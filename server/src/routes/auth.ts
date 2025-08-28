@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import passport from "../lib/passport.js";
 import logger from "../lib/logger.js";
 import config from "../lib/config.js";
+import { regenerateSession } from "../lib/session-middleware.js";
 import type { AuthStatus, UserProfile } from "../types/auth.js";
 
 const router = Router();
@@ -30,22 +31,36 @@ router.get(
   },
 );
 
-// OAuth success redirect
-router.get("/success", (req: Request, res: Response) => {
+// OAuth success redirect with session regeneration
+router.get("/success", async (req: Request, res: Response) => {
   if (!req.user) {
     logger.warn("OAuth success callback reached but no user in session");
     return res.redirect("/auth/failure");
   }
 
-  logger.info({ userId: req.user.id }, "OAuth authentication successful");
+  try {
+    // Regenerate session for security (prevent session fixation)
+    await regenerateSession(req);
 
-  // Redirect to frontend dashboard or appropriate page
-  const redirectUrl =
-    config.NODE_ENV === "development"
-      ? "http://localhost:3000/dashboard"
-      : "/dashboard";
+    logger.info(
+      { userId: req.user.id },
+      "OAuth authentication successful, session regenerated",
+    );
 
-  res.redirect(redirectUrl);
+    // Redirect to frontend dashboard or appropriate page
+    const redirectUrl =
+      config.NODE_ENV === "development"
+        ? "http://localhost:3000/dashboard"
+        : "/dashboard";
+
+    res.redirect(redirectUrl);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user.id },
+      "Error regenerating session after OAuth",
+    );
+    return res.redirect("/auth/failure");
+  }
 });
 
 // OAuth failure redirect

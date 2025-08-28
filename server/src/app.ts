@@ -66,22 +66,41 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Session configuration (for authentication)
+// Import session utilities
+import { PrismaSessionStore } from "./lib/session-store.js";
+import {
+  validateSession,
+  extractUserContext,
+  startSessionCleanup,
+  stopSessionCleanup,
+} from "./lib/session-middleware.js";
+
+// Session configuration with Prisma store
 app.use(
   session({
+    store: new PrismaSessionStore(),
     secret:
       config.SESSION_SECRET ||
       "default-development-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiration on activity
     cookie: {
       secure: config.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
     },
     name: "mini-infra.session",
   }),
 );
+
+// Session middleware for validation and user context extraction
+app.use(validateSession);
+app.use(extractUserContext);
+
+// Start session cleanup scheduler (cleanup every hour)
+startSessionCleanup(60);
 
 // Health check endpoint
 app.get("/health", (req: Request, res: Response) => {
@@ -95,9 +114,17 @@ app.get("/health", (req: Request, res: Response) => {
 
 // Import routes
 import authRoutes from "./routes/auth.js";
+import sessionRoutes from "./routes/session.js";
+
+// Import CSRF protection
+import { addCSRFToken } from "./lib/csrf-protection.js";
+
+// Add CSRF token to all responses
+app.use(addCSRFToken);
 
 // API routes
 app.use("/auth", authRoutes);
+app.use("/session", sessionRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {
@@ -139,11 +166,13 @@ app.use(errorHandler);
 // Graceful shutdown handling
 process.on("SIGTERM", () => {
   logger.info("SIGTERM received, shutting down gracefully");
+  stopSessionCleanup();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
   logger.info("SIGINT received, shutting down gracefully");
+  stopSessionCleanup();
   process.exit(0);
 });
 

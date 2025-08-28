@@ -60,7 +60,7 @@ export interface SessionUser {
 declare module "express-serve-static-core" {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface User extends SessionUser {}
-  
+
   interface Request {
     user?: User;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,3 +78,13 @@ export type OAuthCallbackHandler = (
   profile: GoogleOAuthProfile,
   done: PassportDoneCallback,
 ) => Promise<void> | void;
+
+// Augment express-session to include our custom session data
+declare module "express-session" {
+  interface SessionData {
+    passport?: {
+      user: string;
+    };
+    csrfToken?: string;
+  }
+}

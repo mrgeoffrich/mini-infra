@@ -115,31 +115,33 @@ passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
 });
 
 // Deserialize user from session
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-passport.deserializeUser(async (userId: string, done: (err: any, user?: any) => void) => {
-  try {
-    logger.debug({ userId }, "Deserializing user from session");
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        image: true,
-        createdAt: true,
-      },
-    });
+passport.deserializeUser(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async (userId: string, done: (err: any, user?: any) => void) => {
+    try {
+      logger.debug({ userId }, "Deserializing user from session");
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          image: true,
+          createdAt: true,
+        },
+      });
 
-    if (!user) {
-      logger.warn({ userId }, "User not found during deserialization");
-      return done(null, null);
+      if (!user) {
+        logger.warn({ userId }, "User not found during deserialization");
+        return done(null, null);
+      }
+
+      done(null, user);
+    } catch (error) {
+      logger.error({ error, userId }, "Error deserializing user from session");
+      done(error, null);
     }
-
-    done(null, user);
-  } catch (error) {
-    logger.error({ error, userId }, "Error deserializing user from session");
-    done(error, null);
-  }
-});
+  },
+);
 
 export default passport;

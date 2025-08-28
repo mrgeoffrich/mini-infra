@@ -25,7 +25,7 @@ declare module "passport-google-oidc" {
     issuer: string,
     profile: Profile,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    done: (error: any, user?: any, info?: any) => void
+    done: (error: any, user?: any, info?: any) => void,
   ) => void | Promise<void>;
 
   export class Strategy extends Strategy {
