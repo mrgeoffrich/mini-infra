@@ -1,0 +1,24 @@
+{
+    "name": "mini-infra-server",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc",
+        "start": "node dist/server.js"
+    },
+    "devDependencies": {
+        "@types/express": "^4.17.17",
+        "@types/cors": "^2.8.13",
+        "@types/node": "^20.4.0",
+        "tsx": "^3.12.7",
+        "typescript": "^5.1.6"
+    },
+    "dependencies": {
+        "express": "^5.1.0",
+        "helmet": "^8.1.0",
+        "passport": "^0.7.0",
+        "passport-google-oidc": "^0.1.0"
+    }
+}

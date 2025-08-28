@@ -1,0 +1,1 @@
+Mini Infra is a streamlined web dashboard that gives home labbers complete control over their single-server Docker infrastructure with one-click zero-downtime deployments, automated PostgreSQL backups, and real-time monitoring—all without the complexity of enterprise orchestration tools.
