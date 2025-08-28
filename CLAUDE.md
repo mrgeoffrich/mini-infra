@@ -21,7 +21,18 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Authentication**: Passport with Google OAuth
 - **Validation**: Zod for runtime type checking
 - **Logging**: Pino (high-performance structured logging)
-- **Security**: Cloudflare Turnstile integration
+- **Security**: Helmet, rate limiting, CORS, secure sessions
+- **Middleware**: Request correlation IDs, error handling, graceful shutdown
+
+#### Express Server Foundation (✅ Completed)
+The Express.js server foundation has been established with:
+- **Security Middleware**: Helmet for security headers, express-rate-limit for API protection
+- **Structured Logging**: Pino with request correlation IDs and automatic data redaction
+- **Environment Configuration**: Zod-based validation with development/production configurations
+- **Error Handling**: Comprehensive error middleware with proper HTTP status codes
+- **Session Management**: Express session configuration for authentication
+- **Request Tracking**: UUID-based request correlation across the system
+- **Graceful Shutdown**: Proper cleanup and shutdown handling
 
 ### Development Tools
 - **Language**: TypeScript
@@ -150,10 +161,19 @@ DATABASE_URL="file:./dev.db"
 # Authentication
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+SESSION_SECRET=your_session_secret_key
+
+# Server Configuration
+NODE_ENV=development
+PORT=5000
 
 # Logging
 LOG_LEVEL=debug
-NODE_ENV=development
+
+# Security & CORS
+CORS_ORIGIN=http://localhost:3000
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
 ```
 
 ## Key Commands

@@ -8,7 +8,8 @@
       "Bash(npm run build:*)",
       "Bash(npx prettier:*)",
       "Bash(npx eslint:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(npm run format:*)"
     ],
     "deny": [],
     "ask": []
