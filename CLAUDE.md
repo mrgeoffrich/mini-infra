@@ -87,6 +87,16 @@ A complete set of RESTful API endpoints for authentication flow management and u
 - **Rate Limiting**: Protection against abuse with configurable rate limits for key operations
 - **Secure Redirects**: OAuth success/failure handling with environment-aware redirects to frontend
 
+#### Backend Authentication Tests (✅ Completed)
+A comprehensive test suite for authentication system functionality and security has been implemented using Jest:
+- **Jest Testing Environment**: Cross-platform setup with proper TypeScript configuration, test database isolation, and unique test data generation using CUID2
+- **OAuth Strategy Tests**: Unit tests covering Google OAuth callback handling, user creation/linking scenarios, error handling, user serialization/deserialization
+- **Session Management Tests**: Complete test coverage for session store operations, lifecycle management, cleanup operations, data validation, and cascade deletion
+- **API Key Service Tests**: Security-focused tests for key generation, hashing, database operations, validation logic, and user isolation
+- **Test Utilities**: Reusable test utilities for creating isolated test users, sessions, and API keys with proper cleanup between tests
+- **Database Isolation**: Each test creates unique data to prevent conflicts during parallel test execution
+- **Security Testing**: Validation of cryptographic security, hash consistency, access control, and data protection
+
 ### Development Tools
 - **Language**: TypeScript
 - **Package Manager**: npm
@@ -242,6 +252,9 @@ RATE_LIMIT_MAX_REQUESTS=100
 - `npm run dev` - Start development server with hot reload
 - `npm run build` - Build TypeScript to JavaScript
 - `npm start` - Start production server
+- `npm test` - Run Jest test suite
+- `npm run test:watch` - Run tests in watch mode
+- `npm run test:coverage` - Run tests with coverage report
 - `npm run lint` - Run ESLint on TypeScript files
 - `npm run lint:fix` - Run ESLint with auto-fix
 - `npm run format` - Format code with Prettier

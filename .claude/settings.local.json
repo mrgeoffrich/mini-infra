@@ -9,7 +9,11 @@
       "Bash(npx prettier:*)",
       "Bash(npx eslint:*)",
       "Bash(npm run lint)",
-      "Bash(npm run format:*)"
+      "Bash(npm run format:*)",
+      "Bash(npm test)",
+      "Bash(cross-env DATABASE_URL=\"file:./test.db\" npx prisma db push)",
+      "Bash(set DATABASE_URL=file:./test.db)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []
