@@ -93,9 +93,11 @@ app.get("/health", (req: Request, res: Response) => {
   });
 });
 
-// API routes will be added here
-// app.use('/api', apiRoutes)
-// app.use('/auth', authRoutes)
+// Import routes
+import authRoutes from "./routes/auth.js";
+
+// API routes
+app.use("/auth", authRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

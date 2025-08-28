@@ -2,13 +2,7 @@ import { Request, Response } from "express";
 import logger from "./logger.js";
 import { getRequestId } from "./request-id.js";
 
-// Extend Request interface to include user
-interface RequestWithUser extends Request {
-  user?: {
-    id: string;
-    [key: string]: unknown;
-  };
-}
+// Types imported for future use
 
 export interface ApiContext {
   requestId: string;
@@ -31,7 +25,7 @@ export const createApiLogger = (req: Request) => {
     path: req.path,
     ip: req.ip || req.socket.remoteAddress || "unknown",
     userAgent: req.headers["user-agent"] || "unknown",
-    userId: (req as RequestWithUser).user?.id,
+    userId: req.user?.id,
     startTime: Date.now(),
   };
 
