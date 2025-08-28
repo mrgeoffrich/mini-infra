@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "WebFetch",
       "Bash(npm install:*)",
       "Bash(npx prisma init:*)",
       "Bash(npx prisma generate:*)",
@@ -10,14 +11,16 @@
       "Bash(npx eslint:*)",
       "Bash(npm run lint)",
       "Bash(npm run format:*)",
-      "Bash(npm test)",
+      "Bash(npm test:*)",
       "Bash(cross-env DATABASE_URL=\"file:./test.db\" npx prisma db push)",
       "Bash(set DATABASE_URL=file:./test.db)",
       "Bash(npm test:*)",
       "Bash(npm run test:coverage:*)",
-      "Bash(npx shadcn add:*)"
+      "Bash(npx shadcn add:*)",
+      "WebSearch"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "defaultMode": "acceptEdits"
   }
 }

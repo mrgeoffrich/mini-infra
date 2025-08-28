@@ -24,102 +24,6 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Security**: Helmet, rate limiting, CORS, secure sessions
 - **Middleware**: Request correlation IDs, error handling, graceful shutdown
 
-#### Express Server Foundation (✅ Completed)
-The Express.js server foundation has been established with:
-- **Security Middleware**: Helmet for security headers, express-rate-limit for API protection
-- **Structured Logging**: Pino with request correlation IDs and automatic data redaction
-- **Environment Configuration**: Zod-based validation with development/production configurations
-- **Error Handling**: Comprehensive error middleware with proper HTTP status codes
-- **Session Management**: Express session configuration for authentication
-- **Request Tracking**: UUID-based request correlation across the system
-- **Graceful Shutdown**: Proper cleanup and shutdown handling
-
-#### Google OAuth Authentication (✅ Completed)
-The Google OAuth backend implementation has been completed with:
-- **Passport.js Integration**: Configured with Google OpenID Connect strategy
-- **User Management**: Automatic user creation and profile updates from Google OAuth
-- **Session Handling**: Secure user serialization and deserialization for sessions
-- **TypeScript Support**: Comprehensive type definitions for authentication flow
-- **API Endpoints**: Complete authentication routes including login, callback, logout, and status
-- **Security**: Proper error handling and logging for authentication events
-- **Database Integration**: User data storage with Prisma ORM and SQLite
-
-#### Session Management System (✅ Completed)
-A comprehensive session management system has been implemented with:
-- **Database-Backed Sessions**: Custom Prisma session store for persistent session storage
-- **Session Lifecycle Management**: Automatic session validation, cleanup, and expiration handling
-- **Security Features**: Session regeneration on authentication, CSRF protection, secure cookie configuration
-- **Middleware Stack**: Session validation, user context extraction, and request processing
-- **Session API**: Endpoints for session statistics, CSRF token management, and session destruction
-- **Cleanup Scheduler**: Automated cleanup of expired sessions with configurable intervals
-- **Activity Tracking**: Session activity timestamps and user context persistence
-
-#### API Key Authentication System (✅ Completed)
-A secure API key authentication system has been implemented for webhook and programmatic access:
-- **Secure Key Generation**: Cryptographically secure API keys with HMAC-SHA256 hashing for storage
-- **Key Management**: Full CRUD operations - create, list, revoke, rotate, and delete API keys
-- **Multiple Authentication Methods**: Support for Bearer token and x-api-key header formats
-- **Flexible Middleware**: Three middleware options - required API key, optional API key, and session or API key
-- **Rate Limiting**: Configurable rate limits for API key operations (20 ops/15min, 5 creates/hour)
-- **User Context**: API key authentication provides same user context as session authentication
-- **Activity Tracking**: Last used timestamps and comprehensive logging for security monitoring
-- **RESTful API**: Complete API endpoints at /api/keys for key management operations
-
-#### Authentication Middleware System (✅ Completed)
-A comprehensive authentication middleware system has been developed to protect API routes and validate user authentication:
-- **Session-Based Authentication**: `requireAuth` middleware for session-only authentication with comprehensive validation
-- **Optional Authentication**: `optionalAuth` middleware that validates authentication if present but allows unauthenticated requests
-- **Authorization Middleware**: `requireAuthorization` middleware for basic authorization checks with future role-based support
-- **Resource Ownership Protection**: `requireOwnership` middleware to ensure users can only access their own resources
-- **Standardized Error Responses**: Consistent error handling with typed error responses and request correlation IDs
-- **Middleware Composition**: Utilities for combining multiple middleware functions with pre-composed common patterns
-- **Authentication Utilities**: Helper functions for user extraction, authentication status checks, and auth method detection
-- **Flexible Route Protection**: Multiple protection patterns including session-only, API key-only, mixed auth, and ownership-based access
-
-#### Authentication API Endpoints (✅ Completed)
-A complete set of RESTful API endpoints for authentication flow management and user operations has been implemented:
-- **OAuth Flow Endpoints**: `/auth/google` for OAuth initiation and `/auth/google/callback` for OAuth completion
-- **Session Management**: `/auth/logout` for session termination and `/auth/status` for authentication state checking
-- **User Profile Access**: `/auth/user` endpoint for retrieving current user profile information
-- **API Key Management**: Full REST API at `/api/keys` with CRUD operations for API key management
-- **Proper HTTP Status Codes**: Comprehensive error responses with appropriate 200, 201, 400, 401, 404, 500 status codes
-- **Request Validation**: Zod schema validation for API key creation and management requests
-- **Rate Limiting**: Protection against abuse with configurable rate limits for key operations
-- **Secure Redirects**: OAuth success/failure handling with environment-aware redirects to frontend
-
-#### Backend Authentication Tests (✅ Completed)
-A comprehensive test suite for authentication system functionality and security has been implemented using Jest:
-- **Jest Testing Environment**: Cross-platform setup with proper TypeScript configuration, test database isolation, and unique test data generation using CUID2
-- **OAuth Strategy Tests**: Unit tests covering Google OAuth callback handling, user creation/linking scenarios, error handling, user serialization/deserialization
-- **Session Management Tests**: Complete test coverage for session store operations, lifecycle management, cleanup operations, data validation, and cascade deletion
-- **API Key Service Tests**: Security-focused tests for key generation, hashing, database operations, validation logic, and user isolation
-- **Test Utilities**: Reusable test utilities for creating isolated test users, sessions, and API keys with proper cleanup between tests
-- **Database Isolation**: Each test creates unique data to prevent conflicts during parallel test execution
-- **Security Testing**: Validation of cryptographic security, hash consistency, access control, and data protection
-
-#### Frontend Authentication Hooks (✅ Completed)
-A comprehensive React hooks-based authentication system has been implemented with React Query integration:
-- **Authentication Context**: React context provider with React Query integration for global authentication state management
-- **Type Definitions**: Complete TypeScript interfaces for authentication state, user data, API responses, and context types
-- **Core Hooks**: `useAuth` for global authentication state, `useUser` for user profile access, `useAuthStatus` for authentication checking
-- **Action Hooks**: `useLogin` for OAuth initiation, `useLogout` for session termination with loading states and error handling
-- **API Integration**: `useApiKeys` with React Query for API key management including create, list, and revoke operations
-- **React Query Setup**: Optimized query client configuration with proper retry logic, caching, and background refetching
-- **Authentication State Management**: Centralized state management with automatic refetching, error handling, and loading states
-- **Environment Configuration**: Configurable backend URL with development defaults and production environment support
-- **Security Features**: Automatic credential inclusion, proper error handling, and secure redirect management for OAuth flow
-
-#### Login and Logout UI Components (✅ Completed)
-A complete set of authentication UI components has been implemented with responsive design and proper UX patterns:
-- **Google OAuth Login Button**: Interactive login component with Google branding, loading states, and authentication status awareness
-- **Logout Button with Confirmation**: Secure logout component with optional confirmation dialog and loading states
-- **User Profile Display**: Avatar-based user profile component with fallback initials, responsive sizing, and loading skeletons
-- **Authentication Loading States**: Comprehensive spinner components for various loading scenarios including full-page and inline variants
-- **Error Display Components**: Rich error handling UI with retry mechanisms, contextual help text, and proper error categorization
-- **Responsive Authentication Layout**: Flexible layout components including ProtectedRoute, PublicRoute, and AuthLayout for different authentication scenarios
-- **Navigation Integration**: Updated NavUser component with real authentication data, proper loading states, and integrated logout functionality
-- **shadcn/ui Integration**: All components built using shadcn/ui components with Tailwind CSS for consistent styling and accessibility
-
 ### Development Tools
 - **Language**: TypeScript
 - **Package Manager**: npm
@@ -239,6 +143,15 @@ The application uses Prisma ORM with SQLite for data persistence. The authentica
 - **Google OAuth API**: User authentication
 
 ## Environment Variables
+
+Create a `.env` file in the `server/` directory using the provided `.env.example` template:
+
+```bash
+# Copy the example environment file
+cp server/.env.example server/.env
+```
+
+Environment variables reference (see `server/.env.example`):
 
 ```bash
 # Database
