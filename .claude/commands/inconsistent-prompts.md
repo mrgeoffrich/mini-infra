@@ -1,0 +1,1 @@
+Take a look at @projectmanagement\mini_infra_spec.md and@projectmanagement\mini_infra_tech_spec.md and CLAUDE.md and think deeply about any pieces of information that conflict. List out the conflicts and how they might confuse an LLM. Do not use the TODO tool.

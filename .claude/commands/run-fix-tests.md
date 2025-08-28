@@ -1,0 +1,1 @@
+Run tests using `npm run test` and look at all the tests that failed. Think about how each one could be fixed then come up with a plan and then execute that plan. Keep doing this till all tests are fixed.
