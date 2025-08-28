@@ -67,17 +67,29 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ```
 mini-infra/
-├── __tests__/                # Backend API tests
-├── src/
-│   ├── app/                  # Application router
-│   ├── components/           # Reusable components
-│   ├── lib/                 # Utilities and configs
-│   └── types/               # TypeScript definitions
-├── prisma/
-│   ├── schema.prisma        # Database schema
-│   └── migrations/          # Database migrations
-├── public/                  # Static assets
-└── package.json
+├── client/                   # Frontend React application
+│   ├── src/
+│   │   ├── app/             # Application pages
+│   │   │   └── dashboard/   # Dashboard components and data
+│   │   ├── components/      # Reusable UI components
+│   │   │   └── ui/          # shadcn UI components
+│   │   ├── hooks/           # Custom React hooks
+│   │   └── lib/             # Frontend utilities
+│   ├── public/              # Static assets
+│   ├── dist/                # Build output
+│   └── package.json         # Frontend dependencies
+├── server/                  # Backend Express.js application
+│   ├── src/
+│   │   ├── app.ts          # Express app configuration
+│   │   └── server.ts       # Server entry point
+│   ├── dist/                # Backend build output
+│   └── package.json         # Backend dependencies
+├── projectmanagement/       # Project documentation
+│   ├── mini_infra_spec.md  # Project specification
+│   ├── mini_infra_tech_spec.md # Technical specification
+│   └── sizzle.md           # Marketing/overview document
+├── CLAUDE.md                # Claude Code context and instructions
+└── package.json             # Root package.json
 ```
 
 ## Testing Strategy
