@@ -2,7 +2,6 @@ import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import apiRoutes from './routes/index.js' // Adjust import path as needed
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -14,7 +13,7 @@ app.use(cors())
 app.use(express.json())
 
 // API routes
-app.use('/api', apiRoutes)
+//app.use('/api', apiRoutes)
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
