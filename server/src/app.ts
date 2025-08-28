@@ -16,7 +16,7 @@ app.use(express.json())
 //app.use('/api', apiRoutes)
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     console.error(err.stack)
     res.status(500).json({ error: 'Something went wrong!' })
 })

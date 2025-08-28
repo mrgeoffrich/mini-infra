@@ -81,8 +81,14 @@ mini-infra/
 ├── server/                  # Backend Express.js application
 │   ├── src/
 │   │   ├── app.ts          # Express app configuration
-│   │   └── server.ts       # Server entry point
+│   │   ├── server.ts       # Server entry point
+│   │   ├── lib/
+│   │   │   └── prisma.ts   # Prisma client configuration
+│   │   └── generated/      # Generated Prisma client
+│   ├── prisma/
+│   │   └── schema.prisma   # Database schema definition
 │   ├── dist/                # Backend build output
+│   ├── dev.db               # SQLite database file
 │   └── package.json         # Backend dependencies
 ├── projectmanagement/       # Project documentation
 │   ├── mini_infra_spec.md  # Project specification
@@ -91,6 +97,33 @@ mini-infra/
 ├── CLAUDE.md                # Claude Code context and instructions
 └── package.json             # Root package.json
 ```
+
+## Database Schema
+
+### Authentication Models
+
+The application uses Prisma ORM with SQLite for data persistence. The authentication system includes three core models:
+
+#### User Model
+- **Purpose**: Stores Google OAuth user data and profile information
+- **Fields**: id (CUID), email (unique), name, image, googleId (unique), timestamps
+- **Relations**: One-to-many with Sessions and ApiKeys
+
+#### Session Model
+- **Purpose**: Manages secure user sessions for web authentication
+- **Fields**: id (CUID), sessionToken (unique), userId, expires, timestamps
+- **Relations**: Many-to-one with User (cascade delete)
+
+#### ApiKey Model
+- **Purpose**: Provides API key authentication for webhooks and programmatic access
+- **Fields**: id (CUID), name, key (unique), userId, active status, lastUsedAt, timestamps
+- **Relations**: Many-to-one with User (cascade delete)
+
+### Database Configuration
+- **Provider**: SQLite
+- **File Location**: `server/dev.db`
+- **Client Location**: `server/src/generated/prisma`
+- **Schema File**: `server/prisma/schema.prisma`
 
 ## Testing Strategy
 
@@ -111,6 +144,9 @@ mini-infra/
 ## Environment Variables
 
 ```bash
+# Database
+DATABASE_URL="file:./dev.db"
+
 # Authentication
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
@@ -122,12 +158,26 @@ NODE_ENV=development
 
 ## Key Commands
 
+### Frontend (client/)
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run test` - Run tests
 - `npm run lint` - Run linting
+
+### Backend (server/)
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Build TypeScript to JavaScript
+- `npm start` - Start production server
+- `npm run lint` - Run ESLint on TypeScript files
+- `npm run lint:fix` - Run ESLint with auto-fix
+- `npm run format` - Format code with Prettier
+- `npm run format:check` - Check code formatting
+
+### Database (server/)
 - `npx prisma db push` - Sync database schema
 - `npx prisma studio` - Open database GUI
+- `npx prisma generate` - Generate Prisma client
+- `npx prisma migrate dev` - Create and apply new migration
 
 ## Security Considerations
 
