@@ -13,7 +13,8 @@
       "Bash(npm test)",
       "Bash(cross-env DATABASE_URL=\"file:./test.db\" npx prisma db push)",
       "Bash(set DATABASE_URL=file:./test.db)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(npm run test:coverage:*)"
     ],
     "deny": [],
     "ask": []
