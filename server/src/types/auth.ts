@@ -79,6 +79,58 @@ export type OAuthCallbackHandler = (
   done: PassportDoneCallback,
 ) => Promise<void> | void;
 
+// API Key type from Prisma (for type safety)
+export interface ApiKey {
+  id: string;
+  name: string;
+  key: string;
+  userId: string;
+  active: boolean;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// API Key creation request
+export interface CreateApiKeyRequest {
+  name: string;
+}
+
+// API Key response (without the actual key after creation)
+export interface ApiKeyResponse {
+  id: string;
+  name: string;
+  userId: string;
+  active: boolean;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// API Key creation response (includes the key only on creation)
+export interface CreateApiKeyResponse extends ApiKeyResponse {
+  key: string;
+}
+
+// API Key validation result
+export interface ApiKeyValidationResult {
+  valid: boolean;
+  userId?: string;
+  keyId?: string;
+  user?: SessionUser;
+}
+
+// Augment Express Request interface to include API key authentication
+declare module "express-serve-static-core" {
+  interface Request {
+    apiKey?: {
+      id: string;
+      userId: string;
+      user: SessionUser;
+    };
+  }
+}
+
 // Augment express-session to include our custom session data
 declare module "express-session" {
   interface SessionData {

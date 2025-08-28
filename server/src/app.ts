@@ -115,6 +115,7 @@ app.get("/health", (req: Request, res: Response) => {
 // Import routes
 import authRoutes from "./routes/auth.js";
 import sessionRoutes from "./routes/session.js";
+import apiKeyRoutes from "./routes/api-keys.js";
 
 // Import CSRF protection
 import { addCSRFToken } from "./lib/csrf-protection.js";
@@ -125,6 +126,7 @@ app.use(addCSRFToken);
 // API routes
 app.use("/auth", authRoutes);
 app.use("/session", sessionRoutes);
+app.use("/api/keys", apiKeyRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {
