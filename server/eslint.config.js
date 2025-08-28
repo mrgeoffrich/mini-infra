@@ -13,6 +13,10 @@ export default tseslint.config([
       ecmaVersion: 2022,
       globals: globals.node,
       sourceType: 'module',
+      parserOptions: {
+        project: './tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
