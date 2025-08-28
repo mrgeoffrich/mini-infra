@@ -42,38 +42,6 @@
 - **@types/jest**: TypeScript support for Jest
 - **prisma-test-environment**: Database testing utilities
 
-## Project Structure
-
-```
-mini-infra/
-├── __tests__/                # Backend API tests
-│   ├── api/                  # Data model CRUD API test
-│   ├── auth/                 # Authentication API tests
-│   ├── business-logic/       # Businessl logic API tests
-│   ├── setup/                # Test setup and tear down
-│   ├── utils/                # Miscellaneous test utilities
-├── src/
-│   ├── app/                  # Next.js App Router
-│   │   ├── globals.css       # Global styles
-│   │   ├── layout.tsx        # Root layout
-│   │   └── page.tsx          # Landing page
-│   ├── components/           # Reusable components
-│   ├── lib/                 # Utilities and configs
-│   │   ├── prisma.ts        # Prisma client
-│   │   ├── auth.ts          # NextAuth configuration
-│   │   ├── validations.ts   # Zod schemas
-│   │   ├── logger.ts        # Pino logger configuration
-│   │   ├── api-logger.ts    # API logging utilities
-│   │   ├── request-id.ts    # Request correlation IDs
-│   │   └── utils.ts         # Helper functions
-│   └── types/               # TypeScript type definitions
-├── prisma/
-│   ├── schema.prisma        # Database schema
-│   └── migrations/          # Database migrations
-├── public/                  # Static assets
-└── package.json
-```
-
 ## Database Schema (Prisma)
 
 Look in @prisma/schema.prisma for the latest schema.
@@ -95,7 +63,7 @@ The application implements a comprehensive logging strategy using **Pino**, a hi
 
 ### Core Components
 
-#### 1. Logger Configuration (`src/lib/logger.ts`)
+#### 1. Logger Configuration (`server/src/lib/logger.ts`)
 
 ```typescript
 // Environment-aware logger setup
@@ -120,34 +88,7 @@ const logger = process.env.NODE_ENV === 'development'
 - **Automatic Redaction**: Removes sensitive data from logs
 - **Configurable Levels**: Environment variable overrides
 
-#### 2. API Logger Utilities (`src/lib/api-logger.ts`)
-
-```typescript
-// Example usage in API routes
-export async function POST(request: NextRequest) {
-  const { logger, context } = await createApiLogger(request);
-  const timingContext = startApiTiming(context);
-  
-  logger.info('Creating new medication');
-  
-  try {
-    // API logic here
-    logApiBusinessEvent(logger, 'medication_created', {
-      medicationId: medication.id,
-      medicationName: medication.name
-    });
-    
-    const response = NextResponse.json(medication, { status: 201 });
-    logApiCompletion(timingContext, response, logger);
-    return response;
-  } catch (error) {
-    logError(logger, error, 'Failed to create medication', { 
-      endpoint: context.path,
-      userId: context.userId 
-    });
-  }
-}
-```
+#### 2. API Logger Utilities (`server/src/lib/api-logger.ts`)
 
 **Capabilities:**
 - **Request Context**: Automatic extraction of user ID, IP, user agent
@@ -156,20 +97,7 @@ export async function POST(request: NextRequest) {
 - **Error Context**: Rich error information with stack traces and context
 - **Authentication Logging**: Detailed auth failure tracking
 
-#### 3. Request Correlation (`src/lib/request-id.ts` + `middleware.ts`)
-
-```typescript
-// Automatic request ID injection
-export async function middleware(request: NextRequest) {
-  const requestId = request.headers.get('x-request-id') || generateRequestId();
-  
-  const response = NextResponse.next();
-  response.headers.set('x-request-id', requestId);
-  request.headers.set('x-request-id', requestId);
-  
-  return response;
-}
-```
+#### 3. Request Correlation (`server/src/lib/request-id.ts` + `middleware.ts`)
 
 **Benefits:**
 - **Request Tracing**: Follow requests across your entire API
@@ -215,47 +143,6 @@ NODE_ENV=development     # Affects default log level and format
 # Test: silent level (no output)
 ```
 
-#### Next.js Integration
-```typescript
-// next.config.ts
-const nextConfig: NextConfig = {
-  serverExternalPackages: ['pino', 'pino-pretty'],
-  // ... other config
-};
-```
-
-### Implementation in API Routes
-
-```typescript
-export async function POST(request: NextRequest) {
-  const { logger, context } = await createApiLogger(request);
-  const timingContext = startApiTiming(context);
-
-  logger.info('Creating new resource');
-
-  try {
-    // API logic with detailed logging
-    logger.debug({ resourceName: data.name }, 'Resource data validated');
-    
-    logApiBusinessEvent(logger, 'resource_created', {
-      resourceId: resource.id
-    });
-
-    const response = NextResponse.json(resource, { status: 201 });
-    logApiCompletion(timingContext, response, logger);
-    return response;
-  } catch (error) {
-    logError(logger, error, 'Failed to create resource', {
-      endpoint: context.path,
-      userId: context.userId
-    });
-    
-    const response = NextResponse.json({ error: 'Server error' }, { status: 500 });
-    logApiCompletion(timingContext, response, logger);
-    return response;
-  }
-}
-```
 
 ### Benefits for Production
 
@@ -278,11 +165,11 @@ GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
 
 ### React Query Setup
 
-Look in `@src/lib/providers.tsx`
+Look in `@client/src/lib/providers.tsx`
 
 ### Custom Hooks
 
-Custom hook in `@src/hooks/`
+Custom hook in `@client/src/hooks/`
 
 ## Testing
 
@@ -320,48 +207,6 @@ Test Data:
 4. **Valid Dates**: When creating dates for test data use the current date plus or minus few days to ensure the dates are in the future or past by at least a few days. For historical data ensure dates are in the past.
 5. **Mock out current user**: To handle auth in tests use the jest mock for the getServerSession to return the test user id.
 
-### Example Pattern from `resource.test.ts`:
-
-```typescript
-let mockUserId: string;
-
-jest.mock('next-auth', () => ({
-  getServerSession: jest.fn(() => ({ user: { id: mockUserId } })),
-}));
-
-describe('/api/resource', () => {
-  let testResource: any;
-  let testUserId: string;
-  let testUserEmail: string;
-  let testResourceId: string;
-
-  beforeEach(async () => {
-    testUserId = createId();
-    testResourceId = createId();
-    mockUserId = testUserId;
-    testUserEmail = testUserId + '@example.com';
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 30);
-    futureDateString = futureDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-    futureDateISOString = futureDate.toISOString();
-
-    // Create unique test user
-    await prisma.user.upsert({
-      where: { id: testUserId },
-      update: {},
-      create: { id: testUserId, email: testUserEmail },
-    });
-
-     testResource = await prisma.resource.create({
-      data: {
-        id: testMedicationId,
-        name: 'Test Reource',
-        userId: testUserId,
-      },
-    });
-});
-```
-
 ### Database Isolation Methods
 
 1. **Unique User Creation**: Each test creates its own user with unique CUID2 ID
@@ -379,36 +224,6 @@ Each test typically creates:
 - **Test Medications**: Associated with the specific test user
 - **Pill Logs**: Linked to test medications and users
 - **Authentication Mock**: Set to return the specific test user ID
-
-### Test Authentication Mocking
-
-```typescript
-let mockUserId: string;
-
-jest.mock('next-auth', () => ({
-  getServerSession: jest.fn(() => ({ user: { id: mockUserId } })),
-}));
-
-// In beforeEach:
-mockUserId = testUserId; // Set to current test's user ID
-```
-
-### Test Data Creation Pattern
-
-```typescript
-const futureDate = new Date();
-futureDate.setDate(futureDate.getDate() + 30);
-futureDateString = futureDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-futureDateISOString = futureDate.toISOString();
-
-testResource = await prisma.resource.create({
-  data: {
-    id: testResourceId, // Unique ID
-    name: 'Test Resource',
-    userId: testUserId, // Scoped to test user
-  },
-});
-```
 
 ### Key Test Concurrency Prevention Features
 
