@@ -348,6 +348,18 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **TypeScript Support**: Full type integration with `@mini-infra/types` for all API interactions
 - **Request Correlation**: Debug support with correlation IDs for all API requests
 
+### Settings Validation Hooks Implementation
+- **Validation Hooks File**: `client/src/hooks/use-settings-validation.ts` - Specialized React Query hooks for real-time validation and connectivity monitoring
+- **useConnectivityStatus Hook**: Real-time connectivity status monitoring with 30s polling interval for service health tracking
+- **useSettingsValidator Hook**: Debounced validation with configurable delay (500ms default) to prevent excessive API calls
+- **useServiceConnectivity Hook**: Service-specific connectivity monitoring with real-time polling for individual services
+- **useValidateService Hook**: Manual validation trigger with mutation pattern for on-demand connectivity testing
+- **useOptimisticValidation Hook**: Optimistic updates for validation results with pending states and timestamp tracking
+- **useValidationRecovery Hook**: Automatic retry logic with exponential backoff and circuit breaker patterns for failed validations
+- **useAdvancedSettingsValidation Hook**: Combined validation hook with integrated debouncing, polling, retry logic, and optimistic updates
+- **Real-time Features**: Live connectivity status updates, automatic recovery from failures, and comprehensive error handling
+- **Performance Optimization**: Debounced validation requests, intelligent caching strategies, and request correlation for debugging
+
 ## Environment Variables
 
 Create a `.env` file in the `server/` directory using the provided `.env.example` template:
