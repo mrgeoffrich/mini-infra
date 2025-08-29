@@ -11,7 +11,7 @@ import {
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+const BACKEND_URL = window.location.origin;
 
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {

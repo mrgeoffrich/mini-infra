@@ -49,8 +49,8 @@ router.get(
         );
 
         // Get the redirect URL from state parameter or use default
-        const frontendUrl =
-          config.NODE_ENV === "development" ? "http://localhost:3000" : "";
+        const frontendUrl = config.PUBLIC_URL || 
+          (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
         
         let redirectPath = "/dashboard";
         try {
@@ -94,8 +94,8 @@ router.get("/failure", ((req: Request, res: Response) => {
   logger.warn("OAuth authentication failed");
 
   // Redirect to frontend login page with error
-  const frontendUrl =
-    config.NODE_ENV === "development" ? "http://localhost:3000" : "";
+  const frontendUrl = config.PUBLIC_URL || 
+    (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
   const redirectUrl = `${frontendUrl}/login?auth=error`;
 
   logger.info({ redirectUrl }, "Redirecting after failed OAuth");
@@ -131,7 +131,7 @@ router.get("/status", ((req: Request, res: Response) => {
     );
 
     const response: AuthStatus = {
-      authenticated: true,
+      isAuthenticated: true,
       user: {
         id: req.user.id,
         email: req.user.email,
@@ -146,7 +146,7 @@ router.get("/status", ((req: Request, res: Response) => {
     logger.debug("Authentication status check - not authenticated");
 
     const response: AuthStatus = {
-      authenticated: false,
+      isAuthenticated: false,
       user: null,
     };
 

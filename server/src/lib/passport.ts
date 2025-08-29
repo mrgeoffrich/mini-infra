@@ -15,7 +15,7 @@ if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
       {
         clientID: config.GOOGLE_CLIENT_ID,
         clientSecret: config.GOOGLE_CLIENT_SECRET,
-        callbackURL: "/auth/google/callback",
+        callbackURL: `${config.PUBLIC_URL || ''}/auth/google/callback`,
         scope: ["profile", "email"],
       },
       async (

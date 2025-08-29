@@ -54,7 +54,7 @@ app.use(rateLimitMiddleware);
 app.use(
   cors({
     origin:
-      config.CORS_ORIGIN || (config.NODE_ENV === "development" ? true : false),
+      config.PUBLIC_URL || (config.NODE_ENV === "development" ? true : false),
     credentials: true,
     optionsSuccessStatus: 200,
   }),

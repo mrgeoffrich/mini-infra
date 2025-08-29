@@ -22,7 +22,7 @@ export interface UserProfile {
 
 // Authentication status response
 export interface AuthStatus {
-  authenticated: boolean;
+  isAuthenticated: boolean;
   user: UserProfile | null;
 }
 

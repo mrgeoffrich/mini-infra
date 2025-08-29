@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiKey, CreateApiKeyRequest, ApiKeyResponse } from "../lib/auth-types";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+const BACKEND_URL = window.location.origin;
 
 async function fetchApiKeys(): Promise<ApiKey[]> {
   const response = await fetch(`${BACKEND_URL}/api/keys`, {

@@ -29,7 +29,7 @@ const configSchema = z.object({
     .default("info"),
 
   // Security
-  CORS_ORIGIN: z.string().optional(),
+  PUBLIC_URL: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z
     .string()
     .optional()
