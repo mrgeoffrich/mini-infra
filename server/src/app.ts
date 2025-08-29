@@ -91,6 +91,7 @@ app.get("/health", ((req: Request, res: Response) => {
 import authRoutes from "./routes/auth";
 import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
+import settingsRoutes from "./routes/settings";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -99,6 +100,7 @@ import containerRoutes from "./routes/containers";
 app.use("/auth", authRoutes);
 app.use("/api/keys", apiKeyRoutes);
 app.use("/api/containers", containerRoutes);
+app.use("/api/settings", settingsRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

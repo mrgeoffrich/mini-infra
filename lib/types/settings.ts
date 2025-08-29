@@ -74,6 +74,27 @@ export interface SettingsListResponse {
   success: boolean;
   data: SystemSettingsInfo[];
   message?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    hasMore: boolean;
+  };
+}
+
+export interface SettingsApiError {
+  error: string;
+  message: string;
+  details?: any;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface SettingsDeleteResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  requestId?: string;
 }
 
 // ====================
