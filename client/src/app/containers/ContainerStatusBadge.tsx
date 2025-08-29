@@ -1,3 +1,4 @@
+import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ContainerStatus } from "@mini-infra/types";
@@ -7,11 +8,11 @@ interface ContainerStatusBadgeProps {
   className?: string;
 }
 
-export function ContainerStatusBadge({
+export const ContainerStatusBadge = React.memo(function ContainerStatusBadge({
   status,
   className,
 }: ContainerStatusBadgeProps) {
-  const getStatusConfig = (status: ContainerStatus) => {
+  const config = React.useMemo(() => {
     switch (status) {
       case "running":
         return {
@@ -50,9 +51,7 @@ export function ContainerStatusBadge({
           label: status,
         };
     }
-  };
-
-  const config = getStatusConfig(status);
+  }, [status]);
 
   return (
     <Badge variant={config.variant} className={cn(config.className, className)}>
@@ -71,4 +70,4 @@ export function ContainerStatusBadge({
       </span>
     </Badge>
   );
-}
+});

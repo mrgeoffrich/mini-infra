@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PublicRoute } from "@/components/public-route";
 import { AuthErrorBoundary } from "@/components/auth-error-boundary";
+import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
@@ -22,75 +23,44 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: "/dashboard",
+    path: "/",
     element: (
       <AuthErrorBoundary>
         <ProtectedRoute>
-          <DashboardPage />
+          <AppLayout />
         </ProtectedRoute>
       </AuthErrorBoundary>
     ),
-  },
-  // Future routes can be added here
-  {
-    path: "/containers",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <ContainersPage />
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
-  },
-  {
-    path: "/databases",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <div>Database Management - Coming Soon</div>
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
-  },
-  {
-    path: "/deployments",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <div>Deployment Management - Coming Soon</div>
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
-  },
-  {
-    path: "/tunnels",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <div>Cloudflare Tunnels - Coming Soon</div>
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
-  },
-  {
-    path: "/logs",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <div>Activity Logs - Coming Soon</div>
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
-  },
-  {
-    path: "/settings",
-    element: (
-      <AuthErrorBoundary>
-        <ProtectedRoute>
-          <div>Settings - Coming Soon</div>
-        </ProtectedRoute>
-      </AuthErrorBoundary>
-    ),
+    children: [
+      {
+        path: "dashboard",
+        element: <DashboardPage />,
+      },
+      {
+        path: "containers",
+        element: <ContainersPage />,
+      },
+      {
+        path: "databases",
+        element: <div>Database Management - Coming Soon</div>,
+      },
+      {
+        path: "deployments",
+        element: <div>Deployment Management - Coming Soon</div>,
+      },
+      {
+        path: "tunnels",
+        element: <div>Cloudflare Tunnels - Coming Soon</div>,
+      },
+      {
+        path: "logs",
+        element: <div>Activity Logs - Coming Soon</div>,
+      },
+      {
+        path: "settings",
+        element: <div>Settings - Coming Soon</div>,
+      },
+    ],
   },
   {
     path: "*",
