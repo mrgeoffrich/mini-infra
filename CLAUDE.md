@@ -9,10 +9,12 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 ### Frontend
 - **Framework**: Vite
 - **UI Library**: React 19+
+- **Routing**: React Router DOM v7+
 - **Styling**: shadcn 3 and Tailwind CSS 4
-- **Icons**: Heroicons
+- **Icons**: Heroicons and Tabler Icons
 - **Forms**: React Hook Form with Zod validation
 - **State Management**: React Query (TanStack Query)
+- **Protected Routes**: ProtectedRoute and PublicRoute components with authentication guards
 
 ### Backend
 - **API**: Express.js
@@ -71,11 +73,18 @@ mini-infra/
 ├── client/                   # Frontend React application
 │   ├── src/
 │   │   ├── app/             # Application pages
-│   │   │   └── dashboard/   # Dashboard components and data
+│   │   │   ├── dashboard/   # Dashboard components and data
+│   │   │   └── login/       # Login page
 │   │   ├── components/      # Reusable UI components
-│   │   │   └── ui/          # shadcn UI components
-│   │   ├── hooks/           # Custom React hooks
+│   │   │   ├── ui/          # shadcn UI components
+│   │   │   ├── protected-route.tsx    # Route protection component
+│   │   │   ├── public-route.tsx       # Public route wrapper
+│   │   │   ├── navigation-guard.tsx   # Navigation guards for sections
+│   │   │   └── auth-error-boundary.tsx # Authentication error handling
+│   │   ├── hooks/           # Custom React hooks (useAuth, useUser, etc.)
 │   │   └── lib/             # Frontend utilities
+│   │       ├── routes.tsx   # React Router configuration with protected routes
+│   │       └── auth-context.tsx # Authentication context provider
 │   ├── public/              # Static assets
 │   ├── dist/                # Build output
 │   └── package.json         # Frontend dependencies
