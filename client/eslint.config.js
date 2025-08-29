@@ -26,7 +26,18 @@ export default tseslint.config([
     rules: {
       "react-refresh/only-export-components": [
         "warn",
-        { allowConstantExport: true, allowExportNames: ["buttonVariants", "badgeVariants", "toggleVariants", "sidebarMenuButtonVariants", "schema", "useFormField", "useSidebar"] },
+        {
+          allowConstantExport: true,
+          allowExportNames: [
+            "buttonVariants",
+            "badgeVariants",
+            "toggleVariants",
+            "sidebarMenuButtonVariants",
+            "schema",
+            "useFormField",
+            "useSidebar",
+          ],
+        },
       ],
     },
   },
@@ -36,6 +47,9 @@ export default tseslint.config([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.node,
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
   },
 ]);
