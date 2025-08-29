@@ -19,7 +19,6 @@ async function fetchAuthStatus(): Promise<AuthStatus> {
         return {
           isAuthenticated: false,
           user: null,
-          sessionId: null,
         };
       }
 

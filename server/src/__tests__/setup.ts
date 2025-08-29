@@ -37,15 +37,6 @@ beforeAll(async () => {
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )`;
 
-    await testPrisma.$queryRaw`CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      sessionToken TEXT UNIQUE NOT NULL,
-      userId TEXT NOT NULL,
-      expires DATETIME NOT NULL,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users (id) ON DELETE CASCADE
-    )`;
 
     await testPrisma.$queryRaw`CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY,
@@ -72,7 +63,6 @@ afterAll(async () => {
 // Clean up between tests
 afterEach(async () => {
   // Clean up test data
-  await testPrisma.session.deleteMany();
   await testPrisma.apiKey.deleteMany();
   await testPrisma.user.deleteMany();
 });
@@ -109,18 +99,6 @@ export const createTestApiKey = async (
   return apiKey;
 };
 
-export const createTestSession = async (userId: string) => {
-  const sessionId = createId();
-  const session = await testPrisma.session.create({
-    data: {
-      id: sessionId,
-      sessionToken: `test-session-${sessionId}`,
-      userId: userId,
-      expires: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24 hours
-    },
-  });
-  return session;
-};
 
 // Mock logger to silence logs during tests
 jest.mock("../lib/logger.ts", () => ({

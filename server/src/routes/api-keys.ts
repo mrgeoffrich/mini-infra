@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import {
@@ -71,12 +71,12 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 }
 
 // Apply authentication to all routes
-router.use(requireAuth);
+router.use(requireAuth as RequestHandler);
 
 /**
  * GET /api/keys - Get all API keys for the current user
  */
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -97,12 +97,12 @@ router.get("/", async (req: Request, res: Response) => {
       message: "Failed to retrieve API keys",
     });
   }
-});
+}) as RequestHandler);
 
 /**
  * POST /api/keys - Create a new API key
  */
-router.post("/", createKeyRateLimit, async (req: Request, res: Response) => {
+router.post("/", createKeyRateLimit, (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -144,12 +144,12 @@ router.post("/", createKeyRateLimit, async (req: Request, res: Response) => {
       message: "Failed to create API key",
     });
   }
-});
+}) as RequestHandler);
 
 /**
  * PATCH /api/keys/:keyId/revoke - Revoke (deactivate) an API key
  */
-router.patch("/:keyId/revoke", async (req: Request, res: Response) => {
+router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;
@@ -181,7 +181,7 @@ router.patch("/:keyId/revoke", async (req: Request, res: Response) => {
       message: "Failed to revoke API key",
     });
   }
-});
+}) as RequestHandler);
 
 /**
  * POST /api/keys/:keyId/rotate - Rotate an API key (create new, deactivate old)
@@ -189,7 +189,7 @@ router.patch("/:keyId/revoke", async (req: Request, res: Response) => {
 router.post(
   "/:keyId/rotate",
   createKeyRateLimit,
-  async (req: Request, res: Response) => {
+  (async (req: Request, res: Response) => {
     const userId = req.user!.id;
     const { keyId } = req.params;
     const requestId = req.headers["x-request-id"] as string;
@@ -223,13 +223,13 @@ router.post(
         message: "Failed to rotate API key",
       });
     }
-  },
+  }) as RequestHandler,
 );
 
 /**
  * DELETE /api/keys/:keyId - Permanently delete an API key
  */
-router.delete("/:keyId", async (req: Request, res: Response) => {
+router.delete("/:keyId", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;
@@ -261,12 +261,12 @@ router.delete("/:keyId", async (req: Request, res: Response) => {
       message: "Failed to delete API key",
     });
   }
-});
+}) as RequestHandler);
 
 /**
  * GET /api/keys/stats - Get API key statistics for the current user
  */
-router.get("/stats", async (req: Request, res: Response) => {
+router.get("/stats", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -290,6 +290,6 @@ router.get("/stats", async (req: Request, res: Response) => {
       message: "Failed to retrieve API key statistics",
     });
   }
-});
+}) as RequestHandler);
 
 export default router;

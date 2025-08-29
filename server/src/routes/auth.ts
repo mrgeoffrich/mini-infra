@@ -1,8 +1,8 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Request, Response, NextFunction, RequestHandler } from "express";
 import passport from "../lib/passport";
 import logger from "../lib/logger";
 import config from "../lib/config";
-import { regenerateSession } from "../lib/session-middleware";
+import { generateToken } from "../lib/jwt";
 import type { AuthStatus, UserProfile } from "../types/auth";
 
 const router = Router();
@@ -12,72 +12,86 @@ router.use(passport.initialize());
 router.use(passport.session());
 
 // Google OAuth initiation
-router.get("/google", (req: Request, res: Response, next: NextFunction) => {
+router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
   const redirectParam = req.query.redirect as string;
   logger.info({ redirect: redirectParam }, "Initiating Google OAuth flow");
 
-  // Store redirect URL in session for later use
-  if (redirectParam) {
-    req.session.oauthRedirect = redirectParam;
-  }
+  // Store redirect URL in query state for OAuth callback
+  const state = redirectParam ? Buffer.from(redirectParam).toString('base64') : '';
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
+    state,
   })(req, res, next);
-});
+}) as RequestHandler);
 
 // Google OAuth callback
 router.get(
   "/google/callback",
-  (req: Request, res: Response, next: NextFunction) => {
+  ((req: Request, res: Response, next: NextFunction) => {
     passport.authenticate("google", {
       successRedirect: "/auth/success",
       failureRedirect: "/auth/failure",
     })(req, res, next);
-  },
+  }) as RequestHandler,
 );
 
-// OAuth success redirect with session regeneration
-router.get("/success", async (req: Request, res: Response) => {
+// OAuth success redirect with JWT token generation
+router.get("/success", (async (req: Request, res: Response) => {
   if (!req.user) {
     logger.warn("OAuth success callback reached but no user in session");
     return res.redirect("/auth/failure");
   }
 
   try {
-    // Regenerate session for security (prevent session fixation)
-    await regenerateSession(req);
+    // Generate JWT token
+    const token = generateToken(req.user as UserProfile);
 
     logger.info(
       { userId: req.user.id },
-      "OAuth authentication successful, session regenerated",
+      "OAuth authentication successful, JWT token generated",
     );
 
-    // Get the redirect URL from session (stored during OAuth initiation) or use default
+    // Get the redirect URL from state parameter or use default
     const frontendUrl =
       config.NODE_ENV === "development" ? "http://localhost:3000" : "";
-    const redirectPath = req.session.oauthRedirect || "/dashboard";
+    
+    let redirectPath = "/dashboard";
+    try {
+      const state = req.query.state as string;
+      if (state) {
+        redirectPath = Buffer.from(state, 'base64').toString('utf8');
+      }
+    } catch {
+      logger.warn("Failed to decode redirect state, using default");
+    }
+    
     const redirectUrl = `${frontendUrl}${redirectPath}`;
 
-    // Clear the stored redirect from session
-    delete req.session.oauthRedirect;
+    // Set JWT token as HTTP-only cookie
+    res.cookie("auth-token", token, {
+      httpOnly: true,
+      secure: config.NODE_ENV === "production",
+      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
 
     logger.info(
-      { redirectUrl, originalQuery: req.query },
-      "Redirecting after successful OAuth",
+      { redirectUrl },
+      "Redirecting after successful OAuth with JWT cookie",
     );
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error(
       { error, userId: req.user.id },
-      "Error regenerating session after OAuth",
+      "Error generating JWT token after OAuth",
     );
     return res.redirect("/auth/failure");
   }
-});
+}) as RequestHandler);
 
 // OAuth failure redirect
-router.get("/failure", (req: Request, res: Response) => {
+router.get("/failure", ((req: Request, res: Response) => {
   logger.warn("OAuth authentication failed");
 
   // Redirect to frontend login page with error
@@ -87,25 +101,30 @@ router.get("/failure", (req: Request, res: Response) => {
 
   logger.info({ redirectUrl }, "Redirecting after failed OAuth");
   res.redirect(redirectUrl);
-});
+}) as RequestHandler);
 
 // Logout endpoint
-router.post("/logout", (req: Request, res: Response) => {
+router.post("/logout", ((req: Request, res: Response) => {
   const userId = req.user ? req.user.id : "unknown";
 
-  req.logout((err) => {
-    if (err) {
-      logger.error({ error: err, userId }, "Error during logout");
-      return res.status(500).json({ error: "Logout failed" });
-    }
+  try {
+    // Clear the JWT token cookie
+    res.clearCookie("auth-token", {
+      httpOnly: true,
+      secure: config.NODE_ENV === "production",
+      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+    });
 
     logger.info({ userId }, "User logged out successfully");
     res.json({ message: "Logged out successfully" });
-  });
-});
+  } catch (error) {
+    logger.error({ error, userId }, "Error during logout");
+    res.status(500).json({ error: "Logout failed" });
+  }
+}) as RequestHandler);
 
 // Get current user status
-router.get("/status", (req: Request, res: Response) => {
+router.get("/status", ((req: Request, res: Response) => {
   if (req.user) {
     logger.debug(
       { userId: req.user.id },
@@ -117,8 +136,8 @@ router.get("/status", (req: Request, res: Response) => {
       user: {
         id: req.user.id,
         email: req.user.email,
-        name: req.user.name,
-        image: req.user.image,
+        name: req.user.name || null,
+        image: req.user.image || null,
         createdAt: req.user.createdAt,
       },
     };
@@ -134,10 +153,10 @@ router.get("/status", (req: Request, res: Response) => {
 
     res.json(response);
   }
-});
+}) as RequestHandler);
 
 // Get current user profile
-router.get("/user", (req: Request, res: Response) => {
+router.get("/user", ((req: Request, res: Response) => {
   if (!req.user) {
     logger.debug("User profile request - not authenticated");
     return res.status(401).json({ error: "Not authenticated" });
@@ -148,12 +167,12 @@ router.get("/user", (req: Request, res: Response) => {
   const userProfile: UserProfile = {
     id: req.user.id,
     email: req.user.email,
-    name: req.user.name,
-    image: req.user.image,
+    name: req.user.name || null,
+    image: req.user.image || null,
     createdAt: req.user.createdAt,
   };
 
   res.json(userProfile);
-});
+}) as RequestHandler);
 
 export default router;

@@ -1,6 +1,6 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction, RequestHandler } from "express";
 import cors from "cors";
-import session from "express-session";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "path";
 
@@ -19,7 +19,7 @@ const app: express.Application = express();
 app.set("trust proxy", true);
 
 // Request correlation ID middleware (must be first)
-app.use(requestIdMiddleware);
+app.use(requestIdMiddleware as RequestHandler);
 
 // Pino HTTP logging middleware
 app.use(
@@ -64,66 +64,34 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Import session utilities
-import { PrismaSessionStore } from "./lib/session-store";
-import {
-  validateSession,
-  extractUserContext,
-  startSessionCleanup,
-  stopSessionCleanup,
-} from "./lib/session-middleware";
+// Cookie parsing middleware for JWT tokens
+app.use(cookieParser());
 
-// Session configuration with Prisma store
-app.use(
-  session({
-    store: new PrismaSessionStore(),
-    secret:
-      config.SESSION_SECRET ||
-      "default-development-secret-change-in-production",
-    resave: false,
-    saveUninitialized: false,
-    rolling: true, // Reset expiration on activity
-    cookie: {
-      secure: config.NODE_ENV === "production",
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
-    },
-    name: "mini-infra.session",
-  }),
-);
+// Import JWT middleware
+import { extractJwtUser } from "./lib/jwt-middleware";
 
-// Session middleware for validation and user context extraction
-app.use(validateSession);
-app.use(extractUserContext);
-
-// Start session cleanup scheduler (cleanup every hour)
-startSessionCleanup(60);
+// JWT user extraction middleware
+app.use(extractJwtUser as RequestHandler);
 
 // Health check endpoint
-app.get("/health", (req: Request, res: Response) => {
+app.get("/health", ((req: Request, res: Response) => {
   res.status(200).json({
     status: "healthy",
     timestamp: new Date().toISOString(),
     environment: config.NODE_ENV,
     uptime: process.uptime(),
   });
-});
+}) as RequestHandler);
 
 // Import routes
 import authRoutes from "./routes/auth";
-import sessionRoutes from "./routes/session";
 import apiKeyRoutes from "./routes/api-keys";
 
-// Import CSRF protection
-import { addCSRFToken } from "./lib/csrf-protection";
-
-// Add CSRF token to all responses
-app.use(addCSRFToken);
+// JWT-based authentication doesn't require CSRF protection for now
+// TODO: Implement JWT-based CSRF protection if needed
 
 // API routes
 app.use("/auth", authRoutes);
-app.use("/session", sessionRoutes);
 app.use("/api/keys", apiKeyRoutes);
 
 // Serve static files in production
@@ -131,7 +99,7 @@ if (config.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../public")));
 
   // Handle client-side routing for SPA
-  app.get("*", (req: Request, res: Response, next) => {
+  app.get("*", ((req: Request, res: Response, next: NextFunction) => {
     // Skip API routes
     if (
       req.path.startsWith("/api") ||
@@ -142,37 +110,35 @@ if (config.NODE_ENV === "production") {
     }
 
     res.sendFile(path.join(__dirname, "../public/index.html"));
-  });
+  }) as RequestHandler);
 }
 
 // Development welcome message
 if (config.NODE_ENV === "development") {
-  app.get("/", (req: Request, res: Response) => {
+  app.get("/", ((req: Request, res: Response) => {
     res.json({
       message: "Mini Infra API Server",
       environment: config.NODE_ENV,
       timestamp: new Date().toISOString(),
       docs: "/health for health check",
     });
-  });
+  }) as RequestHandler);
 }
 
 // 404 handler for unmatched routes
-app.use(notFoundHandler);
+app.use(notFoundHandler as RequestHandler);
 
 // Global error handling middleware (must be last)
-app.use(errorHandler);
+app.use(errorHandler as any);
 
 // Graceful shutdown handling
 process.on("SIGTERM", () => {
   logger.info("SIGTERM received, shutting down gracefully");
-  stopSessionCleanup();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
   logger.info("SIGINT received, shutting down gracefully");
-  stopSessionCleanup();
   process.exit(0);
 });
 

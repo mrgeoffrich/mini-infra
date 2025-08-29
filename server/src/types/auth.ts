@@ -40,15 +40,8 @@ export interface GoogleOAuthProfile {
   provider: string;
 }
 
-// Session data that gets stored
-export interface SessionData {
-  passport?: {
-    user?: string; // user ID
-  };
-}
-
-// Express session user interface
-export interface SessionUser {
+// JWT User interface (similar to session user but for JWT context)
+export interface JWTUser {
   id: string;
   email: string;
   name: string | null;
@@ -58,11 +51,8 @@ export interface SessionUser {
 
 // Augment Express Request interface to include user
 declare module "express-serve-static-core" {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  interface User extends SessionUser {}
-
   interface Request {
-    user?: User;
+    user?: JWTUser;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logout(done: (err: any) => void): void;
   }
@@ -117,7 +107,7 @@ export interface ApiKeyValidationResult {
   valid: boolean;
   userId?: string;
   keyId?: string;
-  user?: SessionUser;
+  user?: JWTUser;
 }
 
 // Augment Express Request interface to include API key authentication
@@ -126,18 +116,7 @@ declare module "express-serve-static-core" {
     apiKey?: {
       id: string;
       userId: string;
-      user: SessionUser;
+      user: JWTUser;
     };
-  }
-}
-
-// Augment express-session to include our custom session data
-declare module "express-session" {
-  interface SessionData {
-    passport?: {
-      user: string;
-    };
-    csrfToken?: string;
-    oauthRedirect?: string;
   }
 }

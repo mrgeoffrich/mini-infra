@@ -6,7 +6,7 @@ import type {
   CreateApiKeyResponse,
   ApiKeyResponse,
   ApiKeyValidationResult,
-  SessionUser,
+  JWTUser,
 } from "../types/auth";
 
 /**
@@ -129,7 +129,7 @@ export async function validateApiKey(
       "API key validated successfully",
     );
 
-    const sessionUser: SessionUser = {
+    const sessionUser: JWTUser = {
       id: apiKey.user.id,
       email: apiKey.user.email,
       name: apiKey.user.name,

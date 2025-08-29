@@ -11,7 +11,6 @@ export interface User {
 export interface AuthStatus {
   isAuthenticated: boolean;
   user: User | null;
-  sessionId: string | null;
 }
 
 export interface ApiKey {

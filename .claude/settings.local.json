@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
+      "List",
       "WebFetch",
+      "Bash(cd /c/Repos/mini-infra/server && npm:*)",
       "Bash(npm install:*)",
       "Bash(npx prisma init:*)",
       "Bash(npx prisma generate:*)",

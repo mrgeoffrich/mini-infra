@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "./logger";
 import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
+import { getCurrentUserFromJwt, getCurrentUserIdFromJwt } from "./jwt-middleware";
 
 /**
  * Authentication error types for standardized responses
@@ -42,8 +43,8 @@ export function createAuthErrorResponse(
 }
 
 /**
- * Middleware to require session-based authentication
- * Only allows requests from authenticated users with valid sessions
+ * Middleware to require JWT authentication
+ * Only allows requests from authenticated users with valid JWT tokens
  */
 export function requireAuth(
   req: Request,
@@ -54,15 +55,17 @@ export function requireAuth(
 
   logger.debug(
     { requestId, path: req.path },
-    "Validating session-based authentication",
+    "Validating JWT authentication",
   );
 
   try {
-    // Check if user is authenticated via session
-    if (!req.user) {
+    // Check if user is authenticated via JWT or API key
+    const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
+    
+    if (!user) {
       logger.warn(
         { requestId, path: req.path, ip: req.ip },
-        "Session authentication failed: no user in session",
+        "Authentication failed: no user found",
       );
 
       const errorResponse = createAuthErrorResponse(
@@ -75,33 +78,16 @@ export function requireAuth(
       return;
     }
 
-    // Additional session validation
-    if (!req.session || !req.sessionID) {
-      logger.warn(
-        { requestId, path: req.path, ip: req.ip, userId: req.user.id },
-        "Session authentication failed: invalid session state",
-      );
-
-      const errorResponse = createAuthErrorResponse(
-        AuthErrorType.INVALID_SESSION,
-        "Invalid session. Please log in again.",
-        requestId,
-      );
-
-      res.status(401).json(errorResponse);
-      return;
-    }
-
     logger.debug(
-      { requestId, path: req.path, userId: req.user.id },
-      "Session authentication successful",
+      { requestId, path: req.path, userId: user.id },
+      "Authentication successful",
     );
 
     next();
   } catch (error) {
     logger.error(
       { error, requestId, path: req.path },
-      "Error during session authentication",
+      "Error during authentication",
     );
 
     const errorResponse = createAuthErrorResponse(
@@ -115,7 +101,7 @@ export function requireAuth(
 }
 
 /**
- * Middleware for optional authentication that works with both session and API key
+ * Middleware for optional authentication that works with both JWT and API key
  * Validates authentication if present, but allows request to continue if not
  * Provides consistent user context regardless of authentication method
  */
@@ -127,16 +113,17 @@ export function optionalAuth(
   const requestId = req.headers["x-request-id"] as string;
 
   try {
-    // Get current user from either session or API key
-    const user = getCurrentUser(req);
+    // Get current user from either JWT or API key
+    const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
 
     if (user) {
+      const authMethod = getCurrentUserFromJwt(req) ? "jwt" : "api_key";
       logger.debug(
         {
           requestId,
           path: req.path,
           userId: user.id,
-          authMethod: req.user ? "session" : "api_key",
+          authMethod,
         },
         "Optional authentication found user",
       );
@@ -169,8 +156,8 @@ export function requireAuthorization(
   next: NextFunction,
 ): void {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getCurrentUser(req);
-  const userId = getCurrentUserId(req);
+  const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
+  const userId = getCurrentUserIdFromJwt(req) || getCurrentUserId(req);
 
   logger.debug(
     { requestId, path: req.path, userId },
@@ -225,7 +212,7 @@ export function requireAuthorization(
 export function requireOwnership(paramName: string = "userId") {
   return (req: Request, res: Response, next: NextFunction): void => {
     const requestId = req.headers["x-request-id"] as string;
-    const currentUserId = getCurrentUserId(req);
+    const currentUserId = getCurrentUserIdFromJwt(req) || getCurrentUserId(req);
 
     logger.debug(
       { requestId, path: req.path, currentUserId, paramName },
@@ -342,9 +329,9 @@ export function composeMiddleware(
  */
 export const authMiddleware = {
   /**
-   * Require session-based authentication
+   * Require JWT authentication
    */
-  requireSession: requireAuth,
+  requireJwt: requireAuth,
 
   /**
    * Require API key authentication (re-exported for convenience)
@@ -355,9 +342,9 @@ export const authMiddleware = {
   },
 
   /**
-   * Accept either session or API key authentication
+   * Accept either JWT or API key authentication
    */
-  requireSessionOrApiKey: async (
+  requireJwtOrApiKey: async (
     req: Request,
     res: Response,
     next: NextFunction,
@@ -367,7 +354,7 @@ export const authMiddleware = {
   },
 
   /**
-   * Optional authentication (session or API key)
+   * Optional authentication (JWT or API key)
    */
   optional: optionalAuth,
 
@@ -380,9 +367,9 @@ export const authMiddleware = {
   ),
 
   /**
-   * Require session-based auth with ownership check
+   * Require JWT auth with ownership check
    */
-  requireSessionWithOwnership: (paramName: string = "userId") =>
+  requireJwtWithOwnership: (paramName: string = "userId") =>
     composeMiddleware(requireAuth, requireOwnership(paramName)),
 
   /**
@@ -398,10 +385,10 @@ export const authMiddleware = {
 
 /**
  * Utility function to extract user information for API responses
- * Works with both session-based and API key authentication
+ * Works with both JWT and API key authentication
  */
 export function getAuthenticatedUser(req: Request) {
-  const user = getCurrentUser(req);
+  const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
   if (!user) return null;
 
   return {
@@ -417,14 +404,14 @@ export function getAuthenticatedUser(req: Request) {
  * Utility function to check if request is authenticated
  */
 export function isAuthenticated(req: Request): boolean {
-  return getCurrentUserId(req) !== null;
+  return (getCurrentUserIdFromJwt(req) || getCurrentUserId(req)) !== null;
 }
 
 /**
  * Utility function to get the authentication method used
  */
-export function getAuthMethod(req: Request): "session" | "api_key" | null {
-  if (req.user) return "session";
+export function getAuthMethod(req: Request): "jwt" | "api_key" | null {
+  if (getCurrentUserFromJwt(req)) return "jwt";
   if (req.apiKey) return "api_key";
   return null;
 }

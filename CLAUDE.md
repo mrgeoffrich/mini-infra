@@ -17,7 +17,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Protected Routes**: ProtectedRoute and PublicRoute components with authentication guards
 
 ### Backend
-- **API**: Express.js
+- **API**: Express.js 5
 - **Database**: SQLite
 - **ORM**: Prisma
 - **Authentication**: Passport with Google OAuth
@@ -31,6 +31,12 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Package Manager**: npm
 - **Linting**: ESLint
 - **Testing**: Jest + React Testing Library
+
+## Development Environment Notes
+
+- **Platform**: Windows with Git Bash
+- **Path Handling**: Use Unix-style paths when using the Bash tool (convert C:\path to /c/path). Otherwise use windows path style.
+- **Shell**: Git Bash expects forward slashes and Unix-style drive references
 
 ## Core Features
 
