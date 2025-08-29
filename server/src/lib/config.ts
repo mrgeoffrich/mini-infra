@@ -43,7 +43,7 @@ const configSchema = z.object({
 
   // Docker Configuration
   DOCKER_HOST: z.string().default("/var/run/docker.sock"),
-  DOCKER_API_VERSION: z.string().default("v1.41"),
+  DOCKER_API_VERSION: z.string().default("1.51"),
   CONTAINER_CACHE_TTL: z
     .string()
     .optional()

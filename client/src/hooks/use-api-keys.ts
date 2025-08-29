@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiKey, CreateApiKeyRequest, ApiKeyResponse } from "../lib/auth-types";
 
-const BACKEND_URL = window.location.origin;
 
 async function fetchApiKeys(): Promise<ApiKey[]> {
-  const response = await fetch(`${BACKEND_URL}/api/keys`, {
+  const response = await fetch(`/api/keys`, {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -20,7 +19,7 @@ async function fetchApiKeys(): Promise<ApiKey[]> {
 }
 
 async function createApiKey(request: CreateApiKeyRequest): Promise<ApiKey> {
-  const response = await fetch(`${BACKEND_URL}/api/keys`, {
+  const response = await fetch(`/api/keys`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -38,7 +37,7 @@ async function createApiKey(request: CreateApiKeyRequest): Promise<ApiKey> {
 }
 
 async function revokeApiKey(keyId: string): Promise<void> {
-  const response = await fetch(`${BACKEND_URL}/api/keys/${keyId}`, {
+  const response = await fetch(`/api/keys/${keyId}`, {
     method: "DELETE",
     credentials: "include",
     headers: {

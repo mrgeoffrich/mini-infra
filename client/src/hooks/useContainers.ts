@@ -8,7 +8,6 @@ import {
   ContainerQueryParams,
 } from "@mini-infra/types";
 
-const BACKEND_URL = window.location.origin;
 const POLL_INTERVAL = 5000; // 5 seconds as specified in requirements
 
 // Generate correlation ID for debugging
@@ -20,7 +19,7 @@ async function fetchContainers(
   queryParams: ContainerQueryParams = {},
   correlationId: string,
 ): Promise<ContainerListResponse> {
-  const url = new URL(`${BACKEND_URL}/api/containers`);
+  const url = new URL(`/api/containers`, window.location.origin);
 
   // Add query parameters
   if (queryParams.page !== undefined)

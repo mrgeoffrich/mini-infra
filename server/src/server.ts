@@ -1,47 +1,76 @@
 import app from "./app";
 import config from "./lib/config";
 import logger from "./lib/logger";
+import DockerService from "./services/docker";
 
-const server = app.listen(config.PORT, () => {
-  logger.info(
-    {
-      port: config.PORT,
-      environment: config.NODE_ENV,
-      logLevel: config.LOG_LEVEL,
-    },
-    `🚀 Mini Infra server started on port ${config.PORT}`,
-  );
-
-  if (config.NODE_ENV === "development") {
-    logger.info(
-      `📊 Health check available at: http://localhost:${config.PORT}/health`,
-    );
-  }
-});
-
-// Graceful shutdown
-const gracefulShutdown = (signal: string) => {
-  logger.info(`${signal} received, starting graceful shutdown`);
-
-  server.close((err) => {
-    if (err) {
-      logger.error({ error: err }, "Error during server shutdown");
-      process.exit(1);
-    }
-
-    logger.info("Server closed successfully");
-    process.exit(0);
-  });
-
-  // Force shutdown after 30 seconds
-  setTimeout(() => {
-    logger.error("Forced shutdown after 30 seconds");
+// Initialize Docker connection before starting server
+const initializeServices = async () => {
+  try {
+    const dockerService = DockerService.getInstance();
+    await dockerService.initialize();
+    logger.info("All services initialized successfully");
+  } catch (error) {
+    logger.fatal({
+      error,
+      errorMessage: error instanceof Error ? error.message : String(error)
+    }, "Failed to initialize services - shutting down");
     process.exit(1);
-  }, 30000);
+  }
 };
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// Start server after successful service initialization
+const startServer = async () => {
+  await initializeServices();
+  
+  const server = app.listen(config.PORT, () => {
+    logger.info(
+      {
+        port: config.PORT,
+        environment: config.NODE_ENV,
+        logLevel: config.LOG_LEVEL,
+      },
+      `🚀 Mini Infra server started on port ${config.PORT}`,
+    );
+
+    if (config.NODE_ENV === "development") {
+      logger.info(
+        `📊 Health check available at: http://localhost:${config.PORT}/health`,
+      );
+    }
+  });
+  
+  return server;
+};
+
+// Start the application
+startServer().then(server => {
+  // Graceful shutdown
+  const gracefulShutdown = (signal: string) => {
+    logger.info(`${signal} received, starting graceful shutdown`);
+
+    server.close((err) => {
+      if (err) {
+        logger.error({ error: err }, "Error during server shutdown");
+        process.exit(1);
+      }
+
+      logger.info("Server closed successfully");
+      process.exit(0);
+    });
+
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+      logger.error("Forced shutdown after 30 seconds");
+      process.exit(1);
+    }, 30000);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+}).catch(error => {
+  logger.fatal({ error }, "Failed to start server");
+  process.exit(1);
+});
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {

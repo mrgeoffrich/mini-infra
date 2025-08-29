@@ -13,29 +13,68 @@ class DockerService {
 
   private constructor() {
     // Initialize Docker client
-    const dockerHost = config.DOCKER_HOST || "/var/run/docker.sock";
-    this.docker = new Docker({
-      socketPath:
-        dockerHost.startsWith("unix://") || dockerHost.startsWith("/")
-          ? dockerHost
-          : undefined,
-      host: dockerHost.startsWith("tcp://")
-        ? dockerHost.replace("tcp://", "").split(":")[0]
-        : undefined,
-      port: dockerHost.startsWith("tcp://")
-        ? parseInt(dockerHost.replace("tcp://", "").split(":")[1] || "2375")
-        : undefined,
-      version: config.DOCKER_API_VERSION || "v1.41",
-    });
+    let dockerHost = config.DOCKER_HOST;
+    
+    // Default Docker host based on platform
+    if (!dockerHost) {
+      if (process.platform === "win32") {
+        // Windows: Use named pipe for Docker Desktop
+        dockerHost = "//./pipe/docker_engine";
+      } else {
+        // Unix/Linux/Mac: Use Unix socket
+        dockerHost = "/var/run/docker.sock";
+      }
+    }
+    
+    let dockerConfig: any = {};
+
+    // Parse Docker host configuration
+    if (dockerHost.startsWith("npipe://")) {
+      // Windows named pipe
+      dockerConfig.socketPath = dockerHost;
+    } else if (dockerHost.startsWith("unix://")) {
+      // Unix socket with unix:// prefix
+      dockerConfig.socketPath = dockerHost.replace("unix://", "");
+    } else if (dockerHost.startsWith("tcp://") || dockerHost.startsWith("http://") || dockerHost.startsWith("https://")) {
+      // TCP connection
+      const url = new URL(dockerHost);
+      dockerConfig.host = url.hostname;
+      dockerConfig.port = parseInt(url.port || "2375");
+      if (dockerHost.startsWith("https://")) {
+        dockerConfig.protocol = "https";
+      } else {
+        dockerConfig.protocol = "http";
+      }
+    } else if (dockerHost.startsWith("/") || dockerHost.startsWith("\\") || dockerHost.includes("pipe")) {
+      // Direct socket path (Windows named pipe or Unix socket)
+      dockerConfig.socketPath = dockerHost;
+    } else {
+      // Assume it's a host:port format
+      const parts = dockerHost.split(":");
+      dockerConfig.host = parts[0];
+      dockerConfig.port = parseInt(parts[1] || "2375");
+      dockerConfig.protocol = "http";
+    }
+
+    // Add API version if specified
+    if (config.DOCKER_API_VERSION) {
+      dockerConfig.version = config.DOCKER_API_VERSION.startsWith("v") 
+        ? config.DOCKER_API_VERSION 
+        : `v${config.DOCKER_API_VERSION}`;
+    }
+
+    logger.info({
+      dockerHost,
+      dockerConfig
+    }, "Initializing Docker client");
+
+    this.docker = new Docker(dockerConfig);
 
     // Initialize cache with 3-second TTL
     this.cache = new NodeCache({
       stdTTL: Math.floor((config.CONTAINER_CACHE_TTL || 3000) / 1000),
       checkperiod: 5,
     });
-
-    this.connect();
-    this.setupEventListeners();
   }
 
   public static getInstance(): DockerService {
@@ -45,9 +84,25 @@ class DockerService {
     return DockerService.instance;
   }
 
-  private async connect(): Promise<void> {
+  public async initialize(): Promise<void> {
+    logger.info("Initializing Docker connection at startup...");
+    
     try {
-      await this.docker.ping();
+      await this.connect(false); // Don't schedule reconnect during startup
+      this.setupEventListeners();
+      logger.info("Docker service initialized successfully");
+    } catch (error) {
+      logger.error({ 
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      }, "Failed to initialize Docker connection at startup");
+      throw new Error(`Docker initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async connect(shouldScheduleReconnect: boolean = true): Promise<void> {
+    try {
+      const pingResult = await this.docker.ping();
       this.connected = true;
       logger.info("Docker service connected successfully");
 
@@ -57,9 +112,17 @@ class DockerService {
       }
     } catch (error) {
       this.connected = false;
-      logger.error({ error }, "Failed to connect to Docker");
-      this.scheduleReconnect();
-      throw error;
+      logger.error({
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      }, "Failed to connect to Docker");
+      
+      if (shouldScheduleReconnect) {
+        this.scheduleReconnect();
+      }
+      
+      throw error; // Re-throw for startup initialization
     }
   }
 
@@ -69,7 +132,7 @@ class DockerService {
     this.reconnectInterval = setInterval(async () => {
       logger.info("Attempting to reconnect to Docker...");
       try {
-        await this.connect();
+        await this.connect(true); // Allow scheduling reconnect in background
       } catch (error) {
         logger.error({ error }, "Reconnection attempt failed");
       }

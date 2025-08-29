@@ -53,7 +53,6 @@ app.use(
 
 // Security middleware
 app.use(helmetMiddleware);
-app.use(rateLimitMiddleware);
 
 // CORS configuration
 app.use(
@@ -87,6 +86,7 @@ app.get("/health", ((req: Request, res: Response) => {
     uptime: process.uptime(),
   });
 }) as RequestHandler);
+
 
 // Import routes
 import authRoutes from "./routes/auth";

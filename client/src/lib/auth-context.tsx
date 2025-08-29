@@ -11,7 +11,6 @@ import {
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
 
-const BACKEND_URL = window.location.origin;
 
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {
@@ -233,14 +232,14 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       redirectPath = window.location.pathname + window.location.search;
     }
 
-    const authUrl = `${BACKEND_URL}/auth/google?redirect=${encodeURIComponent(redirectPath)}`;
+    const authUrl = `/auth/google?redirect=${encodeURIComponent(redirectPath)}`;
     console.log(`Initiating OAuth login with redirect: ${redirectPath}`);
     window.location.href = authUrl;
   };
 
   const logout = async (options?: LogoutOptions) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/auth/logout`, {
+      const response = await fetch(`/auth/logout`, {
         method: "POST",
         credentials: "include",
       });

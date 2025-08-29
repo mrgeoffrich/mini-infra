@@ -47,8 +47,8 @@ jest.mock("../../lib/logger", () => mockLogger);
 // Mock config
 jest.mock("../../lib/config", () => ({
   default: {
-    DOCKER_HOST: "/var/run/docker.sock",
-    DOCKER_API_VERSION: "v1.41",
+    DOCKER_HOST: "", // Let it auto-detect based on platform
+    DOCKER_API_VERSION: "1.41", // Will be prefixed with 'v' in the service
     CONTAINER_CACHE_TTL: 3000,
   },
 }));
@@ -89,10 +89,12 @@ describe("DockerService", () => {
     it("should initialize Docker client with correct configuration", () => {
       DockerService.getInstance();
 
+      const expectedSocketPath = process.platform === "win32" 
+        ? "//./pipe/docker_engine"
+        : "/var/run/docker.sock";
+
       expect(require("dockerode")).toHaveBeenCalledWith({
-        socketPath: "/var/run/docker.sock",
-        host: undefined,
-        port: undefined,
+        socketPath: expectedSocketPath,
         version: "v1.41",
       });
     });
@@ -776,7 +778,7 @@ describe("DockerService", () => {
       jest.doMock("../../lib/config", () => ({
         default: {
           DOCKER_HOST: "tcp://localhost:2375",
-          DOCKER_API_VERSION: "v1.41",
+          DOCKER_API_VERSION: "1.41",
           CONTAINER_CACHE_TTL: 3000,
         },
       }));
@@ -785,9 +787,9 @@ describe("DockerService", () => {
       DockerServiceTCP.getInstance();
 
       expect(require("dockerode")).toHaveBeenCalledWith({
-        socketPath: undefined,
         host: "localhost",
         port: 2375,
+        protocol: "http",
         version: "v1.41",
       });
     });

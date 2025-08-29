@@ -1,11 +1,9 @@
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import { AuthStatus } from "../lib/auth-types";
 
-const BACKEND_URL = window.location.origin;
-
 async function fetchAuthStatus(): Promise<AuthStatus> {
   try {
-    const response = await fetch(`${BACKEND_URL}/auth/status`, {
+    const response = await fetch(`/auth/status`, {
       method: "GET",
       credentials: "include",
       headers: {

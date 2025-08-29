@@ -12,6 +12,7 @@ import { requireAuth } from "../lib/auth-middleware";
 import {
   ContainerQueryParams,
   ContainerListResponse,
+  ContainerListApiResponse,
   ContainerInfo,
   DockerContainerInfo,
 } from "@mini-infra/types/containers";
@@ -32,8 +33,14 @@ const containerRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 60, // 60 requests per windowMs
   keyGenerator: (req: any) => {
-    // Use user ID if available, otherwise fall back to IP
-    return req.user?.id || req.ip || "unknown";
+    // Use user ID if available, otherwise use default
+    return req.user?.id || "user-default";
+  },
+  validate: {
+    // Disable trust proxy validation since we want to use it in production
+    trustProxy: false,
+    // Disable IPv6 validation since we're not using IP addresses as the primary key
+    keyGeneratorIpFallback: false,
   },
   message: {
     error: "Too Many Requests",
@@ -233,7 +240,12 @@ router.get("/", containerRateLimit, requireAuth, (async (
       "Business event: container list viewed",
     );
 
-    res.json(response);
+    const apiResponse: ContainerListApiResponse = {
+      success: true,
+      data: response,
+    };
+
+    res.json(apiResponse);
   } catch (error) {
     logger.error(
       {
