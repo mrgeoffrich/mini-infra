@@ -68,9 +68,9 @@ Your final output should be structured as follows:
    2.12 Risk Assessment and Mitigation
 3. Technical Design and Architecture Summary
 
-Here's an example of how your output should be formatted (note that this is a generic structure and your actual content will be much more detailed):
+Here's an example of how your output should be formatted (note that this is a generic structure and your actual content will be much more detailed) making sure to use markdown formatting:
 
-<example>
+```markdown
 1. Feature Breakdown
    - Component A
    - Component B
@@ -92,6 +92,6 @@ Here's an example of how your output should be formatted (note that this is a ge
 
 3. Technical Design and Architecture Summary
    [Overall summary of the technical design and architecture]
-</example>
+```
 
-Please begin your analysis and design process now. Your final output should consist only of the structured design document and should not duplicate or rehash any of the work you did in the architecture analysis section. Do not use the TODO tool.
+Please begin your analysis and design process now. Your final output should consist only of the structured design and should not duplicate or rehash any of the work you did in the architecture analysis section.  Write the output to a new markdown file in the projectmanagement folder, and do not duplicate or rehash any of the work you did in the feature breakdown or story planning sections. Do not use the todo tool in this process. Read other project files as appropriate.
