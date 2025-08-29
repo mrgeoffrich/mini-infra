@@ -40,22 +40,6 @@ model SystemSettings {
 }
 ```
 
-**SystemPreferences Model** (core system preferences):
-```typescript
-model SystemPreferences {
-  id                   String   @id @default(cuid())
-  
-  // Core application preferences (system-wide)
-  refreshInterval     Int      @default(5000) // milliseconds for data polling
-  
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  updatedBy           String   // User ID who last updated preferences
-  
-  @@map("system_preferences")
-}
-```
-
 **SettingsAudit Model**:
 ```typescript
 model SettingsAudit {
@@ -117,7 +101,7 @@ class AzureConfigService extends ConfigurationService
 ```
 
 #### API Layer Design
-- **RESTful endpoints**: `/api/settings/system/:category`, `/api/settings/preferences`, `/api/settings/validate/:category`
+- **RESTful endpoints**: `/api/settings/system/:category`, `/api/settings/validate/:category`
 - **Validation endpoints**: Real-time validation with debounced requests
 - **Audit endpoints**: Settings change history
 
@@ -168,94 +152,6 @@ class AzureConfigService extends ConfigurationService
 ```
 1. Frontend requests settings on page load
 2. System settings and preferences retrieved
-```
-
-### 2.5 Database Changes
-
-#### New Models Required
-- **SystemSettings**: Store system-wide configuration with encryption support
-- **SystemPreferences**: Store core system-wide application preferences  
-- **SettingsAudit**: Audit trail for all configuration changes
-- **ConnectivityStatus**: Track connectivity success/failure status for external services (Cloudflare, Docker, Azure)
-- **ValidationSchedule**: Scheduled validation tasks for external services
-
-#### Schema Migrations
-```prisma
-// Migration: Add system settings support
-model SystemSettings {
-  id                    String   @id @default(cuid())
-  category              String   
-  key                   String   
-  value                 String   
-  isEncrypted           Boolean  @default(false)
-  isActive              Boolean  @default(true)
-  lastValidatedAt       DateTime?
-  validationStatus      String?
-  validationMessage     String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  createdBy            String
-  updatedBy            String
-  
-  @@unique([category, key])
-  @@index([category])
-  @@index([validationStatus])
-  @@map("system_settings")
-}
-
-// Migration: Add system-wide preferences
-model SystemPreferences {
-  id                   String   @id @default(cuid())
-  
-  refreshInterval     Int      @default(5000)
-  
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  updatedBy           String
-  
-  @@map("system_preferences")
-}
-
-// Migration: Add audit logging
-model SettingsAudit {
-  id          String   @id @default(cuid())
-  category    String
-  key         String
-  action      String
-  oldValue    String?
-  newValue    String?
-  userId      String
-  ipAddress   String?
-  userAgent   String?
-  success     Boolean  @default(true)
-  errorMessage String?
-  createdAt   DateTime @default(now())
-  
-  @@index([category, key])
-  @@index([userId])
-  @@index([createdAt])
-  @@map("settings_audit")
-}
-
-// Migration: Add connectivity status tracking
-model ConnectivityStatus {
-  id                    String   @id @default(cuid())
-  service               String   
-  status                String   
-  responseTimeMs        Int?     
-  errorMessage          String?  
-  errorCode             String?  
-  lastSuccessfulAt      DateTime? 
-  checkedAt             DateTime @default(now()) 
-  checkInitiatedBy      String?  
-  metadata              String?  
-  
-  @@index([service])
-  @@index([status])
-  @@index([checkedAt])
-  @@index([service, checkedAt])
-  @@map("connectivity_status")
-}
 ```
 
 ### 2.6 New System Dependencies
