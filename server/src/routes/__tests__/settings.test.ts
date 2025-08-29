@@ -1799,7 +1799,7 @@ describe("Settings API Routes", () => {
             mockPrisma.systemSettings.findMany.mockRejectedValue(dbError),
         },
         {
-          path: "/api/settings/test-id",
+          path: "/api/settings/test-id-12345", // Use valid ID format (>= 8 chars)
           method: "get",
           setupMock: () =>
             mockPrisma.systemSettings.findUnique.mockRejectedValue(dbError),

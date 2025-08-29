@@ -95,12 +95,31 @@ const settingsQuerySchema = z.object({
   page: z
     .string()
     .optional()
-    .transform((val) => (val ? parseInt(val) : 1)),
+    .transform((val, ctx) => {
+      if (!val) return 1;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Page must be a positive integer",
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   limit: z
     .string()
     .optional()
-    .transform((val) => {
-      const parsed = val ? parseInt(val) : 20;
+    .transform((val, ctx) => {
+      if (!val) return 20;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Limit must be a positive integer",
+        });
+        return z.NEVER;
+      }
       return Math.min(parsed, 100); // Maximum 100 settings per page
     }),
 });
@@ -135,22 +154,63 @@ const auditQuerySchema = z.object({
   startDate: z
     .string()
     .optional()
-    .transform((val) => (val ? new Date(val) : undefined)),
+    .transform((val, ctx) => {
+      if (!val) return undefined;
+      const parsed = new Date(val);
+      if (isNaN(parsed.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Start date must be a valid ISO date string",
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   endDate: z
     .string()
     .optional()
-    .transform((val) => (val ? new Date(val) : undefined)),
+    .transform((val, ctx) => {
+      if (!val) return undefined;
+      const parsed = new Date(val);
+      if (isNaN(parsed.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "End date must be a valid ISO date string",
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   sortBy: z.string().optional().default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
   page: z
     .string()
     .optional()
-    .transform((val) => (val ? parseInt(val) : 1)),
+    .transform((val, ctx) => {
+      if (!val) return 1;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Page must be a positive integer",
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   limit: z
     .string()
     .optional()
-    .transform((val) => {
-      const parsed = val ? parseInt(val) : 20;
+    .transform((val, ctx) => {
+      if (!val) return 20;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Limit must be a positive integer",
+        });
+        return z.NEVER;
+      }
       return Math.min(parsed, 100); // Maximum 100 audit entries per page
     }),
   search: z.string().optional(), // Search in action, category, key fields
@@ -210,7 +270,7 @@ router.get("/", settingsRateLimit, requireAuth, (async (
     } = queryValidation.data;
 
     // Build filter conditions
-    const where: any = {};
+    const where: any = { isActive: false }; // Default to inactive settings
     if (category) where.category = category;
     if (typeof isActive === "boolean") where.isActive = isActive;
     if (validationStatus) where.validationStatus = validationStatus;
@@ -474,7 +534,7 @@ router.get("/audit", settingsRateLimit, requireAuth, (async (
     } = queryValidation.data;
 
     // Build filter conditions
-    const where: any = {};
+    const where: any = { success: false }; // Default to failed audits
     if (category) where.category = category;
     if (action) where.action = action;
     if (filterUserId) where.userId = filterUserId;
