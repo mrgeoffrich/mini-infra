@@ -23,9 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-dev.db
-test.db
-
 # Build artifacts
 server/public/assets/
 server/public/

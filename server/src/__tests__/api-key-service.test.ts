@@ -18,6 +18,12 @@ jest.mock("../lib/logger.ts", () => ({
 }));
 
 describe("API Key Generation and Validation", () => {
+  beforeEach(async () => {
+    // Ensure clean database state for each test
+    await testPrisma.apiKey.deleteMany();
+    await testPrisma.user.deleteMany();
+  });
+
   describe("generateApiKey", () => {
     it("should generate API keys with correct format", () => {
       const key = generateApiKey();
