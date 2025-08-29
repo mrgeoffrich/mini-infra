@@ -1,4 +1,4 @@
-# Medication Tracker App - Technical Specification
+# Mini Infra - Technical Specification
 
 ## Technology Stack
 
@@ -59,7 +59,7 @@ The application implements a comprehensive logging strategy using **Pino**, a hi
 - **Request Correlation**: Unique request IDs for tracing API calls across the system
 - **Security-First**: Automatic redaction of sensitive data (passwords, tokens, cookies)
 - **Environment Awareness**: Pretty-printed logs in development, JSON in production
-- **Business Events**: Structured logging for key actions (pill_logged, medication_created)
+- **Business Events**: Structured logging for key actions
 
 ### Core Components
 
@@ -202,7 +202,7 @@ The tests avoid concurrency conflicts by generating **unique identifiers** for e
 Test Data:
 
 1. **CUID2 Generation**: Uses `@paralleldrive/cuid2` to generate unique IDs
-2. **Per-Test Isolation**: Each test creates its own unique user and medication data
+2. **Per-Test Isolation**: Each test creates its own unique user and data
 3. **Email Uniqueness**: Test emails are generated as `{userId}@example.com`
 4. **Valid Dates**: When creating dates for test data use the current date plus or minus few days to ensure the dates are in the future or past by at least a few days. For historical data ensure dates are in the past.
 5. **Mock out current user**: To handle auth in tests use the jest mock for the getServerSession to return the test user id.
@@ -210,9 +210,8 @@ Test Data:
 ### Database Isolation Methods
 
 1. **Unique User Creation**: Each test creates its own user with unique CUID2 ID
-2. **User-Scoped Data**: All medications and pill logs are scoped to the specific test user
-3. **No Global Test Data**: Avoids shared fixtures that could cause race conditions
-4. **Clean Test Database**: Global setup ensures fresh database schema
+2. **No Global Test Data**: Avoids shared fixtures that could cause race conditions
+3. **Clean Test Database**: Global setup ensures fresh database schema
 
 ## Test Data Patterns
 
@@ -221,8 +220,6 @@ Test Data:
 Each test typically creates:
 
 - **Unique User**: With CUID2 ID and corresponding email
-- **Test Medications**: Associated with the specific test user
-- **Pill Logs**: Linked to test medications and users
 - **Authentication Mock**: Set to return the specific test user ID
 
 ### Key Test Concurrency Prevention Features
