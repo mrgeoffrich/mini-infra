@@ -42,6 +42,25 @@ async function fetchContainers(
   });
 
   if (!response.ok) {
+    // Handle specific HTTP status codes
+    if (response.status === 503) {
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Docker service is not available");
+      } catch {
+        throw new Error("Docker service is not available. Please try again later.");
+      }
+    }
+
+    if (response.status === 504) {
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Docker API request timed out");
+      } catch {
+        throw new Error("Docker API request timed out. Please try again.");
+      }
+    }
+
     throw new Error(`Failed to fetch containers: ${response.statusText}`);
   }
 
@@ -87,6 +106,16 @@ export function useContainers(options: UseContainersOptions = {}) {
             ) {
               return false;
             }
+            
+            // Don't retry immediately on Docker service unavailable
+            // Let the polling interval handle reconnection attempts
+            if (
+              error.message.includes("Docker service is not available") ||
+              error.message.includes("Service Unavailable")
+            ) {
+              return false;
+            }
+            
             // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;
           },

@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers } from "@/hooks/useContainers";
+import { useConnectivityStatus } from "@/hooks/use-settings";
 import {
   AlertCircle,
   ArrowRight,
@@ -11,9 +12,25 @@ import {
   Play,
   Square,
   Pause,
+  Settings,
 } from "lucide-react";
 
 export function ContainerSummary() {
+  // Check Docker connectivity first
+  const {
+    data: connectivityData,
+    isLoading: isConnectivityLoading,
+  } = useConnectivityStatus({
+    filters: { service: "docker" },
+    limit: 1,
+    refetchInterval: 10000, // Check every 10 seconds
+  });
+
+  // Get the latest Docker connectivity status
+  const latestDockerStatus = connectivityData?.data?.[0];
+  const isDockerConnected = latestDockerStatus?.status === "connected";
+  const hasDockerError = latestDockerStatus?.status === "failed" || latestDockerStatus?.status === "error";
+
   const {
     data: containerData,
     isLoading,
@@ -22,7 +39,7 @@ export function ContainerSummary() {
     refetch,
   } = useContainers({
     queryParams: {},
-    enabled: true,
+    enabled: isDockerConnected !== false, // Only fetch containers if Docker is not explicitly disconnected
     refetchInterval: 30000, // Poll every 30 seconds
   });
 
@@ -30,7 +47,40 @@ export function ContainerSummary() {
     refetch();
   };
 
-  if (isError) {
+  // Show Docker connectivity error if Docker is not connected
+  if (hasDockerError && !isConnectivityLoading) {
+    return (
+      <div className="px-4 lg:px-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">Docker service is not available</div>
+                <div className="text-sm mt-1">
+                  {latestDockerStatus?.errorMessage || "Cannot connect to Docker. Please check your Docker configuration."}
+                </div>
+                {latestDockerStatus?.checkedAt && (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Last checked: {new Date(latestDockerStatus.checkedAt).toLocaleString()}
+                  </div>
+                )}
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/settings/docker">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configure
+                </Link>
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Show other container fetch errors
+  if (isError && !hasDockerError) {
     return (
       <div className="px-4 lg:px-6">
         <Alert variant="destructive">
@@ -49,7 +99,7 @@ export function ContainerSummary() {
     );
   }
 
-  if (isLoading && !containerData) {
+  if ((isLoading && !containerData) || isConnectivityLoading) {
     return (
       <div className="px-4 lg:px-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -61,6 +111,11 @@ export function ContainerSummary() {
         <div className="mt-6">
           <Skeleton className="h-48" />
         </div>
+        {isConnectivityLoading && (
+          <div className="mt-4 text-center text-sm text-muted-foreground">
+            Checking Docker connectivity...
+          </div>
+        )}
       </div>
     );
   }
