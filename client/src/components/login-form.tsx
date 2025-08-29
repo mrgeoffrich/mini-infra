@@ -1,24 +1,27 @@
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { useLogin } from "@/hooks/use-login"
-import { Loader2 } from "lucide-react"
+} from "@/components/ui/card";
+import { useLogin } from "@/hooks/use-login";
+import { useAuth } from "@/hooks/use-auth";
+import { InlineAuthError } from "@/components/auth-error";
+import { Loader2 } from "lucide-react";
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const { login, isLoading, isAuthenticated } = useLogin()
+  const { login, isLoading, isAuthenticated } = useLogin();
+  const { authState } = useAuth();
 
   const handleGoogleLogin = () => {
-    login()
-  }
+    login();
+  };
 
   if (isAuthenticated) {
     return (
@@ -31,7 +34,7 @@ export function LoginForm({
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -40,11 +43,20 @@ export function LoginForm({
         <CardHeader>
           <CardTitle>Sign in to Mini Infra</CardTitle>
           <CardDescription>
-            Sign in with your Google account to access the infrastructure management dashboard
+            Sign in with your Google account to access the infrastructure
+            management dashboard
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button 
+          {authState.error && !isLoading && (
+            <div className="mb-4">
+              <InlineAuthError
+                error={authState.error}
+                onRetry={() => window.location.reload()}
+              />
+            </div>
+          )}
+          <Button
             onClick={handleGoogleLogin}
             disabled={isLoading}
             className="w-full"
@@ -85,5 +97,5 @@ export function LoginForm({
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

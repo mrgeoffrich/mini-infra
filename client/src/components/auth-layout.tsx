@@ -1,17 +1,17 @@
-import { useAuth } from "@/hooks/use-auth"
-import { AuthSpinner, FullPageAuthSpinner } from "./auth-spinner"
-import { AuthErrorDisplay } from "./auth-error"
-import { LoginForm } from "./login-form"
-import { UserProfile } from "./user-profile"
-import { LogoutButton } from "./logout-button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useAuth } from "@/hooks/use-auth";
+import { AuthSpinner, FullPageAuthSpinner } from "./auth-spinner";
+import { AuthErrorDisplay } from "./auth-error";
+import { LoginForm } from "./login-form";
+import { UserProfile } from "./user-profile";
+import { LogoutButton } from "./logout-button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface AuthLayoutProps {
-  children?: React.ReactNode
-  showUserProfile?: boolean
-  showLogoutButton?: boolean
-  fullPage?: boolean
-  className?: string
+  children?: React.ReactNode;
+  showUserProfile?: boolean;
+  showLogoutButton?: boolean;
+  fullPage?: boolean;
+  className?: string;
 }
 
 export function AuthLayout({
@@ -21,15 +21,15 @@ export function AuthLayout({
   fullPage = false,
   className = "",
 }: AuthLayoutProps) {
-  const { authState, refetch } = useAuth()
-  const { isLoading, isAuthenticated, error } = authState
+  const { authState, refetch } = useAuth();
+  const { isLoading, isAuthenticated, error } = authState;
 
   if (isLoading) {
     return fullPage ? (
       <FullPageAuthSpinner message="Checking authentication..." />
     ) : (
       <AuthSpinner message="Checking authentication..." />
-    )
+    );
   }
 
   if (error) {
@@ -41,23 +41,21 @@ export function AuthLayout({
           showCard={true}
         />
       </div>
-    )
+    );
   }
 
   if (!isAuthenticated) {
-    const loginContent = <LoginForm />
-    
+    const loginContent = <LoginForm />;
+
     if (fullPage) {
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
-          <div className="w-full max-w-md">
-            {loginContent}
-          </div>
+          <div className="w-full max-w-md">{loginContent}</div>
         </div>
-      )
+      );
     }
-    
-    return <div className={className}>{loginContent}</div>
+
+    return <div className={className}>{loginContent}</div>;
   }
 
   return (
@@ -75,7 +73,7 @@ export function AuthLayout({
             </CardHeader>
             {showUserProfile && (
               <CardContent className="pt-0">
-                <UserProfile 
+                <UserProfile
                   showCard={false}
                   showName={true}
                   showEmail={true}
@@ -88,58 +86,62 @@ export function AuthLayout({
       )}
       {children}
     </div>
-  )
+  );
 }
 
-export function ProtectedRoute({ 
-  children, 
-  fallback 
-}: { 
-  children: React.ReactNode
-  fallback?: React.ReactNode
+export function ProtectedRoute({
+  children,
+  fallback,
+}: {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
 }) {
-  const { authState } = useAuth()
-  const { isLoading, isAuthenticated, error } = authState
+  const { authState } = useAuth();
+  const { isLoading, isAuthenticated, error } = authState;
 
   if (isLoading) {
-    return <FullPageAuthSpinner message="Authenticating..." />
+    return <FullPageAuthSpinner message="Authenticating..." />;
   }
 
   if (error) {
-    return fallback || (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <AuthErrorDisplay error={error} showCard={true} />
+    return (
+      fallback || (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
+            <AuthErrorDisplay error={error} showCard={true} />
+          </div>
         </div>
-      </div>
-    )
+      )
+    );
   }
 
   if (!isAuthenticated) {
-    return fallback || (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <LoginForm />
+    return (
+      fallback || (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
+            <LoginForm />
+          </div>
         </div>
-      </div>
-    )
+      )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }
 
-export function PublicRoute({ 
+export function PublicRoute({
   children,
-  redirectIfAuthenticated = true 
-}: { 
-  children: React.ReactNode
-  redirectIfAuthenticated?: boolean
+  redirectIfAuthenticated = true,
+}: {
+  children: React.ReactNode;
+  redirectIfAuthenticated?: boolean;
 }) {
-  const { authState } = useAuth()
-  const { isLoading, isAuthenticated } = authState
+  const { authState } = useAuth();
+  const { isLoading, isAuthenticated } = authState;
 
   if (isLoading) {
-    return <FullPageAuthSpinner message="Checking authentication..." />
+    return <FullPageAuthSpinner message="Checking authentication..." />;
   }
 
   if (isAuthenticated && redirectIfAuthenticated) {
@@ -153,8 +155,8 @@ export function PublicRoute({
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }

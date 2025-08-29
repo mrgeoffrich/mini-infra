@@ -13,7 +13,13 @@ router.use(passport.session());
 
 // Google OAuth initiation
 router.get("/google", (req: Request, res: Response, next: NextFunction) => {
-  logger.info("Initiating Google OAuth flow");
+  const redirectParam = req.query.redirect as string;
+  logger.info({ redirect: redirectParam }, "Initiating Google OAuth flow");
+
+  // Store redirect URL in session for later use
+  if (redirectParam) {
+    req.session.oauthRedirect = redirectParam;
+  }
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
@@ -47,12 +53,19 @@ router.get("/success", async (req: Request, res: Response) => {
       "OAuth authentication successful, session regenerated",
     );
 
-    // Redirect to frontend dashboard or appropriate page
-    const redirectUrl =
-      config.NODE_ENV === "development"
-        ? "http://localhost:3000/dashboard"
-        : "/dashboard";
+    // Get the redirect URL from session (stored during OAuth initiation) or use default
+    const frontendUrl =
+      config.NODE_ENV === "development" ? "http://localhost:3000" : "";
+    const redirectPath = req.session.oauthRedirect || "/dashboard";
+    const redirectUrl = `${frontendUrl}${redirectPath}`;
 
+    // Clear the stored redirect from session
+    delete req.session.oauthRedirect;
+
+    logger.info(
+      { redirectUrl, originalQuery: req.query },
+      "Redirecting after successful OAuth",
+    );
     res.redirect(redirectUrl);
   } catch (error) {
     logger.error(
@@ -68,11 +81,11 @@ router.get("/failure", (req: Request, res: Response) => {
   logger.warn("OAuth authentication failed");
 
   // Redirect to frontend login page with error
-  const redirectUrl =
-    config.NODE_ENV === "development"
-      ? "http://localhost:3000/?auth=error"
-      : "/?auth=error";
+  const frontendUrl =
+    config.NODE_ENV === "development" ? "http://localhost:3000" : "";
+  const redirectUrl = `${frontendUrl}/login?auth=error`;
 
+  logger.info({ redirectUrl }, "Redirecting after failed OAuth");
   res.redirect(redirectUrl);
 });
 

@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,17 +9,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { useLogout } from "@/hooks/use-logout"
-import { Loader2 } from "lucide-react"
-import { useState } from "react"
+} from "@/components/ui/alert-dialog";
+import { useLogout } from "@/hooks/use-logout";
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
 
 interface LogoutButtonProps {
-  variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
-  size?: "default" | "sm" | "lg" | "icon"
-  showConfirmation?: boolean
-  className?: string
-  children?: React.ReactNode
+  variant?:
+    | "default"
+    | "destructive"
+    | "outline"
+    | "secondary"
+    | "ghost"
+    | "link";
+  size?: "default" | "sm" | "lg" | "icon";
+  showConfirmation?: boolean;
+  className?: string;
+  children?: React.ReactNode;
 }
 
 export function LogoutButton({
@@ -29,25 +35,25 @@ export function LogoutButton({
   className,
   children,
 }: LogoutButtonProps) {
-  const { logout, isLoggingOut, error } = useLogout()
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const { logout, isLoggingOut, error } = useLogout();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
-      await logout()
-      setIsDialogOpen(false)
+      await logout();
+      setIsDialogOpen(false);
     } catch (err) {
-      console.error("Logout failed:", err)
+      console.error("Logout failed:", err);
     }
-  }
+  };
 
   const handleDirectLogout = async () => {
     if (!showConfirmation) {
-      await handleLogout()
+      await handleLogout();
     } else {
-      setIsDialogOpen(true)
+      setIsDialogOpen(true);
     }
-  }
+  };
 
   if (showConfirmation) {
     return (
@@ -74,13 +80,12 @@ export function LogoutButton({
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Sign Out</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to sign out? You will need to authenticate again to access the dashboard.
+              Are you sure you want to sign out? You will need to authenticate
+              again to access the dashboard.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && (
-            <div className="text-sm text-destructive mt-2">
-              Error: {error}
-            </div>
+            <div className="text-sm text-destructive mt-2">Error: {error}</div>
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isLoggingOut}>
@@ -103,7 +108,7 @@ export function LogoutButton({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    )
+    );
   }
 
   return (
@@ -123,5 +128,5 @@ export function LogoutButton({
         children || "Sign out"
       )}
     </Button>
-  )
+  );
 }

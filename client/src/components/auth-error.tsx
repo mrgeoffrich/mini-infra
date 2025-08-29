@@ -1,22 +1,22 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertTriangle, RefreshCw, X } from "lucide-react"
-import { useState } from "react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertTriangle, RefreshCw, X } from "lucide-react";
+import { useState } from "react";
 
 interface AuthError {
-  message: string
-  code?: string
-  statusCode?: number
+  message: string;
+  code?: string;
+  statusCode?: number;
 }
 
 interface AuthErrorDisplayProps {
-  error: AuthError | string
-  onRetry?: () => void
-  onDismiss?: () => void
-  showCard?: boolean
-  variant?: "default" | "destructive"
-  className?: string
+  error: AuthError | string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+  showCard?: boolean;
+  variant?: "default" | "destructive";
+  className?: string;
 }
 
 export function AuthErrorDisplay({
@@ -27,36 +27,40 @@ export function AuthErrorDisplay({
   variant = "destructive",
   className = "",
 }: AuthErrorDisplayProps) {
-  const [isDismissed, setIsDismissed] = useState(false)
+  const [isDismissed, setIsDismissed] = useState(false);
 
   if (isDismissed) {
-    return null
+    return null;
   }
 
-  const errorMessage = typeof error === "string" ? error : error.message
-  const errorCode = typeof error === "object" ? error.code : undefined
-  const statusCode = typeof error === "object" ? error.statusCode : undefined
+  const errorMessage = typeof error === "string" ? error : error.message;
+  const errorCode = typeof error === "object" ? error.code : undefined;
+  const statusCode = typeof error === "object" ? error.statusCode : undefined;
 
   const handleDismiss = () => {
-    setIsDismissed(true)
-    onDismiss?.()
-  }
+    setIsDismissed(true);
+    onDismiss?.();
+  };
 
   const getErrorTitle = () => {
-    if (statusCode === 401) return "Authentication Failed"
-    if (statusCode === 403) return "Access Denied"
-    if (statusCode === 429) return "Rate Limited"
-    if (statusCode && statusCode >= 500) return "Server Error"
-    return "Authentication Error"
-  }
+    if (statusCode === 401) return "Authentication Failed";
+    if (statusCode === 403) return "Access Denied";
+    if (statusCode === 429) return "Rate Limited";
+    if (statusCode && statusCode >= 500) return "Server Error";
+    return "Authentication Error";
+  };
 
   const getHelpText = () => {
-    if (statusCode === 401) return "Please check your credentials and try again."
-    if (statusCode === 403) return "You don't have permission to access this resource."
-    if (statusCode === 429) return "Too many attempts. Please wait a moment and try again."
-    if (statusCode && statusCode >= 500) return "Our servers are experiencing issues. Please try again later."
-    return "Something went wrong with authentication. Please try again."
-  }
+    if (statusCode === 401)
+      return "Please check your credentials and try again.";
+    if (statusCode === 403)
+      return "You don't have permission to access this resource.";
+    if (statusCode === 429)
+      return "Too many attempts. Please wait a moment and try again.";
+    if (statusCode && statusCode >= 500)
+      return "Our servers are experiencing issues. Please try again later.";
+    return "Something went wrong with authentication. Please try again.";
+  };
 
   const errorContent = (
     <Alert variant={variant} className={className}>
@@ -78,9 +82,7 @@ export function AuthErrorDisplay({
         <AlertDescription className="mt-2">
           <div className="space-y-2">
             <p>{errorMessage}</p>
-            <p className="text-sm text-muted-foreground">
-              {getHelpText()}
-            </p>
+            <p className="text-sm text-muted-foreground">{getHelpText()}</p>
             {errorCode && (
               <p className="text-xs text-muted-foreground">
                 Error Code: {errorCode}
@@ -104,10 +106,10 @@ export function AuthErrorDisplay({
         </AlertDescription>
       </div>
     </Alert>
-  )
+  );
 
   if (!showCard) {
-    return errorContent
+    return errorContent;
   }
 
   return (
@@ -121,9 +123,7 @@ export function AuthErrorDisplay({
       <CardContent>
         <div className="space-y-2">
           <p>{errorMessage}</p>
-          <p className="text-sm text-muted-foreground">
-            {getHelpText()}
-          </p>
+          <p className="text-sm text-muted-foreground">{getHelpText()}</p>
           {errorCode && (
             <p className="text-xs text-muted-foreground">
               Error Code: {errorCode}
@@ -156,17 +156,17 @@ export function AuthErrorDisplay({
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export function InlineAuthError({
   error,
   onRetry,
 }: {
-  error: AuthError | string
-  onRetry?: () => void
+  error: AuthError | string;
+  onRetry?: () => void;
 }) {
-  const errorMessage = typeof error === "string" ? error : error.message
+  const errorMessage = typeof error === "string" ? error : error.message;
 
   return (
     <div className="flex items-center gap-2 text-sm text-destructive">
@@ -183,5 +183,5 @@ export function InlineAuthError({
         </Button>
       )}
     </div>
-  )
+  );
 }

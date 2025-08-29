@@ -4,27 +4,44 @@ import { AuthStatus } from "../lib/auth-types";
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 async function fetchAuthStatus(): Promise<AuthStatus> {
-  const response = await fetch(`${BACKEND_URL}/api/auth/status`, {
-    method: "GET",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  try {
+    const response = await fetch(`${BACKEND_URL}/auth/status`, {
+      method: "GET",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      return {
-        isAuthenticated: false,
-        user: null,
-        sessionId: null,
-      };
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Unauthorized is expected when not authenticated
+        return {
+          isAuthenticated: false,
+          user: null,
+          sessionId: null,
+        };
+      }
+
+      // For other errors, create descriptive error messages
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(
+        `${response.status}: Failed to fetch auth status - ${errorText}`,
+      );
     }
-    throw new Error(`Failed to fetch auth status: ${response.statusText}`);
-  }
 
-  const data = await response.json();
-  return data.data || data;
+    const data = await response.json();
+    return data.data || data;
+  } catch (error) {
+    // Handle network errors and other fetch errors
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new Error(
+        "NetworkError: Unable to connect to the authentication server. Please check your connection.",
+      );
+    }
+    // Re-throw other errors as-is
+    throw error;
+  }
 }
 
 export function useAuthStatus(): UseQueryResult<AuthStatus, Error> {
@@ -38,8 +55,18 @@ export function useAuthStatus(): UseQueryResult<AuthStatus, Error> {
       }
       return failureCount < 2;
     },
+    // Enhanced session persistence settings
     refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: true, // Always check on mount
+    refetchOnWindowFocus: true, // Check when window regains focus
+    refetchOnReconnect: true, // Check when network reconnects
+    staleTime: 1 * 60 * 1000, // Consider data fresh for 1 minute
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (formerly cacheTime)
+
+    // Network mode for better offline handling
+    networkMode: "online",
+
+    // Retry on network error for better persistence
+    retryOnMount: true,
   });
 }

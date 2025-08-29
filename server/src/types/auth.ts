@@ -138,5 +138,6 @@ declare module "express-session" {
       user: string;
     };
     csrfToken?: string;
+    oauthRedirect?: string;
   }
 }

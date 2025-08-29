@@ -57,9 +57,15 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - API integration for real-time updates
 
 ### 5. Authentication & Authorization
-- OAuth 2.0 with Google
-- API key-based authentication for webhooks
-- Team support for multiple users
+- **Full OAuth 2.0 with Google Integration**: Complete end-to-end authentication flow with seamless redirects
+- **Session Management**: Secure session handling with database persistence and automatic cleanup
+- **API Key Authentication**: For webhooks and programmatic access with proper validation
+- **Cross-Tab Synchronization**: Authentication state synchronized across browser tabs using BroadcastChannel API
+- **Comprehensive Error Handling**: User-friendly error messages with proper error boundaries and recovery options
+- **Toast Notifications**: Real-time feedback for authentication events (login success, logout, errors)
+- **Route Protection**: Protected and public route components with authentication guards and loading states
+- **Session Persistence**: Authentication state persists across browser sessions with localStorage backup
+- **Team Support**: Multiple users with proper user context management and profile display
 
 ### 6. Activity Logging & Monitoring
 - Comprehensive activity logs for all operations
@@ -135,12 +141,37 @@ The application uses Prisma ORM with SQLite for data persistence. The authentica
 - **Client Location**: `server/src/generated/prisma`
 - **Schema File**: `server/prisma/schema.prisma`
 
+## Authentication System Implementation
+
+### Frontend Authentication
+- **Auth Context Provider**: Centralized authentication state management with React Query integration
+- **Custom Hooks**: useAuth, useLogin, useLogout, useAuthStatus, useUser for easy authentication access
+- **Error Components**: Comprehensive error display components with retry functionality and user guidance
+- **Route Guards**: ProtectedRoute and PublicRoute components with loading states and redirects
+- **Session Storage**: Local storage utilities for session persistence and user preferences
+- **Cross-Tab Sync**: BroadcastChannel API integration for synchronized authentication across browser tabs
+
+### Backend Authentication
+- **OAuth Integration**: Complete Passport.js setup with Google OAuth 2.0 strategy
+- **Session Management**: Express-session with custom Prisma store and automatic cleanup
+- **API Endpoints**: RESTful authentication endpoints (/auth/google, /auth/status, /auth/logout)
+- **Middleware**: Authentication and authorization middleware for route protection
+- **CSRF Protection**: Cross-site request forgery protection with token validation
+- **Rate Limiting**: Request rate limiting for authentication endpoints
+
+### Security Features
+- **Secure Redirects**: Proper OAuth callback handling with frontend/backend coordination
+- **Error Handling**: Comprehensive error parsing and user-friendly error messages
+- **Session Security**: Secure cookie configuration with appropriate flags and expiration
+- **Data Validation**: Zod schemas for request/response validation
+- **Audit Logging**: Structured logging for all authentication events and operations
+
 ## Testing Strategy
 
 - **Jest** for backend API testing
 - **@testing-library/user-event** for user interaction simulation
 - **Unique test data** using CUID2 for concurrent test isolation
-- **Mocked authentication** with NextAuth
+- **Mocked authentication** with PassportJS mocking
 - **Database isolation** with user-scoped test data
 
 ## External Integrations

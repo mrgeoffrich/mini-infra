@@ -1,6 +1,6 @@
-import * as React from "react"
-import { type Icon } from "@tabler/icons-react"
-import { Link, useLocation } from "react-router-dom"
+import * as React from "react";
+import { type Icon } from "@tabler/icons-react";
+import { Link, useLocation } from "react-router-dom";
 
 import {
   SidebarGroup,
@@ -8,19 +8,19 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
 export function NavSecondary({
   items,
   ...props
 }: {
   items: {
-    title: string
-    url: string
-    icon: Icon
-  }[]
+    title: string;
+    url: string;
+    icon: Icon;
+  }[];
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
-  const location = useLocation()
+  const location = useLocation();
 
   return (
     <SidebarGroup {...props}>
@@ -28,11 +28,11 @@ export function NavSecondary({
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton 
+              <SidebarMenuButton
                 asChild
                 isActive={location.pathname === item.url}
               >
-                {item.url.startsWith('#') || item.url.startsWith('http') ? (
+                {item.url.startsWith("#") || item.url.startsWith("http") ? (
                   <a href={item.url}>
                     <item.icon />
                     <span>{item.title}</span>
@@ -49,5 +49,5 @@ export function NavSecondary({
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
-  )
+  );
 }

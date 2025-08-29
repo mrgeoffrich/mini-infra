@@ -3,13 +3,9 @@ import {
   IconDotsVertical,
   IconNotification,
   IconUserCircle,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,21 +14,21 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@/components/ui/sidebar"
-import { useUser } from "@/hooks/use-user"
-import { useLogout } from "@/hooks/use-logout"
-import { Loader2, LogOut } from "lucide-react"
+} from "@/components/ui/sidebar";
+import { useUser } from "@/hooks/use-user";
+import { useLogout } from "@/hooks/use-logout";
+import { Loader2, LogOut } from "lucide-react";
 
 export function NavUser() {
-  const { isMobile } = useSidebar()
-  const { user, isLoading } = useUser()
-  const { logout, isLoggingOut } = useLogout()
+  const { isMobile } = useSidebar();
+  const { user, isLoading } = useUser();
+  const { logout, isLoggingOut } = useLogout();
 
   if (isLoading || !user) {
     return (
@@ -47,7 +43,7 @@ export function NavUser() {
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
-    )
+    );
   }
 
   const getInitials = (name: string) => {
@@ -56,16 +52,16 @@ export function NavUser() {
       .map((n) => n[0])
       .join("")
       .toUpperCase()
-      .slice(0, 2)
-  }
+      .slice(0, 2);
+  };
 
   const handleLogout = async () => {
     try {
-      await logout()
+      await logout();
     } catch (error) {
-      console.error("Logout failed:", error)
+      console.error("Logout failed:", error);
     }
-  }
+  };
 
   return (
     <SidebarMenu>
@@ -77,9 +73,14 @@ export function NavUser() {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.image || undefined} alt={user.name || user.email} />
+                <AvatarImage
+                  src={user.image || undefined}
+                  alt={user.name || user.email}
+                />
                 <AvatarFallback className="rounded-lg">
-                  {user.name ? getInitials(user.name) : user.email.slice(0, 2).toUpperCase()}
+                  {user.name
+                    ? getInitials(user.name)
+                    : user.email.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -102,9 +103,14 @@ export function NavUser() {
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.image || undefined} alt={user.name || user.email} />
+                  <AvatarImage
+                    src={user.image || undefined}
+                    alt={user.name || user.email}
+                  />
                   <AvatarFallback className="rounded-lg">
-                    {user.name ? getInitials(user.name) : user.email.slice(0, 2).toUpperCase()}
+                    {user.name
+                      ? getInitials(user.name)
+                      : user.email.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
@@ -150,5 +156,5 @@ export function NavUser() {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }
