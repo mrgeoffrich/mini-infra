@@ -14,6 +14,8 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Icons**: Heroicons and Tabler Icons
 - **Forms**: React Hook Form with Zod validation
 - **State Management**: React Query (TanStack Query)
+- **Data Tables**: @tanstack/react-table for container data display
+- **Date Handling**: date-fns for timestamp formatting
 - **Protected Routes**: ProtectedRoute and PublicRoute components with authentication guards
 
 ### Backend
@@ -43,8 +45,11 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ### 1. Docker Container Management
 - Read-only dashboard for all running containers
-- Real-time status updates via polling
+- Real-time status updates via polling (5-second intervals)
 - Container information: name, status, image, ports, volumes, IP, creation time
+- Advanced filtering and sorting capabilities with debounced input
+- Pagination support for large container lists (50 containers per page)
+- Request correlation ID support for debugging and error tracking
 
 ### 2. PostgreSQL Database Management
 - Database connection string storage
@@ -90,7 +95,7 @@ mini-infra/
 │   │   │   └── login/       # Login page
 │   │   ├── components/      # Reusable UI components
 │   │   │   ├── ui/          # shadcn UI components
-│   │   ├── hooks/           # Custom React hooks (useAuth, useUser, etc.)
+│   │   ├── hooks/           # Custom React hooks (useAuth, useUser, useContainers, etc.)
 │   │   └── lib/             # Frontend utilities
 │   ├── public/              # Static assets
 │   ├── dist/                # Build output
@@ -181,6 +186,31 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Session Security**: Secure cookie configuration with appropriate flags and expiration
 - **Data Validation**: Zod schemas for request/response validation
 - **Audit Logging**: Structured logging for all authentication events and operations
+
+## Container Data Fetching Implementation
+
+### Frontend Container Hooks
+- **useContainers**: Custom React Query hook for fetching container data with real-time polling
+  - 5-second polling interval for real-time updates
+  - Automatic retry logic with exponential backoff
+  - Authentication error handling (no retry on 401/Unauthorized)
+  - Request correlation ID for debugging support
+  - Configurable options for enabling/disabling, custom intervals, and retry behavior
+  
+- **useContainerFilters**: State management hook for container filtering and sorting
+  - Filter by status, name, and image with debounced input
+  - Sorting by any field (name, status, created date, etc.) with ascending/descending order
+  - Pagination controls with configurable page size (default: 50)
+  - Reset filters functionality
+  - Automatic page reset when filters or sorting change
+
+### Frontend Container Data Flow
+1. **Data Fetching**: useContainers hook polls `/api/containers` endpoint every 5 seconds
+2. **Caching**: React Query manages local cache with 2-second stale time
+3. **Error Handling**: Automatic retry with exponential backoff, no retry on auth errors
+4. **Real-time Updates**: Polling ensures fresh data with configurable intervals
+5. **State Management**: useContainerFilters manages UI state for filtering and sorting
+6. **Debugging**: Request correlation IDs track requests across client/server boundary
 
 ## Testing Strategy
 
