@@ -176,7 +176,7 @@ describe("ConfigurationService", () => {
 
       await expect(
         configService.set("host", "tcp://localhost:2375", "user1"),
-      ).rejects.toThrow("Unknown error");
+      ).rejects.toBe("Unknown error");
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
@@ -336,7 +336,7 @@ describe("ConfigurationService", () => {
         .fn()
         .mockRejectedValue(unknownError);
 
-      await expect(configService.delete("host", "user1")).rejects.toThrow(
+      await expect(configService.delete("host", "user1")).rejects.toBe(
         "Delete failed",
       );
 

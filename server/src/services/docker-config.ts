@@ -359,7 +359,28 @@ export class DockerConfigService extends ConfigurationService {
   }
 
   /**
-   * Override set method to invalidate cached Docker client
+   * Record connectivity status - public method to allow main Docker service to record status
+   */
+  async recordConnectivityStatus(
+    status: ConnectivityStatusType,
+    responseTimeMs?: number,
+    errorMessage?: string,
+    errorCode?: string,
+    metadata?: Record<string, any>,
+    userId?: string,
+  ): Promise<void> {
+    return super.recordConnectivityStatus(
+      status,
+      responseTimeMs,
+      errorMessage,
+      errorCode,
+      metadata,
+      userId,
+    );
+  }
+
+  /**
+   * Override set method to invalidate cached Docker client and refresh main service
    */
   async set(key: string, value: string, userId: string): Promise<void> {
     await super.set(key, value, userId);
@@ -374,5 +395,22 @@ export class DockerConfigService extends ConfigurationService {
       },
       "Docker configuration updated, client cache invalidated",
     );
+
+    // Notify main Docker service to refresh connection
+    try {
+      const DockerService = (await import("./docker")).default;
+      const dockerService = DockerService.getInstance();
+      await dockerService.refreshConnection();
+      logger.info(
+        "Main Docker service connection refreshed after settings update",
+      );
+    } catch (error) {
+      logger.warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to refresh main Docker service connection after settings update",
+      );
+    }
   }
 }

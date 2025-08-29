@@ -510,7 +510,7 @@
 
 **Goal:** Change the functionality to not use an environment variable but the settings in the database.
 
-**Status:** Not Started
+**Status:** ✅ Completed
 
 **Tasks:**
 

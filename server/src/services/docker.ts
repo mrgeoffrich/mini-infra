@@ -3,6 +3,8 @@ import NodeCache from "node-cache";
 import logger from "../lib/logger";
 import config from "../lib/config";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
+import { DockerConfigService } from "./docker-config";
+import prisma from "../lib/prisma";
 
 class DockerService {
   private static instance: DockerService;
@@ -10,82 +12,20 @@ class DockerService {
   private cache: NodeCache;
   private connected: boolean = false;
   private reconnectInterval: NodeJS.Timeout | null = null;
+  private dockerConfigService: DockerConfigService;
 
   private constructor() {
-    // Initialize Docker client
-    let dockerHost = config.DOCKER_HOST;
-
-    // Default Docker host based on platform
-    if (!dockerHost) {
-      if (process.platform === "win32") {
-        // Windows: Use named pipe for Docker Desktop
-        dockerHost = "//./pipe/docker_engine";
-      } else {
-        // Unix/Linux/Mac: Use Unix socket
-        dockerHost = "/var/run/docker.sock";
-      }
-    }
-
-    let dockerConfig: any = {};
-
-    // Parse Docker host configuration
-    if (dockerHost.startsWith("npipe://")) {
-      // Windows named pipe
-      dockerConfig.socketPath = dockerHost;
-    } else if (dockerHost.startsWith("unix://")) {
-      // Unix socket with unix:// prefix
-      dockerConfig.socketPath = dockerHost.replace("unix://", "");
-    } else if (
-      dockerHost.startsWith("tcp://") ||
-      dockerHost.startsWith("http://") ||
-      dockerHost.startsWith("https://")
-    ) {
-      // TCP connection
-      const url = new URL(dockerHost);
-      dockerConfig.host = url.hostname;
-      dockerConfig.port = parseInt(url.port || "2375");
-      if (dockerHost.startsWith("https://")) {
-        dockerConfig.protocol = "https";
-      } else {
-        dockerConfig.protocol = "http";
-      }
-    } else if (
-      dockerHost.startsWith("/") ||
-      dockerHost.startsWith("\\") ||
-      dockerHost.includes("pipe")
-    ) {
-      // Direct socket path (Windows named pipe or Unix socket)
-      dockerConfig.socketPath = dockerHost;
-    } else {
-      // Assume it's a host:port format
-      const parts = dockerHost.split(":");
-      dockerConfig.host = parts[0];
-      dockerConfig.port = parseInt(parts[1] || "2375");
-      dockerConfig.protocol = "http";
-    }
-
-    // Add API version if specified
-    if (config.DOCKER_API_VERSION) {
-      dockerConfig.version = config.DOCKER_API_VERSION.startsWith("v")
-        ? config.DOCKER_API_VERSION
-        : `v${config.DOCKER_API_VERSION}`;
-    }
-
-    logger.info(
-      {
-        dockerHost,
-        dockerConfig,
-      },
-      "Initializing Docker client",
-    );
-
-    this.docker = new Docker(dockerConfig);
+    // Initialize Docker configuration service
+    this.dockerConfigService = new DockerConfigService(prisma);
 
     // Initialize cache with 3-second TTL
     this.cache = new NodeCache({
       stdTTL: Math.floor((config.CONTAINER_CACHE_TTL || 3000) / 1000),
       checkperiod: 5,
     });
+
+    // Initialize Docker client - this will be done asynchronously in initialize()
+    this.docker = {} as Docker; // Placeholder, will be set in initialize()
   }
 
   public static getInstance(): DockerService {
@@ -99,20 +39,98 @@ class DockerService {
     logger.info("Initializing Docker connection at startup...");
 
     try {
+      // Create Docker client based on settings
+      await this.createDockerClientFromSettings();
+
+      // Attempt to connect
       await this.connect(false); // Don't schedule reconnect during startup
       this.setupEventListeners();
       logger.info("Docker service initialized successfully");
     } catch (error) {
-      logger.error(
+      logger.warn(
         {
           error,
           errorMessage: error instanceof Error ? error.message : String(error),
         },
-        "Failed to initialize Docker connection at startup",
+        "Failed to initialize Docker connection at startup - continuing with degraded functionality",
       );
-      throw new Error(
-        `Docker initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+
+      // Record connection failure in database instead of crashing
+      try {
+        await this.dockerConfigService.recordConnectivityStatus(
+          "failed",
+          undefined,
+          error instanceof Error ? error.message : String(error),
+          this.getDockerErrorCode(error),
+        );
+      } catch (dbError) {
+        logger.error(
+          { error: dbError },
+          "Failed to record Docker connectivity failure in database",
+        );
+      }
+
+      // Don't throw error - allow server to start with degraded Docker functionality
+      logger.info(
+        "Docker service initialized with degraded functionality - will retry connection attempts",
       );
+
+      // Schedule reconnection attempts
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Create Docker client from database settings with fallback to environment variables
+   */
+  private async createDockerClientFromSettings(): Promise<void> {
+    try {
+      // Try to get settings from database first
+      const dockerHost = await this.dockerConfigService.get("host");
+      const apiVersion = await this.dockerConfigService.get("apiVersion");
+
+      let finalHost: string;
+      let finalApiVersion: string | undefined;
+
+      if (dockerHost) {
+        finalHost = dockerHost;
+        logger.info(
+          { host: dockerHost },
+          "Using Docker host from database settings",
+        );
+      } else {
+        // Fallback to environment variable or platform default
+        finalHost = config.DOCKER_HOST || this.getDefaultDockerHost();
+        logger.info(
+          { host: finalHost },
+          "Using Docker host from environment/default",
+        );
+      }
+
+      if (apiVersion) {
+        finalApiVersion = apiVersion;
+        logger.info(
+          { apiVersion },
+          "Using Docker API version from database settings",
+        );
+      } else if (config.DOCKER_API_VERSION) {
+        finalApiVersion = config.DOCKER_API_VERSION;
+        logger.info(
+          { apiVersion: finalApiVersion },
+          "Using Docker API version from environment",
+        );
+      }
+
+      // Create Docker client using the same logic as DockerConfigService
+      this.docker = this.createDockerClient(finalHost, finalApiVersion);
+
+      logger.info("Docker client created successfully");
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : "Unknown error" },
+        "Failed to create Docker client from settings",
+      );
+      throw error;
     }
   }
 
@@ -120,9 +138,29 @@ class DockerService {
     shouldScheduleReconnect: boolean = true,
   ): Promise<void> {
     try {
+      if (!this.docker || typeof this.docker.ping !== "function") {
+        throw new Error("Docker client not initialized");
+      }
+
+      const startTime = Date.now();
       const pingResult = await this.docker.ping();
+      const responseTimeMs = Date.now() - startTime;
+
       this.connected = true;
-      logger.info("Docker service connected successfully");
+      logger.info({ responseTimeMs }, "Docker service connected successfully");
+
+      // Record successful connection
+      try {
+        await this.dockerConfigService.recordConnectivityStatus(
+          "connected",
+          responseTimeMs,
+        );
+      } catch (dbError) {
+        logger.error(
+          { error: dbError },
+          "Failed to record successful Docker connectivity in database",
+        );
+      }
 
       if (this.reconnectInterval) {
         clearInterval(this.reconnectInterval);
@@ -130,6 +168,8 @@ class DockerService {
       }
     } catch (error) {
       this.connected = false;
+      const responseTimeMs = Date.now();
+
       logger.error(
         {
           error,
@@ -139,11 +179,26 @@ class DockerService {
         "Failed to connect to Docker",
       );
 
+      // Record failed connection
+      try {
+        await this.dockerConfigService.recordConnectivityStatus(
+          "failed",
+          responseTimeMs,
+          error instanceof Error ? error.message : String(error),
+          this.getDockerErrorCode(error),
+        );
+      } catch (dbError) {
+        logger.error(
+          { error: dbError },
+          "Failed to record Docker connectivity failure in database",
+        );
+      }
+
       if (shouldScheduleReconnect) {
         this.scheduleReconnect();
       }
 
-      throw error; // Re-throw for startup initialization
+      throw error;
     }
   }
 
@@ -153,11 +208,97 @@ class DockerService {
     this.reconnectInterval = setInterval(async () => {
       logger.info("Attempting to reconnect to Docker...");
       try {
+        // Recreate client from current settings before reconnecting
+        await this.createDockerClientFromSettings();
         await this.connect(true); // Allow scheduling reconnect in background
       } catch (error) {
         logger.error({ error }, "Reconnection attempt failed");
       }
     }, 10000); // Try every 10 seconds
+  }
+
+  /**
+   * Create Docker client with specified configuration
+   * This method is copied from DockerConfigService to maintain consistency
+   */
+  private createDockerClient(host: string, apiVersion?: string | null): Docker {
+    let dockerConfig: any = {};
+
+    // Parse Docker host configuration
+    if (host.startsWith("npipe://")) {
+      // Windows named pipe
+      dockerConfig.socketPath = host;
+    } else if (host.startsWith("unix://")) {
+      // Unix socket with unix:// prefix
+      dockerConfig.socketPath = host.replace("unix://", "");
+    } else if (
+      host.startsWith("tcp://") ||
+      host.startsWith("http://") ||
+      host.startsWith("https://")
+    ) {
+      // TCP connection
+      const url = new URL(host);
+      dockerConfig.host = url.hostname;
+      dockerConfig.port = parseInt(url.port || "2375");
+      if (host.startsWith("https://")) {
+        dockerConfig.protocol = "https";
+      } else {
+        dockerConfig.protocol = "http";
+      }
+    } else if (
+      host.startsWith("/") ||
+      host.startsWith("\\") ||
+      host.includes("pipe")
+    ) {
+      // Direct socket path (Windows named pipe or Unix socket)
+      dockerConfig.socketPath = host;
+    } else {
+      // Assume it's a host:port format
+      const parts = host.split(":");
+      dockerConfig.host = parts[0];
+      dockerConfig.port = parseInt(parts[1] || "2375");
+      dockerConfig.protocol = "http";
+    }
+
+    // Add API version if specified
+    if (apiVersion) {
+      dockerConfig.version = apiVersion.startsWith("v")
+        ? apiVersion
+        : `v${apiVersion}`;
+    }
+
+    return new Docker(dockerConfig);
+  }
+
+  /**
+   * Get default Docker host based on platform
+   */
+  private getDefaultDockerHost(): string {
+    if (process.platform === "win32") {
+      // Windows: Use named pipe for Docker Desktop
+      return "//./pipe/docker_engine";
+    } else {
+      // Unix/Linux/Mac: Use Unix socket
+      return "/var/run/docker.sock";
+    }
+  }
+
+  /**
+   * Extract Docker-specific error codes
+   */
+  private getDockerErrorCode(error: any): string | undefined {
+    if (error && typeof error === "object") {
+      if (error.statusCode) {
+        return `HTTP_${error.statusCode}`;
+      }
+      if (error.code) {
+        return error.code;
+      }
+      if (error.errno) {
+        return `ERRNO_${error.errno}`;
+      }
+    }
+    return undefined;
   }
 
   private setupEventListeners(): void {
@@ -429,6 +570,45 @@ class DockerService {
   public flushCache(): void {
     this.cache.flushAll();
     logger.info("Docker service cache flushed");
+  }
+
+  /**
+   * Refresh Docker connection with updated settings
+   * This method can be called when Docker settings are updated
+   */
+  public async refreshConnection(): Promise<void> {
+    logger.info("Refreshing Docker connection with updated settings...");
+
+    try {
+      // Stop current reconnection attempts
+      if (this.reconnectInterval) {
+        clearInterval(this.reconnectInterval);
+        this.reconnectInterval = null;
+      }
+
+      // Recreate Docker client with updated settings
+      await this.createDockerClientFromSettings();
+
+      // Attempt new connection
+      await this.connect(true);
+
+      // Setup event listeners for new connection
+      this.setupEventListeners();
+
+      logger.info("Docker connection refreshed successfully");
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to refresh Docker connection",
+      );
+
+      // Schedule reconnect attempts
+      this.scheduleReconnect();
+
+      throw error;
+    }
   }
 }
 

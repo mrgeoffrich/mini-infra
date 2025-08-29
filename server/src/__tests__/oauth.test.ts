@@ -68,25 +68,30 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Get the strategy callback function that was registered
       const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyConfig = mockUse.mock.calls[0]?.[0];
-      const callbackFunction =
-        strategyConfig?.verify || strategyConfig?._verify;
+      const strategyArgs = mockUse.mock.calls[0];
+      
+      if (strategyArgs && strategyArgs.length > 0) {
+        const strategyInstance = strategyArgs[0];
+        const callbackFunction = strategyInstance._verify;
 
-      if (callbackFunction) {
-        await callbackFunction("google.com", mockProfile, mockDone);
+        if (callbackFunction) {
+          await callbackFunction("accessToken", "refreshToken", mockProfile, mockDone);
 
-        // Verify user was created
-        const createdUser = await testPrisma.user.findUnique({
-          where: { googleId: mockProfile.id },
-        });
+          // Verify user was created
+          const createdUser = await testPrisma.user.findUnique({
+            where: { googleId: mockProfile.id },
+          });
 
-        expect(createdUser).toBeTruthy();
-        expect(createdUser?.email).toBe("test@example.com");
-        expect(createdUser?.name).toBe("Test User");
-        expect(createdUser?.googleId).toBe("google-test-123");
-        expect(mockDone).toHaveBeenCalledWith(null, createdUser);
+          expect(createdUser).toBeTruthy();
+          expect(createdUser?.email).toBe("test@example.com");
+          expect(createdUser?.name).toBe("Test User");
+          expect(createdUser?.googleId).toBe("google-test-123");
+          expect(mockDone).toHaveBeenCalledWith(null, createdUser);
+        } else {
+          throw new Error("Could not find OAuth strategy callback function");
+        }
       } else {
-        throw new Error("Could not find OAuth strategy callback function");
+        throw new Error("No strategy was registered");
       }
     });
 
@@ -102,12 +107,14 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       const passport = await import("../lib/passport");
       const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyConfig = mockUse.mock.calls[0]?.[0];
-      const callbackFunction =
-        strategyConfig?.verify || strategyConfig?._verify;
+      const strategyArgs = mockUse.mock.calls[0];
+      
+      if (strategyArgs && strategyArgs.length > 0) {
+        const strategyInstance = strategyArgs[0];
+        const callbackFunction = strategyInstance._verify;
 
-      if (callbackFunction) {
-        await callbackFunction("google.com", mockProfile, mockDone);
+        if (callbackFunction) {
+          await callbackFunction("accessToken", "refreshToken", mockProfile, mockDone);
 
         // Verify user was updated
         const updatedUser = await testPrisma.user.findUnique({
@@ -117,6 +124,11 @@ describe("OAuth Strategy and Callback Handling", () => {
         expect(updatedUser?.name).toBe("Test User"); // Should be updated
         expect(updatedUser?.email).toBe("test@example.com"); // Should be updated
         expect(mockDone).toHaveBeenCalledWith(null, updatedUser);
+        } else {
+          throw new Error("Could not find OAuth strategy callback function");
+        }
+      } else {
+        throw new Error("No strategy was registered");
       }
     });
 
@@ -131,12 +143,14 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       const passport = await import("../lib/passport");
       const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyConfig = mockUse.mock.calls[0]?.[0];
-      const callbackFunction =
-        strategyConfig?.verify || strategyConfig?._verify;
+      const strategyArgs = mockUse.mock.calls[0];
+      
+      if (strategyArgs && strategyArgs.length > 0) {
+        const strategyInstance = strategyArgs[0];
+        const callbackFunction = strategyInstance._verify;
 
-      if (callbackFunction) {
-        await callbackFunction("google.com", mockProfile, mockDone);
+        if (callbackFunction) {
+          await callbackFunction("accessToken", "refreshToken", mockProfile, mockDone);
 
         // Verify user was linked
         const linkedUser = await testPrisma.user.findUnique({
@@ -146,6 +160,11 @@ describe("OAuth Strategy and Callback Handling", () => {
         expect(linkedUser?.googleId).toBe("google-test-123");
         expect(linkedUser?.name).toBe("Test User"); // Updated from OAuth
         expect(mockDone).toHaveBeenCalledWith(null, linkedUser);
+        } else {
+          throw new Error("Could not find OAuth strategy callback function");
+        }
+      } else {
+        throw new Error("No strategy was registered");
       }
     });
 
@@ -185,12 +204,14 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       const passport = await import("../lib/passport");
       const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyConfig = mockUse.mock.calls[0]?.[0];
-      const callbackFunction =
-        strategyConfig?.verify || strategyConfig?._verify;
+      const strategyArgs = mockUse.mock.calls[0];
+      
+      if (strategyArgs && strategyArgs.length > 0) {
+        const strategyInstance = strategyArgs[0];
+        const callbackFunction = strategyInstance._verify;
 
-      if (callbackFunction) {
-        await callbackFunction("google.com", mockProfile, mockDone);
+        if (callbackFunction) {
+          await callbackFunction("accessToken", "refreshToken", mockProfile, mockDone);
 
         expect(mockDone).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -198,6 +219,7 @@ describe("OAuth Strategy and Callback Handling", () => {
           }),
           null,
         );
+      }
       }
 
       // Restore the original method

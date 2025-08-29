@@ -252,12 +252,16 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Google OAuth API**: User authentication
 
 ### Docker Integration Implementation
-- **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with automatic reconnection
+- **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with database-driven configuration and automatic reconnection
+- **Configuration Source**: Uses DockerConfigService to retrieve host and API version settings from database with fallback to environment variables
 - **Dependencies**: dockerode, @types/dockerode, node-cache for container API integration and caching
 - **Features**: Container listing, detailed inspection, real-time event subscription, data transformation
 - **Caching**: 3-second TTL in-memory cache with event-based invalidation
 - **Security**: Data sanitization, timeout protection (5s), connection validation
-- **Error Handling**: Graceful degradation, automatic reconnection logic, comprehensive error messages
+- **Error Handling**: Graceful degradation with database recording, automatic reconnection logic, comprehensive error messages
+- **Graceful Failure**: Server continues startup even if Docker connection fails, with degraded functionality and automatic retry attempts
+- **Dynamic Reconfiguration**: Automatically refreshes connection when settings change through DockerConfigService
+- **Connectivity Monitoring**: Records connection status and errors in ConnectivityStatus database table
 - **API Endpoints**: `server/src/routes/containers.ts` - RESTful endpoints with authentication, rate limiting, filtering, pagination
 - **Testing**: Comprehensive unit and integration tests covering Docker service, API endpoints, error scenarios, caching, and data transformation
 

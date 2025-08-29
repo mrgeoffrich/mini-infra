@@ -79,11 +79,19 @@ class ExponentialBackoff {
   private readonly maxAttempts: number;
   private readonly baseDelay: number;
   private readonly maxDelay: number;
+  private readonly delayFn: (ms: number) => Promise<void>;
 
-  constructor(maxAttempts = 5, baseDelay = 1000, maxDelay = 30000) {
+  constructor(
+    maxAttempts = 5,
+    baseDelay = 1000,
+    maxDelay = 30000,
+    delayFn: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
+  ) {
     this.maxAttempts = maxAttempts;
     this.baseDelay = baseDelay;
     this.maxDelay = maxDelay;
+    this.delayFn = delayFn;
   }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
@@ -121,7 +129,7 @@ class ExponentialBackoff {
           "Operation failed, retrying with exponential backoff",
         );
 
-        await this.delay(delay);
+        await this.delayFn(delay);
       }
     }
 
@@ -132,9 +140,6 @@ class ExponentialBackoff {
     this.attempts = 0;
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
 }
 
 /**
@@ -147,11 +152,15 @@ class ServiceMonitor {
   private readonly backoff: ExponentialBackoff;
   private lastStatus: ConnectivityStatusType = "unreachable";
 
-  constructor(service: SettingsCategory, factory: ConfigurationServiceFactory) {
+  constructor(
+    service: SettingsCategory,
+    factory: ConfigurationServiceFactory,
+    delayFn?: (ms: number) => Promise<void>,
+  ) {
     this.service = service;
     this.factory = factory;
     this.circuitBreaker = new CircuitBreaker(3, 300000); // 3 failures, 5min timeout
-    this.backoff = new ExponentialBackoff(3, 2000, 60000); // 3 attempts, 2s-60s delay
+    this.backoff = new ExponentialBackoff(3, 2000, 60000, delayFn); // 3 attempts, 2s-60s delay
   }
 
   async performHealthCheck(): Promise<void> {
@@ -241,6 +250,7 @@ export class ConnectivityScheduler {
   constructor(
     prisma: PrismaClient,
     checkInterval: number = 5 * 60 * 1000, // 5 minutes default
+    delayFn?: (ms: number) => Promise<void>,
   ) {
     this.prisma = prisma;
     this.factory = new ConfigurationServiceFactory(prisma);
@@ -250,7 +260,10 @@ export class ConnectivityScheduler {
     // Initialize monitors for all supported services
     const supportedCategories = this.factory.getSupportedCategories();
     for (const category of supportedCategories) {
-      this.monitors.set(category, new ServiceMonitor(category, this.factory));
+      this.monitors.set(
+        category,
+        new ServiceMonitor(category, this.factory, delayFn),
+      );
     }
 
     logger.info(

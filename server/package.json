@@ -3,10 +3,10 @@
     "private": true,
     "version": "0.1.0",
     "scripts": {
-        "dev": "tsx watch src/server.ts",
-        "build": "tsc",
+        "dev": "npx prisma db push && tsx watch src/server.ts",
+        "build": "npx prisma generate && tsc",
         "start": "node dist/server.js",
-        "test": "cross-env NODE_ENV=test jest",
+        "test": "cross-env NODE_ENV=test && cross-env DATABASE_URL=file:./test.db && npx prisma db push && jest",
         "test:watch": "cross-env NODE_ENV=test jest --watch",
         "test:coverage": "cross-env NODE_ENV=test jest --coverage",
         "lint": "eslint",

@@ -538,9 +538,19 @@ router.get("/audit", settingsRateLimit, requireAuth, (async (
       "Settings audit logs returned successfully",
     );
 
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
     const response: SettingsAuditListResponse = {
       success: true,
       data: serializedAuditLogs,
+      totalCount,
+      page,
+      limit,
+      totalPages,
+      hasNextPage,
+      hasPreviousPage,
       message: `Found ${totalCount} audit log entries`,
     };
 
