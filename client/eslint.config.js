@@ -8,7 +8,7 @@ import { globalIgnores } from "eslint/config";
 export default tseslint.config([
   globalIgnores(["dist"]),
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["src/**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
@@ -26,8 +26,16 @@ export default tseslint.config([
     rules: {
       "react-refresh/only-export-components": [
         "warn",
-        { allowConstantExport: true },
+        { allowConstantExport: true, allowExportNames: ["buttonVariants", "badgeVariants", "toggleVariants", "sidebarMenuButtonVariants", "schema", "useFormField", "useSidebar"] },
       ],
+    },
+  },
+  {
+    files: ["*.config.{ts,js}", "*.config.*.{ts,js}"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.node,
     },
   },
 ]);
