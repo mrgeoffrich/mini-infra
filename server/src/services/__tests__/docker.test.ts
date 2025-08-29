@@ -89,9 +89,10 @@ describe("DockerService", () => {
     it("should initialize Docker client with correct configuration", () => {
       DockerService.getInstance();
 
-      const expectedSocketPath = process.platform === "win32" 
-        ? "//./pipe/docker_engine"
-        : "/var/run/docker.sock";
+      const expectedSocketPath =
+        process.platform === "win32"
+          ? "//./pipe/docker_engine"
+          : "/var/run/docker.sock";
 
       expect(require("dockerode")).toHaveBeenCalledWith({
         socketPath: expectedSocketPath,

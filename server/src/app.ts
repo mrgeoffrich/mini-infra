@@ -87,7 +87,6 @@ app.get("/health", ((req: Request, res: Response) => {
   });
 }) as RequestHandler);
 
-
 // Import routes
 import authRoutes from "./routes/auth";
 import apiKeyRoutes from "./routes/api-keys";

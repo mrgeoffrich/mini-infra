@@ -243,3 +243,48 @@ export interface ConnectivityStatusSortOptions {
   field: keyof ConnectivityStatusInfo;
   order: "asc" | "desc";
 }
+
+// ====================
+// Configuration Service Types
+// ====================
+
+// Validation result interface
+export interface ValidationResult {
+  isValid: boolean;
+  message: string;
+  errorCode?: string;
+  responseTimeMs?: number;
+  metadata?: Record<string, any>;
+}
+
+// Service health status interface
+export interface ServiceHealthStatus {
+  service: ConnectivityService;
+  status: ConnectivityStatusType;
+  lastChecked: Date;
+  lastSuccessful?: Date;
+  responseTime?: number;
+  errorMessage?: string;
+  errorCode?: string;
+  metadata?: Record<string, any>;
+}
+
+// Configuration service interface (abstract base)
+export interface IConfigurationService {
+  validate(): Promise<ValidationResult>;
+  getHealthStatus(): Promise<ServiceHealthStatus>;
+  set(key: string, value: string): Promise<void>;
+  get(key: string): Promise<string | null>;
+  delete(key: string): Promise<void>;
+}
+
+// Service factory types
+export interface ServiceFactoryOptions {
+  category: SettingsCategory;
+  encryptionKey?: string;
+}
+
+export interface IConfigurationServiceFactory {
+  create(options: ServiceFactoryOptions): IConfigurationService;
+  getSupportedCategories(): SettingsCategory[];
+}

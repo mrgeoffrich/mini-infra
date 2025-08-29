@@ -14,7 +14,7 @@ class DockerService {
   private constructor() {
     // Initialize Docker client
     let dockerHost = config.DOCKER_HOST;
-    
+
     // Default Docker host based on platform
     if (!dockerHost) {
       if (process.platform === "win32") {
@@ -25,7 +25,7 @@ class DockerService {
         dockerHost = "/var/run/docker.sock";
       }
     }
-    
+
     let dockerConfig: any = {};
 
     // Parse Docker host configuration
@@ -35,7 +35,11 @@ class DockerService {
     } else if (dockerHost.startsWith("unix://")) {
       // Unix socket with unix:// prefix
       dockerConfig.socketPath = dockerHost.replace("unix://", "");
-    } else if (dockerHost.startsWith("tcp://") || dockerHost.startsWith("http://") || dockerHost.startsWith("https://")) {
+    } else if (
+      dockerHost.startsWith("tcp://") ||
+      dockerHost.startsWith("http://") ||
+      dockerHost.startsWith("https://")
+    ) {
       // TCP connection
       const url = new URL(dockerHost);
       dockerConfig.host = url.hostname;
@@ -45,7 +49,11 @@ class DockerService {
       } else {
         dockerConfig.protocol = "http";
       }
-    } else if (dockerHost.startsWith("/") || dockerHost.startsWith("\\") || dockerHost.includes("pipe")) {
+    } else if (
+      dockerHost.startsWith("/") ||
+      dockerHost.startsWith("\\") ||
+      dockerHost.includes("pipe")
+    ) {
       // Direct socket path (Windows named pipe or Unix socket)
       dockerConfig.socketPath = dockerHost;
     } else {
@@ -58,15 +66,18 @@ class DockerService {
 
     // Add API version if specified
     if (config.DOCKER_API_VERSION) {
-      dockerConfig.version = config.DOCKER_API_VERSION.startsWith("v") 
-        ? config.DOCKER_API_VERSION 
+      dockerConfig.version = config.DOCKER_API_VERSION.startsWith("v")
+        ? config.DOCKER_API_VERSION
         : `v${config.DOCKER_API_VERSION}`;
     }
 
-    logger.info({
-      dockerHost,
-      dockerConfig
-    }, "Initializing Docker client");
+    logger.info(
+      {
+        dockerHost,
+        dockerConfig,
+      },
+      "Initializing Docker client",
+    );
 
     this.docker = new Docker(dockerConfig);
 
@@ -86,21 +97,28 @@ class DockerService {
 
   public async initialize(): Promise<void> {
     logger.info("Initializing Docker connection at startup...");
-    
+
     try {
       await this.connect(false); // Don't schedule reconnect during startup
       this.setupEventListeners();
       logger.info("Docker service initialized successfully");
     } catch (error) {
-      logger.error({ 
-        error,
-        errorMessage: error instanceof Error ? error.message : String(error)
-      }, "Failed to initialize Docker connection at startup");
-      throw new Error(`Docker initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        {
+          error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to initialize Docker connection at startup",
+      );
+      throw new Error(
+        `Docker initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
-  private async connect(shouldScheduleReconnect: boolean = true): Promise<void> {
+  private async connect(
+    shouldScheduleReconnect: boolean = true,
+  ): Promise<void> {
     try {
       const pingResult = await this.docker.ping();
       this.connected = true;
@@ -112,16 +130,19 @@ class DockerService {
       }
     } catch (error) {
       this.connected = false;
-      logger.error({
-        error,
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined,
-      }, "Failed to connect to Docker");
-      
+      logger.error(
+        {
+          error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+        },
+        "Failed to connect to Docker",
+      );
+
       if (shouldScheduleReconnect) {
         this.scheduleReconnect();
       }
-      
+
       throw error; // Re-throw for startup initialization
     }
   }

@@ -1,15 +1,17 @@
 import { Link } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers } from "@/hooks/useContainers";
-import { AlertCircle, ArrowRight, Container, Play, Square, Pause } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Container,
+  Play,
+  Square,
+  Pause,
+} from "lucide-react";
 
 export function ContainerSummary() {
   const {
@@ -65,20 +67,29 @@ export function ContainerSummary() {
 
   const containers = containerData?.containers || [];
   const totalContainers = containers.length;
-  const runningContainers = containers.filter(c => c.status === "running").length;
-  const stoppedContainers = containers.filter(c => c.status === "exited").length;
-  const pausedContainers = containers.filter(c => c.status === "paused").length;
-  const otherContainers = totalContainers - runningContainers - stoppedContainers - pausedContainers;
+  const runningContainers = containers.filter(
+    (c) => c.status === "running",
+  ).length;
+  const stoppedContainers = containers.filter(
+    (c) => c.status === "exited",
+  ).length;
+  const pausedContainers = containers.filter(
+    (c) => c.status === "paused",
+  ).length;
+  const otherContainers =
+    totalContainers - runningContainers - stoppedContainers - pausedContainers;
 
   // Check for recently died containers (exited in the last 24 hours)
   const now = new Date();
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  
-  const recentlyDiedContainers = containers.filter(container => {
+
+  const recentlyDiedContainers = containers.filter((container) => {
     if (container.status !== "exited") return false;
-    
+
     // Check if the container started recently (as a proxy for when it might have stopped)
-    const startedAt = container.startedAt ? new Date(container.startedAt) : null;
+    const startedAt = container.startedAt
+      ? new Date(container.startedAt)
+      : null;
     return startedAt && startedAt > twentyFourHoursAgo;
   });
 
@@ -88,7 +99,9 @@ export function ContainerSummary() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Containers</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Containers
+            </CardTitle>
             <Container className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -102,7 +115,9 @@ export function ContainerSummary() {
             <Play className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{runningContainers}</div>
+            <div className="text-2xl font-bold text-green-600">
+              {runningContainers}
+            </div>
           </CardContent>
         </Card>
 
@@ -112,7 +127,9 @@ export function ContainerSummary() {
             <Square className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stoppedContainers}</div>
+            <div className="text-2xl font-bold text-red-600">
+              {stoppedContainers}
+            </div>
           </CardContent>
         </Card>
 
@@ -122,7 +139,9 @@ export function ContainerSummary() {
             <Pause className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{pausedContainers}</div>
+            <div className="text-2xl font-bold text-yellow-600">
+              {pausedContainers}
+            </div>
             {otherContainers > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
                 +{otherContainers} other
@@ -139,8 +158,10 @@ export function ContainerSummary() {
           <AlertDescription>
             <div className="flex items-center justify-between">
               <span>
-                {recentlyDiedContainers.length} container{recentlyDiedContainers.length === 1 ? '' : 's'} 
-                {recentlyDiedContainers.length === 1 ? ' has' : ' have'} stopped in the last 24 hours
+                {recentlyDiedContainers.length} container
+                {recentlyDiedContainers.length === 1 ? "" : "s"}
+                {recentlyDiedContainers.length === 1 ? " has" : " have"} stopped
+                in the last 24 hours
               </span>
               <Button asChild variant="outline" size="sm">
                 <Link to="/containers?status=exited">

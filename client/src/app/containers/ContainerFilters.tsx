@@ -74,7 +74,6 @@ export function ContainerFilters({
     [updateFilter],
   );
 
-
   const handleReset = useCallback(() => {
     resetFilters();
     setNameInput("");

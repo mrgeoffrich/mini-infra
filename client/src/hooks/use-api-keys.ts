@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiKey, CreateApiKeyRequest, ApiKeyResponse } from "../lib/auth-types";
 
-
 async function fetchApiKeys(): Promise<ApiKey[]> {
   const response = await fetch(`/api/keys`, {
     credentials: "include",

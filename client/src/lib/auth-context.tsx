@@ -11,7 +11,6 @@ import {
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
 
-
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {
   if (typeof window === "undefined" || !window.BroadcastChannel) {

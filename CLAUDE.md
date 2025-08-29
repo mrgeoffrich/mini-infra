@@ -244,6 +244,16 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **API Endpoints**: `server/src/routes/containers.ts` - RESTful endpoints with authentication, rate limiting, filtering, pagination
 - **Testing**: Comprehensive unit and integration tests covering Docker service, API endpoints, error scenarios, caching, and data transformation
 
+### Settings Service Layer Architecture
+- **Base Class**: `server/src/services/configuration-base.ts` - Abstract ConfigurationService with database integration
+- **Service Factory**: `server/src/services/configuration-factory.ts` - Factory pattern for creating configuration service instances
+- **Type Definitions**: Extended `@mini-infra/types` with ValidationResult, ServiceHealthStatus, and IConfigurationService interfaces
+- **Database Integration**: Built-in support for SystemSettings, SettingsAudit, and ConnectivityStatus models
+- **Audit Logging**: Automatic audit trail creation for all configuration changes with user context
+- **Connectivity Monitoring**: Built-in methods for recording and retrieving service health status
+- **Future Services**: Docker, Cloudflare, and Azure configuration services will extend the base class
+- **Error Handling**: Comprehensive error logging with structured Pino logging integration
+
 ## Environment Variables
 
 Create a `.env` file in the `server/` directory using the provided `.env.example` template:
