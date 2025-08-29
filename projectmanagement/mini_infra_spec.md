@@ -105,6 +105,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Authentication**: Cloudflare API token
 - **Operations**: Read-only access to tunnel configuration
 - **Real-time Monitoring**: Periodic health checks and status updates
+- **NPM Library**: Use the cloudflare npm library Context7
 
 ### 5. Authentication and Authorization
 
@@ -177,6 +178,15 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **API Security**: Secure API key generation and validation
 - **Data Protection**: Encrypted storage for sensitive configuration
 - **Network Security**: HTTPS enforcement for all communications
+
+## 8. Settings and Configuration Management
+
+### 8.1 Settings storage and verification
+
+- **Cloudflare API Key**: Store and verify the key works
+- **Docker Host**: Store and verift docker host location
+
+
 
 ## Future Considerations
 
