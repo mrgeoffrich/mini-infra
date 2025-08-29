@@ -8,4 +8,4 @@ Now, follow these steps to complete your task:
 2. Identify the first story that is not marked as complete or finished.
 3. Perform that story
 
-Make sure to consider carefully the architecture design document for this feature: $2
+An architecture document to read on how to implement these stories: $2

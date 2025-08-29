@@ -74,3 +74,26 @@ model ContainerCache {
   @@index([expiresAt])
   @@map("container_cache")
 }
+
+// SystemSettings model for storing system configuration
+model SystemSettings {
+  id                    String   @id @default(cuid())
+  category              String   // 'docker', 'cloudflare', 'azure'
+  key                   String   // Specific setting key within category
+  value                 String   // Encrypted value for sensitive data
+  isEncrypted           Boolean  @default(false)
+  isActive              Boolean  @default(true)
+  lastValidatedAt       DateTime?
+  validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'
+  validationMessage     String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String   // User ID who created the setting
+  updatedBy            String   // User ID who last updated the setting
+  
+  @@unique([category, key])
+  @@index([category])
+  @@index([validationStatus])
+  @@index([isActive])
+  @@map("system_settings")
+}

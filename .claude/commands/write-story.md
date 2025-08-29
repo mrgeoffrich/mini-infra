@@ -68,10 +68,10 @@ Now, create the user stories following this format:
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 2: [Story Title]

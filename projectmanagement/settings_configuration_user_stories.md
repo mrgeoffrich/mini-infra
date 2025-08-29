@@ -4,7 +4,7 @@
 
 **Goal:** Create the database schema for storing system settings including Docker, Cloudflare, and Azure configurations with encryption support and validation status tracking.
 
-**Status:** Not Started
+**Status:** ✅ Completed
 
 **Tasks:**
 
@@ -40,10 +40,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 3: Create ConnectivityStatus Database Model
@@ -63,10 +63,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 4: Create Settings Service Layer Architecture
@@ -86,10 +86,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 5: Implement Docker Configuration Service
@@ -109,10 +109,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 6: Implement Cloudflare Configuration Service
@@ -132,10 +132,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 7: Implement Azure Configuration Service
@@ -155,10 +155,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 8: Create Settings API Endpoints
@@ -178,10 +178,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 9: Create Settings Validation API Endpoints
@@ -201,10 +201,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 10: Create Settings Audit API Endpoints
@@ -224,10 +224,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 12: Add Background Connectivity Monitoring
@@ -247,10 +247,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 13: Write Tests for Settings Services
@@ -270,10 +270,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 14: Write Tests for Settings API Endpoints
@@ -293,10 +293,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 15: Create Settings Data Fetching Hooks
@@ -316,10 +316,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 16: Create Settings Validation Hooks
@@ -339,10 +339,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 17: Create Settings Navigation and Routing
@@ -362,10 +362,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 18: Create Settings Overview Dashboard
@@ -385,10 +385,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 19: Implement Docker Settings Configuration Form
@@ -408,10 +408,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 20: Implement Cloudflare Settings Configuration Form
@@ -431,10 +431,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 21: Implement Azure Settings Configuration Form
@@ -454,10 +454,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 22: Implement Connectivity Status Indicators
@@ -477,10 +477,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 23: Create Settings Audit/History Viewer
@@ -500,10 +500,10 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.
 
 ## User Story 24: Make sure the main docker connectivity functionality now uses the new settings
@@ -519,8 +519,8 @@
    
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier over all new files to format them if they are ts or tsx files
 - Run linter to ensure no errors
-- Update CLAUDE.md with new details
+- Run build to ensure no errors
+- Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
 - Mark the story as done in the markdown file for it.

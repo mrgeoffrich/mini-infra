@@ -8,6 +8,9 @@ export * from './auth';
 // Container types
 export * from './containers';
 
+// Settings types
+export * from './settings';
+
 // API response types
 export * from './api';
 
