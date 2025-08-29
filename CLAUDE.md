@@ -409,6 +409,22 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Loading States**: Proper loading indicators during validation, connection testing, and form submission
 - **Responsive Design**: Mobile-optimized layout matching the existing settings page design patterns
 
+### Azure Settings Configuration Form Implementation
+- **Azure Settings Page**: Complete Azure Storage configuration form at `/settings/azure` implemented in `client/src/app/settings/azure/page.tsx`
+- **Secure Connection String Input**: Form field with show/hide toggle for Azure Storage connection string input with proper validation
+- **Real-time Storage Validation**: Integration with settings validation hooks for live connectivity testing and feedback
+- **Encrypted Storage**: Connection strings are automatically encrypted when saved to the database for security
+- **Zod Schema Validation**: Comprehensive client-side validation for connection string format including required fields (DefaultEndpointsProtocol, AccountName, AccountKey)
+- **Connection Testing**: Manual test connection button with real-time feedback and error handling
+- **Status Indicators**: Color-coded connectivity status badges with response times and error messages
+- **Storage Account Details**: Display of storage account information including account name, SKU, container count when connected
+- **Container Information**: Shows sample container names and counts when connection is validated
+- **Form Integration**: Built on React Hook Form with proper error states and validation messaging
+- **Security Features**: Connection string masking in UI, encrypted database storage, and secure form submission
+- **Error Handling**: Comprehensive error handling for Azure API failures, authentication errors, and network issues
+- **Loading States**: Proper loading indicators during validation, connection testing, and form submission
+- **Responsive Design**: Mobile-optimized layout matching the existing settings page design patterns
+
 ## Environment Variables
 
 Create a `.env` file in the `server/` directory using the provided `.env.example` template:
