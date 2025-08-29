@@ -8,6 +8,7 @@ import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
+import SettingsAuditPage from "@/app/settings/audit/page";
 
 export const router = createBrowserRouter([
   {
@@ -80,7 +81,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "settings/audit",
-        element: <div>Settings Audit - Coming Soon</div>,
+        element: <SettingsAuditPage />,
       },
     ],
   },

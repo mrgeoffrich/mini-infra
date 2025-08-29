@@ -167,6 +167,12 @@ export interface SettingsAuditResponse {
 export interface SettingsAuditListResponse {
   success: boolean;
   data: SettingsAuditInfo[];
+  totalCount: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
   message?: string;
 }
 
