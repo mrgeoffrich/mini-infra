@@ -253,7 +253,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Database Integration**: Built-in support for SystemSettings, SettingsAudit, and ConnectivityStatus models
 - **Audit Logging**: Automatic audit trail creation for all configuration changes with user context
 - **Connectivity Monitoring**: Built-in methods for recording and retrieving service health status
-- **Future Services**: Azure configuration service will extend the base class
+- **Azure Configuration Service**: `server/src/services/azure-config.ts` - Azure Storage validation and management
 - **Error Handling**: Comprehensive error logging with structured Pino logging integration
 
 ### Docker Configuration Service Implementation
@@ -274,6 +274,16 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Security Features**: API token redaction in logs and audit trails, encrypted storage support
 - **Error Handling**: Comprehensive error parsing with Cloudflare-specific error codes (timeout, unauthorized, rate limits, network errors)
 - **Configuration Management**: Secure API token and account ID storage with validation and removal capabilities
+
+### Azure Configuration Service Implementation
+- **Service Class**: `server/src/services/azure-config.ts` - Complete Azure Storage configuration management service
+- **Features**: Connection string validation, container access testing, storage account information retrieval, comprehensive audit logging
+- **API Integration**: Uses official Azure Storage Blob SDK with timeout protection (15s default) and error handling
+- **Validation Methods**: Real-time Azure Storage connectivity testing with account validation and container listing
+- **Container Management**: Retrieval of container information including metadata, access testing, and storage account details
+- **Security Features**: Connection string redaction in logs and audit trails, encrypted storage support
+- **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, rate limits, invalid credentials)
+- **Configuration Management**: Secure connection string storage with validation and removal capabilities
 
 ## Environment Variables
 

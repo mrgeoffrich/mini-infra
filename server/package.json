@@ -41,6 +41,7 @@
         "typescript-eslint": "^8.41.0"
     },
     "dependencies": {
+        "@azure/storage-blob": "^12.28.0",
         "@mini-infra/types": "file:../lib",
         "@prisma/client": "^6.15.0",
         "@types/cloudflare": "^2.7.15",
