@@ -22,6 +22,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
+import { CompactStatus } from "@/components/connectivity-status";
 
 // Map settings categories to display info
 const CATEGORY_INFO = {
@@ -444,49 +445,23 @@ export function SettingsOverview() {
                 <div className="space-y-3">
                   {(Object.keys(CATEGORY_INFO) as SettingsCategory[]).map(
                     (category) => {
-                      const info = CATEGORY_INFO[category];
                       const connectivity = latestConnectivity[category];
-                      const Icon = info.icon;
-                      const StatusIcon = connectivity
-                        ? STATUS_VARIANTS[
-                            connectivity.status as ConnectivityStatusType
-                          ]?.icon || AlertCircle
-                        : AlertCircle;
-                      const statusColor = connectivity
-                        ? STATUS_VARIANTS[
-                            connectivity.status as ConnectivityStatusType
-                          ]?.color || "text-gray-600"
-                        : "text-gray-600";
 
                       return (
                         <div
                           key={category}
-                          className="flex items-center justify-between p-3 rounded-md border"
+                          className="p-3 rounded-md border"
                         >
-                          <div className="flex items-center gap-3">
-                            <Icon className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{info.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {connectivity?.responseTimeMs && (
-                              <span className="text-xs text-muted-foreground">
-                                {connectivity.responseTimeMs}ms
-                              </span>
-                            )}
-                            <StatusIcon className={`h-4 w-4 ${statusColor}`} />
-                            <Badge
-                              variant={
-                                connectivity
-                                  ? STATUS_VARIANTS[
-                                      connectivity.status as ConnectivityStatusType
-                                    ]?.variant || "outline"
-                                  : "outline"
-                              }
-                              className="text-xs"
-                            >
-                              {connectivity?.status || "unknown"}
-                            </Badge>
-                          </div>
+                          <CompactStatus
+                            service={category}
+                            status={connectivity}
+                            isLoading={false}
+                            onClick={() => {
+                              // Navigate to service config page
+                              const path = CATEGORY_INFO[category].path;
+                              window.location.href = path;
+                            }}
+                          />
                         </div>
                       );
                     },

@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Form,
@@ -35,7 +34,6 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Clock,
   ArrowLeft,
   Save,
   TestTube,
@@ -44,6 +42,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { ServiceStatusCard } from "@/components/connectivity-status";
 
 // Docker settings schema
 const dockerSettingsSchema = z.object({
@@ -67,33 +66,6 @@ const dockerSettingsSchema = z.object({
 
 type DockerSettingsFormData = z.infer<typeof dockerSettingsSchema>;
 
-// Map connectivity status to UI elements
-const STATUS_VARIANTS = {
-  connected: {
-    variant: "default" as const,
-    icon: CheckCircle,
-    color: "text-green-600",
-    bgColor: "bg-green-50 border-green-200",
-  },
-  failed: {
-    variant: "destructive" as const,
-    icon: XCircle,
-    color: "text-red-600",
-    bgColor: "bg-red-50 border-red-200",
-  },
-  timeout: {
-    variant: "secondary" as const,
-    icon: Clock,
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 border-yellow-200",
-  },
-  unreachable: {
-    variant: "outline" as const,
-    icon: AlertCircle,
-    color: "text-gray-600",
-    bgColor: "bg-gray-50 border-gray-200",
-  },
-} as const;
 
 export default function DockerSettingsPage() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -235,18 +207,6 @@ export default function DockerSettingsPage() {
 
   // Get latest connectivity status
   const latestConnectivity = validation.connectivity.data?.data?.[0];
-  const StatusIcon = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.icon || AlertCircle
-    : AlertCircle;
-  const statusColor = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.color || "text-gray-600"
-    : "text-gray-600";
-  const statusBg = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.bgColor || "bg-gray-50 border-gray-200"
-    : "bg-gray-50 border-gray-200";
 
   const isLoading = settingsLoading || validation.isValidating;
   const isSaving = createSetting.isPending || updateSetting.isPending;
@@ -410,65 +370,12 @@ export default function DockerSettingsPage() {
           {/* Status Panel */}
           <div className="space-y-6">
             {/* Connection Status */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  Connection Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoading && !latestConnectivity ? (
-                  <Skeleton className="h-20" />
-                ) : latestConnectivity ? (
-                  <div className={`p-4 rounded-md border ${statusBg}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <StatusIcon className={`h-5 w-5 ${statusColor}`} />
-                      <Badge
-                        variant={
-                          STATUS_VARIANTS[
-                            latestConnectivity.status as keyof typeof STATUS_VARIANTS
-                          ]?.variant || "outline"
-                        }
-                      >
-                        {latestConnectivity.status}
-                      </Badge>
-                    </div>
-                    {latestConnectivity.responseTimeMs && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Response time: {latestConnectivity.responseTimeMs}ms
-                      </div>
-                    )}
-                    {latestConnectivity.lastSuccessfulAt && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Last successful:{" "}
-                        {new Date(
-                          latestConnectivity.lastSuccessfulAt,
-                        ).toLocaleString()}
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      Checked:{" "}
-                      {new Date(latestConnectivity.checkedAt).toLocaleString()}
-                    </div>
-                    {latestConnectivity.errorMessage && (
-                      <div className="text-sm text-red-600 mt-2">
-                        {latestConnectivity.errorMessage}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-md border bg-gray-50 border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="h-5 w-5 text-gray-600" />
-                      <Badge variant="outline">Unknown</Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      No connectivity checks performed yet
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ServiceStatusCard
+              service="docker"
+              status={latestConnectivity}
+              isLoading={isLoading && !latestConnectivity}
+              onRefresh={handleTestConnection}
+            />
 
             {/* Validation Status */}
             {(validation.validation.data ||
