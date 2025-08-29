@@ -28,9 +28,10 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ### Development Tools
 - **Language**: TypeScript
-- **Package Manager**: npm
+- **Package Manager**: npm (with workspaces)
 - **Linting**: ESLint
 - **Testing**: Jest + React Testing Library
+- **Shared Types**: Centralized TypeScript definitions in `@mini-infra/types` package
 
 ## Development Environment Notes
 
@@ -89,14 +90,8 @@ mini-infra/
 │   │   │   └── login/       # Login page
 │   │   ├── components/      # Reusable UI components
 │   │   │   ├── ui/          # shadcn UI components
-│   │   │   ├── protected-route.tsx    # Route protection component
-│   │   │   ├── public-route.tsx       # Public route wrapper
-│   │   │   ├── navigation-guard.tsx   # Navigation guards for sections
-│   │   │   └── auth-error-boundary.tsx # Authentication error handling
 │   │   ├── hooks/           # Custom React hooks (useAuth, useUser, etc.)
 │   │   └── lib/             # Frontend utilities
-│   │       ├── routes.tsx   # React Router configuration with protected routes
-│   │       └── auth-context.tsx # Authentication context provider
 │   ├── public/              # Static assets
 │   ├── dist/                # Build output
 │   └── package.json         # Frontend dependencies
@@ -110,48 +105,51 @@ mini-infra/
 │   ├── prisma/
 │   │   └── schema.prisma   # Database schema definition
 │   ├── dist/                # Backend build output
-│   ├── dev.db               # SQLite database file
 │   └── package.json         # Backend dependencies
+├── lib/                     # Shared TypeScript types package (@mini-infra/types)
+│   ├── types/              # TypeScript type definitions
+│   ├── dist/               # Compiled JavaScript and declaration files
+│   ├── package.json        # Shared types package configuration
+│   └── tsconfig.json       # TypeScript configuration for lib
 ├── projectmanagement/       # Project documentation
-│   ├── mini_infra_spec.md  # Project specification
-│   ├── mini_infra_tech_spec.md # Technical specification
-│   └── sizzle.md           # Marketing/overview document
 ├── CLAUDE.md                # Claude Code context and instructions
-└── package.json             # Root package.json
+└── package.json             # Root package.json with workspaces
 ```
+
+## Shared Types Architecture
+
+The project uses a centralized shared types package (`@mini-infra/types`) that provides TypeScript definitions shared between the client and server applications.
+
+### Type Organization
+- **Authentication Types** (`lib/types/auth.ts`): User profiles, sessions, API keys, OAuth data
+- **API Types** (`lib/types/api.ts`): Request/response interfaces, error handling types
+- **Container Types** (`lib/types/containers.ts`): Docker container data structures and status enums
+- **Utility Types** (`lib/types/index.ts`): Serialization helpers, conditional types, partial/required utilities
+
+### Workspace Configuration
+- **Package**: `@mini-infra/types` (private workspace package)
+- **Location**: `lib/` directory with own `package.json` and `tsconfig.json`
+- **Build Output**: Compiled to `lib/dist/` with `.js` and `.d.ts` files
+- **Dependencies**: Client and server reference as `"@mini-infra/types": "file:../lib"`
+
+### Development Integration
+- **Import Pattern**: Both projects import via `@mini-infra/types` alias
+- **TypeScript Mapping**: Path resolution configured in client/server `tsconfig.json`
+- **Vite Alias**: Client uses Vite alias pointing to `../lib/dist`
+- **Hot Reload**: TypeScript watch mode (`tsc --watch`) rebuilds types automatically
+- **Dev Chain**: `npm run dev` runs lib watch + server + client concurrently
+
+### Build Dependencies
+- **Build Order**: lib must compile before client/server builds
+- **Scripts**: `build:lib` → `build:client` / `build:server`
+- **Watch Mode**: All three services run in parallel during development
+- **Type Safety**: Ensures consistent type definitions across full-stack
 
 ## Database Schema
 
 ### Authentication Models
 
-The application uses Prisma ORM with SQLite for data persistence. The authentication system includes three core models:
-
-#### User Model
-- **Purpose**: Stores Google OAuth user data and profile information
-- **Fields**: id (CUID), email (unique), name, image, googleId (unique), timestamps
-- **Relations**: One-to-many with Sessions and ApiKeys, One-to-one with UserPreference
-
-#### Session Model
-- **Purpose**: Manages secure user sessions for web authentication
-- **Fields**: id (CUID), sessionToken (unique), userId, expires, timestamps
-- **Relations**: Many-to-one with User (cascade delete)
-
-#### ApiKey Model
-- **Purpose**: Provides API key authentication for webhooks and programmatic access
-- **Fields**: id (CUID), name, key (unique), userId, active status, lastUsedAt, timestamps
-- **Relations**: Many-to-one with User (cascade delete)
-
-### Container Dashboard Models
-
-#### UserPreference Model
-- **Purpose**: Stores user-specific preferences for container dashboard (sorting, filtering, column visibility)
-- **Fields**: id (CUID), userId (unique), containerSortField, containerSortOrder, containerFilters (JSON), containerColumns (JSON), timestamps
-- **Relations**: One-to-one with User (cascade delete)
-
-#### ContainerCache Model
-- **Purpose**: Provides optional database caching for container data with expiration support
-- **Fields**: id (CUID), data (JSON), expiresAt (indexed), createdAt
-- **Relations**: None (standalone caching table)
+The application uses Prisma ORM with SQLite for data persistence.
 
 ### Database Configuration
 - **Provider**: SQLite
@@ -250,14 +248,22 @@ CONTAINER_POLL_INTERVAL=5000
 
 ## Key Commands
 
+### Root Project (npm workspaces)
+- `npm run dev` - Start all three services: lib watch + server + client (recommended for development)
+- `npm run build` - Build lib then client (production build for frontend)
+- `npm run build:all` - Build lib then both client and server in parallel
+- `npm run build:lib` - Build shared types package only
+- `npm run build:server` - Build lib then server
+- `npm install` - Install all workspace dependencies
+
 ### Frontend (client/)
-- `npm run dev` - Start development server
+- `npm run dev` - Start development server (Vite)
 - `npm run build` - Build for production
 - `npm run test` - Run tests
 - `npm run lint` - Run linting
 
 ### Backend (server/)
-- `npm run dev` - Start development server with hot reload
+- `npm run dev` - Start development server with hot reload (tsx watch)
 - `npm run build` - Build TypeScript to JavaScript
 - `npm start` - Start production server
 - `npm test` - Run Jest test suite
@@ -267,6 +273,11 @@ CONTAINER_POLL_INTERVAL=5000
 - `npm run lint:fix` - Run ESLint with auto-fix
 - `npm run format` - Format code with Prettier
 - `npm run format:check` - Check code formatting
+
+### Shared Types (lib/)
+- `npm run dev` - TypeScript watch mode (auto-recompile on changes)
+- `npm run build` - Compile TypeScript to JavaScript + declarations
+- `npm run clean` - Remove dist/ build output
 
 ### Database (server/)
 - `npx prisma db push` - Sync database schema

@@ -24,8 +24,8 @@
       "WebSearch",
       "Bash(npm run:*)",
       "Bash(curl:*)",
-      "Read(C:\\c\\Repos\\mini-infra/**)",
-      "Read(C:\\c\\Repos\\mini-infra/**)"
+      "Read",
+      "Write"
     ],
     "deny": [],
     "ask": [],
