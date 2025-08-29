@@ -31,6 +31,7 @@ export function ContainerSummary() {
   const isDockerConnected = latestDockerStatus?.status === "connected";
   const hasDockerError = latestDockerStatus?.status === "failed" || latestDockerStatus?.status === "error";
 
+  // Only fetch containers if Docker is connected
   const {
     data: containerData,
     isLoading,
@@ -39,16 +40,32 @@ export function ContainerSummary() {
     refetch,
   } = useContainers({
     queryParams: {},
-    enabled: isDockerConnected !== false, // Only fetch containers if Docker is not explicitly disconnected
+    enabled: isDockerConnected === true, // Only fetch when explicitly connected
     refetchInterval: 30000, // Poll every 30 seconds
   });
 
-  const handleRetry = () => {
-    refetch();
-  };
+  // Show loading state while checking connectivity
+  if (isConnectivityLoading) {
+    return (
+      <div className="px-4 lg:px-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+        <div className="mt-6">
+          <Skeleton className="h-48" />
+        </div>
+        <div className="mt-4 text-center text-sm text-muted-foreground">
+          Checking Docker connectivity...
+        </div>
+      </div>
+    );
+  }
 
-  // Show Docker connectivity error if Docker is not connected
-  if (hasDockerError && !isConnectivityLoading) {
+  // If Docker is not connected, show error message
+  if (hasDockerError) {
     return (
       <div className="px-4 lg:px-6">
         <Alert variant="destructive">
@@ -79,8 +96,18 @@ export function ContainerSummary() {
     );
   }
 
-  // Show other container fetch errors
-  if (isError && !hasDockerError) {
+  // If Docker connectivity is unknown (no data yet), don't show anything
+  if (!isDockerConnected) {
+    return null;
+  }
+
+  // Docker is connected - show container summary
+  const handleRetry = () => {
+    refetch();
+  };
+
+  // Show container fetch errors
+  if (isError) {
     return (
       <div className="px-4 lg:px-6">
         <Alert variant="destructive">
@@ -99,7 +126,8 @@ export function ContainerSummary() {
     );
   }
 
-  if ((isLoading && !containerData) || isConnectivityLoading) {
+  // Show loading state for container data
+  if (isLoading && !containerData) {
     return (
       <div className="px-4 lg:px-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -111,11 +139,6 @@ export function ContainerSummary() {
         <div className="mt-6">
           <Skeleton className="h-48" />
         </div>
-        {isConnectivityLoading && (
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            Checking Docker connectivity...
-          </div>
-        )}
       </div>
     );
   }

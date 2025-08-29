@@ -44,7 +44,7 @@ export function ContainerDashboard() {
     refetch,
   } = useContainers({
     queryParams,
-    enabled: isDockerConnected !== false, // Only fetch containers if Docker is not explicitly disconnected
+    enabled: isDockerConnected === true, // Only fetch when explicitly connected
   });
 
   // Log business event when container list is viewed
@@ -63,8 +63,40 @@ export function ContainerDashboard() {
     refetch();
   };
 
+  // Show loading state while checking connectivity
+  if (isConnectivityLoading) {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <h1 className="text-3xl font-bold">Container Dashboard</h1>
+          <p className="text-muted-foreground mt-2">
+            Monitor and manage your Docker containers
+          </p>
+        </div>
+
+        <div className="px-4 lg:px-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Containers</CardTitle>
+              <CardDescription>
+                Checking Docker connectivity...
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   // Show Docker connectivity error if Docker is not connected
-  if (hasDockerError && !isConnectivityLoading) {
+  if (hasDockerError) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
@@ -104,8 +136,43 @@ export function ContainerDashboard() {
     );
   }
 
-  // Show other container fetch errors
-  if (isError && !hasDockerError) {
+  // If Docker connectivity is unknown (no data yet), show basic page without containers
+  if (!isDockerConnected) {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <h1 className="text-3xl font-bold">Container Dashboard</h1>
+          <p className="text-muted-foreground mt-2">
+            Monitor and manage your Docker containers
+          </p>
+        </div>
+
+        <div className="px-4 lg:px-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Containers</CardTitle>
+              <CardDescription>
+                Docker connectivity status unknown. Please check your Docker configuration.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <Button asChild variant="outline">
+                  <Link to="/settings/docker">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Configure Docker
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Docker is connected - show container fetch errors if any
+  if (isError) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
@@ -154,13 +221,8 @@ export function ContainerDashboard() {
           <CardContent className="space-y-4">
             <ContainerFilters {...filterState} />
 
-            {((isLoading && !containerData) || isConnectivityLoading) ? (
+            {(isLoading && !containerData) ? (
               <div className="space-y-2">
-                {isConnectivityLoading && (
-                  <div className="text-center text-sm text-muted-foreground mb-4">
-                    Checking Docker connectivity...
-                  </div>
-                )}
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
