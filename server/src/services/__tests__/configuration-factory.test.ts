@@ -1,0 +1,286 @@
+import { jest } from "@jest/globals";
+import { PrismaClient } from "../../generated/prisma";
+import { ConfigurationServiceFactory } from "../configuration-factory";
+import { DockerConfigService } from "../docker-config";
+import { CloudflareConfigService } from "../cloudflare-config";
+import { AzureConfigService } from "../azure-config";
+
+// Mock logger
+jest.mock("../../lib/logger", () => ({
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+}));
+
+// Mock configuration services
+jest.mock("../docker-config");
+jest.mock("../cloudflare-config");
+jest.mock("../azure-config");
+
+// Mock Prisma client
+const mockPrisma = {
+  systemSettings: {
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+    delete: jest.fn(),
+  },
+  connectivityStatus: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  settingsAudit: {
+    create: jest.fn(),
+  },
+} as unknown as PrismaClient;
+
+// Import the mock after the jest.mock calls
+import mockLogger from "../../lib/logger";
+
+describe("ConfigurationServiceFactory", () => {
+  let factory: ConfigurationServiceFactory;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    factory = new ConfigurationServiceFactory(mockPrisma);
+  });
+
+  describe("Constructor", () => {
+    it("should initialize with correct prisma client", () => {
+      expect((factory as any).prisma).toBe(mockPrisma);
+    });
+
+    it("should initialize with supported categories", () => {
+      const supportedCategories = factory.getSupportedCategories();
+      expect(supportedCategories).toEqual(["docker", "cloudflare", "azure"]);
+    });
+  });
+
+  describe("create", () => {
+    it("should create Docker configuration service", () => {
+      const service = factory.create({ category: "docker" });
+
+      expect(DockerConfigService).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(DockerConfigService);
+    });
+
+    it("should create Cloudflare configuration service", () => {
+      const service = factory.create({ category: "cloudflare" });
+
+      expect(CloudflareConfigService).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(CloudflareConfigService);
+    });
+
+    it("should create Azure configuration service", () => {
+      const service = factory.create({ category: "azure" });
+
+      expect(AzureConfigService).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(AzureConfigService);
+    });
+
+    it("should throw error for unsupported category", () => {
+      expect(() => {
+        factory.create({ category: "unsupported" as any });
+      }).toThrow("Unsupported configuration category: unsupported");
+    });
+
+    it("should throw error for empty category", () => {
+      expect(() => {
+        factory.create({ category: "" as any });
+      }).toThrow("Unsupported configuration category: ");
+    });
+
+    it("should throw error for null category", () => {
+      expect(() => {
+        factory.create({ category: null as any });
+      }).toThrow("Unsupported configuration category: null");
+    });
+
+    it("should throw error for undefined category", () => {
+      expect(() => {
+        factory.create({ category: undefined as any });
+      }).toThrow("Unsupported configuration category: undefined");
+    });
+
+    it("should log error when service creation fails", () => {
+      // Mock DockerConfigService constructor to throw
+      const MockedDockerConfigService = DockerConfigService as jest.MockedClass<
+        typeof DockerConfigService
+      >;
+      MockedDockerConfigService.mockImplementationOnce(() => {
+        throw new Error("Service creation failed");
+      });
+
+      expect(() => {
+        factory.create({ category: "docker" });
+      }).toThrow("Service creation failed");
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        {
+          category: "docker",
+          error: "Service creation failed",
+        },
+        "Failed to create configuration service",
+      );
+    });
+
+    it("should log error with unknown error message when non-Error thrown", () => {
+      // Mock CloudflareConfigService constructor to throw non-Error
+      const MockedCloudflareConfigService =
+        CloudflareConfigService as jest.MockedClass<
+          typeof CloudflareConfigService
+        >;
+      MockedCloudflareConfigService.mockImplementationOnce(() => {
+        throw "String error";
+      });
+
+      expect(() => {
+        factory.create({ category: "cloudflare" });
+      }).toThrow("String error");
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        {
+          category: "cloudflare",
+          error: "Unknown error",
+        },
+        "Failed to create configuration service",
+      );
+    });
+  });
+
+  describe("getSupportedCategories", () => {
+    it("should return copy of supported categories", () => {
+      const categories1 = factory.getSupportedCategories();
+      const categories2 = factory.getSupportedCategories();
+
+      expect(categories1).toEqual(["docker", "cloudflare", "azure"]);
+      expect(categories2).toEqual(["docker", "cloudflare", "azure"]);
+
+      // Should be different array instances
+      expect(categories1).not.toBe(categories2);
+
+      // Modifying one shouldn't affect the other
+      categories1.push("test" as any);
+      expect(categories2).toHaveLength(3);
+    });
+  });
+
+  describe("isSupported", () => {
+    it("should return true for supported categories", () => {
+      expect(factory.isSupported("docker")).toBe(true);
+      expect(factory.isSupported("cloudflare")).toBe(true);
+      expect(factory.isSupported("azure")).toBe(true);
+    });
+
+    it("should return false for unsupported categories", () => {
+      expect(factory.isSupported("postgresql")).toBe(false);
+      expect(factory.isSupported("redis")).toBe(false);
+      expect(factory.isSupported("")).toBe(false);
+      expect(factory.isSupported("123")).toBe(false);
+    });
+
+    it("should handle null and undefined", () => {
+      expect(factory.isSupported(null as any)).toBe(false);
+      expect(factory.isSupported(undefined as any)).toBe(false);
+    });
+
+    it("should be case sensitive", () => {
+      expect(factory.isSupported("Docker")).toBe(false);
+      expect(factory.isSupported("DOCKER")).toBe(false);
+      expect(factory.isSupported("CloudFlare")).toBe(false);
+      expect(factory.isSupported("Azure")).toBe(false);
+    });
+  });
+
+  describe("Integration with actual service classes", () => {
+    beforeEach(() => {
+      // Reset mocks to use actual implementations for integration tests
+      jest.resetModules();
+    });
+
+    it("should create services that extend base configuration service", () => {
+      const dockerService = factory.create({ category: "docker" });
+      const cloudflareService = factory.create({ category: "cloudflare" });
+      const azureService = factory.create({ category: "azure" });
+
+      // Check if instances have expected methods from base class
+      expect(typeof dockerService.validate).toBe("function");
+      expect(typeof dockerService.getHealthStatus).toBe("function");
+      expect(typeof dockerService.set).toBe("function");
+      expect(typeof dockerService.get).toBe("function");
+      expect(typeof dockerService.delete).toBe("function");
+
+      expect(typeof cloudflareService.validate).toBe("function");
+      expect(typeof cloudflareService.getHealthStatus).toBe("function");
+
+      expect(typeof azureService.validate).toBe("function");
+      expect(typeof azureService.getHealthStatus).toBe("function");
+    });
+
+    it("should create different instances for each call", () => {
+      const dockerService1 = factory.create({ category: "docker" });
+      const dockerService2 = factory.create({ category: "docker" });
+
+      expect(dockerService1).not.toBe(dockerService2);
+      expect(dockerService1).toBeInstanceOf(DockerConfigService);
+      expect(dockerService2).toBeInstanceOf(DockerConfigService);
+    });
+
+    it("should pass prisma client to all created services", () => {
+      const dockerService = factory.create({ category: "docker" });
+      const cloudflareService = factory.create({ category: "cloudflare" });
+      const azureService = factory.create({ category: "azure" });
+
+      expect((dockerService as any).prisma).toBe(mockPrisma);
+      expect((cloudflareService as any).prisma).toBe(mockPrisma);
+      expect((azureService as any).prisma).toBe(mockPrisma);
+    });
+
+    it("should set correct category for each service", () => {
+      const dockerService = factory.create({ category: "docker" });
+      const cloudflareService = factory.create({ category: "cloudflare" });
+      const azureService = factory.create({ category: "azure" });
+
+      expect((dockerService as any).category).toBe("docker");
+      expect((cloudflareService as any).category).toBe("cloudflare");
+      expect((azureService as any).category).toBe("azure");
+    });
+  });
+
+  describe("Error handling scenarios", () => {
+    it("should handle prisma client being null", () => {
+      const nullFactory = new ConfigurationServiceFactory(null as any);
+
+      // Should still create factory but services might fail at runtime
+      expect(nullFactory).toBeInstanceOf(ConfigurationServiceFactory);
+      expect(nullFactory.getSupportedCategories()).toHaveLength(3);
+    });
+
+    it("should handle factory with corrupted supported categories", () => {
+      // Manually corrupt the supported categories array
+      (factory as any).supportedCategories = null;
+
+      expect(() => {
+        factory.getSupportedCategories();
+      }).toThrow();
+    });
+
+    it("should handle service creation with undefined options", () => {
+      expect(() => {
+        factory.create(undefined as any);
+      }).toThrow();
+    });
+
+    it("should handle service creation with null options", () => {
+      expect(() => {
+        factory.create(null as any);
+      }).toThrow();
+    });
+
+    it("should handle service creation with empty options object", () => {
+      expect(() => {
+        factory.create({} as any);
+      }).toThrow("Unsupported configuration category: undefined");
+    });
+  });
+});
