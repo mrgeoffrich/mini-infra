@@ -205,6 +205,8 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Caching**: 3-second TTL in-memory cache with event-based invalidation
 - **Security**: Data sanitization, timeout protection (5s), connection validation
 - **Error Handling**: Graceful degradation, automatic reconnection logic, comprehensive error messages
+- **API Endpoints**: `server/src/routes/containers.ts` - RESTful endpoints with authentication, rate limiting, filtering, pagination
+- **Testing**: Comprehensive unit and integration tests covering Docker service, API endpoints, error scenarios, caching, and data transformation
 
 ## Environment Variables
 
