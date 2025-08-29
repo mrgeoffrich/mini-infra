@@ -1,5 +1,5 @@
 import passport from "passport";
-import { Strategy as GoogleStrategy } from "passport-google-oidc";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./prisma";
 import config from "./config";
 import logger from "./logger";
@@ -19,7 +19,8 @@ if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
         scope: ["profile", "email"],
       },
       async (
-        issuer: string,
+        accessToken: string,
+        refreshToken: string,
         profile: GoogleOAuthProfile,
         done: PassportDoneCallback,
       ) => {
