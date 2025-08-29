@@ -47,7 +47,7 @@ export const extractJwtUser = async (
   try {
     // Skip JWT extraction for certain routes
     if (
-      req.path.startsWith("/auth") ||
+      (req.path.startsWith("/auth") && req.path !== "/auth/status" && req.path !== "/auth/user") ||
       req.path === "/health" ||
       req.path.startsWith("/api/keys") // API keys use separate auth
     ) {
