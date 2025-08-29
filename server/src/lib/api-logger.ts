@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import logger from "./logger.js";
-import { getRequestId } from "./request-id.js";
+import logger from "./logger";
+import { getRequestId } from "./request-id";
 
 // Types imported for future use
 

@@ -8,9 +8,9 @@ import {
   rotateApiKey,
   deleteApiKey,
   getApiKeyStats,
-} from "../lib/api-key-service.js";
-import logger from "../lib/logger.js";
-import type { CreateApiKeyRequest } from "../types/auth.js";
+} from "../lib/api-key-service";
+import logger from "../lib/logger";
+import type { CreateApiKeyRequest } from "../types/auth";
 
 const router = Router();
 

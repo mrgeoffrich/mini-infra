@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import logger from "./logger.js";
-import { getRequestId } from "./request-id.js";
-import config from "./config.js";
+import logger from "./logger";
+import { getRequestId } from "./request-id";
+import config from "./config";
 
 export interface AppError extends Error {
   statusCode?: number;

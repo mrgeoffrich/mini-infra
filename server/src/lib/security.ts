@@ -1,7 +1,7 @@
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import config from "./config.js";
-import logger from "./logger.js";
+import config from "./config";
+import logger from "./logger";
 
 // Helmet security middleware configuration
 export const helmetMiddleware = helmet({

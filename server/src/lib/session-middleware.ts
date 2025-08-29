@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { PrismaSessionStore } from "./session-store.js";
-import logger from "./logger.js";
-import prisma from "./prisma.js";
+import { PrismaSessionStore } from "./session-store";
+import logger from "./logger";
+import prisma from "./prisma";
 
 // Session validation middleware
 export const validateSession = async (

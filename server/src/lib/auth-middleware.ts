@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import logger from "./logger.js";
-import { getCurrentUser, getCurrentUserId } from "./api-key-middleware.js";
+import logger from "./logger";
+import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
 
 /**
  * Authentication error types for standardized responses
@@ -350,7 +350,7 @@ export const authMiddleware = {
    * Require API key authentication (re-exported for convenience)
    */
   requireApiKey: async (req: Request, res: Response, next: NextFunction) => {
-    const { requireApiKey } = await import("./api-key-middleware.js");
+    const { requireApiKey } = await import("./api-key-middleware");
     return requireApiKey(req, res, next);
   },
 
@@ -362,7 +362,7 @@ export const authMiddleware = {
     res: Response,
     next: NextFunction,
   ) => {
-    const { requireSessionOrApiKey } = await import("./api-key-middleware.js");
+    const { requireSessionOrApiKey } = await import("./api-key-middleware");
     return requireSessionOrApiKey(req, res, next);
   },
 

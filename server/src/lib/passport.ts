@@ -1,12 +1,12 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oidc";
-import prisma from "./prisma.js";
-import config from "./config.js";
-import logger from "./logger.js";
+import prisma from "./prisma";
+import config from "./config";
+import logger from "./logger";
 import type {
   GoogleOAuthProfile,
   PassportDoneCallback,
-} from "../types/auth.js";
+} from "../types/auth";
 
 // Configure Google OAuth2 strategy
 if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {

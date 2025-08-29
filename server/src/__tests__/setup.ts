@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma/index.js";
+import { PrismaClient } from "../generated/prisma/index";
 import { jest } from "@jest/globals";
 import { createId } from "@paralleldrive/cuid2";
 

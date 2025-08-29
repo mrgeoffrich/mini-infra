@@ -1,13 +1,13 @@
 import { randomBytes, createHmac } from "crypto";
-import prisma from "./prisma.js";
-import logger from "./logger.js";
+import prisma from "./prisma";
+import logger from "./logger";
 import type {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
   ApiKeyResponse,
   ApiKeyValidationResult,
   SessionUser,
-} from "../types/auth.js";
+} from "../types/auth";
 
 /**
  * Generate a secure API key using cryptographically secure random bytes

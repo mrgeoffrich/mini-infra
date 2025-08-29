@@ -3,17 +3,15 @@ import cors from "cors";
 import session from "express-session";
 import pinoHttp from "pino-http";
 import path from "path";
-import { fileURLToPath } from "url";
 
 // Import configuration and utilities
-import config from "./lib/config.js";
-import logger from "./lib/logger.js";
-import { requestIdMiddleware } from "./lib/request-id.js";
-import { helmetMiddleware, rateLimitMiddleware } from "./lib/security.js";
-import { errorHandler, notFoundHandler } from "./lib/error-handler.js";
+import config from "./lib/config";
+import logger from "./lib/logger";
+import { requestIdMiddleware } from "./lib/request-id";
+import { helmetMiddleware, rateLimitMiddleware } from "./lib/security";
+import { errorHandler, notFoundHandler } from "./lib/error-handler";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// __filename and __dirname are available globally in CommonJS
 
 const app: express.Application = express();
 
@@ -67,13 +65,13 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Import session utilities
-import { PrismaSessionStore } from "./lib/session-store.js";
+import { PrismaSessionStore } from "./lib/session-store";
 import {
   validateSession,
   extractUserContext,
   startSessionCleanup,
   stopSessionCleanup,
-} from "./lib/session-middleware.js";
+} from "./lib/session-middleware";
 
 // Session configuration with Prisma store
 app.use(
@@ -113,12 +111,12 @@ app.get("/health", (req: Request, res: Response) => {
 });
 
 // Import routes
-import authRoutes from "./routes/auth.js";
-import sessionRoutes from "./routes/session.js";
-import apiKeyRoutes from "./routes/api-keys.js";
+import authRoutes from "./routes/auth";
+import sessionRoutes from "./routes/session";
+import apiKeyRoutes from "./routes/api-keys";
 
 // Import CSRF protection
-import { addCSRFToken } from "./lib/csrf-protection.js";
+import { addCSRFToken } from "./lib/csrf-protection";
 
 // Add CSRF token to all responses
 app.use(addCSRFToken);

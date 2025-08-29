@@ -1,9 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express";
-import passport from "../lib/passport.js";
-import logger from "../lib/logger.js";
-import config from "../lib/config.js";
-import { regenerateSession } from "../lib/session-middleware.js";
-import type { AuthStatus, UserProfile } from "../types/auth.js";
+import passport from "../lib/passport";
+import logger from "../lib/logger";
+import config from "../lib/config";
+import { regenerateSession } from "../lib/session-middleware";
+import type { AuthStatus, UserProfile } from "../types/auth";
 
 const router = Router();
 

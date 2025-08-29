@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { randomBytes, timingSafeEqual } from "crypto";
-import logger from "./logger.js";
+import logger from "./logger";
 
 // CSRF token configuration
 const CSRF_TOKEN_LENGTH = 32;

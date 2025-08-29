@@ -1,6 +1,6 @@
 import { Store } from "express-session";
-import prisma from "./prisma.js";
-import logger from "./logger.js";
+import prisma from "./prisma";
+import logger from "./logger";
 
 // Custom Prisma session store for express-session
 export class PrismaSessionStore extends Store {

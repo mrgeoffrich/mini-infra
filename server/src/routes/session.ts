@@ -1,10 +1,10 @@
 import { Router, Request, Response } from "express";
-import logger from "../lib/logger.js";
+import logger from "../lib/logger";
 import {
   getSessionStats,
   destroyUserSessions,
-} from "../lib/session-middleware.js";
-import { getCSRFToken } from "../lib/csrf-protection.js";
+} from "../lib/session-middleware";
+import { getCSRFToken } from "../lib/csrf-protection";
 
 const router = Router();
 
