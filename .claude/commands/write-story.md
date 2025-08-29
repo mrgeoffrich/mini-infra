@@ -1,12 +1,24 @@
-Here is a single feature to be implemented - make sure to only implement this feature and think deeply:
+You are an experienced software developer tasked with creating user stories for an application. Your goal is to break down the given single feature into small, concrete, and implementable tasks.
+
+Before creating the user stories, please review the project specifications and the technical specifications and the feature architecture design document carefully and think deeply.
 
 <feature>
-$ARGUMENT
+$1
 </feature>
 
-You are an experienced software developer tasked with creating user stories for a medication tracker application. Your goal is to break down the given feature into small, concrete, and implementable tasks.
+<project_specifications>
+@projectmanagement/mini_infra_spec.md
+</project_specifications>
 
-Before creating the user stories, please review the project specifications in the file @projectmanagement\mini_infra_spec.md and also ensure you are aware of the technical specifications in @projectmanagement\mini_infra_tech_spec.md
+<technical_specifications>
+@projectmanagement/mini_infra_tech_spec.md
+</technical_specifications>
+
+<feature_architecture_design>
+$2
+</feature_architecture_design>
+
+
 
 First, analyze the feature and break it down into components. Make sure to make API type defintions changes with any API changes. Do this work inside a thinking block, wrapped in <feature_breakdown> tags:
 
@@ -17,8 +29,10 @@ First, analyze the feature and break it down into components. Make sure to make 
 4. Identify potential user roles involved in the feature.
 5. Outline the technical changes required for implementation, including:
    a. Database model changes
-   b. Backend changes including type definitions and API endpoints
-   c. Frontend changes
+   b. New backend libraries to install or connectivity required
+   c. Backend changes including type definitions and API endpoints
+   d. New frontend libraries to install
+   e. Frontend changes
 6. Break down the feature into smaller components.
 7. List possible edge cases and error scenarios.
 </feature_breakdown>
