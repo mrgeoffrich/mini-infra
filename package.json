@@ -17,7 +17,9 @@
         "build:server": "npm run build:lib && cd server && npm run build",
         "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\"",
         "start": "cd server && npm start",
-        "install:all": "npm install && npm install --workspace=client && npm install --workspace=server"
+        "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
+        "format": "cd server && npm run format",
+        "format:check": "cd server && npm run format:check"
     },
     "devDependencies": {
         "concurrently": "^8.2.0"
