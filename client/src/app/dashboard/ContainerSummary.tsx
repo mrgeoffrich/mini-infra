@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -78,9 +77,9 @@ export function ContainerSummary() {
   const recentlyDiedContainers = containers.filter(container => {
     if (container.status !== "exited") return false;
     
-    // Check if the container finished recently
-    const finishedAt = container.finishedAt ? new Date(container.finishedAt) : null;
-    return finishedAt && finishedAt > twentyFourHoursAgo;
+    // Check if the container started recently (as a proxy for when it might have stopped)
+    const startedAt = container.startedAt ? new Date(container.startedAt) : null;
+    return startedAt && startedAt > twentyFourHoursAgo;
   });
 
   return (
@@ -154,9 +153,9 @@ export function ContainerSummary() {
               {recentlyDiedContainers.slice(0, 3).map((container) => (
                 <div key={container.id} className="text-sm">
                   <span className="font-medium">{container.name}</span>
-                  {container.finishedAt && (
+                  {container.startedAt && (
                     <span className="text-muted-foreground ml-2">
-                      stopped {new Date(container.finishedAt).toLocaleString()}
+                      started {new Date(container.startedAt).toLocaleString()}
                     </span>
                   )}
                 </div>
