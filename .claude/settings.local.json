@@ -6,6 +6,7 @@
       "Bash(mkdir:*)",
       "Bash(cd /c/Repos/mini-infra/server:*)",
       "Bash(cd /c/Repos/mini-infra/client:*)",
+      "Bash(cd /c/Repos/mini-infra/lib:*)",
       "Bash(npm install:*)",
       "Bash(npx prisma init:*)",
       "Bash(npx prisma generate:*)",
@@ -25,7 +26,8 @@
       "Bash(npm run:*)",
       "Bash(curl:*)",
       "Read",
-      "Write"
+      "Write",
+      "Read(C:\\c\\Repos\\mini-infra/**)"
     ],
     "deny": [],
     "ask": [],

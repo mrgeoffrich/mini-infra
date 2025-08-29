@@ -3,7 +3,10 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./prisma";
 import config from "./config";
 import logger from "./logger";
-import type { GoogleOAuthProfile, PassportDoneCallback } from "@mini-infra/types";
+import type {
+  GoogleOAuthProfile,
+  PassportDoneCallback,
+} from "@mini-infra/types";
 
 // Configure Google OAuth2 strategy
 if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {

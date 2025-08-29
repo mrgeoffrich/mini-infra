@@ -45,6 +45,9 @@ export interface ContainerQueryParams {
   limit?: number;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  status?: string;
+  name?: string;
+  image?: string;
   filters?: ContainerFilters;
 }
 

@@ -151,9 +151,7 @@ export async function validateApiKey(
 /**
  * Get all API keys for a user (without the actual key values)
  */
-export async function getUserApiKeys(
-  userId: string,
-): Promise<ApiKeyInfo[]> {
+export async function getUserApiKeys(userId: string): Promise<ApiKeyInfo[]> {
   try {
     const apiKeys = await prisma.apiKey.findMany({
       where: {

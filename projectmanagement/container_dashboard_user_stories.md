@@ -92,9 +92,9 @@
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them
-- Run build to ensure no errors
+- Run prettier using `npm run format`
 - Run linter to ensure no errors
+- Run build to ensure no errors
 - Update CLAUDE.md with new details
 - Mark the story as done in the markdown file for it.
 

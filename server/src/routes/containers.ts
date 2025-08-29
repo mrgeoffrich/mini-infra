@@ -43,6 +43,8 @@ const containerRateLimit = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
   skip: (req: any) => {
     // Skip rate limiting in test environment
     return process.env.NODE_ENV === "test";
@@ -137,21 +139,21 @@ router.get("/", containerRateLimit, requireAuth, (async (
     let containers = dockerContainers.map(serializeContainer);
 
     // Apply filtering
-    if (queryParams.filters?.status) {
+    if (queryParams.status) {
       containers = containers.filter(
-        (container) => container.status === queryParams.filters?.status,
+        (container) => container.status === queryParams.status,
       );
     }
 
-    if (queryParams.filters?.name) {
-      const nameFilter = queryParams.filters.name.toLowerCase();
+    if (queryParams.name) {
+      const nameFilter = queryParams.name.toLowerCase();
       containers = containers.filter((container) =>
         container.name.toLowerCase().includes(nameFilter),
       );
     }
 
-    if (queryParams.filters?.image) {
-      const imageFilter = queryParams.filters.image.toLowerCase();
+    if (queryParams.image) {
+      const imageFilter = queryParams.image.toLowerCase();
       containers = containers.filter((container) =>
         container.image.toLowerCase().includes(imageFilter),
       );
@@ -220,7 +222,11 @@ router.get("/", containerRateLimit, requireAuth, (async (
         userId,
         requestId,
         containerCount: totalCount,
-        filters: queryParams.filters,
+        filters: {
+          status: queryParams.status,
+          name: queryParams.name,
+          image: queryParams.image,
+        },
         sortBy: queryParams.sortBy,
         sortOrder: queryParams.sortOrder,
       },
