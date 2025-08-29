@@ -394,6 +394,21 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Loading States**: Skeleton loading components for smooth UX during data fetching
 - **Responsive Design**: Mobile-optimized layout with proper grid breakpoints for different screen sizes
 
+### Cloudflare Settings Configuration Form Implementation
+- **Cloudflare Settings Page**: Complete Cloudflare configuration form at `/settings/cloudflare` implemented in `client/src/app/settings/cloudflare/page.tsx`
+- **Secure API Token Input**: Form field with show/hide toggle for Cloudflare API token input with proper validation
+- **Real-time API Key Validation**: Integration with settings validation hooks for live connectivity testing and feedback
+- **Encrypted Storage**: API tokens are automatically encrypted when saved to the database for security
+- **Account ID Support**: Optional Account ID field for enhanced tunnel management capabilities
+- **Zod Schema Validation**: Comprehensive client-side validation for API token format and Account ID format
+- **Connection Testing**: Manual test connection button with real-time feedback and error handling
+- **Status Indicators**: Color-coded connectivity status badges with response times and error messages
+- **Form Integration**: Built on React Hook Form with proper error states and validation messaging
+- **Security Features**: API token masking in UI, encrypted database storage, and secure form submission
+- **Error Handling**: Comprehensive error handling for API failures, rate limits, and network issues
+- **Loading States**: Proper loading indicators during validation, connection testing, and form submission
+- **Responsive Design**: Mobile-optimized layout matching the existing settings page design patterns
+
 ## Environment Variables
 
 Create a `.env` file in the `server/` directory using the provided `.env.example` template:
