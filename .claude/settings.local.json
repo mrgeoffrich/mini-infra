@@ -23,7 +23,9 @@
       "Bash(npx shadcn add:*)",
       "WebSearch",
       "Bash(npm run:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Read(C:\\c\\Repos\\mini-infra/**)",
+      "Read(C:\\c\\Repos\\mini-infra/**)"
     ],
     "deny": [],
     "ask": [],

@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@mini-infra/types": path.resolve(__dirname, "../lib/types"),
+      "@mini-infra/types": path.resolve(__dirname, "../lib/dist"),
     },
   },
   server: {

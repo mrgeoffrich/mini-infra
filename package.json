@@ -3,13 +3,19 @@
     "private": true,
     "workspaces": [
         "client",
-        "server"
+        "server",
+        "lib"
     ],
     "scripts": {
-        "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+        "dev": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
+        "dev:lib": "cd lib && npm run dev",
         "dev:client": "cd client && npm run dev",
         "dev:server": "cd server && npm run dev",
-        "build": "cd client && npm run build",
+        "build": "npm run build:lib && npm run build:client",
+        "build:lib": "cd lib && npm run build",
+        "build:client": "cd client && npm run build",
+        "build:server": "npm run build:lib && cd server && npm run build",
+        "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\"",
         "start": "cd server && npm start",
         "install:all": "npm install && npm install --workspace=client && npm install --workspace=server"
     },
