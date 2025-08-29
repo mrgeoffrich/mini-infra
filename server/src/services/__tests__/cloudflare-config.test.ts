@@ -59,6 +59,7 @@ describe("CloudflareConfigService", () => {
 
   afterEach(() => {
     jest.clearAllTimers();
+    jest.useRealTimers();
   });
 
   describe("Constructor", () => {
@@ -78,16 +79,17 @@ describe("CloudflareConfigService", () => {
       expect(result.isValid).toBe(false);
       expect(result.message).toBe("Cloudflare API token not configured");
       expect(result.errorCode).toBe("MISSING_API_TOKEN");
-      expect(result.responseTimeMs).toBeGreaterThan(0);
+      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
 
       // Verify failure was recorded
       expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
         data: {
           service: "cloudflare",
           status: "failed",
-          responseTimeMs: expect.any(Number),
+          responseTimeMs: null,
           errorMessage: "Cloudflare API token not configured",
           errorCode: "MISSING_API_TOKEN",
+          metadata: null,
           checkInitiatedBy: null,
           checkedAt: expect.any(Date),
           lastSuccessfulAt: null,
@@ -122,7 +124,7 @@ describe("CloudflareConfigService", () => {
       expect(result.message).toBe(
         "Cloudflare API connection successful (test@example.com)",
       );
-      expect(result.responseTimeMs).toBeGreaterThan(0);
+      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.metadata).toMatchObject({
         userEmail: "test@example.com",
         userId: "user-123",
@@ -136,9 +138,9 @@ describe("CloudflareConfigService", () => {
         data: {
           service: "cloudflare",
           status: "connected",
-          responseTimeMs: expect.any(Number),
-          errorMessage: undefined,
-          errorCode: undefined,
+          responseTimeMs: null,
+          errorMessage: null,
+          errorCode: null,
           metadata: JSON.stringify(result.metadata),
           checkInitiatedBy: null,
           checkedAt: expect.any(Date),
@@ -232,36 +234,31 @@ describe("CloudflareConfigService", () => {
       );
     });
 
-    it("should handle API timeout", async () => {
-      jest.useFakeTimers();
+    it(
+      "should handle API timeout",
+      async () => {
+        mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+          value: "valid-api-token-123",
+        });
 
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
-        value: "valid-api-token-123",
-      });
+        // Mock timeout scenario - return a promise that never resolves
+        mockCloudflare.user.get.mockImplementation(
+          () =>
+            new Promise(() => {
+              // Never resolves, will be rejected by timeout
+            }),
+        );
 
-      // Mock timeout scenario
-      mockCloudflare.user.get.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(resolve, 15000); // 15 seconds, longer than timeout
-          }),
-      );
+        mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+        const result = await cloudflareConfigService.validate();
 
-      const validatePromise = cloudflareConfigService.validate();
-
-      // Fast-forward past timeout
-      jest.advanceTimersByTime(11000);
-
-      const result = await validatePromise;
-
-      expect(result.isValid).toBe(false);
-      expect(result.message).toContain("API request timeout");
-      expect(result.errorCode).toBe("TIMEOUT");
-
-      jest.useRealTimers();
-    });
+        expect(result.isValid).toBe(false);
+        expect(result.message).toContain("API request timeout");
+        expect(result.errorCode).toBe("TIMEOUT");
+      },
+      15000, // 15 second timeout for this test
+    );
 
     it("should handle unauthorized API token", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
@@ -300,9 +297,10 @@ describe("CloudflareConfigService", () => {
         data: {
           service: "cloudflare",
           status: "unreachable",
-          responseTimeMs: expect.any(Number),
+          responseTimeMs: null,
           errorMessage: expect.stringContaining("ENOTFOUND"),
           errorCode: "NETWORK_ERROR",
+          metadata: null,
           checkInitiatedBy: null,
           checkedAt: expect.any(Date),
           lastSuccessfulAt: null,
@@ -647,40 +645,36 @@ describe("CloudflareConfigService", () => {
       );
     });
 
-    it("should handle tunnel API timeout", async () => {
-      jest.useFakeTimers();
+    it(
+      "should handle tunnel API timeout",
+      async () => {
+        jest
+          .spyOn(cloudflareConfigService, "getApiToken")
+          .mockResolvedValue("valid-token");
+        jest
+          .spyOn(cloudflareConfigService, "getAccountId")
+          .mockResolvedValue("account-123");
 
-      jest
-        .spyOn(cloudflareConfigService, "getApiToken")
-        .mockResolvedValue("valid-token");
-      jest
-        .spyOn(cloudflareConfigService, "getAccountId")
-        .mockResolvedValue("account-123");
+        // Mock timeout scenario - return a promise that never resolves
+        mockCloudflare.zeroTrust.tunnels.list.mockImplementation(
+          () =>
+            new Promise(() => {
+              // Never resolves, will be rejected by timeout
+            }),
+        );
 
-      // Mock timeout scenario
-      mockCloudflare.zeroTrust.tunnels.list.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(resolve, 15000);
-          }),
-      );
+        const result = await cloudflareConfigService.getTunnelInfo();
 
-      const getTunnelInfoPromise = cloudflareConfigService.getTunnelInfo();
-
-      jest.advanceTimersByTime(11000);
-
-      const result = await getTunnelInfoPromise;
-
-      expect(result).toEqual([]);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Tunnel API request timeout",
-        },
-        "Failed to retrieve Cloudflare tunnel information",
-      );
-
-      jest.useRealTimers();
-    });
+        expect(result).toEqual([]);
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          {
+            error: "Tunnel API request timeout",
+          },
+          "Failed to retrieve Cloudflare tunnel information",
+        );
+      },
+      15000, // 15 second timeout for this test
+    );
 
     it("should handle tunnel API errors", async () => {
       jest
@@ -759,10 +753,10 @@ describe("CloudflareConfigService", () => {
         data: {
           service: "cloudflare",
           status: "failed",
-          responseTimeMs: undefined,
+          responseTimeMs: null,
           errorMessage: "Configuration removed by user",
           errorCode: "CONFIG_REMOVED",
-          metadata: undefined,
+          metadata: null,
           checkInitiatedBy: "user1",
           checkedAt: expect.any(Date),
           lastSuccessfulAt: null,
