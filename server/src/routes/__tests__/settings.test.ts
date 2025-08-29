@@ -1023,9 +1023,7 @@ describe("Settings API Routes", () => {
     });
   });
 
-  // TODO: These tests require fixing the route ordering in settings.ts
-  // The /audit route should come before /:id route to prevent conflicts
-  describe.skip("GET /api/settings/audit", () => {
+  describe("GET /api/settings/audit", () => {
     const mockAuditLogs: SettingsAudit[] = [
       {
         id: "audit-1",
@@ -1108,7 +1106,7 @@ describe("Settings API Routes", () => {
       });
 
       expect(mockPrisma.settingsAudit.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { success: false },
         orderBy: { createdAt: "desc" },
         skip: 0,
         take: 20,
@@ -1166,6 +1164,7 @@ describe("Settings API Routes", () => {
             gte: new Date(startDate),
             lte: new Date(endDate),
           },
+          success: false,
         },
         orderBy: { createdAt: "desc" },
         skip: 0,
@@ -1188,6 +1187,7 @@ describe("Settings API Routes", () => {
             { key: { contains: "docker", mode: "insensitive" } },
             { action: { contains: "docker", mode: "insensitive" } },
           ],
+          success: false,
         },
         orderBy: { createdAt: "desc" },
         skip: 0,
@@ -1206,7 +1206,7 @@ describe("Settings API Routes", () => {
         .expect(200);
 
       expect(mockPrisma.settingsAudit.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { success: false },
         orderBy: { category: "asc" },
         skip: 25,
         take: 25,
@@ -1222,7 +1222,7 @@ describe("Settings API Routes", () => {
         .expect(200);
 
       expect(mockPrisma.settingsAudit.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { success: false },
         orderBy: { createdAt: "desc" },
         skip: 0,
         take: 100,
@@ -1267,9 +1267,7 @@ describe("Settings API Routes", () => {
     });
   });
 
-  // TODO: These tests require fixing the route ordering in settings.ts
-  // The /validate/:service route should come before /:id route to prevent conflicts
-  describe.skip("POST /api/settings/validate/:service", () => {
+  describe("POST /api/settings/validate/:service", () => {
     const mockValidationResult: ValidationResult = {
       isValid: true,
       message: "Docker connection successful",
@@ -1394,7 +1392,7 @@ describe("Settings API Routes", () => {
         data: {
           service: "cloudflare",
           status: "failed",
-          responseTimeMs: 5000,
+          responseTimeMs: 0,
           errorMessage: "Docker daemon not running",
           errorCode: "CONNECTION_FAILED",
           lastSuccessfulAt: null,

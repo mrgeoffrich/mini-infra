@@ -273,92 +273,6 @@ router.get("/", settingsRateLimit, requireAuth, (async (
   }
 }) as RequestHandler);
 
-/**
- * GET /api/settings/:id - Get specific setting by ID
- */
-router.get("/:id", settingsRateLimit, requireAuth, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
-  const settingId = req.params.id;
-
-  logger.info(
-    {
-      requestId,
-      userId,
-      settingId,
-    },
-    "Setting details requested",
-  );
-
-  try {
-    // Validate setting ID format
-    if (!settingId || settingId.length < 8) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid setting ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    const setting = await prisma.systemSettings.findUnique({
-      where: { id: settingId },
-    });
-
-    if (!setting) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          settingId,
-        },
-        "Setting not found",
-      );
-
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Setting with ID '${settingId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        settingId,
-        category: setting.category,
-        key: setting.key,
-      },
-      "Setting details returned successfully",
-    );
-
-    const response: SettingResponse = {
-      success: true,
-      data: serializeSystemSetting(setting),
-    };
-
-    res.json(response);
-  } catch (error) {
-    logger.error(
-      {
-        error,
-        requestId,
-        userId,
-        settingId,
-      },
-      "Failed to fetch setting details",
-    );
-
-    next(error);
-  }
-}) as RequestHandler);
 
 /**
  * POST /api/settings - Create a new system setting
@@ -497,282 +411,6 @@ router.post("/", settingsRateLimit, requireAuth, (async (
         body: { ...req.body, value: "[REDACTED]" },
       },
       "Failed to create setting",
-    );
-
-    next(error);
-  }
-}) as RequestHandler);
-
-/**
- * PUT /api/settings/:id - Update an existing system setting
- */
-router.put("/:id", settingsRateLimit, requireAuth, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
-  const settingId = req.params.id;
-
-  logger.info(
-    {
-      requestId,
-      userId,
-      settingId,
-      body: { ...req.body, value: "[REDACTED]" },
-    },
-    "Update setting requested",
-  );
-
-  try {
-    if (!user || !userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-        message: "User authentication required",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Validate setting ID format
-    if (!settingId || settingId.length < 8) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid setting ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Validate request body
-    const bodyValidation = updateSettingSchema.safeParse(req.body);
-    if (!bodyValidation.success) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          settingId,
-          validationErrors: bodyValidation.error.issues,
-        },
-        "Invalid request body for update setting",
-      );
-
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid request data",
-        details: bodyValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    const { value, isEncrypted } = bodyValidation.data;
-
-    // Get existing setting for audit log
-    const existingSetting = await prisma.systemSettings.findUnique({
-      where: { id: settingId },
-    });
-
-    if (!existingSetting) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          settingId,
-        },
-        "Setting not found for update",
-      );
-
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Setting with ID '${settingId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Prepare update data
-    const updateData: any = {
-      value,
-      updatedBy: userId,
-    };
-
-    if (typeof isEncrypted === "boolean") {
-      updateData.isEncrypted = isEncrypted;
-    }
-
-    // Update the setting
-    const updatedSetting = await prisma.systemSettings.update({
-      where: { id: settingId },
-      data: updateData,
-    });
-
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category: existingSetting.category,
-        key: existingSetting.key,
-        action: "update",
-        oldValue: existingSetting.isEncrypted
-          ? "[ENCRYPTED]"
-          : existingSetting.value,
-        newValue:
-          (isEncrypted ?? existingSetting.isEncrypted) ? "[ENCRYPTED]" : value,
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: true,
-      },
-    });
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        settingId,
-        category: existingSetting.category,
-        key: existingSetting.key,
-      },
-      "Setting updated successfully",
-    );
-
-    const response: SettingResponse = {
-      success: true,
-      data: serializeSystemSetting(updatedSetting),
-      message: "Setting updated successfully",
-    };
-
-    res.json(response);
-  } catch (error) {
-    logger.error(
-      {
-        error,
-        requestId,
-        userId,
-        settingId,
-        body: { ...req.body, value: "[REDACTED]" },
-      },
-      "Failed to update setting",
-    );
-
-    next(error);
-  }
-}) as RequestHandler);
-
-/**
- * DELETE /api/settings/:id - Delete a system setting
- */
-router.delete("/:id", settingsRateLimit, requireAuth, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
-  const settingId = req.params.id;
-
-  logger.info(
-    {
-      requestId,
-      userId,
-      settingId,
-    },
-    "Delete setting requested",
-  );
-
-  try {
-    if (!user || !userId) {
-      return res.status(401).json({
-        error: "Unauthorized",
-        message: "User authentication required",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Validate setting ID format
-    if (!settingId || settingId.length < 8) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid setting ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Get existing setting for audit log
-    const existingSetting = await prisma.systemSettings.findUnique({
-      where: { id: settingId },
-    });
-
-    if (!existingSetting) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          settingId,
-        },
-        "Setting not found for deletion",
-      );
-
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Setting with ID '${settingId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Delete the setting
-    await prisma.systemSettings.delete({
-      where: { id: settingId },
-    });
-
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category: existingSetting.category,
-        key: existingSetting.key,
-        action: "delete",
-        oldValue: existingSetting.isEncrypted
-          ? "[ENCRYPTED]"
-          : existingSetting.value,
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: true,
-      },
-    });
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        settingId,
-        category: existingSetting.category,
-        key: existingSetting.key,
-      },
-      "Setting deleted successfully",
-    );
-
-    res.json({
-      success: true,
-      message: "Setting deleted successfully",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  } catch (error) {
-    logger.error(
-      {
-        error,
-        requestId,
-        userId,
-        settingId,
-      },
-      "Failed to delete setting",
     );
 
     next(error);
@@ -1154,5 +792,370 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
     next(error);
   }
 }) as RequestHandler);
+
+/**
+ * GET /api/settings/:id - Get specific setting by ID
+ */
+router.get("/:id", settingsRateLimit, requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const settingId = req.params.id;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      settingId,
+    },
+    "Setting details requested",
+  );
+
+  try {
+    // Validate setting ID format
+    if (!settingId || settingId.length < 8) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid setting ID format",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const setting = await prisma.systemSettings.findUnique({
+      where: { id: settingId },
+    });
+
+    if (!setting) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          settingId,
+        },
+        "Setting not found",
+      );
+
+      return res.status(404).json({
+        error: "Not Found",
+        message: `Setting with ID '${settingId}' not found`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        settingId,
+        category: setting.category,
+        key: setting.key,
+      },
+      "Setting details returned successfully",
+    );
+
+    const response: SettingResponse = {
+      success: true,
+      data: serializeSystemSetting(setting),
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        settingId,
+      },
+      "Failed to fetch setting details",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * PUT /api/settings/:id - Update an existing system setting
+ */
+router.put("/:id", settingsRateLimit, requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const settingId = req.params.id;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      settingId,
+      body: { ...req.body, value: "[REDACTED]" },
+    },
+    "Update setting requested",
+  );
+
+  try {
+    if (!user || !userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate setting ID format
+    if (!settingId || settingId.length < 8) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid setting ID format",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate request body
+    const bodyValidation = updateSettingSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          settingId,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for update setting",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const { value, isEncrypted } = bodyValidation.data;
+
+    // Get existing setting for audit log
+    const existingSetting = await prisma.systemSettings.findUnique({
+      where: { id: settingId },
+    });
+
+    if (!existingSetting) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          settingId,
+        },
+        "Setting not found for update",
+      );
+
+      return res.status(404).json({
+        error: "Not Found",
+        message: `Setting with ID '${settingId}' not found`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Prepare update data
+    const updateData: any = {
+      value,
+      updatedBy: userId,
+    };
+
+    if (typeof isEncrypted === "boolean") {
+      updateData.isEncrypted = isEncrypted;
+    }
+
+    // Update the setting
+    const updatedSetting = await prisma.systemSettings.update({
+      where: { id: settingId },
+      data: updateData,
+    });
+
+    // Create audit log entry
+    await prisma.settingsAudit.create({
+      data: {
+        category: existingSetting.category,
+        key: existingSetting.key,
+        action: "update",
+        oldValue: existingSetting.isEncrypted
+          ? "[ENCRYPTED]"
+          : existingSetting.value,
+        newValue:
+          (isEncrypted ?? existingSetting.isEncrypted) ? "[ENCRYPTED]" : value,
+        userId,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+        success: true,
+      },
+    });
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        settingId,
+        category: existingSetting.category,
+        key: existingSetting.key,
+      },
+      "Setting updated successfully",
+    );
+
+    const response: SettingResponse = {
+      success: true,
+      data: serializeSystemSetting(updatedSetting),
+      message: "Setting updated successfully",
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        settingId,
+        body: { ...req.body, value: "[REDACTED]" },
+      },
+      "Failed to update setting",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * DELETE /api/settings/:id - Delete a system setting
+ */
+router.delete("/:id", settingsRateLimit, requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const settingId = req.params.id;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      settingId,
+    },
+    "Delete setting requested",
+  );
+
+  try {
+    if (!user || !userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate setting ID format
+    if (!settingId || settingId.length < 8) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid setting ID format",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get existing setting for audit log
+    const existingSetting = await prisma.systemSettings.findUnique({
+      where: { id: settingId },
+    });
+
+    if (!existingSetting) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          settingId,
+        },
+        "Setting not found for deletion",
+      );
+
+      return res.status(404).json({
+        error: "Not Found",
+        message: `Setting with ID '${settingId}' not found`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Delete the setting
+    await prisma.systemSettings.delete({
+      where: { id: settingId },
+    });
+
+    // Create audit log entry
+    await prisma.settingsAudit.create({
+      data: {
+        category: existingSetting.category,
+        key: existingSetting.key,
+        action: "delete",
+        oldValue: existingSetting.isEncrypted
+          ? "[ENCRYPTED]"
+          : existingSetting.value,
+        userId,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+        success: true,
+      },
+    });
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        settingId,
+        category: existingSetting.category,
+        key: existingSetting.key,
+      },
+      "Setting deleted successfully",
+    );
+
+    res.json({
+      success: true,
+      message: "Setting deleted successfully",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        settingId,
+      },
+      "Failed to delete setting",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+
 
 export default router;
