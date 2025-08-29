@@ -7,9 +7,8 @@ import type { AuthStatus, UserProfile } from "../types/auth";
 
 const router = Router();
 
-// Initialize Passport middleware
+// Initialize Passport middleware (without sessions)
 router.use(passport.initialize());
-router.use(passport.session());
 
 // Google OAuth initiation
 router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
@@ -29,66 +28,66 @@ router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
 router.get(
   "/google/callback",
   ((req: Request, res: Response, next: NextFunction) => {
-    passport.authenticate("google", {
-      successRedirect: "/auth/success",
-      failureRedirect: "/auth/failure",
+    passport.authenticate("google", (err: any, user: any, info: any) => {
+      if (err) {
+        logger.error({ error: err }, "OAuth authentication error");
+        return res.redirect("/auth/failure");
+      }
+      
+      if (!user) {
+        logger.warn({ info }, "OAuth authentication failed - no user returned");
+        return res.redirect("/auth/failure");
+      }
+
+      // Generate JWT token immediately
+      try {
+        const token = generateToken(user as UserProfile);
+        
+        logger.info(
+          { userId: user.id },
+          "OAuth authentication successful, JWT token generated",
+        );
+
+        // Get the redirect URL from state parameter or use default
+        const frontendUrl =
+          config.NODE_ENV === "development" ? "http://localhost:3000" : "";
+        
+        let redirectPath = "/dashboard";
+        try {
+          const state = req.query.state as string;
+          if (state) {
+            redirectPath = Buffer.from(state, 'base64').toString('utf8');
+          }
+        } catch {
+          logger.warn("Failed to decode redirect state, using default");
+        }
+        
+        const redirectUrl = `${frontendUrl}${redirectPath}`;
+
+        // Set JWT token as HTTP-only cookie
+        res.cookie("auth-token", token, {
+          httpOnly: true,
+          secure: config.NODE_ENV === "production",
+          sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+          maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        });
+
+        logger.info(
+          { redirectUrl },
+          "Redirecting after successful OAuth with JWT cookie",
+        );
+        res.redirect(redirectUrl);
+      } catch (error) {
+        logger.error(
+          { error, userId: user.id },
+          "Error generating JWT token after OAuth",
+        );
+        return res.redirect("/auth/failure");
+      }
     })(req, res, next);
   }) as RequestHandler,
 );
 
-// OAuth success redirect with JWT token generation
-router.get("/success", (async (req: Request, res: Response) => {
-  if (!req.user) {
-    logger.warn("OAuth success callback reached but no user in session");
-    return res.redirect("/auth/failure");
-  }
-
-  try {
-    // Generate JWT token
-    const token = generateToken(req.user as UserProfile);
-
-    logger.info(
-      { userId: req.user.id },
-      "OAuth authentication successful, JWT token generated",
-    );
-
-    // Get the redirect URL from state parameter or use default
-    const frontendUrl =
-      config.NODE_ENV === "development" ? "http://localhost:3000" : "";
-    
-    let redirectPath = "/dashboard";
-    try {
-      const state = req.query.state as string;
-      if (state) {
-        redirectPath = Buffer.from(state, 'base64').toString('utf8');
-      }
-    } catch {
-      logger.warn("Failed to decode redirect state, using default");
-    }
-    
-    const redirectUrl = `${frontendUrl}${redirectPath}`;
-
-    // Set JWT token as HTTP-only cookie
-    res.cookie("auth-token", token, {
-      httpOnly: true,
-      secure: config.NODE_ENV === "production",
-      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    });
-
-    logger.info(
-      { redirectUrl },
-      "Redirecting after successful OAuth with JWT cookie",
-    );
-    res.redirect(redirectUrl);
-  } catch (error) {
-    logger.error(
-      { error, userId: req.user.id },
-      "Error generating JWT token after OAuth",
-    );
-    return res.redirect("/auth/failure");
-  }
-}) as RequestHandler);
 
 // OAuth failure redirect
 router.get("/failure", ((req: Request, res: Response) => {

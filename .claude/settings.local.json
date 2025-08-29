@@ -20,7 +20,8 @@
       "Bash(npm run test:coverage:*)",
       "Bash(npx shadcn add:*)",
       "WebSearch",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": [],

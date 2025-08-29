@@ -107,41 +107,6 @@ if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
   logger.warn("Google OAuth not configured - missing client ID or secret");
 }
 
-// Serialize user for session storage
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
-  logger.debug({ userId: user.id }, "Serializing user for session");
-  done(null, user.id);
-});
-
-// Deserialize user from session
-passport.deserializeUser(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async (userId: string, done: (err: any, user?: any) => void) => {
-    try {
-      logger.debug({ userId }, "Deserializing user from session");
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          image: true,
-          createdAt: true,
-        },
-      });
-
-      if (!user) {
-        logger.warn({ userId }, "User not found during deserialization");
-        return done(null, null);
-      }
-
-      done(null, user);
-    } catch (error) {
-      logger.error({ error, userId }, "Error deserializing user from session");
-      done(error, null);
-    }
-  },
-);
+// Note: No session serialization needed - using JWT tokens for stateless authentication
 
 export default passport;
