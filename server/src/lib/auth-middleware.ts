@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "./logger";
 import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
-import { getCurrentUserFromJwt, getCurrentUserIdFromJwt } from "./jwt-middleware";
+import {
+  getCurrentUserFromJwt,
+  getCurrentUserIdFromJwt,
+} from "./jwt-middleware";
 
 /**
  * Authentication error types for standardized responses
@@ -53,15 +56,12 @@ export function requireAuth(
 ): void {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.debug(
-    { requestId, path: req.path },
-    "Validating JWT authentication",
-  );
+  logger.debug({ requestId, path: req.path }, "Validating JWT authentication");
 
   try {
     // Check if user is authenticated via JWT or API key
     const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
-    
+
     if (!user) {
       logger.warn(
         { requestId, path: req.path, ip: req.ip },

@@ -40,6 +40,20 @@ const configSchema = z.object({
     .optional()
     .default("100")
     .transform((val) => Number(val)), // 100 requests per window
+
+  // Docker Configuration
+  DOCKER_HOST: z.string().default("/var/run/docker.sock"),
+  DOCKER_API_VERSION: z.string().default("v1.41"),
+  CONTAINER_CACHE_TTL: z
+    .string()
+    .optional()
+    .default("3000")
+    .transform((val) => Number(val)), // 3 seconds
+  CONTAINER_POLL_INTERVAL: z
+    .string()
+    .optional()
+    .default("5000")
+    .transform((val) => Number(val)), // 5 seconds
 });
 
 export type Config = z.infer<typeof configSchema>;

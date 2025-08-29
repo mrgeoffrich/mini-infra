@@ -129,7 +129,7 @@ The application uses Prisma ORM with SQLite for data persistence. The authentica
 #### User Model
 - **Purpose**: Stores Google OAuth user data and profile information
 - **Fields**: id (CUID), email (unique), name, image, googleId (unique), timestamps
-- **Relations**: One-to-many with Sessions and ApiKeys
+- **Relations**: One-to-many with Sessions and ApiKeys, One-to-one with UserPreference
 
 #### Session Model
 - **Purpose**: Manages secure user sessions for web authentication
@@ -140,6 +140,18 @@ The application uses Prisma ORM with SQLite for data persistence. The authentica
 - **Purpose**: Provides API key authentication for webhooks and programmatic access
 - **Fields**: id (CUID), name, key (unique), userId, active status, lastUsedAt, timestamps
 - **Relations**: Many-to-one with User (cascade delete)
+
+### Container Dashboard Models
+
+#### UserPreference Model
+- **Purpose**: Stores user-specific preferences for container dashboard (sorting, filtering, column visibility)
+- **Fields**: id (CUID), userId (unique), containerSortField, containerSortOrder, containerFilters (JSON), containerColumns (JSON), timestamps
+- **Relations**: One-to-one with User (cascade delete)
+
+#### ContainerCache Model
+- **Purpose**: Provides optional database caching for container data with expiration support
+- **Fields**: id (CUID), data (JSON), expiresAt (indexed), createdAt
+- **Relations**: None (standalone caching table)
 
 ### Database Configuration
 - **Provider**: SQLite
@@ -182,11 +194,19 @@ The application uses Prisma ORM with SQLite for data persistence. The authentica
 
 ## External Integrations
 
-- **Docker API**: Container management
+- **Docker API**: Container management via dockerode library with singleton service pattern
 - **Traefik API**: Load balancer configuration
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
 - **Google OAuth API**: User authentication
+
+### Docker Integration Implementation
+- **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with automatic reconnection
+- **Dependencies**: dockerode, @types/dockerode, node-cache for container API integration and caching
+- **Features**: Container listing, detailed inspection, real-time event subscription, data transformation
+- **Caching**: 3-second TTL in-memory cache with event-based invalidation
+- **Security**: Data sanitization, timeout protection (5s), connection validation
+- **Error Handling**: Graceful degradation, automatic reconnection logic, comprehensive error messages
 
 ## Environment Variables
 
@@ -220,6 +240,12 @@ LOG_LEVEL=debug
 CORS_ORIGIN=http://localhost:3000
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
+
+# Docker Configuration
+DOCKER_HOST=/var/run/docker.sock
+DOCKER_API_VERSION=1.41
+CONTAINER_CACHE_TTL=3000
+CONTAINER_POLL_INTERVAL=5000
 ```
 
 ## Key Commands

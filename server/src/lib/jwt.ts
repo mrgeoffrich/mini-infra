@@ -14,7 +14,8 @@ export interface JwtPayload {
 }
 
 // JWT configuration
-const JWT_SECRET = config.SESSION_SECRET || "default-development-secret-change-in-production";
+const JWT_SECRET =
+  config.SESSION_SECRET || "default-development-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h"; // 24 hours
 const JWT_ISSUER = "mini-infra";
 
@@ -95,7 +96,10 @@ export const extractTokenFromHeader = (authHeader?: string): string | null => {
 /**
  * Extract token from cookies
  */
-export const extractTokenFromCookie = (cookies: Record<string, string>, cookieName: string = "auth-token"): string | null => {
+export const extractTokenFromCookie = (
+  cookies: Record<string, string>,
+  cookieName: string = "auth-token",
+): string | null => {
   if (!cookies || !cookies[cookieName]) {
     return null;
   }

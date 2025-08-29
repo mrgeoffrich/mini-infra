@@ -23,6 +23,7 @@ model User {
   
   // Relations
   apiKeys       ApiKey[]
+  userPreference UserPreference?
 
   @@map("users")
 }
@@ -42,4 +43,34 @@ model ApiKey {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("api_keys")
+}
+
+// UserPreference model for storing user-specific preferences
+model UserPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Container dashboard preferences
+  containerSortField    String?  @default("name")
+  containerSortOrder    String?  @default("asc")
+  containerFilters      Json?    // Stored filter preferences
+  containerColumns      Json?    // Visible columns configuration
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+// ContainerCache model for caching container data
+model ContainerCache {
+  id        String   @id @default(cuid())
+  data      Json     // Cached container data
+  expiresAt DateTime
+  
+  createdAt DateTime @default(now())
+  
+  @@index([expiresAt])
+  @@map("container_cache")
 }

@@ -15,8 +15,8 @@ export interface User {
 export interface UserProfile {
   id: string;
   email: string;
-  name: string | null;
-  image: string | null;
+  name?: string | undefined;
+  image?: string | undefined;
   createdAt: Date;
 }
 
@@ -44,8 +44,8 @@ export interface GoogleOAuthProfile {
 export interface JWTUser {
   id: string;
   email: string;
-  name: string | null;
-  image: string | null;
+  name?: string | undefined;
+  image?: string | undefined;
   createdAt: Date;
 }
 

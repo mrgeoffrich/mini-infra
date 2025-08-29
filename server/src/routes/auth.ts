@@ -1,4 +1,10 @@
-import { Router, Request, Response, NextFunction, RequestHandler } from "express";
+import {
+  Router,
+  Request,
+  Response,
+  NextFunction,
+  RequestHandler,
+} from "express";
 import passport from "../lib/passport";
 import logger from "../lib/logger";
 import config from "../lib/config";
@@ -16,7 +22,9 @@ router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
   logger.info({ redirect: redirectParam }, "Initiating Google OAuth flow");
 
   // Store redirect URL in query state for OAuth callback
-  const state = redirectParam ? Buffer.from(redirectParam).toString('base64') : '';
+  const state = redirectParam
+    ? Buffer.from(redirectParam).toString("base64")
+    : "";
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
@@ -25,76 +33,78 @@ router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
 }) as RequestHandler);
 
 // Google OAuth callback
-router.get(
-  "/google/callback",
-  ((req: Request, res: Response, next: NextFunction) => {
-    passport.authenticate("google", (err: any, user: any, info: any) => {
-      if (err) {
-        logger.error({ error: err }, "OAuth authentication error");
-        return res.redirect("/auth/failure");
-      }
-      
-      if (!user) {
-        logger.warn({ info }, "OAuth authentication failed - no user returned");
-        return res.redirect("/auth/failure");
-      }
+router.get("/google/callback", ((
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  passport.authenticate("google", (err: any, user: any, info: any) => {
+    if (err) {
+      logger.error({ error: err }, "OAuth authentication error");
+      return res.redirect("/auth/failure");
+    }
 
-      // Generate JWT token immediately
+    if (!user) {
+      logger.warn({ info }, "OAuth authentication failed - no user returned");
+      return res.redirect("/auth/failure");
+    }
+
+    // Generate JWT token immediately
+    try {
+      const token = generateToken(user as UserProfile);
+
+      logger.info(
+        { userId: user.id },
+        "OAuth authentication successful, JWT token generated",
+      );
+
+      // Get the redirect URL from state parameter or use default
+      const frontendUrl =
+        config.PUBLIC_URL ||
+        (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
+
+      let redirectPath = "/dashboard";
       try {
-        const token = generateToken(user as UserProfile);
-        
-        logger.info(
-          { userId: user.id },
-          "OAuth authentication successful, JWT token generated",
-        );
-
-        // Get the redirect URL from state parameter or use default
-        const frontendUrl = config.PUBLIC_URL || 
-          (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
-        
-        let redirectPath = "/dashboard";
-        try {
-          const state = req.query.state as string;
-          if (state) {
-            redirectPath = Buffer.from(state, 'base64').toString('utf8');
-          }
-        } catch {
-          logger.warn("Failed to decode redirect state, using default");
+        const state = req.query.state as string;
+        if (state) {
+          redirectPath = Buffer.from(state, "base64").toString("utf8");
         }
-        
-        const redirectUrl = `${frontendUrl}${redirectPath}`;
-
-        // Set JWT token as HTTP-only cookie
-        res.cookie("auth-token", token, {
-          httpOnly: true,
-          secure: config.NODE_ENV === "production",
-          sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
-          maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        });
-
-        logger.info(
-          { redirectUrl },
-          "Redirecting after successful OAuth with JWT cookie",
-        );
-        res.redirect(redirectUrl);
-      } catch (error) {
-        logger.error(
-          { error, userId: user.id },
-          "Error generating JWT token after OAuth",
-        );
-        return res.redirect("/auth/failure");
+      } catch {
+        logger.warn("Failed to decode redirect state, using default");
       }
-    })(req, res, next);
-  }) as RequestHandler,
-);
 
+      const redirectUrl = `${frontendUrl}${redirectPath}`;
+
+      // Set JWT token as HTTP-only cookie
+      res.cookie("auth-token", token, {
+        httpOnly: true,
+        secure: config.NODE_ENV === "production",
+        sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      });
+
+      logger.info(
+        { redirectUrl },
+        "Redirecting after successful OAuth with JWT cookie",
+      );
+      res.redirect(redirectUrl);
+    } catch (error) {
+      logger.error(
+        { error, userId: user.id },
+        "Error generating JWT token after OAuth",
+      );
+      return res.redirect("/auth/failure");
+    }
+  })(req, res, next);
+}) as RequestHandler);
 
 // OAuth failure redirect
 router.get("/failure", ((req: Request, res: Response) => {
   logger.warn("OAuth authentication failed");
 
   // Redirect to frontend login page with error
-  const frontendUrl = config.PUBLIC_URL || 
+  const frontendUrl =
+    config.PUBLIC_URL ||
     (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
   const redirectUrl = `${frontendUrl}/login?auth=error`;
 
@@ -135,8 +145,8 @@ router.get("/status", ((req: Request, res: Response) => {
       user: {
         id: req.user.id,
         email: req.user.email,
-        name: req.user.name || null,
-        image: req.user.image || null,
+        name: req.user.name || undefined,
+        image: req.user.image || undefined,
         createdAt: req.user.createdAt,
       },
     };
@@ -166,8 +176,8 @@ router.get("/user", ((req: Request, res: Response) => {
   const userProfile: UserProfile = {
     id: req.user.id,
     email: req.user.email,
-    name: req.user.name || null,
-    image: req.user.image || null,
+    name: req.user.name || undefined,
+    image: req.user.image || undefined,
     createdAt: req.user.createdAt,
   };
 

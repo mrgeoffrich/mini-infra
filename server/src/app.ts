@@ -1,4 +1,9 @@
-import express, { Request, Response, NextFunction, RequestHandler } from "express";
+import express, {
+  Request,
+  Response,
+  NextFunction,
+  RequestHandler,
+} from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -86,6 +91,7 @@ app.get("/health", ((req: Request, res: Response) => {
 // Import routes
 import authRoutes from "./routes/auth";
 import apiKeyRoutes from "./routes/api-keys";
+import containerRoutes from "./routes/containers";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -93,6 +99,7 @@ import apiKeyRoutes from "./routes/api-keys";
 // API routes
 app.use("/auth", authRoutes);
 app.use("/api/keys", apiKeyRoutes);
+app.use("/api/containers", containerRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

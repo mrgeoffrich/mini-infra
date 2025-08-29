@@ -132,8 +132,8 @@ export async function validateApiKey(
     const sessionUser: JWTUser = {
       id: apiKey.user.id,
       email: apiKey.user.email,
-      name: apiKey.user.name,
-      image: apiKey.user.image,
+      name: apiKey.user.name || undefined,
+      image: apiKey.user.image || undefined,
       createdAt: apiKey.user.createdAt,
     };
 

@@ -37,7 +37,6 @@ beforeAll(async () => {
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )`;
 
-
     await testPrisma.$queryRaw`CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -98,7 +97,6 @@ export const createTestApiKey = async (
   });
   return apiKey;
 };
-
 
 // Mock logger to silence logs during tests
 jest.mock("../lib/logger.ts", () => ({

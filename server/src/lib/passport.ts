@@ -3,10 +3,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./prisma";
 import config from "./config";
 import logger from "./logger";
-import type {
-  GoogleOAuthProfile,
-  PassportDoneCallback,
-} from "../types/auth";
+import type { GoogleOAuthProfile, PassportDoneCallback } from "../types/auth";
 
 // Configure Google OAuth2 strategy
 if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
@@ -15,7 +12,7 @@ if (config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET) {
       {
         clientID: config.GOOGLE_CLIENT_ID,
         clientSecret: config.GOOGLE_CLIENT_SECRET,
-        callbackURL: `${config.PUBLIC_URL || ''}/auth/google/callback`,
+        callbackURL: `${config.PUBLIC_URL || ""}/auth/google/callback`,
         scope: ["profile", "email"],
       },
       async (

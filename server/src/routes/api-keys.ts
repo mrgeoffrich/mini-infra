@@ -186,45 +186,44 @@ router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
 /**
  * POST /api/keys/:keyId/rotate - Rotate an API key (create new, deactivate old)
  */
-router.post(
-  "/:keyId/rotate",
-  createKeyRateLimit,
-  (async (req: Request, res: Response) => {
-    const userId = req.user!.id;
-    const { keyId } = req.params;
-    const requestId = req.headers["x-request-id"] as string;
+router.post("/:keyId/rotate", createKeyRateLimit, (async (
+  req: Request,
+  res: Response,
+) => {
+  const userId = req.user!.id;
+  const { keyId } = req.params;
+  const requestId = req.headers["x-request-id"] as string;
 
-    try {
-      logger.info({ userId, requestId, keyId }, "Rotating API key");
+  try {
+    logger.info({ userId, requestId, keyId }, "Rotating API key");
 
-      const newApiKey = await rotateApiKey(userId, keyId);
+    const newApiKey = await rotateApiKey(userId, keyId);
 
-      res.json({
-        success: true,
-        data: newApiKey,
-        message:
-          "API key rotated successfully. Save the new key securely - it won't be shown again.",
-      });
-    } catch (error) {
-      logger.error(
-        { error, userId, requestId, keyId },
-        "Failed to rotate API key",
-      );
+    res.json({
+      success: true,
+      data: newApiKey,
+      message:
+        "API key rotated successfully. Save the new key securely - it won't be shown again.",
+    });
+  } catch (error) {
+    logger.error(
+      { error, userId, requestId, keyId },
+      "Failed to rotate API key",
+    );
 
-      if (error instanceof Error && error.message.includes("not found")) {
-        return res.status(404).json({
-          error: "Not found",
-          message: "API key not found or not owned by user",
-        });
-      }
-
-      res.status(500).json({
-        error: "Internal server error",
-        message: "Failed to rotate API key",
+    if (error instanceof Error && error.message.includes("not found")) {
+      return res.status(404).json({
+        error: "Not found",
+        message: "API key not found or not owned by user",
       });
     }
-  }) as RequestHandler,
-);
+
+    res.status(500).json({
+      error: "Internal server error",
+      message: "Failed to rotate API key",
+    });
+  }
+}) as RequestHandler);
 
 /**
  * DELETE /api/keys/:keyId - Permanently delete an API key

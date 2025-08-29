@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyToken, extractTokenFromHeader, extractTokenFromCookie, JwtPayload } from "./jwt";
+import {
+  verifyToken,
+  extractTokenFromHeader,
+  extractTokenFromCookie,
+  JwtPayload,
+} from "./jwt";
 import prisma from "./prisma";
 import logger from "./logger";
 import { AuthErrorType, createAuthErrorResponse } from "./auth-middleware";
 
 // Extend Express Request type to include JWT user
-declare module 'express' {
+declare module "express" {
   interface Request {
     user?: {
       id: string;
@@ -24,7 +29,7 @@ declare module 'express' {
 function extractToken(req: Request): string | null {
   // Try Authorization header first (Bearer token)
   let token = extractTokenFromHeader(req.headers.authorization);
-  
+
   if (!token) {
     // Fallback to cookie
     token = extractTokenFromCookie(req.cookies);
@@ -47,7 +52,9 @@ export const extractJwtUser = async (
   try {
     // Skip JWT extraction for certain routes
     if (
-      (req.path.startsWith("/auth") && req.path !== "/auth/status" && req.path !== "/auth/user") ||
+      (req.path.startsWith("/auth") &&
+        req.path !== "/auth/status" &&
+        req.path !== "/auth/user") ||
       req.path === "/health" ||
       req.path.startsWith("/api/keys") // API keys use separate auth
     ) {
@@ -57,7 +64,10 @@ export const extractJwtUser = async (
     const token = extractToken(req);
 
     if (!token) {
-      logger.debug({ requestId, path: req.path }, "No JWT token found in request");
+      logger.debug(
+        { requestId, path: req.path },
+        "No JWT token found in request",
+      );
       return next();
     }
 
