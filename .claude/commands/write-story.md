@@ -14,12 +14,6 @@ $1
 @projectmanagement/mini_infra_tech_spec.md
 </technical_specifications>
 
-<feature_architecture_design>
-$2
-</feature_architecture_design>
-
-
-
 First, analyze the feature and break it down into components. Make sure to make API type defintions changes with any API changes. Do this work inside a thinking block, wrapped in <feature_breakdown> tags:
 
 <feature_breakdown>
