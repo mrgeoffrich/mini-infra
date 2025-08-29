@@ -5,7 +5,8 @@ import {
   ServiceFactoryOptions,
   SettingsCategory,
 } from "@mini-infra/types";
-import { logger } from "../lib/logger";
+import logger from "../lib/logger";
+import { DockerConfigService } from "./docker-config";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -36,8 +37,7 @@ export class ConfigurationServiceFactory
     try {
       switch (category) {
         case "docker":
-          // Will be implemented in future user stories
-          throw new Error("Docker configuration service not yet implemented");
+          return new DockerConfigService(this.prisma);
 
         case "cloudflare":
           // Will be implemented in future user stories
@@ -53,10 +53,13 @@ export class ConfigurationServiceFactory
           throw new Error(`Unknown configuration category: ${category}`);
       }
     } catch (error) {
-      logger.error("Failed to create configuration service", {
-        category: category,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          category: category,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to create configuration service",
+      );
       throw error;
     }
   }

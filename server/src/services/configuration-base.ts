@@ -7,7 +7,7 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import { logger } from "../lib/logger";
+import logger from "../lib/logger";
 
 export abstract class ConfigurationService implements IConfigurationService {
   protected prisma: PrismaClient;
@@ -61,17 +61,23 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      logger.info("Setting updated", {
-        category: this.category,
-        key: key,
-        userId: userId,
-      });
+      logger.info(
+        {
+          category: this.category,
+          key: key,
+          userId: userId,
+        },
+        "Setting updated",
+      );
     } catch (error) {
-      logger.error("Failed to set configuration value", {
-        category: this.category,
-        key: key,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          category: this.category,
+          key: key,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to set configuration value",
+      );
       throw error;
     }
   }
@@ -94,11 +100,14 @@ export abstract class ConfigurationService implements IConfigurationService {
 
       return setting?.value || null;
     } catch (error) {
-      logger.error("Failed to get configuration value", {
-        category: this.category,
-        key: key,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          category: this.category,
+          key: key,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get configuration value",
+      );
       throw error;
     }
   }
@@ -119,17 +128,23 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      logger.info("Setting deleted", {
-        category: this.category,
-        key: key,
-        userId: userId,
-      });
+      logger.info(
+        {
+          category: this.category,
+          key: key,
+          userId: userId,
+        },
+        "Setting deleted",
+      );
     } catch (error) {
-      logger.error("Failed to delete configuration value", {
-        category: this.category,
-        key: key,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          category: this.category,
+          key: key,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to delete configuration value",
+      );
       throw error;
     }
   }
@@ -162,11 +177,14 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      logger.error("Failed to record connectivity status", {
-        service: this.category,
-        status: status,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          service: this.category,
+          status: status,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to record connectivity status",
+      );
     }
   }
 
@@ -185,10 +203,13 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      logger.error("Failed to get latest connectivity status", {
-        service: this.category,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          service: this.category,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get latest connectivity status",
+      );
       return null;
     }
   }
@@ -233,12 +254,15 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      logger.error("Failed to create audit log", {
-        category: this.category,
-        key: key,
-        action: action,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      logger.error(
+        {
+          category: this.category,
+          key: key,
+          action: action,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to create audit log",
+      );
     }
   }
 }

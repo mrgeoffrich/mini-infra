@@ -247,12 +247,22 @@ The application uses Prisma ORM with SQLite for data persistence.
 ### Settings Service Layer Architecture
 - **Base Class**: `server/src/services/configuration-base.ts` - Abstract ConfigurationService with database integration
 - **Service Factory**: `server/src/services/configuration-factory.ts` - Factory pattern for creating configuration service instances
+- **Docker Configuration Service**: `server/src/services/docker-config.ts` - Docker host validation and management
 - **Type Definitions**: Extended `@mini-infra/types` with ValidationResult, ServiceHealthStatus, and IConfigurationService interfaces
 - **Database Integration**: Built-in support for SystemSettings, SettingsAudit, and ConnectivityStatus models
 - **Audit Logging**: Automatic audit trail creation for all configuration changes with user context
 - **Connectivity Monitoring**: Built-in methods for recording and retrieving service health status
-- **Future Services**: Docker, Cloudflare, and Azure configuration services will extend the base class
+- **Future Services**: Cloudflare and Azure configuration services will extend the base class
 - **Error Handling**: Comprehensive error logging with structured Pino logging integration
+
+### Docker Configuration Service Implementation
+- **Service Class**: `server/src/services/docker-config.ts` - Complete Docker configuration management service
+- **Features**: Docker host validation, API connectivity testing, version information retrieval, health status monitoring
+- **Configuration Support**: Supports Unix sockets, Windows named pipes, and TCP connections with Docker API
+- **Validation Methods**: Real-time Docker API connectivity testing with timeout protection (5s default)
+- **Error Handling**: Comprehensive error mapping to connectivity status with Docker-specific error codes
+- **Caching**: Automatic Docker client cache invalidation when configuration changes
+- **Integration**: Built on existing dockerode library with full compatibility with current Docker service patterns
 
 ## Environment Variables
 

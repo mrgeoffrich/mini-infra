@@ -273,9 +273,9 @@ export interface ServiceHealthStatus {
 export interface IConfigurationService {
   validate(): Promise<ValidationResult>;
   getHealthStatus(): Promise<ServiceHealthStatus>;
-  set(key: string, value: string): Promise<void>;
+  set(key: string, value: string, userId: string): Promise<void>;
   get(key: string): Promise<string | null>;
-  delete(key: string): Promise<void>;
+  delete(key: string, userId: string): Promise<void>;
 }
 
 // Service factory types
