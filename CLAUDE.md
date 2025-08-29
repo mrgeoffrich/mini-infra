@@ -248,11 +248,12 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Base Class**: `server/src/services/configuration-base.ts` - Abstract ConfigurationService with database integration
 - **Service Factory**: `server/src/services/configuration-factory.ts` - Factory pattern for creating configuration service instances
 - **Docker Configuration Service**: `server/src/services/docker-config.ts` - Docker host validation and management
+- **Cloudflare Configuration Service**: `server/src/services/cloudflare-config.ts` - Cloudflare API key validation and tunnel management
 - **Type Definitions**: Extended `@mini-infra/types` with ValidationResult, ServiceHealthStatus, and IConfigurationService interfaces
 - **Database Integration**: Built-in support for SystemSettings, SettingsAudit, and ConnectivityStatus models
 - **Audit Logging**: Automatic audit trail creation for all configuration changes with user context
 - **Connectivity Monitoring**: Built-in methods for recording and retrieving service health status
-- **Future Services**: Cloudflare and Azure configuration services will extend the base class
+- **Future Services**: Azure configuration service will extend the base class
 - **Error Handling**: Comprehensive error logging with structured Pino logging integration
 
 ### Docker Configuration Service Implementation
@@ -263,6 +264,16 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Error Handling**: Comprehensive error mapping to connectivity status with Docker-specific error codes
 - **Caching**: Automatic Docker client cache invalidation when configuration changes
 - **Integration**: Built on existing dockerode library with full compatibility with current Docker service patterns
+
+### Cloudflare Configuration Service Implementation
+- **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service
+- **Features**: API token validation, account information retrieval, tunnel connectivity testing, comprehensive audit logging
+- **API Integration**: Uses official Cloudflare SDK with timeout protection (10s default) and rate limit handling
+- **Validation Methods**: Real-time Cloudflare API connectivity testing with user profile and account validation
+- **Tunnel Management**: Retrieval of tunnel information including status, connections, and configuration details
+- **Security Features**: API token redaction in logs and audit trails, encrypted storage support
+- **Error Handling**: Comprehensive error parsing with Cloudflare-specific error codes (timeout, unauthorized, rate limits, network errors)
+- **Configuration Management**: Secure API token and account ID storage with validation and removal capabilities
 
 ## Environment Variables
 

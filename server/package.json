@@ -43,7 +43,9 @@
     "dependencies": {
         "@mini-infra/types": "file:../lib",
         "@prisma/client": "^6.15.0",
+        "@types/cloudflare": "^2.7.15",
         "@types/dockerode": "^3.3.43",
+        "cloudflare": "^4.5.0",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
         "dockerode": "^4.0.7",
