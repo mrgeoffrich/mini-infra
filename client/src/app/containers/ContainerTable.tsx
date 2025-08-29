@@ -164,7 +164,7 @@ const ContainerRow = React.memo(({
   getColumnWidth
 }: { 
   container: ContainerInfo; 
-  visibleCells: any[];
+  visibleCells: unknown[];
   getColumnWidth: (index: number) => string;
 }) => (
   <TableRow
@@ -209,19 +209,7 @@ export const ContainerTable = React.memo(function ContainerTable({
 }: ContainerTableProps) {
   const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
 
-  // Only show skeleton on initial load, not on refresh
-  if (isLoading && containers.length === 0) {
-    return (
-      <div className="space-y-4">
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
+  // All hooks must be declared at the top before any conditional returns
   const handleNameSort = React.useCallback(() => updateSort("name"), [updateSort]);
   const handleStatusSort = React.useCallback(() => updateSort("status"), [updateSort]);
   const handleImageSort = React.useCallback(() => updateSort("image"), [updateSort]);
@@ -337,6 +325,22 @@ export const ContainerTable = React.memo(function ContainerTable({
     }
   }, []);
 
+  const handlePrevPage = React.useCallback(() => setPage(page - 1), [setPage, page]);
+  const handleNextPage = React.useCallback(() => setPage(page + 1), [setPage, page]);
+
+  // Only show skeleton on initial load, not on refresh
+  if (isLoading && containers.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border">
@@ -395,7 +399,7 @@ export const ContainerTable = React.memo(function ContainerTable({
           <Button
             variant="outline"
             size="sm"
-            onClick={React.useCallback(() => setPage(page - 1), [setPage, page])}
+            onClick={handlePrevPage}
             disabled={page <= 1}
           >
             <ChevronLeft className="h-4 w-4" />
@@ -476,7 +480,7 @@ export const ContainerTable = React.memo(function ContainerTable({
           <Button
             variant="outline"
             size="sm"
-            onClick={React.useCallback(() => setPage(page + 1), [setPage, page])}
+            onClick={handleNextPage}
             disabled={page >= totalPages}
           >
             Next

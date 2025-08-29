@@ -166,3 +166,80 @@ export interface SettingsAuditSortOptions {
   field: keyof SettingsAuditInfo;
   order: "asc" | "desc";
 }
+
+// ====================
+// Connectivity Status Types
+// ====================
+
+// Database ConnectivityStatus type (matches Prisma schema)
+export interface ConnectivityStatus {
+  id: string;
+  service: string;
+  status: string;
+  responseTimeMs: number | null;
+  errorMessage: string | null;
+  errorCode: string | null;
+  lastSuccessfulAt: Date | null;
+  checkedAt: Date;
+  checkInitiatedBy: string | null;
+  metadata: string | null;
+}
+
+// ConnectivityStatus for API responses (frontend-friendly with date strings)
+export interface ConnectivityStatusInfo {
+  id: string;
+  service: string;
+  status: string;
+  responseTimeMs: number | null;
+  errorMessage: string | null;
+  errorCode: string | null;
+  lastSuccessfulAt: string | null;
+  checkedAt: string;
+  checkInitiatedBy: string | null;
+  metadata: string | null;
+}
+
+// ====================
+// Connectivity Status Enums
+// ====================
+
+export type ConnectivityService = "cloudflare" | "docker" | "azure";
+
+export type ConnectivityStatusType =
+  | "connected"
+  | "failed"
+  | "timeout"
+  | "unreachable";
+
+// ====================
+// Connectivity API Response Types
+// ====================
+
+export interface ConnectivityStatusResponse {
+  success: boolean;
+  data: ConnectivityStatusInfo;
+  message?: string;
+}
+
+export interface ConnectivityStatusListResponse {
+  success: boolean;
+  data: ConnectivityStatusInfo[];
+  message?: string;
+}
+
+// ====================
+// Connectivity Filter and Sort Types
+// ====================
+
+export interface ConnectivityStatusFilter {
+  service?: ConnectivityService;
+  status?: ConnectivityStatusType;
+  checkInitiatedBy?: string;
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export interface ConnectivityStatusSortOptions {
+  field: keyof ConnectivityStatusInfo;
+  order: "asc" | "desc";
+}

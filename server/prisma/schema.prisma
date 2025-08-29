@@ -120,3 +120,25 @@ model SettingsAudit {
   @@index([category, createdAt])
   @@map("settings_audit")
 }
+
+// ConnectivityStatus model for tracking external service connectivity
+model ConnectivityStatus {
+  id                    String   @id @default(cuid())
+  service               String   // 'cloudflare', 'docker', 'azure'
+  status                String   // 'connected', 'failed', 'timeout', 'unreachable'
+  responseTimeMs        Int?     // Response time in milliseconds for successful connections
+  errorMessage          String?  // Detailed error message for failed connections
+  errorCode             String?  // Service-specific error code
+  lastSuccessfulAt      DateTime? // Last successful connection timestamp
+  checkedAt             DateTime @default(now()) // When this check was performed
+  checkInitiatedBy      String?  // User ID who initiated manual check (null for scheduled checks)
+  
+  // Service-specific metadata (JSON stored as string)
+  metadata              String?  // Additional service-specific information
+  
+  @@index([service])
+  @@index([status])
+  @@index([checkedAt])
+  @@index([service, checkedAt])
+  @@map("connectivity_status")
+}
