@@ -23,6 +23,10 @@ import {
   SettingsSortOptions,
   ValidateServiceRequest,
   ValidateServiceResponse,
+  SettingsAudit,
+  SettingsAuditInfo,
+  SettingsAuditListResponse,
+  AuditAction,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -37,6 +41,14 @@ function serializeSystemSetting(setting: SystemSettings): SystemSettingsInfo {
     lastValidatedAt: setting.lastValidatedAt?.toISOString() || null,
     createdAt: setting.createdAt.toISOString(),
     updatedAt: setting.updatedAt.toISOString(),
+  };
+}
+
+// Helper function to convert SettingsAudit to SettingsAuditInfo for API responses
+function serializeSettingsAudit(audit: SettingsAudit): SettingsAuditInfo {
+  return {
+    ...audit,
+    createdAt: audit.createdAt.toISOString(),
   };
 }
 
@@ -109,6 +121,39 @@ const updateSettingSchema = z.object({
 // Validation request schema
 const validateServiceSchema = z.object({
   settings: z.record(z.string(), z.string()).optional(), // Optional settings to validate with
+});
+
+// Audit query parameter validation schema
+const auditQuerySchema = z.object({
+  category: z.enum(["docker", "cloudflare", "azure"]).optional(),
+  action: z.enum(["create", "update", "delete", "validate"]).optional(),
+  userId: z.string().optional(),
+  success: z
+    .string()
+    .optional()
+    .transform((val) => val === "true"),
+  startDate: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  endDate: z
+    .string()
+    .optional()
+    .transform((val) => (val ? new Date(val) : undefined)),
+  sortBy: z.string().optional().default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+  page: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val) : 1)),
+  limit: z
+    .string()
+    .optional()
+    .transform((val) => {
+      const parsed = val ? parseInt(val) : 20;
+      return Math.min(parsed, 100); // Maximum 100 audit entries per page
+    }),
+  search: z.string().optional(), // Search in action, category, key fields
 });
 
 /**
@@ -735,6 +780,150 @@ router.delete("/:id", settingsRateLimit, requireAuth, (async (
 }) as RequestHandler);
 
 /**
+ * GET /api/settings/audit - List settings audit logs with filtering and pagination
+ */
+router.get("/audit", settingsRateLimit, requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      query: req.query,
+    },
+    "Settings audit logs requested",
+  );
+
+  try {
+    // Validate query parameters
+    const queryValidation = auditQuerySchema.safeParse(req.query);
+    if (!queryValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          validationErrors: queryValidation.error.issues,
+        },
+        "Invalid query parameters for audit logs",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid query parameters",
+        details: queryValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const {
+      category,
+      action,
+      userId: filterUserId,
+      success,
+      startDate,
+      endDate,
+      sortBy,
+      sortOrder,
+      page,
+      limit,
+      search,
+    } = queryValidation.data;
+
+    // Build filter conditions
+    const where: any = {};
+    if (category) where.category = category;
+    if (action) where.action = action;
+    if (filterUserId) where.userId = filterUserId;
+    if (typeof success === "boolean") where.success = success;
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) where.createdAt.lte = endDate;
+    }
+
+    // Add search functionality
+    if (search) {
+      where.OR = [
+        { category: { contains: search, mode: "insensitive" } },
+        { key: { contains: search, mode: "insensitive" } },
+        { action: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Build sort conditions
+    const orderBy: any = {};
+    orderBy[sortBy] = sortOrder;
+
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+
+    // Fetch audit logs with filtering and pagination
+    const [auditLogs, totalCount] = await Promise.all([
+      prisma.settingsAudit.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+      }),
+      prisma.settingsAudit.count({ where }),
+    ]);
+
+    // Serialize audit logs for API response
+    const serializedAuditLogs = auditLogs.map(serializeSettingsAudit);
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        totalAuditLogs: totalCount,
+        returnedAuditLogs: serializedAuditLogs.length,
+        filters: {
+          category,
+          action,
+          userId: filterUserId,
+          success,
+          startDate: startDate?.toISOString(),
+          endDate: endDate?.toISOString(),
+          search,
+        },
+        sortBy,
+        sortOrder,
+        page,
+        limit,
+      },
+      "Settings audit logs returned successfully",
+    );
+
+    const response: SettingsAuditListResponse = {
+      success: true,
+      data: serializedAuditLogs,
+      message: `Found ${totalCount} audit log entries`,
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        query: req.query,
+      },
+      "Failed to fetch audit logs",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
 router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
@@ -822,7 +1011,9 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
         service,
         status: validationResult.isValid ? "connected" : "failed",
         responseTimeMs: responseTime,
-        errorMessage: validationResult.isValid ? null : validationResult.message,
+        errorMessage: validationResult.isValid
+          ? null
+          : validationResult.message,
         errorCode: validationResult.errorCode,
         lastSuccessfulAt: validationResult.isValid ? new Date() : null,
         checkInitiatedBy: userId,
@@ -842,7 +1033,9 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
         },
         data: {
           validationStatus: validationResult.isValid ? "valid" : "invalid",
-          validationMessage: validationResult.isValid ? null : validationResult.message,
+          validationMessage: validationResult.isValid
+            ? null
+            : validationResult.message,
           lastValidatedAt: new Date(),
         },
       });
@@ -858,7 +1051,9 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
         ipAddress: req.ip,
         userAgent: req.get("User-Agent"),
         success: validationResult.isValid,
-        errorMessage: validationResult.isValid ? null : validationResult.message,
+        errorMessage: validationResult.isValid
+          ? null
+          : validationResult.message,
       },
     });
 
