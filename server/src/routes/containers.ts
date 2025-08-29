@@ -63,12 +63,31 @@ const containerQuerySchema = z.object({
   page: z
     .string()
     .optional()
-    .transform((val) => (val ? parseInt(val) : 1)),
+    .transform((val, ctx) => {
+      if (!val) return 1;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Page must be a positive integer",
+        });
+        return z.NEVER;
+      }
+      return parsed;
+    }),
   limit: z
     .string()
     .optional()
-    .transform((val) => {
-      const parsed = val ? parseInt(val) : 50;
+    .transform((val, ctx) => {
+      if (!val) return 50;
+      const parsed = parseInt(val);
+      if (isNaN(parsed) || parsed < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Limit must be a positive integer",
+        });
+        return z.NEVER;
+      }
       return Math.min(parsed, 50); // Maximum 50 containers per page
     }),
   sortBy: z.string().optional().default("name"),

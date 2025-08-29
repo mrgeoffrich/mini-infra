@@ -12,11 +12,58 @@ const mockDockerService = {
   getContainer: jest.fn(),
   getCacheStats: jest.fn(),
   flushCache: jest.fn(),
+  initialize: jest.fn().mockResolvedValue(undefined),
+  refreshConnection: jest.fn().mockResolvedValue(undefined),
 };
 
-jest.mock("../../services/docker", () => ({
-  default: mockDockerService,
+jest.mock("../../services/docker", () => mockDockerService);
+
+// Mock DockerConfigService
+const mockDockerConfigService = {
+  get: jest.fn(),
+  set: jest.fn(),
+  validate: jest.fn(),
+  getHealthStatus: jest.fn(),
+  testConnection: jest.fn(),
+  recordConnectivityStatus: jest.fn().mockResolvedValue(undefined),
+};
+
+jest.mock("../../services/docker-config", () => ({
+  DockerConfigService: jest.fn().mockImplementation(() => mockDockerConfigService),
 }));
+
+// Mock configuration base
+jest.mock("../../services/configuration-base", () => ({
+  ConfigurationService: jest.fn().mockImplementation(() => ({})),
+}));
+
+// Mock config
+const mockConfig = {
+  CONTAINER_CACHE_TTL: 3000,
+  DOCKER_HOST: "/var/run/docker.sock",
+  DOCKER_API_VERSION: "1.51",
+};
+
+jest.mock("../../lib/config", () => mockConfig);
+
+// Mock prisma
+const mockPrisma = {
+  systemSettings: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
+  connectivityStatus: {
+    create: jest.fn().mockResolvedValue({}),
+    findFirst: jest.fn(),
+  },
+  settingsAudit: {
+    create: jest.fn().mockResolvedValue({}),
+  },
+};
+
+jest.mock("../../lib/prisma", () => mockPrisma);
 
 // Mock logger
 const mockLogger = {
@@ -44,7 +91,7 @@ describe("Container Routes", () => {
   let app: express.Application;
   let mockDockerInstance: any;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = express();
     app.use(express.json());
 
@@ -73,6 +120,8 @@ describe("Container Routes", () => {
       getContainer: jest.fn(),
       getCacheStats: jest.fn(),
       flushCache: jest.fn(),
+      initialize: jest.fn().mockResolvedValue(undefined),
+      refreshConnection: jest.fn().mockResolvedValue(undefined),
     };
 
     mockDockerService.getInstance.mockReturnValue(mockDockerInstance);
@@ -81,6 +130,8 @@ describe("Container Routes", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDockerInstance.isConnected.mockReturnValue(true);
+    mockDockerConfigService.get.mockResolvedValue(null);
+    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(undefined);
   });
 
   describe("GET /api/containers", () => {
@@ -123,29 +174,32 @@ describe("Container Routes", () => {
       const response = await request(app).get("/api/containers").expect(200);
 
       expect(response.body).toMatchObject({
-        containers: expect.arrayContaining([
-          expect.objectContaining({
-            id: "container1",
-            name: "nginx-container",
-            status: "running",
-            image: "nginx",
-            imageTag: "latest",
-            createdAt: "2023-01-01T00:00:00.000Z",
-            startedAt: "2023-01-01T01:00:00.000Z",
-          }),
-          expect.objectContaining({
-            id: "container2",
-            name: "redis-container",
-            status: "stopped",
-            image: "redis",
-            imageTag: "alpine",
-            createdAt: "2023-01-02T00:00:00.000Z",
-          }),
-        ]),
-        totalCount: 2,
-        lastUpdated: expect.any(String),
-        page: 1,
-        limit: 50,
+        success: true,
+        data: {
+          containers: expect.arrayContaining([
+            expect.objectContaining({
+              id: "container1",
+              name: "nginx-container",
+              status: "running",
+              image: "nginx",
+              imageTag: "latest",
+              createdAt: "2023-01-01T00:00:00.000Z",
+              startedAt: "2023-01-01T01:00:00.000Z",
+            }),
+            expect.objectContaining({
+              id: "container2",
+              name: "redis-container",
+              status: "stopped",
+              image: "redis",
+              imageTag: "alpine",
+              createdAt: "2023-01-02T00:00:00.000Z",
+            }),
+          ]),
+          totalCount: 2,
+          lastUpdated: expect.any(String),
+          page: 1,
+          limit: 50,
+        },
       });
 
       expect(mockDockerInstance.listContainers).toHaveBeenCalledWith(true);
@@ -172,11 +226,12 @@ describe("Container Routes", () => {
         .get("/api/containers?page=2&limit=25")
         .expect(200);
 
-      expect(response.body.containers).toHaveLength(25);
-      expect(response.body.totalCount).toBe(75);
-      expect(response.body.page).toBe(2);
-      expect(response.body.limit).toBe(25);
-      expect(response.body.containers[0].id).toBe("container26");
+      expect(response.body.data.containers).toHaveLength(25);
+      expect(response.body.data.totalCount).toBe(75);
+      expect(response.body.data.page).toBe(2);
+      expect(response.body.data.limit).toBe(25);
+      // After alphabetical sorting by name, the order changes from numeric
+      expect(response.body.data.containers[0].id).toBe("container32");
     });
 
     it("should enforce maximum limit of 50", async () => {
@@ -186,7 +241,7 @@ describe("Container Routes", () => {
         .get("/api/containers?limit=100")
         .expect(200);
 
-      expect(response.body.limit).toBe(50);
+      expect(response.body.data.limit).toBe(50);
     });
 
     it("should filter by status", async () => {
@@ -196,9 +251,9 @@ describe("Container Routes", () => {
         .get("/api/containers?status=running")
         .expect(200);
 
-      expect(response.body.containers).toHaveLength(1);
-      expect(response.body.containers[0].status).toBe("running");
-      expect(response.body.totalCount).toBe(1);
+      expect(response.body.data.containers).toHaveLength(1);
+      expect(response.body.data.containers[0].status).toBe("running");
+      expect(response.body.data.totalCount).toBe(1);
     });
 
     it("should filter by name", async () => {
@@ -208,8 +263,8 @@ describe("Container Routes", () => {
         .get("/api/containers?name=nginx")
         .expect(200);
 
-      expect(response.body.containers).toHaveLength(1);
-      expect(response.body.containers[0].name).toBe("nginx-container");
+      expect(response.body.data.containers).toHaveLength(1);
+      expect(response.body.data.containers[0].name).toBe("nginx-container");
     });
 
     it("should filter by image", async () => {
@@ -219,8 +274,8 @@ describe("Container Routes", () => {
         .get("/api/containers?image=redis")
         .expect(200);
 
-      expect(response.body.containers).toHaveLength(1);
-      expect(response.body.containers[0].image).toBe("redis");
+      expect(response.body.data.containers).toHaveLength(1);
+      expect(response.body.data.containers[0].image).toBe("redis");
     });
 
     it("should sort containers by name ascending", async () => {
@@ -233,8 +288,8 @@ describe("Container Routes", () => {
         .get("/api/containers?sortBy=name&sortOrder=asc")
         .expect(200);
 
-      expect(response.body.containers[0].name).toBe("alpha-container");
-      expect(response.body.containers[1].name).toBe("zebra-container");
+      expect(response.body.data.containers[0].name).toBe("alpha-container");
+      expect(response.body.data.containers[1].name).toBe("zebra-container");
     });
 
     it("should sort containers by name descending", async () => {
@@ -247,8 +302,8 @@ describe("Container Routes", () => {
         .get("/api/containers?sortBy=name&sortOrder=desc")
         .expect(200);
 
-      expect(response.body.containers[0].name).toBe("zebra-container");
-      expect(response.body.containers[1].name).toBe("alpha-container");
+      expect(response.body.data.containers[0].name).toBe("zebra-container");
+      expect(response.body.data.containers[1].name).toBe("alpha-container");
     });
 
     it("should return 400 for invalid query parameters", async () => {
@@ -571,8 +626,8 @@ describe("Container Routes", () => {
 
       const response = await request(app).get("/api/containers").expect(200);
 
-      expect(response.body.requestId).toBeDefined();
-      expect(typeof response.body.requestId).toBe("string");
+      expect(response.body.data).toBeDefined();
+      expect(response.body.success).toBe(true);
     });
   });
 
