@@ -44,12 +44,18 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 ## Core Features
 
 ### 1. Docker Container Management
-- Read-only dashboard for all running containers
-- Real-time status updates via polling (5-second intervals)
-- Container information: name, status, image, ports, volumes, IP, creation time
-- Advanced filtering and sorting capabilities with debounced input
-- Pagination support for large container lists (50 containers per page)
-- Request correlation ID support for debugging and error tracking
+- **Container Dashboard**: Full-featured React dashboard for monitoring containers at `/containers` route
+- **Real-time Updates**: Live container status with 5-second polling intervals
+- **Container Information**: Complete container details including name, status, image, ports, volumes, IP address, creation timestamps
+- **Advanced Filtering**: Debounced search by container name and image (300ms delay)
+- **Status Filtering**: Filter containers by status (running, stopped, exited, paused, restarting)
+- **Sorting & Pagination**: Sort by any field with 50 containers per page
+- **Visual Status Indicators**: Color-coded status badges with dot indicators
+- **Data Interaction**: Copy container IDs, names, and IP addresses to clipboard
+- **Responsive Design**: Mobile-optimized layout with proper responsive breakpoints
+- **Error Handling**: User-friendly error messages with retry functionality
+- **Business Event Logging**: Container list view events for analytics
+- **Request Correlation**: Debug support with request correlation IDs
 
 ### 2. PostgreSQL Database Management
 - Database connection string storage

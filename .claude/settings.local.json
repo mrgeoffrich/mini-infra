@@ -27,6 +27,7 @@
       "Bash(curl:*)",
       "Read",
       "Write",
+      "Read(C:\\c\\Repos\\mini-infra/**)",
       "Read(C:\\c\\Repos\\mini-infra/**)"
     ],
     "deny": [],

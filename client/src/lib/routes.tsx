@@ -4,6 +4,7 @@ import { PublicRoute } from "@/components/public-route";
 import { AuthErrorBoundary } from "@/components/auth-error-boundary";
 import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
+import { ContainersPage } from "@/app/containers/page";
 
 export const router = createBrowserRouter([
   {
@@ -36,7 +37,7 @@ export const router = createBrowserRouter([
     element: (
       <AuthErrorBoundary>
         <ProtectedRoute>
-          <div>Container Management - Coming Soon</div>
+          <ContainersPage />
         </ProtectedRoute>
       </AuthErrorBoundary>
     ),
