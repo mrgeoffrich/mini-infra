@@ -21,6 +21,8 @@ import {
   ValidationStatus,
   SettingsFilter,
   SettingsSortOptions,
+  ValidateServiceRequest,
+  ValidateServiceResponse,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -102,6 +104,11 @@ const createSettingSchema = z.object({
 const updateSettingSchema = z.object({
   value: z.string().min(1, "Value is required"),
   isEncrypted: z.boolean().optional(),
+});
+
+// Validation request schema
+const validateServiceSchema = z.object({
+  settings: z.record(z.string(), z.string()).optional(), // Optional settings to validate with
 });
 
 /**
@@ -721,6 +728,232 @@ router.delete("/:id", settingsRateLimit, requireAuth, (async (
         settingId,
       },
       "Failed to delete setting",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/validate/:service - Validate external service connectivity
+ */
+router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const service = req.params.service;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      service,
+    },
+    "Service validation requested",
+  );
+
+  try {
+    if (!user || !userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate service parameter
+    if (!["docker", "cloudflare", "azure"].includes(service)) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate request body
+    const bodyValidation = validateServiceSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          service,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for service validation",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const { settings } = bodyValidation.data;
+
+    // Get the configuration service for the requested service type
+    const configService = configFactory.create({
+      category: service as SettingsCategory,
+    });
+
+    // Perform validation with timeout protection
+    const startTime = Date.now();
+    const validationResult = (await Promise.race([
+      configService.validate(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Validation timeout")), 30000),
+      ),
+    ])) as any;
+
+    const responseTime = Date.now() - startTime;
+
+    // Store validation results in ConnectivityStatus database
+    await prisma.connectivityStatus.create({
+      data: {
+        service,
+        status: validationResult.isValid ? "connected" : "failed",
+        responseTimeMs: responseTime,
+        errorMessage: validationResult.isValid ? null : validationResult.message,
+        errorCode: validationResult.errorCode,
+        lastSuccessfulAt: validationResult.isValid ? new Date() : null,
+        checkInitiatedBy: userId,
+        metadata: validationResult.metadata
+          ? JSON.stringify(validationResult.metadata)
+          : null,
+      },
+    });
+
+    // Update SystemSettings validation status if validating current configuration
+    if (!settings) {
+      // Update all settings for this service category
+      await prisma.systemSettings.updateMany({
+        where: {
+          category: service,
+          isActive: true,
+        },
+        data: {
+          validationStatus: validationResult.isValid ? "valid" : "invalid",
+          validationMessage: validationResult.isValid ? null : validationResult.message,
+          lastValidatedAt: new Date(),
+        },
+      });
+    }
+
+    // Create audit log entry
+    await prisma.settingsAudit.create({
+      data: {
+        category: service,
+        key: "validation",
+        action: "validate",
+        userId,
+        ipAddress: req.ip,
+        userAgent: req.get("User-Agent"),
+        success: validationResult.isValid,
+        errorMessage: validationResult.isValid ? null : validationResult.message,
+      },
+    });
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        service,
+        isValid: validationResult.isValid,
+        responseTimeMs: responseTime,
+        errorCode: validationResult.errorCode,
+      },
+      "Service validation completed",
+    );
+
+    res.json({
+      success: true,
+      data: {
+        service,
+        isValid: validationResult.isValid,
+        responseTimeMs: responseTime,
+        error: validationResult.isValid ? undefined : validationResult.message,
+        errorCode: validationResult.errorCode,
+        metadata: validationResult.metadata,
+        validatedAt: new Date().toISOString(),
+      },
+      message: validationResult.isValid
+        ? `${service} service validation successful`
+        : `${service} service validation failed`,
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  } catch (error) {
+    const responseTime = Date.now() - (Date.now() - 30000); // Fallback time calculation
+
+    // Store failed validation in ConnectivityStatus database
+    try {
+      await prisma.connectivityStatus.create({
+        data: {
+          service,
+          status: "error",
+          responseTimeMs: responseTime,
+          errorMessage:
+            error instanceof Error ? error.message : "Unknown validation error",
+          errorCode: "VALIDATION_ERROR",
+          checkInitiatedBy: userId,
+        },
+      });
+    } catch (dbError) {
+      logger.error(
+        {
+          dbError,
+          requestId,
+          userId,
+          service,
+        },
+        "Failed to store validation error in database",
+      );
+    }
+
+    // Create audit log entry for failed validation
+    try {
+      await prisma.settingsAudit.create({
+        data: {
+          category: service,
+          key: "validation",
+          action: "validate",
+          userId: userId || "unknown",
+          ipAddress: req.ip,
+          userAgent: req.get("User-Agent"),
+          success: false,
+          errorMessage:
+            error instanceof Error ? error.message : "Unknown validation error",
+        },
+      });
+    } catch (auditError) {
+      logger.error(
+        {
+          auditError,
+          requestId,
+          userId,
+          service,
+        },
+        "Failed to create audit log entry for validation error",
+      );
+    }
+
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        service,
+      },
+      "Service validation failed with error",
     );
 
     next(error);

@@ -309,3 +309,27 @@ export interface IConfigurationServiceFactory {
   create(options: ServiceFactoryOptions): IConfigurationService;
   getSupportedCategories(): SettingsCategory[];
 }
+
+// ====================
+// Validation API Types
+// ====================
+
+export interface ValidateServiceRequest {
+  settings?: Record<string, string>; // Optional settings to validate with
+}
+
+export interface ValidateServiceResponse {
+  success: boolean;
+  data: {
+    service: string;
+    isValid: boolean;
+    responseTimeMs: number;
+    error?: string;
+    errorCode?: string;
+    metadata?: Record<string, any>;
+    validatedAt: string;
+  };
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
