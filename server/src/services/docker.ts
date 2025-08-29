@@ -2,7 +2,7 @@ import Docker from "dockerode";
 import NodeCache from "node-cache";
 import logger from "../lib/logger";
 import config from "../lib/config";
-import { ContainerInfo } from "../types/container";
+import { DockerContainerInfo } from "@mini-infra/types/containers";
 
 class DockerService {
   private static instance: DockerService;
@@ -110,13 +110,13 @@ class DockerService {
     });
   }
 
-  public async listContainers(all = true): Promise<ContainerInfo[]> {
+  public async listContainers(all = true): Promise<DockerContainerInfo[]> {
     if (!this.connected) {
       throw new Error("Docker service not connected");
     }
 
     const cacheKey = `containers_${all}`;
-    const cached = this.cache.get<ContainerInfo[]>(cacheKey);
+    const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
 
     if (cached) {
       logger.debug("Returning cached container list");
@@ -147,13 +147,13 @@ class DockerService {
     }
   }
 
-  public async getContainer(id: string): Promise<ContainerInfo | null> {
+  public async getContainer(id: string): Promise<DockerContainerInfo | null> {
     if (!this.connected) {
       throw new Error("Docker service not connected");
     }
 
     const cacheKey = `container_${id}`;
-    const cached = this.cache.get<ContainerInfo>(cacheKey);
+    const cached = this.cache.get<DockerContainerInfo>(cacheKey);
 
     if (cached) {
       return cached;
@@ -187,7 +187,7 @@ class DockerService {
     }
   }
 
-  private transformContainerData(container: any): ContainerInfo {
+  private transformContainerData(container: any): DockerContainerInfo {
     return {
       id: container.Id,
       name: container.Names[0]?.replace(/^\//, "") || "unknown",
@@ -205,7 +205,7 @@ class DockerService {
     };
   }
 
-  private transformDetailedContainerData(data: any): ContainerInfo {
+  private transformDetailedContainerData(data: any): DockerContainerInfo {
     return {
       id: data.Id,
       name: data.Name?.replace(/^\//, "") || "unknown",
@@ -225,7 +225,7 @@ class DockerService {
     };
   }
 
-  private normalizeStatus(status: string): ContainerInfo["status"] {
+  private normalizeStatus(status: string): DockerContainerInfo["status"] {
     const lowercaseStatus = status.toLowerCase();
     switch (lowercaseStatus) {
       case "running":
@@ -243,7 +243,7 @@ class DockerService {
     }
   }
 
-  private transformPorts(ports: any[]): ContainerInfo["ports"] {
+  private transformPorts(ports: any[]): DockerContainerInfo["ports"] {
     return ports.map((port) => ({
       private: port.PrivatePort,
       public: port.PublicPort || undefined,
@@ -251,8 +251,8 @@ class DockerService {
     }));
   }
 
-  private transformDetailedPorts(ports: any): ContainerInfo["ports"] {
-    const result: ContainerInfo["ports"] = [];
+  private transformDetailedPorts(ports: any): DockerContainerInfo["ports"] {
+    const result: DockerContainerInfo["ports"] = [];
 
     for (const [privatePort, bindings] of Object.entries(ports)) {
       const [port, protocol] = privatePort.split("/");
@@ -272,7 +272,7 @@ class DockerService {
     return result;
   }
 
-  private transformVolumes(mounts: any[]): ContainerInfo["volumes"] {
+  private transformVolumes(mounts: any[]): DockerContainerInfo["volumes"] {
     return mounts.map((mount) => ({
       source: mount.Source || mount.Name,
       destination: mount.Destination,

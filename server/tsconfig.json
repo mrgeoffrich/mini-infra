@@ -10,11 +10,15 @@
     "isolatedModules": true,
     "noEmit": false,
     "outDir": "./dist",
-    "rootDir": "./src",
     "strict": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mini-infra/types": ["../lib/types"],
+      "@mini-infra/types/*": ["../lib/types/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../lib/types/**/*"],
   "exclude": ["node_modules", "dist", "src/**/__tests__", "src/**/*.test.ts"]
 }

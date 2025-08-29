@@ -10,7 +10,7 @@ import {
   getApiKeyStats,
 } from "../lib/api-key-service";
 import logger from "../lib/logger";
-import type { CreateApiKeyRequest } from "../types/auth";
+import type { CreateApiKeyRequest } from "@mini-infra/types";
 
 const router = Router();
 

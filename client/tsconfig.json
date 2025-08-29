@@ -7,7 +7,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@mini-infra/types": ["../lib/types"],
+      "@mini-infra/types/*": ["../lib/types/*"]
     }
   }
 }

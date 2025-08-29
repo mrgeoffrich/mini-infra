@@ -12,9 +12,20 @@ import { requireAuth } from "../lib/auth-middleware";
 import {
   ContainerQueryParams,
   ContainerListResponse,
-} from "../types/container";
+  ContainerInfo,
+  DockerContainerInfo,
+} from "@mini-infra/types/containers";
 
 const router = express.Router();
+
+// Helper function to convert DockerContainerInfo to ContainerInfo for API responses
+function serializeContainer(container: DockerContainerInfo): ContainerInfo {
+  return {
+    ...container,
+    createdAt: container.createdAt.toISOString(),
+    startedAt: container.startedAt?.toISOString(),
+  };
+}
 
 // Rate limiting specific to container endpoints: 60 requests per minute per user
 const containerRateLimit = rateLimit({
@@ -122,7 +133,8 @@ router.get("/", containerRateLimit, requireAuth, (async (
     }
 
     // Fetch containers from Docker service
-    let containers = await dockerService.listContainers(true);
+    let dockerContainers = await dockerService.listContainers(true);
+    let containers = dockerContainers.map(serializeContainer);
 
     // Apply filtering
     if (queryParams.filters?.status) {
@@ -183,7 +195,7 @@ router.get("/", containerRateLimit, requireAuth, (async (
     const response: ContainerListResponse = {
       containers: paginatedContainers,
       totalCount,
-      lastUpdated: new Date(),
+      lastUpdated: new Date().toISOString(),
       page,
       limit,
     };
@@ -308,9 +320,9 @@ router.get("/:id", containerRateLimit, requireAuth, (async (
       });
     }
 
-    const container = await dockerService.getContainer(containerId);
+    const dockerContainer = await dockerService.getContainer(containerId);
 
-    if (!container) {
+    if (!dockerContainer) {
       logger.warn(
         {
           requestId,
@@ -333,13 +345,13 @@ router.get("/:id", containerRateLimit, requireAuth, (async (
         requestId,
         userId,
         containerId,
-        containerName: container.name,
-        containerStatus: container.status,
+        containerName: dockerContainer.name,
+        containerStatus: dockerContainer.status,
       },
       "Container details returned successfully",
     );
 
-    res.json(container);
+    res.json(serializeContainer(dockerContainer));
   } catch (error) {
     logger.error(
       {

@@ -9,9 +9,20 @@ import passport from "../lib/passport";
 import logger from "../lib/logger";
 import config from "../lib/config";
 import { generateToken } from "../lib/jwt";
-import type { AuthStatus, UserProfile } from "../types/auth";
+import type { AuthStatus, UserProfile, JWTUser } from "@mini-infra/types";
 
 const router = Router();
+
+// Helper function to convert JWTUser to UserProfile for API responses
+function serializeUserProfile(user: JWTUser): UserProfile {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    image: user.image,
+    createdAt: user.createdAt.toISOString(),
+  };
+}
 
 // Initialize Passport middleware (without sessions)
 router.use(passport.initialize());
@@ -142,13 +153,7 @@ router.get("/status", ((req: Request, res: Response) => {
 
     const response: AuthStatus = {
       isAuthenticated: true,
-      user: {
-        id: req.user.id,
-        email: req.user.email,
-        name: req.user.name || undefined,
-        image: req.user.image || undefined,
-        createdAt: req.user.createdAt,
-      },
+      user: serializeUserProfile(req.user),
     };
 
     res.json(response);
@@ -173,13 +178,7 @@ router.get("/user", ((req: Request, res: Response) => {
 
   logger.debug({ userId: req.user.id }, "User profile request");
 
-  const userProfile: UserProfile = {
-    id: req.user.id,
-    email: req.user.email,
-    name: req.user.name || undefined,
-    image: req.user.image || undefined,
-    createdAt: req.user.createdAt,
-  };
+  const userProfile = serializeUserProfile(req.user);
 
   res.json(userProfile);
 }) as RequestHandler);

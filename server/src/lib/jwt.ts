@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import config from "./config";
 import logger from "./logger";
-import type { UserProfile } from "../types/auth";
+import type { UserProfile } from "@mini-infra/types";
 
 // JWT payload interface
 export interface JwtPayload {

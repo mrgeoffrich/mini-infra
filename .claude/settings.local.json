@@ -3,6 +3,7 @@
     "allow": [
       "List",
       "WebFetch",
+      "Bash(mkdir:*)",
       "Bash(cd /c/Repos/mini-infra/server:*)",
       "Bash(cd /c/Repos/mini-infra/client:*)",
       "Bash(npm install:*)",

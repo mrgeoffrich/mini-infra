@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { validateApiKey } from "./api-key-service";
 import logger from "./logger";
-import type { ApiKeyValidationResult } from "../types/auth";
+import type { ApiKeyValidationResult } from "@mini-infra/types";
 
 /**
  * Middleware to require API key authentication

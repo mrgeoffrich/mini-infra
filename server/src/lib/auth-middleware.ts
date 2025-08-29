@@ -5,6 +5,7 @@ import {
   getCurrentUserFromJwt,
   getCurrentUserIdFromJwt,
 } from "./jwt-middleware";
+import type { JWTUser } from "@mini-infra/types";
 
 /**
  * Authentication error types for standardized responses
@@ -387,17 +388,9 @@ export const authMiddleware = {
  * Utility function to extract user information for API responses
  * Works with both JWT and API key authentication
  */
-export function getAuthenticatedUser(req: Request) {
+export function getAuthenticatedUser(req: Request): JWTUser | null {
   const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
-  if (!user) return null;
-
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    image: user.image,
-    createdAt: user.createdAt,
-  };
+  return user || null;
 }
 
 /**

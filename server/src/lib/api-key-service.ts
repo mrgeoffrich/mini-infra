@@ -4,10 +4,10 @@ import logger from "./logger";
 import type {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
-  ApiKeyResponse,
+  ApiKeyInfo,
   ApiKeyValidationResult,
   JWTUser,
-} from "../types/auth";
+} from "@mini-infra/types";
 
 /**
  * Generate a secure API key using cryptographically secure random bytes
@@ -66,11 +66,10 @@ export async function createApiKey(
       id: apiKey.id,
       name: apiKey.name,
       key: rawKey, // Only exposed during creation
-      userId: apiKey.userId,
       active: apiKey.active,
-      lastUsedAt: apiKey.lastUsedAt,
-      createdAt: apiKey.createdAt,
-      updatedAt: apiKey.updatedAt,
+      lastUsedAt: apiKey.lastUsedAt?.toISOString() || null,
+      createdAt: apiKey.createdAt.toISOString(),
+      updatedAt: apiKey.updatedAt.toISOString(),
     };
   } catch (error) {
     logger.error(
@@ -154,7 +153,7 @@ export async function validateApiKey(
  */
 export async function getUserApiKeys(
   userId: string,
-): Promise<ApiKeyResponse[]> {
+): Promise<ApiKeyInfo[]> {
   try {
     const apiKeys = await prisma.apiKey.findMany({
       where: {
@@ -168,11 +167,10 @@ export async function getUserApiKeys(
     return apiKeys.map((apiKey) => ({
       id: apiKey.id,
       name: apiKey.name,
-      userId: apiKey.userId,
       active: apiKey.active,
-      lastUsedAt: apiKey.lastUsedAt,
-      createdAt: apiKey.createdAt,
-      updatedAt: apiKey.updatedAt,
+      lastUsedAt: apiKey.lastUsedAt?.toISOString() || null,
+      createdAt: apiKey.createdAt.toISOString(),
+      updatedAt: apiKey.updatedAt.toISOString(),
     }));
   } catch (error) {
     logger.error({ error, userId }, "Failed to get user API keys");

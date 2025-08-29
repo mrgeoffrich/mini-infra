@@ -24,8 +24,10 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@mini-infra/types": ["../lib/types"],
+      "@mini-infra/types/*": ["../lib/types/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../lib/types"]
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { testPrisma, createTestUser } from "./setup";
-import type { GoogleOAuthProfile } from "../types/auth";
+import type { GoogleOAuthProfile } from "@mini-infra/types";
 
 // Mock passport and logger before importing the module
 jest.mock("passport", () => ({
