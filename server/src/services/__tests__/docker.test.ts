@@ -15,8 +15,10 @@ const mockContainer = {
 
 mockDocker.getContainer.mockReturnValue(mockContainer);
 
+const MockDockerConstructor = jest.fn().mockImplementation(() => mockDocker);
+
 jest.mock("dockerode", () => {
-  return jest.fn().mockImplementation(() => mockDocker);
+  return MockDockerConstructor;
 });
 
 // Mock node-cache
@@ -53,6 +55,20 @@ jest.mock("../../lib/config", () => ({
   },
 }));
 
+// Mock DockerConfigService
+const mockDockerConfigService = {
+  get: jest.fn(),
+  recordConnectivityStatus: jest.fn(),
+};
+
+jest.mock("../docker-config", () => ({
+  DockerConfigService: jest.fn().mockImplementation(() => mockDockerConfigService),
+}));
+
+// Mock prisma
+const mockPrisma = {};
+jest.mock("../../lib/prisma", () => mockPrisma);
+
 // Import the service after mocks are set up
 import DockerService from "../docker";
 
@@ -69,6 +85,15 @@ describe("DockerService", () => {
         on: jest.fn(),
       });
     });
+    // Reset constructor mock
+    MockDockerConstructor.mockClear();
+    // Setup default mocks for DockerConfigService
+    mockDockerConfigService.get.mockImplementation((key) => {
+      if (key === "host") return Promise.resolve(null);
+      if (key === "apiVersion") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -86,17 +111,18 @@ describe("DockerService", () => {
       expect(instance1).toBe(instance2);
     });
 
-    it("should initialize Docker client with correct configuration", () => {
-      DockerService.getInstance();
+    it("should initialize Docker client with correct configuration", async () => {
+      dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       const expectedSocketPath =
         process.platform === "win32"
           ? "//./pipe/docker_engine"
           : "/var/run/docker.sock";
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(MockDockerConstructor).toHaveBeenCalledWith({
         socketPath: expectedSocketPath,
-        version: "v1.41",
+        // Note: version not included when using default config fallback
       });
     });
 
@@ -115,13 +141,12 @@ describe("DockerService", () => {
       mockDocker.ping.mockResolvedValueOnce(true);
 
       dockerService = DockerService.getInstance();
-
-      // Manually trigger connection for testing
-      await (dockerService as any).connect();
+      await dockerService.initialize();
 
       expect(mockDocker.ping).toHaveBeenCalled();
       expect(dockerService.isConnected()).toBe(true);
       expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ responseTimeMs: expect.any(Number) }),
         "Docker service connected successfully",
       );
     });
@@ -132,16 +157,15 @@ describe("DockerService", () => {
 
       dockerService = DockerService.getInstance();
 
-      // Manually trigger connection for testing
-      try {
-        await (dockerService as any).connect();
-      } catch (error) {
-        // Expected to throw
-      }
+      // Initialize should not throw but should handle the error gracefully
+      await dockerService.initialize();
 
       expect(dockerService.isConnected()).toBe(false);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        { error: connectionError },
+        expect.objectContaining({
+          error: connectionError,
+          errorMessage: "Docker daemon not available",
+        }),
         "Failed to connect to Docker",
       );
     });
@@ -176,7 +200,7 @@ describe("DockerService", () => {
 
       // Simulate successful connection
       mockDocker.ping.mockResolvedValueOnce(true);
-      await (dockerService as any).connect();
+      await dockerService.refreshConnection();
 
       // Verify interval is cleared
       expect((dockerService as any).reconnectInterval).toBeNull();
@@ -184,8 +208,9 @@ describe("DockerService", () => {
   });
 
   describe("Event Listeners", () => {
-    it("should set up Docker event listeners", () => {
+    it("should set up Docker event listeners", async () => {
       dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       expect(mockDocker.getEvents).toHaveBeenCalledWith(
         {},
@@ -193,7 +218,7 @@ describe("DockerService", () => {
       );
     });
 
-    it("should flush cache on container events", () => {
+    it("should flush cache on container events", async () => {
       let eventCallback: any;
       const mockStream = {
         on: jest.fn((event, callback) => {
@@ -208,6 +233,7 @@ describe("DockerService", () => {
       });
 
       dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       // Simulate container event
       const containerEvent = JSON.stringify({
@@ -228,7 +254,7 @@ describe("DockerService", () => {
       );
     });
 
-    it("should handle malformed event data gracefully", () => {
+    it("should handle malformed event data gracefully", async () => {
       let eventCallback: any;
       const mockStream = {
         on: jest.fn((event, callback) => {
@@ -243,6 +269,7 @@ describe("DockerService", () => {
       });
 
       dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       // Simulate malformed event data
       eventCallback(Buffer.from("invalid json"));
@@ -254,7 +281,7 @@ describe("DockerService", () => {
       );
     });
 
-    it("should handle event stream errors", () => {
+    it("should handle event stream errors", async () => {
       let errorCallback: any;
       const mockStream = {
         on: jest.fn((event, callback) => {
@@ -269,6 +296,7 @@ describe("DockerService", () => {
       });
 
       dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       const streamError = new Error("Stream error");
       errorCallback(streamError);
@@ -279,13 +307,14 @@ describe("DockerService", () => {
       );
     });
 
-    it("should handle getEvents callback error", () => {
+    it("should handle getEvents callback error", async () => {
       const eventsError = new Error("Failed to get events");
       mockDocker.getEvents.mockImplementation((options, callback) => {
         callback(eventsError, null);
       });
 
       dockerService = DockerService.getInstance();
+      await dockerService.initialize();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         { error: eventsError },
@@ -332,10 +361,10 @@ describe("DockerService", () => {
   });
 
   describe("listContainers", () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       dockerService = DockerService.getInstance();
-      // Mock connected state
-      (dockerService as any).connected = true;
+      await dockerService.initialize();
+      // Connected state should be set by initialize() if ping succeeds
     });
 
     it("should throw error when not connected", async () => {
@@ -457,9 +486,10 @@ describe("DockerService", () => {
   });
 
   describe("getContainer", () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       dockerService = DockerService.getInstance();
-      (dockerService as any).connected = true;
+      await dockerService.initialize();
+      // Connected state should be set by initialize() if ping succeeds
     });
 
     it("should throw error when not connected", async () => {
@@ -774,20 +804,18 @@ describe("DockerService", () => {
       (DockerService as any).instance = undefined;
     });
 
-    it("should configure Docker client for TCP connection", () => {
-      // Mock TCP configuration
-      jest.doMock("../../lib/config", () => ({
-        default: {
-          DOCKER_HOST: "tcp://localhost:2375",
-          DOCKER_API_VERSION: "1.41",
-          CONTAINER_CACHE_TTL: 3000,
-        },
-      }));
+    it("should configure Docker client for TCP connection", async () => {
+      // Mock TCP configuration - need to override the DockerConfigService mock
+      mockDockerConfigService.get.mockImplementation((key) => {
+        if (key === "host") return Promise.resolve("tcp://localhost:2375");
+        if (key === "apiVersion") return Promise.resolve("1.41");
+        return Promise.resolve(null);
+      });
 
-      const DockerServiceTCP = require("../docker").default;
-      DockerServiceTCP.getInstance();
+      const dockerServiceTCP = DockerService.getInstance();
+      await dockerServiceTCP.initialize();
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(MockDockerConstructor).toHaveBeenCalledWith({
         host: "localhost",
         port: 2375,
         protocol: "http",

@@ -126,7 +126,7 @@ model ConnectivityStatus {
   id                    String   @id @default(cuid())
   service               String   // 'cloudflare', 'docker', 'azure'
   status                String   // 'connected', 'failed', 'timeout', 'unreachable'
-  responseTimeMs        Int?     // Response time in milliseconds for successful connections
+  responseTimeMs        BigInt?  // Response time in milliseconds for successful connections
   errorMessage          String?  // Detailed error message for failed connections
   errorCode             String?  // Service-specific error code
   lastSuccessfulAt      DateTime? // Last successful connection timestamp
