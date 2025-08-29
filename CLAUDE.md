@@ -253,7 +253,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 
 ### Docker Integration Implementation
 - **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with database-driven configuration and automatic reconnection
-- **Configuration Source**: Uses DockerConfigService to retrieve host and API version settings from database with fallback to environment variables
+- **Configuration Source**: Uses DockerConfigService to retrieve host and API version settings exclusively from database (no environment variable fallbacks)
 - **Dependencies**: dockerode, @types/dockerode, node-cache for container API integration and caching
 - **Features**: Container listing, detailed inspection, real-time event subscription, data transformation
 - **Caching**: 3-second TTL in-memory cache with event-based invalidation
@@ -477,8 +477,7 @@ RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX_REQUESTS=100
 
 # Docker Configuration
-DOCKER_HOST=/var/run/docker.sock
-DOCKER_API_VERSION=1.41
+# Note: Docker host and API version are now configured via database settings only
 CONTAINER_CACHE_TTL=3000
 CONTAINER_POLL_INTERVAL=5000
 ```
@@ -521,6 +520,59 @@ CONTAINER_POLL_INTERVAL=5000
 - `npx prisma studio` - Open database GUI
 - `npx prisma generate` - Generate Prisma client
 - `npx prisma migrate dev` - Create and apply new migration
+
+### SQLite3 Command Line Operations
+
+The project uses SQLite as the database. For direct database inspection and operations, you can use the SQLite3 command line tool.
+
+#### Installation on Windows
+```bash
+# Download and extract SQLite tools
+curl -L -o sqlite3.zip https://www.sqlite.org/2024/sqlite-tools-win-x64-3460100.zip
+powershell -Command "Expand-Archive -Path sqlite3.zip -DestinationPath sqlite3_tools"
+
+# Use the extracted sqlite3.exe
+./sqlite3_tools/sqlite3.exe server/prisma/dev.db
+```
+
+#### Common SQLite Commands
+```bash
+# Connect to database
+sqlite3 server/prisma/dev.db
+
+# List all tables
+.tables
+
+# Show table schema
+.schema system_settings
+
+# Query data
+SELECT * FROM system_settings;
+SELECT category, key, value FROM system_settings WHERE category = 'docker';
+
+# Show column headers in output
+.headers on
+
+# Change output mode to table format
+.mode table
+
+# Export query results to CSV
+.mode csv
+.output settings.csv
+SELECT * FROM system_settings;
+.output stdout
+
+# Get database info
+.dbinfo
+
+# Exit SQLite
+.quit
+```
+
+#### Database File Locations
+- **Development**: `server/prisma/dev.db`
+- **Test**: `server/test-1.db` (when running tests)
+- **Production**: Configured via `DATABASE_URL` environment variable
 
 ## Security Considerations
 

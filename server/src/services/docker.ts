@@ -99,12 +99,7 @@ class DockerService {
           "Using Docker host from database settings",
         );
       } else {
-        // Fallback to environment variable or platform default
-        finalHost = config.DOCKER_HOST || this.getDefaultDockerHost();
-        logger.info(
-          { host: finalHost },
-          "Using Docker host from environment/default",
-        );
+        throw new Error("Docker host not configured in database settings");
       }
 
       if (apiVersion) {
@@ -113,12 +108,8 @@ class DockerService {
           { apiVersion },
           "Using Docker API version from database settings",
         );
-      } else if (config.DOCKER_API_VERSION) {
-        finalApiVersion = config.DOCKER_API_VERSION;
-        logger.info(
-          { apiVersion: finalApiVersion },
-          "Using Docker API version from environment",
-        );
+      } else {
+        logger.info("No Docker API version specified, using Docker daemon default");
       }
 
       // Create Docker client using the same logic as DockerConfigService
@@ -270,18 +261,6 @@ class DockerService {
     return new Docker(dockerConfig);
   }
 
-  /**
-   * Get default Docker host based on platform
-   */
-  private getDefaultDockerHost(): string {
-    if (process.platform === "win32") {
-      // Windows: Use named pipe for Docker Desktop
-      return "//./pipe/docker_engine";
-    } else {
-      // Unix/Linux/Mac: Use Unix socket
-      return "/var/run/docker.sock";
-    }
-  }
 
   /**
    * Extract Docker-specific error codes

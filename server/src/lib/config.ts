@@ -42,8 +42,6 @@ const configSchema = z.object({
     .transform((val) => Number(val)), // 100 requests per window
 
   // Docker Configuration
-  DOCKER_HOST: z.string().default("/var/run/docker.sock"),
-  DOCKER_API_VERSION: z.string().default("1.51"),
   CONTAINER_CACHE_TTL: z
     .string()
     .optional()
