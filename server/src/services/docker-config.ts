@@ -57,6 +57,27 @@ export class DockerConfigService extends ConfigurationService {
 
       const responseTimeMs = Date.now() - startTime;
 
+      // Validate ping result
+      if (pingResult !== "OK") {
+        const errorMessage = `Docker ping failed: ${pingResult}`;
+        logger.warn({ pingResult }, errorMessage);
+        
+        // Record failed connectivity
+        await this.recordConnectivityStatus(
+          "failed",
+          responseTimeMs,
+          errorMessage,
+          "PING_FAILED",
+        );
+
+        return {
+          isValid: false,
+          message: errorMessage,
+          errorCode: "PING_FAILED",
+          responseTimeMs,
+        };
+      }
+
       // Get additional Docker info for metadata
       const dockerInfo = await docker.info();
       const dockerVersion = await docker.version();
