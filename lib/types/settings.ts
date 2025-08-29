@@ -203,7 +203,7 @@ export interface ConnectivityStatus {
   id: string;
   service: string;
   status: string;
-  responseTimeMs: number | null;
+  responseTimeMs: bigint | null;
   errorMessage: string | null;
   errorCode: string | null;
   lastSuccessfulAt: Date | null;
@@ -251,6 +251,12 @@ export interface ConnectivityStatusResponse {
 export interface ConnectivityStatusListResponse {
   success: boolean;
   data: ConnectivityStatusInfo[];
+  totalCount?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+  hasNextPage?: boolean;
+  hasPreviousPage?: boolean;
   message?: string;
 }
 
