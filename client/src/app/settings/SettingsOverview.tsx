@@ -94,10 +94,7 @@ export function SettingsOverview() {
     refetchInterval: 30000, // Poll every 30 seconds
   });
 
-  const {
-    data: auditData,
-    isLoading: auditLoading,
-  } = useSettingsAudit({
+  const { data: auditData, isLoading: auditLoading } = useSettingsAudit({
     limit: 5,
   });
 
