@@ -273,7 +273,6 @@ router.get("/", settingsRateLimit, requireAuth, (async (
   }
 }) as RequestHandler);
 
-
 /**
  * POST /api/settings - Create a new system setting
  */
@@ -1155,7 +1154,5 @@ router.delete("/:id", settingsRateLimit, requireAuth, (async (
     next(error);
   }
 }) as RequestHandler);
-
-
 
 export default router;

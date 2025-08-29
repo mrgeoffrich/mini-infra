@@ -349,7 +349,7 @@
 
 **Goal:** Add settings pages to the application routing and integrate with the existing sidebar navigation.
 
-**Status:** Not Started
+**Status:** ✅ Completed
 
 **Tasks:**
 
@@ -372,7 +372,7 @@
 
 **Goal:** Implement the main settings page that provides an overview of all system configurations and their status.
 
-**Status:** Not Started
+**Status:** ✅ Completed
 
 **Tasks:**
 

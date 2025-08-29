@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
+import { SettingsPage } from "@/app/settings/page";
 
 export const router = createBrowserRouter([
   {
@@ -58,7 +59,27 @@ export const router = createBrowserRouter([
       },
       {
         path: "settings",
-        element: <div>Settings - Coming Soon</div>,
+        element: <Navigate to="/settings/overview" replace />,
+      },
+      {
+        path: "settings/overview",
+        element: <SettingsPage />,
+      },
+      {
+        path: "settings/docker",
+        element: <div>Docker Settings - Coming Soon</div>,
+      },
+      {
+        path: "settings/cloudflare",
+        element: <div>Cloudflare Settings - Coming Soon</div>,
+      },
+      {
+        path: "settings/azure",
+        element: <div>Azure Settings - Coming Soon</div>,
+      },
+      {
+        path: "settings/audit",
+        element: <div>Settings Audit - Coming Soon</div>,
       },
     ],
   },
