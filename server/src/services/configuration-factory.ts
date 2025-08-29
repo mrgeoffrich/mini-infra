@@ -7,6 +7,8 @@ import {
 } from "@mini-infra/types";
 import logger from "../lib/logger";
 import { DockerConfigService } from "./docker-config";
+import { CloudflareConfigService } from "./cloudflare-config";
+import { AzureConfigService } from "./azure-config";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -40,14 +42,10 @@ export class ConfigurationServiceFactory
           return new DockerConfigService(this.prisma);
 
         case "cloudflare":
-          // Will be implemented in future user stories
-          throw new Error(
-            "Cloudflare configuration service not yet implemented",
-          );
+          return new CloudflareConfigService(this.prisma);
 
         case "azure":
-          // Will be implemented in future user stories
-          throw new Error("Azure configuration service not yet implemented");
+          return new AzureConfigService(this.prisma);
 
         default:
           throw new Error(`Unknown configuration category: ${category}`);

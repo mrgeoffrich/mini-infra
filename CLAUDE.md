@@ -255,6 +255,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Connectivity Monitoring**: Built-in methods for recording and retrieving service health status
 - **Azure Configuration Service**: `server/src/services/azure-config.ts` - Azure Storage validation and management
 - **Error Handling**: Comprehensive error logging with structured Pino logging integration
+- **Background Connectivity Monitoring**: `server/src/lib/connectivity-scheduler.ts` - Automated health checking scheduler with circuit breaker and exponential backoff patterns
 
 ### Settings API Endpoints Implementation
 - **API Router**: `server/src/routes/settings.ts` - RESTful CRUD endpoints for system settings management
@@ -302,6 +303,18 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Security Features**: Connection string redaction in logs and audit trails, encrypted storage support
 - **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, rate limits, invalid credentials)
 - **Configuration Management**: Secure connection string storage with validation and removal capabilities
+
+### Background Connectivity Monitoring Implementation
+- **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
+- **Monitoring Interval**: Configurable periodic health checks (default: 5 minutes) for all configured services
+- **Circuit Breaker Pattern**: Prevents cascading failures with configurable failure thresholds and timeout periods
+- **Exponential Backoff**: Automatic retry logic with exponential delay to handle temporary service disruptions
+- **Service Integration**: Utilizes existing configuration services (Docker, Cloudflare, Azure) for health validation
+- **Database Updates**: Automatic ConnectivityStatus database updates with detailed health metrics and timestamps
+- **Server Integration**: Integrated with server startup (`server/src/server.ts`) and graceful shutdown processes
+- **Monitoring Features**: Real-time status tracking, circuit breaker state management, failure counting, and detailed logging
+- **Error Handling**: Comprehensive error logging with structured Pino integration and connection status classification
+- **Parallel Execution**: All service health checks run concurrently to minimize overall check duration
 
 ## Environment Variables
 

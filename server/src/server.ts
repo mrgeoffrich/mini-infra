@@ -2,12 +2,26 @@ import app from "./app";
 import config from "./lib/config";
 import logger from "./lib/logger";
 import DockerService from "./services/docker";
+import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
+import prisma from "./lib/prisma";
 
-// Initialize Docker connection before starting server
+// Global connectivity scheduler instance
+let connectivityScheduler: ConnectivityScheduler | null = null;
+
+// Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
   try {
+    // Initialize Docker service
     const dockerService = DockerService.getInstance();
     await dockerService.initialize();
+
+    // Initialize connectivity scheduler
+    connectivityScheduler = new ConnectivityScheduler(
+      prisma,
+      5 * 60 * 1000, // 5 minutes
+    );
+    connectivityScheduler.start();
+
     logger.info("All services initialized successfully");
   } catch (error) {
     logger.fatal(
@@ -51,6 +65,12 @@ startServer()
     // Graceful shutdown
     const gracefulShutdown = (signal: string) => {
       logger.info(`${signal} received, starting graceful shutdown`);
+
+      // Stop connectivity scheduler first
+      if (connectivityScheduler) {
+        connectivityScheduler.stop();
+        logger.info("Connectivity scheduler stopped");
+      }
 
       server.close((err) => {
         if (err) {
