@@ -24,6 +24,7 @@ model User {
   // Relations
   apiKeys       ApiKey[]
   userPreference UserPreference?
+  postgresDatabases PostgresDatabase[]
 
   @@map("users")
 }
@@ -119,4 +120,90 @@ model ConnectivityStatus {
   @@index([checkedAt])
   @@index([service, checkedAt])
   @@map("connectivity_status")
+}
+
+// PostgreSQL Database Management Models
+
+// PostgresDatabase model for managing database configurations
+model PostgresDatabase {
+  id               String   @id @default(cuid())
+  name             String
+  connectionString String   // Encrypted
+  host             String
+  port             Int
+  database         String
+  username         String
+  sslMode          String   @default("prefer")
+  tags             String   // JSON array
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastHealthCheck  DateTime?
+  healthStatus     String   @default("unknown")
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  
+  backupConfig     BackupConfiguration?
+  backupOperations BackupOperation[]
+  restoreOperations RestoreOperation[]
+  
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("postgres_databases")
+}
+
+// BackupConfiguration model for managing backup scheduling and settings
+model BackupConfiguration {
+  id                String   @id @default(cuid())
+  databaseId        String   @unique
+  database          PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  schedule          String?  // Cron expression
+  azureContainerName String
+  azurePathPrefix   String
+  retentionDays     Int      @default(30)
+  backupFormat      String   @default("custom")
+  compressionLevel  Int      @default(6)
+  isEnabled         Boolean  @default(true)
+  lastBackupAt      DateTime?
+  nextScheduledAt   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([databaseId])
+  @@map("backup_configurations")
+}
+
+// BackupOperation model for tracking backup job execution
+model BackupOperation {
+  id              String   @id @default(cuid())
+  databaseId      String
+  database        PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  operationType   String   // manual, scheduled
+  status          String   // pending, running, completed, failed
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  sizeBytes       BigInt?
+  azureBlobUrl    String?
+  errorMessage    String?
+  progress        Int      @default(0)
+  metadata        String?  // JSON for additional data
+  
+  @@index([databaseId, status])
+  @@index([startedAt])
+  @@map("backup_operations")
+}
+
+// RestoreOperation model for tracking restore job execution
+model RestoreOperation {
+  id              String   @id @default(cuid())
+  databaseId      String
+  database        PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  backupUrl       String
+  status          String   // pending, running, completed, failed
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  errorMessage    String?
+  progress        Int      @default(0)
+  
+  @@index([databaseId, status])
+  @@map("restore_operations")
 }
