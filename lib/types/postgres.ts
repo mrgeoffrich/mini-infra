@@ -350,3 +350,111 @@ export interface BackupConfigurationServiceResult<T = BackupConfigurationInfo> {
   error?: string;
   errorCode?: string;
 }
+
+// ====================
+// Backup Operations API Request Types
+// ====================
+
+export interface CreateManualBackupRequest {
+  databaseId: string;
+}
+
+export interface BackupOperationFilter {
+  status?: BackupOperationStatus;
+  operationType?: BackupOperationType;
+  startedAfter?: string; // ISO date string
+  startedBefore?: string; // ISO date string
+}
+
+export interface BackupOperationSortOptions {
+  field: keyof BackupOperationInfo;
+  order: "asc" | "desc";
+}
+
+// ====================
+// Backup Operations API Response Types
+// ====================
+
+export interface BackupOperationResponse {
+  success: boolean;
+  data: BackupOperationInfo;
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface BackupOperationListResponse {
+  success: boolean;
+  data: BackupOperationInfo[];
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    hasMore: boolean;
+  };
+}
+
+export interface BackupOperationStatusResponse {
+  success: boolean;
+  data: {
+    id: string;
+    status: BackupOperationStatus;
+    progress: number;
+    startedAt: string;
+    completedAt: string | null;
+    errorMessage: string | null;
+    sizeBytes: number | null;
+    azureBlobUrl: string | null;
+    metadata: Record<string, any> | null;
+  };
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface BackupOperationDeleteResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface ManualBackupResponse {
+  success: boolean;
+  data: {
+    operationId: string;
+    status: BackupOperationStatus;
+    message: string;
+  };
+  timestamp: string;
+  requestId?: string;
+}
+
+// ====================
+// Progress Tracking Types
+// ====================
+
+export interface BackupProgressUpdate {
+  operationId: string;
+  progress: number;
+  status: BackupOperationStatus;
+  message?: string;
+  timestamp: string;
+}
+
+export interface BackupOperationProgress {
+  id: string;
+  databaseId: string;
+  status: BackupOperationStatus;
+  progress: number;
+  startedAt: string;
+  estimatedCompletion?: string;
+  currentStep?: string;
+  totalSteps?: number;
+  completedSteps?: number;
+  errorMessage?: string;
+  metadata?: Record<string, any>;
+}
