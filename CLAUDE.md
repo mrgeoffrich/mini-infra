@@ -209,6 +209,10 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **API Router**: `server/src/routes/cloudflare-settings.ts` - RESTful Cloudflare-specific endpoints for configuration management
 - **Features**: API token validation, account management, connectivity testing, CRUD operations for Cloudflare settings
 
+### Cloudflare Connectivity Status API Endpoints Implementation
+- **API Router**: `server/src/routes/cloudflare-connectivity.ts` - RESTful endpoints for Cloudflare connectivity status retrieval
+- **Features**: Latest status retrieval, historical data with pagination, response caching with 5-minute TTL, error handling and status codes
+
 ### Background Connectivity Monitoring Implementation
 - **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
 
