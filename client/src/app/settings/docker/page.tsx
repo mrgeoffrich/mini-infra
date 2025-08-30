@@ -36,8 +36,6 @@ import {
 import { useAdvancedSettingsValidation } from "@/hooks/use-settings-validation";
 import {
   Container,
-  CheckCircle,
-  XCircle,
   AlertCircle,
   ArrowLeft,
   Save,

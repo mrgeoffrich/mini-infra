@@ -11,7 +11,6 @@ import {
 import {
   AlertCircle,
   ArrowRight,
-  Settings,
   CheckCircle,
   XCircle,
   Clock,
