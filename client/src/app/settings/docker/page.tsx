@@ -70,7 +70,6 @@ const dockerSettingsSchema = z.object({
 
 type DockerSettingsFormData = z.infer<typeof dockerSettingsSchema>;
 
-
 export default function DockerSettingsPage() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -314,7 +313,9 @@ export default function DockerSettingsPage() {
                                   <div className="space-y-3">
                                     <div className="flex items-center gap-2">
                                       <Zap className="h-4 w-4" />
-                                      <span className="font-medium text-sm">Quick Tips</span>
+                                      <span className="font-medium text-sm">
+                                        Quick Tips
+                                      </span>
                                     </div>
                                     <div className="text-sm space-y-2">
                                       <div>
@@ -330,7 +331,9 @@ export default function DockerSettingsPage() {
                                         </code>
                                       </div>
                                       <div>
-                                        <strong>Windows (Docker Desktop):</strong>{" "}
+                                        <strong>
+                                          Windows (Docker Desktop):
+                                        </strong>{" "}
                                         <code className="text-xs bg-muted px-1 rounded">
                                           npipe:////./pipe/dockerDesktopLinuxEngine
                                         </code>
@@ -377,13 +380,16 @@ export default function DockerSettingsPage() {
                                   <div className="space-y-3">
                                     <div className="flex items-center gap-2">
                                       <Zap className="h-4 w-4" />
-                                      <span className="font-medium text-sm">How to find API version</span>
+                                      <span className="font-medium text-sm">
+                                        How to find API version
+                                      </span>
                                     </div>
                                     <div className="text-sm space-y-2">
                                       <div>
                                         <strong>Get API version only:</strong>
                                         <code className="text-xs bg-muted px-1 rounded block mt-1">
-                                          docker version --format '{"{{.Server.APIVersion}}"}'
+                                          docker version --format '
+                                          {"{{.Server.APIVersion}}"}'
                                         </code>
                                       </div>
                                       <div>
@@ -393,7 +399,8 @@ export default function DockerSettingsPage() {
                                         </code>
                                       </div>
                                       <div className="text-xs text-muted-foreground">
-                                        Run these commands in your terminal to find your Docker API version.
+                                        Run these commands in your terminal to
+                                        find your Docker API version.
                                       </div>
                                     </div>
                                   </div>
@@ -459,8 +466,6 @@ export default function DockerSettingsPage() {
               isLoading={isLoading && !latestConnectivity}
               onRefresh={handleTestConnection}
             />
-
-
           </div>
         </div>
       </div>

@@ -4,10 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  useSystemSettings,
-  useConnectivityStatus,
-} from "@/hooks/use-settings";
+import { useSystemSettings, useConnectivityStatus } from "@/hooks/use-settings";
 import {
   AlertCircle,
   ArrowRight,
@@ -168,7 +165,6 @@ export function SettingsOverview() {
     {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>,
   );
 
-
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
@@ -181,7 +177,6 @@ export function SettingsOverview() {
       </div>
 
       <div className="px-4 lg:px-6 space-y-6">
-
         {/* Service Configuration Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {(Object.keys(CATEGORY_INFO) as SettingsCategory[]).map(
@@ -278,7 +273,6 @@ export function SettingsOverview() {
             },
           )}
         </div>
-
       </div>
     </div>
   );

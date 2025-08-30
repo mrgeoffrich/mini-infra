@@ -17,19 +17,19 @@ import {
 
 export function ContainerSummary() {
   // Check Docker connectivity first
-  const {
-    data: connectivityData,
-    isLoading: isConnectivityLoading,
-  } = useConnectivityStatus({
-    filters: { service: "docker" },
-    limit: 1,
-    refetchInterval: 10000, // Check every 10 seconds
-  });
+  const { data: connectivityData, isLoading: isConnectivityLoading } =
+    useConnectivityStatus({
+      filters: { service: "docker" },
+      limit: 1,
+      refetchInterval: 10000, // Check every 10 seconds
+    });
 
   // Get the latest Docker connectivity status
   const latestDockerStatus = connectivityData?.data?.[0];
   const isDockerConnected = latestDockerStatus?.status === "connected";
-  const hasDockerError = latestDockerStatus?.status === "failed" || latestDockerStatus?.status === "error";
+  const hasDockerError =
+    latestDockerStatus?.status === "failed" ||
+    latestDockerStatus?.status === "error";
 
   // Only fetch containers if Docker is connected
   const {
@@ -73,13 +73,17 @@ export function ContainerSummary() {
           <AlertDescription>
             <div className="flex items-center justify-between">
               <div>
-                <div className="font-medium">Docker service is not available</div>
+                <div className="font-medium">
+                  Docker service is not available
+                </div>
                 <div className="text-sm mt-1">
-                  {latestDockerStatus?.errorMessage || "Cannot connect to Docker. Please check your Docker configuration."}
+                  {latestDockerStatus?.errorMessage ||
+                    "Cannot connect to Docker. Please check your Docker configuration."}
                 </div>
                 {latestDockerStatus?.checkedAt && (
                   <div className="text-sm text-muted-foreground mt-1">
-                    Last checked: {new Date(latestDockerStatus.checkedAt).toLocaleString()}
+                    Last checked:{" "}
+                    {new Date(latestDockerStatus.checkedAt).toLocaleString()}
                   </div>
                 )}
               </div>

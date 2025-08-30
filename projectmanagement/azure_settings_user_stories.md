@@ -106,7 +106,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Implement React Query hooks for Azure settings management in the frontend
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 

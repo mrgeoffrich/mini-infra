@@ -48,7 +48,9 @@ async function fetchContainers(
         const errorData = await response.json();
         throw new Error(errorData.message || "Docker service is not available");
       } catch {
-        throw new Error("Docker service is not available. Please try again later.");
+        throw new Error(
+          "Docker service is not available. Please try again later.",
+        );
       }
     }
 
@@ -106,7 +108,7 @@ export function useContainers(options: UseContainersOptions = {}) {
             ) {
               return false;
             }
-            
+
             // Don't retry immediately on Docker service unavailable
             // Let the polling interval handle reconnection attempts
             if (
@@ -115,7 +117,7 @@ export function useContainers(options: UseContainersOptions = {}) {
             ) {
               return false;
             }
-            
+
             // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;
           },

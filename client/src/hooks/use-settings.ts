@@ -452,7 +452,6 @@ export function useValidateService() {
   });
 }
 
-
 // ====================
 // Connectivity Status API Functions
 // ====================

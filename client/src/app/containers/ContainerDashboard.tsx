@@ -21,19 +21,19 @@ export function ContainerDashboard() {
   const { queryParams } = filterState;
 
   // Check Docker connectivity first
-  const {
-    data: connectivityData,
-    isLoading: isConnectivityLoading,
-  } = useConnectivityStatus({
-    filters: { service: "docker" },
-    limit: 1,
-    refetchInterval: 10000, // Check every 10 seconds
-  });
+  const { data: connectivityData, isLoading: isConnectivityLoading } =
+    useConnectivityStatus({
+      filters: { service: "docker" },
+      limit: 1,
+      refetchInterval: 10000, // Check every 10 seconds
+    });
 
   // Get the latest Docker connectivity status
   const latestDockerStatus = connectivityData?.data?.[0];
   const isDockerConnected = latestDockerStatus?.status === "connected";
-  const hasDockerError = latestDockerStatus?.status === "failed" || latestDockerStatus?.status === "error";
+  const hasDockerError =
+    latestDockerStatus?.status === "failed" ||
+    latestDockerStatus?.status === "error";
 
   const {
     data: containerData,
@@ -78,9 +78,7 @@ export function ContainerDashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Containers</CardTitle>
-              <CardDescription>
-                Checking Docker connectivity...
-              </CardDescription>
+              <CardDescription>Checking Docker connectivity...</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -112,13 +110,17 @@ export function ContainerDashboard() {
             <AlertDescription>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium">Docker service is not available</div>
+                  <div className="font-medium">
+                    Docker service is not available
+                  </div>
                   <div className="text-sm mt-1">
-                    {latestDockerStatus?.errorMessage || "Cannot connect to Docker. Please check your Docker configuration."}
+                    {latestDockerStatus?.errorMessage ||
+                      "Cannot connect to Docker. Please check your Docker configuration."}
                   </div>
                   {latestDockerStatus?.checkedAt && (
                     <div className="text-sm text-muted-foreground mt-1">
-                      Last checked: {new Date(latestDockerStatus.checkedAt).toLocaleString()}
+                      Last checked:{" "}
+                      {new Date(latestDockerStatus.checkedAt).toLocaleString()}
                     </div>
                   )}
                 </div>
@@ -152,7 +154,8 @@ export function ContainerDashboard() {
             <CardHeader>
               <CardTitle>Containers</CardTitle>
               <CardDescription>
-                Docker connectivity status unknown. Please check your Docker configuration.
+                Docker connectivity status unknown. Please check your Docker
+                configuration.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -221,7 +224,7 @@ export function ContainerDashboard() {
           <CardContent className="space-y-4">
             <ContainerFilters {...filterState} />
 
-            {(isLoading && !containerData) ? (
+            {isLoading && !containerData ? (
               <div className="space-y-2">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />

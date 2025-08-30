@@ -398,6 +398,23 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Real-time Features**: Live connectivity status updates, automatic recovery from failures, and comprehensive error handling
 - **Performance Optimization**: Debounced validation requests, intelligent caching strategies, and request correlation for debugging
 
+### Azure Settings Hooks Implementation
+- **Azure Hooks File**: `client/src/hooks/use-azure-settings.ts` - Comprehensive React Query hooks for Azure Storage management
+- **useAzureSettings Hook**: Fetches current Azure configuration with connectivity status and account information (5s stale time)
+- **useUpdateAzureSettings Mutation**: Updates Azure Storage connection string and configuration with automatic cache invalidation
+- **useValidateAzureConnection Mutation**: Tests Azure connectivity with optional temporary connection string for validation
+- **useDeleteAzureSettings Mutation**: Removes Azure configuration and clears related caches (containers, connectivity status)
+- **useAzureContainers Hook**: Fetches Azure Storage container list with metadata (30s stale time, no auto-refetch on focus)
+- **useTestAzureContainerAccess Mutation**: Tests access to specific Azure Storage containers with response time metrics
+- **useAzureConnectivityStatus Hook**: Real-time Azure connectivity monitoring with 30s polling interval
+- **useAzureConnectivityHistory Hook**: Fetches paginated Azure connectivity history with filtering and sorting support
+- **Filter Management Hooks**: useAzureContainerFilters and useAzureConnectivityFilters for state management
+- **Error Handling**: Comprehensive retry logic with authentication error detection and Azure-specific error handling
+- **React Query Integration**: Proper cache invalidation, optimistic updates, and query key management for all Azure operations
+- **TypeScript Support**: Full type integration with `@mini-infra/types` Azure-specific interfaces
+- **Request Correlation**: Debug support with correlation IDs for all Azure API requests
+- **Performance Features**: Intelligent caching strategies, configurable polling intervals, and selective auto-refetch behavior
+
 ### Settings Navigation and Routing Implementation
 - **Settings Routes**: Complete nested routing structure in `client/src/lib/routes.tsx` with protected settings pages
   - `/settings` - Redirects to settings overview
