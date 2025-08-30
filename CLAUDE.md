@@ -547,6 +547,11 @@ CORS_ORIGIN=http://localhost:3000
 # Note: Docker host and API version are now configured via database settings only
 CONTAINER_CACHE_TTL=3000
 CONTAINER_POLL_INTERVAL=5000
+
+# Azure Configuration
+# Note: Azure connection strings are configured via database settings only
+AZURE_API_TIMEOUT=15000
+CONNECTIVITY_CHECK_INTERVAL=300000
 ```
 
 ## Key Commands

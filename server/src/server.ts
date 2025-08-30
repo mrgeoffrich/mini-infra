@@ -18,7 +18,7 @@ const initializeServices = async () => {
     // Initialize connectivity scheduler
     connectivityScheduler = new ConnectivityScheduler(
       prisma,
-      5 * 60 * 1000, // 5 minutes
+      config.CONNECTIVITY_CHECK_INTERVAL,
     );
     connectivityScheduler.start();
 

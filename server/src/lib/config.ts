@@ -42,6 +42,18 @@ const configSchema = z.object({
     .optional()
     .default("5000")
     .transform((val) => Number(val)), // 5 seconds
+
+  // Azure Configuration
+  AZURE_API_TIMEOUT: z
+    .string()
+    .optional()
+    .default("15000")
+    .transform((val) => Number(val)), // 15 seconds
+  CONNECTIVITY_CHECK_INTERVAL: z
+    .string()
+    .optional()
+    .default("300000")
+    .transform((val) => Number(val)), // 5 minutes
 });
 
 export type Config = z.infer<typeof configSchema>;

@@ -202,7 +202,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Ensure Azure connectivity monitoring is properly integrated with the background scheduler
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 

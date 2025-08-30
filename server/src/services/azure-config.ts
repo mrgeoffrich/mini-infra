@@ -6,6 +6,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
 import logger from "../lib/logger";
+import config from "../lib/config";
 import { BlobServiceClient } from "@azure/storage-blob";
 
 /**
@@ -13,9 +14,12 @@ import { BlobServiceClient } from "@azure/storage-blob";
  * Extends the base ConfigurationService to provide Azure-specific functionality
  */
 export class AzureConfigService extends ConfigurationService {
-  private static readonly TIMEOUT_MS = 15000; // 15 second timeout
   private static readonly CONNECTION_STRING_KEY = "connection_string";
   private static readonly STORAGE_ACCOUNT_KEY = "storage_account_name";
+
+  private get timeoutMs(): number {
+    return config.AZURE_API_TIMEOUT;
+  }
 
   constructor(prisma: PrismaClient) {
     super(prisma, "azure");
@@ -60,7 +64,7 @@ export class AzureConfigService extends ConfigurationService {
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("Azure API request timeout")),
-          AzureConfigService.TIMEOUT_MS,
+          this.timeoutMs,
         ),
       );
 
@@ -326,7 +330,7 @@ export class AzureConfigService extends ConfigurationService {
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("Container listing timeout")),
-          AzureConfigService.TIMEOUT_MS,
+          this.timeoutMs,
         ),
       );
 
