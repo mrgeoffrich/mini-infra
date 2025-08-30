@@ -215,6 +215,8 @@ The application uses Prisma ORM with SQLite for data persistence.
 
 ### Background Connectivity Monitoring Implementation
 - **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
+- **Features**: Automatic monitoring of all registered services (Docker, Cloudflare, Azure), circuit breaker pattern, exponential backoff for retries, configurable check intervals via CONNECTIVITY_CHECK_INTERVAL environment variable (default 5 minutes)
+- **Cloudflare Integration**: Automatically included via ConfigurationServiceFactory, performs periodic health checks using CloudflareConfigService.validate(), supports manual trigger via performHealthCheck('cloudflare')
 
 ### Settings Data Fetching Hooks Implementation
 - **Settings Hooks File**: `client/src/hooks/use-settings.ts` - Comprehensive React Query hooks for settings management
