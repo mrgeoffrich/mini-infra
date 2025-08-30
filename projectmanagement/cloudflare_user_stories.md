@@ -4,7 +4,7 @@
 
 **Goal:** Fix the existing Cloudflare settings page key mapping between api_token/apiToken to ensure proper data flow between frontend and backend
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 
