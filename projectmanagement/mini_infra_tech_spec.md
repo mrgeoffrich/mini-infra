@@ -127,7 +127,6 @@ const REDACT_FIELDS = [
 #### Privacy Compliance
 - **No PII in Logs**: Personal information automatically filtered
 - **Configurable Redaction**: Custom patterns for sensitive data
-- **Audit Trail**: Business events without exposing private data
 - **GDPR Ready**: Structured for compliance requirements
 
 ### Configuration
@@ -149,7 +148,7 @@ NODE_ENV=development     # Affects default log level and format
 1. **Debugging**: Request correlation allows tracing issues across the stack
 2. **Monitoring**: Structured data integrates with log aggregation tools (ELK, Splunk)
 3. **Performance**: Automatic API response time tracking
-4. **Security**: Audit trail for authentication and authorization events
+4. **Security**: Logging for authentication and authorization events
 5. **Business Intelligence**: Structured events for analytics and reporting
 6. **Compliance**: Proper data handling and privacy protection
 

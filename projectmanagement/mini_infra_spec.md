@@ -204,4 +204,3 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Usability**: Team members can perform common operations without documentation
 - **Performance**: Real-time updates respond within 1 second
 - **Security**: All authentication and authorization requirements met
-- **Monitoring**: Complete audit trail for all infrastructure operations

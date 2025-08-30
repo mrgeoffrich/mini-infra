@@ -10,10 +10,6 @@ import {
   SettingsFilter,
   SettingsCategory,
   ValidationStatus,
-  SettingsAuditInfo,
-  SettingsAuditListResponse,
-  SettingsAuditFilter,
-  AuditAction,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
   ConnectivityStatusFilter,
@@ -456,159 +452,6 @@ export function useValidateService() {
   });
 }
 
-// ====================
-// Settings Audit API Functions
-// ====================
-
-async function fetchSettingsAudit(
-  filters: SettingsAuditFilter = {},
-  page = 1,
-  limit = 50,
-  correlationId: string,
-): Promise<SettingsAuditListResponse> {
-  const url = new URL(`/api/settings/audit`, window.location.origin);
-
-  // Add query parameters
-  url.searchParams.set("page", page.toString());
-  url.searchParams.set("limit", limit.toString());
-  url.searchParams.set("sortBy", "createdAt");
-  url.searchParams.set("sortOrder", "desc");
-  if (filters.category) url.searchParams.set("category", filters.category);
-  if (filters.action) url.searchParams.set("action", filters.action);
-  if (filters.userId) url.searchParams.set("userId", filters.userId);
-  if (filters.success !== undefined)
-    url.searchParams.set("success", filters.success.toString());
-  if (filters.startDate)
-    url.searchParams.set("startDate", filters.startDate.toISOString());
-  if (filters.endDate)
-    url.searchParams.set("endDate", filters.endDate.toISOString());
-
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch settings audit: ${response.statusText}`);
-  }
-
-  const data: SettingsAuditListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch settings audit");
-  }
-
-  return data;
-}
-
-// ====================
-// Settings Audit Hooks
-// ====================
-
-export interface UseSettingsAuditOptions {
-  enabled?: boolean;
-  filters?: SettingsAuditFilter;
-  page?: number;
-  limit?: number;
-  refetchInterval?: number;
-  retry?: number | boolean | ((failureCount: number, error: Error) => boolean);
-}
-
-export function useSettingsAudit(options: UseSettingsAuditOptions = {}) {
-  const {
-    enabled = true,
-    filters = {},
-    page = 1,
-    limit = 50,
-    refetchInterval,
-    retry = 3,
-  } = options;
-
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["settingsAudit", filters, page, limit],
-    queryFn: () => fetchSettingsAudit(filters, page, limit, correlationId),
-    enabled,
-    refetchInterval,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
-              return false;
-            }
-            // Retry up to the specified number of times for other errors
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 10000, // Audit data is fresh for 10 seconds
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  });
-}
-
-// ====================
-// Audit Filter Hook
-// ====================
-
-export interface AuditFiltersState {
-  category?: SettingsCategory;
-  action?: AuditAction;
-  userId?: string;
-  success?: boolean;
-  startDate?: Date;
-  endDate?: Date;
-  page: number;
-  limit: number;
-}
-
-export function useAuditFilters(
-  initialFilters: Partial<AuditFiltersState> = {},
-) {
-  const [filters, setFilters] = useState<AuditFiltersState>({
-    page: 1,
-    limit: 50,
-    ...initialFilters,
-  });
-
-  const updateFilter = useCallback(
-    <K extends keyof AuditFiltersState>(
-      key: K,
-      value: AuditFiltersState[K],
-    ) => {
-      setFilters((prev) => ({
-        ...prev,
-        [key]: value,
-        // Reset to first page when filters change (except when updating page itself)
-        page: key === "page" ? (value as number) : 1,
-      }));
-    },
-    [],
-  );
-
-  const resetFilters = useCallback(() => {
-    setFilters({
-      page: 1,
-      limit: 50,
-      ...initialFilters,
-    });
-  }, [initialFilters]);
-
-  return {
-    filters,
-    updateFilter,
-    resetFilters,
-  };
-}
 
 // ====================
 // Connectivity Status API Functions
@@ -778,10 +621,6 @@ export type {
   SettingsFilter,
   SettingsCategory,
   ValidationStatus,
-  SettingsAuditInfo,
-  SettingsAuditListResponse,
-  SettingsAuditFilter,
-  AuditAction,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
   ConnectivityStatusFilter,

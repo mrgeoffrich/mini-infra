@@ -23,10 +23,6 @@ import {
   SettingsSortOptions,
   ValidateServiceRequest,
   ValidateServiceResponse,
-  SettingsAudit,
-  SettingsAuditInfo,
-  SettingsAuditListResponse,
-  AuditAction,
   ConnectivityStatus,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
@@ -49,13 +45,6 @@ function serializeSystemSetting(setting: SystemSettings): SystemSettingsInfo {
   };
 }
 
-// Helper function to convert SettingsAudit to SettingsAuditInfo for API responses
-function serializeSettingsAudit(audit: SettingsAudit): SettingsAuditInfo {
-  return {
-    ...audit,
-    createdAt: audit.createdAt.toISOString(),
-  };
-}
 
 // Helper function to convert ConnectivityStatus to ConnectivityStatusInfo for API responses
 function serializeConnectivityStatus(
@@ -159,79 +148,6 @@ const validateServiceSchema = z.object({
   settings: z.record(z.string(), z.string()).optional(), // Optional settings to validate with
 });
 
-// Audit query parameter validation schema
-const auditQuerySchema = z.object({
-  category: z.enum(["docker", "cloudflare", "azure"]).optional(),
-  action: z.enum(["create", "update", "delete"]).optional(),
-  userId: z.string().optional(),
-  success: z
-    .string()
-    .optional()
-    .transform((val) => val === "true"),
-  startDate: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return undefined;
-      const parsed = new Date(val);
-      if (isNaN(parsed.getTime())) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Start date must be a valid ISO date string",
-        });
-        return z.NEVER;
-      }
-      return parsed;
-    }),
-  endDate: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return undefined;
-      const parsed = new Date(val);
-      if (isNaN(parsed.getTime())) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "End date must be a valid ISO date string",
-        });
-        return z.NEVER;
-      }
-      return parsed;
-    }),
-  sortBy: z.string().optional().default("createdAt"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
-  page: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return 1;
-      const parsed = parseInt(val);
-      if (isNaN(parsed) || parsed < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Page must be a positive integer",
-        });
-        return z.NEVER;
-      }
-      return parsed;
-    }),
-  limit: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return 20;
-      const parsed = parseInt(val);
-      if (isNaN(parsed) || parsed < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Limit must be a positive integer",
-        });
-        return z.NEVER;
-      }
-      return Math.min(parsed, 100); // Maximum 100 audit entries per page
-    }),
-  search: z.string().optional(), // Search in action, category, key fields
-});
 
 // Connectivity query parameter validation schema
 const connectivityQuerySchema = z.object({
@@ -515,19 +431,6 @@ router.post("/", settingsRateLimit, requireAuth, (async (
       },
     });
 
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category,
-        key,
-        action: "create",
-        newValue: isEncrypted ? "[ENCRYPTED]" : value,
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: true,
-      },
-    });
 
     logger.info(
       {
@@ -562,159 +465,6 @@ router.post("/", settingsRateLimit, requireAuth, (async (
   }
 }) as RequestHandler);
 
-/**
- * GET /api/settings/audit - List settings audit logs with filtering and pagination
- */
-router.get("/audit", settingsRateLimit, requireAuth, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
-
-  logger.info(
-    {
-      requestId,
-      userId,
-      query: req.query,
-    },
-    "Settings audit logs requested",
-  );
-
-  try {
-    // Validate query parameters
-    const queryValidation = auditQuerySchema.safeParse(req.query);
-    if (!queryValidation.success) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          validationErrors: queryValidation.error.issues,
-        },
-        "Invalid query parameters for audit logs",
-      );
-
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid query parameters",
-        details: queryValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    const {
-      category,
-      action,
-      userId: filterUserId,
-      success,
-      startDate,
-      endDate,
-      sortBy,
-      sortOrder,
-      page,
-      limit,
-      search,
-    } = queryValidation.data;
-
-    // Build filter conditions
-    const where: any = {}; // Show all audits by default
-    if (category) where.category = category;
-    if (action) where.action = action;
-    if (filterUserId) where.userId = filterUserId;
-    if (typeof success === "boolean") where.success = success;
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
-    }
-
-    // Add search functionality
-    if (search) {
-      where.OR = [
-        { category: { contains: search, mode: "insensitive" } },
-        { key: { contains: search, mode: "insensitive" } },
-        { action: { contains: search, mode: "insensitive" } },
-      ];
-    }
-
-    // Build sort conditions
-    const orderBy: any = {};
-    orderBy[sortBy] = sortOrder;
-
-    // Calculate pagination
-    const skip = (page - 1) * limit;
-
-    // Fetch audit logs with filtering and pagination
-    const [auditLogs, totalCount] = await Promise.all([
-      prisma.settingsAudit.findMany({
-        where,
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      prisma.settingsAudit.count({ where }),
-    ]);
-
-    // Serialize audit logs for API response
-    const serializedAuditLogs = auditLogs.map(serializeSettingsAudit);
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        totalAuditLogs: totalCount,
-        returnedAuditLogs: serializedAuditLogs.length,
-        filters: {
-          category,
-          action,
-          userId: filterUserId,
-          success,
-          startDate: startDate?.toISOString(),
-          endDate: endDate?.toISOString(),
-          search,
-        },
-        sortBy,
-        sortOrder,
-        page,
-        limit,
-      },
-      "Settings audit logs returned successfully",
-    );
-
-    const totalPages = Math.ceil(totalCount / limit);
-    const hasNextPage = page < totalPages;
-    const hasPreviousPage = page > 1;
-
-    const response: SettingsAuditListResponse = {
-      success: true,
-      data: serializedAuditLogs,
-      totalCount,
-      page,
-      limit,
-      totalPages,
-      hasNextPage,
-      hasPreviousPage,
-      message: `Found ${totalCount} audit log entries`,
-    };
-
-    res.json(response);
-  } catch (error) {
-    logger.error(
-      {
-        error,
-        requestId,
-        userId,
-        query: req.query,
-      },
-      "Failed to fetch audit logs",
-    );
-
-    next(error);
-  }
-}) as RequestHandler);
 
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
@@ -1242,23 +992,6 @@ router.put("/:id", settingsRateLimit, requireAuth, (async (
       data: updateData,
     });
 
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category: existingSetting.category,
-        key: existingSetting.key,
-        action: "update",
-        oldValue: existingSetting.isEncrypted
-          ? "[ENCRYPTED]"
-          : existingSetting.value,
-        newValue:
-          (isEncrypted ?? existingSetting.isEncrypted) ? "[ENCRYPTED]" : value,
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: true,
-      },
-    });
 
     logger.info(
       {
@@ -1364,21 +1097,6 @@ router.delete("/:id", settingsRateLimit, requireAuth, (async (
       where: { id: settingId },
     });
 
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category: existingSetting.category,
-        key: existingSetting.key,
-        action: "delete",
-        oldValue: existingSetting.isEncrypted
-          ? "[ENCRYPTED]"
-          : existingSetting.value,
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: true,
-      },
-    });
 
     logger.info(
       {

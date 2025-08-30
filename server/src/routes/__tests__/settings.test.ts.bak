@@ -21,6 +21,11 @@ const mockPrisma = {
     delete: jest.fn(),
     count: jest.fn(),
   },
+  settingsAudit: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+    count: jest.fn(),
+  },
   connectivityStatus: {
     create: jest.fn(),
     findFirst: jest.fn(),
@@ -486,6 +491,7 @@ describe("Settings API Routes", () => {
     it("should create new setting successfully", async () => {
       mockPrisma.systemSettings.findUnique.mockResolvedValue(null); // No existing setting
       mockPrisma.systemSettings.create.mockResolvedValue(mockCreatedSetting);
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .post("/api/settings")
@@ -516,6 +522,18 @@ describe("Settings API Routes", () => {
         },
       });
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "api_version",
+          action: "create",
+          newValue: "1.41",
+          userId: "test-user-id",
+          ipAddress: "::ffff:127.0.0.1",
+          userAgent: "Test Agent",
+          success: true,
+        },
+      });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -544,12 +562,18 @@ describe("Settings API Routes", () => {
 
       mockPrisma.systemSettings.findUnique.mockResolvedValue(null);
       mockPrisma.systemSettings.create.mockResolvedValue(encryptedSetting);
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .post("/api/settings")
         .send(encryptedRequest)
         .expect(201);
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          newValue: "[ENCRYPTED]", // Should redact encrypted values in audit log
+        }),
+      });
     });
 
     it("should return 400 for invalid request body", async () => {
@@ -670,6 +694,7 @@ describe("Settings API Routes", () => {
     it("should update setting successfully", async () => {
       mockPrisma.systemSettings.findUnique.mockResolvedValue(existingSetting);
       mockPrisma.systemSettings.update.mockResolvedValue(updatedSetting);
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .put("/api/settings/setting-123")
@@ -694,6 +719,19 @@ describe("Settings API Routes", () => {
         },
       });
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "host",
+          action: "update",
+          oldValue: "tcp://localhost:2375",
+          newValue: "tcp://192.168.1.100:2375",
+          userId: "test-user-id",
+          ipAddress: "::ffff:127.0.0.1",
+          userAgent: "Test Agent",
+          success: true,
+        },
+      });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -724,6 +762,7 @@ describe("Settings API Routes", () => {
         value: "new_encrypted_value",
         isEncrypted: true,
       });
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .put("/api/settings/setting-123")
@@ -739,6 +778,12 @@ describe("Settings API Routes", () => {
         },
       });
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          oldValue: "tcp://localhost:2375", // Unencrypted old value
+          newValue: "[ENCRYPTED]", // Encrypted new value should be redacted
+        }),
+      });
     });
 
     it("should return 400 for invalid setting ID format", async () => {
@@ -851,6 +896,7 @@ describe("Settings API Routes", () => {
     it("should delete setting successfully", async () => {
       mockPrisma.systemSettings.findUnique.mockResolvedValue(existingSetting);
       mockPrisma.systemSettings.delete.mockResolvedValue(existingSetting);
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .delete("/api/settings/setting-123")
@@ -865,6 +911,18 @@ describe("Settings API Routes", () => {
         where: { id: "setting-123" },
       });
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "host",
+          action: "delete",
+          oldValue: "tcp://localhost:2375",
+          userId: "test-user-id",
+          ipAddress: "::ffff:127.0.0.1",
+          userAgent: "Test Agent",
+          success: true,
+        },
+      });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -885,11 +943,17 @@ describe("Settings API Routes", () => {
 
       mockPrisma.systemSettings.findUnique.mockResolvedValue(encryptedSetting);
       mockPrisma.systemSettings.delete.mockResolvedValue(encryptedSetting);
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .delete("/api/settings/setting-123")
         .expect(200);
 
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          oldValue: "[ENCRYPTED]", // Should redact encrypted values
+        }),
+      });
     });
 
     it("should return 400 for invalid setting ID format", async () => {
@@ -1351,6 +1415,7 @@ describe("Settings API Routes", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       await request(app)
         .post("/api/settings")
@@ -1397,6 +1462,7 @@ describe("Settings API Routes", () => {
         ...existingSetting,
         value: "new_sensitive_token",
       });
+      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       await request(app)
         .put("/api/settings/test-setting")
@@ -1470,6 +1536,7 @@ describe("Settings API Routes", () => {
           path: "/api/settings/audit",
           method: "get",
           setupMock: () =>
+            mockPrisma.settingsAudit.findMany.mockRejectedValue(dbError),
         },
       ];
 

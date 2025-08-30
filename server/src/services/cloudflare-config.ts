@@ -224,17 +224,6 @@ export class CloudflareConfigService extends ConfigurationService {
 
     await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
 
-    // Create audit log for token update (don't log the actual token value)
-    await this.createAuditLog(
-      "update",
-      CloudflareConfigService.API_TOKEN_KEY,
-      "[REDACTED]",
-      "[REDACTED]",
-      userId,
-      undefined,
-      undefined,
-      true,
-    );
   }
 
   /**
@@ -249,16 +238,6 @@ export class CloudflareConfigService extends ConfigurationService {
 
     await this.set(CloudflareConfigService.ACCOUNT_ID_KEY, accountId, userId);
 
-    await this.createAuditLog(
-      "update",
-      CloudflareConfigService.ACCOUNT_ID_KEY,
-      null,
-      accountId,
-      userId,
-      undefined,
-      undefined,
-      true,
-    );
   }
 
   /**
@@ -350,16 +329,6 @@ export class CloudflareConfigService extends ConfigurationService {
   async removeConfiguration(userId: string): Promise<void> {
     try {
       await this.delete(CloudflareConfigService.API_TOKEN_KEY, userId);
-      await this.createAuditLog(
-        "delete",
-        CloudflareConfigService.API_TOKEN_KEY,
-        "[REDACTED]",
-        null,
-        userId,
-        undefined,
-        undefined,
-        true,
-      );
     } catch (error) {
       // Token might not exist, continue
     }
@@ -369,16 +338,6 @@ export class CloudflareConfigService extends ConfigurationService {
         CloudflareConfigService.ACCOUNT_ID_KEY,
       );
       await this.delete(CloudflareConfigService.ACCOUNT_ID_KEY, userId);
-      await this.createAuditLog(
-        "delete",
-        CloudflareConfigService.ACCOUNT_ID_KEY,
-        oldAccountId,
-        null,
-        userId,
-        undefined,
-        undefined,
-        true,
-      );
     } catch (error) {
       // Account ID might not exist, continue
     }

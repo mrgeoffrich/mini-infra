@@ -8,7 +8,6 @@ import {
   IconDatabase,
   IconFileText,
   IconHelp,
-  IconHistory,
   IconInnerShadowTop,
   IconRocket,
   IconSearch,
@@ -99,11 +98,6 @@ const data = {
       title: "Azure Storage",
       url: "/settings/azure",
       icon: IconCloud,
-    },
-    {
-      title: "Audit History",
-      url: "/settings/audit",
-      icon: IconHistory,
     },
   ],
 };

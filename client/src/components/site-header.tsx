@@ -14,7 +14,7 @@ import {
   IconCloud,
   IconBrandAzure,
 } from "@tabler/icons-react";
-import { useConnectivityStatus } from "@/hooks/use-settings";
+import { useConnectivityStatus, ConnectivityService } from "@/hooks/use-settings";
 
 const getPageTitle = (pathname: string): string => {
   switch (pathname) {
@@ -69,12 +69,12 @@ function ConnectivityIndicator({
   icon: Icon, 
   label 
 }: { 
-  service: string; 
+  service: ConnectivityService; 
   icon: React.ComponentType<{ size?: number; className?: string }>; 
   label: string;
 }) {
   const { data: connectivityData } = useConnectivityStatus({
-    filters: { service: service as any },
+    filters: { service: service },
     limit: 1,
   });
 

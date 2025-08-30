@@ -98,28 +98,6 @@ model SystemSettings {
   @@map("system_settings")
 }
 
-// SettingsAudit model for tracking configuration changes
-model SettingsAudit {
-  id          String   @id @default(cuid())
-  category    String   // Setting category that was changed
-  key         String   // Setting key that was changed
-  action      String   // 'create', 'update', 'delete', 'validate'
-  oldValue    String?  // Previous value (never store sensitive data)
-  newValue    String?  // New value (never store sensitive data)
-  userId      String   // User who made the change
-  ipAddress   String?  // Source IP address
-  userAgent   String?  // User agent string
-  success     Boolean  @default(true)
-  errorMessage String? // Error details if action failed
-  createdAt   DateTime @default(now())
-  
-  @@index([userId])
-  @@index([category])
-  @@index([action])
-  @@index([createdAt])
-  @@index([category, createdAt])
-  @@map("settings_audit")
-}
 
 // ConnectivityStatus model for tracking external service connectivity
 model ConnectivityStatus {

@@ -546,4 +546,156 @@ describe("ConfigurationService", () => {
     });
   });
 
+  describe("createAuditLog", () => {
+    it("should create audit log with all parameters", async () => {
+      mockPrisma.settingsAudit.create = jest.fn().mockResolvedValue({
+        id: "audit-1",
+      });
+
+      await (configService as any).createAuditLog(
+        "update",
+        "host",
+        "old-value",
+        "new-value",
+        "user1",
+        "192.168.1.100",
+        "Mozilla/5.0",
+        true,
+        undefined,
+      );
+
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "host",
+          action: "update",
+          oldValue: "old-value",
+          newValue: "new-value",
+          userId: "user1",
+          ipAddress: "192.168.1.100",
+          userAgent: "Mozilla/5.0",
+          success: true,
+          errorMessage: null,
+          createdAt: expect.any(Date),
+        },
+      });
+    });
+
+    it("should create audit log with minimal parameters", async () => {
+      mockPrisma.settingsAudit.create = jest.fn().mockResolvedValue({
+        id: "audit-1",
+      });
+
+      await (configService as any).createAuditLog(
+        "create",
+        "api_token",
+        null,
+        "[REDACTED]",
+        "user2",
+      );
+
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "api_token",
+          action: "create",
+          oldValue: null,
+          newValue: "[REDACTED]",
+          userId: "user2",
+          ipAddress: null,
+          userAgent: null,
+          success: true,
+          errorMessage: null,
+          createdAt: expect.any(Date),
+        },
+      });
+    });
+
+    it("should create audit log for failed operation", async () => {
+      mockPrisma.settingsAudit.create = jest.fn().mockResolvedValue({
+        id: "audit-1",
+      });
+
+      await (configService as any).createAuditLog(
+        "validate",
+        "connection",
+        null,
+        null,
+        "user1",
+        "127.0.0.1",
+        "curl/7.68.0",
+        false,
+        "Connection refused",
+      );
+
+      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
+        data: {
+          category: "docker",
+          key: "connection",
+          action: "validate",
+          oldValue: null,
+          newValue: null,
+          userId: "user1",
+          ipAddress: "127.0.0.1",
+          userAgent: "curl/7.68.0",
+          success: false,
+          errorMessage: "Connection refused",
+          createdAt: expect.any(Date),
+        },
+      });
+    });
+
+    it("should handle database errors gracefully", async () => {
+      const dbError = new Error("Audit log insert failed");
+      mockPrisma.settingsAudit.create = jest.fn().mockRejectedValue(dbError);
+
+      // Should not throw
+      await expect(
+        (configService as any).createAuditLog(
+          "update",
+          "host",
+          "old",
+          "new",
+          "user1",
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        {
+          category: "docker",
+          key: "host",
+          action: "update",
+          error: "Audit log insert failed",
+        },
+        "Failed to create audit log",
+      );
+    });
+
+    it("should handle non-Error exceptions", async () => {
+      const unknownError = { message: "Unknown audit error" };
+      mockPrisma.settingsAudit.create = jest
+        .fn()
+        .mockRejectedValue(unknownError);
+
+      await expect(
+        (configService as any).createAuditLog(
+          "delete",
+          "host",
+          "old",
+          null,
+          "user1",
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        {
+          category: "docker",
+          key: "host",
+          action: "delete",
+          error: "Unknown error",
+        },
+        "Failed to create audit log",
+      );
+    });
+  });
 });

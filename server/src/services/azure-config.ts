@@ -262,17 +262,6 @@ export class AzureConfigService extends ConfigurationService {
       userId,
     );
 
-    // Create audit log for connection string update (don't log the actual value)
-    await this.createAuditLog(
-      "update",
-      AzureConfigService.CONNECTION_STRING_KEY,
-      "[REDACTED]",
-      "[REDACTED]",
-      userId,
-      undefined,
-      undefined,
-      true,
-    );
   }
 
   /**
@@ -430,16 +419,6 @@ export class AzureConfigService extends ConfigurationService {
   async removeConfiguration(userId: string): Promise<void> {
     try {
       await this.delete(AzureConfigService.CONNECTION_STRING_KEY, userId);
-      await this.createAuditLog(
-        "delete",
-        AzureConfigService.CONNECTION_STRING_KEY,
-        "[REDACTED]",
-        null,
-        userId,
-        undefined,
-        undefined,
-        true,
-      );
     } catch (error) {
       // Connection string might not exist, continue
     }
@@ -449,16 +428,6 @@ export class AzureConfigService extends ConfigurationService {
         AzureConfigService.STORAGE_ACCOUNT_KEY,
       );
       await this.delete(AzureConfigService.STORAGE_ACCOUNT_KEY, userId);
-      await this.createAuditLog(
-        "delete",
-        AzureConfigService.STORAGE_ACCOUNT_KEY,
-        oldAccountName,
-        null,
-        userId,
-        undefined,
-        undefined,
-        true,
-      );
     } catch (error) {
       // Account name might not exist, continue
     }
