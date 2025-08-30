@@ -3,16 +3,19 @@
 // ====================
 
 // Authentication types
-export * from './auth';
+export * from "./auth";
 
 // Container types
-export * from './containers';
+export * from "./containers";
 
 // Settings types
-export * from './settings';
+export * from "./settings";
+
+// Azure types
+export * from "./azure";
 
 // API response types
-export * from './api';
+export * from "./api";
 
 // ====================
 // Type Utilities
@@ -23,12 +26,12 @@ export type Serialize<T> = {
   [K in keyof T]: T[K] extends Date
     ? string
     : T[K] extends Date | null
-    ? string | null
-    : T[K] extends Date | undefined
-    ? string | undefined
-    : T[K] extends object
-    ? Serialize<T[K]>
-    : T[K];
+      ? string | null
+      : T[K] extends Date | undefined
+        ? string | undefined
+        : T[K] extends object
+          ? Serialize<T[K]>
+          : T[K];
 };
 
 // Utility type to convert string fields to Date (for deserialization)
@@ -38,16 +41,17 @@ export type Deserialize<T> = {
       ? Date
       : T[K]
     : T[K] extends string | null
-    ? T[K] extends `${number}-${number}-${number}T${string}` | null
-      ? Date | null
-      : T[K]
-    : T[K] extends object
-    ? Deserialize<T[K]>
-    : T[K];
+      ? T[K] extends `${number}-${number}-${number}T${string}` | null
+        ? Date | null
+        : T[K]
+      : T[K] extends object
+        ? Deserialize<T[K]>
+        : T[K];
 };
 
 // Utility type for making certain fields optional
 export type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 
 // Utility type for making certain fields required
-export type RequiredBy<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
+export type RequiredBy<T, K extends keyof T> = Omit<T, K> &
+  Required<Pick<T, K>>;

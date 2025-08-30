@@ -135,6 +135,8 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Authentication Types** (`lib/types/auth.ts`): User profiles, sessions, API keys, OAuth data
 - **API Types** (`lib/types/api.ts`): Request/response interfaces, error handling types
 - **Container Types** (`lib/types/containers.ts`): Docker container data structures and status enums
+- **Settings Types** (`lib/types/settings.ts`): System settings, connectivity status, validation and configuration service interfaces
+- **Azure Types** (`lib/types/azure.ts`): Azure Storage specific request/response types, connection metadata, account info, container data, and error handling
 - **Utility Types** (`lib/types/index.ts`): Serialization helpers, conditional types, partial/required utilities
 
 ### Workspace Configuration

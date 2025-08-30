@@ -112,7 +112,6 @@ export interface SettingsSortOptions {
   order: "asc" | "desc";
 }
 
-
 // ====================
 // Connectivity Status Types
 // ====================

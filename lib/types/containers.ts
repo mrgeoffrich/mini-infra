@@ -2,18 +2,23 @@
 // Container Core Types
 // ====================
 
-export type ContainerStatus = 'running' | 'stopped' | 'restarting' | 'paused' | 'exited';
+export type ContainerStatus =
+  | "running"
+  | "stopped"
+  | "restarting"
+  | "paused"
+  | "exited";
 
 export interface ContainerPort {
   private: number;
   public?: number;
-  type: 'tcp' | 'udp';
+  type: "tcp" | "udp";
 }
 
 export interface ContainerVolume {
   source: string;
   destination: string;
-  mode: 'rw' | 'ro';
+  mode: "rw" | "ro";
 }
 
 export interface ContainerInfo {
@@ -44,7 +49,7 @@ export interface ContainerQueryParams {
   page?: number;
   limit?: number;
   sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
+  sortOrder?: "asc" | "desc";
   status?: string;
   name?: string;
   image?: string;

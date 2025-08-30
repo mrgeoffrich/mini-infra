@@ -55,7 +55,7 @@ export interface PaginatedResponse<T> {
 // Sorting and Filtering Types
 // ====================
 
-export type SortOrder = 'asc' | 'desc';
+export type SortOrder = "asc" | "desc";
 
 export interface SortParams {
   sortBy?: string;
@@ -71,14 +71,17 @@ export interface QueryParams extends PaginationParams, SortParams {
 // ====================
 
 export interface HealthStatus {
-  status: 'healthy' | 'unhealthy';
+  status: "healthy" | "unhealthy";
   timestamp: string;
   environment: string;
   uptime: number;
-  services?: Record<string, {
-    status: 'connected' | 'disconnected' | 'error';
-    message?: string;
-  }>;
+  services?: Record<
+    string,
+    {
+      status: "connected" | "disconnected" | "error";
+      message?: string;
+    }
+  >;
 }
 
 // ====================
