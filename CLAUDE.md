@@ -496,6 +496,21 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Accessibility**: Proper ARIA labels, screen reader support, and keyboard navigation
 - **Data Management**: Uses existing Azure hooks (`useAzureContainers`, `useAzureContainerFilters`) for data fetching and state management
 
+### Azure Connectivity Status Display Component Implementation
+- **AzureConnectivityStatus Component**: Comprehensive connectivity status monitoring component implemented in `client/src/components/AzureConnectivityStatus.tsx`
+- **Real-time Status Monitoring**: Displays current Azure Storage connectivity status with auto-refresh functionality (configurable interval, default: 30 seconds)
+- **Response Time Chart**: Visual progress bar chart showing response times for the last 10 successful connections with trend analysis
+- **Status History Timeline**: Interactive timeline view of recent connectivity checks with filtering options (5, 10, 20, or 50 entries)
+- **Color-coded Status Indicators**: Uses existing `StatusBadge`, `StatusDot`, and `ServiceStatusCard` components for consistent visual status representation
+- **Connection Details Panel**: Displays last successful connection timestamp, current response time, storage account information, and auto-refresh interval
+- **Error Details Display**: Comprehensive error message display with error codes when connections fail, including specific Azure error handling
+- **Auto-refresh Functionality**: Configurable polling interval with automatic status updates and manual refresh capability
+- **Storage Account Metadata**: Shows connected storage account details including account name, SKU, and container count when available
+- **Performance Metrics**: Response time tracking with visual indicators and average calculations across successful connections
+- **Integration**: Seamlessly integrated into Azure settings page at `/settings/azure` with proper hook-based data management
+- **Responsive Design**: Mobile-optimized layout with proper grid breakpoints and touch-friendly interactions
+- **Accessibility**: Full ARIA support, keyboard navigation, and screen reader compatibility with descriptive tooltips and labels
+
 
 ## Environment Variables
 

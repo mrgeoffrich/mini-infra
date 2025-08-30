@@ -49,6 +49,7 @@ import {
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { AzureContainerList } from "@/components/AzureContainerList";
+import { AzureConnectivityStatus } from "@/components/AzureConnectivityStatus";
 
 // Azure settings schema
 const azureSettingsSchema = z.object({
@@ -667,6 +668,15 @@ export default function AzureSettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Azure Connectivity Status Display */}
+        <div className="mt-8">
+          <AzureConnectivityStatus
+            refreshInterval={30000} // 30 seconds
+            showResponseTimeChart={true}
+            showHistoryTimeline={true}
+          />
         </div>
 
         {/* Container List - Only show when Azure connection is established */}

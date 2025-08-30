@@ -178,7 +178,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Create a component to show real-time Azure connectivity status and history
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 
