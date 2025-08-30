@@ -17,6 +17,9 @@ export * from "./azure";
 // Cloudflare types
 export * from "./cloudflare";
 
+// PostgreSQL types
+export * from "./postgres";
+
 // API response types
 export * from "./api";
 

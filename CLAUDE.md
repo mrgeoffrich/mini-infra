@@ -176,10 +176,17 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Traefik API**: Load balancer configuration
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
+- **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
 - **Google OAuth API**: User authentication
 
 ### Docker Integration Implementation
 - **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with database-driven configuration and automatic reconnection
+
+### PostgreSQL Database Configuration Service Implementation
+- **Service Class**: `server/src/services/postgres-config.ts` - Complete PostgreSQL database configuration management service
+- **Features**: CRUD operations for database configurations, connection string encryption/decryption using crypto-js, connection testing and health checks, user-scoped database management
+- **Security**: AES encryption for sensitive connection strings, secure validation with timeout protection (10s connection, 5s query), comprehensive error handling with categorized error codes
+- **Database Integration**: Uses PostgresDatabase, BackupConfiguration, BackupOperation, and RestoreOperation Prisma models with full relationship support
 
 ### Settings Service Layer Architecture
 - **Code**: `server/src/services/**` - all the settings code
