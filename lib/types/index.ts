@@ -17,6 +17,12 @@ export * from "./azure";
 // API response types
 export * from "./api";
 
+// Job management types
+export * from "./job";
+
+// SSE event types
+export * from "./sse";
+
 // ====================
 // Type Utilities
 // ====================

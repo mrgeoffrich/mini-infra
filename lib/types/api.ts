@@ -94,3 +94,62 @@ export interface RateLimitError extends ApiError {
   remaining: number;
   resetTime: string;
 }
+
+// ====================
+// Job Management API Types  
+// ====================
+
+import { JobExecution, JobStatus } from './job.js';
+
+export interface CreateJobRequest {
+  repositoryUrl: string;
+  githubToken: string;
+  storyFile: string;
+  architectureDoc: string;
+  branchPrefix?: string;
+  featureBranch?: string;
+  customPrompt?: string;
+}
+
+export interface JobResponse {
+  id: string;
+  userId: string;
+  repositoryUrl: string;
+  storyFile: string;
+  architectureDoc: string;
+  branchPrefix?: string;
+  featureBranch?: string;
+  status: JobStatus;
+  createdAt: string;
+  updatedAt: string;
+  execution?: JobExecution;
+}
+
+export interface JobListResponse extends PaginatedResponse<JobResponse> {}
+
+export interface JobExecutionResponse {
+  id: string;
+  jobId: string;
+  sessionId: string;
+  status: JobStatus;
+  progress?: {
+    current: number;
+    total: number;
+    percentage: number;
+    message?: string;
+  };
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface JobStreamParams {
+  sessionId: string;
+  jobId?: string;
+}
+
+export interface StartJobResponse {
+  sessionId: string;
+  jobId: string;
+  streamUrl: string;
+}
