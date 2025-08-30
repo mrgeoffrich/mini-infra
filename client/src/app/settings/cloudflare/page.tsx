@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { TunnelStatus } from "@/components/cloudflare/tunnel-status";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -569,6 +570,11 @@ export default function CloudflareSettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Tunnel Status Display */}
+        <div className="mt-6">
+          <TunnelStatus />
         </div>
       </div>
     </div>
