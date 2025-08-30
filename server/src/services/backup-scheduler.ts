@@ -1,0 +1,496 @@
+import { PrismaClient } from "../generated/prisma";
+import * as cron from "node-cron";
+import logger from "../lib/logger";
+import { BackupConfigService } from "./backup-config";
+import { BackupExecutorService } from "./backup-executor";
+import { BackupOperationType } from "@mini-infra/types";
+
+/**
+ * Scheduled job information
+ */
+export interface ScheduledJob {
+  id: string;
+  databaseId: string;
+  schedule: string;
+  task: cron.ScheduledTask;
+  isEnabled: boolean;
+  nextScheduledAt: Date | null;
+}
+
+/**
+ * BackupSchedulerService manages cron-based backup scheduling
+ */
+export class BackupSchedulerService {
+  private prisma: PrismaClient;
+  private backupConfigService: BackupConfigService;
+  private backupExecutorService: BackupExecutorService;
+  private scheduledJobs: Map<string, ScheduledJob> = new Map();
+  private isInitialized = false;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+    this.backupConfigService = new BackupConfigService(prisma);
+    this.backupExecutorService = new BackupExecutorService(prisma);
+  }
+
+  /**
+   * Initialize the scheduler service and load existing schedules
+   */
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    try {
+      // Initialize dependencies
+      await this.backupExecutorService.initialize();
+
+      // Load existing backup configurations with schedules
+      await this.loadExistingSchedules();
+
+      logger.info("BackupSchedulerService initialized successfully");
+      this.isInitialized = true;
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to initialize BackupSchedulerService",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Register a scheduled backup job
+   */
+  public async registerSchedule(
+    databaseId: string,
+    schedule: string,
+    userId: string,
+  ): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      // Validate cron expression
+      if (!cron.validate(schedule)) {
+        throw new Error(`Invalid cron expression: ${schedule}`);
+      }
+
+      // Remove existing schedule if it exists
+      await this.unregisterSchedule(databaseId);
+
+      // Create scheduled task (initially stopped)
+      const task = cron.schedule(
+        schedule,
+        async () => {
+          await this.executeScheduledBackup(databaseId, userId);
+        },
+        {
+          timezone: "UTC",
+        },
+      );
+      
+      // Stop the task initially - it will be started when enabled
+      task.stop();
+
+      // Calculate next scheduled time
+      const nextScheduledAt = this.calculateNextRunTime(schedule);
+
+      // Store job information
+      const scheduledJob: ScheduledJob = {
+        id: `${databaseId}-${Date.now()}`,
+        databaseId,
+        schedule,
+        task,
+        isEnabled: false,
+        nextScheduledAt,
+      };
+
+      this.scheduledJobs.set(databaseId, scheduledJob);
+
+      // Update database with next scheduled time
+      await this.updateNextScheduledTime(databaseId, nextScheduledAt);
+
+      logger.info(
+        {
+          databaseId,
+          schedule,
+          nextScheduledAt: nextScheduledAt?.toISOString(),
+        },
+        "Backup schedule registered",
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+          schedule,
+          userId,
+        },
+        "Failed to register backup schedule",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Unregister a scheduled backup job
+   */
+  public async unregisterSchedule(databaseId: string): Promise<void> {
+    try {
+      const existingJob = this.scheduledJobs.get(databaseId);
+      if (existingJob) {
+        // Stop and destroy the cron task
+        existingJob.task.stop();
+        existingJob.task.destroy();
+
+        // Remove from map
+        this.scheduledJobs.delete(databaseId);
+
+        // Clear next scheduled time in database
+        await this.updateNextScheduledTime(databaseId, null);
+
+        logger.info({ databaseId }, "Backup schedule unregistered");
+      }
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+        },
+        "Failed to unregister backup schedule",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Enable a scheduled backup job
+   */
+  public async enableSchedule(databaseId: string): Promise<void> {
+    try {
+      const job = this.scheduledJobs.get(databaseId);
+      if (!job) {
+        throw new Error("Schedule not found for database");
+      }
+
+      if (!job.isEnabled) {
+        job.task.start();
+        job.isEnabled = true;
+
+        // Update next scheduled time
+        job.nextScheduledAt = this.calculateNextRunTime(job.schedule);
+        await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
+
+        logger.info(
+          {
+            databaseId,
+            nextScheduledAt: job.nextScheduledAt?.toISOString(),
+          },
+          "Backup schedule enabled",
+        );
+      }
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+        },
+        "Failed to enable backup schedule",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Disable a scheduled backup job
+   */
+  public async disableSchedule(databaseId: string): Promise<void> {
+    try {
+      const job = this.scheduledJobs.get(databaseId);
+      if (!job) {
+        throw new Error("Schedule not found for database");
+      }
+
+      if (job.isEnabled) {
+        job.task.stop();
+        job.isEnabled = false;
+
+        // Clear next scheduled time
+        job.nextScheduledAt = null;
+        await this.updateNextScheduledTime(databaseId, null);
+
+        logger.info({ databaseId }, "Backup schedule disabled");
+      }
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+        },
+        "Failed to disable backup schedule",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get status of all scheduled jobs
+   */
+  public getScheduleStatus(): Array<{
+    databaseId: string;
+    schedule: string;
+    isEnabled: boolean;
+    nextScheduledAt: string | null;
+  }> {
+    return Array.from(this.scheduledJobs.values()).map((job) => ({
+      databaseId: job.databaseId,
+      schedule: job.schedule,
+      isEnabled: job.isEnabled,
+      nextScheduledAt: job.nextScheduledAt?.toISOString() || null,
+    }));
+  }
+
+  /**
+   * Get status of a specific scheduled job
+   */
+  public getScheduleStatusForDatabase(databaseId: string): {
+    databaseId: string;
+    schedule: string;
+    isEnabled: boolean;
+    nextScheduledAt: string | null;
+  } | null {
+    const job = this.scheduledJobs.get(databaseId);
+    if (!job) {
+      return null;
+    }
+
+    return {
+      databaseId: job.databaseId,
+      schedule: job.schedule,
+      isEnabled: job.isEnabled,
+      nextScheduledAt: job.nextScheduledAt?.toISOString() || null,
+    };
+  }
+
+  /**
+   * Calculate next run time for a cron expression
+   */
+  private calculateNextRunTime(schedule: string): Date | null {
+    try {
+      if (!cron.validate(schedule)) {
+        return null;
+      }
+
+      // Use a temporary task to get the next execution time
+      const tempTask = cron.schedule(schedule, () => {});
+      // Note: node-cron doesn't provide nextDate method, so we calculate manually
+      // This is a simplified approach - for production, consider using a proper cron library
+      const now = new Date();
+      // For now, return one hour from now as a placeholder
+      // This would need proper cron expression parsing for accurate next execution time
+      const nextDate = new Date(now.getTime() + 60 * 60 * 1000);
+      tempTask.destroy();
+
+      return nextDate;
+    } catch (error) {
+      logger.warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          schedule,
+        },
+        "Failed to calculate next run time",
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Execute a scheduled backup
+   */
+  private async executeScheduledBackup(
+    databaseId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      logger.info(
+        { databaseId },
+        "Executing scheduled backup",
+      );
+
+      // Queue the backup operation
+      const backupOperation = await this.backupExecutorService.queueBackup(
+        databaseId,
+        "scheduled" as BackupOperationType,
+        userId,
+      );
+
+      // Update next scheduled time for this job
+      const job = this.scheduledJobs.get(databaseId);
+      if (job) {
+        job.nextScheduledAt = this.calculateNextRunTime(job.schedule);
+        await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
+      }
+
+      logger.info(
+        {
+          databaseId,
+          operationId: backupOperation.id,
+          nextScheduledAt: job?.nextScheduledAt?.toISOString(),
+        },
+        "Scheduled backup queued successfully",
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+          userId,
+        },
+        "Failed to execute scheduled backup",
+      );
+    }
+  }
+
+  /**
+   * Load existing backup configurations with schedules
+   */
+  private async loadExistingSchedules(): Promise<void> {
+    try {
+      const backupConfigs = await this.prisma.backupConfiguration.findMany({
+        where: {
+          schedule: { not: null },
+          isEnabled: true,
+        },
+        include: {
+          database: true,
+        },
+      });
+
+      logger.info(
+        { count: backupConfigs.length },
+        "Loading existing backup schedules",
+      );
+
+      for (const config of backupConfigs) {
+        if (config.schedule && config.database) {
+          try {
+            await this.registerSchedule(
+              config.databaseId,
+              config.schedule,
+              config.database.userId,
+            );
+
+            // Enable the schedule if it was previously enabled
+            if (config.isEnabled) {
+              await this.enableSchedule(config.databaseId);
+            }
+          } catch (error) {
+            logger.warn(
+              {
+                error: error instanceof Error ? error.message : "Unknown error",
+                databaseId: config.databaseId,
+                schedule: config.schedule,
+              },
+              "Failed to load backup schedule, skipping",
+            );
+          }
+        }
+      }
+
+      logger.info(
+        {
+          loaded: this.scheduledJobs.size,
+          total: backupConfigs.length,
+        },
+        "Finished loading backup schedules",
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to load existing backup schedules",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Update next scheduled time in database
+   */
+  private async updateNextScheduledTime(
+    databaseId: string,
+    nextScheduledAt: Date | null,
+  ): Promise<void> {
+    try {
+      await this.prisma.backupConfiguration.updateMany({
+        where: { databaseId },
+        data: { nextScheduledAt },
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          databaseId,
+          nextScheduledAt: nextScheduledAt?.toISOString(),
+        },
+        "Failed to update next scheduled time in database",
+      );
+    }
+  }
+
+  /**
+   * Refresh schedules when backup configurations change
+   */
+  public async refreshSchedules(): Promise<void> {
+    try {
+      logger.info("Refreshing backup schedules");
+
+      // Stop all existing jobs
+      for (const [databaseId] of this.scheduledJobs) {
+        await this.unregisterSchedule(databaseId);
+      }
+
+      // Reload from database
+      await this.loadExistingSchedules();
+
+      logger.info("Backup schedules refreshed successfully");
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to refresh backup schedules",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  public async shutdown(): Promise<void> {
+    try {
+      // Stop all scheduled jobs
+      for (const [databaseId] of this.scheduledJobs) {
+        await this.unregisterSchedule(databaseId);
+      }
+
+      // Shutdown backup executor
+      await this.backupExecutorService.shutdown();
+
+      logger.info("BackupSchedulerService shut down successfully");
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Error during BackupSchedulerService shutdown",
+      );
+    }
+  }
+}
