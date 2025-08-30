@@ -22,12 +22,14 @@
         "@types/cookie-parser": "^1.4.9",
         "@types/cors": "^2.8.13",
         "@types/express": "^5.0.3",
+        "@types/fs-extra": "^11.0.4",
         "@types/jest": "^30.0.0",
         "@types/jsonwebtoken": "^9.0.10",
         "@types/node": "^20.4.0",
         "@types/passport": "^1.0.17",
         "@types/passport-google-oauth20": "^2.0.16",
         "@types/supertest": "^6.0.3",
+        "@types/uuid": "^10.0.0",
         "@typescript-eslint/eslint-plugin": "^8.41.0",
         "@typescript-eslint/parser": "^8.41.0",
         "cross-env": "^10.0.0",
@@ -43,6 +45,7 @@
         "typescript-eslint": "^8.41.0"
     },
     "dependencies": {
+        "@anthropic-ai/claude-code": "^1.0.98",
         "@azure/storage-blob": "^12.28.0",
         "@mini-infra/types": "file:../lib",
         "@prisma/client": "^6.15.0",
@@ -54,6 +57,7 @@
         "dockerode": "^4.0.7",
         "dotenv": "^17.2.1",
         "express": "^5.1.0",
+        "fs-extra": "^11.3.1",
         "helmet": "^8.1.0",
         "jsonwebtoken": "^9.0.2",
         "node-cache": "^5.1.2",
@@ -63,6 +67,7 @@
         "pino-http": "^10.5.0",
         "pino-pretty": "^13.1.1",
         "prisma": "^6.15.0",
+        "uuid": "^11.1.0",
         "zod": "^4.1.4"
     }
 }
