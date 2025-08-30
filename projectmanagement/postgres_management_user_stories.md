@@ -144,7 +144,7 @@
 
 **Goal:** Create service to execute Docker containers for backup and restore operations
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
