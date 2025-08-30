@@ -25,6 +25,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   useSystemSettings,
   useCreateSystemSetting,
   useUpdateSystemSetting,
@@ -40,16 +45,15 @@ import {
   Save,
   TestTube,
   Loader2,
-  Zap,
   Eye,
   EyeOff,
   Shield,
   Server,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { AzureContainerList } from "@/components/AzureContainerList";
-import { AzureConnectivityStatus } from "@/components/AzureConnectivityStatus";
 
 // Azure settings schema
 const azureSettingsSchema = z.object({
@@ -348,336 +352,310 @@ export default function AzureSettingsPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-4xl">
-        <div className="grid gap-6 md:grid-cols-3">
-          {/* Configuration Form */}
-          <div className="md:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Storage Account Configuration</CardTitle>
-                <CardDescription>
-                  Configure your Azure Storage Account connection string to
-                  enable backup operations. Connection strings are stored
-                  securely with encryption.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {settingsLoading ? (
-                  <div className="space-y-4">
-                    <Skeleton className="h-20" />
-                    <Skeleton className="h-10" />
-                  </div>
-                ) : (
-                  <Form {...form}>
-                    <form
-                      onSubmit={form.handleSubmit(handleSave)}
-                      className="space-y-6"
-                    >
-                      <FormField
-                        control={form.control}
-                        name="connectionString"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <Shield className="inline mr-2 h-4 w-4" />
-                              Connection String
-                            </FormLabel>
-                            <FormControl>
-                              <div className="relative">
-                                <Input
-                                  type={
-                                    showConnectionString ? "text" : "password"
-                                  }
-                                  placeholder="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
-                                  {...field}
-                                  className="pr-10"
-                                />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                                  onClick={() =>
-                                    setShowConnectionString(
-                                      !showConnectionString,
-                                    )
-                                  }
-                                >
-                                  {showConnectionString ? (
-                                    <EyeOff className="h-4 w-4" />
-                                  ) : (
-                                    <Eye className="h-4 w-4" />
-                                  )}
-                                </Button>
+        {/* Configuration Form */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Storage Account Configuration</CardTitle>
+            <CardDescription>
+              Configure your Azure Storage Account connection string to
+              enable backup operations. Connection strings are stored
+              securely with encryption.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {settingsLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-20" />
+                <Skeleton className="h-10" />
+              </div>
+            ) : (
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(handleSave)}
+                  className="space-y-6"
+                >
+                  <FormField
+                    control={form.control}
+                    name="connectionString"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <Shield className="h-4 w-4" />
+                          Connection String
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                              >
+                                <HelpCircle className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80">
+                              <div className="space-y-3">
+                                <h4 className="font-medium leading-none">Quick Tips</h4>
+                                <div className="text-sm space-y-2">
+                                  <div>
+                                    <strong>Connection String:</strong> Found in Azure Portal
+                                    under your Storage Account → Access Keys
+                                  </div>
+                                  <div>
+                                    <strong>Security:</strong> Connection strings are encrypted
+                                    and stored securely in the database
+                                  </div>
+                                  <div>
+                                    <strong>Containers:</strong> Once validated, container
+                                    information will be available for backup operations
+                                  </div>
+                                  <div>
+                                    <strong>Permissions:</strong> Ensure your storage account
+                                    allows blob operations for backups to work
+                                  </div>
+                                </div>
                               </div>
-                            </FormControl>
-                            <FormDescription>
-                              Your Azure Storage Account connection string. Find
-                              this in the Azure portal under Storage Account →
-                              Access Keys. It should include
-                              DefaultEndpointsProtocol, AccountName, and
-                              AccountKey.
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="flex gap-3 items-center">
-                        <Button
-                          type="submit"
-                          disabled={!form.formState.isValid || isSaving}
-                        >
-                          {isSaving ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="mr-2 h-4 w-4" />
-                          )}
-                          Save Settings
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={
-                            !form.formState.isValid ||
-                            isTestingConnection ||
-                            validation.isValidating
-                          }
-                          onClick={handleTestConnection}
-                        >
-                          {isTestingConnection || validation.isValidating ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <TestTube className="mr-2 h-4 w-4" />
-                          )}
-                          Test Connection
-                        </Button>
-
-                        {/* Auto-save status indicator */}
-                        {autoSaveStatus !== "idle" && (
-                          <div className="flex items-center gap-2 text-sm">
-                            {autoSaveStatus === "saving" && (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                                <span className="text-blue-600">
-                                  Auto-saving...
-                                </span>
-                              </>
-                            )}
-                            {autoSaveStatus === "saved" && (
-                              <>
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                                <span className="text-green-600">
-                                  Auto-saved
-                                </span>
-                              </>
-                            )}
-                            {autoSaveStatus === "error" && (
-                              <>
-                                <XCircle className="h-4 w-4 text-red-600" />
-                                <span className="text-red-600">
-                                  Auto-save failed
-                                </span>
-                              </>
-                            )}
+                            </PopoverContent>
+                          </Popover>
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              type={
+                                showConnectionString ? "text" : "password"
+                              }
+                              placeholder="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
+                              {...field}
+                              className="pr-10"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                              onClick={() =>
+                                setShowConnectionString(
+                                  !showConnectionString,
+                                )
+                              }
+                            >
+                              {showConnectionString ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </Button>
                           </div>
+                        </FormControl>
+                        <FormDescription>
+                          Your Azure Storage Account connection string. Find
+                          this in the Azure portal under Storage Account →
+                          Access Keys. It should include
+                          DefaultEndpointsProtocol, AccountName, and
+                          AccountKey.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex gap-3 items-center">
+                    <Button
+                      type="submit"
+                      disabled={!form.formState.isValid || isSaving}
+                    >
+                      {isSaving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Settings
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        !form.formState.isValid ||
+                        isTestingConnection ||
+                        validation.isValidating
+                      }
+                      onClick={handleTestConnection}
+                    >
+                      {isTestingConnection || validation.isValidating ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <TestTube className="mr-2 h-4 w-4" />
+                      )}
+                      Test Connection
+                    </Button>
+
+                    {/* Auto-save status indicator */}
+                    {autoSaveStatus !== "idle" && (
+                      <div className="flex items-center gap-2 text-sm">
+                        {autoSaveStatus === "saving" && (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                            <span className="text-blue-600">
+                              Auto-saving...
+                            </span>
+                          </>
+                        )}
+                        {autoSaveStatus === "saved" && (
+                          <>
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600">
+                              Auto-saved
+                            </span>
+                          </>
+                        )}
+                        {autoSaveStatus === "error" && (
+                          <>
+                            <XCircle className="h-4 w-4 text-red-600" />
+                            <span className="text-red-600">
+                              Auto-save failed
+                            </span>
+                          </>
                         )}
                       </div>
-                    </form>
-                  </Form>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                    )}
+                  </div>
+                </form>
+              </Form>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Status Panel */}
-          <div className="space-y-6">
-            {/* Connection Status */}
+        {/* Status Panels - Two Column Layout */}
+        <div className="grid gap-6 md:grid-cols-2 mt-6">
+          {/* Connection Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">
+                Connection Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading && !latestConnectivity ? (
+                <Skeleton className="h-20" />
+              ) : latestConnectivity ? (
+                <div className={`p-4 rounded-md border ${statusBg}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <StatusIcon className={`h-5 w-5 ${statusColor}`} />
+                    <Badge
+                      variant={
+                        STATUS_VARIANTS[
+                          latestConnectivity.status as keyof typeof STATUS_VARIANTS
+                        ]?.variant || "outline"
+                      }
+                    >
+                      {latestConnectivity.status}
+                    </Badge>
+                  </div>
+                  {latestConnectivity.responseTimeMs && (
+                    <div className="text-sm text-muted-foreground mb-1">
+                      Response time: {latestConnectivity.responseTimeMs}ms
+                    </div>
+                  )}
+                  {latestConnectivity.lastSuccessfulAt && (
+                    <div className="text-sm text-muted-foreground mb-1">
+                      Last successful:{" "}
+                      {new Date(
+                        latestConnectivity.lastSuccessfulAt,
+                      ).toLocaleString()}
+                    </div>
+                  )}
+                  <div className="text-xs text-muted-foreground">
+                    Checked:{" "}
+                    {new Date(latestConnectivity.checkedAt).toLocaleString()}
+                  </div>
+                  {latestConnectivity.errorMessage && (
+                    <div className="text-sm text-red-600 mt-2">
+                      {latestConnectivity.errorMessage}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-md border bg-gray-50 border-gray-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-5 w-5 text-gray-600" />
+                    <Badge variant="outline">Unknown</Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    No connectivity checks performed yet
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Storage Account Info */}
+          {metadata && latestConnectivity?.status === "connected" ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-medium">
-                  Connection Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoading && !latestConnectivity ? (
-                  <Skeleton className="h-20" />
-                ) : latestConnectivity ? (
-                  <div className={`p-4 rounded-md border ${statusBg}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <StatusIcon className={`h-5 w-5 ${statusColor}`} />
-                      <Badge
-                        variant={
-                          STATUS_VARIANTS[
-                            latestConnectivity.status as keyof typeof STATUS_VARIANTS
-                          ]?.variant || "outline"
-                        }
-                      >
-                        {latestConnectivity.status}
-                      </Badge>
-                    </div>
-                    {latestConnectivity.responseTimeMs && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Response time: {latestConnectivity.responseTimeMs}ms
-                      </div>
-                    )}
-                    {latestConnectivity.lastSuccessfulAt && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Last successful:{" "}
-                        {new Date(
-                          latestConnectivity.lastSuccessfulAt,
-                        ).toLocaleString()}
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      Checked:{" "}
-                      {new Date(latestConnectivity.checkedAt).toLocaleString()}
-                    </div>
-                    {latestConnectivity.errorMessage && (
-                      <div className="text-sm text-red-600 mt-2">
-                        {latestConnectivity.errorMessage}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-md border bg-gray-50 border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="h-5 w-5 text-gray-600" />
-                      <Badge variant="outline">Unknown</Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      No connectivity checks performed yet
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Storage Account Info */}
-            {metadata && latestConnectivity?.status === "connected" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">
-                    <Server className="inline mr-2 h-4 w-4" />
-                    Storage Account Details
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm space-y-2">
-                  <div>
-                    <strong>Account Name:</strong> {metadata.accountName}
-                  </div>
-                  {metadata.accountKind && (
-                    <div>
-                      <strong>Account Kind:</strong> {metadata.accountKind}
-                    </div>
-                  )}
-                  {metadata.skuName && (
-                    <div>
-                      <strong>SKU:</strong> {metadata.skuName}
-                    </div>
-                  )}
-                  <div>
-                    <strong>Containers:</strong> {metadata.containerCount || 0}
-                  </div>
-                  {metadata.containers && metadata.containers.length > 0 && (
-                    <div>
-                      <strong>Sample Containers:</strong>
-                      <ul className="mt-1 text-xs text-muted-foreground">
-                        {metadata.containers.map(
-                          (container: string, index: number) => (
-                            <li key={index}>• {container}</li>
-                          ),
-                        )}
-                        {metadata.containerCount >
-                          metadata.containers.length && (
-                          <li>
-                            • ... and{" "}
-                            {metadata.containerCount -
-                              metadata.containers.length}{" "}
-                            more
-                          </li>
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Validation Status */}
-            {(validation.validation.data ||
-              validation.validation.isLoading) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">
-                    Real-time Validation
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {validation.validation.isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Validating configuration...
-                      </span>
-                    </div>
-                  ) : validation.validation.data?.data.isValid ? (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration is valid
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <XCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration has issues
-                      </span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Quick Tips */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  <Zap className="inline mr-2 h-4 w-4" />
-                  Quick Tips
+                  <Server className="inline mr-2 h-4 w-4" />
+                  Storage Account Details
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-2">
                 <div>
-                  <strong>Connection String:</strong> Found in Azure Portal
-                  under your Storage Account → Access Keys
+                  <strong>Account Name:</strong> {metadata.accountName}
                 </div>
+                {metadata.accountKind && (
+                  <div>
+                    <strong>Account Kind:</strong> {metadata.accountKind}
+                  </div>
+                )}
+                {metadata.skuName && (
+                  <div>
+                    <strong>SKU:</strong> {metadata.skuName}
+                  </div>
+                )}
                 <div>
-                  <strong>Security:</strong> Connection strings are encrypted
-                  and stored securely in the database
+                  <strong>Containers:</strong> {metadata.containerCount || 0}
                 </div>
-                <div>
-                  <strong>Containers:</strong> Once validated, container
-                  information will be available for backup operations
-                </div>
-                <div>
-                  <strong>Permissions:</strong> Ensure your storage account
-                  allows blob operations for backups to work
+                {metadata.containers && metadata.containers.length > 0 && (
+                  <div>
+                    <strong>Sample Containers:</strong>
+                    <ul className="mt-1 text-xs text-muted-foreground">
+                      {metadata.containers.map(
+                        (container: string, index: number) => (
+                          <li key={index}>• {container}</li>
+                        ),
+                      )}
+                      {metadata.containerCount >
+                        metadata.containers.length && (
+                        <li>
+                          • ... and{" "}
+                          {metadata.containerCount -
+                            metadata.containers.length}{" "}
+                          more
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            // Placeholder card when not connected to maintain grid layout
+            <Card className="opacity-50">
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">
+                  <Server className="inline mr-2 h-4 w-4" />
+                  Storage Account Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  Connect to Azure Storage to view account details
                 </div>
               </CardContent>
             </Card>
-          </div>
+          )}
         </div>
 
-        {/* Azure Connectivity Status Display */}
-        <div className="mt-8">
-          <AzureConnectivityStatus
-            refreshInterval={30000} // 30 seconds
-            showResponseTimeChart={true}
-            showHistoryTimeline={true}
-          />
-        </div>
 
         {/* Container List - Only show when Azure connection is established */}
         {latestConnectivity?.status === "connected" && (
