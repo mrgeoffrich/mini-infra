@@ -212,15 +212,6 @@ export function SettingsOverview() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Settings count */}
-                    <div className="flex items-center justify-between text-sm">
-                      <span>Settings configured</span>
-                      <Badge variant="secondary">
-                        {categorySettings.length} setting
-                        {categorySettings.length !== 1 ? "s" : ""}
-                      </Badge>
-                    </div>
-
                     {/* Connectivity Status */}
                     <div className="flex items-center justify-between text-sm">
                       <span>Connectivity</span>

@@ -6,11 +6,8 @@ import {
   IconCloudComputing,
   IconDashboard,
   IconDatabase,
-  IconFileText,
-  IconHelp,
   IconInnerShadowTop,
   IconRocket,
-  IconSearch,
   IconSettings,
   IconViewfinder,
 } from "@tabler/icons-react";
@@ -61,23 +58,7 @@ const data = {
       icon: IconCloud,
     },
   ],
-  navSecondary: [
-    {
-      title: "Activity Logs",
-      url: "/logs",
-      icon: IconFileText,
-    },
-    {
-      title: "Help",
-      url: "#",
-      icon: IconHelp,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: IconSearch,
-    },
-  ],
+  navSecondary: [],
   settingsNav: [
     {
       title: "Overview",
@@ -114,7 +95,7 @@ function NavSettings() {
             <SidebarMenuButton asChild isActive={isSettingsActive}>
               <Link to="/settings">
                 <IconSettings />
-                <span>Settings</span>
+                <span>Admin Settings</span>
               </Link>
             </SidebarMenuButton>
             {isSettingsActive && (
@@ -161,10 +142,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavSettings />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
+        <NavSettings />
         <NavUser />
       </SidebarFooter>
     </Sidebar>

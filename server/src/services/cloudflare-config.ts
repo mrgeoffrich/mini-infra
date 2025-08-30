@@ -785,6 +785,258 @@ export class CloudflareConfigService extends ConfigurationService {
   }
 
   /**
+   * Update tunnel configuration with new ingress rules
+   * @param tunnelId The tunnel ID to update
+   * @param config The new tunnel configuration
+   * @returns Updated configuration or null if update fails
+   */
+  async updateTunnelConfig(tunnelId: string, config: any): Promise<any> {
+    // Check circuit breaker before making API call
+    if (this.isCircuitBreakerOpen()) {
+      logger.warn(
+        {
+          circuitState: "open",
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+          tunnelId,
+        },
+        "Circuit breaker is open, skipping tunnel config update",
+      );
+      return null;
+    }
+
+    try {
+      const apiToken = await this.getApiToken();
+      const accountId = await this.getAccountId();
+
+      if (!apiToken) {
+        logger.warn("Cannot update tunnel config: API token not configured");
+        return null;
+      }
+
+      if (!accountId) {
+        logger.warn("Cannot update tunnel config: Account ID not configured");
+        return null;
+      }
+
+      // Update tunnel configuration using the proper API endpoint
+      const updateResponse = (await Promise.race([
+        fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            config: config
+          })
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Tunnel config update API request timeout")),
+            CloudflareConfigService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as Response;
+
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        logger.warn(
+          this.redactSensitiveData({
+            accountId,
+            tunnelId,
+            status: updateResponse.status,
+            statusText: updateResponse.statusText,
+            error: errorText,
+          }),
+          "Failed to update tunnel configuration via Cloudflare API",
+        );
+        throw new Error(`HTTP ${updateResponse.status}: ${errorText}`);
+      }
+
+      const updateData = await updateResponse.json();
+      
+      // Record success for circuit breaker
+      this.recordSuccess();
+
+      logger.info(
+        this.redactSensitiveData({
+          accountId,
+          tunnelId,
+          configVersion: updateData.result?.version,
+          ingressRuleCount: config.ingress?.length || 0,
+        }),
+        "Successfully updated Cloudflare tunnel configuration",
+      );
+
+      return updateData.result;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
+
+      logger.error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          errorCode,
+          isRetriable,
+          tunnelId,
+        }),
+        "Failed to update Cloudflare tunnel configuration",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Add a public hostname to a tunnel's ingress rules
+   * @param tunnelId The tunnel ID to update
+   * @param hostname The public hostname to add
+   * @param service The backend service URL
+   * @param path Optional path pattern for the hostname
+   * @returns Updated configuration or null if update fails
+   */
+  async addHostname(tunnelId: string, hostname: string, service: string, path?: string): Promise<any> {
+    try {
+      // First get the current configuration
+      const currentConfig = await this.getTunnelConfig(tunnelId);
+      
+      if (!currentConfig || !currentConfig.config) {
+        throw new Error("Unable to retrieve current tunnel configuration");
+      }
+
+      const ingress = [...(currentConfig.config.ingress || [])];
+      
+      // Check if hostname already exists
+      const existingRuleIndex = ingress.findIndex(rule => rule.hostname === hostname && rule.path === path);
+      if (existingRuleIndex !== -1) {
+        throw new Error(`Hostname ${hostname}${path ? ` with path ${path}` : ''} already exists`);
+      }
+
+      // Find the catch-all rule (rule without hostname) and insert before it
+      const catchAllIndex = ingress.findIndex(rule => !rule.hostname);
+      const newRule: any = {
+        hostname,
+        service,
+      };
+      
+      if (path) {
+        newRule.path = path;
+      }
+
+      if (catchAllIndex !== -1) {
+        // Insert before catch-all rule
+        ingress.splice(catchAllIndex, 0, newRule);
+      } else {
+        // No catch-all rule found, add at the end (though this shouldn't happen)
+        ingress.push(newRule);
+      }
+
+      // Update the configuration
+      const updatedConfig = {
+        ...currentConfig.config,
+        ingress,
+      };
+
+      logger.info(
+        this.redactSensitiveData({
+          tunnelId,
+          hostname,
+          service,
+          path,
+          ingressRuleCount: ingress.length,
+        }),
+        "Adding hostname to tunnel configuration",
+      );
+
+      return await this.updateTunnelConfig(tunnelId, updatedConfig);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      
+      logger.error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          tunnelId,
+          hostname,
+          service,
+        }),
+        "Failed to add hostname to tunnel configuration",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a public hostname from a tunnel's ingress rules
+   * @param tunnelId The tunnel ID to update
+   * @param hostname The public hostname to remove
+   * @param path Optional path pattern for the hostname
+   * @returns Updated configuration or null if update fails
+   */
+  async removeHostname(tunnelId: string, hostname: string, path?: string): Promise<any> {
+    try {
+      // First get the current configuration
+      const currentConfig = await this.getTunnelConfig(tunnelId);
+      
+      if (!currentConfig || !currentConfig.config) {
+        throw new Error("Unable to retrieve current tunnel configuration");
+      }
+
+      const ingress = [...(currentConfig.config.ingress || [])];
+      
+      // Find the rule to remove
+      const ruleIndex = ingress.findIndex(rule => 
+        rule.hostname === hostname && 
+        (path ? rule.path === path : !rule.path)
+      );
+      
+      if (ruleIndex === -1) {
+        throw new Error(`Hostname ${hostname}${path ? ` with path ${path}` : ''} not found`);
+      }
+
+      // Remove the rule
+      ingress.splice(ruleIndex, 1);
+
+      // Update the configuration
+      const updatedConfig = {
+        ...currentConfig.config,
+        ingress,
+      };
+
+      logger.info(
+        this.redactSensitiveData({
+          tunnelId,
+          hostname,
+          path,
+          ingressRuleCount: ingress.length,
+        }),
+        "Removing hostname from tunnel configuration",
+      );
+
+      return await this.updateTunnelConfig(tunnelId, updatedConfig);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      
+      logger.error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          tunnelId,
+          hostname,
+        }),
+        "Failed to remove hostname from tunnel configuration",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
    * Remove API token and account ID
    * @param userId - User ID who is removing the configuration
    */

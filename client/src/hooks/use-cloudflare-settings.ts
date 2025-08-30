@@ -4,6 +4,8 @@ import type {
   ConnectivityStatusInfo,
   CloudflareTunnelInfo,
   CloudflareTunnelConfig,
+  CloudflareAddHostnameRequest,
+  CloudflareHostnameResponse,
 } from "@mini-infra/types";
 
 interface CloudflareSettingsResponse {
@@ -380,6 +382,86 @@ export function useRefreshCloudfareTunnels() {
     mutationFn: async () => {
       // Just invalidate the cache to force a refetch
       await queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+    },
+  });
+}
+
+// Hook for adding a hostname to a tunnel
+export function useAddTunnelHostname() {
+  const queryClient = useQueryClient();
+
+  return useMutation<CloudflareHostnameResponse, Error, { tunnelId: string } & CloudflareAddHostnameRequest>({
+    mutationFn: async ({ tunnelId, hostname, service, path }) => {
+      const response = await fetch(`/api/settings/cloudflare/tunnels/${tunnelId}/hostnames`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          hostname,
+          service,
+          path,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to add hostname to tunnel",
+        }));
+        throw new Error(errorData.details || errorData.message || "Failed to add hostname");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Invalidate tunnel-related queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnel", data.data.tunnelId] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnel-config", data.data.tunnelId] });
+    },
+    onError: (error) => {
+      console.error('Failed to add hostname to tunnel:', error.message);
+    },
+  });
+}
+
+// Hook for removing a hostname from a tunnel
+export function useRemoveTunnelHostname() {
+  const queryClient = useQueryClient();
+
+  return useMutation<CloudflareHostnameResponse, Error, { tunnelId: string; hostname: string; path?: string }>({
+    mutationFn: async ({ tunnelId, hostname, path }) => {
+      // URL encode hostname to handle special characters
+      const encodedHostname = encodeURIComponent(hostname);
+      const params = new URLSearchParams();
+      if (path) {
+        params.set('path', path);
+      }
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+
+      const response = await fetch(`/api/settings/cloudflare/tunnels/${tunnelId}/hostnames/${encodedHostname}${queryString}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to remove hostname from tunnel",
+        }));
+        throw new Error(errorData.details || errorData.message || "Failed to remove hostname");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Invalidate tunnel-related queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnel", data.data.tunnelId] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnel-config", data.data.tunnelId] });
+    },
+    onError: (error) => {
+      console.error('Failed to remove hostname from tunnel:', error.message);
     },
   });
 }

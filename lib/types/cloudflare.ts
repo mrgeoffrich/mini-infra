@@ -72,6 +72,26 @@ export interface CloudflareTunnelConfigResponse {
   message?: string;
 }
 
+// Cloudflare add hostname request
+export interface CloudflareAddHostnameRequest {
+  hostname: string;
+  service: string;
+  path?: string;
+}
+
+// Cloudflare hostname management response
+export interface CloudflareHostnameResponse {
+  success: boolean;
+  data: {
+    tunnelId: string;
+    hostname: string;
+    service?: string;
+    path?: string;
+    configVersion: number;
+  };
+  message?: string;
+}
+
 // ====================
 // Cloudflare Metadata Types
 // ====================

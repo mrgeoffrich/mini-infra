@@ -4,8 +4,10 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconRefresh,
+  IconPlus,
+  IconTrash,
 } from "@tabler/icons-react";
-import { useCloudfareTunnels, useCloudfareTunnelConfig } from "@/hooks/use-cloudflare-settings";
+import { useCloudfareTunnels, useCloudfareTunnelConfig, useAddTunnelHostname, useRemoveTunnelHostname } from "@/hooks/use-cloudflare-settings";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 interface TunnelConnection {
   id: string;
@@ -36,13 +42,126 @@ interface TunnelStatusProps {
   className?: string;
 }
 
-// Helper component to display tunnel configuration
+// Component for adding a new hostname
+function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
+  const [open, setOpen] = useState(false);
+  const [hostname, setHostname] = useState("");
+  const [service, setService] = useState("");
+  const [path, setPath] = useState("");
+  
+  const addHostname = useAddTunnelHostname();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!hostname.trim() || !service.trim()) {
+      toast.error("Hostname and service are required fields.");
+      return;
+    }
+
+    try {
+      await addHostname.mutateAsync({
+        tunnelId,
+        hostname: hostname.trim(),
+        service: service.trim(),
+        path: path.trim() || undefined,
+      });
+      
+      toast.success(`Hostname ${hostname} added successfully.`);
+      
+      // Reset form and close dialog
+      setHostname("");
+      setService("");
+      setPath("");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to add hostname");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <IconPlus className="h-4 w-4" />
+          Add Hostname
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Add Public Hostname</DialogTitle>
+          <DialogDescription>
+            Add a new public hostname that will route to a backend service.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="hostname">Hostname *</Label>
+            <Input
+              id="hostname"
+              type="text"
+              placeholder="e.g., app.example.com or *.example.com"
+              value={hostname}
+              onChange={(e) => setHostname(e.target.value)}
+              required
+            />
+            <div className="text-xs text-muted-foreground">
+              Can include wildcards like *.example.com
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="service">Backend Service *</Label>
+            <Input
+              id="service"
+              type="text"
+              placeholder="e.g., http://localhost:3000 or localhost:8080"
+              value={service}
+              onChange={(e) => setService(e.target.value)}
+              required
+            />
+            <div className="text-xs text-muted-foreground">
+              The URL or address:port of your backend service
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="path">Path Pattern (optional)</Label>
+            <Input
+              id="path"
+              type="text"
+              placeholder="e.g., /api/* or /static/*"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+            />
+            <div className="text-xs text-muted-foreground">
+              Optional path pattern for this hostname
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={addHostname.isPending}>
+              {addHostname.isPending ? "Adding..." : "Add Hostname"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Helper component to display tunnel configuration with hostname management
 function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
   const {
     data: configData,
     isLoading: configLoading,
     error: configError,
   } = useCloudfareTunnelConfig(tunnelId);
+  
+  const removeHostname = useRemoveTunnelHostname();
 
   if (configLoading) {
     return (
@@ -63,8 +182,11 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
   const config = configData?.data;
   if (!config?.config?.ingress) {
     return (
-      <div className="text-sm text-muted-foreground">
-        No configuration rules found
+      <div className="space-y-3">
+        <div className="text-sm text-muted-foreground">
+          No configuration rules found
+        </div>
+        <AddHostnameDialog tunnelId={tunnelId} />
       </div>
     );
   }
@@ -80,16 +202,33 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
       isCatchAll: !rule.hostname,
     }));
 
+  const handleRemoveHostname = async (hostname: string, path?: string) => {
+    try {
+      await removeHostname.mutateAsync({
+        tunnelId,
+        hostname,
+        path,
+      });
+      
+      toast.success(`Hostname ${hostname} removed successfully.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove hostname");
+    }
+  };
+
   return (
     <div className="space-y-3">
-      <div className="text-sm font-medium">Public Hostnames & Services</div>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium">Public Hostnames & Services</div>
+        <AddHostnameDialog tunnelId={tunnelId} />
+      </div>
       
       {publicHostnames.length > 0 ? (
         <div className="space-y-2">
           {publicHostnames.map((hostname, index) => (
             <div
               key={index}
-              className="p-2 bg-background rounded border text-xs"
+              className="p-3 bg-background rounded border text-xs"
             >
               <div className="flex items-start justify-between">
                 <div className="space-y-1 flex-1 min-w-0">
@@ -112,12 +251,21 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
                     Service: <span className="font-mono">{hostname.service}</span>
                   </div>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemoveHostname(hostname.hostname, hostname.path)}
+                  disabled={removeHostname.isPending}
+                  className="ml-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  <IconTrash className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="text-sm text-muted-foreground text-center py-2">
+        <div className="text-sm text-muted-foreground text-center py-4">
           No public hostnames configured
         </div>
       )}
