@@ -8,6 +8,7 @@ import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
+import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
 import AzureSettingsPage from "@/app/settings/azure/page";
 
 export const router = createBrowserRouter([
@@ -73,7 +74,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "settings/cloudflare",
-        element: <div>Cloudflare Settings - Coming Soon</div>,
+        element: <CloudflareSettingsPage />,
       },
       {
         path: "settings/azure",
