@@ -40,7 +40,10 @@ const GetHistoryQuerySchema = z.object({
  * GET /api/postgres/progress/backup/:operationId
  * Get progress for a specific backup operation
  */
-router.get("/backup/:operationId", requireAuth, async (req: Request, res: Response) => {
+router.get(
+  "/backup/:operationId",
+  requireAuth,
+  async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const userId = req.user?.id;
 
@@ -141,7 +144,10 @@ router.get("/backup/:operationId", requireAuth, async (req: Request, res: Respon
  * GET /api/postgres/progress/restore/:operationId
  * Get progress for a specific restore operation
  */
-router.get("/restore/:operationId", requireAuth, async (req: Request, res: Response) => {
+router.get(
+  "/restore/:operationId",
+  requireAuth,
+  async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const userId = req.user?.id;
 

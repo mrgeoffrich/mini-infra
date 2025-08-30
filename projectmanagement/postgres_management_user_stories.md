@@ -331,7 +331,7 @@
 
 **Goal:** Add system settings for configuring backup/restore Docker images
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
