@@ -25,6 +25,10 @@ const getPageTitle = (pathname: string): string => {
       return "Dashboard";
     case "/containers":
       return "Containers";
+    case "/yolo-claude":
+      return "YoloClaude - Create Job";
+    case "/yolo-claude/jobs":
+      return "YoloClaude - Job History";
     case "/databases":
       return "Databases";
     case "/deployments":
@@ -45,6 +49,10 @@ const getPageTitle = (pathname: string): string => {
     case "/settings/audit":
       return "Audit History";
     default:
+      // Handle YoloClaude job execution pages
+      if (pathname.startsWith("/yolo-claude/jobs/")) {
+        return "YoloClaude - Job Execution";
+      }
       return "Dashboard";
   }
 };
@@ -63,6 +71,21 @@ const getSettingsPageTitle = (pathname: string): string => {
       return "Audit History";
     default:
       return "Settings";
+  }
+};
+
+const getYoloClaudePageTitle = (pathname: string): string => {
+  switch (pathname) {
+    case "/yolo-claude":
+      return "Create Job";
+    case "/yolo-claude/jobs":
+      return "Job History";
+    default:
+      // Handle YoloClaude job execution pages
+      if (pathname.startsWith("/yolo-claude/jobs/")) {
+        return "Job Execution";
+      }
+      return "YoloClaude";
   }
 };
 
@@ -137,6 +160,9 @@ export function SiteHeader() {
   const isSettingsPage =
     location.pathname.startsWith("/settings") &&
     location.pathname !== "/settings";
+  const isYoloClaudePage =
+    location.pathname.startsWith("/yolo-claude") &&
+    location.pathname !== "/yolo-claude";
 
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
@@ -158,6 +184,22 @@ export function SiteHeader() {
               <BreadcrumbItem>
                 <BreadcrumbPage>
                   {getSettingsPageTitle(location.pathname)}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        ) : isYoloClaudePage ? (
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link to="/yolo-claude">YoloClaude</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>
+                  {getYoloClaudePageTitle(location.pathname)}
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>

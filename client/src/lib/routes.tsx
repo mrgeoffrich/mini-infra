@@ -8,6 +8,9 @@ import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
+import YoloClaudePage from "@/app/yolo-claude/page";
+import JobListPage from "@/app/yolo-claude/jobs/page";
+import JobExecutionPage from "@/app/yolo-claude/jobs/[jobId]/page";
 
 export const router = createBrowserRouter([
   {
@@ -77,6 +80,18 @@ export const router = createBrowserRouter([
       {
         path: "settings/azure",
         element: <div>Azure Settings - Coming Soon</div>,
+      },
+      {
+        path: "yolo-claude",
+        element: <YoloClaudePage />,
+      },
+      {
+        path: "yolo-claude/jobs",
+        element: <JobListPage />,
+      },
+      {
+        path: "yolo-claude/jobs/:jobId",
+        element: <JobExecutionPage />,
       },
     ],
   },

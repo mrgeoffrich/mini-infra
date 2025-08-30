@@ -99,7 +99,7 @@ export interface RateLimitError extends ApiError {
 // Job Management API Types  
 // ====================
 
-import { JobStatus } from './job.js';
+import { JobStatus } from './job';
 
 export interface CreateJobRequest {
   repositoryUrl: string;

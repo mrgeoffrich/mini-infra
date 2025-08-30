@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "Shared TypeScript types for Mini Infra client and server",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "private": true,
   "scripts": {
     "build": "tsc",

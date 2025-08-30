@@ -13,6 +13,7 @@ import {
   IconSearch,
   IconSettings,
   IconViewfinder,
+  IconBrain,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -44,6 +45,21 @@ const data = {
       title: "Containers",
       url: "/containers",
       icon: IconBrandDocker,
+    },
+    {
+      title: "YoloClaude",
+      url: "/yolo-claude",
+      icon: IconBrain,
+      items: [
+        {
+          title: "Create Job",
+          url: "/yolo-claude",
+        },
+        {
+          title: "Job History",
+          url: "/yolo-claude/jobs",
+        },
+      ],
     },
     {
       title: "Databases",

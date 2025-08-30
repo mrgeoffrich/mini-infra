@@ -6,7 +6,7 @@ export const JobStatus = {
   CANCELLED: 'cancelled'
 } as const;
 
-export type JobStatus = typeof JobStatus[keyof typeof JobStatus];
+export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus];
 
 export interface JobProgress {
   current: number;
