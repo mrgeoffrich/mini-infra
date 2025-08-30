@@ -202,10 +202,7 @@ export class BackupConfigService {
       }
 
       // Recalculate next scheduled time if schedule or enabled status changed
-      if (
-        updates.schedule !== undefined ||
-        updates.isEnabled !== undefined
-      ) {
+      if (updates.schedule !== undefined || updates.isEnabled !== undefined) {
         const finalSchedule = updates.schedule ?? existingConfig.schedule;
         const finalEnabled = updates.isEnabled ?? existingConfig.isEnabled;
 
@@ -351,7 +348,7 @@ export class BackupConfigService {
       nextTime.setMinutes(0);
       nextTime.setSeconds(0);
       nextTime.setMilliseconds(0);
-      
+
       return nextTime;
     } catch (error) {
       logger.error(
@@ -370,9 +367,8 @@ export class BackupConfigService {
    */
   private async validateAzureContainer(containerName: string): Promise<void> {
     try {
-      const accessResult = await this.azureConfigService.testContainerAccess(
-        containerName,
-      );
+      const accessResult =
+        await this.azureConfigService.testContainerAccess(containerName);
 
       if (!accessResult.accessible) {
         throw new Error(
@@ -461,9 +457,7 @@ export class BackupConfigService {
   /**
    * Convert database record to info object for API responses
    */
-  private toBackupConfigInfo(
-    config: any,
-  ): BackupConfigurationInfo {
+  private toBackupConfigInfo(config: any): BackupConfigurationInfo {
     return {
       id: config.id,
       databaseId: config.databaseId,

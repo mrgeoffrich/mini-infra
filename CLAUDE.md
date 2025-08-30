@@ -206,6 +206,14 @@ The application uses Prisma ORM with SQLite for data persistence.
   - `POST /api/postgres/test-connection` - Test connection with provided credentials (without saving)
 - **Features**: Complete CRUD operations, Zod validation schemas, comprehensive error handling with categorized status codes, business event logging, sensitive data redaction in logs
 
+### PostgreSQL Backup Configuration API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-backup-configs.ts` - RESTful endpoints for backup configuration management
+- **Endpoints**:
+  - `GET /api/postgres/backup-configs/:databaseId` - Get backup configuration for a specific database
+  - `POST /api/postgres/backup-configs` - Create new backup configuration
+  - `DELETE /api/postgres/backup-configs/:id` - Delete backup configuration
+- **Features**: Backup configuration CRUD operations, cron expression validation, Azure container validation, Zod validation schemas, comprehensive error handling, business event logging
+
 ### Settings Service Layer Architecture
 - **Code**: `server/src/services/**` - all the settings code
 

@@ -289,3 +289,64 @@ export interface RestoreOperationInfo {
 }
 
 export type RestoreOperationStatus = "pending" | "running" | "completed" | "failed";
+
+// ====================
+// Backup Configuration API Request Types
+// ====================
+
+export interface CreateBackupConfigurationRequest {
+  databaseId: string;
+  schedule?: string; // Cron expression
+  azureContainerName: string;
+  azurePathPrefix?: string;
+  retentionDays?: number;
+  backupFormat?: BackupFormat;
+  compressionLevel?: number;
+  isEnabled?: boolean;
+}
+
+export interface UpdateBackupConfigurationRequest {
+  schedule?: string | null; // Cron expression
+  azureContainerName?: string;
+  azurePathPrefix?: string;
+  retentionDays?: number;
+  backupFormat?: BackupFormat;
+  compressionLevel?: number;
+  isEnabled?: boolean;
+}
+
+// ====================
+// Backup Configuration API Response Types
+// ====================
+
+export interface BackupConfigurationResponse {
+  success: boolean;
+  data: BackupConfigurationInfo;
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface BackupConfigurationDeleteResponse {
+  success: boolean;
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+// ====================
+// Backup Configuration Service Types
+// ====================
+
+export interface BackupScheduleValidationResult {
+  isValid: boolean;
+  message: string;
+  nextScheduledAt?: Date;
+}
+
+export interface BackupConfigurationServiceResult<T = BackupConfigurationInfo> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  errorCode?: string;
+}
