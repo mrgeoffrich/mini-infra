@@ -96,6 +96,7 @@ import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
 import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 import cloudflareConnectivityRoutes from "./routes/cloudflare-connectivity";
+import postgresDatabasesRoutes from "./routes/postgres-databases";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -109,6 +110,7 @@ app.use("/api/settings/azure", azureSettingsRoutes);
 app.use("/api/settings/cloudflare", cloudflareSettingsRoutes);
 app.use("/api/connectivity/azure", azureConnectivityRoutes);
 app.use("/api/connectivity", cloudflareConnectivityRoutes);
+app.use("/api/postgres/databases", postgresDatabasesRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

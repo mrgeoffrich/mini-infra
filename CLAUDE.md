@@ -188,6 +188,18 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Security**: AES encryption for sensitive connection strings, secure validation with timeout protection (10s connection, 5s query), comprehensive error handling with categorized error codes
 - **Database Integration**: Uses PostgresDatabase, BackupConfiguration, BackupOperation, and RestoreOperation Prisma models with full relationship support
 
+### PostgreSQL Database API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-databases.ts` - RESTful CRUD endpoints for PostgreSQL database configuration management
+- **Endpoints**: 
+  - `GET /api/postgres/databases` - List database configurations with filtering and pagination
+  - `GET /api/postgres/databases/:id` - Get specific database configuration
+  - `POST /api/postgres/databases` - Create new database configuration
+  - `PUT /api/postgres/databases/:id` - Update existing database configuration
+  - `DELETE /api/postgres/databases/:id` - Delete database configuration
+  - `POST /api/postgres/databases/:id/test` - Test connection for existing database
+  - `POST /api/postgres/test-connection` - Test connection with provided credentials (without saving)
+- **Features**: Complete CRUD operations, Zod validation schemas, comprehensive error handling with categorized status codes, business event logging, sensitive data redaction in logs
+
 ### Settings Service Layer Architecture
 - **Code**: `server/src/services/**` - all the settings code
 

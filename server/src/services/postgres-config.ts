@@ -23,7 +23,8 @@ export class DatabaseConfigService {
   constructor(prisma: PrismaClient, encryptionKey?: string) {
     this.prisma = prisma;
     // Use provided encryption key or default from env
-    this.encryptionKey = encryptionKey || process.env.API_KEY_SECRET || "default-key";
+    this.encryptionKey =
+      encryptionKey || process.env.API_KEY_SECRET || "default-key";
   }
 
   // ====================
@@ -37,7 +38,10 @@ export class DatabaseConfigService {
    */
   private encryptConnectionString(connectionString: string): string {
     try {
-      return CryptoJS.AES.encrypt(connectionString, this.encryptionKey).toString();
+      return CryptoJS.AES.encrypt(
+        connectionString,
+        this.encryptionKey,
+      ).toString();
     } catch (error) {
       logger.error(
         {
@@ -56,7 +60,10 @@ export class DatabaseConfigService {
    */
   private decryptConnectionString(encryptedConnectionString: string): string {
     try {
-      const bytes = CryptoJS.AES.decrypt(encryptedConnectionString, this.encryptionKey);
+      const bytes = CryptoJS.AES.decrypt(
+        encryptedConnectionString,
+        this.encryptionKey,
+      );
       const decrypted = bytes.toString(CryptoJS.enc.Utf8);
       if (!decrypted) {
         throw new Error("Decryption resulted in empty string");
@@ -88,7 +95,9 @@ export class DatabaseConfigService {
    * @param connectionString - PostgreSQL connection string
    * @returns Database connection configuration
    */
-  private parseConnectionString(connectionString: string): DatabaseConnectionConfig {
+  private parseConnectionString(
+    connectionString: string,
+  ): DatabaseConnectionConfig {
     try {
       const url = new URL(connectionString);
       const sslMode = url.searchParams.get("sslmode") || "prefer";
@@ -141,7 +150,8 @@ export class DatabaseConfigService {
       };
 
       const connectionString = this.buildConnectionString(config);
-      const encryptedConnectionString = this.encryptConnectionString(connectionString);
+      const encryptedConnectionString =
+        this.encryptConnectionString(connectionString);
 
       // Check for duplicate name for this user
       const existingDb = await this.prisma.postgresDatabase.findUnique({
@@ -154,7 +164,9 @@ export class DatabaseConfigService {
       });
 
       if (existingDb) {
-        throw new Error(`Database configuration with name '${request.name}' already exists`);
+        throw new Error(
+          `Database configuration with name '${request.name}' already exists`,
+        );
       }
 
       // Create database configuration
@@ -221,7 +233,9 @@ export class DatabaseConfigService {
       }
 
       if (existingDb.userId !== userId) {
-        throw new Error("Access denied: You can only update your own database configurations");
+        throw new Error(
+          "Access denied: You can only update your own database configurations",
+        );
       }
 
       // Prepare update data
@@ -233,9 +247,18 @@ export class DatabaseConfigService {
       let needsConnectionStringUpdate = false;
       let currentConfig: DatabaseConnectionConfig;
 
-      if (request.host || request.port || request.database || request.username || request.password || request.sslMode) {
+      if (
+        request.host ||
+        request.port ||
+        request.database ||
+        request.username ||
+        request.password ||
+        request.sslMode
+      ) {
         // Decrypt current connection string to get current config
-        const currentConnectionString = this.decryptConnectionString(existingDb.connectionString);
+        const currentConnectionString = this.decryptConnectionString(
+          existingDb.connectionString,
+        );
         currentConfig = this.parseConnectionString(currentConnectionString);
 
         // Update config with new values
@@ -250,7 +273,8 @@ export class DatabaseConfigService {
 
         // Build and encrypt new connection string
         const newConnectionString = this.buildConnectionString(newConfig);
-        updateData.connectionString = this.encryptConnectionString(newConnectionString);
+        updateData.connectionString =
+          this.encryptConnectionString(newConnectionString);
 
         // Update individual fields
         updateData.host = newConfig.host;
@@ -278,7 +302,9 @@ export class DatabaseConfigService {
         });
 
         if (existingWithName && existingWithName.id !== databaseId) {
-          throw new Error(`Database configuration with name '${request.name}' already exists`);
+          throw new Error(
+            `Database configuration with name '${request.name}' already exists`,
+          );
         }
 
         updateData.name = request.name;
@@ -324,7 +350,10 @@ export class DatabaseConfigService {
    * @param userId - User ID requesting the database
    * @returns Database information or null if not found
    */
-  async getDatabaseById(databaseId: string, userId: string): Promise<PostgresDatabaseInfo | null> {
+  async getDatabaseById(
+    databaseId: string,
+    userId: string,
+  ): Promise<PostgresDatabaseInfo | null> {
     try {
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
@@ -394,7 +423,7 @@ export class DatabaseConfigService {
 
         if (filter.tags && filter.tags.length > 0) {
           // Search for any of the provided tags in the JSON array
-          where.OR = filter.tags.map(tag => ({
+          where.OR = filter.tags.map((tag) => ({
             tags: {
               contains: `"${tag}"`,
             },
@@ -418,7 +447,7 @@ export class DatabaseConfigService {
         skip: offset,
       });
 
-      return databases.map(db => this.toDatabaseInfo(db));
+      return databases.map((db) => this.toDatabaseInfo(db));
     } catch (error) {
       logger.error(
         {
@@ -485,7 +514,9 @@ export class DatabaseConfigService {
    * @param config - Database connection configuration
    * @returns Validation result
    */
-  async testConnection(config: DatabaseConnectionConfig): Promise<DatabaseValidationResult> {
+  async testConnection(
+    config: DatabaseConnectionConfig,
+  ): Promise<DatabaseValidationResult> {
     const startTime = Date.now();
     let client: PostgresClient | null = null;
 
@@ -532,7 +563,8 @@ export class DatabaseConfigService {
       };
     } catch (error) {
       const responseTimeMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
 
       let errorCode = "CONNECTION_FAILED";
       if (errorMessage.includes("timeout")) {
@@ -576,7 +608,8 @@ export class DatabaseConfigService {
         } catch (endError) {
           logger.warn(
             {
-              error: endError instanceof Error ? endError.message : "Unknown error",
+              error:
+                endError instanceof Error ? endError.message : "Unknown error",
             },
             "Failed to close database connection",
           );
@@ -591,7 +624,10 @@ export class DatabaseConfigService {
    * @param userId - User ID
    * @returns Validation result
    */
-  async testDatabaseConnection(databaseId: string, userId: string): Promise<DatabaseValidationResult> {
+  async testDatabaseConnection(
+    databaseId: string,
+    userId: string,
+  ): Promise<DatabaseValidationResult> {
     try {
       // Get database configuration
       const database = await this.prisma.postgresDatabase.findFirst({
@@ -606,7 +642,9 @@ export class DatabaseConfigService {
       }
 
       // Decrypt connection string
-      const connectionString = this.decryptConnectionString(database.connectionString);
+      const connectionString = this.decryptConnectionString(
+        database.connectionString,
+      );
       const config = this.parseConnectionString(connectionString);
 
       // Test connection
@@ -634,7 +672,9 @@ export class DatabaseConfigService {
    * @param databaseId - Database ID
    * @returns Health check result
    */
-  async performHealthCheck(databaseId: string): Promise<DatabaseHealthCheckResult> {
+  async performHealthCheck(
+    databaseId: string,
+  ): Promise<DatabaseHealthCheckResult> {
     try {
       const database = await this.prisma.postgresDatabase.findUnique({
         where: { id: databaseId },
@@ -645,14 +685,18 @@ export class DatabaseConfigService {
       }
 
       // Decrypt connection string
-      const connectionString = this.decryptConnectionString(database.connectionString);
+      const connectionString = this.decryptConnectionString(
+        database.connectionString,
+      );
       const config = this.parseConnectionString(connectionString);
 
       // Test connection
       const validationResult = await this.testConnection(config);
 
       // Determine health status
-      const healthStatus: DatabaseHealthStatus = validationResult.isValid ? "healthy" : "unhealthy";
+      const healthStatus: DatabaseHealthStatus = validationResult.isValid
+        ? "healthy"
+        : "unhealthy";
 
       // Update database health status
       await this.prisma.postgresDatabase.update({
@@ -668,7 +712,9 @@ export class DatabaseConfigService {
         healthStatus,
         lastChecked: new Date(),
         responseTime: validationResult.responseTimeMs,
-        errorMessage: validationResult.isValid ? undefined : validationResult.message,
+        errorMessage: validationResult.isValid
+          ? undefined
+          : validationResult.message,
         errorCode: validationResult.errorCode,
         serverVersion: validationResult.serverVersion,
         metadata: validationResult.metadata,
@@ -705,9 +751,14 @@ export class DatabaseConfigService {
    * @param databaseId - Database ID
    * @param validationResult - Validation result from connection test
    */
-  private async updateHealthStatus(databaseId: string, validationResult: DatabaseValidationResult): Promise<void> {
+  private async updateHealthStatus(
+    databaseId: string,
+    validationResult: DatabaseValidationResult,
+  ): Promise<void> {
     try {
-      const healthStatus: DatabaseHealthStatus = validationResult.isValid ? "healthy" : "unhealthy";
+      const healthStatus: DatabaseHealthStatus = validationResult.isValid
+        ? "healthy"
+        : "unhealthy";
 
       await this.prisma.postgresDatabase.update({
         where: { id: databaseId },
@@ -755,7 +806,9 @@ export class DatabaseConfigService {
    * Validate database request fields
    * @param request - Database creation request
    */
-  private validateDatabaseRequest(request: CreatePostgresDatabaseRequest): void {
+  private validateDatabaseRequest(
+    request: CreatePostgresDatabaseRequest,
+  ): void {
     if (!request.name || request.name.trim().length === 0) {
       throw new Error("Database name is required");
     }
@@ -786,7 +839,9 @@ export class DatabaseConfigService {
 
     // Validate name format (alphanumeric, hyphens, underscores only)
     if (!/^[a-zA-Z0-9_-]+$/.test(request.name)) {
-      throw new Error("Database name can only contain letters, numbers, hyphens, and underscores");
+      throw new Error(
+        "Database name can only contain letters, numbers, hyphens, and underscores",
+      );
     }
 
     if (request.name.length > 100) {
