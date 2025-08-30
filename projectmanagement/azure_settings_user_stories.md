@@ -28,7 +28,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Implement RESTful API endpoints for Azure settings CRUD operations and validation
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 

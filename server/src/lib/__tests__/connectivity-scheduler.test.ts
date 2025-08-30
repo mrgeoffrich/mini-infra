@@ -366,7 +366,7 @@ describe("ConnectivityScheduler", () => {
     it("should execute all health checks in parallel", async () => {
       let callCount = 0;
 
-      const createMockValidate = (service: string) => 
+      const createMockValidate = (service: string) =>
         jest.fn().mockImplementation(async () => {
           callCount++;
           return { isValid: true, responseTimeMs: 100 };
@@ -404,11 +404,13 @@ describe("ConnectivityScheduler", () => {
 
     it("should handle validation timeouts", async () => {
       // Mock a service that rejects with a timeout error
-      mockDockerService.validate.mockRejectedValue(new Error("Connection timeout"));
+      mockDockerService.validate.mockRejectedValue(
+        new Error("Connection timeout"),
+      );
 
       // Should handle the timeout error gracefully
       await expect(
-        scheduler.performHealthCheck("docker")
+        scheduler.performHealthCheck("docker"),
       ).resolves.toBeUndefined();
 
       // Should have called the validate function
@@ -418,7 +420,7 @@ describe("ConnectivityScheduler", () => {
           service: "docker",
           error: "Connection timeout",
         }),
-        "Service health check failed"
+        "Service health check failed",
       );
     });
 

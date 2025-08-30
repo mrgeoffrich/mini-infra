@@ -29,7 +29,9 @@ const mockDockerConfigService = {
 };
 
 jest.mock("../../services/docker-config", () => ({
-  DockerConfigService: jest.fn().mockImplementation(() => mockDockerConfigService),
+  DockerConfigService: jest
+    .fn()
+    .mockImplementation(() => mockDockerConfigService),
 }));
 
 // Mock configuration base
@@ -131,7 +133,9 @@ describe("Container Routes", () => {
     jest.clearAllMocks();
     mockDockerInstance.isConnected.mockReturnValue(true);
     mockDockerConfigService.get.mockResolvedValue(null);
-    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(undefined);
+    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(
+      undefined,
+    );
   });
 
   describe("GET /api/containers", () => {
@@ -585,7 +589,6 @@ describe("Container Routes", () => {
       );
     });
   });
-
 
   describe("Request Correlation", () => {
     it("should include request ID in responses and logs", async () => {

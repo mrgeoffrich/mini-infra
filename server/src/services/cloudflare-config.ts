@@ -223,7 +223,6 @@ export class CloudflareConfigService extends ConfigurationService {
     }
 
     await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
-
   }
 
   /**
@@ -237,7 +236,6 @@ export class CloudflareConfigService extends ConfigurationService {
     }
 
     await this.set(CloudflareConfigService.ACCOUNT_ID_KEY, accountId, userId);
-
   }
 
   /**

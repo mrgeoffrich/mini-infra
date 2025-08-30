@@ -261,7 +261,6 @@ export class AzureConfigService extends ConfigurationService {
       connectionString,
       userId,
     );
-
   }
 
   /**

@@ -13,7 +13,6 @@ import type { CreateApiKeyRequest } from "@mini-infra/types";
 
 const router = Router();
 
-
 // Validation schemas
 const createApiKeySchema = z.object({
   name: z
@@ -25,7 +24,6 @@ const createApiKeySchema = z.object({
       "API key name can only contain letters, numbers, spaces, hyphens, and underscores",
     ),
 });
-
 
 /**
  * Middleware to ensure user is authenticated (session required for API key management)
@@ -160,10 +158,7 @@ router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
 /**
  * POST /api/keys/:keyId/rotate - Rotate an API key (create new, deactivate old)
  */
-router.post("/:keyId/rotate", (async (
-  req: Request,
-  res: Response,
-) => {
+router.post("/:keyId/rotate", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;

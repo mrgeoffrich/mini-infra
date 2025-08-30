@@ -235,7 +235,9 @@ describe("ConfigurationServiceFactory", () => {
       // These calls should not throw errors if prisma client is properly injected
       expect(async () => await dockerService.get("host")).not.toThrow();
       expect(async () => await cloudflareService.get("apiToken")).not.toThrow();
-      expect(async () => await azureService.get("connectionString")).not.toThrow();
+      expect(
+        async () => await azureService.get("connectionString"),
+      ).not.toThrow();
     });
 
     it("should create services with correct constructors", () => {

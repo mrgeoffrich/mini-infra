@@ -213,5 +213,4 @@ export abstract class ConfigurationService implements IConfigurationService {
       return null;
     }
   }
-
 }

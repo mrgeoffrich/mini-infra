@@ -27,7 +27,6 @@ function serializeContainer(container: DockerContainerInfo): ContainerInfo {
   };
 }
 
-
 // Query parameter validation schema
 const containerQuerySchema = z.object({
   page: z

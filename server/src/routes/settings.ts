@@ -44,19 +44,19 @@ function serializeSystemSetting(setting: SystemSettings): SystemSettingsInfo {
   };
 }
 
-
 // Helper function to convert ConnectivityStatus to ConnectivityStatusInfo for API responses
 function serializeConnectivityStatus(
   status: ConnectivityStatus,
 ): ConnectivityStatusInfo {
   return {
     ...status,
-    responseTimeMs: status.responseTimeMs ? Number(status.responseTimeMs) : null,
+    responseTimeMs: status.responseTimeMs
+      ? Number(status.responseTimeMs)
+      : null,
     lastSuccessfulAt: status.lastSuccessfulAt?.toISOString() || null,
     checkedAt: status.checkedAt.toISOString(),
   };
 }
-
 
 // Query parameter validation schema for listing settings
 const settingsQuerySchema = z.object({
@@ -118,11 +118,12 @@ const validateServiceSchema = z.object({
   settings: z.record(z.string(), z.string()).optional(), // Optional settings to validate with
 });
 
-
 // Connectivity query parameter validation schema
 const connectivityQuerySchema = z.object({
   service: z.enum(["docker", "cloudflare", "azure"]).optional(),
-  status: z.enum(["connected", "failed", "timeout", "unreachable", "error"]).optional(),
+  status: z
+    .enum(["connected", "failed", "timeout", "unreachable", "error"])
+    .optional(),
   checkInitiatedBy: z.string().optional(),
   startDate: z
     .string()
@@ -401,7 +402,6 @@ router.post("/", requireAuth, (async (
       },
     });
 
-
     logger.info(
       {
         requestId,
@@ -434,7 +434,6 @@ router.post("/", requireAuth, (async (
     next(error);
   }
 }) as RequestHandler);
-
 
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
@@ -696,7 +695,6 @@ router.post("/validate/:service", requireAuth, (async (
       });
     }
 
-
     logger.info(
       {
         requestId,
@@ -753,7 +751,6 @@ router.post("/validate/:service", requireAuth, (async (
         "Failed to store validation error in database",
       );
     }
-
 
     logger.error(
       {
@@ -962,7 +959,6 @@ router.put("/:id", requireAuth, (async (
       data: updateData,
     });
 
-
     logger.info(
       {
         requestId,
@@ -1066,7 +1062,6 @@ router.delete("/:id", requireAuth, (async (
     await prisma.systemSettings.delete({
       where: { id: settingId },
     });
-
 
     logger.info(
       {

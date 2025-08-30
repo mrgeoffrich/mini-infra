@@ -545,5 +545,4 @@ describe("ConfigurationService", () => {
       );
     });
   });
-
 });

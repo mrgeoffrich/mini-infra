@@ -320,6 +320,22 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, invalid credentials)
 - **Configuration Management**: Secure connection string storage with validation and removal capabilities
 
+### Azure Settings API Endpoints Implementation
+- **API Router**: `server/src/routes/azure-settings.ts` - RESTful Azure-specific endpoints for configuration management
+- **Authentication**: Protected by JWT authentication middleware with proper user context extraction
+- **API Endpoints**: 
+  - `GET /api/settings/azure` - Retrieve current Azure configuration with validation status
+  - `PUT /api/settings/azure` - Update Azure configuration with connection string validation
+  - `POST /api/settings/azure/validate` - Test Azure connection with optional temporary connection string
+  - `DELETE /api/settings/azure` - Remove Azure configuration and record disconnection status
+  - `GET /api/settings/azure/containers` - List Azure Storage containers with metadata
+  - `POST /api/settings/azure/test-container` - Test access to specific Azure Storage container
+- **Request Validation**: Comprehensive Zod schema validation for all request parameters and bodies
+- **Error Handling**: Standardized error responses with proper HTTP status codes and structured error messages
+- **Security Features**: Connection string redaction in logs, encrypted storage integration, proper authorization checks
+- **Type Safety**: Full TypeScript integration with `@mini-infra/types` for request/response interfaces
+- **Integration**: Direct integration with existing AzureConfigService for all storage operations
+
 ### Background Connectivity Monitoring Implementation
 - **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
 - **Monitoring Interval**: Configurable periodic health checks (default: 5 minutes) for all configured services

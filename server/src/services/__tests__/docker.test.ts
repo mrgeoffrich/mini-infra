@@ -62,7 +62,9 @@ const mockDockerConfigService = {
 };
 
 jest.mock("../docker-config", () => ({
-  DockerConfigService: jest.fn().mockImplementation(() => mockDockerConfigService),
+  DockerConfigService: jest
+    .fn()
+    .mockImplementation(() => mockDockerConfigService),
 }));
 
 // Mock prisma
@@ -93,7 +95,9 @@ describe("DockerService", () => {
       if (key === "apiVersion") return Promise.resolve(null);
       return Promise.resolve(null);
     });
-    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(undefined);
+    mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(
+      undefined,
+    );
   });
 
   afterEach(() => {

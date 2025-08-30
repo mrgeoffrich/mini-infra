@@ -109,7 +109,9 @@ class DockerService {
           "Using Docker API version from database settings",
         );
       } else {
-        logger.info("No Docker API version specified, using Docker daemon default");
+        logger.info(
+          "No Docker API version specified, using Docker daemon default",
+        );
       }
 
       // Create Docker client using the same logic as DockerConfigService
@@ -260,7 +262,6 @@ class DockerService {
 
     return new Docker(dockerConfig);
   }
-
 
   /**
    * Extract Docker-specific error codes

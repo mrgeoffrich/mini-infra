@@ -139,7 +139,6 @@ class ExponentialBackoff {
   private reset(): void {
     this.attempts = 0;
   }
-
 }
 
 /**

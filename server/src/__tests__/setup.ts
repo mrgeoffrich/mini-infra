@@ -17,9 +17,9 @@ let testPrisma: PrismaClient;
 // Global setup
 beforeAll(async () => {
   // Use worker ID to create separate test databases for parallel execution
-  const workerId = process.env.JEST_WORKER_ID || '1';
+  const workerId = process.env.JEST_WORKER_ID || "1";
   const testDbUrl = `file:./test-${workerId}.db`;
-  
+
   testPrisma = new PrismaClient({
     datasources: {
       db: {
