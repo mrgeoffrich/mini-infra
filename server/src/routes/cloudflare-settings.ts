@@ -514,8 +514,51 @@ router.get("/tunnels", requireAuth, (async (
       return res.json(response);
     }
 
+    // Check if API token and account ID are configured
+    const apiToken = await cloudflareConfigService.getApiToken();
+    const accountId = await cloudflareConfigService.getAccountId();
+    
+    logger.info(
+      {
+        requestId,
+        userId,
+        hasApiToken: !!apiToken,
+        hasAccountId: !!accountId,
+        accountId: accountId ? `${accountId.substring(0, 8)}...` : 'not set',
+      },
+      "Cloudflare configuration check for tunnels",
+    );
+
+    if (!apiToken) {
+      logger.warn({ requestId, userId }, "API token not configured for tunnel retrieval");
+      return res.status(400).json({
+        success: false,
+        error: "Cloudflare API token not configured",
+        details: "Please configure your Cloudflare API token first",
+      });
+    }
+
+    if (!accountId) {
+      logger.warn({ requestId, userId }, "Account ID not configured for tunnel retrieval");
+      return res.status(400).json({
+        success: false,
+        error: "Cloudflare account ID not configured", 
+        details: "Please configure your Cloudflare account ID first",
+      });
+    }
+
     // Fetch tunnel information from Cloudflare API
     const tunnels = await cloudflareConfigService.getTunnelInfo();
+    
+    logger.info(
+      {
+        requestId,
+        userId,
+        tunnelCount: tunnels.length,
+        tunnelNames: tunnels.map(t => t.name),
+      },
+      "Raw tunnel data from Cloudflare API",
+    );
 
     // Transform tunnel data for frontend consumption
     const transformedTunnels = tunnels.map((tunnel: any) => ({

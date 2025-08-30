@@ -52,7 +52,10 @@ interface ConnectivityHistoryResponse {
 
 interface TunnelsResponse {
   success: boolean;
-  tunnels?: CloudflareTunnelInfo[];
+  data?: {
+    tunnels: CloudflareTunnelInfo[];
+    tunnelCount: number;
+  };
   message?: string;
 }
 
@@ -248,7 +251,7 @@ export function useCloudfareTunnels() {
   return useQuery<TunnelsResponse>({
     queryKey: ["cloudflare-tunnels"],
     queryFn: async () => {
-      const response = await fetch("/api/cloudflare/tunnels", {
+      const response = await fetch("/api/settings/cloudflare/tunnels", {
         credentials: "include",
       });
 
@@ -289,7 +292,7 @@ export function useCloudfareTunnelDetails(tunnelId: string | undefined) {
         throw new Error("Tunnel ID is required");
       }
 
-      const response = await fetch(`/api/cloudflare/tunnels/${tunnelId}`, {
+      const response = await fetch(`/api/settings/cloudflare/tunnels/${tunnelId}`, {
         credentials: "include",
       });
 

@@ -141,7 +141,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
     );
   }
 
-  const tunnelData = tunnels as Tunnel[] | undefined;
+  const tunnelData = tunnels?.data?.tunnels as Tunnel[] | undefined;
 
   return (
     <Card className={className}>

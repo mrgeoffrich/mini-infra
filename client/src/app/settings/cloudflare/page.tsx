@@ -40,7 +40,6 @@ import {
   Save,
   TestTube,
   Loader2,
-  Zap,
   Eye,
   EyeOff,
   Shield,
@@ -542,33 +541,6 @@ export default function CloudflareSettingsPage() {
               </Card>
             )}
 
-            {/* Quick Tips */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  <Zap className="inline mr-2 h-4 w-4" />
-                  Quick Tips
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <div>
-                  <strong>API Token:</strong> Create a custom token with
-                  Zone:Read and Account:Read permissions
-                </div>
-                <div>
-                  <strong>Security:</strong> API tokens are encrypted and stored
-                  securely in the database
-                </div>
-                <div>
-                  <strong>Tunnels:</strong> Once validated, tunnel status will
-                  be monitored automatically
-                </div>
-                <div>
-                  <strong>Rate Limits:</strong> Cloudflare API has rate limits -
-                  validation is throttled accordingly
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
