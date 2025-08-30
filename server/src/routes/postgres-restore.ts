@@ -81,10 +81,12 @@ const PaginationSchema = z.object({
 function parseRestoreOperationQuery(query: any) {
   const pagination = PaginationSchema.parse(query);
   const filter = RestoreOperationFilterSchema.parse(query);
-  const sort = query.sortBy ? RestoreOperationSortSchema.parse({
-    field: query.sortBy,
-    order: query.sortOrder || 'desc'
-  }) : { field: 'startedAt' as const, order: 'desc' as const };
+  const sort = query.sortBy
+    ? RestoreOperationSortSchema.parse({
+        field: query.sortBy,
+        order: query.sortOrder || "desc",
+      })
+    : { field: "startedAt" as const, order: "desc" as const };
 
   return { pagination, filter, sort };
 }
@@ -95,10 +97,12 @@ function parseRestoreOperationQuery(query: any) {
 function parseBackupBrowserQuery(query: any) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupBrowserFilterSchema.parse(query);
-  const sort = query.sortBy ? BackupBrowserSortSchema.parse({
-    field: query.sortBy,
-    order: query.sortOrder || 'desc'
-  }) : { field: 'createdAt' as const, order: 'desc' as const };
+  const sort = query.sortBy
+    ? BackupBrowserSortSchema.parse({
+        field: query.sortBy,
+        order: query.sortOrder || "desc",
+      })
+    : { field: "createdAt" as const, order: "desc" as const };
 
   return { pagination, filter, sort };
 }
@@ -106,7 +110,10 @@ function parseBackupBrowserQuery(query: any) {
 /**
  * Build Prisma where clause from filter
  */
-function buildRestoreWhereClause(filter: RestoreOperationFilter, databaseId?: string) {
+function buildRestoreWhereClause(
+  filter: RestoreOperationFilter,
+  databaseId?: string,
+) {
   const where: any = {};
 
   if (databaseId) {
@@ -149,24 +156,27 @@ function mapRestoreOperationToInfo(operation: any) {
 /**
  * Extract database name from backup URL or filename
  */
-function extractDatabaseNameFromBackup(backupUrl: string, blobName: string): string {
+function extractDatabaseNameFromBackup(
+  backupUrl: string,
+  blobName: string,
+): string {
   try {
     // Try to extract from path structure
-    const pathParts = blobName.split('/');
+    const pathParts = blobName.split("/");
     if (pathParts.length >= 2) {
       return pathParts[0]; // Assume first part is database name
     }
-    
+
     // Try to extract from filename
     const filename = pathParts[pathParts.length - 1];
     const match = filename.match(/^([^_]+)_/); // Match database name before first underscore
     if (match) {
       return match[1];
     }
-    
-    return 'unknown';
+
+    return "unknown";
   } catch {
-    return 'unknown';
+    return "unknown";
   }
 }
 
@@ -177,37 +187,47 @@ async function listAvailableBackups(
   containerName: string,
   filter: BackupBrowserFilter,
   sort: BackupBrowserSortOptions,
-  pagination: { page: number; limit: number }
+  pagination: { page: number; limit: number },
 ): Promise<{ items: BackupBrowserItem[]; totalCount: number }> {
   try {
-    const azureConnectionString = await azureConfigService.get("connection_string");
+    const azureConnectionString =
+      await azureConfigService.get("connection_string");
     if (!azureConnectionString) {
       throw new Error("Azure connection string not configured");
     }
 
-    const blobServiceClient = BlobServiceClient.fromConnectionString(azureConnectionString);
+    const blobServiceClient = BlobServiceClient.fromConnectionString(
+      azureConnectionString,
+    );
     const containerClient = blobServiceClient.getContainerClient(containerName);
 
     const blobs: BackupBrowserItem[] = [];
-    
+
     // List all blobs in container
     for await (const blob of containerClient.listBlobsFlat({
       includeMetadata: true,
     })) {
       // Skip if not a backup file (basic heuristic)
-      if (!blob.name.includes('.dump') && !blob.name.includes('.sql') && !blob.name.includes('backup')) {
+      if (
+        !blob.name.includes(".dump") &&
+        !blob.name.includes(".sql") &&
+        !blob.name.includes("backup")
+      ) {
         continue;
       }
 
       const blobClient = containerClient.getBlobClient(blob.name);
       const blobUrl = blobClient.url;
-      
+
       const item: BackupBrowserItem = {
         name: blob.name,
         url: blobUrl,
         sizeBytes: blob.properties.contentLength || 0,
-        createdAt: blob.properties.createdOn?.toISOString() || new Date().toISOString(),
-        lastModified: blob.properties.lastModified?.toISOString() || new Date().toISOString(),
+        createdAt:
+          blob.properties.createdOn?.toISOString() || new Date().toISOString(),
+        lastModified:
+          blob.properties.lastModified?.toISOString() ||
+          new Date().toISOString(),
         metadata: {
           databaseName: extractDatabaseNameFromBackup(blobUrl, blob.name),
           contentType: blob.properties.contentType,
@@ -217,10 +237,16 @@ async function listAvailableBackups(
       };
 
       // Apply filters
-      if (filter.createdAfter && new Date(item.createdAt) < new Date(filter.createdAfter)) {
+      if (
+        filter.createdAfter &&
+        new Date(item.createdAt) < new Date(filter.createdAfter)
+      ) {
         continue;
       }
-      if (filter.createdBefore && new Date(item.createdAt) > new Date(filter.createdBefore)) {
+      if (
+        filter.createdBefore &&
+        new Date(item.createdAt) > new Date(filter.createdBefore)
+      ) {
         continue;
       }
       if (filter.sizeMin && item.sizeBytes < filter.sizeMin) {
@@ -239,15 +265,15 @@ async function listAvailableBackups(
       let bVal: any;
 
       switch (sort.field) {
-        case 'createdAt':
+        case "createdAt":
           aVal = new Date(a.createdAt).getTime();
           bVal = new Date(b.createdAt).getTime();
           break;
-        case 'sizeBytes':
+        case "sizeBytes":
           aVal = a.sizeBytes;
           bVal = b.sizeBytes;
           break;
-        case 'name':
+        case "name":
           aVal = a.name.toLowerCase();
           bVal = b.name.toLowerCase();
           break;
@@ -256,7 +282,7 @@ async function listAvailableBackups(
           bVal = new Date(b.createdAt).getTime();
       }
 
-      if (sort.order === 'asc') {
+      if (sort.order === "asc") {
         return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
       } else {
         return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
@@ -276,7 +302,7 @@ async function listAvailableBackups(
         error: error instanceof Error ? error.message : "Unknown error",
         containerName,
       },
-      "Failed to list available backups"
+      "Failed to list available backups",
     );
     throw error;
   }
@@ -298,7 +324,7 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, databaseId },
-      "Creating restore operation"
+      "Creating restore operation",
     );
 
     // Validate request body
@@ -318,7 +344,7 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
     if (!database) {
       logger.warn(
         { requestId, userId, databaseId },
-        "Database not found or access denied"
+        "Database not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -333,12 +359,13 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
     if (validatedData.confirmRestore !== true) {
       logger.info(
         { requestId, userId, databaseId },
-        "Restore operation requires confirmation"
+        "Restore operation requires confirmation",
       );
       return res.status(400).json({
         success: false,
         error: "Confirmation required",
-        message: "Restore operations require explicit confirmation. Set confirmRestore to true.",
+        message:
+          "Restore operations require explicit confirmation. Set confirmRestore to true.",
         timestamp: new Date().toISOString(),
         requestId,
       });
@@ -355,7 +382,7 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
     if (runningRestore) {
       logger.warn(
         { requestId, userId, databaseId, runningRestoreId: runningRestore.id },
-        "Restore already in progress"
+        "Restore already in progress",
       );
       return res.status(409).json({
         success: false,
@@ -370,12 +397,12 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
     const restoreOperation = await restoreExecutorService.queueRestore(
       databaseId,
       validatedData.backupUrl,
-      userId
+      userId,
     );
 
     logger.info(
       { requestId, userId, databaseId, operationId: restoreOperation.id },
-      "Restore operation queued successfully"
+      "Restore operation queued successfully",
     );
 
     const response: CreateRestoreOperationResponse = {
@@ -394,11 +421,13 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
     res.status(201).json(response);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessage = error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(", ");
-      
+      const errorMessage = error.issues
+        .map((e: any) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+
       logger.warn(
         { requestId, userId, databaseId, validationErrors: error.issues },
-        "Invalid restore operation request"
+        "Invalid restore operation request",
       );
 
       return res.status(400).json({
@@ -410,11 +439,12 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
       });
     }
 
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, databaseId, error: errorMessage },
-      "Failed to create restore operation"
+      "Failed to create restore operation",
     );
 
     res.status(500).json({
@@ -439,7 +469,7 @@ router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, operationId },
-      "Fetching restore operation status"
+      "Fetching restore operation status",
     );
 
     // Get restore operation with database check for access control
@@ -456,7 +486,7 @@ router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
     if (!operation) {
       logger.warn(
         { requestId, userId, operationId },
-        "Restore operation not found or access denied"
+        "Restore operation not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -486,16 +516,17 @@ router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, operationId, status: operation.status },
-      "Successfully fetched restore operation status"
+      "Successfully fetched restore operation status",
     );
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, operationId, error: errorMessage },
-      "Failed to fetch restore operation status"
+      "Failed to fetch restore operation status",
     );
 
     res.status(500).json({
@@ -520,7 +551,7 @@ router.get("/restore/backups/:containerName", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, containerName },
-      "Browsing available backups"
+      "Browsing available backups",
     );
 
     // Parse query parameters
@@ -531,7 +562,7 @@ router.get("/restore/backups/:containerName", requireAuth, async (req, res) => {
       containerName,
       filter,
       sort,
-      pagination
+      pagination,
     );
 
     const response: BackupBrowserResponse = {
@@ -550,16 +581,17 @@ router.get("/restore/backups/:containerName", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, containerName, count: items.length },
-      "Successfully fetched available backups"
+      "Successfully fetched available backups",
     );
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, containerName, error: errorMessage },
-      "Failed to browse available backups"
+      "Failed to browse available backups",
     );
 
     res.status(500).json({
@@ -584,7 +616,7 @@ router.get("/restore/:databaseId/operations", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, databaseId },
-      "Fetching restore operations for database"
+      "Fetching restore operations for database",
     );
 
     // Verify database exists and user has access
@@ -598,7 +630,7 @@ router.get("/restore/:databaseId/operations", requireAuth, async (req, res) => {
     if (!database) {
       logger.warn(
         { requestId, userId, databaseId },
-        "Database not found or access denied"
+        "Database not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -642,16 +674,17 @@ router.get("/restore/:databaseId/operations", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, databaseId, count: restoreOperations.length },
-      "Successfully fetched restore operations"
+      "Successfully fetched restore operations",
     );
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, databaseId, error: errorMessage },
-      "Failed to fetch restore operations"
+      "Failed to fetch restore operations",
     );
 
     res.status(500).json({
@@ -676,7 +709,7 @@ router.get("/restore/:operationId/progress", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, operationId },
-      "Fetching restore operation progress"
+      "Fetching restore operation progress",
     );
 
     // Get restore operation with database check for access control
@@ -693,7 +726,7 @@ router.get("/restore/:operationId/progress", requireAuth, async (req, res) => {
     if (!operation) {
       logger.warn(
         { requestId, userId, operationId },
-        "Restore operation not found or access denied"
+        "Restore operation not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -726,7 +759,7 @@ router.get("/restore/:operationId/progress", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, operationId, progress: operation.progress },
-      "Successfully fetched restore operation progress"
+      "Successfully fetched restore operation progress",
     );
 
     res.json({
@@ -736,11 +769,12 @@ router.get("/restore/:operationId/progress", requireAuth, async (req, res) => {
       requestId,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, operationId, error: errorMessage },
-      "Failed to fetch restore operation progress"
+      "Failed to fetch restore operation progress",
     );
 
     res.status(500).json({

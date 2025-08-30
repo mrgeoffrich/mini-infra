@@ -100,6 +100,7 @@ import postgresDatabasesRoutes from "./routes/postgres-databases";
 import postgresBackupConfigsRoutes from "./routes/postgres-backup-configs";
 import postgresBackupsRoutes from "./routes/postgres-backups";
 import postgresRestoreRoutes from "./routes/postgres-restore";
+import postgresProgressRoutes from "./routes/postgres-progress";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -117,6 +118,7 @@ app.use("/api/postgres/databases", postgresDatabasesRoutes);
 app.use("/api/postgres/backup-configs", postgresBackupConfigsRoutes);
 app.use("/api/postgres", postgresBackupsRoutes);
 app.use("/api/postgres", postgresRestoreRoutes);
+app.use("/api/postgres/progress", postgresProgressRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

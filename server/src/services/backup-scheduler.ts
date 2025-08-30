@@ -92,7 +92,7 @@ export class BackupSchedulerService {
           timezone: "UTC",
         },
       );
-      
+
       // Stop the task initially - it will be started when enabled
       task.stop();
 
@@ -316,10 +316,7 @@ export class BackupSchedulerService {
     userId: string,
   ): Promise<void> {
     try {
-      logger.info(
-        { databaseId },
-        "Executing scheduled backup",
-      );
+      logger.info({ databaseId }, "Executing scheduled backup");
 
       // Queue the backup operation
       const backupOperation = await this.backupExecutorService.queueBackup(

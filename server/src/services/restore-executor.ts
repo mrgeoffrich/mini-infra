@@ -348,9 +348,7 @@ export class RestoreExecutorService {
       // Validate backup file before restore
       const validationResult = await this.validateBackupFile(backupUrl);
       if (!validationResult.isValid) {
-        throw new Error(
-          `Backup validation failed: ${validationResult.error}`,
-        );
+        throw new Error(`Backup validation failed: ${validationResult.error}`);
       }
 
       await this.updateRestoreProgress(operationId, {
@@ -474,9 +472,8 @@ export class RestoreExecutorService {
       });
 
       // Verify the restored database
-      const verificationResult = await this.verifyRestoredDatabase(
-        connectionConfig,
-      );
+      const verificationResult =
+        await this.verifyRestoredDatabase(connectionConfig);
       if (!verificationResult.isValid) {
         rollbackInitiated = true;
         await this.updateRestoreProgress(operationId, {
@@ -747,9 +744,7 @@ export class RestoreExecutorService {
       });
 
       if (containerResult.exitCode !== 0) {
-        throw new Error(
-          `Rollback execution failed: ${containerResult.stderr}`,
-        );
+        throw new Error(`Rollback execution failed: ${containerResult.stderr}`);
       }
 
       logger.info({ rollbackBackupUrl }, "Rollback executed successfully");
@@ -812,7 +807,9 @@ export class RestoreExecutorService {
   /**
    * Clean up rollback backup after successful restore
    */
-  private async cleanupRollbackBackup(rollbackBackupUrl: string): Promise<void> {
+  private async cleanupRollbackBackup(
+    rollbackBackupUrl: string,
+  ): Promise<void> {
     try {
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
@@ -825,7 +822,8 @@ export class RestoreExecutorService {
         azureConnectionString,
       );
 
-      const { containerName, blobName } = this.parseBackupUrl(rollbackBackupUrl);
+      const { containerName, blobName } =
+        this.parseBackupUrl(rollbackBackupUrl);
       const blobClient = blobServiceClient
         .getContainerClient(containerName)
         .getBlobClient(blobName);

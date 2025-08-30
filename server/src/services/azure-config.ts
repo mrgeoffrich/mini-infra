@@ -7,7 +7,11 @@ import {
 import { ConfigurationService } from "./configuration-base";
 import logger from "../lib/logger";
 import config from "../lib/config";
-import { BlobServiceClient, BlobItem, BlockBlobClient } from "@azure/storage-blob";
+import {
+  BlobServiceClient,
+  BlobItem,
+  BlockBlobClient,
+} from "@azure/storage-blob";
 import NodeCache from "node-cache";
 
 /**
@@ -657,7 +661,7 @@ export class AzureConfigService extends ConfigurationService {
         // Parse database name from blob path
         const pathParts = blob.name.split("/");
         let extractedDbName = databaseName;
-        
+
         if (!extractedDbName) {
           // Try to extract from path structure
           if (pathPrefix && blob.name.startsWith(pathPrefix + "/")) {
@@ -672,7 +676,10 @@ export class AzureConfigService extends ConfigurationService {
         let backupType = "unknown";
         if (blob.name.endsWith(".sql")) {
           backupType = "sql";
-        } else if (blob.name.endsWith(".dump") || blob.name.endsWith(".backup")) {
+        } else if (
+          blob.name.endsWith(".dump") ||
+          blob.name.endsWith(".backup")
+        ) {
           backupType = "custom";
         } else if (blob.name.endsWith(".tar")) {
           backupType = "tar";
@@ -762,10 +769,10 @@ export class AzureConfigService extends ConfigurationService {
 
       // Get blob properties first
       const properties = await blockBlobClient.getProperties();
-      
+
       // Start download
       const downloadResponse = await blockBlobClient.download(0);
-      
+
       if (!downloadResponse.readableStreamBody) {
         throw new Error("Failed to get download stream");
       }
@@ -853,13 +860,14 @@ export class AzureConfigService extends ConfigurationService {
       };
 
       for await (const blob of containerClient.listBlobsFlat(listOptions)) {
-        const blobDate = blob.properties.createdOn || blob.properties.lastModified;
-        
+        const blobDate =
+          blob.properties.createdOn || blob.properties.lastModified;
+
         if (blobDate && blobDate < cutoffDate) {
           try {
             const blobClient = containerClient.getBlobClient(blob.name);
             await blobClient.delete();
-            
+
             deletedFiles.push(blob.name);
             totalSizeFreed += blob.properties.contentLength || 0;
 
@@ -872,10 +880,12 @@ export class AzureConfigService extends ConfigurationService {
               "Deleted old backup file due to retention policy",
             );
           } catch (deleteError) {
-            const deleteErrorMessage = 
-              deleteError instanceof Error ? deleteError.message : "Unknown error";
+            const deleteErrorMessage =
+              deleteError instanceof Error
+                ? deleteError.message
+                : "Unknown error";
             errors.push(`Failed to delete ${blob.name}: ${deleteErrorMessage}`);
-            
+
             logger.warn(
               {
                 blobName: blob.name,
@@ -951,12 +961,12 @@ export class AzureConfigService extends ConfigurationService {
 
       // Validate metadata keys and values (Azure Storage requirements)
       const validatedMetadata: Record<string, string> = {};
-      
+
       for (const [key, value] of Object.entries(metadata)) {
         // Azure metadata keys must be valid identifiers and values must be strings
-        const validKey = key.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+        const validKey = key.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
         const validValue = String(value).substring(0, 8192); // Max 8KB per metadata value
-        
+
         if (validKey && validValue) {
           validatedMetadata[validKey] = validValue;
         }
@@ -964,7 +974,7 @@ export class AzureConfigService extends ConfigurationService {
 
       // Add timestamp for indexing
       validatedMetadata.indexed_at = new Date().toISOString();
-      
+
       await blobClient.setMetadata(validatedMetadata);
 
       logger.info(
@@ -1015,7 +1025,7 @@ export class AzureConfigService extends ConfigurationService {
     errors: string[];
   }> {
     const errors: string[] = [];
-    
+
     try {
       const connectionString = await this.getConnectionString();
       if (!connectionString) {
@@ -1031,19 +1041,23 @@ export class AzureConfigService extends ConfigurationService {
       // Get blob properties
       const properties = await blobClient.getProperties();
       const actualSize = properties.contentLength || 0;
-      
+
       // Validate size
       if (expectedSize !== undefined && actualSize !== expectedSize) {
-        errors.push(`Size mismatch: expected ${expectedSize}, got ${actualSize}`);
+        errors.push(
+          `Size mismatch: expected ${expectedSize}, got ${actualSize}`,
+        );
       }
 
       // Validate MD5 if available
       let actualMD5: string | undefined;
       if (properties.contentMD5) {
         actualMD5 = Buffer.from(properties.contentMD5).toString("hex");
-        
+
         if (expectedMD5 && actualMD5 !== expectedMD5) {
-          errors.push(`MD5 mismatch: expected ${expectedMD5}, got ${actualMD5}`);
+          errors.push(
+            `MD5 mismatch: expected ${expectedMD5}, got ${actualMD5}`,
+          );
         }
       }
 
@@ -1077,7 +1091,7 @@ export class AzureConfigService extends ConfigurationService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      
+
       errors.push(`Validation failed: ${errorMessage}`);
 
       logger.error(

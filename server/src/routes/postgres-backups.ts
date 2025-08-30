@@ -59,10 +59,12 @@ const PaginationSchema = z.object({
 function parseBackupOperationQuery(query: any) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupOperationFilterSchema.parse(query);
-  const sort = query.sortBy ? BackupOperationSortSchema.parse({
-    field: query.sortBy,
-    order: query.sortOrder || 'desc'
-  }) : { field: 'startedAt' as const, order: 'desc' as const };
+  const sort = query.sortBy
+    ? BackupOperationSortSchema.parse({
+        field: query.sortBy,
+        order: query.sortOrder || "desc",
+      })
+    : { field: "startedAt" as const, order: "desc" as const };
 
   return { pagination, filter, sort };
 }
@@ -133,7 +135,7 @@ router.get("/backups/:databaseId", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, databaseId },
-      "Fetching backup operations for database"
+      "Fetching backup operations for database",
     );
 
     // Verify database exists and user has access
@@ -147,7 +149,7 @@ router.get("/backups/:databaseId", requireAuth, async (req, res) => {
     if (!database) {
       logger.warn(
         { requestId, userId, databaseId },
-        "Database not found or access denied"
+        "Database not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -191,16 +193,17 @@ router.get("/backups/:databaseId", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, databaseId, count: backupOperations.length },
-      "Successfully fetched backup operations"
+      "Successfully fetched backup operations",
     );
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, databaseId, error: errorMessage },
-      "Failed to fetch backup operations"
+      "Failed to fetch backup operations",
     );
 
     res.status(500).json({
@@ -223,10 +226,7 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
   const { databaseId } = req.params;
 
   try {
-    logger.info(
-      { requestId, userId, databaseId },
-      "Triggering manual backup"
-    );
+    logger.info({ requestId, userId, databaseId }, "Triggering manual backup");
 
     // Verify database exists and user has access
     const database = await prisma.postgresDatabase.findFirst({
@@ -239,7 +239,7 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
     if (!database) {
       logger.warn(
         { requestId, userId, databaseId },
-        "Database not found or access denied"
+        "Database not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -258,7 +258,7 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
     if (!backupConfig) {
       logger.warn(
         { requestId, userId, databaseId },
-        "Backup configuration not found"
+        "Backup configuration not found",
       );
       return res.status(400).json({
         success: false,
@@ -280,7 +280,7 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
     if (runningBackup) {
       logger.warn(
         { requestId, userId, databaseId, runningBackupId: runningBackup.id },
-        "Backup already in progress"
+        "Backup already in progress",
       );
       return res.status(409).json({
         success: false,
@@ -295,12 +295,12 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
     const backupOperation = await backupExecutorService.queueBackup(
       databaseId,
       "manual",
-      userId
+      userId,
     );
 
     logger.info(
       { requestId, userId, databaseId, operationId: backupOperation.id },
-      "Manual backup queued successfully"
+      "Manual backup queued successfully",
     );
 
     const response: ManualBackupResponse = {
@@ -316,11 +316,12 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
 
     res.status(201).json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, databaseId, error: errorMessage },
-      "Failed to trigger manual backup"
+      "Failed to trigger manual backup",
     );
 
     res.status(500).json({
@@ -345,7 +346,7 @@ router.get("/backups/:backupId/status", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, backupId },
-      "Fetching backup operation status"
+      "Fetching backup operation status",
     );
 
     // Get backup operation with database check for access control
@@ -362,7 +363,7 @@ router.get("/backups/:backupId/status", requireAuth, async (req, res) => {
     if (!operation) {
       logger.warn(
         { requestId, userId, backupId },
-        "Backup operation not found or access denied"
+        "Backup operation not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -393,16 +394,17 @@ router.get("/backups/:backupId/status", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, backupId, status: operation.status },
-      "Successfully fetched backup operation status"
+      "Successfully fetched backup operation status",
     );
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, backupId, error: errorMessage },
-      "Failed to fetch backup operation status"
+      "Failed to fetch backup operation status",
     );
 
     res.status(500).json({
@@ -425,10 +427,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
   const { backupId } = req.params;
 
   try {
-    logger.info(
-      { requestId, userId, backupId },
-      "Deleting backup operation"
-    );
+    logger.info({ requestId, userId, backupId }, "Deleting backup operation");
 
     // Get backup operation with database check for access control
     const operation = await prisma.backupOperation.findFirst({
@@ -444,7 +443,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
     if (!operation) {
       logger.warn(
         { requestId, userId, backupId },
-        "Backup operation not found or access denied"
+        "Backup operation not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -459,7 +458,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
     if (operation.status === "running" || operation.status === "pending") {
       logger.warn(
         { requestId, userId, backupId, status: operation.status },
-        "Cannot delete running backup operation"
+        "Cannot delete running backup operation",
       );
       return res.status(400).json({
         success: false,
@@ -475,7 +474,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
     if (operation.azureBlobUrl) {
       logger.info(
         { requestId, backupId, blobUrl: operation.azureBlobUrl },
-        "TODO: Delete Azure blob (not implemented yet)"
+        "TODO: Delete Azure blob (not implemented yet)",
       );
     }
 
@@ -486,7 +485,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, backupId },
-      "Successfully deleted backup operation"
+      "Successfully deleted backup operation",
     );
 
     const response: BackupOperationDeleteResponse = {
@@ -498,11 +497,12 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, backupId, error: errorMessage },
-      "Failed to delete backup operation"
+      "Failed to delete backup operation",
     );
 
     res.status(500).json({
@@ -527,7 +527,7 @@ router.get("/backups/:backupId/progress", requireAuth, async (req, res) => {
   try {
     logger.info(
       { requestId, userId, backupId },
-      "Fetching backup operation progress"
+      "Fetching backup operation progress",
     );
 
     // Get backup operation with database check for access control
@@ -544,7 +544,7 @@ router.get("/backups/:backupId/progress", requireAuth, async (req, res) => {
     if (!operation) {
       logger.warn(
         { requestId, userId, backupId },
-        "Backup operation not found or access denied"
+        "Backup operation not found or access denied",
       );
       return res.status(404).json({
         success: false,
@@ -583,7 +583,7 @@ router.get("/backups/:backupId/progress", requireAuth, async (req, res) => {
 
     logger.info(
       { requestId, userId, backupId, progress: operation.progress },
-      "Successfully fetched backup operation progress"
+      "Successfully fetched backup operation progress",
     );
 
     res.json({
@@ -593,11 +593,12 @@ router.get("/backups/:backupId/progress", requireAuth, async (req, res) => {
       requestId,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       { requestId, userId, backupId, error: errorMessage },
-      "Failed to fetch backup operation progress"
+      "Failed to fetch backup operation progress",
     );
 
     res.status(500).json({
