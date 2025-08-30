@@ -93,6 +93,7 @@ import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
 import settingsRoutes from "./routes/settings";
 import azureSettingsRoutes from "./routes/azure-settings";
+import azureConnectivityRoutes from "./routes/azure-connectivity";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -103,6 +104,7 @@ app.use("/api/keys", apiKeyRoutes);
 app.use("/api/containers", containerRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/settings/azure", azureSettingsRoutes);
+app.use("/api/connectivity/azure", azureConnectivityRoutes);
 
 // Serve static files in production
 if (config.NODE_ENV === "production") {

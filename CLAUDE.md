@@ -336,6 +336,21 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Type Safety**: Full TypeScript integration with `@mini-infra/types` for request/response interfaces
 - **Integration**: Direct integration with existing AzureConfigService for all storage operations
 
+### Azure Connectivity Status API Endpoints Implementation
+- **API Router**: `server/src/routes/azure-connectivity.ts` - RESTful endpoints for Azure connectivity status retrieval
+- **Authentication**: Protected by JWT authentication middleware with proper user context extraction
+- **API Endpoints**: 
+  - `GET /api/connectivity/azure` - Get latest Azure connectivity status with caching (30s TTL)
+  - `GET /api/connectivity/azure/history` - Get Azure connectivity history with pagination, filtering, and sorting
+- **Request Validation**: Comprehensive Zod schema validation for query parameters including pagination, date ranges, and status filtering
+- **Response Caching**: NodeCache implementation with appropriate TTL (30s for latest status, 2 minutes for history)
+- **Filtering Support**: Filter by connectivity status, date ranges (startDate/endDate) with flexible query parameters
+- **Pagination**: Full pagination support with configurable page size (max 100), total counts, and navigation metadata
+- **Sorting**: Sortable by checkedAt, status, responseTimeMs with ascending/descending order
+- **Error Handling**: Standardized error responses with proper HTTP status codes and structured error messages
+- **Database Integration**: Direct integration with ConnectivityStatus database model for Azure service records
+- **Type Safety**: Full TypeScript integration with `@mini-infra/types` connectivity status interfaces
+
 ### Background Connectivity Monitoring Implementation
 - **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
 - **Monitoring Interval**: Configurable periodic health checks (default: 5 minutes) for all configured services

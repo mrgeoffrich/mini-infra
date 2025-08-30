@@ -55,7 +55,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Implement API endpoints for retrieving Azure connectivity status and history
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 
