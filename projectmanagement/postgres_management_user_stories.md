@@ -238,7 +238,7 @@
 
 **Goal:** Create service to handle database restore operations from Azure backups
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
