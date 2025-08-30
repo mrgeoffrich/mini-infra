@@ -217,8 +217,8 @@ class DockerService {
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {
-      // Windows named pipe
-      dockerConfig.socketPath = host;
+      // Windows named pipe - dockerode expects just the pipe path
+      dockerConfig.socketPath = host.replace("npipe://", "");
     } else if (host.startsWith("unix://")) {
       // Unix socket with unix:// prefix
       dockerConfig.socketPath = host.replace("unix://", "");

@@ -9,6 +9,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  IconBrandDocker,
+  IconCloud,
+  IconBrandAzure,
+} from "@tabler/icons-react";
+import { useConnectivityStatus } from "@/hooks/use-settings";
 
 const getPageTitle = (pathname: string): string => {
   switch (pathname) {
@@ -57,6 +63,76 @@ const getSettingsPageTitle = (pathname: string): string => {
   }
 };
 
+// Connectivity status indicator component
+function ConnectivityIndicator({ 
+  service, 
+  icon: Icon, 
+  label 
+}: { 
+  service: string; 
+  icon: React.ComponentType<{ size?: number; className?: string }>; 
+  label: string;
+}) {
+  const { data: connectivityData } = useConnectivityStatus({
+    filters: { service: service as any },
+    limit: 1,
+  });
+
+  // Get the most recent status for this service
+  const latestStatus = connectivityData?.data?.[0];
+  const isConnected = latestStatus?.status === "connected";
+
+  // Map services to their settings page routes
+  const getSettingsRoute = (serviceName: string): string => {
+    switch (serviceName) {
+      case "docker":
+        return "/settings/docker";
+      case "cloudflare":
+        return "/settings/cloudflare";
+      case "azure":
+        return "/settings/azure";
+      default:
+        return "/settings";
+    }
+  };
+
+  const content = (
+    <div className="flex items-center gap-1.5">
+      <Icon size={16} className="text-muted-foreground" />
+      <div 
+        className={`w-2 h-2 rounded-full ${
+          isConnected 
+            ? 'bg-green-500' 
+            : 'bg-red-500'
+        }`} 
+      />
+    </div>
+  );
+
+  // If disconnected, make it clickable to go to settings
+  if (!isConnected) {
+    return (
+      <Link 
+        to={getSettingsRoute(service)}
+        className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
+        title={`${label}: Disconnected - Click to configure`}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  // If connected, just show the status without link
+  return (
+    <div 
+      className="flex items-center gap-1.5" 
+      title={`${label}: Connected`}
+    >
+      {content}
+    </div>
+  );
+}
+
 export function SiteHeader() {
   const location = useLocation();
   const pageTitle = getPageTitle(location.pathname);
@@ -91,6 +167,25 @@ export function SiteHeader() {
         ) : (
           <h1 className="text-base font-medium">{pageTitle}</h1>
         )}
+        
+        {/* Connectivity Status Indicators */}
+        <div className="ml-auto flex items-center gap-3">
+          <ConnectivityIndicator 
+            service="docker" 
+            icon={IconBrandDocker} 
+            label="Docker" 
+          />
+          <ConnectivityIndicator 
+            service="cloudflare" 
+            icon={IconCloud} 
+            label="Cloudflare" 
+          />
+          <ConnectivityIndicator 
+            service="azure" 
+            icon={IconBrandAzure} 
+            label="Azure" 
+          />
+        </div>
       </div>
     </header>
   );

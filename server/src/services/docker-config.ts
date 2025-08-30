@@ -57,9 +57,10 @@ export class DockerConfigService extends ConfigurationService {
 
       const responseTimeMs = Date.now() - startTime;
 
-      // Validate ping result
-      if (pingResult !== "OK") {
-        const errorMessage = `Docker ping failed: ${pingResult}`;
+      // Validate ping result (can be string "OK" or Buffer with "OK")
+      const pingString = pingResult instanceof Buffer ? pingResult.toString() : pingResult;
+      if (pingString !== "OK") {
+        const errorMessage = `Docker ping failed: ${pingString}`;
         logger.warn({ pingResult }, errorMessage);
         
         // Record failed connectivity
@@ -274,8 +275,8 @@ export class DockerConfigService extends ConfigurationService {
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {
-      // Windows named pipe
-      dockerConfig.socketPath = host;
+      // Windows named pipe - dockerode expects just the pipe path
+      dockerConfig.socketPath = host.replace("npipe://", "");
     } else if (host.startsWith("unix://")) {
       // Unix socket with unix:// prefix
       dockerConfig.socketPath = host.replace("unix://", "");

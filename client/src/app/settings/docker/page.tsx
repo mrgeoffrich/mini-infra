@@ -24,6 +24,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   useSystemSettings,
   useCreateSystemSetting,
   useUpdateSystemSetting,
@@ -39,6 +44,7 @@ import {
   TestTube,
   Loader2,
   Zap,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
@@ -91,8 +97,8 @@ export default function DockerSettingsPage() {
   const form = useForm<DockerSettingsFormData>({
     resolver: zodResolver(dockerSettingsSchema),
     defaultValues: {
-      host: "unix:///var/run/docker.sock",
-      version: "1.41",
+      host: "npipe:////./pipe/dockerDesktopLinuxEngine",
+      version: "1.51",
     },
     mode: "onChange",
   });
@@ -141,8 +147,8 @@ export default function DockerSettingsPage() {
       if (settingsMap.host?.value) {
         form.setValue("host", settingsMap.host.value);
       }
-      if (settingsMap.version?.value) {
-        form.setValue("version", settingsMap.version.value);
+      if (settingsMap.apiVersion?.value) {
+        form.setValue("version", settingsMap.apiVersion.value);
       }
     }
   }, [settingsData, form]);
@@ -171,10 +177,10 @@ export default function DockerSettingsPage() {
       }
 
       // Save or update version setting
-      if (settings.version) {
+      if (settings.apiVersion) {
         promises.push(
           updateSetting.mutateAsync({
-            id: settings.version.id,
+            id: settings.apiVersion.id,
             setting: { value: data.version },
           }),
         );
@@ -182,7 +188,7 @@ export default function DockerSettingsPage() {
         promises.push(
           createSetting.mutateAsync({
             category: "docker",
-            key: "version",
+            key: "apiVersion",
             value: data.version,
             isEncrypted: false,
           }),
@@ -294,7 +300,48 @@ export default function DockerSettingsPage() {
                         name="host"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Docker Host URL</FormLabel>
+                            <div className="flex items-center gap-2">
+                              <FormLabel>Docker Host URL</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    <HelpCircle className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80">
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <Zap className="h-4 w-4" />
+                                      <span className="font-medium text-sm">Quick Tips</span>
+                                    </div>
+                                    <div className="text-sm space-y-2">
+                                      <div>
+                                        <strong>Local Docker:</strong>{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          unix:///var/run/docker.sock
+                                        </code>
+                                      </div>
+                                      <div>
+                                        <strong>Remote Docker:</strong>{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          tcp://host:2376
+                                        </code>
+                                      </div>
+                                      <div>
+                                        <strong>Windows (Docker Desktop):</strong>{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          npipe:////./pipe/dockerDesktopLinuxEngine
+                                        </code>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
                             <FormControl>
                               <Input
                                 placeholder="unix:///var/run/docker.sock"
@@ -316,7 +363,45 @@ export default function DockerSettingsPage() {
                         name="version"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Docker API Version</FormLabel>
+                            <div className="flex items-center gap-2">
+                              <FormLabel>Docker API Version</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    <HelpCircle className="h-4 w-4" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80">
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <Zap className="h-4 w-4" />
+                                      <span className="font-medium text-sm">How to find API version</span>
+                                    </div>
+                                    <div className="text-sm space-y-2">
+                                      <div>
+                                        <strong>Get API version only:</strong>
+                                        <code className="text-xs bg-muted px-1 rounded block mt-1">
+                                          docker version --format '{"{{.Server.APIVersion}}"}'
+                                        </code>
+                                      </div>
+                                      <div>
+                                        <strong>Get all version info:</strong>
+                                        <code className="text-xs bg-muted px-1 rounded block mt-1">
+                                          docker version
+                                        </code>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Run these commands in your terminal to find your Docker API version.
+                                      </div>
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
                             <FormControl>
                               <Input placeholder="1.41" {...field} />
                             </FormControl>
@@ -377,71 +462,7 @@ export default function DockerSettingsPage() {
               onRefresh={handleTestConnection}
             />
 
-            {/* Validation Status */}
-            {(validation.validation.data ||
-              validation.validation.isLoading) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">
-                    Real-time Validation
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {validation.validation.isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Validating configuration...
-                      </span>
-                    </div>
-                  ) : validation.validation.data?.data.isValid ? (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration is valid
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <XCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration has issues
-                      </span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
 
-            {/* Quick Tips */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  <Zap className="inline mr-2 h-4 w-4" />
-                  Quick Tips
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <div>
-                  <strong>Local Docker:</strong> Use{" "}
-                  <code className="text-xs bg-muted px-1 rounded">
-                    unix:///var/run/docker.sock
-                  </code>
-                </div>
-                <div>
-                  <strong>Remote Docker:</strong> Use{" "}
-                  <code className="text-xs bg-muted px-1 rounded">
-                    tcp://host:2376
-                  </code>
-                </div>
-                <div>
-                  <strong>Windows:</strong> Use{" "}
-                  <code className="text-xs bg-muted px-1 rounded">
-                    npipe:////./pipe/docker_engine
-                  </code>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>

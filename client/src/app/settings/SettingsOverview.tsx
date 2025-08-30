@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   useSystemSettings,
   useConnectivityStatus,
-  useSettingsAudit,
 } from "@/hooks/use-settings";
 import {
   AlertCircle,
@@ -22,7 +21,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
-import { CompactStatus } from "@/components/connectivity-status";
 
 // Map settings categories to display info
 const CATEGORY_INFO = {
@@ -95,9 +93,6 @@ export function SettingsOverview() {
     refetchInterval: 30000, // Poll every 30 seconds
   });
 
-  const { data: auditData, isLoading: auditLoading } = useSettingsAudit({
-    limit: 5,
-  });
 
   const handleRefresh = () => {
     refetchSettings();
@@ -161,7 +156,6 @@ export function SettingsOverview() {
 
   const settings = settingsData?.data || [];
   const connectivityStatuses = connectivityData?.data || [];
-  const recentAudits = auditData?.data || [];
 
   // Group settings by category
   const settingsByCategory = settings.reduce(
@@ -190,14 +184,6 @@ export function SettingsOverview() {
     {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>,
   );
 
-  const totalSettings = settings.length;
-  const activeSettings = settings.filter((s) => s.isActive).length;
-  const validSettings = settings.filter(
-    (s) => s.validationStatus === "valid",
-  ).length;
-  const errorSettings = settings.filter(
-    (s) => s.validationStatus === "error" || s.validationStatus === "invalid",
-  ).length;
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -217,59 +203,6 @@ export function SettingsOverview() {
       </div>
 
       <div className="px-4 lg:px-6 space-y-6">
-        {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Settings
-              </CardTitle>
-              <Settings className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalSettings}</div>
-              <p className="text-xs text-muted-foreground">
-                {activeSettings} active
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Valid</CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {validSettings}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Errors</CardTitle>
-              <XCircle className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {errorSettings}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Categories</CardTitle>
-              <Settings className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {Object.keys(settingsByCategory).length}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Service Configuration Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -368,113 +301,6 @@ export function SettingsOverview() {
           )}
         </div>
 
-        {/* Recent Configuration Changes */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Changes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {auditLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                </div>
-              ) : recentAudits.length > 0 ? (
-                <div className="space-y-3">
-                  {recentAudits.slice(0, 5).map((audit) => (
-                    <div
-                      key={audit.id}
-                      className="flex items-start gap-3 p-3 rounded-md border"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-xs">
-                            {audit.action}
-                          </Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {audit.category}
-                          </Badge>
-                        </div>
-                        <div className="text-sm font-medium truncate">
-                          {audit.key}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(audit.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      {audit.success ? (
-                        <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0 mt-1" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-1" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  No recent changes
-                </p>
-              )}
-
-              <div className="mt-4">
-                <Button asChild variant="outline" size="sm" className="w-full">
-                  <Link to="/settings/audit">
-                    View All Changes
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Service Health Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Service Health</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {connectivityLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                </div>
-              ) : connectivityStatuses.length > 0 ? (
-                <div className="space-y-3">
-                  {(Object.keys(CATEGORY_INFO) as SettingsCategory[]).map(
-                    (category) => {
-                      const connectivity = latestConnectivity[category];
-
-                      return (
-                        <div
-                          key={category}
-                          className="p-3 rounded-md border"
-                        >
-                          <CompactStatus
-                            service={category}
-                            status={connectivity}
-                            isLoading={false}
-                            onClick={() => {
-                              // Navigate to service config page
-                              const path = CATEGORY_INFO[category].path;
-                              window.location.href = path;
-                            }}
-                          />
-                        </div>
-                      );
-                    },
-                  )}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  No connectivity data available
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );
