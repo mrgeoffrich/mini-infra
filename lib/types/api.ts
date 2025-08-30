@@ -99,7 +99,7 @@ export interface RateLimitError extends ApiError {
 // Job Management API Types  
 // ====================
 
-import { JobExecution, JobStatus } from './job.js';
+import { JobStatus } from './job.js';
 
 export interface CreateJobRequest {
   repositoryUrl: string;
@@ -122,7 +122,7 @@ export interface JobResponse {
   status: JobStatus;
   createdAt: string;
   updatedAt: string;
-  execution?: JobExecution;
+  execution?: JobExecutionResponse;
 }
 
 export interface JobListResponse extends PaginatedResponse<JobResponse> {}
