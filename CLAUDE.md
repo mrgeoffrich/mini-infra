@@ -225,6 +225,10 @@ The application uses Prisma ORM with SQLite for data persistence.
 ### Azure Settings Hooks Implementation
 - **Azure Hooks File**: `client/src/hooks/use-azure-settings.ts` - Comprehensive React Query hooks for Azure Storage management
 
+### Cloudflare Settings Hooks Implementation
+- **Cloudflare Hooks File**: `client/src/hooks/use-cloudflare-settings.ts` - Comprehensive React Query hooks for Cloudflare management
+- **Features**: Settings CRUD operations, connectivity testing, tunnel information retrieval, connectivity history, automatic cache invalidation, error handling with retry logic
+
 ### Settings Navigation and Routing Implementation
 - **Settings Routes**: Complete nested routing structure in `client/src/lib/routes.tsx` with protected settings pages
   - `/settings` - Redirects to settings overview
