@@ -25,7 +25,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Authentication**: Passport with Google OAuth
 - **Validation**: Zod for runtime type checking
 - **Logging**: Pino (high-performance structured logging)
-- **Security**: Helmet, rate limiting, CORS, secure sessions
+- **Security**: Helmet, CORS, secure sessions
 - **Middleware**: Request correlation IDs, error handling, graceful shutdown
 
 ### Development Tools
@@ -184,7 +184,6 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **API Endpoints**: RESTful authentication endpoints (/auth/google, /auth/status, /auth/logout)
 - **Middleware**: Authentication and authorization middleware for route protection
 - **CSRF Protection**: Cross-site request forgery protection with token validation
-- **Rate Limiting**: Request rate limiting for authentication endpoints
 
 ### Security Features
 - **Secure Redirects**: Proper OAuth callback handling with frontend/backend coordination
@@ -233,7 +232,6 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Database Integration**: Mock Prisma database operations with proper error handling scenarios
 - **Security Features Testing**: Sensitive data redaction in logs
 - **Error Handling Testing**: Comprehensive error scenarios including database failures, validation errors, and unauthorized access
-- **Rate Limiting Testing**: Verification that rate limiting works correctly in test environment
 - **Request Correlation Testing**: Proper request ID handling and logging correlation
 - **IP Address Handling**: Proper handling of IPv4-mapped IPv6 addresses in test environment
 - **Pagination Testing**: Filtering, sorting, and pagination scenarios with edge cases
@@ -260,7 +258,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Graceful Failure**: Server continues startup even if Docker connection fails, with degraded functionality and automatic retry attempts
 - **Dynamic Reconfiguration**: Automatically refreshes connection when settings change through DockerConfigService
 - **Connectivity Monitoring**: Records connection status and errors in ConnectivityStatus database table
-- **API Endpoints**: `server/src/routes/containers.ts` - RESTful endpoints with authentication, rate limiting, filtering, pagination
+- **API Endpoints**: `server/src/routes/containers.ts` - RESTful endpoints with authentication, filtering, pagination
 - **Testing**: Comprehensive unit and integration tests covering Docker service, API endpoints, error scenarios, caching, and data transformation
 
 ### Settings Service Layer Architecture
@@ -278,7 +276,6 @@ The application uses Prisma ORM with SQLite for data persistence.
 ### Settings API Endpoints Implementation
 - **API Router**: `server/src/routes/settings.ts` - RESTful CRUD endpoints for system settings management
 - **Authentication**: Protected by JWT authentication middleware with proper user context extraction
-- **Rate Limiting**: 30 requests per minute per user to prevent abuse
 - **CRUD Operations**: Complete Create, Read, Update, Delete operations for system settings
 - **Filtering & Pagination**: Support for filtering by category, active status, validation status with pagination (max 100 items per page)
 - **Request Validation**: Comprehensive Zod schema validation for all request parameters and bodies
@@ -304,11 +301,11 @@ The application uses Prisma ORM with SQLite for data persistence.
 ### Cloudflare Configuration Service Implementation
 - **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service
 - **Features**: API token validation, account information retrieval, tunnel connectivity testing
-- **API Integration**: Uses official Cloudflare SDK with timeout protection (10s default) and rate limit handling
+- **API Integration**: Uses official Cloudflare SDK with timeout protection (10s default)
 - **Validation Methods**: Real-time Cloudflare API connectivity testing with user profile and account validation
 - **Tunnel Management**: Retrieval of tunnel information including status, connections, and configuration details
 - **Security Features**: API token redaction in logs, encrypted storage support
-- **Error Handling**: Comprehensive error parsing with Cloudflare-specific error codes (timeout, unauthorized, rate limits, network errors)
+- **Error Handling**: Comprehensive error parsing with Cloudflare-specific error codes (timeout, unauthorized, network errors)
 - **Configuration Management**: Secure API token and account ID storage with validation and removal capabilities
 
 ### Azure Configuration Service Implementation
@@ -318,7 +315,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Validation Methods**: Real-time Azure Storage connectivity testing with account validation and container listing
 - **Container Management**: Retrieval of container information including metadata, access testing, and storage account details
 - **Security Features**: Connection string redaction in logs, encrypted storage support
-- **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, rate limits, invalid credentials)
+- **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, invalid credentials)
 - **Configuration Management**: Secure connection string storage with validation and removal capabilities
 
 ### Background Connectivity Monitoring Implementation
@@ -402,7 +399,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Status Indicators**: Color-coded connectivity status badges with response times and error messages
 - **Form Integration**: Built on React Hook Form with proper error states and validation messaging
 - **Security Features**: API token masking in UI, encrypted database storage, and secure form submission
-- **Error Handling**: Comprehensive error handling for API failures, rate limits, and network issues
+- **Error Handling**: Comprehensive error handling for API failures and network issues
 - **Loading States**: Proper loading indicators during validation, connection testing, and form submission
 - **Responsive Design**: Mobile-optimized layout matching the existing settings page design patterns
 
@@ -453,8 +450,6 @@ LOG_LEVEL=debug
 
 # Security & CORS
 CORS_ORIGIN=http://localhost:3000
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
 
 # Docker Configuration
 # Note: Docker host and API version are now configured via database settings only

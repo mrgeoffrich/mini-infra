@@ -586,22 +586,6 @@ describe("Container Routes", () => {
     });
   });
 
-  describe("Rate Limiting", () => {
-    it("should skip rate limiting in test environment", async () => {
-      // Verify the environment check works by making multiple rapid requests
-      mockDockerInstance.listContainers.mockResolvedValue([]);
-
-      const requests = Array.from({ length: 5 }, () =>
-        request(app).get("/api/containers"),
-      );
-
-      const responses = await Promise.all(requests);
-
-      responses.forEach((response) => {
-        expect(response.status).toBe(200);
-      });
-    });
-  });
 
   describe("Request Correlation", () => {
     it("should include request ID in responses and logs", async () => {

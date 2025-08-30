@@ -4,7 +4,6 @@ import express, {
   NextFunction,
   RequestHandler,
 } from "express";
-import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import logger from "../lib/logger";
 import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
@@ -58,35 +57,6 @@ function serializeConnectivityStatus(
   };
 }
 
-// Rate limiting specific to settings endpoints: 30 requests per minute per user
-const settingsRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per windowMs
-  keyGenerator: (req: any) => {
-    // Use user ID if available, otherwise use default
-    return req.user?.id || "user-default";
-  },
-  validate: {
-    // Disable trust proxy validation since we want to use it in production
-    trustProxy: false,
-    // Disable IPv6 validation since we're not using IP addresses as the primary key
-    keyGeneratorIpFallback: false,
-  },
-  message: {
-    error: "Too Many Requests",
-    message:
-      "Settings API rate limit exceeded. Maximum 30 requests per minute.",
-    timestamp: new Date().toISOString(),
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: false,
-  skipFailedRequests: false,
-  skip: (req: any) => {
-    // Skip rate limiting in test environment
-    return process.env.NODE_ENV === "test";
-  },
-});
 
 // Query parameter validation schema for listing settings
 const settingsQuerySchema = z.object({
@@ -221,7 +191,7 @@ const connectivityQuerySchema = z.object({
 /**
  * GET /api/settings - List system settings with filtering and pagination
  */
-router.get("/", settingsRateLimit, requireAuth, (async (
+router.get("/", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -338,7 +308,7 @@ router.get("/", settingsRateLimit, requireAuth, (async (
 /**
  * POST /api/settings - Create a new system setting
  */
-router.post("/", settingsRateLimit, requireAuth, (async (
+router.post("/", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -469,7 +439,7 @@ router.post("/", settingsRateLimit, requireAuth, (async (
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
  */
-router.get("/connectivity", settingsRateLimit, requireAuth, (async (
+router.get("/connectivity", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -611,7 +581,7 @@ router.get("/connectivity", settingsRateLimit, requireAuth, (async (
 /**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
-router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
+router.post("/validate/:service", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -802,7 +772,7 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
 /**
  * GET /api/settings/:id - Get specific setting by ID
  */
-router.get("/:id", settingsRateLimit, requireAuth, (async (
+router.get("/:id", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -889,7 +859,7 @@ router.get("/:id", settingsRateLimit, requireAuth, (async (
 /**
  * PUT /api/settings/:id - Update an existing system setting
  */
-router.put("/:id", settingsRateLimit, requireAuth, (async (
+router.put("/:id", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -1030,7 +1000,7 @@ router.put("/:id", settingsRateLimit, requireAuth, (async (
 /**
  * DELETE /api/settings/:id - Delete a system setting
  */
-router.delete("/:id", settingsRateLimit, requireAuth, (async (
+router.delete("/:id", requireAuth, (async (
   req: Request,
   res: Response,
   next: NextFunction,

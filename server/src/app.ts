@@ -13,7 +13,7 @@ import path from "path";
 import config from "./lib/config";
 import logger from "./lib/logger";
 import { requestIdMiddleware } from "./lib/request-id";
-import { helmetMiddleware, rateLimitMiddleware } from "./lib/security";
+import { helmetMiddleware } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 
 // __filename and __dirname are available globally in CommonJS

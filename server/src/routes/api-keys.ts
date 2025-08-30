@@ -1,6 +1,5 @@
 import { Router, Request, Response, RequestHandler } from "express";
 import { z } from "zod";
-import rateLimit from "express-rate-limit";
 import {
   createApiKey,
   getUserApiKeys,
@@ -14,29 +13,6 @@ import type { CreateApiKeyRequest } from "@mini-infra/types";
 
 const router = Router();
 
-// Rate limiting for API key operations
-const apiKeyRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 API key operations per windowMs
-  message: {
-    error: "Too many API key operations",
-    message: "Please try again later",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-// Rate limiting for API key creation (more restrictive)
-const createKeyRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // Limit each IP to 5 key creations per hour
-  message: {
-    error: "Too many API key creations",
-    message: "You can only create 5 API keys per hour",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 // Validation schemas
 const createApiKeySchema = z.object({
@@ -50,8 +26,6 @@ const createApiKeySchema = z.object({
     ),
 });
 
-// Apply rate limiting to all API key routes
-router.use(apiKeyRateLimit);
 
 /**
  * Middleware to ensure user is authenticated (session required for API key management)
@@ -102,7 +76,7 @@ router.get("/", (async (req: Request, res: Response) => {
 /**
  * POST /api/keys - Create a new API key
  */
-router.post("/", createKeyRateLimit, (async (req: Request, res: Response) => {
+router.post("/", (async (req: Request, res: Response) => {
   const userId = req.user!.id;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -186,7 +160,7 @@ router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
 /**
  * POST /api/keys/:keyId/rotate - Rotate an API key (create new, deactivate old)
  */
-router.post("/:keyId/rotate", createKeyRateLimit, (async (
+router.post("/:keyId/rotate", (async (
   req: Request,
   res: Response,
 ) => {

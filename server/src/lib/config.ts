@@ -30,16 +30,6 @@ const configSchema = z.object({
 
   // Security
   PUBLIC_URL: z.string().optional(),
-  RATE_LIMIT_WINDOW_MS: z
-    .string()
-    .optional()
-    .default("900000")
-    .transform((val) => Number(val)), // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: z
-    .string()
-    .optional()
-    .default("100")
-    .transform((val) => Number(val)), // 100 requests per window
 
   // Docker Configuration
   CONTAINER_CACHE_TTL: z
