@@ -8,6 +8,7 @@ import { ConfigurationService } from "./configuration-base";
 import logger from "../lib/logger";
 import config from "../lib/config";
 import { BlobServiceClient } from "@azure/storage-blob";
+import NodeCache from "node-cache";
 
 /**
  * AzureConfigService handles Azure Storage configuration management
@@ -17,12 +18,70 @@ export class AzureConfigService extends ConfigurationService {
   private static readonly CONNECTION_STRING_KEY = "connection_string";
   private static readonly STORAGE_ACCOUNT_KEY = "storage_account_name";
 
+  // Cache for container access test results (5 minute TTL)
+  private static containerAccessCache = new NodeCache({
+    stdTTL: 300, // 5 minutes
+    checkperiod: 60, // Check for expired keys every minute
+    useClones: false,
+  });
+
   private get timeoutMs(): number {
     return config.AZURE_API_TIMEOUT;
   }
 
   constructor(prisma: PrismaClient) {
     super(prisma, "azure");
+  }
+
+  /**
+   * Retry helper for transient failures
+   */
+  private async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelayMs: number = 1000,
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = lastError.message.toLowerCase();
+
+        // Don't retry on authentication or authorization errors
+        if (
+          errorMessage.includes("authenticationfailed") ||
+          errorMessage.includes("forbidden") ||
+          errorMessage.includes("invalidaccountkey") ||
+          errorMessage.includes("invalidstorage")
+        ) {
+          throw lastError;
+        }
+
+        // Don't retry on final attempt
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // Exponential backoff with jitter
+        const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 1000;
+        logger.warn(
+          {
+            attempt: attempt + 1,
+            maxRetries: maxRetries + 1,
+            delayMs: Math.round(delay),
+            error: errorMessage,
+          },
+          "Azure operation failed, retrying...",
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError!;
   }
 
   /**
@@ -365,53 +424,139 @@ export class AzureConfigService extends ConfigurationService {
   /**
    * Test container access by attempting to list blobs in a specific container
    * @param containerName - Name of the container to test
-   * @returns boolean indicating if container is accessible
+   * @returns Object with access result, response time, and error details
    */
-  async testContainerAccess(containerName: string): Promise<boolean> {
+  async testContainerAccess(containerName: string): Promise<{
+    accessible: boolean;
+    responseTimeMs: number;
+    error?: string;
+    errorCode?: string;
+    cached?: boolean;
+  }> {
+    const cacheKey = `container_access:${containerName}`;
+
+    // Check cache first
+    const cached = AzureConfigService.containerAccessCache.get<{
+      accessible: boolean;
+      responseTimeMs: number;
+      error?: string;
+      errorCode?: string;
+    }>(cacheKey);
+
+    if (cached) {
+      logger.debug(
+        { containerName },
+        "Container access test result returned from cache",
+      );
+      return { ...cached, cached: true };
+    }
+
+    const startTime = Date.now();
+
     try {
       const connectionString = await this.getConnectionString();
 
       if (!connectionString) {
-        return false;
+        const result = {
+          accessible: false,
+          responseTimeMs: Date.now() - startTime,
+          error: "No connection string configured",
+          errorCode: "MISSING_CONNECTION_STRING",
+        };
+
+        // Cache negative result for shorter time (1 minute)
+        AzureConfigService.containerAccessCache.set(cacheKey, result, 60);
+        return result;
       }
 
-      const blobServiceClient =
-        BlobServiceClient.fromConnectionString(connectionString);
-      const containerClient =
-        blobServiceClient.getContainerClient(containerName);
+      // Test container access with retry logic
+      const accessible = await this.retryOperation(
+        async () => {
+          const blobServiceClient =
+            BlobServiceClient.fromConnectionString(connectionString);
+          const containerClient =
+            blobServiceClient.getContainerClient(containerName);
 
-      // Try to list first blob with timeout
-      const listPromise = (async () => {
-        const iterator = containerClient.listBlobsFlat();
-        const page = await iterator.next();
-        return page.done !== undefined;
-      })();
+          // Try to get container properties (faster than listing blobs)
+          const propertiesPromise = containerClient.getProperties();
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Container access test timeout")),
+              5000, // Shorter timeout for container access test
+            ),
+          );
 
-      const timeoutPromise = new Promise<boolean>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Container access test timeout")),
-          5000, // Shorter timeout for container access test
-        ),
+          await Promise.race([propertiesPromise, timeoutPromise]);
+          return true;
+        },
+        2,
+        500,
+      ); // 2 retries with 500ms base delay
+
+      const result = {
+        accessible,
+        responseTimeMs: Date.now() - startTime,
+      };
+
+      // Cache successful result
+      AzureConfigService.containerAccessCache.set(cacheKey, result);
+
+      logger.info(
+        {
+          containerName,
+          responseTimeMs: result.responseTimeMs,
+          cached: false,
+        },
+        "Container access test successful",
       );
 
-      await Promise.race([listPromise, timeoutPromise]);
-
-      logger.info({ containerName }, "Container access test successful");
-
-      return true;
+      return result;
     } catch (error) {
+      const responseTime = Date.now() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      let errorCode = "CONTAINER_ACCESS_ERROR";
+
+      // Parse specific error types
+      if (errorMessage.includes("timeout")) {
+        errorCode = "TIMEOUT";
+      } else if (
+        errorMessage.includes("AuthenticationFailed") ||
+        errorMessage.includes("InvalidAccountKey")
+      ) {
+        errorCode = "INVALID_CREDENTIALS";
+      } else if (errorMessage.includes("ContainerNotFound")) {
+        errorCode = "CONTAINER_NOT_FOUND";
+      } else if (errorMessage.includes("Forbidden")) {
+        errorCode = "INSUFFICIENT_PERMISSIONS";
+      } else if (
+        errorMessage.includes("ENOTFOUND") ||
+        errorMessage.includes("ECONNREFUSED")
+      ) {
+        errorCode = "NETWORK_ERROR";
+      }
+
+      const result = {
+        accessible: false,
+        responseTimeMs: responseTime,
+        error: errorMessage,
+        errorCode,
+      };
+
+      // Cache error result for shorter time (2 minutes)
+      AzureConfigService.containerAccessCache.set(cacheKey, result, 120);
 
       logger.warn(
         {
           containerName,
           error: errorMessage,
+          errorCode,
+          responseTime,
         },
         "Container access test failed",
       );
 
-      return false;
+      return result;
     }
   }
 

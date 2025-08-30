@@ -312,12 +312,16 @@ The application uses Prisma ORM with SQLite for data persistence.
 
 ### Azure Configuration Service Implementation
 - **Service Class**: `server/src/services/azure-config.ts` - Complete Azure Storage configuration management service
-- **Features**: Connection string validation, container access testing, storage account information retrieval
+- **Features**: Connection string validation, container access testing with retry logic and caching, storage account information retrieval
 - **API Integration**: Uses official Azure Storage Blob SDK with timeout protection (15s default) and error handling
+- **Container Access Testing**: Enhanced `testContainerAccess` method with detailed response including access status, response time, error details, and cache status
+- **Retry Logic**: Intelligent retry mechanism with exponential backoff, smart error detection to skip non-retryable errors (authentication, authorization)
+- **Result Caching**: NodeCache integration with configurable TTL (5 minutes for success, 2 minutes for errors, 1 minute for missing config)
 - **Validation Methods**: Real-time Azure Storage connectivity testing with account validation and container listing
 - **Container Management**: Retrieval of container information including metadata, access testing, and storage account details
+- **Performance Optimization**: Uses container properties API (faster than blob listing) for access testing
 - **Security Features**: Connection string redaction in logs, encrypted storage support
-- **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, invalid credentials)
+- **Error Handling**: Comprehensive error parsing with Azure-specific error codes (authentication, network errors, invalid credentials, timeouts, container not found)
 - **Configuration Management**: Secure connection string storage with validation and removal capabilities
 
 ### Azure Settings API Endpoints Implementation
@@ -481,7 +485,12 @@ The application uses Prisma ORM with SQLite for data persistence.
 
 ### Azure Container Metadata Display Component Implementation
 - **AzureContainerList Component**: Complete container metadata display component implemented in `client/src/components/AzureContainerList.tsx`
-- **Table Display**: Professional data table using @tanstack/react-table with columns for container name, last modified, lease status, access level, and metadata
+- **Table Display**: Professional data table using @tanstack/react-table with columns for container name, last modified, lease status, access level, metadata, and actions
+- **Container Access Testing**: Individual "Test Access" buttons for each container with real-time testing, response time display, and comprehensive error handling
+- **Access Test Results**: Visual indicators showing success (green check), failure (red X), and response times with tooltips for detailed error messages
+- **Retry Logic**: Automatic retry with exponential backoff for transient failures, smart error detection to avoid retrying authentication errors
+- **Result Caching**: 5-minute cache for successful tests, 2-minute cache for failed tests, with cache indicators in UI
+- **Toast Notifications**: Real-time user feedback for container access tests with success/failure messages and response times
 - **Pagination Support**: Full pagination implementation for large container lists with configurable page size (default: 20 containers per page)
 - **Search and Filter Functionality**: Real-time search by container name prefix and filtering by lease status, public access level, and metadata presence
 - **Sorting Capabilities**: Sortable columns for container name, last modified date, and lease status with ascending/descending order
@@ -494,7 +503,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Integration**: Automatically shown on Azure settings page when connection is established (`latestConnectivity?.status === "connected"`)
 - **Performance Optimization**: Memoized components and callbacks to prevent unnecessary re-renders
 - **Accessibility**: Proper ARIA labels, screen reader support, and keyboard navigation
-- **Data Management**: Uses existing Azure hooks (`useAzureContainers`, `useAzureContainerFilters`) for data fetching and state management
+- **Data Management**: Uses existing Azure hooks (`useAzureContainers`, `useAzureContainerFilters`, `useTestAzureContainerAccess`) for data fetching and state management
 
 ### Azure Connectivity Status Display Component Implementation
 - **AzureConnectivityStatus Component**: Comprehensive connectivity status monitoring component implemented in `client/src/components/AzureConnectivityStatus.tsx`

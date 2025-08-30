@@ -226,7 +226,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Implement functionality to test access to specific Azure Storage containers
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 

@@ -43,11 +43,17 @@ import {
   AlertCircle,
   Container,
   Calendar,
+  TestTube,
+  Loader2,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import {
   useAzureContainers,
   useAzureContainerFilters,
+  useTestAzureContainerAccess,
 } from "@/hooks/use-azure-settings";
+import { toast } from "sonner";
 
 interface AzureContainerListProps {
   className?: string;
@@ -241,6 +247,78 @@ const MetadataCell = React.memo(
 
 MetadataCell.displayName = "MetadataCell";
 
+// Container access test result interface
+interface ContainerAccessTest {
+  containerName: string;
+  status: "testing" | "success" | "failed" | "idle";
+  lastTested?: Date;
+  responseTime?: number;
+  error?: string;
+}
+
+// Container actions cell with test access functionality
+const ActionsCell = React.memo(
+  ({
+    containerName,
+    testStatus,
+    onTestAccess,
+  }: {
+    containerName: string;
+    testStatus?: ContainerAccessTest;
+    onTestAccess: (containerName: string) => void;
+  }) => {
+    const isTestActive = testStatus?.status === "testing";
+    const hasResult =
+      testStatus?.status === "success" || testStatus?.status === "failed";
+
+    return (
+      <div className="flex items-center gap-2 min-h-[2rem]">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onTestAccess(containerName)}
+          disabled={isTestActive}
+          className="h-8 px-3"
+        >
+          {isTestActive ? (
+            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          ) : (
+            <TestTube className="h-3 w-3 mr-1" />
+          )}
+          Test Access
+        </Button>
+        {hasResult && (
+          <div className="flex items-center gap-1">
+            {testStatus?.status === "success" ? (
+              <div title="Access successful">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+            ) : (
+              <div title={testStatus?.error || "Access failed"}>
+                <XCircle className="h-4 w-4 text-red-600" />
+              </div>
+            )}
+            {testStatus?.responseTime && (
+              <span
+                className="text-xs text-muted-foreground"
+                title="Response time"
+              >
+                {testStatus.responseTime}ms
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.containerName === nextProps.containerName &&
+    JSON.stringify(prevProps.testStatus) ===
+      JSON.stringify(nextProps.testStatus),
+);
+
+ActionsCell.displayName = "ActionsCell";
+
 // Container row component
 const ContainerRow = React.memo(
   ({
@@ -291,6 +369,14 @@ export const AzureContainerList = React.memo(function AzureContainerList({
     sortOrder: "asc",
   });
 
+  // Container access test state
+  const [containerTests, setContainerTests] = React.useState<
+    Map<string, ContainerAccessTest>
+  >(new Map());
+
+  // Test container access mutation
+  const testContainerAccess = useTestAzureContainerAccess();
+
   // Fetch containers data
   const {
     data: containersData,
@@ -315,6 +401,82 @@ export const AzureContainerList = React.memo(function AzureContainerList({
   const handleLeaseStatusSort = React.useCallback(
     () => updateFilter("sortBy", "leaseStatus"),
     [updateFilter],
+  );
+
+  // Handle container access testing
+  const handleTestAccess = React.useCallback(
+    async (containerName: string) => {
+      // Set testing state
+      setContainerTests((prev) =>
+        new Map(prev).set(containerName, {
+          containerName,
+          status: "testing",
+          lastTested: new Date(),
+        }),
+      );
+
+      try {
+        const result = await testContainerAccess.mutateAsync(containerName);
+
+        // Update with success result
+        setContainerTests((prev) =>
+          new Map(prev).set(containerName, {
+            containerName,
+            status: "success",
+            lastTested: new Date(),
+            responseTime: result.data.responseTimeMs,
+          }),
+        );
+
+        // Show success toast
+        toast.success(
+          `Container '${containerName}' is accessible (${result.data.responseTimeMs}ms)`,
+        );
+
+        // Clear result after 10 seconds
+        setTimeout(() => {
+          setContainerTests((prev) => {
+            const updated = new Map(prev);
+            const current = updated.get(containerName);
+            if (current?.status === "success") {
+              updated.set(containerName, { ...current, status: "idle" });
+            }
+            return updated;
+          });
+        }, 10000);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Access test failed";
+
+        // Update with error result
+        setContainerTests((prev) =>
+          new Map(prev).set(containerName, {
+            containerName,
+            status: "failed",
+            lastTested: new Date(),
+            error: errorMessage,
+          }),
+        );
+
+        // Show error toast
+        toast.error(
+          `Container '${containerName}' access failed: ${errorMessage}`,
+        );
+
+        // Clear error after 15 seconds
+        setTimeout(() => {
+          setContainerTests((prev) => {
+            const updated = new Map(prev);
+            const current = updated.get(containerName);
+            if (current?.status === "failed") {
+              updated.set(containerName, { ...current, status: "idle" });
+            }
+            return updated;
+          });
+        }, 15000);
+      }
+    },
+    [testContainerAccess],
   );
 
   // Column definitions
@@ -378,8 +540,25 @@ export const AzureContainerList = React.memo(function AzureContainerList({
         header: "Metadata",
         cell: ({ row }) => <MetadataCell metadata={row.getValue("metadata")} />,
       },
+      {
+        id: "actions",
+        header: "Actions",
+        cell: ({ row }) => (
+          <ActionsCell
+            containerName={row.original.name}
+            testStatus={containerTests.get(row.original.name)}
+            onTestAccess={handleTestAccess}
+          />
+        ),
+      },
     ],
-    [handleNameSort, handleLastModifiedSort, handleLeaseStatusSort],
+    [
+      handleNameSort,
+      handleLastModifiedSort,
+      handleLeaseStatusSort,
+      handleTestAccess,
+      containerTests,
+    ],
   );
 
   // Filter containers based on current filters
@@ -510,6 +689,8 @@ export const AzureContainerList = React.memo(function AzureContainerList({
         return "w-[120px] min-w-[120px] max-w-[120px]"; // Access Level
       case 4:
         return "w-[140px] min-w-[140px] max-w-[140px]"; // Metadata
+      case 5:
+        return "w-[180px] min-w-[180px] max-w-[180px]"; // Actions
       default:
         return "";
     }

@@ -669,16 +669,14 @@ router.post("/test-container", requireAuth, (async (
     }
 
     const { containerName } = bodyValidation.data;
-    const startTime = Date.now();
 
-    // Test container access
-    const isAccessible =
+    // Test container access (includes retry logic and caching)
+    const testResult =
       await azureConfigService.testContainerAccess(containerName);
-    const responseTime = Date.now() - startTime;
 
     // Get container metadata if accessible
     let containerMetadata = null;
-    if (isAccessible) {
+    if (testResult.accessible) {
       try {
         const containers = await azureConfigService.getContainerInfo();
         containerMetadata = containers.find((c) => c.name === containerName);
@@ -697,21 +695,19 @@ router.post("/test-container", requireAuth, (async (
       success: true,
       data: {
         containerName,
-        accessible: isAccessible,
-        responseTimeMs: responseTime,
+        accessible: testResult.accessible,
+        responseTimeMs: testResult.responseTimeMs,
         lastModified: containerMetadata?.lastModified
           ? new Date(containerMetadata.lastModified).toISOString()
           : undefined,
         leaseStatus: containerMetadata?.leaseStatus,
-        error: isAccessible
-          ? undefined
-          : "Container access denied or container does not exist",
-        errorCode: isAccessible ? undefined : "ACCESS_DENIED",
+        error: testResult.error,
+        errorCode: testResult.errorCode,
         testedAt: new Date().toISOString(),
       },
-      message: isAccessible
-        ? `Container '${containerName}' is accessible`
-        : `Container '${containerName}' is not accessible`,
+      message: testResult.accessible
+        ? `Container '${containerName}' is accessible${testResult.cached ? " (cached)" : ""}`
+        : `Container '${containerName}' is not accessible: ${testResult.error || "Access denied"}`,
       timestamp: new Date().toISOString(),
       requestId,
     };
@@ -721,8 +717,9 @@ router.post("/test-container", requireAuth, (async (
         requestId,
         userId,
         containerName,
-        accessible: isAccessible,
-        responseTimeMs: responseTime,
+        accessible: testResult.accessible,
+        responseTimeMs: testResult.responseTimeMs,
+        cached: testResult.cached,
       },
       "Azure container access test completed",
     );
