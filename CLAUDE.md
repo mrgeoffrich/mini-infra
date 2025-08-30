@@ -191,8 +191,8 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Service Class**: `server/src/services/docker-config.ts` - Complete Docker configuration management service
 
 ### Cloudflare Configuration Service Implementation
-- **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service
-- **Features**: API token validation, account information retrieval, tunnel connectivity testing
+- **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service with circuit breaker pattern
+- **Features**: API token validation, account information retrieval, tunnel connectivity testing, circuit breaker for resilient API communication (opens after 5 consecutive failures with 5-minute cooldown), request deduplication within 1-second window, comprehensive error handling with sensitive data redaction
 
 ### Azure Configuration Service Implementation
 - **Service Class**: `server/src/services/azure-config.ts` - Complete Azure Storage configuration management service
