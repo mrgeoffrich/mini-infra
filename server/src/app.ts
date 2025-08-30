@@ -94,6 +94,7 @@ import containerRoutes from "./routes/containers";
 import settingsRoutes from "./routes/settings";
 import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
+import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -104,6 +105,7 @@ app.use("/api/keys", apiKeyRoutes);
 app.use("/api/containers", containerRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/settings/azure", azureSettingsRoutes);
+app.use("/api/settings/cloudflare", cloudflareSettingsRoutes);
 app.use("/api/connectivity/azure", azureConnectivityRoutes);
 
 // Serve static files in production
