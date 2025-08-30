@@ -466,6 +466,7 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Azure Settings Page**: Complete Azure Storage configuration form at `/settings/azure` implemented in `client/src/app/settings/azure/page.tsx`
 - **Secure Connection String Input**: Form field with show/hide toggle for Azure Storage connection string input with proper validation
 - **Real-time Storage Validation**: Integration with settings validation hooks for live connectivity testing and feedback
+- **Auto-save Functionality**: Debounced auto-save with 1-second delay that automatically saves valid connection strings with visual feedback indicators
 - **Encrypted Storage**: Connection strings are automatically encrypted when saved to the database for security
 - **Zod Schema Validation**: Comprehensive client-side validation for connection string format including required fields (DefaultEndpointsProtocol, AccountName, AccountKey)
 - **Connection Testing**: Manual test connection button with real-time feedback and error handling

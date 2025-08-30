@@ -127,6 +127,9 @@ export default function AzureSettingsPage() {
   // Watch form values for real-time validation
   const formValues = form.watch();
   const [debouncedValues, setDebouncedValues] = useState(formValues);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
 
   // Debounce form values for validation
   useEffect(() => {
@@ -135,6 +138,66 @@ export default function AzureSettingsPage() {
     }, 500);
     return () => clearTimeout(timer);
   }, [formValues]);
+
+  // Auto-save functionality with debouncing
+  useEffect(() => {
+    if (!form.formState.isValid || !debouncedValues.connectionString) {
+      return;
+    }
+
+    // Only auto-save if the connection string has actually changed from the saved value
+    const currentSavedValue = settings.connection_string?.value || "";
+    if (debouncedValues.connectionString === currentSavedValue) {
+      return;
+    }
+
+    // Auto-save after debounce delay
+    const autoSaveTimer = setTimeout(async () => {
+      try {
+        setAutoSaveStatus("saving");
+
+        // Save or update connection string setting (encrypted)
+        if (settings.connection_string) {
+          await updateSetting.mutateAsync({
+            id: settings.connection_string.id,
+            setting: { value: debouncedValues.connectionString },
+          });
+        } else {
+          await createSetting.mutateAsync({
+            category: "azure",
+            key: "connection_string",
+            value: debouncedValues.connectionString,
+            isEncrypted: true,
+          });
+        }
+
+        setAutoSaveStatus("saved");
+        toast.success("Azure Storage settings auto-saved successfully");
+
+        // Clear saved status after a short delay
+        setTimeout(() => {
+          setAutoSaveStatus("idle");
+        }, 2000);
+      } catch (error) {
+        setAutoSaveStatus("error");
+        console.error("Auto-save failed:", error);
+        toast.error(`Auto-save failed: ${(error as Error).message}`);
+
+        // Clear error status after a delay
+        setTimeout(() => {
+          setAutoSaveStatus("idle");
+        }, 3000);
+      }
+    }, 1000); // 1 second delay for auto-save
+
+    return () => clearTimeout(autoSaveTimer);
+  }, [
+    debouncedValues.connectionString,
+    form.formState.isValid,
+    settings.connection_string,
+    updateSetting,
+    createSetting,
+  ]);
 
   // Advanced validation with real-time connectivity testing
   const validation = useAdvancedSettingsValidation(
@@ -357,7 +420,7 @@ export default function AzureSettingsPage() {
                         )}
                       />
 
-                      <div className="flex gap-3">
+                      <div className="flex gap-3 items-center">
                         <Button
                           type="submit"
                           disabled={!form.formState.isValid || isSaving}
@@ -387,6 +450,36 @@ export default function AzureSettingsPage() {
                           )}
                           Test Connection
                         </Button>
+
+                        {/* Auto-save status indicator */}
+                        {autoSaveStatus !== "idle" && (
+                          <div className="flex items-center gap-2 text-sm">
+                            {autoSaveStatus === "saving" && (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                                <span className="text-blue-600">
+                                  Auto-saving...
+                                </span>
+                              </>
+                            )}
+                            {autoSaveStatus === "saved" && (
+                              <>
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <span className="text-green-600">
+                                  Auto-saved
+                                </span>
+                              </>
+                            )}
+                            {autoSaveStatus === "error" && (
+                              <>
+                                <XCircle className="h-4 w-4 text-red-600" />
+                                <span className="text-red-600">
+                                  Auto-save failed
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </form>
                   </Form>

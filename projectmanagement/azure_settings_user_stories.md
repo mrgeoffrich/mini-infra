@@ -130,7 +130,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Add real-time validation and connection testing to the Azure settings form
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 
