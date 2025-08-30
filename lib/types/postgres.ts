@@ -458,3 +458,151 @@ export interface BackupOperationProgress {
   errorMessage?: string;
   metadata?: Record<string, any>;
 }
+
+// ====================
+// Restore Operations API Request Types
+// ====================
+
+export interface CreateRestoreOperationRequest {
+  databaseId: string;
+  backupUrl: string;
+  confirmRestore?: boolean; // For confirmation workflow
+}
+
+export interface RestoreOperationFilter {
+  status?: RestoreOperationStatus;
+  startedAfter?: string; // ISO date string
+  startedBefore?: string; // ISO date string
+}
+
+export interface RestoreOperationSortOptions {
+  field: keyof RestoreOperationInfo;
+  order: "asc" | "desc";
+}
+
+export interface BackupBrowserFilter {
+  createdAfter?: string; // ISO date string
+  createdBefore?: string; // ISO date string
+  sizeMin?: number; // Minimum size in bytes
+  sizeMax?: number; // Maximum size in bytes
+}
+
+export interface BackupBrowserSortOptions {
+  field: "createdAt" | "sizeBytes" | "name";
+  order: "asc" | "desc";
+}
+
+// ====================
+// Restore Operations API Response Types
+// ====================
+
+export interface RestoreOperationResponse {
+  success: boolean;
+  data: RestoreOperationInfo;
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface RestoreOperationListResponse {
+  success: boolean;
+  data: RestoreOperationInfo[];
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    hasMore: boolean;
+  };
+}
+
+export interface RestoreOperationStatusResponse {
+  success: boolean;
+  data: {
+    id: string;
+    status: RestoreOperationStatus;
+    progress: number;
+    startedAt: string;
+    completedAt: string | null;
+    errorMessage: string | null;
+    backupUrl: string;
+    databaseName: string;
+    currentStep?: string;
+    totalSteps?: number;
+    completedSteps?: number;
+  };
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface CreateRestoreOperationResponse {
+  success: boolean;
+  data: {
+    operationId: string;
+    status: RestoreOperationStatus;
+    message: string;
+    backupUrl: string;
+    databaseName: string;
+  };
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface BackupBrowserItem {
+  name: string;
+  url: string;
+  sizeBytes: number;
+  createdAt: string;
+  lastModified: string;
+  metadata?: {
+    databaseName?: string;
+    backupFormat?: BackupFormat;
+    compressionLevel?: number;
+    pgVersion?: string;
+    [key: string]: any;
+  };
+}
+
+export interface BackupBrowserResponse {
+  success: boolean;
+  data: BackupBrowserItem[];
+  message?: string;
+  timestamp: string;
+  requestId?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    totalCount: number;
+    hasMore: boolean;
+  };
+}
+
+// ====================
+// Restore Progress Tracking Types
+// ====================
+
+export interface RestoreProgressUpdate {
+  operationId: string;
+  progress: number;
+  status: RestoreOperationStatus;
+  message?: string;
+  timestamp: string;
+}
+
+export interface RestoreOperationProgress {
+  id: string;
+  databaseId: string;
+  status: RestoreOperationStatus;
+  progress: number;
+  startedAt: string;
+  estimatedCompletion?: string;
+  currentStep?: string;
+  totalSteps?: number;
+  completedSteps?: number;
+  errorMessage?: string;
+  backupUrl: string;
+  metadata?: Record<string, any>;
+}

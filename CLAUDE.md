@@ -214,6 +214,16 @@ The application uses Prisma ORM with SQLite for data persistence.
   - `DELETE /api/postgres/backup-configs/:id` - Delete backup configuration
 - **Features**: Backup configuration CRUD operations, cron expression validation, Azure container validation, Zod validation schemas, comprehensive error handling, business event logging
 
+### PostgreSQL Restore Operations API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-restore.ts` - RESTful endpoints for restore operations management
+- **Endpoints**:
+  - `POST /api/postgres/restore/:databaseId` - Initiate restore operation for a specific database
+  - `GET /api/postgres/restore/:operationId/status` - Get status of a specific restore operation  
+  - `GET /api/postgres/restore/backups/:containerName` - Browse available backups in Azure container for restore
+  - `GET /api/postgres/restore/:databaseId/operations` - List restore operations for a specific database
+  - `GET /api/postgres/restore/:operationId/progress` - Get detailed progress information for a restore operation
+- **Features**: Restore operation CRUD operations, backup browser for Azure Storage, restore confirmation workflow, progress tracking with detailed status updates, comprehensive error handling, business event logging, sensitive data redaction in logs
+
 ### Settings Service Layer Architecture
 - **Code**: `server/src/services/**` - all the settings code
 

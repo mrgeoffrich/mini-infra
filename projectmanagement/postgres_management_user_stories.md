@@ -261,7 +261,7 @@
 
 **Goal:** Create API endpoints for restore operations
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
