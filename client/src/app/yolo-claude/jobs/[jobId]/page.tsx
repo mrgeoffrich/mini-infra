@@ -306,10 +306,7 @@ export default function JobExecutionPage() {
                   Repository
                 </div>
                 <div className="text-sm font-mono bg-muted px-2 py-1 rounded mt-1">
-                  {jobDetails.repositoryUrl.replace(
-                    /^https?:\/\/(www\.)?/,
-                    "",
-                  )}
+                  {jobDetails.repositoryUrl.replace(/^https?:\/\/(www\.)?/, "")}
                 </div>
               </div>
               <div>
