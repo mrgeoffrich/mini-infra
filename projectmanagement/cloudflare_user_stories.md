@@ -72,7 +72,7 @@
 
 **Goal:** Implement API endpoints for retrieving Cloudflare tunnel information
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 
