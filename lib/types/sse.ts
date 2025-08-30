@@ -48,13 +48,24 @@ export interface JobErrorEvent extends BaseSSEEvent {
   details?: any;
 }
 
+export interface ConnectionEvent extends BaseSSEEvent {
+  type: 'connected';
+  jobId?: string;
+}
+
+export interface HeartbeatEvent extends BaseSSEEvent {
+  type: 'heartbeat';
+}
+
 export type SSEEvent = 
   | JobStartedEvent
   | JobProgressEvent 
   | JobLogEvent
   | JobStatusEvent
   | JobCompletedEvent
-  | JobErrorEvent;
+  | JobErrorEvent
+  | ConnectionEvent
+  | HeartbeatEvent;
 
 export interface SSEConnection {
   sessionId: string;

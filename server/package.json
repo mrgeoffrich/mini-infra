@@ -14,7 +14,7 @@
         "lint:fix": "eslint --fix",
         "format": "prettier --write \"src/**/*.{ts,js}\"",
         "format:check": "prettier --check \"src/**/*.{ts,js}\"",
-        "justfix": "eslint --fix \"src/**/*.{ts,js}\" && eslint --fix"
+        "justfix": "eslint --fix"
     },
     "devDependencies": {
         "@eslint/js": "^9.34.0",
