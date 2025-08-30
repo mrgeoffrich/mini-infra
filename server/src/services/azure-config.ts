@@ -7,8 +7,55 @@ import {
 import { ConfigurationService } from "./configuration-base";
 import logger from "../lib/logger";
 import config from "../lib/config";
-import { BlobServiceClient } from "@azure/storage-blob";
+import { BlobServiceClient, BlobItem, BlockBlobClient } from "@azure/storage-blob";
 import NodeCache from "node-cache";
+
+/**
+ * Backup file metadata interface
+ */
+export interface BackupFileMetadata {
+  name: string;
+  blobUrl: string;
+  size: number;
+  createdAt: Date;
+  lastModified: Date;
+  databaseName: string;
+  backupType: string;
+  pathPrefix: string;
+  contentMD5?: string;
+  metadata: Record<string, string>;
+  etag: string;
+}
+
+/**
+ * Backup file list result
+ */
+export interface BackupFileListResult {
+  files: BackupFileMetadata[];
+  totalCount: number;
+  containerName: string;
+  pathPrefix?: string;
+}
+
+/**
+ * Download stream result
+ */
+export interface BackupDownloadResult {
+  stream: NodeJS.ReadableStream;
+  contentLength: number;
+  contentType: string;
+  fileName: string;
+}
+
+/**
+ * Retention policy enforcement result
+ */
+export interface RetentionEnforcementResult {
+  deletedFiles: string[];
+  deletedCount: number;
+  totalSizeFreed: number;
+  errors: string[];
+}
 
 /**
  * AzureConfigService handles Azure Storage configuration management
@@ -557,6 +604,498 @@ export class AzureConfigService extends ConfigurationService {
       );
 
       return result;
+    }
+  }
+
+  /**
+   * List backup files in a container with metadata
+   * @param containerName - Name of the Azure container
+   * @param pathPrefix - Optional path prefix to filter files
+   * @param databaseName - Optional database name to filter files
+   * @param maxResults - Maximum number of results to return (default: 100)
+   * @returns BackupFileListResult with file metadata
+   */
+  async listBackupFiles(
+    containerName: string,
+    pathPrefix?: string,
+    databaseName?: string,
+    maxResults: number = 100,
+  ): Promise<BackupFileListResult> {
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      const blobServiceClient =
+        BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient =
+        blobServiceClient.getContainerClient(containerName);
+
+      // Build prefix for filtering
+      let searchPrefix = pathPrefix || "";
+      if (databaseName) {
+        searchPrefix = searchPrefix
+          ? `${searchPrefix}/${databaseName}`
+          : databaseName;
+      }
+
+      const files: BackupFileMetadata[] = [];
+      let totalCount = 0;
+
+      // List blobs with metadata
+      const listOptions = {
+        prefix: searchPrefix || undefined,
+        includeMetadata: true,
+      };
+
+      for await (const blob of containerClient.listBlobsFlat(listOptions)) {
+        if (totalCount >= maxResults) {
+          break;
+        }
+
+        // Parse database name from blob path
+        const pathParts = blob.name.split("/");
+        let extractedDbName = databaseName;
+        
+        if (!extractedDbName) {
+          // Try to extract from path structure
+          if (pathPrefix && blob.name.startsWith(pathPrefix + "/")) {
+            const remainingPath = blob.name.substring(pathPrefix.length + 1);
+            extractedDbName = remainingPath.split("/")[0];
+          } else {
+            extractedDbName = pathParts[0];
+          }
+        }
+
+        // Determine backup type from file extension
+        let backupType = "unknown";
+        if (blob.name.endsWith(".sql")) {
+          backupType = "sql";
+        } else if (blob.name.endsWith(".dump") || blob.name.endsWith(".backup")) {
+          backupType = "custom";
+        } else if (blob.name.endsWith(".tar")) {
+          backupType = "tar";
+        }
+
+        const fileMetadata: BackupFileMetadata = {
+          name: blob.name,
+          blobUrl: `https://${blobServiceClient.accountName}.blob.core.windows.net/${containerName}/${blob.name}`,
+          size: blob.properties.contentLength || 0,
+          createdAt: blob.properties.createdOn || new Date(),
+          lastModified: blob.properties.lastModified || new Date(),
+          databaseName: extractedDbName || "unknown",
+          backupType,
+          pathPrefix: pathPrefix || "",
+          contentMD5: blob.properties.contentMD5
+            ? Buffer.from(blob.properties.contentMD5).toString("hex")
+            : undefined,
+          metadata: blob.metadata || {},
+          etag: blob.properties.etag || "",
+        };
+
+        files.push(fileMetadata);
+        totalCount++;
+      }
+
+      // Sort files by creation date (newest first)
+      files.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      logger.info(
+        {
+          containerName,
+          pathPrefix,
+          databaseName,
+          fileCount: files.length,
+          maxResults,
+        },
+        "Listed backup files from Azure Storage",
+      );
+
+      return {
+        files,
+        totalCount,
+        containerName,
+        pathPrefix,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        {
+          error: errorMessage,
+          containerName,
+          pathPrefix,
+          databaseName,
+          maxResults,
+        },
+        "Failed to list backup files from Azure Storage",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Download a backup file from Azure Storage
+   * @param containerName - Name of the Azure container
+   * @param blobName - Name of the blob to download
+   * @returns BackupDownloadResult with download stream
+   */
+  async downloadBackupFile(
+    containerName: string,
+    blobName: string,
+  ): Promise<BackupDownloadResult> {
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      const blobServiceClient =
+        BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient =
+        blobServiceClient.getContainerClient(containerName);
+      const blobClient = containerClient.getBlobClient(blobName);
+      const blockBlobClient = blobClient.getBlockBlobClient();
+
+      // Get blob properties first
+      const properties = await blockBlobClient.getProperties();
+      
+      // Start download
+      const downloadResponse = await blockBlobClient.download(0);
+      
+      if (!downloadResponse.readableStreamBody) {
+        throw new Error("Failed to get download stream");
+      }
+
+      const fileName = blobName.split("/").pop() || blobName;
+
+      logger.info(
+        {
+          containerName,
+          blobName,
+          contentLength: properties.contentLength,
+          fileName,
+        },
+        "Started backup file download from Azure Storage",
+      );
+
+      return {
+        stream: downloadResponse.readableStreamBody,
+        contentLength: properties.contentLength || 0,
+        contentType: properties.contentType || "application/octet-stream",
+        fileName,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        {
+          error: errorMessage,
+          containerName,
+          blobName,
+        },
+        "Failed to download backup file from Azure Storage",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Enforce retention policy by deleting old backup files
+   * @param containerName - Name of the Azure container
+   * @param retentionDays - Number of days to retain backups
+   * @param pathPrefix - Optional path prefix to limit deletion scope
+   * @param databaseName - Optional database name to limit deletion scope
+   * @returns RetentionEnforcementResult with deletion details
+   */
+  async enforceRetentionPolicy(
+    containerName: string,
+    retentionDays: number,
+    pathPrefix?: string,
+    databaseName?: string,
+  ): Promise<RetentionEnforcementResult> {
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      const blobServiceClient =
+        BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient =
+        blobServiceClient.getContainerClient(containerName);
+
+      // Calculate cutoff date
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+      const deletedFiles: string[] = [];
+      const errors: string[] = [];
+      let totalSizeFreed = 0;
+
+      // Build prefix for filtering
+      let searchPrefix = pathPrefix || "";
+      if (databaseName) {
+        searchPrefix = searchPrefix
+          ? `${searchPrefix}/${databaseName}`
+          : databaseName;
+      }
+
+      // List blobs to find old ones
+      const listOptions = {
+        prefix: searchPrefix || undefined,
+        includeMetadata: true,
+      };
+
+      for await (const blob of containerClient.listBlobsFlat(listOptions)) {
+        const blobDate = blob.properties.createdOn || blob.properties.lastModified;
+        
+        if (blobDate && blobDate < cutoffDate) {
+          try {
+            const blobClient = containerClient.getBlobClient(blob.name);
+            await blobClient.delete();
+            
+            deletedFiles.push(blob.name);
+            totalSizeFreed += blob.properties.contentLength || 0;
+
+            logger.debug(
+              {
+                blobName: blob.name,
+                blobDate: blobDate.toISOString(),
+                sizeBytes: blob.properties.contentLength,
+              },
+              "Deleted old backup file due to retention policy",
+            );
+          } catch (deleteError) {
+            const deleteErrorMessage = 
+              deleteError instanceof Error ? deleteError.message : "Unknown error";
+            errors.push(`Failed to delete ${blob.name}: ${deleteErrorMessage}`);
+            
+            logger.warn(
+              {
+                blobName: blob.name,
+                error: deleteErrorMessage,
+              },
+              "Failed to delete backup file during retention enforcement",
+            );
+          }
+        }
+      }
+
+      logger.info(
+        {
+          containerName,
+          retentionDays,
+          pathPrefix,
+          databaseName,
+          deletedCount: deletedFiles.length,
+          totalSizeFreed,
+          errorCount: errors.length,
+        },
+        "Retention policy enforcement completed",
+      );
+
+      return {
+        deletedFiles,
+        deletedCount: deletedFiles.length,
+        totalSizeFreed,
+        errors,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        {
+          error: errorMessage,
+          containerName,
+          retentionDays,
+          pathPrefix,
+          databaseName,
+        },
+        "Failed to enforce retention policy",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Index backup metadata by creating/updating blob metadata
+   * @param containerName - Name of the Azure container
+   * @param blobName - Name of the blob to index
+   * @param metadata - Metadata to associate with the backup
+   * @returns boolean indicating success
+   */
+  async indexBackupMetadata(
+    containerName: string,
+    blobName: string,
+    metadata: Record<string, string>,
+  ): Promise<boolean> {
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      const blobServiceClient =
+        BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient =
+        blobServiceClient.getContainerClient(containerName);
+      const blobClient = containerClient.getBlobClient(blobName);
+
+      // Validate metadata keys and values (Azure Storage requirements)
+      const validatedMetadata: Record<string, string> = {};
+      
+      for (const [key, value] of Object.entries(metadata)) {
+        // Azure metadata keys must be valid identifiers and values must be strings
+        const validKey = key.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+        const validValue = String(value).substring(0, 8192); // Max 8KB per metadata value
+        
+        if (validKey && validValue) {
+          validatedMetadata[validKey] = validValue;
+        }
+      }
+
+      // Add timestamp for indexing
+      validatedMetadata.indexed_at = new Date().toISOString();
+      
+      await blobClient.setMetadata(validatedMetadata);
+
+      logger.info(
+        {
+          containerName,
+          blobName,
+          metadataKeys: Object.keys(validatedMetadata),
+        },
+        "Backup metadata indexed successfully",
+      );
+
+      return true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        {
+          error: errorMessage,
+          containerName,
+          blobName,
+          metadata,
+        },
+        "Failed to index backup metadata",
+      );
+
+      return false;
+    }
+  }
+
+  /**
+   * Validate backup file integrity after upload
+   * @param containerName - Name of the Azure container
+   * @param blobName - Name of the blob to validate
+   * @param expectedSize - Expected file size in bytes (optional)
+   * @param expectedMD5 - Expected MD5 hash (optional)
+   * @returns Object with validation results
+   */
+  async validateBackupFile(
+    containerName: string,
+    blobName: string,
+    expectedSize?: number,
+    expectedMD5?: string,
+  ): Promise<{
+    isValid: boolean;
+    actualSize: number;
+    actualMD5?: string;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      const blobServiceClient =
+        BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient =
+        blobServiceClient.getContainerClient(containerName);
+      const blobClient = containerClient.getBlobClient(blobName);
+
+      // Get blob properties
+      const properties = await blobClient.getProperties();
+      const actualSize = properties.contentLength || 0;
+      
+      // Validate size
+      if (expectedSize !== undefined && actualSize !== expectedSize) {
+        errors.push(`Size mismatch: expected ${expectedSize}, got ${actualSize}`);
+      }
+
+      // Validate MD5 if available
+      let actualMD5: string | undefined;
+      if (properties.contentMD5) {
+        actualMD5 = Buffer.from(properties.contentMD5).toString("hex");
+        
+        if (expectedMD5 && actualMD5 !== expectedMD5) {
+          errors.push(`MD5 mismatch: expected ${expectedMD5}, got ${actualMD5}`);
+        }
+      }
+
+      // Basic existence and accessibility check
+      if (actualSize === 0) {
+        errors.push("Backup file is empty");
+      }
+
+      const isValid = errors.length === 0;
+
+      logger.info(
+        {
+          containerName,
+          blobName,
+          actualSize,
+          actualMD5,
+          expectedSize,
+          expectedMD5,
+          isValid,
+          errorCount: errors.length,
+        },
+        "Backup file validation completed",
+      );
+
+      return {
+        isValid,
+        actualSize,
+        actualMD5,
+        errors,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      
+      errors.push(`Validation failed: ${errorMessage}`);
+
+      logger.error(
+        {
+          error: errorMessage,
+          containerName,
+          blobName,
+          expectedSize,
+          expectedMD5,
+        },
+        "Failed to validate backup file",
+      );
+
+      return {
+        isValid: false,
+        actualSize: 0,
+        errors,
+      };
     }
   }
 

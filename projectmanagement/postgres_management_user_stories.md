@@ -215,7 +215,7 @@
 
 **Goal:** Enhance Azure Storage service for PostgreSQL backup operations
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
