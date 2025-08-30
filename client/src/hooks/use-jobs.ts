@@ -61,7 +61,7 @@ async function fetchJobs(
   }
 
   const data: JobListResponse = await response.json();
-  
+
   return data;
 }
 
@@ -184,10 +184,10 @@ export function useJobDetails(
   jobId: string,
   options: UseJobDetailsOptions = {},
 ) {
-  const { 
-    enabled = true, 
+  const {
+    enabled = true,
     retry = 3,
-    refetchInterval = 5000 // Poll for job status updates
+    refetchInterval = 5000, // Poll for job status updates
   } = options;
   const correlationId = generateCorrelationId();
 
@@ -254,7 +254,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
     isComplete: false,
     isConnected: false,
   });
-  
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsRef = useRef<JobLog[]>([]);
 
@@ -282,7 +282,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       // Connection opened
       eventSource.onopen = () => {
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           isConnected: true,
         }));
@@ -291,12 +291,12 @@ export function useJobStatus(sessionId: string, jobId?: string) {
       // Handle different event types
       eventSource.addEventListener("job-started", (event) => {
         const data: JobStartedEvent = JSON.parse(event.data);
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           status: JobStatus.IN_PROGRESS,
           isComplete: false,
         }));
-        
+
         // Add start log
         const startLog: JobLog = {
           id: `start-${Date.now()}`,
@@ -307,7 +307,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
           source: "system",
         };
         logsRef.current = [...logsRef.current, startLog];
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           logs: [...logsRef.current],
         }));
@@ -315,7 +315,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       eventSource.addEventListener("job-progress", (event) => {
         const data: JobProgressEvent = JSON.parse(event.data);
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           progress: data.progress,
         }));
@@ -332,7 +332,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
           source: data.source,
         };
         logsRef.current = [...logsRef.current, newLog];
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           logs: [...logsRef.current],
         }));
@@ -340,7 +340,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       eventSource.addEventListener("job-status", (event) => {
         const data: JobStatusEvent = JSON.parse(event.data);
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           status: data.status,
         }));
@@ -348,12 +348,12 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       eventSource.addEventListener("job-completed", (event) => {
         const data: JobCompletedEvent = JSON.parse(event.data);
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           status: data.status,
           isComplete: true,
         }));
-        
+
         // Add completion log
         const completionLog: JobLog = {
           id: `complete-${Date.now()}`,
@@ -364,7 +364,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
           source: "system",
         };
         logsRef.current = [...logsRef.current, completionLog];
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           logs: [...logsRef.current],
         }));
@@ -372,13 +372,13 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       eventSource.addEventListener("job-error", (event) => {
         const data: JobErrorEvent = JSON.parse(event.data);
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           status: JobStatus.FAILED,
           error: data.error,
           isComplete: true,
         }));
-        
+
         // Add error log
         const errorLog: JobLog = {
           id: `error-${Date.now()}`,
@@ -389,7 +389,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
           source: "system",
         };
         logsRef.current = [...logsRef.current, errorLog];
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           logs: [...logsRef.current],
         }));
@@ -397,11 +397,11 @@ export function useJobStatus(sessionId: string, jobId?: string) {
 
       // Connection errors
       eventSource.onerror = () => {
-        setStatusUpdate(prev => ({
+        setStatusUpdate((prev) => ({
           ...prev,
           isConnected: false,
         }));
-        
+
         // Attempt to reconnect after 3 seconds
         setTimeout(() => {
           if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
@@ -425,7 +425,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
   // Function to reset logs (useful for starting a new job)
   const resetLogs = useCallback(() => {
     logsRef.current = [];
-    setStatusUpdate(prev => ({
+    setStatusUpdate((prev) => ({
       ...prev,
       logs: [],
       status: JobStatus.PENDING,
@@ -440,7 +440,7 @@ export function useJobStatus(sessionId: string, jobId?: string) {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
-      setStatusUpdate(prev => ({
+      setStatusUpdate((prev) => ({
         ...prev,
         isConnected: false,
       }));
@@ -467,9 +467,7 @@ export interface JobFiltersState {
   limit: number;
 }
 
-export function useJobFilters(
-  initialFilters: Partial<JobFiltersState> = {},
-) {
+export function useJobFilters(initialFilters: Partial<JobFiltersState> = {}) {
   const [filters, setFilters] = useState<JobFiltersState>({
     sortBy: "createdAt",
     sortOrder: "desc",
@@ -479,10 +477,7 @@ export function useJobFilters(
   });
 
   const updateFilter = useCallback(
-    <K extends keyof JobFiltersState>(
-      key: K,
-      value: JobFiltersState[K],
-    ) => {
+    <K extends keyof JobFiltersState>(key: K, value: JobFiltersState[K]) => {
       setFilters((prev) => ({
         ...prev,
         [key]: value,
