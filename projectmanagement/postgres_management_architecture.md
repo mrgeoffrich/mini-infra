@@ -282,9 +282,35 @@ model RestoreOperation {
    - Better for handling failures and restarts
 
 #### Process Management
-- Run a configured docker inmage with 
+- The docker image to run below should be a system setting
 
-### 2.7 Scalability and Performance
+To perform a backup run:
+
+docker run \
+    -e POSTGRES_HOST=<postgres hostname> \
+    -e POSTGRES_USER=<postgres db user> \
+    -e POSTGRES_PASSWORD=<postgres db password> \
+    -e POSTGRES_DATABASE=<database name> \
+    -e AZURE_STORAGE_ACCOUNT_CONNECTION_STRING=<storage account connection string> \
+    -e AZURE_CONTAINER_NAME=<azure storage container> \
+    --rm
+
+To performa a restore run:
+docker run \
+    -e POSTGRES_HOST=<postgres hostname> \
+    -e POSTGRES_USER=<postgres db user> \
+    -e POSTGRES_PASSWORD=<postgres db password> \
+    -e POSTGRES_DATABASE=<database name> \
+    -e AZURE_STORAGE_ACCOUNT_CONNECTION_STRING=<storage account name> \
+    -e AZURE_CONTAINER_NAME=<azure storage container> \
+    -e RESTORE=yes \
+    -e DROP_PUBLIC=yes \
+    --rm 
+
+### 2.7 New System Configuration Options
+
+- From the Admin settings page create a new one general system settings.
+- In there users can set up what container runs to perform backups or restores.
 
 ### 2.8 Security Considerations
 
