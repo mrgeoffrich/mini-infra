@@ -2,9 +2,9 @@ You are an experienced software developer tasked with creating user stories for 
 
 Before creating the user stories, please review the project specifications and the technical specifications and the feature architecture design document carefully and think deeply.
 
-<feature>
+<feature_architecture_design>
 $1
-</feature>
+</feature_architecture_design>
 
 <project_specifications>
 @projectmanagement/mini_infra_spec.md
@@ -18,10 +18,9 @@ First, analyze the feature and break it down into components. Make sure to make 
 
 <feature_breakdown>
 1. Explain the feature in detail.
-2. List all existing screens in the application.
-3. Identify potential new screens needed for the feature.
-4. Identify potential user roles involved in the feature.
-5. Outline the technical changes required for implementation, including:
+2. List all the areas of the application that will need to be changed including database, API and front end.
+3. Identify potential new screens needed for the feature and figure out how they fit into the design.
+4. Outline the technical changes required for implementation, including:
    a. Database model changes
    b. New backend libraries to install or connectivity required
    c. Backend changes including type definitions and API endpoints
@@ -39,7 +38,7 @@ Next, plan the user stories based on your analysis. Continue working inside the 
    - The goal
    - Key tasks
    - Any dependencies on other stories
-3. Order the stories based on the following order:
+3. Order the stories based on the following order of depedencies:
    a. Database model changes
    b. Backend API changes and backend API type definitions
    c. Backend tests
@@ -68,7 +67,7 @@ Now, create the user stories following this format:
 
 **Acceptance Criteria:**
 
-- Run prettier over all new files to format them if they are ts or tsx files
+- Run `npm run justfix` in either project after changes to fix linting and formatting before running any linter or build.
 - Run linter to ensure no errors
 - Run build to ensure no errors
 - Update CLAUDE.md with new details if theres information that relates to this in the file already - ignore database changes
