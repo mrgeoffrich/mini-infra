@@ -14,6 +14,9 @@ export * from "./settings";
 // Azure types
 export * from "./azure";
 
+// Cloudflare types
+export * from "./cloudflare";
+
 // API response types
 export * from "./api";
 

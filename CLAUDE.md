@@ -191,8 +191,8 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Service Class**: `server/src/services/docker-config.ts` - Complete Docker configuration management service
 
 ### Cloudflare Configuration Service Implementation
-- **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service
-- **Features**: API token validation, account information retrieval, tunnel connectivity testing
+- **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service with circuit breaker pattern
+- **Features**: API token validation, account information retrieval, tunnel connectivity testing, circuit breaker for resilient API communication (opens after 5 consecutive failures with 5-minute cooldown), request deduplication within 1-second window, comprehensive error handling with sensitive data redaction
 
 ### Azure Configuration Service Implementation
 - **Service Class**: `server/src/services/azure-config.ts` - Complete Azure Storage configuration management service
@@ -205,8 +205,18 @@ The application uses Prisma ORM with SQLite for data persistence.
 ### Azure Connectivity Status API Endpoints Implementation
 - **API Router**: `server/src/routes/azure-connectivity.ts` - RESTful endpoints for Azure connectivity status retrieval
 
+### Cloudflare Settings API Endpoints Implementation
+- **API Router**: `server/src/routes/cloudflare-settings.ts` - RESTful Cloudflare-specific endpoints for configuration management
+- **Features**: API token validation, account management, connectivity testing, CRUD operations for Cloudflare settings, tunnel listing and details retrieval with 60-second caching
+
+### Cloudflare Connectivity Status API Endpoints Implementation
+- **API Router**: `server/src/routes/cloudflare-connectivity.ts` - RESTful endpoints for Cloudflare connectivity status retrieval
+- **Features**: Latest status retrieval, historical data with pagination, response caching with 5-minute TTL, error handling and status codes
+
 ### Background Connectivity Monitoring Implementation
 - **Scheduler Class**: `server/src/lib/connectivity-scheduler.ts` - Comprehensive background health checking system
+- **Features**: Automatic monitoring of all registered services (Docker, Cloudflare, Azure), circuit breaker pattern, exponential backoff for retries, configurable check intervals via CONNECTIVITY_CHECK_INTERVAL environment variable (default 5 minutes)
+- **Cloudflare Integration**: Automatically included via ConfigurationServiceFactory, performs periodic health checks using CloudflareConfigService.validate(), supports manual trigger via performHealthCheck('cloudflare')
 
 ### Settings Data Fetching Hooks Implementation
 - **Settings Hooks File**: `client/src/hooks/use-settings.ts` - Comprehensive React Query hooks for settings management
@@ -216,6 +226,14 @@ The application uses Prisma ORM with SQLite for data persistence.
 
 ### Azure Settings Hooks Implementation
 - **Azure Hooks File**: `client/src/hooks/use-azure-settings.ts` - Comprehensive React Query hooks for Azure Storage management
+
+### Cloudflare Settings Hooks Implementation
+- **Cloudflare Hooks File**: `client/src/hooks/use-cloudflare-settings.ts` - Comprehensive React Query hooks for Cloudflare management
+- **Features**: Settings CRUD operations, connectivity testing, tunnel information retrieval, connectivity history, automatic cache invalidation, error handling with retry logic
+
+### Cloudflare Tunnel Status Component Implementation
+- **Tunnel Status Component**: `client/src/components/cloudflare/tunnel-status.tsx` - Real-time Cloudflare tunnel monitoring display
+- **Features**: Tunnel list with health indicators, expandable details for each tunnel, active connection information, manual refresh capability, real-time status badges (healthy, degraded, inactive, down)
 
 ### Settings Navigation and Routing Implementation
 - **Settings Routes**: Complete nested routing structure in `client/src/lib/routes.tsx` with protected settings pages

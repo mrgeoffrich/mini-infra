@@ -9,27 +9,343 @@ import logger from "../lib/logger";
 import Cloudflare from "cloudflare";
 
 /**
+ * Circuit breaker state for managing API failures
+ */
+interface CircuitBreakerState {
+  state: "closed" | "open" | "half-open";
+  consecutiveFailures: number;
+  lastFailureTime?: Date;
+  lastSuccessTime?: Date;
+  nextRetryTime?: Date;
+}
+
+/**
+ * Request deduplication tracking
+ */
+interface PendingRequest {
+  promise: Promise<ValidationResult>;
+  timestamp: number;
+}
+
+/**
  * CloudflareConfigService handles Cloudflare API configuration management
  * Extends the base ConfigurationService to provide Cloudflare-specific functionality
+ * Implements circuit breaker pattern for resilient API communication
  */
 export class CloudflareConfigService extends ConfigurationService {
   private static readonly TIMEOUT_MS = 10000; // 10 second timeout
   private static readonly API_TOKEN_KEY = "api_token";
   private static readonly ACCOUNT_ID_KEY = "account_id";
+  
+  // Circuit breaker configuration
+  private static readonly FAILURE_THRESHOLD = 5; // Open circuit after 5 consecutive failures
+  private static readonly COOLDOWN_PERIOD_MS = 5 * 60 * 1000; // 5 minutes cooldown
+  private static readonly DEDUP_WINDOW_MS = 1000; // 1 second deduplication window
+  
+  // Circuit breaker state
+  private circuitBreaker: CircuitBreakerState = {
+    state: "closed",
+    consecutiveFailures: 0,
+  };
+  
+  // Request deduplication
+  private pendingValidation: PendingRequest | null = null;
 
   constructor(prisma: PrismaClient) {
     super(prisma, "cloudflare");
   }
 
   /**
+   * Check if the circuit breaker allows requests
+   * @returns Whether the circuit is closed or half-open (allowing requests)
+   */
+  private isCircuitBreakerOpen(): boolean {
+    if (this.circuitBreaker.state === "open") {
+      // Check if cooldown period has passed
+      if (
+        this.circuitBreaker.nextRetryTime &&
+        new Date() >= this.circuitBreaker.nextRetryTime
+      ) {
+        // Transition to half-open state to allow retry
+        this.circuitBreaker.state = "half-open";
+        logger.info(
+          {
+            previousFailures: this.circuitBreaker.consecutiveFailures,
+            lastFailureTime: this.circuitBreaker.lastFailureTime,
+          },
+          "Circuit breaker transitioning to half-open state",
+        );
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Record a successful API call and reset circuit breaker if needed
+   */
+  private recordSuccess(): void {
+    if (this.circuitBreaker.state === "half-open" || this.circuitBreaker.consecutiveFailures > 0) {
+      logger.info(
+        {
+          previousState: this.circuitBreaker.state,
+          previousFailures: this.circuitBreaker.consecutiveFailures,
+        },
+        "Circuit breaker reset after successful API call",
+      );
+    }
+    
+    this.circuitBreaker = {
+      state: "closed",
+      consecutiveFailures: 0,
+      lastSuccessTime: new Date(),
+    };
+  }
+
+  /**
+   * Record a failed API call and update circuit breaker state
+   * @param errorCode The error code from the API failure
+   */
+  private recordFailure(errorCode: string): void {
+    this.circuitBreaker.consecutiveFailures++;
+    this.circuitBreaker.lastFailureTime = new Date();
+
+    // Check if we should open the circuit
+    if (this.circuitBreaker.consecutiveFailures >= CloudflareConfigService.FAILURE_THRESHOLD) {
+      this.circuitBreaker.state = "open";
+      this.circuitBreaker.nextRetryTime = new Date(
+        Date.now() + CloudflareConfigService.COOLDOWN_PERIOD_MS,
+      );
+      
+      logger.warn(
+        {
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+          errorCode,
+          nextRetryTime: this.circuitBreaker.nextRetryTime,
+        },
+        "Circuit breaker opened due to consecutive failures",
+      );
+    } else {
+      logger.debug(
+        {
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+          threshold: CloudflareConfigService.FAILURE_THRESHOLD,
+          errorCode,
+        },
+        "API failure recorded, circuit breaker still closed",
+      );
+    }
+  }
+
+  /**
+   * Parse and categorize Cloudflare API errors
+   * @param error The error to parse
+   * @returns Categorized error information
+   */
+  private parseApiError(error: any): {
+    errorCode: string;
+    connectivityStatus: ConnectivityStatusType;
+    isRetriable: boolean;
+  } {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const statusCode = error?.response?.status || error?.status;
+    
+    // Handle specific HTTP status codes
+    if (statusCode) {
+      switch (statusCode) {
+        case 401:
+          return {
+            errorCode: "INVALID_API_TOKEN",
+            connectivityStatus: "failed",
+            isRetriable: false,
+          };
+        case 403:
+          return {
+            errorCode: "INSUFFICIENT_PERMISSIONS",
+            connectivityStatus: "failed",
+            isRetriable: false,
+          };
+        case 429:
+          return {
+            errorCode: "RATE_LIMITED",
+            connectivityStatus: "failed",
+            isRetriable: true,
+          };
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          return {
+            errorCode: `SERVER_ERROR_${statusCode}`,
+            connectivityStatus: "failed",
+            isRetriable: true,
+          };
+      }
+    }
+    
+    // Parse error messages
+    if (errorMessage.includes("timeout")) {
+      return {
+        errorCode: "TIMEOUT",
+        connectivityStatus: "timeout",
+        isRetriable: true,
+      };
+    } else if (
+      errorMessage.includes("Unauthorized") ||
+      errorMessage.includes("Invalid API Token")
+    ) {
+      return {
+        errorCode: "INVALID_API_TOKEN",
+        connectivityStatus: "failed",
+        isRetriable: false,
+      };
+    } else if (errorMessage.includes("Forbidden")) {
+      return {
+        errorCode: "INSUFFICIENT_PERMISSIONS",
+        connectivityStatus: "failed",
+        isRetriable: false,
+      };
+    } else if (
+      errorMessage.includes("ENOTFOUND") ||
+      errorMessage.includes("ECONNREFUSED")
+    ) {
+      return {
+        errorCode: "NETWORK_ERROR",
+        connectivityStatus: "unreachable",
+        isRetriable: true,
+      };
+    } else if (errorMessage.includes("Rate limit")) {
+      return {
+        errorCode: "RATE_LIMITED",
+        connectivityStatus: "failed",
+        isRetriable: true,
+      };
+    }
+    
+    return {
+      errorCode: "CLOUDFLARE_API_ERROR",
+      connectivityStatus: "failed",
+      isRetriable: true,
+    };
+  }
+
+  /**
+   * Redact sensitive information from log data
+   * @param data The data to redact
+   * @returns Redacted data safe for logging
+   */
+  private redactSensitiveData(data: any): any {
+    if (typeof data === "string") {
+      // Redact API tokens (typically 40+ characters starting with specific patterns)
+      return data.replace(/[a-zA-Z0-9_-]{40,}/g, "[REDACTED_TOKEN]");
+    }
+    
+    if (typeof data === "object" && data !== null) {
+      const redacted = { ...data };
+      const sensitiveKeys = ["apiToken", "api_token", "token", "secret", "password", "key"];
+      
+      for (const key of Object.keys(redacted)) {
+        if (sensitiveKeys.some(sensitive => key.toLowerCase().includes(sensitive))) {
+          redacted[key] = "[REDACTED]";
+        } else if (typeof redacted[key] === "object") {
+          redacted[key] = this.redactSensitiveData(redacted[key]);
+        }
+      }
+      
+      return redacted;
+    }
+    
+    return data;
+  }
+
+  /**
    * Validate Cloudflare API configuration by testing API connectivity
+   * Implements circuit breaker pattern and request deduplication
    * @returns ValidationResult with connectivity status and details
    */
   async validate(): Promise<ValidationResult> {
     const startTime = Date.now();
+    
+    // Check for request deduplication
+    if (this.pendingValidation) {
+      const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
+      if (timeSinceRequest < CloudflareConfigService.DEDUP_WINDOW_MS) {
+        logger.debug(
+          {
+            timeSinceRequest,
+            dedupWindow: CloudflareConfigService.DEDUP_WINDOW_MS,
+          },
+          "Deduplicating validation request within time window",
+        );
+        return this.pendingValidation.promise;
+      }
+    }
+    
+    // Check circuit breaker state
+    if (this.isCircuitBreakerOpen()) {
+      const timeSinceFailure = this.circuitBreaker.lastFailureTime
+        ? Date.now() - this.circuitBreaker.lastFailureTime.getTime()
+        : 0;
+      const timeUntilRetry = this.circuitBreaker.nextRetryTime
+        ? this.circuitBreaker.nextRetryTime.getTime() - Date.now()
+        : 0;
+        
+      logger.info(
+        {
+          circuitState: "open",
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+          timeSinceFailure,
+          timeUntilRetry,
+        },
+        "Circuit breaker is open, skipping validation",
+      );
+      
+      const result: ValidationResult = {
+        isValid: false,
+        message: `Circuit breaker open after ${this.circuitBreaker.consecutiveFailures} consecutive failures. Retry in ${Math.ceil(timeUntilRetry / 1000)} seconds.`,
+        errorCode: "CIRCUIT_BREAKER_OPEN",
+        responseTimeMs: Date.now() - startTime,
+      };
+      
+      return result;
+    }
+    
+    // Create the validation promise
+    const validationPromise = this.performValidation(startTime);
+    
+    // Store for deduplication
+    this.pendingValidation = {
+      promise: validationPromise,
+      timestamp: Date.now(),
+    };
+    
+    // Clear pending validation after completion
+    validationPromise.finally(() => {
+      this.pendingValidation = null;
+    });
+    
+    return validationPromise;
+  }
+  
+  /**
+   * Perform the actual validation logic
+   * @param startTime The start time of the validation request
+   * @returns ValidationResult with connectivity status and details
+   */
+  private async performValidation(startTime: number): Promise<ValidationResult> {
 
     try {
       const apiToken = await this.get(CloudflareConfigService.API_TOKEN_KEY);
+      
+      logger.debug(
+        this.redactSensitiveData({
+          hasToken: !!apiToken,
+          tokenLength: apiToken?.length,
+          circuitState: this.circuitBreaker.state,
+        }),
+        "Starting Cloudflare API validation",
+      );
 
       if (!apiToken) {
         const result: ValidationResult = {
@@ -98,6 +414,9 @@ export class CloudflareConfigService extends ConfigurationService {
         }
       }
 
+      // Record success for circuit breaker
+      this.recordSuccess();
+      
       const result: ValidationResult = {
         isValid: true,
         message: `Cloudflare API connection successful (${userResponse.email})`,
@@ -112,34 +431,29 @@ export class CloudflareConfigService extends ConfigurationService {
         undefined,
         metadata,
       );
+      
+      logger.info(
+        this.redactSensitiveData({
+          responseTime,
+          userEmail: userResponse.email,
+          accountStatus: metadata.accountStatus,
+          circuitState: this.circuitBreaker.state,
+        }),
+        "Cloudflare API validation successful",
+      );
 
       return result;
     } catch (error) {
       const responseTime = Date.now() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      let errorCode = "CLOUDFLARE_API_ERROR";
-      let connectivityStatus: ConnectivityStatusType = "failed";
-
-      // Parse specific Cloudflare API errors
-      if (errorMessage.includes("timeout")) {
-        errorCode = "TIMEOUT";
-        connectivityStatus = "timeout";
-      } else if (
-        errorMessage.includes("Unauthorized") ||
-        errorMessage.includes("Invalid API Token")
-      ) {
-        errorCode = "INVALID_API_TOKEN";
-      } else if (errorMessage.includes("Forbidden")) {
-        errorCode = "INSUFFICIENT_PERMISSIONS";
-      } else if (
-        errorMessage.includes("ENOTFOUND") ||
-        errorMessage.includes("ECONNREFUSED")
-      ) {
-        errorCode = "NETWORK_ERROR";
-        connectivityStatus = "unreachable";
-      } else if (errorMessage.includes("Rate limit")) {
-        errorCode = "RATE_LIMITED";
+      
+      // Parse and categorize the error
+      const { errorCode, connectivityStatus, isRetriable } = this.parseApiError(error);
+      
+      // Record failure for circuit breaker (only for retriable errors)
+      if (isRetriable) {
+        this.recordFailure(errorCode);
       }
 
       const result: ValidationResult = {
@@ -157,11 +471,14 @@ export class CloudflareConfigService extends ConfigurationService {
       );
 
       logger.error(
-        {
+        this.redactSensitiveData({
           error: errorMessage,
           errorCode,
           responseTime,
-        },
+          isRetriable,
+          circuitState: this.circuitBreaker.state,
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+        }),
         "Cloudflare API validation failed",
       );
 
@@ -223,6 +540,20 @@ export class CloudflareConfigService extends ConfigurationService {
     }
 
     await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
+    
+    // Reset circuit breaker when new credentials are set
+    this.circuitBreaker = {
+      state: "closed",
+      consecutiveFailures: 0,
+    };
+    
+    logger.info(
+      this.redactSensitiveData({
+        userId,
+        tokenLength: apiToken.length,
+      }),
+      "API token updated, circuit breaker reset",
+    );
   }
 
   /**
@@ -256,9 +587,21 @@ export class CloudflareConfigService extends ConfigurationService {
 
   /**
    * Test tunnel connectivity and retrieve tunnel information
+   * Respects circuit breaker state
    * @returns Array of tunnel information or empty array if no tunnels or connection fails
    */
   async getTunnelInfo(): Promise<any[]> {
+    // Check circuit breaker before making API call
+    if (this.isCircuitBreakerOpen()) {
+      logger.warn(
+        {
+          circuitState: "open",
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+        },
+        "Circuit breaker is open, skipping tunnel info retrieval",
+      );
+      return [];
+    }
     try {
       const apiToken = await this.getApiToken();
       const accountId = await this.getAccountId();
@@ -290,11 +633,14 @@ export class CloudflareConfigService extends ConfigurationService {
 
       const tunnels = tunnelsResponse.result || [];
 
+      // Record success for circuit breaker
+      this.recordSuccess();
+      
       logger.info(
-        {
+        this.redactSensitiveData({
           accountId,
           tunnelCount: tunnels.length,
-        },
+        }),
         "Successfully retrieved Cloudflare tunnel information",
       );
 
@@ -308,11 +654,19 @@ export class CloudflareConfigService extends ConfigurationService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
 
       logger.error(
-        {
+        this.redactSensitiveData({
           error: errorMessage,
-        },
+          errorCode,
+          isRetriable,
+        }),
         "Failed to retrieve Cloudflare tunnel information",
       );
 

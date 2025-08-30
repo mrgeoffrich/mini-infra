@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { TunnelStatus } from "@/components/cloudflare/tunnel-status";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -165,12 +166,12 @@ export default function CloudflareSettingsPage() {
       );
       setSettings(settingsMap);
 
-      // Update form with current values
-      if (settingsMap.apiToken?.value) {
-        form.setValue("apiToken", settingsMap.apiToken.value);
+      // Update form with current values (backend uses snake_case keys)
+      if (settingsMap.api_token?.value) {
+        form.setValue("apiToken", settingsMap.api_token.value);
       }
-      if (settingsMap.accountId?.value) {
-        form.setValue("accountId", settingsMap.accountId.value);
+      if (settingsMap.account_id?.value) {
+        form.setValue("accountId", settingsMap.account_id.value);
       }
     }
   }, [settingsData, form]);
@@ -180,10 +181,10 @@ export default function CloudflareSettingsPage() {
       const promises: Promise<unknown>[] = [];
 
       // Save or update API token setting (encrypted)
-      if (settings.apiToken) {
+      if (settings.api_token) {
         promises.push(
           updateSetting.mutateAsync({
-            id: settings.apiToken.id,
+            id: settings.api_token.id,
             setting: { value: data.apiToken },
           }),
         );
@@ -191,7 +192,7 @@ export default function CloudflareSettingsPage() {
         promises.push(
           createSetting.mutateAsync({
             category: "cloudflare",
-            key: "apiToken",
+            key: "api_token",
             value: data.apiToken,
             isEncrypted: true,
           }),
@@ -200,10 +201,10 @@ export default function CloudflareSettingsPage() {
 
       // Save or update account ID setting if provided
       if (data.accountId) {
-        if (settings.accountId) {
+        if (settings.account_id) {
           promises.push(
             updateSetting.mutateAsync({
-              id: settings.accountId.id,
+              id: settings.account_id.id,
               setting: { value: data.accountId },
             }),
           );
@@ -211,7 +212,7 @@ export default function CloudflareSettingsPage() {
           promises.push(
             createSetting.mutateAsync({
               category: "cloudflare",
-              key: "accountId",
+              key: "account_id",
               value: data.accountId,
               isEncrypted: false,
             }),
@@ -569,6 +570,11 @@ export default function CloudflareSettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Tunnel Status Display */}
+        <div className="mt-6">
+          <TunnelStatus />
         </div>
       </div>
     </div>

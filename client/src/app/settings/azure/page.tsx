@@ -357,9 +357,9 @@ export default function AzureSettingsPage() {
           <CardHeader>
             <CardTitle>Storage Account Configuration</CardTitle>
             <CardDescription>
-              Configure your Azure Storage Account connection string to
-              enable backup operations. Connection strings are stored
-              securely with encryption.
+              Configure your Azure Storage Account connection string to enable
+              backup operations. Connection strings are stored securely with
+              encryption.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -395,23 +395,29 @@ export default function AzureSettingsPage() {
                             </PopoverTrigger>
                             <PopoverContent className="w-80">
                               <div className="space-y-3">
-                                <h4 className="font-medium leading-none">Quick Tips</h4>
+                                <h4 className="font-medium leading-none">
+                                  Quick Tips
+                                </h4>
                                 <div className="text-sm space-y-2">
                                   <div>
-                                    <strong>Connection String:</strong> Found in Azure Portal
-                                    under your Storage Account → Access Keys
+                                    <strong>Connection String:</strong> Found in
+                                    Azure Portal under your Storage Account →
+                                    Access Keys
                                   </div>
                                   <div>
-                                    <strong>Security:</strong> Connection strings are encrypted
-                                    and stored securely in the database
+                                    <strong>Security:</strong> Connection
+                                    strings are encrypted and stored securely in
+                                    the database
                                   </div>
                                   <div>
-                                    <strong>Containers:</strong> Once validated, container
-                                    information will be available for backup operations
+                                    <strong>Containers:</strong> Once validated,
+                                    container information will be available for
+                                    backup operations
                                   </div>
                                   <div>
-                                    <strong>Permissions:</strong> Ensure your storage account
-                                    allows blob operations for backups to work
+                                    <strong>Permissions:</strong> Ensure your
+                                    storage account allows blob operations for
+                                    backups to work
                                   </div>
                                 </div>
                               </div>
@@ -421,9 +427,7 @@ export default function AzureSettingsPage() {
                         <FormControl>
                           <div className="relative">
                             <Input
-                              type={
-                                showConnectionString ? "text" : "password"
-                              }
+                              type={showConnectionString ? "text" : "password"}
                               placeholder="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
                               {...field}
                               className="pr-10"
@@ -434,9 +438,7 @@ export default function AzureSettingsPage() {
                               size="sm"
                               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                               onClick={() =>
-                                setShowConnectionString(
-                                  !showConnectionString,
-                                )
+                                setShowConnectionString(!showConnectionString)
                               }
                             >
                               {showConnectionString ? (
@@ -451,8 +453,7 @@ export default function AzureSettingsPage() {
                           Your Azure Storage Account connection string. Find
                           this in the Azure portal under Storage Account →
                           Access Keys. It should include
-                          DefaultEndpointsProtocol, AccountName, and
-                          AccountKey.
+                          DefaultEndpointsProtocol, AccountName, and AccountKey.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -504,9 +505,7 @@ export default function AzureSettingsPage() {
                         {autoSaveStatus === "saved" && (
                           <>
                             <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-green-600">
-                              Auto-saved
-                            </span>
+                            <span className="text-green-600">Auto-saved</span>
                           </>
                         )}
                         {autoSaveStatus === "error" && (
@@ -624,12 +623,10 @@ export default function AzureSettingsPage() {
                           <li key={index}>• {container}</li>
                         ),
                       )}
-                      {metadata.containerCount >
-                        metadata.containers.length && (
+                      {metadata.containerCount > metadata.containers.length && (
                         <li>
                           • ... and{" "}
-                          {metadata.containerCount -
-                            metadata.containers.length}{" "}
+                          {metadata.containerCount - metadata.containers.length}{" "}
                           more
                         </li>
                       )}
@@ -655,7 +652,6 @@ export default function AzureSettingsPage() {
             </Card>
           )}
         </div>
-
 
         {/* Container List - Only show when Azure connection is established */}
         {latestConnectivity?.status === "connected" && (
