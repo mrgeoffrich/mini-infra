@@ -24,6 +24,7 @@ model User {
   // Relations
   apiKeys       ApiKey[]
   userPreference UserPreference?
+  jobs          Job[]
 
   @@map("users")
 }
@@ -119,4 +120,68 @@ model ConnectivityStatus {
   @@index([checkedAt])
   @@index([service, checkedAt])
   @@map("connectivity_status")
+}
+
+// Job model for YoloClaude job management
+model Job {
+  id                String   @id @default(cuid())
+  userId            String
+  repositoryUrl     String
+  githubToken       String   // Encrypted GitHub token
+  storyFile         String   // Path within repository
+  architectureDoc   String   // Path within repository
+  branchPrefix      String?  @default("story")
+  featureBranch     String?
+  status            String   @default("pending") // 'pending', 'running', 'completed', 'failed'
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobExecutions     JobExecution[]
+  jobLogs           JobLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("jobs")
+}
+
+// JobExecution model for tracking job execution details
+model JobExecution {
+  id           String    @id @default(cuid())
+  jobId        String
+  sessionId    String    @unique
+  status       String    @default("pending") // 'pending', 'running', 'completed', 'failed'
+  progress     Int       @default(0) // Progress percentage 0-100
+  startedAt    DateTime?
+  completedAt  DateTime?
+  error        String?   // Error message if failed
+  logs         String?   // Execution logs
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  // Relations
+  job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([sessionId])
+  @@index([status])
+  @@map("job_executions")
+}
+
+// JobLog model for storing individual log entries
+model JobLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  timestamp DateTime @default(now())
+  logEntry  String   // Individual log message
+  level     String?  @default("info") // 'info', 'warn', 'error', 'debug'
+  
+  // Relations
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([timestamp])
+  @@map("job_logs")
 }
