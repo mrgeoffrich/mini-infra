@@ -742,6 +742,47 @@ export class DatabaseConfigService {
     }
   }
 
+  /**
+   * Get decrypted connection configuration for a database
+   * @param databaseId - Database ID
+   * @param userId - User ID for authorization
+   * @returns Database connection configuration
+   */
+  async getConnectionConfig(
+    databaseId: string,
+    userId: string,
+  ): Promise<DatabaseConnectionConfig> {
+    try {
+      // Get database record
+      const database = await this.prisma.postgresDatabase.findFirst({
+        where: {
+          id: databaseId,
+          userId: userId,
+        },
+      });
+
+      if (!database) {
+        throw new Error("Database not found or access denied");
+      }
+
+      // Decrypt connection string and parse configuration
+      const connectionString = this.decryptConnectionString(
+        database.connectionString,
+      );
+      return this.parseConnectionString(connectionString);
+    } catch (error) {
+      logger.error(
+        {
+          databaseId,
+          userId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get connection configuration",
+      );
+      throw error;
+    }
+  }
+
   // ====================
   // Utility Methods
   // ====================

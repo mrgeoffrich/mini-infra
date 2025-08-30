@@ -167,7 +167,7 @@
 
 **Goal:** Create service to orchestrate backup operations using Docker containers
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 

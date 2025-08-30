@@ -56,7 +56,7 @@ export class DockerExecutorService {
       }
 
       this.docker = this.createDockerClient(dockerHost, apiVersion);
-      
+
       // Test connection
       await this.docker.ping();
       logger.info("DockerExecutor initialized successfully");
@@ -65,7 +65,7 @@ export class DockerExecutorService {
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to initialize DockerExecutor"
+        "Failed to initialize DockerExecutor",
       );
       throw error;
     }
@@ -75,7 +75,7 @@ export class DockerExecutorService {
    * Execute a container with the specified configuration
    */
   public async executeContainer(
-    options: ContainerExecutionOptions
+    options: ContainerExecutionOptions,
   ): Promise<ContainerExecutionResult> {
     const startTime = Date.now();
     let container: Container | undefined;
@@ -89,7 +89,7 @@ export class DockerExecutorService {
           envKeys: Object.keys(options.env),
           timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
         },
-        "Starting container execution"
+        "Starting container execution",
       );
 
       // Create container
@@ -100,7 +100,7 @@ export class DockerExecutorService {
 
       // Set up output capture
       const outputCapture = await this.attachToContainer(container);
-      
+
       // Capture stdout and stderr
       outputCapture.stdout?.on("data", (data: Buffer) => {
         const chunk = data.toString();
@@ -123,7 +123,7 @@ export class DockerExecutorService {
       // Wait for container completion with timeout
       const result = await this.waitForContainer(
         container,
-        options.timeout || DockerExecutorService.DEFAULT_TIMEOUT
+        options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
       );
 
       const executionTimeMs = Date.now() - startTime;
@@ -134,7 +134,7 @@ export class DockerExecutorService {
           exitCode: result.exitCode,
           executionTimeMs,
         },
-        "Container execution completed"
+        "Container execution completed",
       );
 
       return {
@@ -146,7 +146,8 @@ export class DockerExecutorService {
       };
     } catch (error) {
       const executionTimeMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
       logger.error(
         {
@@ -154,7 +155,7 @@ export class DockerExecutorService {
           containerId: container?.id,
           executionTimeMs,
         },
-        "Container execution failed"
+        "Container execution failed",
       );
 
       return {
@@ -177,7 +178,7 @@ export class DockerExecutorService {
    */
   public async executeContainerWithProgress(
     options: ContainerExecutionOptions,
-    progressCallback?: (progress: ContainerProgress) => void
+    progressCallback?: (progress: ContainerProgress) => void,
   ): Promise<ContainerExecutionResult> {
     const startTime = Date.now();
 
@@ -212,7 +213,8 @@ export class DockerExecutorService {
       return result;
     } catch (error) {
       const executionTimeMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
 
       progressCallback?.({
         status: "failed",
@@ -247,7 +249,7 @@ export class DockerExecutorService {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
         },
-        "Failed to get container status"
+        "Failed to get container status",
       );
       throw error;
     }
@@ -258,7 +260,7 @@ export class DockerExecutorService {
    */
   public async stopContainer(
     containerId: string,
-    forceKill = false
+    forceKill = false,
   ): Promise<void> {
     try {
       const container = this.docker.getContainer(containerId);
@@ -276,7 +278,7 @@ export class DockerExecutorService {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
         },
-        "Failed to stop container"
+        "Failed to stop container",
       );
       throw error;
     }
@@ -286,11 +288,13 @@ export class DockerExecutorService {
    * Create Docker container with specified options
    */
   private async createContainer(
-    options: ContainerExecutionOptions
+    options: ContainerExecutionOptions,
   ): Promise<Container> {
     try {
       // Convert environment variables to Docker format
-      const env = Object.entries(options.env).map(([key, value]) => `${key}=${value}`);
+      const env = Object.entries(options.env).map(
+        ([key, value]) => `${key}=${value}`,
+      );
 
       const containerOptions = {
         Image: options.image,
@@ -314,7 +318,7 @@ export class DockerExecutorService {
           error: error instanceof Error ? error.message : "Unknown error",
           image: options.image,
         },
-        "Failed to create container"
+        "Failed to create container",
       );
       throw error;
     }
@@ -366,7 +370,7 @@ export class DockerExecutorService {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId: container.id,
         },
-        "Failed to attach to container"
+        "Failed to attach to container",
       );
       throw error;
     }
@@ -377,7 +381,7 @@ export class DockerExecutorService {
    */
   private async waitForContainer(
     container: Container,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<{ exitCode: number }> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -404,7 +408,7 @@ export class DockerExecutorService {
     try {
       // Check if container still exists
       const data = await container.inspect();
-      
+
       // Remove container if it exists and is not already being removed
       if (data.State.Status !== "removing") {
         await container.remove({ force: true });
@@ -415,7 +419,7 @@ export class DockerExecutorService {
       if ((error as any).statusCode === 404) {
         logger.debug(
           { containerId: container.id },
-          "Container already removed"
+          "Container already removed",
         );
       } else {
         logger.warn(
@@ -423,7 +427,7 @@ export class DockerExecutorService {
             error: error instanceof Error ? error.message : "Unknown error",
             containerId: container.id,
           },
-          "Failed to clean up container"
+          "Failed to clean up container",
         );
       }
     }

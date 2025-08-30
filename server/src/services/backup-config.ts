@@ -397,6 +397,40 @@ export class BackupConfigService {
   }
 
   /**
+   * Update last backup time for a configuration
+   */
+  async updateLastBackupTime(configId: string): Promise<void> {
+    try {
+      const now = new Date();
+
+      await this.prisma.backupConfiguration.update({
+        where: { id: configId },
+        data: {
+          lastBackupAt: now,
+          updatedAt: now,
+        },
+      });
+
+      logger.debug(
+        {
+          configId,
+          lastBackupAt: now.toISOString(),
+        },
+        "Updated last backup time for configuration",
+      );
+    } catch (error) {
+      logger.error(
+        {
+          configId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to update last backup time",
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Calculate cutoff date for retention policy
    */
   calculateRetentionCutoffDate(retentionDays: number): Date {
