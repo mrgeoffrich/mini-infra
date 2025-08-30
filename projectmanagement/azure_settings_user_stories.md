@@ -154,7 +154,7 @@ NOTE: Use the existing SystemSettings and ConnectivityStatus tables do not creat
 
 **Goal:** Build a component to display Azure Storage container information
 
-**Status:** Not Started
+**Status:** ✅ Done
 
 **Tasks:**
 

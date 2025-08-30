@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { AzureContainerList } from "@/components/AzureContainerList";
 
 // Azure settings schema
 const azureSettingsSchema = z.object({
@@ -667,6 +668,13 @@ export default function AzureSettingsPage() {
             </Card>
           </div>
         </div>
+
+        {/* Container List - Only show when Azure connection is established */}
+        {latestConnectivity?.status === "connected" && (
+          <div className="mt-8">
+            <AzureContainerList />
+          </div>
+        )}
       </div>
     </div>
   );

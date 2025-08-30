@@ -479,6 +479,23 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Loading States**: Proper loading indicators during validation, connection testing, and form submission
 - **Responsive Design**: Mobile-optimized layout matching the existing settings page design patterns
 
+### Azure Container Metadata Display Component Implementation
+- **AzureContainerList Component**: Complete container metadata display component implemented in `client/src/components/AzureContainerList.tsx`
+- **Table Display**: Professional data table using @tanstack/react-table with columns for container name, last modified, lease status, access level, and metadata
+- **Pagination Support**: Full pagination implementation for large container lists with configurable page size (default: 20 containers per page)
+- **Search and Filter Functionality**: Real-time search by container name prefix and filtering by lease status, public access level, and metadata presence
+- **Sorting Capabilities**: Sortable columns for container name, last modified date, and lease status with ascending/descending order
+- **Loading Skeletons**: Smooth loading experience with skeleton components during data fetching
+- **Empty State Handling**: User-friendly empty states for no containers or no matching filters
+- **Visual Status Indicators**: Color-coded badges for lease status (locked/unlocked) and access levels (private/container/blob)
+- **Container Count Display**: Real-time container count badge showing total containers in the storage account
+- **Error Handling**: Comprehensive error display with retry functionality for failed container fetches
+- **Responsive Design**: Mobile-optimized layout with proper table responsiveness and touch-friendly controls
+- **Integration**: Automatically shown on Azure settings page when connection is established (`latestConnectivity?.status === "connected"`)
+- **Performance Optimization**: Memoized components and callbacks to prevent unnecessary re-renders
+- **Accessibility**: Proper ARIA labels, screen reader support, and keyboard navigation
+- **Data Management**: Uses existing Azure hooks (`useAzureContainers`, `useAzureContainerFilters`) for data fetching and state management
+
 
 ## Environment Variables
 
