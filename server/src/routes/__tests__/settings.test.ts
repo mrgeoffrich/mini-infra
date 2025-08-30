@@ -1053,25 +1053,11 @@ describe("Settings API Routes", () => {
         errorMessage: null,
         createdAt: new Date("2023-01-02T10:00:00Z"),
       },
-      {
-        id: "audit-3",
-        category: "azure",
-        key: "connection_string",
-        action: "validate",
-        oldValue: null,
-        newValue: null,
-        userId: "user-1",
-        ipAddress: "192.168.1.100",
-        userAgent: "Mozilla/5.0",
-        success: false,
-        errorMessage: "Connection timeout",
-        createdAt: new Date("2023-01-03T10:00:00Z"),
-      },
     ];
 
     it("should return audit logs successfully", async () => {
       mockPrisma.settingsAudit.findMany.mockResolvedValue(mockAuditLogs);
-      mockPrisma.settingsAudit.count.mockResolvedValue(3);
+      mockPrisma.settingsAudit.count.mockResolvedValue(2);
 
       const response = await request(app)
         .get("/api/settings/audit")
@@ -1079,7 +1065,7 @@ describe("Settings API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Found 3 audit log entries",
+        message: "Found 2 audit log entries",
         data: expect.arrayContaining([
           expect.objectContaining({
             id: "audit-1",
@@ -1095,13 +1081,6 @@ describe("Settings API Routes", () => {
             action: "update",
             success: true,
           }),
-          expect.objectContaining({
-            id: "audit-3",
-            category: "azure",
-            action: "validate",
-            success: false,
-            errorMessage: "Connection timeout",
-          }),
         ]),
       });
 
@@ -1114,8 +1093,8 @@ describe("Settings API Routes", () => {
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
-          totalAuditLogs: 3,
-          returnedAuditLogs: 3,
+          totalAuditLogs: 2,
+          returnedAuditLogs: 2,
         }),
         "Settings audit logs returned successfully",
       );
@@ -1283,7 +1262,6 @@ describe("Settings API Routes", () => {
       mockConfigService.validate.mockResolvedValue(mockValidationResult);
       mockPrisma.connectivityStatus.create.mockResolvedValue({});
       mockPrisma.systemSettings.updateMany.mockResolvedValue({ count: 2 });
-      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .post("/api/settings/validate/docker")
@@ -1336,18 +1314,6 @@ describe("Settings API Routes", () => {
         },
       });
 
-      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
-        data: {
-          category: "docker",
-          key: "validation",
-          action: "validate",
-          userId: "test-user-id",
-          ipAddress: "::ffff:127.0.0.1",
-          userAgent: "Test Agent",
-          success: true,
-          errorMessage: null,
-        },
-      });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1370,7 +1336,6 @@ describe("Settings API Routes", () => {
       mockConfigService.validate.mockResolvedValue(failedValidationResult);
       mockPrisma.connectivityStatus.create.mockResolvedValue({});
       mockPrisma.systemSettings.updateMany.mockResolvedValue({ count: 1 });
-      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .post("/api/settings/validate/cloudflare")
@@ -1413,12 +1378,6 @@ describe("Settings API Routes", () => {
         },
       });
 
-      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          success: false,
-          errorMessage: "Docker daemon not running",
-        }),
-      });
     });
 
     it("should handle validation with custom settings", async () => {
@@ -1429,7 +1388,6 @@ describe("Settings API Routes", () => {
 
       mockConfigService.validate.mockResolvedValue(mockValidationResult);
       mockPrisma.connectivityStatus.create.mockResolvedValue({});
-      mockPrisma.settingsAudit.create.mockResolvedValue({});
 
       const response = await request(app)
         .post("/api/settings/validate/azure")
@@ -1525,12 +1483,6 @@ describe("Settings API Routes", () => {
         }),
       });
 
-      expect(mockPrisma.settingsAudit.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          success: false,
-          errorMessage: "Service configuration invalid",
-        }),
-      });
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({

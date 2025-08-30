@@ -471,6 +471,8 @@ async function fetchSettingsAudit(
   // Add query parameters
   url.searchParams.set("page", page.toString());
   url.searchParams.set("limit", limit.toString());
+  url.searchParams.set("sortBy", "createdAt");
+  url.searchParams.set("sortOrder", "desc");
   if (filters.category) url.searchParams.set("category", filters.category);
   if (filters.action) url.searchParams.set("action", filters.action);
   if (filters.userId) url.searchParams.set("userId", filters.userId);

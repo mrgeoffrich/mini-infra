@@ -58,10 +58,28 @@ export class DockerConfigService extends ConfigurationService {
       const responseTimeMs = Date.now() - startTime;
 
       // Validate ping result (can be string "OK" or Buffer with "OK")
-      const pingString = pingResult instanceof Buffer ? pingResult.toString() : pingResult;
-      if (pingString !== "OK") {
+      // Handle Buffer, string, or other types and normalize whitespace
+      let pingString: string;
+      if (pingResult instanceof Buffer) {
+        pingString = pingResult.toString().trim();
+      } else if (typeof pingResult === 'string') {
+        pingString = pingResult.trim();
+      } else {
+        pingString = String(pingResult).trim();
+      }
+      
+      logger.debug({
+        pingResult,
+        pingResultType: typeof pingResult,
+        isBuffer: pingResult instanceof Buffer,
+        pingString,
+        pingStringNormalized: pingString
+      }, "Docker ping result details");
+      
+      // Check for successful ping - Docker API should return "OK" (case insensitive)
+      if (pingString.toLowerCase() !== "ok") {
         const errorMessage = `Docker ping failed: ${pingString}`;
-        logger.warn({ pingResult }, errorMessage);
+        logger.warn({ pingResult, pingString, originalResult: pingResult }, errorMessage);
         
         // Record failed connectivity
         await this.recordConnectivityStatus(

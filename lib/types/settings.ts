@@ -152,7 +152,7 @@ export interface SettingsAuditInfo {
 // Audit Action Types
 // ====================
 
-export type AuditAction = "create" | "update" | "delete" | "validate";
+export type AuditAction = "create" | "update" | "delete";
 
 // ====================
 // Audit API Response Types

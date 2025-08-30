@@ -169,16 +169,16 @@ export default function SettingsAuditPage() {
             <div>
               <label className="text-sm font-medium">Category</label>
               <Select
-                value={filters.category || ""}
+                value={filters.category || "all"}
                 onValueChange={(value) =>
-                  updateFilter("category", value ? (value as any) : undefined)
+                  updateFilter("category", value === "all" ? undefined : (value as any))
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All categories" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All categories</SelectItem>
+                  <SelectItem value="all">All categories</SelectItem>
                   <SelectItem value="docker">Docker</SelectItem>
                   <SelectItem value="cloudflare">Cloudflare</SelectItem>
                   <SelectItem value="azure">Azure</SelectItem>
@@ -190,20 +190,19 @@ export default function SettingsAuditPage() {
             <div>
               <label className="text-sm font-medium">Action</label>
               <Select
-                value={filters.action || ""}
+                value={filters.action || "all"}
                 onValueChange={(value) =>
-                  updateFilter("action", value ? (value as any) : undefined)
+                  updateFilter("action", value === "all" ? undefined : (value as any))
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All actions" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All actions</SelectItem>
+                  <SelectItem value="all">All actions</SelectItem>
                   <SelectItem value="create">Create</SelectItem>
                   <SelectItem value="update">Update</SelectItem>
                   <SelectItem value="delete">Delete</SelectItem>
-                  <SelectItem value="validate">Validate</SelectItem>
                 </SelectContent>
               </Select>
             </div>

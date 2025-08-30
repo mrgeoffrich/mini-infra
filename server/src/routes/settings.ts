@@ -162,7 +162,7 @@ const validateServiceSchema = z.object({
 // Audit query parameter validation schema
 const auditQuerySchema = z.object({
   category: z.enum(["docker", "cloudflare", "azure"]).optional(),
-  action: z.enum(["create", "update", "delete", "validate"]).optional(),
+  action: z.enum(["create", "update", "delete"]).optional(),
   userId: z.string().optional(),
   success: z
     .string()
@@ -620,7 +620,7 @@ router.get("/audit", settingsRateLimit, requireAuth, (async (
     } = queryValidation.data;
 
     // Build filter conditions
-    const where: any = { success: false }; // Default to failed audits
+    const where: any = {}; // Show all audits by default
     if (category) where.category = category;
     if (action) where.action = action;
     if (filterUserId) where.userId = filterUserId;
@@ -976,21 +976,6 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
       });
     }
 
-    // Create audit log entry
-    await prisma.settingsAudit.create({
-      data: {
-        category: service,
-        key: "validation",
-        action: "validate",
-        userId,
-        ipAddress: req.ip,
-        userAgent: req.get("User-Agent"),
-        success: validationResult.isValid,
-        errorMessage: validationResult.isValid
-          ? null
-          : validationResult.message,
-      },
-    });
 
     logger.info(
       {
@@ -1049,32 +1034,6 @@ router.post("/validate/:service", settingsRateLimit, requireAuth, (async (
       );
     }
 
-    // Create audit log entry for failed validation
-    try {
-      await prisma.settingsAudit.create({
-        data: {
-          category: service,
-          key: "validation",
-          action: "validate",
-          userId: userId || "unknown",
-          ipAddress: req.ip,
-          userAgent: req.get("User-Agent"),
-          success: false,
-          errorMessage:
-            error instanceof Error ? error.message : "Unknown validation error",
-        },
-      });
-    } catch (auditError) {
-      logger.error(
-        {
-          auditError,
-          requestId,
-          userId,
-          service,
-        },
-        "Failed to create audit log entry for validation error",
-      );
-    }
 
     logger.error(
       {

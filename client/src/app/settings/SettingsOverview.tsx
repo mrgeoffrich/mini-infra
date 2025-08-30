@@ -18,7 +18,6 @@ import {
   Container,
   Cloud,
   Database,
-  RefreshCw,
 } from "lucide-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
 
@@ -77,7 +76,6 @@ export function SettingsOverview() {
     data: settingsData,
     isLoading: settingsLoading,
     error: settingsError,
-    refetch: refetchSettings,
   } = useSystemSettings({
     filters: { isActive: true },
     limit: 100,
@@ -87,17 +85,10 @@ export function SettingsOverview() {
     data: connectivityData,
     isLoading: connectivityLoading,
     error: connectivityError,
-    refetch: refetchConnectivity,
   } = useConnectivityStatus({
     limit: 10,
     refetchInterval: 30000, // Poll every 30 seconds
   });
-
-
-  const handleRefresh = () => {
-    refetchSettings();
-    refetchConnectivity();
-  };
 
   const isLoading = settingsLoading || connectivityLoading;
   const hasError = settingsError || connectivityError;
@@ -117,12 +108,6 @@ export function SettingsOverview() {
             <AlertDescription>
               Failed to load settings data.{" "}
               {settingsError?.message || connectivityError?.message}
-              <button
-                onClick={handleRefresh}
-                className="ml-2 underline hover:no-underline"
-              >
-                Try again
-              </button>
             </AlertDescription>
           </Alert>
         </div>
@@ -188,17 +173,11 @@ export function SettingsOverview() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Settings</h1>
-            <p className="text-muted-foreground mb-6">
-              System configuration and connectivity overview
-            </p>
-          </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Settings</h1>
+          <p className="text-muted-foreground mb-6">
+            System configuration and connectivity overview
+          </p>
         </div>
       </div>
 
