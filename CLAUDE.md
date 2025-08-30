@@ -335,6 +335,15 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Security Features**: Connection string redaction in logs, encrypted storage integration, proper authorization checks
 - **Type Safety**: Full TypeScript integration with `@mini-infra/types` for request/response interfaces
 - **Integration**: Direct integration with existing AzureConfigService for all storage operations
+- **Comprehensive Testing**: Complete test coverage in `server/src/routes/__tests__/azure-settings.test.ts` including:
+  - Authentication requirement tests for all endpoints (GET, PUT, POST, DELETE)
+  - Successful CRUD operations testing with proper mocking of AzureConfigService
+  - Validation endpoint testing with mock Azure responses and error scenarios
+  - Error handling tests for invalid connection strings, network failures, timeouts, and database errors
+  - Concurrent access testing for simultaneous validation and configuration update requests
+  - Request validation testing with Zod schemas and malformed data scenarios
+  - Container listing and access testing with proper metadata handling
+  - Service isolation through comprehensive mocking of all external dependencies
 
 ### Azure Connectivity Status API Endpoints Implementation
 - **API Router**: `server/src/routes/azure-connectivity.ts` - RESTful endpoints for Azure connectivity status retrieval
