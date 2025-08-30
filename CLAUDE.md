@@ -188,6 +188,12 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Security**: AES encryption for sensitive connection strings, secure validation with timeout protection (10s connection, 5s query), comprehensive error handling with categorized error codes
 - **Database Integration**: Uses PostgresDatabase, BackupConfiguration, BackupOperation, and RestoreOperation Prisma models with full relationship support
 
+### PostgreSQL Backup Configuration Service Implementation
+- **Service Class**: `server/src/services/backup-config.ts` - Complete backup configuration management service for PostgreSQL databases
+- **Features**: CRUD operations for backup configurations, cron expression validation using node-cron, Azure container validation, retention policy management
+- **Scheduling**: Automated next scheduled backup time calculation, support for enabling/disabling backup schedules
+- **Integration**: Azure Storage container validation, comprehensive error handling and logging
+
 ### PostgreSQL Database API Endpoints Implementation
 - **API Router**: `server/src/routes/postgres-databases.ts` - RESTful CRUD endpoints for PostgreSQL database configuration management
 - **Endpoints**: 
