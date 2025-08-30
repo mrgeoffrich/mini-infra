@@ -10,6 +10,7 @@ import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
 import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
 import AzureSettingsPage from "@/app/settings/azure/page";
+import { TunnelsPage } from "@/app/tunnels/page";
 
 export const router = createBrowserRouter([
   {
@@ -54,7 +55,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "tunnels",
-        element: <div>Cloudflare Tunnels - Coming Soon</div>,
+        element: <TunnelsPage />,
       },
       {
         path: "logs",

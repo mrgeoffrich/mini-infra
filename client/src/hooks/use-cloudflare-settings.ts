@@ -3,6 +3,7 @@ import type {
   CloudflareSettingResponse,
   ConnectivityStatusInfo,
   CloudflareTunnelInfo,
+  CloudflareTunnelConfig,
 } from "@mini-infra/types";
 
 interface CloudflareSettingsResponse {
@@ -62,6 +63,12 @@ interface TunnelsResponse {
 interface TunnelDetailsResponse {
   success: boolean;
   tunnel?: CloudflareTunnelInfo;
+  message?: string;
+}
+
+interface TunnelConfigResponse {
+  success: boolean;
+  data?: CloudflareTunnelConfig;
   message?: string;
 }
 
@@ -301,6 +308,47 @@ export function useCloudfareTunnelDetails(tunnelId: string | undefined) {
           message: "Failed to fetch tunnel details",
         }));
         throw new Error(errorData.message || "Failed to fetch tunnel");
+      }
+
+      return response.json();
+    },
+    enabled: !!tunnelId,
+    staleTime: 60000, // 1 minute - matches backend cache TTL
+    retry: (failureCount, error) => {
+      // Don't retry on 401/403/404 errors
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        if (
+          message.includes("unauthorized") ||
+          message.includes("forbidden") ||
+          message.includes("not found")
+        ) {
+          return false;
+        }
+      }
+      return failureCount < 2;
+    },
+  });
+}
+
+// Hook for retrieving tunnel configuration
+export function useCloudfareTunnelConfig(tunnelId: string | undefined) {
+  return useQuery<TunnelConfigResponse>({
+    queryKey: ["cloudflare-tunnel-config", tunnelId],
+    queryFn: async () => {
+      if (!tunnelId) {
+        throw new Error("Tunnel ID is required");
+      }
+
+      const response = await fetch(`/api/settings/cloudflare/tunnels/${tunnelId}/config`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to fetch tunnel configuration",
+        }));
+        throw new Error(errorData.message || "Failed to fetch tunnel configuration");
       }
 
       return response.json();

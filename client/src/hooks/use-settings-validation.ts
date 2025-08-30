@@ -497,7 +497,7 @@ export function useAdvancedSettingsValidation(
     retry: false, // Handle retries manually
   });
 
-  const connectivity = useServiceConnectivity(service, {
+  const connectivity = useServiceConnectivity(service as ConnectivityService, {
     enabled,
     pollingInterval,
   });

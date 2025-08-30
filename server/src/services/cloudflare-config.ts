@@ -586,6 +586,113 @@ export class CloudflareConfigService extends ConfigurationService {
   }
 
   /**
+   * Get tunnel configuration including ingress rules and hostname mappings
+   * @param tunnelId The tunnel ID to get configuration for
+   * @returns Tunnel configuration or null if not found or connection fails
+   */
+  async getTunnelConfig(tunnelId: string): Promise<any> {
+    // Check circuit breaker before making API call
+    if (this.isCircuitBreakerOpen()) {
+      logger.warn(
+        {
+          circuitState: "open",
+          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
+          tunnelId,
+        },
+        "Circuit breaker is open, skipping tunnel config retrieval",
+      );
+      return null;
+    }
+
+    try {
+      const apiToken = await this.getApiToken();
+      const accountId = await this.getAccountId();
+
+      if (!apiToken) {
+        logger.warn("Cannot retrieve tunnel config: API token not configured");
+        return null;
+      }
+
+      if (!accountId) {
+        logger.warn("Cannot retrieve tunnel config: Account ID not configured");
+        return null;
+      }
+
+      const cf = new Cloudflare({
+        apiToken,
+      });
+
+      // Try to fetch tunnel configuration using the proper API endpoint
+      const configResponse = (await Promise.race([
+        // Use the tunnel configurations endpoint
+        fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`, {
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Tunnel config API request timeout")),
+            CloudflareConfigService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as Response;
+
+      if (!configResponse.ok) {
+        logger.warn(
+          this.redactSensitiveData({
+            accountId,
+            tunnelId,
+            status: configResponse.status,
+            statusText: configResponse.statusText,
+          }),
+          "Failed to fetch tunnel configuration from Cloudflare API",
+        );
+        return null;
+      }
+
+      const configData = await configResponse.json();
+      
+      // Record success for circuit breaker
+      this.recordSuccess();
+
+      logger.info(
+        this.redactSensitiveData({
+          accountId,
+          tunnelId,
+          configVersion: configData.result?.version,
+          ingressRuleCount: configData.result?.config?.ingress?.length || 0,
+        }),
+        "Successfully retrieved Cloudflare tunnel configuration",
+      );
+
+      return configData.result;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
+
+      logger.error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          errorCode,
+          isRetriable,
+          tunnelId,
+        }),
+        "Failed to retrieve Cloudflare tunnel configuration",
+      );
+
+      return null;
+    }
+  }
+
+  /**
    * Test tunnel connectivity and retrieve tunnel information
    * Respects circuit breaker state
    * @returns Array of tunnel information or empty array if no tunnels or connection fails
@@ -644,13 +751,16 @@ export class CloudflareConfigService extends ConfigurationService {
         "Successfully retrieved Cloudflare tunnel information",
       );
 
-      return tunnels.map((tunnel: any) => ({
-        id: tunnel.id,
-        name: tunnel.name,
-        status: tunnel.status,
-        created_at: tunnel.created_at,
-        connections: tunnel.connections || [],
-      }));
+      return tunnels
+        .filter((tunnel: any) => !tunnel.deleted_at) // Filter out deleted tunnels
+        .map((tunnel: any) => ({
+          id: tunnel.id,
+          name: tunnel.name,
+          status: tunnel.status,
+          created_at: tunnel.created_at,
+          deleted_at: tunnel.deleted_at,
+          connections: tunnel.connections || [],
+        }));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";

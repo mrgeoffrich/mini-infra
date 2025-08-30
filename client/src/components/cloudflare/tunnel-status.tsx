@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   IconArrowsRightLeft,
   IconChevronDown,
   IconChevronRight,
   IconRefresh,
 } from "@tabler/icons-react";
-import { useCloudfareTunnels } from "@/hooks/use-cloudflare-settings";
+import { useCloudfareTunnels, useCloudfareTunnelConfig } from "@/hooks/use-cloudflare-settings";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +36,118 @@ interface TunnelStatusProps {
   className?: string;
 }
 
+// Helper component to display tunnel configuration
+function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
+  const {
+    data: configData,
+    isLoading: configLoading,
+    error: configError,
+  } = useCloudfareTunnelConfig(tunnelId);
+
+  if (configLoading) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        Loading configuration...
+      </div>
+    );
+  }
+
+  if (configError) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        Configuration not available
+      </div>
+    );
+  }
+
+  const config = configData?.data;
+  if (!config?.config?.ingress) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        No configuration rules found
+      </div>
+    );
+  }
+
+  const ingressRules = config.config.ingress;
+  const publicHostnames = ingressRules
+    .filter((rule) => rule.hostname)
+    .map((rule) => ({
+      hostname: rule.hostname!,
+      service: rule.service,
+      path: rule.path,
+      isWildcard: rule.hostname!.startsWith("*"),
+      isCatchAll: !rule.hostname,
+    }));
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm font-medium">Public Hostnames & Services</div>
+      
+      {publicHostnames.length > 0 ? (
+        <div className="space-y-2">
+          {publicHostnames.map((hostname, index) => (
+            <div
+              key={index}
+              className="p-2 bg-background rounded border text-xs"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="font-mono text-sm font-medium break-all">
+                      {hostname.hostname}
+                    </div>
+                    {hostname.isWildcard && (
+                      <Badge variant="secondary" className="text-xs">
+                        Wildcard
+                      </Badge>
+                    )}
+                  </div>
+                  {hostname.path && (
+                    <div className="text-muted-foreground">
+                      Path: {hostname.path}
+                    </div>
+                  )}
+                  <div className="text-muted-foreground">
+                    Service: <span className="font-mono">{hostname.service}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-muted-foreground text-center py-2">
+          No public hostnames configured
+        </div>
+      )}
+
+      {/* Show catch-all rule if it exists */}
+      {ingressRules.some((rule) => !rule.hostname) && (
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-muted-foreground">Catch-All Rule</div>
+          {ingressRules
+            .filter((rule) => !rule.hostname)
+            .map((rule, index) => (
+              <div
+                key={index}
+                className="p-2 bg-muted/50 rounded border text-xs"
+              >
+                <div className="text-muted-foreground">
+                  Default service: <span className="font-mono">{rule.service}</span>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      <div className="text-xs text-muted-foreground">
+        Configuration version: {config.version} • Source: {config.source}
+      </div>
+    </div>
+  );
+}
+
 export function TunnelStatus({ className }: TunnelStatusProps) {
   const {
     data: tunnels,
@@ -47,6 +159,15 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
   const [expandedTunnels, setExpandedTunnels] = useState<Set<string>>(
     new Set(),
   );
+
+  // Auto-expand all tunnels when data loads
+  useEffect(() => {
+    const tunnelData = tunnels?.data?.tunnels as Tunnel[] | undefined;
+    if (tunnelData && tunnelData.length > 0) {
+      const allTunnelIds = new Set(tunnelData.map(tunnel => tunnel.id));
+      setExpandedTunnels(allTunnelIds);
+    }
+  }, [tunnels?.data?.tunnels]);
 
   const toggleExpanded = (tunnelId: string) => {
     setExpandedTunnels((prev) => {
@@ -88,6 +209,13 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
       default:
         return "outline";
     }
+  };
+
+  const formatDate = (dateStr: string | null | undefined, formatStr: string): string => {
+    if (!dateStr) return "N/A";
+    const date = new Date(dateStr);
+    if (!isValid(date)) return "Invalid date";
+    return format(date, formatStr);
   };
 
   const handleRefresh = () => {
@@ -231,67 +359,28 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
                           <div>
                             <div className="text-muted-foreground">Created</div>
                             <div className="mt-1">
-                              {format(
-                                new Date(tunnel.created_at),
-                                "MMM d, yyyy HH:mm",
-                              )}
+                              {formatDate(tunnel.created_at, "MMM d, yyyy HH:mm")}
                             </div>
                           </div>
                         </div>
 
-                        {tunnel.connections &&
-                          tunnel.connections.length > 0 && (
-                            <div>
-                              <div className="text-sm font-medium mb-2">
-                                Active Connections
-                              </div>
-                              <div className="space-y-2">
-                                {tunnel.connections.map((connection) => (
-                                  <div
-                                    key={connection.id}
-                                    className="p-2 bg-background rounded border text-xs"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="space-y-1">
-                                        <div className="font-mono">
-                                          {connection.client_id}
-                                        </div>
-                                        <div className="text-muted-foreground">
-                                          Version: {connection.client_version}
-                                        </div>
-                                        <div className="text-muted-foreground">
-                                          Origin: {connection.origin_ip}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        {connection.is_primary && (
-                                          <Badge
-                                            variant="secondary"
-                                            className="text-xs"
-                                          >
-                                            Primary
-                                          </Badge>
-                                        )}
-                                        <div className="text-muted-foreground mt-1">
-                                          {format(
-                                            new Date(connection.opened_at),
-                                            "HH:mm:ss",
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                        {(!tunnel.connections ||
-                          tunnel.connections.length === 0) && (
-                          <div className="text-sm text-muted-foreground text-center py-4">
-                            No active connections
+                        <div>
+                          <div className="text-sm font-medium mb-2">
+                            Active Connections
                           </div>
-                        )}
+                          <div className="p-2 bg-background rounded border text-sm">
+                            {connectionCount > 0 ? (
+                              <span>{connectionCount} active {connectionCount === 1 ? "connection" : "connections"}</span>
+                            ) : (
+                              <span className="text-muted-foreground">No active connections</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Tunnel Configuration Section */}
+                        <div className="border-t pt-4">
+                          <TunnelConfigurationSection tunnelId={tunnel.id} />
+                        </div>
                       </div>
                     </div>
                   )}

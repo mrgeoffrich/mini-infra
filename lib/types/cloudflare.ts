@@ -65,6 +65,13 @@ export interface CloudflareTunnelDetailsResponse {
   message?: string;
 }
 
+// Cloudflare tunnel configuration response
+export interface CloudflareTunnelConfigResponse {
+  success: boolean;
+  data: CloudflareTunnelConfig;
+  message?: string;
+}
+
 // ====================
 // Cloudflare Metadata Types
 // ====================
@@ -106,6 +113,7 @@ export interface CloudflareTunnelInfo {
   connectorId?: string;
   activeTunnelConnections?: number;
   metadata?: Record<string, any>;
+  config?: CloudflareTunnelConfig;
 }
 
 // Cloudflare tunnel connection
@@ -125,6 +133,48 @@ export interface CloudflareTunnelConnection {
   }>;
   clientId?: string;
   clientVersion?: string;
+}
+
+// Cloudflare tunnel configuration
+export interface CloudflareTunnelConfig {
+  config: {
+    ingress: CloudflareTunnelIngressRule[];
+  };
+  source: string;
+  version: number;
+}
+
+// Cloudflare tunnel ingress rule
+export interface CloudflareTunnelIngressRule {
+  hostname?: string;
+  path?: string;
+  service: string;
+  originRequest?: {
+    connectTimeout?: string;
+    tlsTimeout?: string;
+    tcpKeepAlive?: string;
+    noHappyEyeballs?: boolean;
+    keepAliveConnections?: number;
+    keepAliveTimeout?: string;
+    httpHostHeader?: string;
+    originServerName?: string;
+    caPool?: string;
+    noTLSVerify?: boolean;
+    disableChunkedEncoding?: boolean;
+    bastionMode?: boolean;
+    proxyAddress?: string;
+    proxyPort?: number;
+    proxyType?: string;
+  };
+}
+
+// Cloudflare tunnel public hostname information
+export interface CloudflareTunnelHostname {
+  hostname: string;
+  service: string;
+  path?: string;
+  isWildcard: boolean;
+  isCatchAll: boolean;
 }
 
 // Cloudflare connection metadata for connectivity status

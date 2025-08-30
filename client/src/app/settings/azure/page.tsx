@@ -210,7 +210,7 @@ export default function AzureSettingsPage() {
     "azure",
     form.formState.isValid ? debouncedValues : undefined,
     {
-      enabled: form.formState.isValid,
+      enabled: true, // Always enable connectivity monitoring
       debounceDelay: 500,
       onValidationSuccess: () => {
         toast.success("Azure Storage connection validated successfully");

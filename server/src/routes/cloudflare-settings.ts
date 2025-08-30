@@ -16,6 +16,7 @@ import {
   CloudflareValidationResponse,
   CloudflareTunnelListResponse,
   CloudflareTunnelDetailsResponse,
+  CloudflareTunnelConfigResponse,
   CloudflareTunnelInfo,
 } from "@mini-infra/types";
 
@@ -560,14 +561,17 @@ router.get("/tunnels", requireAuth, (async (
       "Raw tunnel data from Cloudflare API",
     );
 
-    // Transform tunnel data for frontend consumption
-    const transformedTunnels = tunnels.map((tunnel: any) => ({
-      id: tunnel.id,
-      name: tunnel.name,
-      status: tunnel.status as "healthy" | "degraded" | "down" | "inactive",
-      createdAt: tunnel.created_at,
-      connections: tunnel.connections || [],
-    }));
+    // Transform tunnel data for frontend consumption and filter out deleted tunnels
+    const transformedTunnels = tunnels
+      .filter((tunnel: any) => !tunnel.deleted_at) // Filter out deleted tunnels
+      .map((tunnel: any) => ({
+        id: tunnel.id,
+        name: tunnel.name,
+        status: tunnel.status as "healthy" | "degraded" | "down" | "inactive",
+        createdAt: tunnel.created_at,
+        deletedAt: tunnel.deleted_at,
+        connections: tunnel.connections || [],
+      }));
 
     // Update cache
     tunnelCache.set(cacheKey, {
@@ -798,6 +802,147 @@ router.get("/tunnels/:id", requireAuth, (async (
         success: false,
         error: "Tunnel not found",
         details: `Tunnel with ID ${tunnelId} was not found`,
+      });
+    }
+
+    if (errorMessage.includes("Rate limit")) {
+      return res.status(429).json({
+        success: false,
+        error: "Rate limited",
+        details: "Too many requests to Cloudflare API. Please try again later.",
+      });
+    }
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * GET /api/cloudflare/tunnels/:id/config - Get specific tunnel configuration
+ */
+router.get("/tunnels/:id/config", requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+  const { id: tunnelId } = req.params;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      tunnelId,
+    },
+    "Cloudflare tunnel configuration requested",
+  );
+
+  try {
+    // Check cache first for tunnel config
+    const cacheKey = `tunnel_config_${tunnelId}`;
+    const cached = tunnelCache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < TUNNEL_CACHE_TTL) {
+      logger.debug(
+        {
+          requestId,
+          userId,
+          tunnelId,
+        },
+        "Returning cached tunnel configuration",
+      );
+
+      const response: CloudflareTunnelConfigResponse = {
+        success: true,
+        data: cached.data,
+      };
+
+      return res.json(response);
+    }
+
+    // Get API credentials
+    const apiToken = await cloudflareConfigService.getApiToken();
+    const accountId = await cloudflareConfigService.getAccountId();
+
+    if (!apiToken) {
+      return res.status(400).json({
+        success: false,
+        error: "Cloudflare API token not configured",
+        details: "Please configure your Cloudflare API token first",
+      });
+    }
+
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        error: "Cloudflare account ID not configured",
+        details: "Please configure your Cloudflare account ID first",
+      });
+    }
+
+    // Fetch tunnel configuration
+    const tunnelConfig = await cloudflareConfigService.getTunnelConfig(tunnelId);
+    
+    if (!tunnelConfig) {
+      return res.status(404).json({
+        success: false,
+        error: "Tunnel configuration not found",
+        details: `Configuration for tunnel ${tunnelId} was not found or could not be retrieved`,
+      });
+    }
+
+    // Update cache
+    tunnelCache.set(cacheKey, {
+      data: tunnelConfig,
+      timestamp: Date.now(),
+    });
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        tunnelId,
+        configVersion: tunnelConfig.version,
+        ingressRuleCount: tunnelConfig.config?.ingress?.length || 0,
+      },
+      "Cloudflare tunnel configuration retrieved successfully",
+    );
+
+    const response: CloudflareTunnelConfigResponse = {
+      success: true,
+      data: tunnelConfig,
+    };
+
+    res.json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    
+    logger.error(
+      {
+        requestId,
+        userId,
+        tunnelId,
+        error: errorMessage,
+      },
+      "Failed to retrieve Cloudflare tunnel configuration",
+    );
+
+    // Return appropriate error response based on error type
+    if (errorMessage.includes("timeout")) {
+      return res.status(504).json({
+        success: false,
+        error: "Request timeout",
+        details: "The request to Cloudflare API timed out",
+      });
+    }
+
+    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+      return res.status(404).json({
+        success: false,
+        error: "Tunnel configuration not found",
+        details: `Configuration for tunnel ${tunnelId} was not found`,
       });
     }
 

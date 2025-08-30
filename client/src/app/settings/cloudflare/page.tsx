@@ -46,7 +46,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { TunnelStatus } from "@/components/cloudflare/tunnel-status";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -142,7 +141,7 @@ export default function CloudflareSettingsPage() {
     "cloudflare",
     form.formState.isValid ? debouncedValues : undefined,
     {
-      enabled: form.formState.isValid,
+      enabled: true, // Always enable connectivity monitoring
       debounceDelay: 500,
       onValidationSuccess: () => {
         toast.success("Cloudflare connection validated successfully");
@@ -544,9 +543,24 @@ export default function CloudflareSettingsPage() {
           </div>
         </div>
 
-        {/* Tunnel Status Display */}
+        {/* Tunnel Management Link */}
         <div className="mt-6">
-          <TunnelStatus />
+          <Card>
+            <CardHeader>
+              <CardTitle>Tunnel Management</CardTitle>
+              <CardDescription>
+                View and monitor your Cloudflare tunnel connections, configurations, and routing rules
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/tunnels" className="flex items-center gap-2">
+                  <Cloud className="h-4 w-4" />
+                  View Tunnels
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
