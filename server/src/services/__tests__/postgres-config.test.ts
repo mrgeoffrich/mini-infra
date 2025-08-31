@@ -123,7 +123,9 @@ describe("DatabaseConfigService", () => {
         userId,
       };
 
-      mockPrisma.postgresDatabase.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
       mockPrisma.postgresDatabase.create = jest
         .fn()
         .mockResolvedValue(mockCreatedDb);
@@ -292,10 +294,16 @@ describe("DatabaseConfigService", () => {
     });
 
     it("should throw error for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       await expect(
-        databaseConfigService.updateDatabase("nonexistent", updateRequest, "user-123"),
+        databaseConfigService.updateDatabase(
+          "nonexistent",
+          updateRequest,
+          "user-123",
+        ),
       ).rejects.toThrow("Database configuration not found");
     });
 
@@ -306,7 +314,11 @@ describe("DatabaseConfigService", () => {
         .mockResolvedValue(unauthorizedDb);
 
       await expect(
-        databaseConfigService.updateDatabase("db-123", updateRequest, "user-123"),
+        databaseConfigService.updateDatabase(
+          "db-123",
+          updateRequest,
+          "user-123",
+        ),
       ).rejects.toThrow(
         "Access denied: You can only update your own database configurations",
       );
@@ -321,7 +333,11 @@ describe("DatabaseConfigService", () => {
         .mockResolvedValueOnce(conflictingDb); // For checking name conflict
 
       await expect(
-        databaseConfigService.updateDatabase("db-123", updateRequest, "user-123"),
+        databaseConfigService.updateDatabase(
+          "db-123",
+          updateRequest,
+          "user-123",
+        ),
       ).rejects.toThrow(
         "Database configuration with name 'updated-db' already exists",
       );
@@ -440,10 +456,9 @@ describe("DatabaseConfigService", () => {
         .fn()
         .mockResolvedValue([mockDatabases[0]]);
 
-      const result = await databaseConfigService.listDatabases(
-        "user-123",
-        { name: "db1" },
-      );
+      const result = await databaseConfigService.listDatabases("user-123", {
+        name: "db1",
+      });
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe("db1");
@@ -467,10 +482,9 @@ describe("DatabaseConfigService", () => {
         .fn()
         .mockResolvedValue([mockDatabases[0]]);
 
-      await databaseConfigService.listDatabases(
-        "user-123",
-        { healthStatus: "healthy" },
-      );
+      await databaseConfigService.listDatabases("user-123", {
+        healthStatus: "healthy",
+      });
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
         where: {
@@ -488,10 +502,9 @@ describe("DatabaseConfigService", () => {
         .fn()
         .mockResolvedValue([mockDatabases[1]]);
 
-      await databaseConfigService.listDatabases(
-        "user-123",
-        { tags: ["production"] },
-      );
+      await databaseConfigService.listDatabases("user-123", {
+        tags: ["production"],
+      });
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
         where: {
@@ -605,7 +618,8 @@ describe("DatabaseConfigService", () => {
       mockPgClient.query.mockResolvedValue(mockQueryResult);
       mockPgClient.end.mockResolvedValue(undefined);
 
-      const result = await databaseConfigService.testConnection(connectionConfig);
+      const result =
+        await databaseConfigService.testConnection(connectionConfig);
 
       expect(result.isValid).toBe(true);
       expect(result.message).toBe("Connection successful");
@@ -617,7 +631,8 @@ describe("DatabaseConfigService", () => {
     it("should handle connection timeout", async () => {
       mockPgClient.connect.mockRejectedValue(new Error("connection timeout"));
 
-      const result = await databaseConfigService.testConnection(connectionConfig);
+      const result =
+        await databaseConfigService.testConnection(connectionConfig);
 
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("TIMEOUT");
@@ -629,7 +644,8 @@ describe("DatabaseConfigService", () => {
         new Error("password authentication failed"),
       );
 
-      const result = await databaseConfigService.testConnection(connectionConfig);
+      const result =
+        await databaseConfigService.testConnection(connectionConfig);
 
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("AUTHENTICATION_FAILED");
@@ -641,7 +657,8 @@ describe("DatabaseConfigService", () => {
         new Error('database "nonexistent" does not exist'),
       );
 
-      const result = await databaseConfigService.testConnection(connectionConfig);
+      const result =
+        await databaseConfigService.testConnection(connectionConfig);
 
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("DATABASE_NOT_FOUND");
@@ -651,7 +668,8 @@ describe("DatabaseConfigService", () => {
     it("should handle connection refused error", async () => {
       mockPgClient.connect.mockRejectedValue(new Error("connection refused"));
 
-      const result = await databaseConfigService.testConnection(connectionConfig);
+      const result =
+        await databaseConfigService.testConnection(connectionConfig);
 
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("CONNECTION_REFUSED");
@@ -909,7 +927,9 @@ describe("DatabaseConfigService", () => {
         sslMode: "prefer",
       };
 
-      const result = (databaseConfigService as any).buildConnectionString(config);
+      const result = (databaseConfigService as any).buildConnectionString(
+        config,
+      );
 
       expect(result).toBe(
         "postgresql://testuser:testpass@localhost:5432/testdb?sslmode=prefer",
@@ -926,7 +946,9 @@ describe("DatabaseConfigService", () => {
         sslMode: "prefer",
       };
 
-      const result = (databaseConfigService as any).buildConnectionString(config);
+      const result = (databaseConfigService as any).buildConnectionString(
+        config,
+      );
 
       expect(result).toBe(
         "postgresql://test%40user:test%3Apass@localhost:5432/testdb?sslmode=prefer",
@@ -952,7 +974,8 @@ describe("DatabaseConfigService", () => {
     });
 
     it("should handle default port and ssl mode", () => {
-      const connectionString = "postgresql://testuser:testpass@localhost/testdb";
+      const connectionString =
+        "postgresql://testuser:testpass@localhost/testdb";
 
       const result = (databaseConfigService as any).parseConnectionString(
         connectionString,
@@ -990,13 +1013,69 @@ describe("DatabaseConfigService", () => {
   describe("validation", () => {
     it("should validate all required fields", () => {
       const invalidRequests = [
-        { name: "", host: "localhost", port: 5432, database: "db", username: "user", password: "pass", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "", port: 5432, database: "db", username: "user", password: "pass", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "localhost", port: 0, database: "db", username: "user", password: "pass", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "localhost", port: 5432, database: "", username: "user", password: "pass", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "localhost", port: 5432, database: "db", username: "", password: "pass", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "localhost", port: 5432, database: "db", username: "user", password: "", sslMode: "prefer" as PostgreSSLMode },
-        { name: "db", host: "localhost", port: 5432, database: "db", username: "user", password: "pass", sslMode: "invalid" as PostgreSSLMode },
+        {
+          name: "",
+          host: "localhost",
+          port: 5432,
+          database: "db",
+          username: "user",
+          password: "pass",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "",
+          port: 5432,
+          database: "db",
+          username: "user",
+          password: "pass",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "localhost",
+          port: 0,
+          database: "db",
+          username: "user",
+          password: "pass",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "localhost",
+          port: 5432,
+          database: "",
+          username: "user",
+          password: "pass",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "localhost",
+          port: 5432,
+          database: "db",
+          username: "",
+          password: "pass",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "localhost",
+          port: 5432,
+          database: "db",
+          username: "user",
+          password: "",
+          sslMode: "prefer" as PostgreSSLMode,
+        },
+        {
+          name: "db",
+          host: "localhost",
+          port: 5432,
+          database: "db",
+          username: "user",
+          password: "pass",
+          sslMode: "invalid" as PostgreSSLMode,
+        },
       ];
 
       for (const request of invalidRequests) {

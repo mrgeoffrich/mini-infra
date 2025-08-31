@@ -74,7 +74,9 @@ describe("PostgreSQL Progress API", () => {
     };
 
     it("should return backup progress for valid operation", async () => {
-      mockProgressTrackerService.getBackupProgress.mockResolvedValue(mockBackupProgress);
+      mockProgressTrackerService.getBackupProgress.mockResolvedValue(
+        mockBackupProgress,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/backup/backup-1")
@@ -86,7 +88,7 @@ describe("PostgreSQL Progress API", () => {
       expect(mockProgressTrackerService.initialize).toHaveBeenCalled();
       expect(mockProgressTrackerService.getBackupProgress).toHaveBeenCalledWith(
         "backup-1",
-        "test-user-id"
+        "test-user-id",
       );
     });
 
@@ -118,7 +120,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle service errors", async () => {
       mockProgressTrackerService.getBackupProgress.mockRejectedValue(
-        new Error("Service unavailable")
+        new Error("Service unavailable"),
       );
 
       const response = await request(app)
@@ -132,7 +134,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle initialization errors", async () => {
       mockProgressTrackerService.initialize.mockRejectedValue(
-        new Error("Initialization failed")
+        new Error("Initialization failed"),
       );
 
       const response = await request(app)
@@ -164,7 +166,9 @@ describe("PostgreSQL Progress API", () => {
     };
 
     it("should return restore progress for valid operation", async () => {
-      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(mockRestoreProgress);
+      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(
+        mockRestoreProgress,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/restore/restore-1")
@@ -174,10 +178,9 @@ describe("PostgreSQL Progress API", () => {
       expect(response.body.data).toEqual(mockRestoreProgress);
 
       expect(mockProgressTrackerService.initialize).toHaveBeenCalled();
-      expect(mockProgressTrackerService.getRestoreProgress).toHaveBeenCalledWith(
-        "restore-1",
-        "test-user-id"
-      );
+      expect(
+        mockProgressTrackerService.getRestoreProgress,
+      ).toHaveBeenCalledWith("restore-1", "test-user-id");
     });
 
     it("should return 404 if restore operation not found", async () => {
@@ -203,7 +206,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle service errors", async () => {
       mockProgressTrackerService.getRestoreProgress.mockRejectedValue(
-        new Error("Service unavailable")
+        new Error("Service unavailable"),
       );
 
       const response = await request(app)
@@ -224,7 +227,9 @@ describe("PostgreSQL Progress API", () => {
         estimatedCompletion: undefined,
       };
 
-      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(completedRestore);
+      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(
+        completedRestore,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/restore/restore-1")
@@ -243,14 +248,18 @@ describe("PostgreSQL Progress API", () => {
         completedAt: "2024-01-01T00:10:00.000Z",
       };
 
-      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(failedRestore);
+      mockProgressTrackerService.getRestoreProgress.mockResolvedValue(
+        failedRestore,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/restore/restore-1")
         .expect(200);
 
       expect(response.body.data.status).toBe("failed");
-      expect(response.body.data.errorMessage).toBe("Database connection failed");
+      expect(response.body.data.errorMessage).toBe(
+        "Database connection failed",
+      );
     });
   });
 
@@ -284,7 +293,9 @@ describe("PostgreSQL Progress API", () => {
     };
 
     it("should return active operations for authenticated user", async () => {
-      mockProgressTrackerService.getActiveOperations.mockResolvedValue(mockActiveOperations);
+      mockProgressTrackerService.getActiveOperations.mockResolvedValue(
+        mockActiveOperations,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/active")
@@ -294,7 +305,9 @@ describe("PostgreSQL Progress API", () => {
       expect(response.body.data).toEqual(mockActiveOperations);
 
       expect(mockProgressTrackerService.initialize).toHaveBeenCalled();
-      expect(mockProgressTrackerService.getActiveOperations).toHaveBeenCalledWith("test-user-id");
+      expect(
+        mockProgressTrackerService.getActiveOperations,
+      ).toHaveBeenCalledWith("test-user-id");
     });
 
     it("should return empty operations when no active operations", async () => {
@@ -303,7 +316,9 @@ describe("PostgreSQL Progress API", () => {
         restoreOperations: [],
       };
 
-      mockProgressTrackerService.getActiveOperations.mockResolvedValue(emptyOperations);
+      mockProgressTrackerService.getActiveOperations.mockResolvedValue(
+        emptyOperations,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/active")
@@ -316,7 +331,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle service errors", async () => {
       mockProgressTrackerService.getActiveOperations.mockRejectedValue(
-        new Error("Service unavailable")
+        new Error("Service unavailable"),
       );
 
       const response = await request(app)
@@ -325,7 +340,9 @@ describe("PostgreSQL Progress API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Internal server error");
-      expect(response.body.message).toBe("Failed to retrieve active operations");
+      expect(response.body.message).toBe(
+        "Failed to retrieve active operations",
+      );
     });
   });
 
@@ -357,7 +374,9 @@ describe("PostgreSQL Progress API", () => {
     };
 
     it("should return operation history with default parameters", async () => {
-      mockProgressTrackerService.getOperationHistory.mockResolvedValue(mockOperationHistory);
+      mockProgressTrackerService.getOperationHistory.mockResolvedValue(
+        mockOperationHistory,
+      );
 
       const response = await request(app)
         .get("/api/postgres/progress/history")
@@ -372,7 +391,9 @@ describe("PostgreSQL Progress API", () => {
         hasMore: true,
       });
 
-      expect(mockProgressTrackerService.getOperationHistory).toHaveBeenCalledWith({
+      expect(
+        mockProgressTrackerService.getOperationHistory,
+      ).toHaveBeenCalledWith({
         userId: "test-user-id",
         operationType: "all",
         limit: 50,
@@ -388,7 +409,9 @@ describe("PostgreSQL Progress API", () => {
       });
 
       const response = await request(app)
-        .get("/api/postgres/progress/history?databaseId=test-db-id&operationType=backup&status=completed&limit=10&offset=5")
+        .get(
+          "/api/postgres/progress/history?databaseId=test-db-id&operationType=backup&status=completed&limit=10&offset=5",
+        )
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -400,7 +423,9 @@ describe("PostgreSQL Progress API", () => {
         hasMore: false,
       });
 
-      expect(mockProgressTrackerService.getOperationHistory).toHaveBeenCalledWith({
+      expect(
+        mockProgressTrackerService.getOperationHistory,
+      ).toHaveBeenCalledWith({
         userId: "test-user-id",
         databaseId: "test-db-id",
         operationType: "backup",
@@ -411,13 +436,19 @@ describe("PostgreSQL Progress API", () => {
     });
 
     it("should handle date range filtering", async () => {
-      mockProgressTrackerService.getOperationHistory.mockResolvedValue(mockOperationHistory);
+      mockProgressTrackerService.getOperationHistory.mockResolvedValue(
+        mockOperationHistory,
+      );
 
       await request(app)
-        .get("/api/postgres/progress/history?startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z")
+        .get(
+          "/api/postgres/progress/history?startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z",
+        )
         .expect(200);
 
-      expect(mockProgressTrackerService.getOperationHistory).toHaveBeenCalledWith({
+      expect(
+        mockProgressTrackerService.getOperationHistory,
+      ).toHaveBeenCalledWith({
         userId: "test-user-id",
         operationType: "all",
         startedAfter: new Date("2024-01-01T00:00:00Z"),
@@ -429,7 +460,9 @@ describe("PostgreSQL Progress API", () => {
 
     it("should return 400 for invalid query parameters", async () => {
       const response = await request(app)
-        .get("/api/postgres/progress/history?limit=101&offset=-1&operationType=invalid")
+        .get(
+          "/api/postgres/progress/history?limit=101&offset=-1&operationType=invalid",
+        )
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -449,7 +482,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle service errors", async () => {
       mockProgressTrackerService.getOperationHistory.mockRejectedValue(
-        new Error("Service unavailable")
+        new Error("Service unavailable"),
       );
 
       const response = await request(app)
@@ -458,18 +491,24 @@ describe("PostgreSQL Progress API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Internal server error");
-      expect(response.body.message).toBe("Failed to retrieve operation history");
+      expect(response.body.message).toBe(
+        "Failed to retrieve operation history",
+      );
     });
 
     it("should filter out undefined values from filter object", async () => {
-      mockProgressTrackerService.getOperationHistory.mockResolvedValue(mockOperationHistory);
+      mockProgressTrackerService.getOperationHistory.mockResolvedValue(
+        mockOperationHistory,
+      );
 
       await request(app)
         .get("/api/postgres/progress/history?status=all")
         .expect(200);
 
       // When status is "all", it should be filtered out (set to undefined and then removed)
-      expect(mockProgressTrackerService.getOperationHistory).toHaveBeenCalledWith({
+      expect(
+        mockProgressTrackerService.getOperationHistory,
+      ).toHaveBeenCalledWith({
         userId: "test-user-id",
         operationType: "all",
         limit: 50,
@@ -485,7 +524,9 @@ describe("PostgreSQL Progress API", () => {
     };
 
     it("should perform cleanup successfully", async () => {
-      mockProgressTrackerService.cleanupOldOperations.mockResolvedValue(mockCleanupResult);
+      mockProgressTrackerService.cleanupOldOperations.mockResolvedValue(
+        mockCleanupResult,
+      );
 
       const response = await request(app)
         .post("/api/postgres/progress/cleanup")
@@ -499,7 +540,9 @@ describe("PostgreSQL Progress API", () => {
       });
 
       expect(mockProgressTrackerService.initialize).toHaveBeenCalled();
-      expect(mockProgressTrackerService.cleanupOldOperations).toHaveBeenCalled();
+      expect(
+        mockProgressTrackerService.cleanupOldOperations,
+      ).toHaveBeenCalled();
     });
 
     it("should handle cleanup with no operations to delete", async () => {
@@ -508,7 +551,9 @@ describe("PostgreSQL Progress API", () => {
         deletedRestoreOperations: 0,
       };
 
-      mockProgressTrackerService.cleanupOldOperations.mockResolvedValue(emptyCleanupResult);
+      mockProgressTrackerService.cleanupOldOperations.mockResolvedValue(
+        emptyCleanupResult,
+      );
 
       const response = await request(app)
         .post("/api/postgres/progress/cleanup")
@@ -521,7 +566,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle cleanup service errors", async () => {
       mockProgressTrackerService.cleanupOldOperations.mockRejectedValue(
-        new Error("Cleanup failed")
+        new Error("Cleanup failed"),
       );
 
       const response = await request(app)
@@ -535,7 +580,7 @@ describe("PostgreSQL Progress API", () => {
 
     it("should handle initialization errors during cleanup", async () => {
       mockProgressTrackerService.initialize.mockRejectedValue(
-        new Error("Initialization failed")
+        new Error("Initialization failed"),
       );
 
       const response = await request(app)
@@ -561,7 +606,7 @@ describe("PostgreSQL Progress API", () => {
         req.user = undefined; // No authenticated user
         next();
       });
-      
+
       // Mock auth middleware to not set user
       jest.doMock("../../lib/auth-middleware", () => ({
         requireAuth: (req: any, res: any, next: any) => {

@@ -20,7 +20,9 @@ const mockDatabaseConfigService = {
 };
 
 jest.mock("../../services/postgres-config", () => ({
-  DatabaseConfigService: jest.fn().mockImplementation(() => mockDatabaseConfigService),
+  DatabaseConfigService: jest
+    .fn()
+    .mockImplementation(() => mockDatabaseConfigService),
 }));
 
 // Mock Prisma
@@ -157,7 +159,9 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle pagination parameters", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue([mockDatabases[0]]);
+      mockDatabaseConfigService.listDatabases.mockResolvedValue([
+        mockDatabases[0],
+      ]);
 
       await request(app)
         .get("/api/postgres/databases")
@@ -217,13 +221,13 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should require authentication", async () => {
-      mockRequireAuth.mockImplementationOnce((req: any, res: any, next: any) => {
-        res.status(401).json({ error: "Unauthorized" });
-      });
+      mockRequireAuth.mockImplementationOnce(
+        (req: any, res: any, next: any) => {
+          res.status(401).json({ error: "Unauthorized" });
+        },
+      );
 
-      await request(app)
-        .get("/api/postgres/databases")
-        .expect(401);
+      await request(app).get("/api/postgres/databases").expect(401);
     });
   });
 
@@ -268,9 +272,7 @@ describe("PostgreSQL Databases API Routes", () => {
         new Error("Database error"),
       );
 
-      await request(app)
-        .get("/api/postgres/databases/db-1")
-        .expect(500);
+      await request(app).get("/api/postgres/databases/db-1").expect(500);
     });
   });
 
@@ -304,7 +306,9 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should create database successfully", async () => {
-      mockDatabaseConfigService.createDatabase.mockResolvedValue(mockCreatedDatabase);
+      mockDatabaseConfigService.createDatabase.mockResolvedValue(
+        mockCreatedDatabase,
+      );
 
       const response = await request(app)
         .post("/api/postgres/databases")
@@ -397,7 +401,9 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should update database successfully", async () => {
-      mockDatabaseConfigService.updateDatabase.mockResolvedValue(mockUpdatedDatabase);
+      mockDatabaseConfigService.updateDatabase.mockResolvedValue(
+        mockUpdatedDatabase,
+      );
 
       const response = await request(app)
         .put("/api/postgres/databases/db-1")
@@ -436,7 +442,9 @@ describe("PostgreSQL Databases API Routes", () => {
 
     it("should handle unauthorized access", async () => {
       mockDatabaseConfigService.updateDatabase.mockRejectedValue(
-        new Error("Access denied: You can only update your own database configurations"),
+        new Error(
+          "Access denied: You can only update your own database configurations",
+        ),
       );
 
       const response = await request(app)
@@ -496,7 +504,9 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should test database connection successfully", async () => {
-      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(mockTestResult);
+      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(
+        mockTestResult,
+      );
 
       const response = await request(app)
         .post("/api/postgres/databases/db-1/test")
@@ -508,10 +518,9 @@ describe("PostgreSQL Databases API Routes", () => {
         data: mockTestResult,
       });
 
-      expect(mockDatabaseConfigService.testDatabaseConnection).toHaveBeenCalledWith(
-        "db-1",
-        "test-user-id",
-      );
+      expect(
+        mockDatabaseConfigService.testDatabaseConnection,
+      ).toHaveBeenCalledWith("db-1", "test-user-id");
     });
 
     it("should return connection failure result", async () => {
@@ -521,7 +530,9 @@ describe("PostgreSQL Databases API Routes", () => {
         errorCode: "TIMEOUT",
       };
 
-      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(failedTestResult);
+      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(
+        failedTestResult,
+      );
 
       const response = await request(app)
         .post("/api/postgres/databases/db-1/test")
@@ -569,7 +580,9 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should test connection with provided config successfully", async () => {
-      mockDatabaseConfigService.testConnection.mockResolvedValue(mockTestResult);
+      mockDatabaseConfigService.testConnection.mockResolvedValue(
+        mockTestResult,
+      );
 
       const response = await request(app)
         .post("/api/postgres/test-connection")
@@ -623,7 +636,9 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should redact sensitive data in logs", async () => {
-      mockDatabaseConfigService.testConnection.mockResolvedValue(mockTestResult);
+      mockDatabaseConfigService.testConnection.mockResolvedValue(
+        mockTestResult,
+      );
 
       await request(app)
         .post("/api/postgres/test-connection")
@@ -647,10 +662,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
       await request(app).get("/api/postgres/databases").expect(401);
       await request(app).get("/api/postgres/databases/db-1").expect(401);
-      await request(app)
-        .post("/api/postgres/databases")
-        .send({})
-        .expect(401);
+      await request(app).post("/api/postgres/databases").send({}).expect(401);
       await request(app)
         .put("/api/postgres/databases/db-1")
         .send({})
@@ -767,9 +779,7 @@ describe("PostgreSQL Databases API Routes", () => {
     it("should use default sorting when not specified", async () => {
       mockDatabaseConfigService.listDatabases.mockResolvedValue([]);
 
-      await request(app)
-        .get("/api/postgres/databases")
-        .expect(200);
+      await request(app).get("/api/postgres/databases").expect(200);
 
       expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
         "test-user-id",

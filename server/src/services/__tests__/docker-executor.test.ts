@@ -58,7 +58,8 @@ describe("DockerExecutorService", () => {
     jest.clearAllMocks();
     dockerExecutorService = new DockerExecutorService();
     // Mock the docker config service instance
-    (dockerExecutorService as any).dockerConfigService = mockDockerConfigService;
+    (dockerExecutorService as any).dockerConfigService =
+      mockDockerConfigService;
   });
 
   describe("constructor", () => {
@@ -69,7 +70,8 @@ describe("DockerExecutorService", () => {
 
   describe("initialize", () => {
     beforeEach(() => {
-      mockDockerConfigService.get = jest.fn()
+      mockDockerConfigService.get = jest
+        .fn()
         .mockResolvedValueOnce("unix:///var/run/docker.sock") // host
         .mockResolvedValueOnce("1.41"); // apiVersion
     });
@@ -82,11 +84,14 @@ describe("DockerExecutorService", () => {
       expect(mockDockerConfigService.get).toHaveBeenCalledWith("host");
       expect(mockDockerConfigService.get).toHaveBeenCalledWith("apiVersion");
       expect(mockDocker.ping).toHaveBeenCalled();
-      expect(mockLogger.info).toHaveBeenCalledWith("DockerExecutor initialized successfully");
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        "DockerExecutor initialized successfully",
+      );
     });
 
     it("should throw error when Docker host not configured", async () => {
-      mockDockerConfigService.get = jest.fn()
+      mockDockerConfigService.get = jest
+        .fn()
         .mockResolvedValueOnce(null) // No host configured
         .mockResolvedValueOnce("1.41");
 
@@ -96,7 +101,9 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle Docker ping failure", async () => {
-      mockDocker.ping = jest.fn().mockRejectedValue(new Error("Docker not available"));
+      mockDocker.ping = jest
+        .fn()
+        .mockRejectedValue(new Error("Docker not available"));
 
       await expect(dockerExecutorService.initialize()).rejects.toThrow(
         "Docker not available",
@@ -156,7 +163,8 @@ describe("DockerExecutorService", () => {
     });
 
     it("should execute container successfully", async () => {
-      const result = await dockerExecutorService.executeContainer(containerOptions);
+      const result =
+        await dockerExecutorService.executeContainer(containerOptions);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe("Hello World");
@@ -186,11 +194,12 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container creation failure", async () => {
-      mockDocker.createContainer = jest.fn().mockRejectedValue(
-        new Error("Image not found"),
-      );
+      mockDocker.createContainer = jest
+        .fn()
+        .mockRejectedValue(new Error("Image not found"));
 
-      const result = await dockerExecutorService.executeContainer(containerOptions);
+      const result =
+        await dockerExecutorService.executeContainer(containerOptions);
 
       expect(result.exitCode).toBe(-1);
       expect(result.stderr).toContain("Execution error: Image not found");
@@ -204,9 +213,12 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container start failure", async () => {
-      mockContainer.start = jest.fn().mockRejectedValue(new Error("Start failed"));
+      mockContainer.start = jest
+        .fn()
+        .mockRejectedValue(new Error("Start failed"));
 
-      const result = await dockerExecutorService.executeContainer(containerOptions);
+      const result =
+        await dockerExecutorService.executeContainer(containerOptions);
 
       expect(result.exitCode).toBe(-1);
       expect(result.stderr).toContain("Execution error: Start failed");
@@ -224,7 +236,9 @@ describe("DockerExecutorService", () => {
       });
 
       expect(result.exitCode).toBe(-1);
-      expect(result.stderr).toContain("Container execution timed out after 100ms");
+      expect(result.stderr).toContain(
+        "Container execution timed out after 100ms",
+      );
     });
 
     it("should cleanup container when removeContainer is true", async () => {
@@ -249,9 +263,12 @@ describe("DockerExecutorService", () => {
       mockContainer.inspect = jest.fn().mockResolvedValue({
         State: { Status: "exited" },
       });
-      mockContainer.remove = jest.fn().mockRejectedValue(new Error("Remove failed"));
+      mockContainer.remove = jest
+        .fn()
+        .mockRejectedValue(new Error("Remove failed"));
 
-      const result = await dockerExecutorService.executeContainer(containerOptions);
+      const result =
+        await dockerExecutorService.executeContainer(containerOptions);
 
       expect(result.exitCode).toBe(0); // Should still succeed
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -269,7 +286,8 @@ describe("DockerExecutorService", () => {
         message: "No such container",
       });
 
-      const result = await dockerExecutorService.executeContainer(containerOptions);
+      const result =
+        await dockerExecutorService.executeContainer(containerOptions);
 
       expect(result.exitCode).toBe(0);
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -357,9 +375,9 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle execution errors and report failed status", async () => {
-      mockDocker.createContainer = jest.fn().mockRejectedValue(
-        new Error("Container creation failed"),
-      );
+      mockDocker.createContainer = jest
+        .fn()
+        .mockRejectedValue(new Error("Container creation failed"));
       const progressCallback = jest.fn();
 
       await expect(
@@ -377,9 +395,10 @@ describe("DockerExecutorService", () => {
     });
 
     it("should work without progress callback", async () => {
-      const result = await dockerExecutorService.executeContainerWithProgress(
-        containerOptions,
-      );
+      const result =
+        await dockerExecutorService.executeContainerWithProgress(
+          containerOptions,
+        );
 
       expect(result.exitCode).toBe(0);
     });
@@ -395,7 +414,8 @@ describe("DockerExecutorService", () => {
         },
       });
 
-      const result = await dockerExecutorService.getContainerStatus("container-123");
+      const result =
+        await dockerExecutorService.getContainerStatus("container-123");
 
       expect(result).toEqual({
         status: "running",
@@ -408,9 +428,9 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container not found", async () => {
-      mockContainer.inspect = jest.fn().mockRejectedValue(
-        new Error("No such container"),
-      );
+      mockContainer.inspect = jest
+        .fn()
+        .mockRejectedValue(new Error("No such container"));
 
       await expect(
         dockerExecutorService.getContainerStatus("nonexistent"),
@@ -454,7 +474,9 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle stop/kill errors", async () => {
-      mockContainer.stop = jest.fn().mockRejectedValue(new Error("Stop failed"));
+      mockContainer.stop = jest
+        .fn()
+        .mockRejectedValue(new Error("Stop failed"));
 
       await expect(
         dockerExecutorService.stopContainer("container-123"),
@@ -474,7 +496,10 @@ describe("DockerExecutorService", () => {
     it("should create client with Windows named pipe", () => {
       const host = "npipe:////./pipe/docker_engine";
 
-      const client = (dockerExecutorService as any).createDockerClient(host, "1.41");
+      const client = (dockerExecutorService as any).createDockerClient(
+        host,
+        "1.41",
+      );
 
       expect(Docker).toHaveBeenCalledWith({
         socketPath: "//./pipe/docker_engine",
@@ -541,7 +566,10 @@ describe("DockerExecutorService", () => {
     it("should handle API version with v prefix", () => {
       const host = "unix:///var/run/docker.sock";
 
-      const client = (dockerExecutorService as any).createDockerClient(host, "v1.41");
+      const client = (dockerExecutorService as any).createDockerClient(
+        host,
+        "v1.41",
+      );
 
       expect(Docker).toHaveBeenCalledWith({
         socketPath: "/var/run/docker.sock",
@@ -552,7 +580,10 @@ describe("DockerExecutorService", () => {
     it("should add v prefix to API version", () => {
       const host = "unix:///var/run/docker.sock";
 
-      const client = (dockerExecutorService as any).createDockerClient(host, "1.41");
+      const client = (dockerExecutorService as any).createDockerClient(
+        host,
+        "1.41",
+      );
 
       expect(Docker).toHaveBeenCalledWith({
         socketPath: "/var/run/docker.sock",
@@ -581,7 +612,8 @@ describe("DockerExecutorService", () => {
         env: { TEST: "value" },
       };
 
-      const resultPromise = dockerExecutorService.executeContainer(containerOptions);
+      const resultPromise =
+        dockerExecutorService.executeContainer(containerOptions);
 
       // Simulate stdout data
       const stdoutData = Buffer.alloc(8 + 6); // Header + "stdout"
@@ -615,7 +647,8 @@ describe("DockerExecutorService", () => {
         env: { TEST: "value" },
       };
 
-      const resultPromise = dockerExecutorService.executeContainer(containerOptions);
+      const resultPromise =
+        dockerExecutorService.executeContainer(containerOptions);
 
       // Simulate malformed data (too small)
       const malformedData = Buffer.alloc(4); // Too small for header
@@ -644,7 +677,8 @@ describe("DockerExecutorService", () => {
         env: { TEST: "value" },
       };
 
-      const resultPromise = dockerExecutorService.executeContainer(containerOptions);
+      const resultPromise =
+        dockerExecutorService.executeContainer(containerOptions);
 
       // Simulate unknown stream type
       const unknownData = Buffer.alloc(8 + 4); // Header + "test"
@@ -665,7 +699,9 @@ describe("DockerExecutorService", () => {
   describe("container lifecycle", () => {
     it("should handle attach failure", async () => {
       mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
-      mockContainer.attach = jest.fn().mockRejectedValue(new Error("Attach failed"));
+      mockContainer.attach = jest
+        .fn()
+        .mockRejectedValue(new Error("Attach failed"));
 
       const result = await dockerExecutorService.executeContainer({
         image: "test:latest",

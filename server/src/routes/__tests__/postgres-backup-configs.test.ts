@@ -12,7 +12,9 @@ const mockBackupConfigService = {
 };
 
 jest.mock("../../services/backup-config", () => ({
-  BackupConfigService: jest.fn().mockImplementation(() => mockBackupConfigService),
+  BackupConfigService: jest
+    .fn()
+    .mockImplementation(() => mockBackupConfigService),
 }));
 
 // Mock Prisma
@@ -102,7 +104,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     };
 
     it("should return backup configuration successfully", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(mockBackupConfig);
+      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(
+        mockBackupConfig,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backup-configs/db-123")
@@ -114,14 +118,15 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         data: mockBackupConfig,
       });
 
-      expect(mockBackupConfigService.getBackupConfigByDatabaseId).toHaveBeenCalledWith(
-        "db-123",
-        "test-user-id",
-      );
+      expect(
+        mockBackupConfigService.getBackupConfigByDatabaseId,
+      ).toHaveBeenCalledWith("db-123", "test-user-id");
     });
 
     it("should return 404 when backup config not found", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(null);
+      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(
+        null,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backup-configs/nonexistent")
@@ -182,7 +187,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     };
 
     it("should create backup configuration successfully", async () => {
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(mockCreatedConfig);
+      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+        mockCreatedConfig,
+      );
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
@@ -263,7 +270,10 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         new Error("Invalid cron expression"),
       );
 
-      const invalidCronRequest = { ...validCreateRequest, schedule: "invalid cron" };
+      const invalidCronRequest = {
+        ...validCreateRequest,
+        schedule: "invalid cron",
+      };
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
@@ -279,7 +289,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
     it("should handle Azure container validation failure", async () => {
       mockBackupConfigService.createBackupConfig.mockRejectedValue(
-        new Error("Azure container 'invalid-container' is not accessible: Container not found"),
+        new Error(
+          "Azure container 'invalid-container' is not accessible: Container not found",
+        ),
       );
 
       const response = await request(app)
@@ -306,7 +318,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         nextScheduledAt: null,
       };
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(mockConfigWithoutSchedule);
+      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+        mockConfigWithoutSchedule,
+      );
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
@@ -446,7 +460,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
       };
 
       mockBackupConfigService.createBackupConfig.mockRejectedValue(
-        new Error("Azure container name must be 3-63 characters, contain only lowercase letters, numbers, and hyphens"),
+        new Error(
+          "Azure container name must be 3-63 characters, contain only lowercase letters, numbers, and hyphens",
+        ),
       );
 
       const response = await request(app)
@@ -472,7 +488,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .post("/api/postgres/backup-configs")
         .send({})
         .expect(401);
-      await request(app).delete("/api/postgres/backup-configs/config-123").expect(401);
+      await request(app)
+        .delete("/api/postgres/backup-configs/config-123")
+        .expect(401);
     });
   });
 
@@ -553,9 +571,11 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
   describe("error handling", () => {
     it("should handle unexpected errors", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockImplementation(() => {
-        throw new Error("Unexpected error");
-      });
+      mockBackupConfigService.getBackupConfigByDatabaseId.mockImplementation(
+        () => {
+          throw new Error("Unexpected error");
+        },
+      );
 
       const response = await request(app)
         .get("/api/postgres/backup-configs/db-123")
@@ -690,7 +710,9 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
       };
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(mockMinimalConfig);
+      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+        mockMinimalConfig,
+      );
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")

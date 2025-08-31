@@ -76,7 +76,8 @@ describe("PostgreSQL Backups API", () => {
         startedAt: new Date("2024-01-01T00:00:00Z"),
         completedAt: new Date("2024-01-01T00:05:00Z"),
         sizeBytes: BigInt(1024000),
-        azureBlobUrl: "https://storage.blob.core.windows.net/backups/backup-1.sql",
+        azureBlobUrl:
+          "https://storage.blob.core.windows.net/backups/backup-1.sql",
         errorMessage: null,
         progress: 100,
         metadata: JSON.stringify({ currentStep: "Upload", totalSteps: 3 }),
@@ -97,9 +98,13 @@ describe("PostgreSQL Backups API", () => {
     ];
 
     it("should list backup operations for a database", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.backupOperation.count.mockResolvedValue(2);
-      mockPrismaClient.backupOperation.findMany.mockResolvedValue(mockBackupOperations);
+      mockPrismaClient.backupOperation.findMany.mockResolvedValue(
+        mockBackupOperations,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/test-db-id")
@@ -115,7 +120,8 @@ describe("PostgreSQL Backups API", () => {
         startedAt: "2024-01-01T00:00:00.000Z",
         completedAt: "2024-01-01T00:05:00.000Z",
         sizeBytes: 1024000,
-        azureBlobUrl: "https://storage.blob.core.windows.net/backups/backup-1.sql",
+        azureBlobUrl:
+          "https://storage.blob.core.windows.net/backups/backup-1.sql",
         errorMessage: null,
         progress: 100,
         metadata: { currentStep: "Upload", totalSteps: 3 },
@@ -129,9 +135,13 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle pagination parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.backupOperation.count.mockResolvedValue(50);
-      mockPrismaClient.backupOperation.findMany.mockResolvedValue([mockBackupOperations[0]]);
+      mockPrismaClient.backupOperation.findMany.mockResolvedValue([
+        mockBackupOperations[0],
+      ]);
 
       const response = await request(app)
         .get("/api/postgres/backups/test-db-id?page=2&limit=10")
@@ -153,12 +163,18 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle filter parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.backupOperation.count.mockResolvedValue(1);
-      mockPrismaClient.backupOperation.findMany.mockResolvedValue([mockBackupOperations[0]]);
+      mockPrismaClient.backupOperation.findMany.mockResolvedValue([
+        mockBackupOperations[0],
+      ]);
 
       await request(app)
-        .get("/api/postgres/backups/test-db-id?status=completed&operationType=manual&startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z")
+        .get(
+          "/api/postgres/backups/test-db-id?status=completed&operationType=manual&startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z",
+        )
         .expect(200);
 
       expect(mockPrismaClient.backupOperation.count).toHaveBeenCalledWith({
@@ -175,9 +191,13 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle sort parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.backupOperation.count.mockResolvedValue(2);
-      mockPrismaClient.backupOperation.findMany.mockResolvedValue(mockBackupOperations);
+      mockPrismaClient.backupOperation.findMany.mockResolvedValue(
+        mockBackupOperations,
+      );
 
       await request(app)
         .get("/api/postgres/backups/test-db-id?sortBy=sizeBytes&sortOrder=asc")
@@ -221,7 +241,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle validation errors for query parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/test-db-id?page=0&limit=101&status=invalid")
@@ -231,7 +253,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/test-db-id")
@@ -265,8 +289,12 @@ describe("PostgreSQL Backups API", () => {
     };
 
     it("should trigger manual backup successfully", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
-      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(mockBackupConfig);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(
+        mockBackupConfig,
+      );
       mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
       mockBackupExecutorService.queueBackup.mockResolvedValue(mockQueuedBackup);
 
@@ -284,7 +312,7 @@ describe("PostgreSQL Backups API", () => {
       expect(mockBackupExecutorService.queueBackup).toHaveBeenCalledWith(
         "test-db-id",
         "manual",
-        "test-user-id"
+        "test-user-id",
       );
     });
 
@@ -300,7 +328,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should return 400 if backup configuration not found", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(null);
 
       const response = await request(app)
@@ -309,7 +339,9 @@ describe("PostgreSQL Backups API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Backup configuration required");
-      expect(response.body.message).toBe("Please configure backup settings before creating a backup");
+      expect(response.body.message).toBe(
+        "Please configure backup settings before creating a backup",
+      );
     });
 
     it("should return 409 if backup already in progress", async () => {
@@ -319,9 +351,15 @@ describe("PostgreSQL Backups API", () => {
         databaseId: "test-db-id",
       };
 
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
-      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(mockBackupConfig);
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(runningBackup);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(
+        mockBackupConfig,
+      );
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        runningBackup,
+      );
 
       const response = await request(app)
         .post("/api/postgres/backups/test-db-id/manual")
@@ -329,7 +367,9 @@ describe("PostgreSQL Backups API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Backup in progress");
-      expect(response.body.message).toBe("A backup is already in progress for this database");
+      expect(response.body.message).toBe(
+        "A backup is already in progress for this database",
+      );
 
       expect(mockPrismaClient.backupOperation.findFirst).toHaveBeenCalledWith({
         where: {
@@ -340,10 +380,16 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle errors from backup executor service", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
-      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(mockBackupConfig);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.backupConfiguration.findFirst.mockResolvedValue(
+        mockBackupConfig,
+      );
       mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
-      mockBackupExecutorService.queueBackup.mockRejectedValue(new Error("Queue service unavailable"));
+      mockBackupExecutorService.queueBackup.mockRejectedValue(
+        new Error("Queue service unavailable"),
+      );
 
       const response = await request(app)
         .post("/api/postgres/backups/test-db-id/manual")
@@ -355,7 +401,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .post("/api/postgres/backups/test-db-id/manual")
@@ -385,7 +433,9 @@ describe("PostgreSQL Backups API", () => {
     };
 
     it("should return backup operation status", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(mockBackupOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        mockBackupOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/status")
@@ -423,10 +473,13 @@ describe("PostgreSQL Backups API", () => {
         progress: 100,
         completedAt: new Date("2024-01-01T00:05:00Z"),
         sizeBytes: BigInt(2048000),
-        azureBlobUrl: "https://storage.blob.core.windows.net/backups/backup-1.sql",
+        azureBlobUrl:
+          "https://storage.blob.core.windows.net/backups/backup-1.sql",
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(completedOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        completedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/status")
@@ -437,7 +490,9 @@ describe("PostgreSQL Backups API", () => {
       expect(response.body.data.progress).toBe(100);
       expect(response.body.data.completedAt).toBe("2024-01-01T00:05:00.000Z");
       expect(response.body.data.sizeBytes).toBe(2048000);
-      expect(response.body.data.azureBlobUrl).toBe("https://storage.blob.core.windows.net/backups/backup-1.sql");
+      expect(response.body.data.azureBlobUrl).toBe(
+        "https://storage.blob.core.windows.net/backups/backup-1.sql",
+      );
     });
 
     it("should return 404 if backup operation not found", async () => {
@@ -473,7 +528,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/status")
@@ -489,7 +546,8 @@ describe("PostgreSQL Backups API", () => {
       id: "backup-1",
       databaseId: "test-db-id",
       status: "completed",
-      azureBlobUrl: "https://storage.blob.core.windows.net/backups/backup-1.sql",
+      azureBlobUrl:
+        "https://storage.blob.core.windows.net/backups/backup-1.sql",
       database: {
         id: "test-db-id",
         userId: "test-user-id",
@@ -497,15 +555,21 @@ describe("PostgreSQL Backups API", () => {
     };
 
     it("should delete backup operation successfully", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(mockBackupOperation);
-      mockPrismaClient.backupOperation.delete.mockResolvedValue(mockBackupOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        mockBackupOperation,
+      );
+      mockPrismaClient.backupOperation.delete.mockResolvedValue(
+        mockBackupOperation,
+      );
 
       const response = await request(app)
         .delete("/api/postgres/backups/backup-1")
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.message).toBe("Backup operation deleted successfully");
+      expect(response.body.message).toBe(
+        "Backup operation deleted successfully",
+      );
 
       expect(mockPrismaClient.backupOperation.delete).toHaveBeenCalledWith({
         where: { id: "backup-1" },
@@ -529,7 +593,9 @@ describe("PostgreSQL Backups API", () => {
         status: "running",
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(runningOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        runningOperation,
+      );
 
       const response = await request(app)
         .delete("/api/postgres/backups/backup-1")
@@ -537,7 +603,9 @@ describe("PostgreSQL Backups API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Backup in progress");
-      expect(response.body.message).toBe("Cannot delete a backup operation that is currently running");
+      expect(response.body.message).toBe(
+        "Cannot delete a backup operation that is currently running",
+      );
 
       expect(mockPrismaClient.backupOperation.delete).not.toHaveBeenCalled();
     });
@@ -548,7 +616,9 @@ describe("PostgreSQL Backups API", () => {
         status: "pending",
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(pendingOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        pendingOperation,
+      );
 
       const response = await request(app)
         .delete("/api/postgres/backups/backup-1")
@@ -559,8 +629,12 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors during deletion", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(mockBackupOperation);
-      mockPrismaClient.backupOperation.delete.mockRejectedValue(new Error("Database delete failed"));
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        mockBackupOperation,
+      );
+      mockPrismaClient.backupOperation.delete.mockRejectedValue(
+        new Error("Database delete failed"),
+      );
 
       const response = await request(app)
         .delete("/api/postgres/backups/backup-1")
@@ -571,7 +645,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors during lookup", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .delete("/api/postgres/backups/backup-1")
@@ -603,7 +679,9 @@ describe("PostgreSQL Backups API", () => {
     };
 
     it("should return detailed progress information", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(mockBackupOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        mockBackupOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
@@ -638,19 +716,23 @@ describe("PostgreSQL Backups API", () => {
         startedAt: startTime,
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(operationWithProgress);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        operationWithProgress,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
         .expect(200);
 
       expect(response.body.data.estimatedCompletion).toBeDefined();
-      
+
       // The estimated completion should be roughly 1 minute in the future
       // (since we're 50% done and it took 1 minute so far)
       const estimatedTime = new Date(response.body.data.estimatedCompletion);
       const expectedTime = new Date(currentTime + 60000);
-      expect(Math.abs(estimatedTime.getTime() - expectedTime.getTime())).toBeLessThan(10000); // Within 10 seconds
+      expect(
+        Math.abs(estimatedTime.getTime() - expectedTime.getTime()),
+      ).toBeLessThan(10000); // Within 10 seconds
     });
 
     it("should not calculate estimated completion for completed operations", async () => {
@@ -661,7 +743,9 @@ describe("PostgreSQL Backups API", () => {
         completedAt: new Date("2024-01-01T00:05:00Z"),
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(completedOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        completedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
@@ -676,7 +760,9 @@ describe("PostgreSQL Backups API", () => {
         progress: 0,
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(zeroProgressOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        zeroProgressOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
@@ -691,7 +777,9 @@ describe("PostgreSQL Backups API", () => {
         metadata: null,
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(operationWithoutMetadata);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        operationWithoutMetadata,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
@@ -712,14 +800,18 @@ describe("PostgreSQL Backups API", () => {
         completedAt: new Date("2024-01-01T00:02:30Z"),
       };
 
-      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(failedOperation);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(
+        failedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")
         .expect(200);
 
       expect(response.body.data.status).toBe("failed");
-      expect(response.body.data.errorMessage).toBe("Connection to database timed out");
+      expect(response.body.data.errorMessage).toBe(
+        "Connection to database timed out",
+      );
       expect(response.body.data.estimatedCompletion).toBeUndefined();
     });
 
@@ -756,7 +848,9 @@ describe("PostgreSQL Backups API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.backupOperation.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/backups/backup-1/progress")

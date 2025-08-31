@@ -45,7 +45,8 @@ const CATEGORY_INFO = {
     name: "PostgreSQL",
     description: "Database backup and restore configuration",
     icon: Database,
-    color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+    color:
+      "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
     path: "/settings/postgres",
   },
 } as const;

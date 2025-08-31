@@ -93,8 +93,10 @@ describe("BackupExecutorService", () => {
 
     // Mock service instances
     (backupExecutorService as any).dockerExecutor = mockDockerExecutor;
-    (backupExecutorService as any).backupConfigService = mockBackupConfigService;
-    (backupExecutorService as any).databaseConfigService = mockDatabaseConfigService;
+    (backupExecutorService as any).backupConfigService =
+      mockBackupConfigService;
+    (backupExecutorService as any).databaseConfigService =
+      mockDatabaseConfigService;
     (backupExecutorService as any).azureConfigService = mockAzureConfigService;
     (backupExecutorService as any).backupQueue = mockQueue;
   });
@@ -102,17 +104,20 @@ describe("BackupExecutorService", () => {
   describe("constructor", () => {
     it("should initialize with Prisma client and create queue", () => {
       expect(backupExecutorService).toBeInstanceOf(BackupExecutorService);
-      expect(Bull).toHaveBeenCalledWith("postgres-backup", expect.objectContaining({
-        defaultJobOptions: expect.objectContaining({
-          attempts: 3,
-          backoff: expect.objectContaining({
-            type: "exponential",
-            delay: 30000,
+      expect(Bull).toHaveBeenCalledWith(
+        "postgres-backup",
+        expect.objectContaining({
+          defaultJobOptions: expect.objectContaining({
+            attempts: 3,
+            backoff: expect.objectContaining({
+              type: "exponential",
+              delay: 30000,
+            }),
+            removeOnComplete: 10,
+            removeOnFail: 50,
           }),
-          removeOnComplete: 10,
-          removeOnFail: 50,
         }),
-      }));
+      );
     });
   });
 
@@ -129,9 +134,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle initialization failure", async () => {
-      mockDockerExecutor.initialize = jest.fn().mockRejectedValue(
-        new Error("Docker initialization failed"),
-      );
+      mockDockerExecutor.initialize = jest
+        .fn()
+        .mockRejectedValue(new Error("Docker initialization failed"));
 
       await expect(backupExecutorService.initialize()).rejects.toThrow(
         "Docker initialization failed",
@@ -177,7 +182,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should create and queue backup operation", async () => {
-      mockPrisma.backupOperation.create = jest.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.create = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperation);
       mockQueue.add = jest.fn().mockResolvedValue({ id: "job-123" });
 
       const result = await backupExecutorService.queueBackup(
@@ -225,7 +232,9 @@ describe("BackupExecutorService", () => {
       // Set as not initialized
       (backupExecutorService as any).isInitialized = false;
 
-      mockPrisma.backupOperation.create = jest.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.create = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperation);
       mockQueue.add = jest.fn().mockResolvedValue({ id: "job-123" });
 
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
@@ -234,9 +243,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle database operation creation failure", async () => {
-      mockPrisma.backupOperation.create = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.create = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         backupExecutorService.queueBackup("db-123", "manual", "user-123"),
@@ -254,7 +263,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle queue add failure", async () => {
-      mockPrisma.backupOperation.create = jest.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.create = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperation);
       mockQueue.add = jest.fn().mockRejectedValue(new Error("Queue error"));
 
       await expect(
@@ -279,9 +290,12 @@ describe("BackupExecutorService", () => {
     };
 
     it("should return backup operation status", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(mockOperation);
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockResolvedValue(mockOperation);
 
-      const result = await backupExecutorService.getBackupStatus("operation-123");
+      const result =
+        await backupExecutorService.getBackupStatus("operation-123");
 
       expect(result).toEqual({
         id: "operation-123",
@@ -307,9 +321,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle database query errors", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         backupExecutorService.getBackupStatus("operation-123"),
@@ -339,7 +353,9 @@ describe("BackupExecutorService", () => {
     };
 
     it("should cancel backup operation successfully", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(mockOperation);
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockResolvedValue(mockOperation);
       mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
       mockQueue.getJobs = jest.fn().mockResolvedValue([mockJob]);
 
@@ -367,7 +383,9 @@ describe("BackupExecutorService", () => {
 
     it("should return false for completed operation", async () => {
       const completedOperation = { ...mockOperation, status: "completed" };
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(completedOperation);
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockResolvedValue(completedOperation);
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
@@ -375,7 +393,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle cancellation when job not in queue", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(mockOperation);
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockResolvedValue(mockOperation);
       mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
       mockQueue.getJobs = jest.fn().mockResolvedValue([]); // No jobs in queue
 
@@ -386,9 +406,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle errors during cancellation", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.findUnique = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
@@ -426,10 +446,18 @@ describe("BackupExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockDatabaseConfigService.getDatabaseById = jest.fn().mockResolvedValue(mockDatabase);
-      mockBackupConfigService.getBackupConfigByDatabaseId = jest.fn().mockResolvedValue(mockBackupConfig);
-      mockDatabaseConfigService.getConnectionConfig = jest.fn().mockResolvedValue(mockConnectionConfig);
-      mockAzureConfigService.get = jest.fn().mockResolvedValue("azure-connection-string");
+      mockDatabaseConfigService.getDatabaseById = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockBackupConfigService.getBackupConfigByDatabaseId = jest
+        .fn()
+        .mockResolvedValue(mockBackupConfig);
+      mockDatabaseConfigService.getConnectionConfig = jest
+        .fn()
+        .mockResolvedValue(mockConnectionConfig);
+      mockAzureConfigService.get = jest
+        .fn()
+        .mockResolvedValue("azure-connection-string");
       mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue({
         value: "postgres:15-alpine",
       });
@@ -438,13 +466,14 @@ describe("BackupExecutorService", () => {
 
     it("should execute backup successfully", async () => {
       // Mock container execution
-      mockDockerExecutor.executeContainerWithProgress = jest.fn()
+      mockDockerExecutor.executeContainerWithProgress = jest
+        .fn()
         .mockImplementation(async (config, progressCallback) => {
           // Simulate progress updates
           await progressCallback({ status: "starting" });
           await progressCallback({ status: "running" });
           await progressCallback({ status: "completed" });
-          
+
           return {
             exitCode: 0,
             stdout: "Backup completed",
@@ -453,18 +482,24 @@ describe("BackupExecutorService", () => {
         });
 
       // Mock Azure verification
-      mockBlobServiceClient.getContainerClient = jest.fn().mockReturnValue(mockContainerClient);
-      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue([
-        {
-          name: "db-backups/testdb/backup-2023-01-01.sql",
-          properties: {
-            createdOn: new Date("2023-01-01T02:00:00Z"),
-            contentLength: 1000000,
+      mockBlobServiceClient.getContainerClient = jest
+        .fn()
+        .mockReturnValue(mockContainerClient);
+      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(
+        [
+          {
+            name: "db-backups/testdb/backup-2023-01-01.sql",
+            properties: {
+              createdOn: new Date("2023-01-01T02:00:00Z"),
+              contentLength: 1000000,
+            },
           },
-        },
-      ][Symbol.asyncIterator]());
+        ][Symbol.asyncIterator](),
+      );
 
-      mockBackupConfigService.updateLastBackupTime = jest.fn().mockResolvedValue(undefined);
+      mockBackupConfigService.updateLastBackupTime = jest
+        .fn()
+        .mockResolvedValue(undefined);
 
       // Test the private executeBackup method through queueBackup
       mockPrisma.backupOperation.create = jest.fn().mockResolvedValue({
@@ -486,14 +521,21 @@ describe("BackupExecutorService", () => {
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
       // Verify the queue processor was called with correct function
-      expect(mockQueue.process).toHaveBeenCalledWith("execute-backup", expect.any(Function));
+      expect(mockQueue.process).toHaveBeenCalledWith(
+        "execute-backup",
+        expect.any(Function),
+      );
     });
   });
 
   describe("verifyBackupInAzure", () => {
     beforeEach(() => {
-      mockAzureConfigService.get = jest.fn().mockResolvedValue("azure-connection-string");
-      mockBlobServiceClient.getContainerClient = jest.fn().mockReturnValue(mockContainerClient);
+      mockAzureConfigService.get = jest
+        .fn()
+        .mockResolvedValue("azure-connection-string");
+      mockBlobServiceClient.getContainerClient = jest
+        .fn()
+        .mockReturnValue(mockContainerClient);
     });
 
     it("should verify backup files exist", async () => {
@@ -507,16 +549,18 @@ describe("BackupExecutorService", () => {
         },
       ];
 
-      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(
-        mockBlobs[Symbol.asyncIterator](),
-      );
+      mockContainerClient.listBlobsFlat = jest
+        .fn()
+        .mockReturnValue(mockBlobs[Symbol.asyncIterator]());
 
       // Mock today's date
       const fixedDate = new Date("2023-01-01T12:00:00Z");
       const originalDate = global.Date;
       global.Date = jest.fn(() => fixedDate) as any;
       global.Date.prototype = originalDate.prototype;
-      global.Date.prototype.toISOString = jest.fn(() => "2023-01-01T12:00:00.000Z");
+      global.Date.prototype.toISOString = jest.fn(
+        () => "2023-01-01T12:00:00.000Z",
+      );
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -534,9 +578,9 @@ describe("BackupExecutorService", () => {
     });
 
     it("should return error when no backup files found", async () => {
-      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(
-        [][Symbol.asyncIterator](),
-      );
+      mockContainerClient.listBlobsFlat = jest
+        .fn()
+        .mockReturnValue([][Symbol.asyncIterator]());
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -583,7 +627,9 @@ describe("BackupExecutorService", () => {
         value: "custom-postgres:latest",
       });
 
-      const result = await (backupExecutorService as any).getBackupDockerImage();
+      const result = await (
+        backupExecutorService as any
+      ).getBackupDockerImage();
 
       expect(result).toBe("custom-postgres:latest");
       expect(mockPrisma.systemSettings.findFirst).toHaveBeenCalledWith({
@@ -597,7 +643,9 @@ describe("BackupExecutorService", () => {
     it("should return default image when setting not found", async () => {
       mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue(null);
 
-      const result = await (backupExecutorService as any).getBackupDockerImage();
+      const result = await (
+        backupExecutorService as any
+      ).getBackupDockerImage();
 
       expect(result).toBe("postgres:15-alpine");
     });
@@ -607,17 +655,21 @@ describe("BackupExecutorService", () => {
         value: null,
       });
 
-      const result = await (backupExecutorService as any).getBackupDockerImage();
+      const result = await (
+        backupExecutorService as any
+      ).getBackupDockerImage();
 
       expect(result).toBe("postgres:15-alpine");
     });
 
     it("should handle database query errors", async () => {
-      mockPrisma.systemSettings.findFirst = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.systemSettings.findFirst = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
-      const result = await (backupExecutorService as any).getBackupDockerImage();
+      const result = await (
+        backupExecutorService as any
+      ).getBackupDockerImage();
 
       expect(result).toBe("postgres:15-alpine");
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -633,11 +685,14 @@ describe("BackupExecutorService", () => {
     it("should update progress successfully", async () => {
       mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
 
-      await (backupExecutorService as any).updateBackupProgress("operation-123", {
-        status: "running",
-        progress: 75,
-        message: "Uploading to Azure",
-      });
+      await (backupExecutorService as any).updateBackupProgress(
+        "operation-123",
+        {
+          status: "running",
+          progress: 75,
+          message: "Uploading to Azure",
+        },
+      );
 
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith({
         where: { id: "operation-123" },
@@ -662,10 +717,13 @@ describe("BackupExecutorService", () => {
     it("should set completedAt when status is completed", async () => {
       mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
 
-      await (backupExecutorService as any).updateBackupProgress("operation-123", {
-        status: "completed",
-        progress: 100,
-      });
+      await (backupExecutorService as any).updateBackupProgress(
+        "operation-123",
+        {
+          status: "completed",
+          progress: 100,
+        },
+      );
 
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith({
         where: { id: "operation-123" },
@@ -679,16 +737,19 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle update errors gracefully", async () => {
-      mockPrisma.backupOperation.update = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.update = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       // Should not throw, just log error
-      await (backupExecutorService as any).updateBackupProgress("operation-123", {
-        status: "failed",
-        progress: 0,
-        errorMessage: "Test error",
-      });
+      await (backupExecutorService as any).updateBackupProgress(
+        "operation-123",
+        {
+          status: "failed",
+          progress: 0,
+          errorMessage: "Test error",
+        },
+      );
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
@@ -741,13 +802,16 @@ describe("BackupExecutorService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl: "https://example.blob.core.windows.net/container/backup.sql",
+        azureBlobUrl:
+          "https://example.blob.core.windows.net/container/backup.sql",
         errorMessage: null,
         progress: 100,
         metadata: '{"duration": 3600}',
       };
 
-      const result = (backupExecutorService as any).mapBackupOperationToInfo(operation);
+      const result = (backupExecutorService as any).mapBackupOperationToInfo(
+        operation,
+      );
 
       expect(result).toEqual({
         id: "operation-123",
@@ -757,7 +821,8 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: "2023-01-01T01:00:00.000Z",
         sizeBytes: 1000000,
-        azureBlobUrl: "https://example.blob.core.windows.net/container/backup.sql",
+        azureBlobUrl:
+          "https://example.blob.core.windows.net/container/backup.sql",
         errorMessage: null,
         progress: 100,
         metadata: { duration: 3600 },
@@ -779,7 +844,9 @@ describe("BackupExecutorService", () => {
         metadata: null,
       };
 
-      const result = (backupExecutorService as any).mapBackupOperationToInfo(operation);
+      const result = (backupExecutorService as any).mapBackupOperationToInfo(
+        operation,
+      );
 
       expect(result).toEqual({
         id: "operation-123",
@@ -820,7 +887,10 @@ describe("BackupExecutorService", () => {
   describe("queue event handling", () => {
     it("should setup queue event handlers", () => {
       // Constructor should have set up event handlers
-      expect(mockQueue.on).toHaveBeenCalledWith("completed", expect.any(Function));
+      expect(mockQueue.on).toHaveBeenCalledWith(
+        "completed",
+        expect.any(Function),
+      );
       expect(mockQueue.on).toHaveBeenCalledWith("failed", expect.any(Function));
     });
 
@@ -833,9 +903,9 @@ describe("BackupExecutorService", () => {
 
       // Get the completed handler and call it
       const completedHandler = mockQueue.on.mock.calls.find(
-        call => call[0] === "completed"
+        (call) => call[0] === "completed",
       )?.[1];
-      
+
       if (completedHandler) {
         completedHandler(mockJob, result);
 
@@ -859,9 +929,9 @@ describe("BackupExecutorService", () => {
 
       // Get the failed handler and call it
       const failedHandler = mockQueue.on.mock.calls.find(
-        call => call[0] === "failed"
+        (call) => call[0] === "failed",
       )?.[1];
-      
+
       if (failedHandler) {
         failedHandler(mockJob, error);
 

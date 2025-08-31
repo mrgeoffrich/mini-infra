@@ -99,9 +99,13 @@ describe("PostgreSQL Restore API", () => {
     };
 
     it("should initiate restore operation successfully", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
-      mockRestoreExecutorService.queueRestore.mockResolvedValue(mockQueuedRestore);
+      mockRestoreExecutorService.queueRestore.mockResolvedValue(
+        mockQueuedRestore,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -123,7 +127,7 @@ describe("PostgreSQL Restore API", () => {
       expect(mockRestoreExecutorService.queueRestore).toHaveBeenCalledWith(
         "test-db-id",
         "https://storage.blob.core.windows.net/backups/backup.sql",
-        "test-user-id"
+        "test-user-id",
       );
     });
 
@@ -143,7 +147,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should return 400 if confirmation not provided", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -154,11 +160,15 @@ describe("PostgreSQL Restore API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Confirmation required");
-      expect(response.body.message).toBe("Restore operations require explicit confirmation. Set confirmRestore to true.");
+      expect(response.body.message).toBe(
+        "Restore operations require explicit confirmation. Set confirmRestore to true.",
+      );
     });
 
     it("should return 400 if confirmation is false", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -179,8 +189,12 @@ describe("PostgreSQL Restore API", () => {
         databaseId: "test-db-id",
       };
 
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(runningRestore);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        runningRestore,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -192,7 +206,9 @@ describe("PostgreSQL Restore API", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Restore in progress");
-      expect(response.body.message).toBe("A restore is already in progress for this database");
+      expect(response.body.message).toBe(
+        "A restore is already in progress for this database",
+      );
 
       expect(mockPrismaClient.restoreOperation.findFirst).toHaveBeenCalledWith({
         where: {
@@ -203,7 +219,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should return 400 for invalid backup URL", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -218,7 +236,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should return 400 for missing backup URL", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -232,9 +252,13 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle errors from restore executor service", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
-      mockRestoreExecutorService.queueRestore.mockRejectedValue(new Error("Queue service unavailable"));
+      mockRestoreExecutorService.queueRestore.mockRejectedValue(
+        new Error("Queue service unavailable"),
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -250,7 +274,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -283,7 +309,9 @@ describe("PostgreSQL Restore API", () => {
     };
 
     it("should return restore operation status", async () => {
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(mockRestoreOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        mockRestoreOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/status")
@@ -321,7 +349,9 @@ describe("PostgreSQL Restore API", () => {
         completedAt: new Date("2024-01-01T00:15:00Z"),
       };
 
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(completedOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        completedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/status")
@@ -366,7 +396,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.restoreOperation.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.restoreOperation.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/status")
@@ -414,13 +446,15 @@ describe("PostgreSQL Restore API", () => {
     };
 
     beforeEach(() => {
-      mockAzureConfigService.get.mockResolvedValue("DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key;EndpointSuffix=core.windows.net");
+      mockAzureConfigService.get.mockResolvedValue(
+        "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key;EndpointSuffix=core.windows.net",
+      );
       mockContainerClient.getBlobClient.mockReturnValue(mockBlobClient);
     });
 
     it("should list available backups", async () => {
       const mockAsyncIterable = {
-        async* [Symbol.asyncIterator]() {
+        async *[Symbol.asyncIterator]() {
           for (const blob of mockBlobs) {
             yield blob;
           }
@@ -454,7 +488,7 @@ describe("PostgreSQL Restore API", () => {
 
     it("should handle pagination parameters", async () => {
       const mockAsyncIterable = {
-        async* [Symbol.asyncIterator]() {
+        async *[Symbol.asyncIterator]() {
           for (const blob of mockBlobs) {
             yield blob;
           }
@@ -478,7 +512,7 @@ describe("PostgreSQL Restore API", () => {
 
     it("should handle filter parameters", async () => {
       const mockAsyncIterable = {
-        async* [Symbol.asyncIterator]() {
+        async *[Symbol.asyncIterator]() {
           for (const blob of mockBlobs) {
             yield blob;
           }
@@ -488,17 +522,22 @@ describe("PostgreSQL Restore API", () => {
       mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
 
       const response = await request(app)
-        .get("/api/postgres/restore/backups/test-container?createdAfter=2024-01-01T12:00:00Z&sizeMin=1500000")
+        .get(
+          "/api/postgres/restore/backups/test-container?createdAfter=2024-01-01T12:00:00Z&sizeMin=1500000",
+        )
         .expect(200);
 
       expect(response.body.data).toHaveLength(1);
-      expect(response.body.data[0].name).toBe("testdb/backup_2024-01-02_00-00-00.dump");
+      expect(response.body.data[0].name).toBe(
+        "testdb/backup_2024-01-02_00-00-00.dump",
+      );
     });
 
     it("should handle sort parameters", async () => {
       const mockAsyncIterable = {
-        async* [Symbol.asyncIterator]() {
-          for (const blob of mockBlobs.reverse()) { // Reverse order to test sorting
+        async *[Symbol.asyncIterator]() {
+          for (const blob of mockBlobs.reverse()) {
+            // Reverse order to test sorting
             yield blob;
           }
         },
@@ -507,7 +546,9 @@ describe("PostgreSQL Restore API", () => {
       mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
 
       const response = await request(app)
-        .get("/api/postgres/restore/backups/test-container?sortBy=sizeBytes&sortOrder=asc")
+        .get(
+          "/api/postgres/restore/backups/test-container?sortBy=sizeBytes&sortOrder=asc",
+        )
         .expect(200);
 
       expect(response.body.data[0].sizeBytes).toBe(1024000);
@@ -530,7 +571,7 @@ describe("PostgreSQL Restore API", () => {
       ];
 
       const mockAsyncIterable = {
-        async* [Symbol.asyncIterator]() {
+        async *[Symbol.asyncIterator]() {
           for (const blob of mixedBlobs) {
             yield blob;
           }
@@ -572,7 +613,9 @@ describe("PostgreSQL Restore API", () => {
 
     it("should handle validation errors for query parameters", async () => {
       const response = await request(app)
-        .get("/api/postgres/restore/backups/test-container?page=0&limit=101&sizeMin=-1")
+        .get(
+          "/api/postgres/restore/backups/test-container?page=0&limit=101&sizeMin=-1",
+        )
         .expect(500);
 
       expect(response.body.success).toBe(false);
@@ -610,9 +653,13 @@ describe("PostgreSQL Restore API", () => {
     ];
 
     it("should list restore operations for a database", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.count.mockResolvedValue(2);
-      mockPrismaClient.restoreOperation.findMany.mockResolvedValue(mockRestoreOperations);
+      mockPrismaClient.restoreOperation.findMany.mockResolvedValue(
+        mockRestoreOperations,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/test-db-id/operations")
@@ -639,9 +686,13 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle pagination parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.count.mockResolvedValue(50);
-      mockPrismaClient.restoreOperation.findMany.mockResolvedValue([mockRestoreOperations[0]]);
+      mockPrismaClient.restoreOperation.findMany.mockResolvedValue([
+        mockRestoreOperations[0],
+      ]);
 
       const response = await request(app)
         .get("/api/postgres/restore/test-db-id/operations?page=2&limit=10")
@@ -663,12 +714,18 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle filter parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.count.mockResolvedValue(1);
-      mockPrismaClient.restoreOperation.findMany.mockResolvedValue([mockRestoreOperations[0]]);
+      mockPrismaClient.restoreOperation.findMany.mockResolvedValue([
+        mockRestoreOperations[0],
+      ]);
 
       await request(app)
-        .get("/api/postgres/restore/test-db-id/operations?status=completed&startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z")
+        .get(
+          "/api/postgres/restore/test-db-id/operations?status=completed&startedAfter=2024-01-01T00:00:00Z&startedBefore=2024-01-02T00:00:00Z",
+        )
         .expect(200);
 
       expect(mockPrismaClient.restoreOperation.count).toHaveBeenCalledWith({
@@ -684,12 +741,18 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle sort parameters", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(mockDatabase);
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
       mockPrismaClient.restoreOperation.count.mockResolvedValue(2);
-      mockPrismaClient.restoreOperation.findMany.mockResolvedValue(mockRestoreOperations);
+      mockPrismaClient.restoreOperation.findMany.mockResolvedValue(
+        mockRestoreOperations,
+      );
 
       await request(app)
-        .get("/api/postgres/restore/test-db-id/operations?sortBy=progress&sortOrder=asc")
+        .get(
+          "/api/postgres/restore/test-db-id/operations?sortBy=progress&sortOrder=asc",
+        )
         .expect(200);
 
       expect(mockPrismaClient.restoreOperation.findMany).toHaveBeenCalledWith({
@@ -730,7 +793,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.postgresDatabase.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/test-db-id/operations")
@@ -758,7 +823,9 @@ describe("PostgreSQL Restore API", () => {
     };
 
     it("should return detailed progress information", async () => {
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(mockRestoreOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        mockRestoreOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")
@@ -786,19 +853,23 @@ describe("PostgreSQL Restore API", () => {
         startedAt: startTime,
       };
 
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(operationWithProgress);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        operationWithProgress,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")
         .expect(200);
 
       expect(response.body.data.estimatedCompletion).toBeDefined();
-      
+
       // The estimated completion should be roughly 1 minute in the future
       // (since we're 50% done and it took 1 minute so far)
       const estimatedTime = new Date(response.body.data.estimatedCompletion);
       const expectedTime = new Date(currentTime + 60000);
-      expect(Math.abs(estimatedTime.getTime() - expectedTime.getTime())).toBeLessThan(10000); // Within 10 seconds
+      expect(
+        Math.abs(estimatedTime.getTime() - expectedTime.getTime()),
+      ).toBeLessThan(10000); // Within 10 seconds
     });
 
     it("should not calculate estimated completion for completed operations", async () => {
@@ -809,7 +880,9 @@ describe("PostgreSQL Restore API", () => {
         completedAt: new Date("2024-01-01T00:15:00Z"),
       };
 
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(completedOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        completedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")
@@ -824,7 +897,9 @@ describe("PostgreSQL Restore API", () => {
         progress: 0,
       };
 
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(zeroProgressOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        zeroProgressOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")
@@ -842,14 +917,18 @@ describe("PostgreSQL Restore API", () => {
         completedAt: new Date("2024-01-01T00:08:00Z"),
       };
 
-      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(failedOperation);
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(
+        failedOperation,
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")
         .expect(200);
 
       expect(response.body.data.status).toBe("failed");
-      expect(response.body.data.errorMessage).toBe("Database connection failed during restore");
+      expect(response.body.data.errorMessage).toBe(
+        "Database connection failed during restore",
+      );
       expect(response.body.data.estimatedCompletion).toBeUndefined();
     });
 
@@ -886,7 +965,9 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle database errors", async () => {
-      mockPrismaClient.restoreOperation.findFirst.mockRejectedValue(new Error("Database connection failed"));
+      mockPrismaClient.restoreOperation.findFirst.mockRejectedValue(
+        new Error("Database connection failed"),
+      );
 
       const response = await request(app)
         .get("/api/postgres/restore/restore-1/progress")

@@ -91,14 +91,17 @@ describe("ProgressTrackerService", () => {
       sizeBytes: BigInt(1000000),
       azureBlobUrl: null,
       errorMessage: null,
-      metadata: '{"currentStep": "uploading", "totalSteps": 5, "completedSteps": 3}',
+      metadata:
+        '{"currentStep": "uploading", "totalSteps": 5, "completedSteps": 3}',
       database: {
         name: "test-db",
       },
     };
 
     it("should return backup operation progress", async () => {
-      mockPrisma.backupOperation.findFirst = jest.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperation);
 
       const result = await progressTrackerService.getBackupProgress(
         "operation-123",
@@ -156,7 +159,9 @@ describe("ProgressTrackerService", () => {
         metadata: "invalid-json",
       };
 
-      mockPrisma.backupOperation.findFirst = jest.fn().mockResolvedValue(operationWithInvalidMetadata);
+      mockPrisma.backupOperation.findFirst = jest
+        .fn()
+        .mockResolvedValue(operationWithInvalidMetadata);
 
       const result = await progressTrackerService.getBackupProgress(
         "operation-123",
@@ -171,9 +176,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle database query errors", async () => {
-      mockPrisma.backupOperation.findFirst = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.findFirst = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         progressTrackerService.getBackupProgress("operation-123", "user-123"),
@@ -206,7 +211,9 @@ describe("ProgressTrackerService", () => {
     };
 
     it("should return restore operation progress", async () => {
-      mockPrisma.restoreOperation.findFirst = jest.fn().mockResolvedValue(mockRestoreOperation);
+      mockPrisma.restoreOperation.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockRestoreOperation);
 
       const result = await progressTrackerService.getRestoreProgress(
         "operation-456",
@@ -269,10 +276,15 @@ describe("ProgressTrackerService", () => {
     ];
 
     it("should return active operations for user", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue(mockActiveBackups);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue(mockActiveRestores);
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockActiveBackups);
+      mockPrisma.restoreOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockActiveRestores);
 
-      const result = await progressTrackerService.getActiveOperations("user-123");
+      const result =
+        await progressTrackerService.getActiveOperations("user-123");
 
       expect(result.backupOperations).toHaveLength(1);
       expect(result.restoreOperations).toHaveLength(1);
@@ -298,9 +310,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle query errors", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         progressTrackerService.getActiveOperations("user-123"),
@@ -319,7 +331,8 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl: "https://account.blob.core.windows.net/backups/backup.sql",
+        azureBlobUrl:
+          "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: null,
         database: { name: "test-db-1" },
@@ -341,8 +354,12 @@ describe("ProgressTrackerService", () => {
     ];
 
     it("should return operation history with all operations", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue(mockBackupOperations);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue(mockRestoreOperations);
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperations);
+      mockPrisma.restoreOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockRestoreOperations);
 
       const result = await progressTrackerService.getOperationHistory({
         userId: "user-123",
@@ -360,7 +377,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should filter by operation type", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue(mockBackupOperations);
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperations);
       mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
 
       const result = await progressTrackerService.getOperationHistory({
@@ -375,7 +394,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should filter by database ID", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue(mockBackupOperations);
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(mockBackupOperations);
       mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
 
       await progressTrackerService.getOperationHistory({
@@ -443,16 +464,23 @@ describe("ProgressTrackerService", () => {
         operationType: "manual",
         status: "completed",
         progress: 100,
-        startedAt: new Date(`2023-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`),
-        completedAt: new Date(`2023-01-${String(i + 1).padStart(2, "0")}T01:00:00Z`),
+        startedAt: new Date(
+          `2023-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+        ),
+        completedAt: new Date(
+          `2023-01-${String(i + 1).padStart(2, "0")}T01:00:00Z`,
+        ),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl: "https://account.blob.core.windows.net/backups/backup.sql",
+        azureBlobUrl:
+          "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: null,
         database: { name: "test-db" },
       }));
 
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue(manyOperations);
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockResolvedValue(manyOperations);
       mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
       mockPrisma.backupOperation.count = jest.fn().mockResolvedValue(60);
       mockPrisma.restoreOperation.count = jest.fn().mockResolvedValue(0);
@@ -468,9 +496,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle query errors", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupOperation.findMany = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         progressTrackerService.getOperationHistory({}),
@@ -587,11 +615,13 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should clean up old operations successfully", async () => {
-      mockPrisma.backupOperation.deleteMany = jest.fn()
+      mockPrisma.backupOperation.deleteMany = jest
+        .fn()
         .mockResolvedValueOnce({ count: 5 }) // Completed operations
         .mockResolvedValueOnce({ count: 3 }); // Failed operations
 
-      mockPrisma.restoreOperation.deleteMany = jest.fn()
+      mockPrisma.restoreOperation.deleteMany = jest
+        .fn()
         .mockResolvedValueOnce({ count: 2 }) // Completed operations
         .mockResolvedValueOnce({ count: 1 }); // Failed operations
 
@@ -634,8 +664,12 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should not log when no operations are cleaned up", async () => {
-      mockPrisma.backupOperation.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
-      mockPrisma.restoreOperation.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+      mockPrisma.backupOperation.deleteMany = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
+      mockPrisma.restoreOperation.deleteMany = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
 
       const result = await progressTrackerService.cleanupOldOperations();
 
@@ -654,9 +688,9 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle cleanup errors", async () => {
-      mockPrisma.backupOperation.deleteMany = jest.fn().mockRejectedValue(
-        new Error("Delete error"),
-      );
+      mockPrisma.backupOperation.deleteMany = jest
+        .fn()
+        .mockRejectedValue(new Error("Delete error"));
 
       await expect(
         progressTrackerService.cleanupOldOperations(),
@@ -685,8 +719,12 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should execute cleanup periodically", async () => {
-      mockPrisma.backupOperation.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
-      mockPrisma.restoreOperation.deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+      mockPrisma.backupOperation.deleteMany = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
+      mockPrisma.restoreOperation.deleteMany = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
 
       await progressTrackerService.initialize();
 
@@ -694,16 +732,16 @@ describe("ProgressTrackerService", () => {
       jest.advanceTimersByTime(60 * 60 * 1000); // 1 hour
 
       // Wait for async cleanup to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockPrisma.backupOperation.deleteMany).toHaveBeenCalled();
       expect(mockPrisma.restoreOperation.deleteMany).toHaveBeenCalled();
     });
 
     it("should handle periodic cleanup errors gracefully", async () => {
-      mockPrisma.backupOperation.deleteMany = jest.fn().mockRejectedValue(
-        new Error("Periodic cleanup error"),
-      );
+      mockPrisma.backupOperation.deleteMany = jest
+        .fn()
+        .mockRejectedValue(new Error("Periodic cleanup error"));
 
       await progressTrackerService.initialize();
 
@@ -711,7 +749,7 @@ describe("ProgressTrackerService", () => {
       jest.advanceTimersByTime(60 * 60 * 1000);
 
       // Wait for async cleanup to complete
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
@@ -760,13 +798,16 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl: "https://account.blob.core.windows.net/backups/backup.sql",
+        azureBlobUrl:
+          "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: '{"currentStep": "completed", "totalSteps": 5}',
         database: { name: "test-db" },
       };
 
-      const result = (progressTrackerService as any).mapBackupOperationToProgress(operation);
+      const result = (
+        progressTrackerService as any
+      ).mapBackupOperationToProgress(operation);
 
       expect(result).toEqual({
         id: "backup-123",
@@ -798,7 +839,9 @@ describe("ProgressTrackerService", () => {
         database: { name: "restore-db" },
       };
 
-      const result = (progressTrackerService as any).mapRestoreOperationToProgress(operation);
+      const result = (
+        progressTrackerService as any
+      ).mapRestoreOperationToProgress(operation);
 
       expect(result).toEqual({
         id: "restore-456",
@@ -827,7 +870,9 @@ describe("ProgressTrackerService", () => {
         database: { name: "failed-db" },
       };
 
-      const result = (progressTrackerService as any).mapBackupOperationToHistoryItem(operation);
+      const result = (
+        progressTrackerService as any
+      ).mapBackupOperationToHistoryItem(operation);
 
       expect(result).toEqual({
         id: "backup-789",
@@ -857,7 +902,9 @@ describe("ProgressTrackerService", () => {
         database: { name: "restored-db" },
       };
 
-      const result = (progressTrackerService as any).mapRestoreOperationToHistoryItem(operation);
+      const result = (
+        progressTrackerService as any
+      ).mapRestoreOperationToHistoryItem(operation);
 
       expect(result).toEqual({
         id: "restore-789",
@@ -885,7 +932,10 @@ describe("ProgressTrackerService", () => {
         progress: 0,
       };
 
-      progressTrackerService.broadcastProgressUpdate("backup", updateWithoutMessage);
+      progressTrackerService.broadcastProgressUpdate(
+        "backup",
+        updateWithoutMessage,
+      );
 
       expect(failedListener).toHaveBeenCalledWith({
         type: "backup",

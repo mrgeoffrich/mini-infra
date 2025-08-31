@@ -84,8 +84,12 @@ describe("BackupConfigService", () => {
     });
 
     it("should create backup configuration successfully", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       const mockCreatedConfig = {
         id: "config-123",
@@ -103,7 +107,9 @@ describe("BackupConfigService", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest.fn().mockResolvedValue(mockCreatedConfig);
+      mockPrisma.backupConfiguration.create = jest
+        .fn()
+        .mockResolvedValue(mockCreatedConfig);
 
       const result = await backupConfigService.createBackupConfig(
         "db-123",
@@ -146,58 +152,98 @@ describe("BackupConfigService", () => {
       mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
 
       await expect(
-        backupConfigService.createBackupConfig("nonexistent", validConfig, "user-123"),
+        backupConfigService.createBackupConfig(
+          "nonexistent",
+          validConfig,
+          "user-123",
+        ),
       ).rejects.toThrow("Database not found or access denied");
     });
 
     it("should throw error for unauthorized database access", async () => {
       const unauthorizedDb = { ...mockDatabase, userId: "other-user" };
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(unauthorizedDb);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(unauthorizedDb);
 
       await expect(
-        backupConfigService.createBackupConfig("db-123", validConfig, "user-123"),
+        backupConfigService.createBackupConfig(
+          "db-123",
+          validConfig,
+          "user-123",
+        ),
       ).rejects.toThrow("Database not found or access denied");
     });
 
     it("should throw error for existing backup configuration", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
       mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue({
         id: "existing-config",
       });
 
       await expect(
-        backupConfigService.createBackupConfig("db-123", validConfig, "user-123"),
-      ).rejects.toThrow("Backup configuration already exists for this database");
+        backupConfigService.createBackupConfig(
+          "db-123",
+          validConfig,
+          "user-123",
+        ),
+      ).rejects.toThrow(
+        "Backup configuration already exists for this database",
+      );
     });
 
     it("should throw error for invalid cron expression", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(false);
 
       const invalidConfig = { ...validConfig, schedule: "invalid cron" };
 
       await expect(
-        backupConfigService.createBackupConfig("db-123", invalidConfig, "user-123"),
+        backupConfigService.createBackupConfig(
+          "db-123",
+          invalidConfig,
+          "user-123",
+        ),
       ).rejects.toThrow("Invalid cron expression");
     });
 
     it("should throw error for inaccessible Azure container", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
       mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
       });
 
       await expect(
-        backupConfigService.createBackupConfig("db-123", validConfig, "user-123"),
-      ).rejects.toThrow("Azure container 'test-backups' is not accessible: Container not found");
+        backupConfigService.createBackupConfig(
+          "db-123",
+          validConfig,
+          "user-123",
+        ),
+      ).rejects.toThrow(
+        "Azure container 'test-backups' is not accessible: Container not found",
+      );
     });
 
     it("should validate required fields", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       const invalidConfigs = [
         { ...validConfig, azureContainerName: "" },
@@ -210,14 +256,22 @@ describe("BackupConfigService", () => {
 
       for (const invalidConfig of invalidConfigs) {
         await expect(
-          backupConfigService.createBackupConfig("db-123", invalidConfig, "user-123"),
+          backupConfigService.createBackupConfig(
+            "db-123",
+            invalidConfig,
+            "user-123",
+          ),
         ).rejects.toThrow();
       }
     });
 
     it("should create configuration without schedule", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       const configWithoutSchedule = {
         azureContainerName: "test-backups",
@@ -240,7 +294,9 @@ describe("BackupConfigService", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest.fn().mockResolvedValue(mockCreatedConfig);
+      mockPrisma.backupConfiguration.create = jest
+        .fn()
+        .mockResolvedValue(mockCreatedConfig);
 
       const result = await backupConfigService.createBackupConfig(
         "db-123",
@@ -253,8 +309,12 @@ describe("BackupConfigService", () => {
     });
 
     it("should create disabled configuration with no next scheduled time", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       const disabledConfig = { ...validConfig, isEnabled: false };
 
@@ -274,7 +334,9 @@ describe("BackupConfigService", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest.fn().mockResolvedValue(mockCreatedConfig);
+      mockPrisma.backupConfiguration.create = jest
+        .fn()
+        .mockResolvedValue(mockCreatedConfig);
 
       const result = await backupConfigService.createBackupConfig(
         "db-123",
@@ -318,7 +380,9 @@ describe("BackupConfigService", () => {
     });
 
     it("should update backup configuration successfully", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(existingConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(existingConfig);
 
       const updatedConfig = {
         ...existingConfig,
@@ -327,7 +391,9 @@ describe("BackupConfigService", () => {
         updatedAt: new Date("2023-01-01T01:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.update = jest.fn().mockResolvedValue(updatedConfig);
+      mockPrisma.backupConfiguration.update = jest
+        .fn()
+        .mockResolvedValue(updatedConfig);
 
       const result = await backupConfigService.updateBackupConfig(
         "config-123",
@@ -353,10 +419,16 @@ describe("BackupConfigService", () => {
     });
 
     it("should throw error for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       await expect(
-        backupConfigService.updateBackupConfig("nonexistent", updateData, "user-123"),
+        backupConfigService.updateBackupConfig(
+          "nonexistent",
+          updateData,
+          "user-123",
+        ),
       ).rejects.toThrow("Backup configuration not found");
     });
 
@@ -365,26 +437,42 @@ describe("BackupConfigService", () => {
         ...existingConfig,
         database: { ...existingConfig.database, userId: "other-user" },
       };
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(unauthorizedConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(unauthorizedConfig);
 
       await expect(
-        backupConfigService.updateBackupConfig("config-123", updateData, "user-123"),
-      ).rejects.toThrow("Access denied: You can only update backup configurations for your own databases");
+        backupConfigService.updateBackupConfig(
+          "config-123",
+          updateData,
+          "user-123",
+        ),
+      ).rejects.toThrow(
+        "Access denied: You can only update backup configurations for your own databases",
+      );
     });
 
     it("should validate cron expression on update", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(existingConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(existingConfig);
       mockCron.validate.mockReturnValue(false);
 
       const invalidUpdate = { schedule: "invalid cron" };
 
       await expect(
-        backupConfigService.updateBackupConfig("config-123", invalidUpdate, "user-123"),
+        backupConfigService.updateBackupConfig(
+          "config-123",
+          invalidUpdate,
+          "user-123",
+        ),
       ).rejects.toThrow("Invalid cron expression");
     });
 
     it("should validate Azure container on update", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(existingConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(existingConfig);
       mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
@@ -393,12 +481,18 @@ describe("BackupConfigService", () => {
       const updateWithContainer = { azureContainerName: "new-container" };
 
       await expect(
-        backupConfigService.updateBackupConfig("config-123", updateWithContainer, "user-123"),
+        backupConfigService.updateBackupConfig(
+          "config-123",
+          updateWithContainer,
+          "user-123",
+        ),
       ).rejects.toThrow("Azure container 'new-container' is not accessible");
     });
 
     it("should validate retention days and compression level", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(existingConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(existingConfig);
 
       const invalidUpdates = [
         { retentionDays: 0 },
@@ -408,13 +502,19 @@ describe("BackupConfigService", () => {
 
       for (const invalidUpdate of invalidUpdates) {
         await expect(
-          backupConfigService.updateBackupConfig("config-123", invalidUpdate, "user-123"),
+          backupConfigService.updateBackupConfig(
+            "config-123",
+            invalidUpdate,
+            "user-123",
+          ),
         ).rejects.toThrow();
       }
     });
 
     it("should handle schedule removal", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(existingConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(existingConfig);
 
       const updatedConfig = {
         ...existingConfig,
@@ -423,7 +523,9 @@ describe("BackupConfigService", () => {
         updatedAt: new Date(),
       };
 
-      mockPrisma.backupConfiguration.update = jest.fn().mockResolvedValue(updatedConfig);
+      mockPrisma.backupConfiguration.update = jest
+        .fn()
+        .mockResolvedValue(updatedConfig);
 
       const result = await backupConfigService.updateBackupConfig(
         "config-123",
@@ -457,7 +559,9 @@ describe("BackupConfigService", () => {
     };
 
     it("should return backup configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(mockConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(mockConfig);
 
       const result = await backupConfigService.getBackupConfigByDatabaseId(
         "db-123",
@@ -482,7 +586,9 @@ describe("BackupConfigService", () => {
     });
 
     it("should return null for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       const result = await backupConfigService.getBackupConfigByDatabaseId(
         "nonexistent",
@@ -497,7 +603,9 @@ describe("BackupConfigService", () => {
         ...mockConfig,
         database: { userId: "other-user" },
       };
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(unauthorizedConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(unauthorizedConfig);
 
       const result = await backupConfigService.getBackupConfigByDatabaseId(
         "db-123",
@@ -518,7 +626,9 @@ describe("BackupConfigService", () => {
     };
 
     it("should delete backup configuration successfully", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(mockConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(mockConfig);
       mockPrisma.backupConfiguration.delete = jest.fn().mockResolvedValue({});
 
       await backupConfigService.deleteBackupConfig("config-123", "user-123");
@@ -538,7 +648,9 @@ describe("BackupConfigService", () => {
     });
 
     it("should throw error for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
 
       await expect(
         backupConfigService.deleteBackupConfig("nonexistent", "user-123"),
@@ -550,7 +662,9 @@ describe("BackupConfigService", () => {
         ...mockConfig,
         database: { userId: "other-user" },
       };
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(unauthorizedConfig);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(unauthorizedConfig);
 
       await expect(
         backupConfigService.deleteBackupConfig("config-123", "user-123"),
@@ -591,7 +705,8 @@ describe("BackupConfigService", () => {
     it("should calculate next scheduled time for valid cron", () => {
       mockCron.validate.mockReturnValue(true);
 
-      const result = backupConfigService.calculateNextScheduledTime("0 2 * * *");
+      const result =
+        backupConfigService.calculateNextScheduledTime("0 2 * * *");
 
       expect(result).toBeInstanceOf(Date);
       expect(result!.getMinutes()).toBe(0);
@@ -615,7 +730,8 @@ describe("BackupConfigService", () => {
         throw new Error("Date error");
       }) as any;
 
-      const result = backupConfigService.calculateNextScheduledTime("0 2 * * *");
+      const result =
+        backupConfigService.calculateNextScheduledTime("0 2 * * *");
 
       expect(result).toBeNull();
       expect(mockLogger.error).toHaveBeenCalled();
@@ -649,9 +765,9 @@ describe("BackupConfigService", () => {
     });
 
     it("should handle update errors", async () => {
-      mockPrisma.backupConfiguration.update = jest.fn().mockRejectedValue(
-        new Error("Database error"),
-      );
+      mockPrisma.backupConfiguration.update = jest
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
 
       await expect(
         backupConfigService.updateLastBackupTime("config-123"),
@@ -703,8 +819,12 @@ describe("BackupConfigService", () => {
     const mockDatabase = { id: "db-123", userId: "user-123" };
 
     beforeEach(() => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
       mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: true,
@@ -843,9 +963,9 @@ describe("BackupConfigService", () => {
 
   describe("error handling and logging", () => {
     it("should log and rethrow database errors", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockRejectedValue(
-        new Error("Database connection failed"),
-      );
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockRejectedValue(new Error("Database connection failed"));
 
       await expect(
         backupConfigService.createBackupConfig(
@@ -867,13 +987,17 @@ describe("BackupConfigService", () => {
 
     it("should handle Azure service errors", async () => {
       const mockDatabase = { id: "db-123", userId: "user-123" };
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest
+        .fn()
+        .mockResolvedValue(mockDatabase);
+      mockPrisma.backupConfiguration.findUnique = jest
+        .fn()
+        .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
 
-      mockAzureConfigService.testContainerAccess = jest.fn().mockRejectedValue(
-        new Error("Azure service unavailable"),
-      );
+      mockAzureConfigService.testContainerAccess = jest
+        .fn()
+        .mockRejectedValue(new Error("Azure service unavailable"));
 
       await expect(
         backupConfigService.createBackupConfig(
