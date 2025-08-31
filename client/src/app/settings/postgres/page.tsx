@@ -105,6 +105,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import type {
   PostgresDatabaseInfo,
   CreatePostgresDatabaseRequest,
@@ -1640,6 +1641,9 @@ export default function PostgresSettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Progress Indicators for Active Operations and History */}
+        <ProgressIndicators showDatabaseSelector={true} defaultTab="active" />
       </div>
 
       <DatabaseModal

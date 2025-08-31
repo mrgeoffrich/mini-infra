@@ -606,3 +606,22 @@ export interface RestoreOperationProgress {
   backupUrl: string;
   metadata?: Record<string, any>;
 }
+
+// ====================
+// Operation History Types
+// ====================
+
+export interface OperationHistoryItem {
+  id: string;
+  type: "backup" | "restore";
+  databaseId: string;
+  databaseName?: string;
+  status: BackupOperationStatus | RestoreOperationStatus;
+  progress: number;
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string | null;
+  operationType?: string; // For backup operations: "manual" | "scheduled"
+  backupUrl?: string; // For restore operations
+  sizeBytes?: number | null; // For backup operations
+}
