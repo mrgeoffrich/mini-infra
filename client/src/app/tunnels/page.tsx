@@ -1,5 +1,11 @@
 import { TunnelStatus } from "@/components/cloudflare/tunnel-status";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Settings } from "lucide-react";
@@ -45,17 +51,19 @@ export function TunnelsPage() {
             <CardContent>
               <div className="flex flex-col gap-4 text-sm">
                 <div>
-                  <strong>Tunnel Status:</strong> Each tunnel shows its current health status - 
-                  healthy (green), degraded (yellow), inactive (gray), or down (red).
+                  <strong>Tunnel Status:</strong> Each tunnel shows its current
+                  health status - healthy (green), degraded (yellow), inactive
+                  (gray), or down (red).
                 </div>
                 <div>
-                  <strong>Connections:</strong> Active connections display client information, 
-                  version, and connection timestamps.
+                  <strong>Connections:</strong> Active connections display
+                  client information, version, and connection timestamps.
                 </div>
                 <div>
-                  <strong>Configuration:</strong> Manage your Cloudflare API settings in the{" "}
-                  <Link 
-                    to="/settings/cloudflare" 
+                  <strong>Configuration:</strong> Manage your Cloudflare API
+                  settings in the{" "}
+                  <Link
+                    to="/settings/cloudflare"
                     className="text-blue-600 hover:underline"
                   >
                     Cloudflare settings page

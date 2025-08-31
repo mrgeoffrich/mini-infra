@@ -539,7 +539,6 @@ export default function CloudflareSettingsPage() {
                 </CardContent>
               </Card>
             )}
-
           </div>
         </div>
 
@@ -549,7 +548,8 @@ export default function CloudflareSettingsPage() {
             <CardHeader>
               <CardTitle>Tunnel Management</CardTitle>
               <CardDescription>
-                View and monitor your Cloudflare tunnel connections, configurations, and routing rules
+                View and monitor your Cloudflare tunnel connections,
+                configurations, and routing rules
               </CardDescription>
             </CardHeader>
             <CardContent>

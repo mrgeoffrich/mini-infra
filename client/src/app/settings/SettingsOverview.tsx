@@ -41,6 +41,13 @@ const CATEGORY_INFO = {
     color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
     path: "/settings/azure",
   },
+  postgres: {
+    name: "PostgreSQL",
+    description: "Database backup and restore configuration",
+    icon: Database,
+    color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+    path: "/settings/postgres",
+  },
 } as const;
 
 // Map connectivity status to badge variants
@@ -135,20 +142,7 @@ export function SettingsOverview() {
     );
   }
 
-  const settings = settingsData?.data || [];
   const connectivityStatuses = connectivityData?.data || [];
-
-  // Group settings by category
-  const settingsByCategory = settings.reduce(
-    (acc, setting) => {
-      if (!acc[setting.category as SettingsCategory]) {
-        acc[setting.category as SettingsCategory] = [];
-      }
-      acc[setting.category as SettingsCategory].push(setting);
-      return acc;
-    },
-    {} as Record<SettingsCategory, typeof settings>,
-  );
 
   // Get latest connectivity status for each service
   const latestConnectivity = connectivityStatuses.reduce(
@@ -182,7 +176,6 @@ export function SettingsOverview() {
           {(Object.keys(CATEGORY_INFO) as SettingsCategory[]).map(
             (category) => {
               const info = CATEGORY_INFO[category];
-              const categorySettings = settingsByCategory[category] || [];
               const connectivity = latestConnectivity[category];
               const Icon = info.icon;
               const StatusIcon = connectivity

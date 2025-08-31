@@ -181,6 +181,7 @@ const serviceLabels = {
   docker: "Docker",
   cloudflare: "Cloudflare",
   azure: "Azure Storage",
+  postgres: "PostgreSQL",
 } as const;
 
 export function ServiceStatusCard({
