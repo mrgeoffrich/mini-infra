@@ -450,7 +450,7 @@
 
 **Goal:** Create frontend interface for browsing and restoring backups
 
-**Status:** Not Started
+**Status:** Done
 
 **Tasks:**
 
