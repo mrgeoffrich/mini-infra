@@ -47,7 +47,7 @@ const CATEGORY_INFO = {
     icon: Database,
     color:
       "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-    path: "/settings/postgres",
+    path: "/postgres",
   },
 } as const;
 
@@ -188,6 +188,9 @@ export function SettingsOverview() {
                     ?.color || "text-gray-600"
                 : "text-gray-600";
 
+              // PostgreSQL doesn't have a single connectivity indicator since there can be multiple databases
+              const showConnectivity = category !== "postgres";
+
               return (
                 <Card key={category} className="relative">
                   <CardHeader>
@@ -206,29 +209,31 @@ export function SettingsOverview() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Connectivity Status */}
-                    <div className="flex items-center justify-between text-sm">
-                      <span>Connectivity</span>
-                      {connectivity ? (
-                        <div className="flex items-center gap-1">
-                          <StatusIcon className={`h-4 w-4 ${statusColor}`} />
-                          <Badge
-                            variant={
-                              STATUS_VARIANTS[
-                                connectivity.status as ConnectivityStatusType
-                              ]?.variant || "outline"
-                            }
-                          >
-                            {connectivity.status}
-                          </Badge>
-                        </div>
-                      ) : (
-                        <Badge variant="outline">Unknown</Badge>
-                      )}
-                    </div>
+                    {/* Connectivity Status - only show for non-PostgreSQL services */}
+                    {showConnectivity && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span>Connectivity</span>
+                        {connectivity ? (
+                          <div className="flex items-center gap-1">
+                            <StatusIcon className={`h-4 w-4 ${statusColor}`} />
+                            <Badge
+                              variant={
+                                STATUS_VARIANTS[
+                                  connectivity.status as ConnectivityStatusType
+                                ]?.variant || "outline"
+                              }
+                            >
+                              {connectivity.status}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <Badge variant="outline">Unknown</Badge>
+                        )}
+                      </div>
+                    )}
 
-                    {/* Last checked */}
-                    {connectivity && (
+                    {/* Last checked - only show for services with connectivity */}
+                    {showConnectivity && connectivity && (
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Last checked</span>
                         <span>
@@ -237,8 +242,8 @@ export function SettingsOverview() {
                       </div>
                     )}
 
-                    {/* Response time */}
-                    {connectivity?.responseTimeMs && (
+                    {/* Response time - only show for services with connectivity */}
+                    {showConnectivity && connectivity?.responseTimeMs && (
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Response time</span>
                         <span>{connectivity.responseTimeMs}ms</span>

@@ -10,7 +10,7 @@ import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
 import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
 import AzureSettingsPage from "@/app/settings/azure/page";
-import PostgresSettingsPage from "@/app/settings/postgres/page";
+import PostgresPage from "@/app/postgres/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 
 export const router = createBrowserRouter([
@@ -47,8 +47,8 @@ export const router = createBrowserRouter([
         element: <ContainersPage />,
       },
       {
-        path: "databases",
-        element: <div>Database Management - Coming Soon</div>,
+        path: "postgres",
+        element: <PostgresPage />,
       },
       {
         path: "deployments",
@@ -81,10 +81,6 @@ export const router = createBrowserRouter([
       {
         path: "settings/azure",
         element: <AzureSettingsPage />,
-      },
-      {
-        path: "settings/postgres",
-        element: <PostgresSettingsPage />,
       },
     ],
   },

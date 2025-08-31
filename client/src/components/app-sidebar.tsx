@@ -43,8 +43,8 @@ const data = {
       icon: IconBrandDocker,
     },
     {
-      title: "Databases",
-      url: "/databases",
+      title: "PostgreSQL",
+      url: "/postgres",
       icon: IconDatabase,
     },
     {
@@ -79,11 +79,6 @@ const data = {
       title: "Azure Storage",
       url: "/settings/azure",
       icon: IconCloud,
-    },
-    {
-      title: "PostgreSQL Management",
-      url: "/settings/postgres",
-      icon: IconDatabase,
     },
   ],
 };

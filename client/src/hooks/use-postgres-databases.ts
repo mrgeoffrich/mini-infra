@@ -187,7 +187,7 @@ async function testDatabaseConnection(
   request: TestDatabaseConnectionRequest,
   correlationId: string,
 ): Promise<DatabaseConnectionTestResponse> {
-  const response = await fetch(`/api/postgres/test-connection`, {
+  const response = await fetch(`/api/postgres/databases/test-connection`, {
     method: "POST",
     credentials: "include",
     headers: {

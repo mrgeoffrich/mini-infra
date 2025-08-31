@@ -1,8 +1,8 @@
 import { useState } from "react";
+import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -80,12 +80,12 @@ import {
   useBackupBrowserFilters,
   usePostgresRestoreOperationFilters,
 } from "@/hooks/use-postgres-restore-operations";
+import { useAzureContainers } from "@/hooks/use-azure-settings";
 import {
   Database,
   CheckCircle,
   XCircle,
   AlertCircle,
-  ArrowLeft,
   TestTube,
   Loader2,
   Eye,
@@ -551,12 +551,18 @@ function BackupConfigurationModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const isEditing = !!backupConfig;
 
   const createMutation = useCreatePostgresBackupConfig();
   const updateMutation = useUpdatePostgresBackupConfig();
   const deleteMutation = useDeletePostgresBackupConfig();
   const manualBackupMutation = useCreateManualBackup();
+
+  // Fetch Azure containers for dropdown
+  const { data: azureContainersResponse, isLoading: containersLoading } = useAzureContainers({
+    enabled: isOpen, // Only fetch when modal is open
+  });
 
   const form = useForm<BackupConfigFormData>({
     resolver: zodResolver(backupConfigSchema),
@@ -574,6 +580,7 @@ function BackupConfigurationModal({
   });
 
   const onSubmit = async (data: BackupConfigFormData) => {
+    setSubmitError(null);
     try {
       if (isEditing && backupConfig) {
         const updateData: UpdateBackupConfigurationRequest = data;
@@ -592,11 +599,8 @@ function BackupConfigurationModal({
       }
       onClose();
     } catch (error) {
-      toast.error(
-        `Failed to ${isEditing ? "update" : "create"} backup configuration: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      setSubmitError(errorMessage);
     }
   };
 
@@ -632,6 +636,13 @@ function BackupConfigurationModal({
     }
   };
 
+  // Clear error when modal opens/closes
+  React.useEffect(() => {
+    if (isOpen) {
+      setSubmitError(null);
+    }
+  }, [isOpen]);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
@@ -643,6 +654,18 @@ function BackupConfigurationModal({
             Configure automated backups for {database.name}
           </DialogDescription>
         </DialogHeader>
+
+        {submitError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {submitError.includes("container") || submitError.includes("Azure") 
+                ? `Azure Storage Error: ${submitError}. Please ensure the Azure Storage account is configured and the container exists.`
+                : submitError
+              }
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -718,18 +741,48 @@ function BackupConfigurationModal({
               <FormField
                 control={form.control}
                 name="azureContainerName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Azure Container Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="postgres-backups" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Azure Storage container for backups
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const containers = azureContainersResponse?.data?.containers || [];
+                  
+                  return (
+                    <FormItem>
+                      <FormLabel>Container</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={containersLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={
+                              containersLoading 
+                                ? "Loading containers..." 
+                                : containers.length === 0
+                                ? "No containers available"
+                                : "Select container"
+                            } />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {containers.map((container) => (
+                            <SelectItem key={container.name} value={container.name}>
+                              {container.name}
+                            </SelectItem>
+                          ))}
+                          {containers.length === 0 && !containersLoading && (
+                            <SelectItem value="" disabled>
+                              No containers found
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Azure Storage container for backups
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
 
               {/* Path Prefix */}
@@ -1333,7 +1386,7 @@ function RestoreBrowserModal({
   );
 }
 
-export default function PostgresSettingsPage() {
+export default function PostgresPage() {
   const [selectedDatabase, setSelectedDatabase] =
     useState<PostgresDatabaseInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1463,16 +1516,6 @@ export default function PostgresSettingsPage() {
   if (error) {
     return (
       <div className="container mx-auto px-6 py-8">
-        <div className="flex items-center gap-4 mb-8">
-          <Link
-            to="/settings"
-            className="flex items-center text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Settings
-          </Link>
-        </div>
-
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -1485,16 +1528,6 @@ export default function PostgresSettingsPage() {
 
   return (
     <div className="container mx-auto px-6 py-8">
-      <div className="flex items-center gap-4 mb-8">
-        <Link
-          to="/settings"
-          className="flex items-center text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Settings
-        </Link>
-      </div>
-
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>

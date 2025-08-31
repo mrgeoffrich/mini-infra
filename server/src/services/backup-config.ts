@@ -453,9 +453,7 @@ export class BackupConfigService {
       throw new Error("Azure container name is required");
     }
 
-    if (!config.azurePathPrefix || config.azurePathPrefix.trim() === "") {
-      throw new Error("Azure path prefix is required");
-    }
+    // Azure path prefix can be empty (root of container)
 
     // Validate container name format
     const containerNamePattern = /^[a-z0-9]([a-z0-9\-])*[a-z0-9]$/;
