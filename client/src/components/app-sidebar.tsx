@@ -80,6 +80,11 @@ const data = {
       url: "/settings/azure",
       icon: IconCloud,
     },
+    {
+      title: "PostgreSQL Management",
+      url: "/settings/postgres",
+      icon: IconDatabase,
+    },
   ],
 };
 

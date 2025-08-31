@@ -239,13 +239,8 @@ export function useDeletePostgresBackupConfig() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: ({
-      id,
-      databaseId: _,
-    }: {
-      id: string;
-      databaseId: string;
-    }) => deletePostgresBackupConfig(id, correlationId),
+    mutationFn: ({ id }: { id: string; databaseId: string }) =>
+      deletePostgresBackupConfig(id, correlationId),
     onSuccess: (_, { databaseId }) => {
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({

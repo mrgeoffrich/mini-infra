@@ -386,13 +386,8 @@ export function useDeleteBackupOperation() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: ({
-      backupId,
-      databaseId: _,
-    }: {
-      backupId: string;
-      databaseId: string;
-    }) => deleteBackupOperation(backupId, correlationId),
+    mutationFn: ({ backupId }: { backupId: string; databaseId: string }) =>
+      deleteBackupOperation(backupId, correlationId),
     onSuccess: (_, { databaseId, backupId }) => {
       // Invalidate and refetch backup operations list
       queryClient.invalidateQueries({
