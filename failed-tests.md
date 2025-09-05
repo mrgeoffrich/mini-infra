@@ -39,15 +39,20 @@ Updated the `hashApiKey` function in `api-key-service.ts` to read the API key se
 
 ---
 
-## 3. `src/services/__tests__/docker.test.ts`
+## 3. `src/services/__tests__/docker.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Docker constructor not being called** - Mock Docker constructor expected to be called with socket path but wasn't called at all
-- **Container operations failing** - Multiple container-related operations not working as expected
+### Issues Fixed:
+- **Docker constructor not being called** - Fixed mock configuration for DockerConfigService to provide required host and API version settings
+- **Container operations failing** - Updated mock setup to properly initialize Docker client with correct configuration  
+- **Config mocking incorrect** - Fixed test to mock the correct config file (`config-new.ts` instead of `config.ts`) for cache TTL validation
 
-### Failed Tests:
-1. `DockerService › Singleton Pattern › should initialize Docker client with correct configuration`
-2. Multiple other Docker service tests (output truncated)
+### Previously Failed Tests (Now Passing):
+1. `DockerService › Singleton Pattern › should initialize Docker client with correct configuration` ✅
+2. `DockerService › Singleton Pattern › should initialize cache with correct TTL` ✅
+3. All other Docker service tests (35 total tests passing) ✅
+
+### Fix Summary:
+Updated the Docker service test mocks to properly configure DockerConfigService with valid host and API version settings, and corrected the config mock to target the proper configuration file used by the service.
 
 ---
 

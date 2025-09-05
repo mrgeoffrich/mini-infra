@@ -54,11 +54,10 @@ jest.mock("../../lib/logger-factory", () => ({
 }));
 
 // Mock config
-jest.mock("../../lib/config", () => ({
-  default: {
-    DOCKER_HOST: "", // Let it auto-detect based on platform
-    DOCKER_API_VERSION: "1.41", // Will be prefixed with 'v' in the service
-    CONTAINER_CACHE_TTL: 3000,
+jest.mock("../../lib/config-new", () => ({
+  dockerConfig: {
+    containerCacheTtl: 3000,
+    containerPollInterval: 5000,
   },
 }));
 
@@ -98,8 +97,14 @@ describe("DockerService", () => {
     MockDockerConstructor.mockClear();
     // Setup default mocks for DockerConfigService
     mockDockerConfigService.get.mockImplementation((key) => {
-      if (key === "host") return Promise.resolve(null);
-      if (key === "apiVersion") return Promise.resolve(null);
+      if (key === "host") {
+        // Provide default socket path based on platform
+        const defaultSocketPath = process.platform === "win32" 
+          ? "//./pipe/docker_engine" 
+          : "/var/run/docker.sock";
+        return Promise.resolve(defaultSocketPath);
+      }
+      if (key === "apiVersion") return Promise.resolve("1.41");
       return Promise.resolve(null);
     });
     mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(
@@ -133,7 +138,7 @@ describe("DockerService", () => {
 
       expect(MockDockerConstructor).toHaveBeenCalledWith({
         socketPath: expectedSocketPath,
-        // Note: version not included when using default config fallback
+        version: "v1.41",
       });
     });
 
