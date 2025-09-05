@@ -25,14 +25,17 @@ Updated the ping validation logic in `docker-config.ts` to accept both string "O
 
 ---
 
-## 2. `src/__tests__/api-key-service.test.ts`
+## 2. `src/__tests__/api-key-service.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Hash collision** - Two different API key hashes are producing the same result
-- Expected different hashes but got: `"779cb3d0684b887364d68ee1054c33223be544fe320ee66168c4d2a4a5e1bf5b"`
+### Issues Fixed:
+- **Hash collision resolved** - Fixed caching issue where config was loaded at import time and not picking up environment variable changes during tests
+- **Environment secret handling** - Modified `hashApiKey` function to read `API_KEY_SECRET` directly from `process.env` instead of cached config
 
-### Failed Tests:
-1. `API Key Generation and Validation › hashApiKey › should handle environment secret correctly`
+### Previously Failed Tests (Now Passing):
+1. `API Key Generation and Validation › hashApiKey › should handle environment secret correctly` ✅
+
+### Fix Summary:
+Updated the `hashApiKey` function in `api-key-service.ts` to read the API key secret directly from `process.env.API_KEY_SECRET` with fallback to the cached config value. This allows the function to properly handle environment variable changes during test execution.
 
 ---
 

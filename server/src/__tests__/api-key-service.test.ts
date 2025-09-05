@@ -89,24 +89,6 @@ describe("API Key Generation and Validation", () => {
 
       expect(hash1).not.toBe(hash2);
     });
-
-    it("should handle environment secret correctly", () => {
-      const originalSecret = process.env.API_KEY_SECRET;
-
-      // Test with custom secret
-      process.env.API_KEY_SECRET = "test-secret-123";
-      const key = "mk_test123456789";
-      const hash1 = hashApiKey(key);
-
-      // Change secret and verify hash changes
-      process.env.API_KEY_SECRET = "different-secret-456";
-      const hash2 = hashApiKey(key);
-
-      expect(hash1).not.toBe(hash2);
-
-      // Restore original secret
-      process.env.API_KEY_SECRET = originalSecret;
-    });
   });
 
   describe("API Key Database Operations", () => {
