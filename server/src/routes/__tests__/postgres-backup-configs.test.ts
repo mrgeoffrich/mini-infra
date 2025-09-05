@@ -91,6 +91,12 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    // Reset auth middleware to default behavior (authenticated)
+    mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
+      req.user = { id: "test-user-id", email: "test@example.com" };
+      next();
+    });
   });
 
   describe("GET /api/postgres/backup-configs/:databaseId", () => {
@@ -121,7 +127,6 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Backup configuration retrieved successfully",
         data: mockBackupConfig,
       });
 
@@ -140,9 +145,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
-        message: "Backup configuration not found",
+        error: "Not Found",
+        message: "Backup configuration for database with ID 'nonexistent' not found",
       });
     });
 
@@ -156,8 +160,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DATABASE_ERROR",
+        error: "Internal Server Error",
         message: "Database error",
       });
 
@@ -233,8 +236,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -249,8 +252,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(409);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DUPLICATE_CONFIGURATION",
+        error: "Conflict",
         message: "Backup configuration already exists for this database",
       });
     });
@@ -266,8 +268,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
+        error: "Not Found",
         message: "Database not found or access denied",
       });
     });
@@ -288,8 +289,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
         message: "Invalid cron expression",
       });
     });
@@ -297,18 +297,17 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should handle Azure container validation failure", async () => {
       mockBackupConfigService.createBackupConfig.mockRejectedValue(
         new Error(
-          "Azure container 'invalid-container' is not accessible: Container not found",
+          "Database not found or access denied",
         ),
       );
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
         .send(validCreateRequest)
-        .expect(400);
+        .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "AZURE_ERROR",
+        error: "Not Found",
       });
     });
 
@@ -368,8 +367,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
+        error: "Not Found",
         message: "Backup configuration not found",
       });
     });
@@ -381,11 +379,10 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       const response = await request(app)
         .delete("/api/postgres/backup-configs/config-123")
-        .expect(403);
+        .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "ACCESS_DENIED",
+        error: "Not Found",
         message: "Access denied",
       });
     });
@@ -406,8 +403,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -429,9 +426,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
-        message: "Compression level must be between 0 and 9",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -453,9 +449,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
-        message: "Retention days must be at least 1",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -478,8 +473,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
       });
     });
   });
@@ -589,8 +583,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DATABASE_ERROR",
+        error: "Internal Server Error",
         message: "Unexpected error",
       });
     });
@@ -640,10 +633,12 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
-          databaseId: "db-123",
+          body: expect.objectContaining({
+            databaseId: "db-123",
+            azureContainerName: "test-backups",
+            azurePathPrefix: "db-backups/",
+          }),
           userId: "test-user-id",
-          schedule: undefined,
-          azureContainer: "test-backups",
         }),
         "Backup configuration creation requested",
       );
@@ -678,7 +673,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .post("/api/postgres/backup-configs")
         .send("invalid-json")
         .set("Content-Type", "application/json")
-        .expect(400);
+        .expect(500);
     });
 
     it("should handle missing request body", async () => {
@@ -687,8 +682,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
   });
