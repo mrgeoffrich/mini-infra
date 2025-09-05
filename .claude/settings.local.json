@@ -29,7 +29,8 @@
       "Write",
       "Bash(npm start)",
       "Read(C:\\c\\Repos\\mini-infra/**)",
-      "Read(//c/c/Repos/mini-infra/server/**)"
+      "Read(//c/c/Repos/mini-infra/server/**)",
+      "mcp__context7__resolve-library-id"
     ],
     "deny": [],
     "ask": [],
