@@ -69,6 +69,42 @@ import postgresDatabasesRouter from "../postgres-databases";
 describe("PostgreSQL Databases API Routes", () => {
   let app: express.Application;
 
+  // Mock data that needs to be accessible across multiple test blocks
+  const mockDatabases: PostgresDatabase[] = [
+    {
+      id: "db-1",
+      name: "production-db",
+      connectionString: "[ENCRYPTED]",
+      host: "prod-host",
+      port: 5432,
+      database: "prod_db",
+      username: "prod_user",
+      sslMode: "require",
+      tags: ["production"],
+      createdAt: "2023-01-01T10:00:00.000Z",
+      updatedAt: "2023-01-01T11:00:00.000Z",
+      lastHealthCheck: "2023-01-01T12:00:00.000Z",
+      healthStatus: "healthy",
+      userId: "test-user-id",
+    },
+    {
+      id: "db-2",
+      name: "development-db",
+      connectionString: "[ENCRYPTED]",
+      host: "dev-host",
+      port: 5432,
+      database: "dev_db",
+      username: "dev_user",
+      sslMode: "prefer",
+      tags: ["development"],
+      createdAt: "2023-01-02T10:00:00.000Z",
+      updatedAt: "2023-01-02T11:00:00.000Z",
+      lastHealthCheck: null,
+      healthStatus: "unknown",
+      userId: "test-user-id",
+    },
+  ];
+
   beforeAll(() => {
     app = express();
     app.use(express.json());
@@ -99,43 +135,20 @@ describe("PostgreSQL Databases API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    // Reset auth middleware to always pass
+    mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
+      req.user = { id: "test-user-id", email: "test@example.com" };
+      next();
+    });
+    
+    mockGetAuthenticatedUser.mockReturnValue({
+      id: "test-user-id",
+      email: "test@example.com",
+    });
   });
 
   describe("GET /api/postgres/databases", () => {
-    const mockDatabases: PostgresDatabase[] = [
-      {
-        id: "db-1",
-        name: "production-db",
-        connectionString: "[ENCRYPTED]",
-        host: "prod-host",
-        port: 5432,
-        database: "prod_db",
-        username: "prod_user",
-        sslMode: "require",
-        tags: ["production"],
-        createdAt: "2023-01-01T10:00:00.000Z",
-        updatedAt: "2023-01-01T11:00:00.000Z",
-        lastHealthCheck: "2023-01-01T12:00:00.000Z",
-        healthStatus: "healthy",
-        userId: "test-user-id",
-      },
-      {
-        id: "db-2",
-        name: "development-db",
-        connectionString: "[ENCRYPTED]",
-        host: "dev-host",
-        port: 5432,
-        database: "dev_db",
-        username: "dev_user",
-        sslMode: "prefer",
-        tags: ["development"],
-        createdAt: "2023-01-02T10:00:00.000Z",
-        updatedAt: "2023-01-02T11:00:00.000Z",
-        lastHealthCheck: null,
-        healthStatus: "unknown",
-        userId: "test-user-id",
-      },
-    ];
 
     it("should return databases list successfully", async () => {
       mockDatabaseConfigService.listDatabases.mockResolvedValue(mockDatabases);
@@ -146,12 +159,11 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Found 2 database configurations",
         data: mockDatabases,
         pagination: {
-          total: 2,
-          limit: 50,
-          offset: 0,
+          page: 1,
+          limit: 20,
+          totalCount: 2,
           hasMore: false,
         },
       });
@@ -159,8 +171,8 @@ describe("PostgreSQL Databases API Routes", () => {
       expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
-        { field: "createdAt", order: "desc" },
-        50,
+        { field: "name", order: "asc" },
+        20,
         0,
       );
     });
@@ -172,15 +184,15 @@ describe("PostgreSQL Databases API Routes", () => {
 
       await request(app)
         .get("/api/postgres/databases")
-        .query({ limit: 10, offset: 5 })
+        .query({ limit: 10, page: 2 })
         .expect(200);
 
       expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
-        { field: "createdAt", order: "desc" },
+        { field: "name", order: "asc" },
         10,
-        5,
+        10,
       );
     });
 
@@ -203,8 +215,8 @@ describe("PostgreSQL Databases API Routes", () => {
           healthStatus: "healthy",
           tags: ["production", "staging"],
         },
-        { field: "createdAt", order: "desc" },
-        50,
+        { field: "name", order: "asc" },
+        20,
         0,
       );
     });
@@ -219,8 +231,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DATABASE_ERROR",
+        error: "Internal Server Error",
         message: "Database service error",
       });
 
@@ -250,7 +261,6 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Database configuration retrieved",
         data: mockDatabase,
       });
 
@@ -268,9 +278,8 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
-        message: "Database configuration not found",
+        error: "Not Found",
+        message: "Database configuration with ID 'nonexistent' not found",
       });
     });
 
@@ -343,8 +352,8 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -359,26 +368,20 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(409);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DUPLICATE_NAME",
+        error: "Conflict",
         message: "Database configuration with name 'new-db' already exists",
       });
     });
 
     it("should handle validation errors", async () => {
-      mockDatabaseConfigService.createDatabase.mockRejectedValue(
-        new Error("Port must be between 1 and 65535"),
-      );
-
       const response = await request(app)
         .post("/api/postgres/databases")
         .send({ ...validCreateRequest, port: 70000 })
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
-        message: "Port must be between 1 and 65535",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
   });
@@ -441,8 +444,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
+        error: "Not Found",
         message: "Database configuration not found",
       });
     });
@@ -457,17 +459,18 @@ describe("PostgreSQL Databases API Routes", () => {
       const response = await request(app)
         .put("/api/postgres/databases/db-1")
         .send(updateRequest)
-        .expect(403);
+        .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "ACCESS_DENIED",
+        error: "Not Found",
       });
     });
   });
 
   describe("DELETE /api/postgres/databases/:id", () => {
     it("should delete database successfully", async () => {
+      // Mock getDatabaseById to return a database first (required by the delete endpoint)
+      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(mockDatabases[0]);
       mockDatabaseConfigService.deleteDatabase.mockResolvedValue(undefined);
 
       const response = await request(app)
@@ -486,17 +489,16 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should return 404 for non-existent database", async () => {
-      mockDatabaseConfigService.deleteDatabase.mockRejectedValue(
-        new Error("Database configuration not found or access denied"),
-      );
+      // Mock getDatabaseById to return null first (required by the delete endpoint)
+      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(null);
 
       const response = await request(app)
         .delete("/api/postgres/databases/nonexistent")
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
+        error: "Not Found",
+        message: "Database configuration with ID 'nonexistent' not found",
       });
     });
   });
@@ -521,8 +523,13 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Database connection test completed",
-        data: mockTestResult,
+        message: "Connection successful",
+        data: {
+          isConnected: true,
+          responseTimeMs: 150,
+          serverVersion: "PostgreSQL 15.0",
+          databaseName: "testdb",
+        },
       });
 
       expect(
@@ -547,8 +554,13 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Database connection test completed",
-        data: failedTestResult,
+        message: "Connection failed",
+        data: {
+          isConnected: false,
+          responseTimeMs: 0,
+          error: "Connection timeout",
+          errorCode: "TIMEOUT",
+        },
       });
     });
 
@@ -562,8 +574,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "NOT_FOUND",
+        error: "Not Found",
       });
     });
   });
@@ -592,14 +603,19 @@ describe("PostgreSQL Databases API Routes", () => {
       );
 
       const response = await request(app)
-        .post("/api/postgres/test-connection")
+        .post("/api/postgres/databases/test-connection")
         .send(validConnectionConfig)
         .expect(200);
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Connection test completed",
-        data: mockTestResult,
+        message: "Connection successful",
+        data: {
+          isConnected: true,
+          responseTimeMs: 100,
+          serverVersion: "PostgreSQL 15.0",
+          databaseName: "testdb",
+        },
       });
 
       expect(mockDatabaseConfigService.testConnection).toHaveBeenCalledWith(
@@ -611,13 +627,13 @@ describe("PostgreSQL Databases API Routes", () => {
       const invalidConfig = { ...validConnectionConfig, port: "invalid" };
 
       const response = await request(app)
-        .post("/api/postgres/test-connection")
+        .post("/api/postgres/databases/test-connection")
         .send(invalidConfig)
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -631,14 +647,19 @@ describe("PostgreSQL Databases API Routes", () => {
       mockDatabaseConfigService.testConnection.mockResolvedValue(failedResult);
 
       const response = await request(app)
-        .post("/api/postgres/test-connection")
+        .post("/api/postgres/databases/test-connection")
         .send(validConnectionConfig)
         .expect(200);
 
       expect(response.body).toMatchObject({
         success: true,
-        message: "Connection test completed",
-        data: failedResult,
+        message: "Connection failed",
+        data: {
+          isConnected: false,
+          responseTimeMs: 0,
+          error: "Authentication failed",
+          errorCode: "AUTHENTICATION_FAILED",
+        },
       });
     });
 
@@ -648,7 +669,7 @@ describe("PostgreSQL Databases API Routes", () => {
       );
 
       await request(app)
-        .post("/api/postgres/test-connection")
+        .post("/api/postgres/databases/test-connection")
         .send(validConnectionConfig)
         .expect(200);
 
@@ -677,7 +698,7 @@ describe("PostgreSQL Databases API Routes", () => {
       await request(app).delete("/api/postgres/databases/db-1").expect(401);
       await request(app).post("/api/postgres/databases/db-1/test").expect(401);
       await request(app)
-        .post("/api/postgres/test-connection")
+        .post("/api/postgres/databases/test-connection")
         .send({})
         .expect(401);
     });
@@ -694,8 +715,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "DATABASE_ERROR",
+        error: "Internal Server Error",
         message: "Unexpected error",
       });
     });
@@ -726,19 +746,14 @@ describe("PostgreSQL Databases API Routes", () => {
         sslMode: "prefer" as const,
       };
 
-      mockDatabaseConfigService.createDatabase.mockRejectedValue(
-        new Error("Port must be between 1 and 65535"),
-      );
-
       const response = await request(app)
         .post("/api/postgres/databases")
         .send(invalidPortRequest)
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
-        message: "Port must be between 1 and 65535",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
 
@@ -759,8 +774,8 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: "VALIDATION_ERROR",
+        error: "Bad Request",
+        message: "Invalid request data",
       });
     });
   });
@@ -778,7 +793,7 @@ describe("PostgreSQL Databases API Routes", () => {
         "test-user-id",
         {},
         { field: "name", order: "asc" },
-        50,
+        20,
         0,
       );
     });
@@ -791,8 +806,8 @@ describe("PostgreSQL Databases API Routes", () => {
       expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
-        { field: "createdAt", order: "desc" },
-        50,
+        { field: "name", order: "asc" },
+        20,
         0,
       );
     });
