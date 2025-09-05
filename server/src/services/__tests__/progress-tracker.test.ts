@@ -8,43 +8,26 @@ import {
   RestoreOperationStatus,
 } from "@mini-infra/types";
 
+// Mock logger functions
+const mockLoggerFunctions = {
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+};
+
 // Mock logger
 jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
+  appLogger: jest.fn(() => mockLoggerFunctions),
+  servicesLogger: jest.fn(() => mockLoggerFunctions),
+  httpLogger: jest.fn(() => mockLoggerFunctions),
+  prismaLogger: jest.fn(() => mockLoggerFunctions),
   __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
+  default: jest.fn(() => mockLoggerFunctions),
 }));
 
 // Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+const mockLogger = mockLoggerFunctions;
 
 // Mock Prisma client
 const mockPrisma = {
