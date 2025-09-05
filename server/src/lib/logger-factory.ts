@@ -54,6 +54,35 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
         level: config.level,
       });
     }
+
+    // Add aggregate log file target (app-all.log) for all loggers
+    const aggregateDestination = path.resolve("logs/app-all.log");
+    ensureLogDirectory(aggregateDestination);
+    
+    if (config.rotation?.enabled) {
+      // Use pino-roll for aggregate log rotation in production
+      targets.push({
+        target: "pino-roll",
+        options: {
+          file: aggregateDestination,
+          frequency: "daily",
+          mkdir: true,
+          ...(config.rotation.maxSize && { size: config.rotation.maxSize }),
+          ...(config.rotation.maxFiles && { limit: config.rotation.maxFiles }),
+        },
+        level: config.level,
+      });
+    } else {
+      // Simple aggregate file destination without rotation
+      targets.push({
+        target: "pino/file",
+        options: {
+          destination: aggregateDestination,
+          mkdir: true,
+        },
+        level: config.level,
+      });
+    }
   }
 
   // Add console output with pretty print for development
