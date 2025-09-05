@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { PrismaClient } from "../generated/prisma";
 import { z } from "zod";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 import { requireAuth } from "../lib/auth-middleware";
 import { RestoreExecutorService } from "../services/restore-executor";
 import { AzureConfigService } from "../services/azure-config";

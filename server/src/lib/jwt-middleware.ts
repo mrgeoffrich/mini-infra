@@ -6,7 +6,9 @@ import {
   JwtPayload,
 } from "./jwt";
 import prisma from "./prisma";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+const logger = appLogger();
 import { AuthErrorType, createAuthErrorResponse } from "./auth-middleware";
 
 // Extend Express Request type to include JWT user

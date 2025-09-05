@@ -8,7 +8,9 @@ import {
   deleteApiKey,
   getApiKeyStats,
 } from "../lib/api-key-service";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 import type { CreateApiKeyRequest } from "@mini-infra/types";
 
 const router = Router();

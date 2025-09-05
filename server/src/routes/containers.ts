@@ -6,7 +6,9 @@ import express, {
 } from "express";
 import { z } from "zod";
 import DockerService from "../services/docker";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 import { requireAuth } from "../lib/auth-middleware";
 import {
   ContainerQueryParams,

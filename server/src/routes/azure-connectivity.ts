@@ -6,7 +6,9 @@ import express, {
 } from "express";
 import { z } from "zod";
 import NodeCache from "node-cache";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import {

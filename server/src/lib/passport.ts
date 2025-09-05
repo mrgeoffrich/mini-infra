@@ -2,7 +2,9 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./prisma";
 import { authConfig, serverConfig } from "./config-new";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+const logger = appLogger();
 import type {
   GoogleOAuthProfile,
   PassportDoneCallback,

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 import { ProgressTrackerService } from "../services/progress-tracker";
 import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";

@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import { authConfig } from "./config-new";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+const logger = appLogger();
 import type { UserProfile } from "@mini-infra/types";
 
 // JWT payload interface

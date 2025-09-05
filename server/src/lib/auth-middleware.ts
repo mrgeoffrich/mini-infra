@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+const logger = appLogger();
 import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
 import {
   getCurrentUserFromJwt,

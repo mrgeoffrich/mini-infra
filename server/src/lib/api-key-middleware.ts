@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { validateApiKey } from "./api-key-service";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+const logger = appLogger();
 import type { ApiKeyValidationResult } from "@mini-infra/types";
 
 /**

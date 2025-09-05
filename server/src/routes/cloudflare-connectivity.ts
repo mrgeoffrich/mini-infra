@@ -2,7 +2,9 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
-import logger from "../lib/logger";
+import { appLogger } from "../lib/logger-factory";
+
+const logger = appLogger();
 
 const router = Router();
 
