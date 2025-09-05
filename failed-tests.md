@@ -94,13 +94,27 @@ The setup tests were already working correctly. The issue was related to test in
 
 ---
 
-## 6. `src/lib/__tests__/connectivity-scheduler.test.ts`
+## 6. `src/lib/__tests__/connectivity-scheduler.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Issues Fixed:
+- **Logger mocking issue resolved** - Fixed mock configuration for logger factory to properly mock the appLogger function and return the same mock instance consistently
+- **Test structure problems** - Resolved hoisting issues with mock logger references by restructuring the mock setup
 
-### Failed Tests:
-- Multiple connectivity scheduler tests (details truncated)
+### Previously Failed Tests (Now Passing):
+1. `ConnectivityScheduler › Constructor › should log initialization` ✅
+2. `ConnectivityScheduler › start › should start scheduler and perform initial health checks` ✅
+3. `ConnectivityScheduler › start › should warn when trying to start already running scheduler` ✅
+4. `ConnectivityScheduler › start › should schedule periodic health checks` ✅
+5. `ConnectivityScheduler › stop › should stop running scheduler` ✅
+6. `ConnectivityScheduler › stop › should warn when trying to stop non-running scheduler` ✅
+7. `ConnectivityScheduler › performHealthCheck › should perform health check for specific service` ✅
+8. `ConnectivityScheduler › performHealthCheck › should handle validation failures gracefully` ✅
+9. `ConnectivityScheduler › Error handling › should handle validation timeouts` ✅
+10. `ConnectivityScheduler › Error handling › should log completion summary` ✅
+11. All other ConnectivityScheduler tests (21 total tests passing) ✅
+
+### Fix Summary:
+Fixed the logger mocking configuration by creating a shared mock logger instance within the jest.mock factory function and properly referencing it in the beforeEach setup. The issue was that the logger mock wasn't being properly connected to the actual logger instance used by the ConnectivityScheduler class.
 
 ---
 

@@ -5,42 +5,23 @@ import { ConfigurationServiceFactory } from "../../services/configuration-factor
 import { ValidationResult } from "@mini-infra/types";
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
-
-// Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").appLogger();
+  };
+  
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Mock ConfigurationServiceFactory
 const mockConfigServiceFactory = {
@@ -88,10 +69,15 @@ const mockPrisma = {
 describe("ConnectivityScheduler", () => {
   let scheduler: ConnectivityScheduler;
   let fakeDelayFn: jest.Mock<Promise<void>, [number]>;
+  let mockLogger: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+
+    // Get reference to the mocked logger after clearing mocks
+    const loggerFactory = require("../../lib/logger-factory");
+    mockLogger = loggerFactory.appLogger();
 
     // Create a fake delay function that resolves immediately for tests
     fakeDelayFn = jest.fn().mockResolvedValue(undefined);
