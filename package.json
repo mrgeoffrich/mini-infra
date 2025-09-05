@@ -23,5 +23,8 @@
     },
     "devDependencies": {
         "concurrently": "^8.2.0"
+    },
+    "dependencies": {
+        "cross-env": "^10.0.0"
     }
 }
