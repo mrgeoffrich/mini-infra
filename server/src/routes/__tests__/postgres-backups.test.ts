@@ -5,33 +5,45 @@ import router from "../postgres-backups";
 import { BackupExecutorService } from "../../services/backup-executor";
 
 // Mock the PrismaClient
-const mockPrismaClient = {
-  postgresDatabase: {
-    findFirst: jest.fn(),
-  },
-  backupConfiguration: {
-    findFirst: jest.fn(),
-  },
-  backupOperation: {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-    delete: jest.fn(),
-  },
-};
+jest.mock("../../generated/prisma", () => {
+  const mockClient = {
+    postgresDatabase: {
+      findFirst: jest.fn(),
+    },
+    backupConfiguration: {
+      findFirst: jest.fn(),
+    },
+    backupOperation: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      delete: jest.fn(),
+    },
+  };
+  
+  return {
+    PrismaClient: jest.fn(() => mockClient),
+    __mockClient: mockClient, // Export the mock client for tests
+  };
+});
 
-jest.mock("../../generated/prisma", () => ({
-  PrismaClient: jest.fn(() => mockPrismaClient),
-}));
+// Get the mock client for use in tests
+const { __mockClient: mockPrismaClient } = jest.requireMock("../../generated/prisma");
 
 // Mock the BackupExecutorService
-const mockBackupExecutorService = {
-  queueBackup: jest.fn(),
-};
+jest.mock("../../services/backup-executor", () => {
+  const mockService = {
+    queueBackup: jest.fn(),
+  };
+  
+  return {
+    BackupExecutorService: jest.fn(() => mockService),
+    __mockService: mockService, // Export the mock service for tests
+  };
+});
 
-jest.mock("../../services/backup-executor", () => ({
-  BackupExecutorService: jest.fn(() => mockBackupExecutorService),
-}));
+// Get the mock service for use in tests
+const { __mockService: mockBackupExecutorService } = jest.requireMock("../../services/backup-executor");
 
 // Mock logger
 jest.mock("../../lib/logger-factory", () => ({

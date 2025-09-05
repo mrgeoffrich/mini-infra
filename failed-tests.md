@@ -193,13 +193,22 @@ Fixed comprehensive response format mismatches between test expectations and act
 
 ---
 
-## 10. `src/routes/__tests__/postgres-backups.test.ts`
+## 10. `src/routes/__tests__/postgres-backups.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Issues Fixed:
+- **JavaScript hoisting error resolved** - Fixed ReferenceError "Cannot access 'mockPrismaClient' before initialization" by restructuring jest.mock to avoid hoisting conflicts
+- **Mock configuration corrected** - Updated both PrismaClient and BackupExecutorService mocks to properly handle variable declaration hoisting
 
-### Failed Tests:
-- Multiple PostgreSQL backup API tests (details truncated)
+### Previously Failed Tests (Now Passing):
+1. All 34 PostgreSQL Backup API tests now pass ✅
+   - GET /api/postgres/backups/:databaseId (8 tests)
+   - POST /api/postgres/backups/:databaseId/manual (6 tests)
+   - GET /api/postgres/backups/:backupId/status (5 tests)
+   - DELETE /api/postgres/backups/:backupId (6 tests)
+   - GET /api/postgres/backups/:backupId/progress (9 tests)
+
+### Fix Summary:
+Fixed JavaScript hoisting issues with jest.mock by restructuring the mock declarations to avoid referencing variables that haven't been hoisted. Moved mock object creation inside jest.mock factory functions and used jest.requireMock to expose mock objects for test access. This eliminated the "Cannot access before initialization" errors for both mockPrismaClient and mockBackupExecutorService.
 
 ---
 
