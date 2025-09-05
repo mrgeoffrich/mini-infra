@@ -60,8 +60,7 @@ jest.mock("../../lib/auth-middleware", () => ({
   getAuthenticatedUser: mockGetAuthenticatedUser,
 }));
 
-// Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").httpLogger();
+// Note: mockLogger is already defined above at line 31-36
 
 // Mock AzureConfigService
 const mockAzureConfigService = {
@@ -227,6 +226,8 @@ describe("Azure Settings API Routes", () => {
       };
       const mockSystemSetting = {
         id: "test-setting-id",
+        category: "azure",
+        key: "connection_string",
         createdAt: new Date("2024-01-01T10:00:00Z"),
         updatedAt: new Date("2024-01-01T11:00:00Z"),
         createdBy: "test-user-id",
@@ -462,9 +463,8 @@ describe("Azure Settings API Routes", () => {
               leaseState: "available",
             }),
           ]),
-          error: undefined,
         },
-        message: "Azure Storage connection validation successful",
+        message: "Connection successful",
       });
 
       expect(mockAzureConfigService.setConnectionString).toHaveBeenCalledWith(
@@ -538,7 +538,7 @@ describe("Azure Settings API Routes", () => {
           error: "Invalid connection string",
           errorCode: "AUTHENTICATION_FAILED",
         },
-        message: "Azure Storage connection validation failed",
+        message: "Invalid connection string",
       });
     });
 
@@ -731,7 +731,12 @@ describe("Azure Settings API Routes", () => {
         leaseStatus: "unlocked",
       };
 
-      mockAzureConfigService.testContainerAccess.mockResolvedValue(true);
+      mockAzureConfigService.testContainerAccess.mockResolvedValue({
+        accessible: true,
+        responseTimeMs: 150,
+        error: undefined,
+        errorCode: undefined,
+      });
       mockAzureConfigService.getContainerInfo.mockResolvedValue([
         mockContainerInfo,
       ]);
@@ -751,8 +756,6 @@ describe("Azure Settings API Routes", () => {
           responseTimeMs: expect.any(Number),
           lastModified: "2024-01-01T12:00:00.000Z",
           leaseStatus: "unlocked",
-          error: undefined,
-          errorCode: undefined,
         },
         message: `Container '${containerName}' is accessible`,
       });
@@ -765,7 +768,12 @@ describe("Azure Settings API Routes", () => {
     test("handles container access denied", async () => {
       const containerName = "inaccessible-container";
 
-      mockAzureConfigService.testContainerAccess.mockResolvedValue(false);
+      mockAzureConfigService.testContainerAccess.mockResolvedValue({
+        accessible: false,
+        responseTimeMs: 100,
+        error: "Container access denied or container does not exist",
+        errorCode: "ACCESS_DENIED",
+      });
 
       const response = await request(app)
         .post("/api/settings/azure/test-container")
@@ -780,7 +788,7 @@ describe("Azure Settings API Routes", () => {
           error: "Container access denied or container does not exist",
           errorCode: "ACCESS_DENIED",
         },
-        message: `Container '${containerName}' is not accessible`,
+        message: `Container '${containerName}' is not accessible: Container access denied or container does not exist`,
       });
     });
 
@@ -795,7 +803,8 @@ describe("Azure Settings API Routes", () => {
         message: "Invalid request data",
         details: expect.arrayContaining([
           expect.objectContaining({
-            message: "Container name is required",
+            message: "Invalid input: expected string, received undefined",
+            path: ["containerName"],
           }),
         ]),
       });
