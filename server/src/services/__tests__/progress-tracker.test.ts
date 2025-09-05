@@ -52,12 +52,14 @@ describe("ProgressTrackerService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    jest.clearAllTimers();
     progressTrackerService = new ProgressTrackerService(mockPrisma);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await progressTrackerService.shutdown();
     jest.useRealTimers();
-    progressTrackerService.shutdown();
+    jest.clearAllTimers();
   });
 
   describe("constructor", () => {
@@ -476,12 +478,8 @@ describe("ProgressTrackerService", () => {
         operationType: "manual",
         status: "completed",
         progress: 100,
-        startedAt: new Date(
-          `2023-01-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
-        ),
-        completedAt: new Date(
-          `2023-01-${String(i + 1).padStart(2, "0")}T01:00:00Z`,
-        ),
+        startedAt: new Date(2023, 0, 1 + (i % 31), 0, 0, 0), // Cycle through valid days
+        completedAt: new Date(2023, 0, 1 + (i % 31), 1, 0, 0), // Cycle through valid days
         sizeBytes: BigInt(1000000),
         azureBlobUrl:
           "https://account.blob.core.windows.net/backups/backup.sql",
@@ -731,41 +729,100 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should execute cleanup periodically", async () => {
+      // Track all calls to understand the pattern
+      const backupCalls: any[] = [];
+      const restoreCalls: any[] = [];
+
       mockPrisma.backupOperation.deleteMany = jest
         .fn()
-        .mockResolvedValue({ count: 0 });
+        .mockImplementation((args) => {
+          backupCalls.push(args);
+          return Promise.resolve({ count: 0 });
+        });
+      
       mockPrisma.restoreOperation.deleteMany = jest
         .fn()
-        .mockResolvedValue({ count: 0 });
+        .mockImplementation((args) => {
+          restoreCalls.push(args);
+          return Promise.resolve({ count: 0 });
+        });
 
       await progressTrackerService.initialize();
 
       // Fast forward time to trigger cleanup
       jest.advanceTimersByTime(60 * 60 * 1000); // 1 hour
 
-      // Wait for async cleanup to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Run all pending timers to execute the cleanup callback
+      jest.runOnlyPendingTimers();
 
+      // Wait for async operations to complete
+      await new Promise(resolve => {
+        jest.useRealTimers();
+        setTimeout(() => {
+          jest.useFakeTimers();
+          resolve(void 0);
+        }, 50);
+      });
+
+      // Should have at least some calls
       expect(mockPrisma.backupOperation.deleteMany).toHaveBeenCalled();
       expect(mockPrisma.restoreOperation.deleteMany).toHaveBeenCalled();
+      
+      // Check that both completed and failed operations are being cleaned up
+      expect(backupCalls.some(call => call.where.status === "completed")).toBe(true);
+      expect(backupCalls.some(call => call.where.status === "failed")).toBe(true);
+      expect(restoreCalls.some(call => call.where.status === "completed")).toBe(true);
+      expect(restoreCalls.some(call => call.where.status === "failed")).toBe(true);
     });
 
     it("should handle periodic cleanup errors gracefully", async () => {
+      let cleanupErrorCount = 0;
+      let periodicErrorCount = 0;
+      
+      // Override the mock logger to track calls
+      mockLogger.error = jest.fn().mockImplementation((context, message) => {
+        if (message === "Failed to clean up old operations") {
+          cleanupErrorCount++;
+        } else if (message === "Periodic cleanup failed") {
+          periodicErrorCount++;
+        }
+      });
+
       mockPrisma.backupOperation.deleteMany = jest
         .fn()
-        .mockRejectedValue(new Error("Periodic cleanup error"));
+        .mockRejectedValue(new Error("Database error"));
 
       await progressTrackerService.initialize();
 
       // Fast forward time to trigger cleanup
       jest.advanceTimersByTime(60 * 60 * 1000);
 
-      // Wait for async cleanup to complete
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Run all pending timers to execute the cleanup callback
+      jest.runOnlyPendingTimers();
 
+      // Wait a bit for async error handling to complete
+      await new Promise(resolve => {
+        jest.useRealTimers();
+        setTimeout(() => {
+          jest.useFakeTimers();
+          resolve(void 0);
+        }, 10);
+      });
+
+      // Should log both error types
+      expect(cleanupErrorCount).toBeGreaterThan(0);
+      expect(periodicErrorCount).toBeGreaterThan(0);
+      
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
-          error: "Periodic cleanup error",
+          error: "Database error",
+        },
+        "Failed to clean up old operations",
+      );
+      
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        {
+          error: "Database error",
         },
         "Periodic cleanup failed",
       );
