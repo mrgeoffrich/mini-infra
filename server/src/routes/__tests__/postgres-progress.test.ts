@@ -648,37 +648,59 @@ describe("PostgreSQL Progress API", () => {
   });
 
   describe("Authentication", () => {
-    beforeEach(() => {
-      // Clear the mock and create a new app without auth for these tests
-    });
-
     it("should return 401 for unauthenticated requests", async () => {
-      // Create a new app without auth middleware for this test
-      const unauthenticatedApp = express();
-      unauthenticatedApp.use(express.json());
-      unauthenticatedApp.use((req, res, next) => {
-        req.headers["x-request-id"] = "test-request-id";
-        req.user = undefined; // No authenticated user
-        next();
-      });
-
-      // Mock auth middleware to not set user
+      // Reset module cache to allow re-mocking
+      jest.resetModules();
+      
+      // Re-mock the auth middleware to not set user
       jest.doMock("../../lib/auth-middleware", () => ({
         requireAuth: (req: any, res: any, next: any) => {
-          req.user = undefined; // Simulate no user
+          // Don't set req.user to simulate unauthenticated request
           next();
         },
         getAuthenticatedUser: jest.fn(),
       }));
-
-      unauthenticatedApp.use("/api/postgres/progress", router);
-
-      const response = await request(unauthenticatedApp)
+      
+      // Re-mock other dependencies that the router needs
+      jest.doMock("../../lib/prisma", () => ({
+        __esModule: true,
+        default: {},
+      }));
+      
+      jest.doMock("../../services/progress-tracker", () => ({
+        ProgressTrackerService: jest.fn().mockImplementation(() => mockProgressTrackerInstance),
+      }));
+      
+      jest.doMock("../../lib/logger-factory", () => ({
+        appLogger: jest.fn(() => ({
+          info: jest.fn(),
+          warn: jest.fn(),
+          error: jest.fn(),
+          debug: jest.fn(),
+        })),
+      }));
+      
+      // Now import the router with the new mocks
+      const unauthRouter = require("../postgres-progress").default;
+      
+      // Create a new app with the re-mocked router
+      const unauthApp = express();
+      unauthApp.use(express.json());
+      unauthApp.use((req, res, next) => {
+        req.headers["x-request-id"] = "test-request-id";
+        next();
+      });
+      unauthApp.use("/api/postgres/progress", unauthRouter);
+      
+      const response = await request(unauthApp)
         .get("/api/postgres/progress/backup/backup-1")
         .expect(401);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Authentication required");
+      
+      // Reset modules again to restore original state
+      jest.resetModules();
     });
   });
 

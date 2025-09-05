@@ -13,12 +13,8 @@ const router = Router();
 const progressTracker = new ProgressTrackerService(prisma);
 
 // Initialize the service on first use
-let isInitialized = false;
 const initializeProgressTracker = async () => {
-  if (!isInitialized) {
-    await progressTracker.initialize();
-    isInitialized = true;
-  }
+  await progressTracker.initialize();
 };
 
 // Validation schemas
