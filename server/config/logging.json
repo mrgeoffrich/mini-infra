@@ -9,17 +9,17 @@
       }
     },
     "http": {
-      "level": "info", 
+      "level": "info",
       "destination": "logs/app-http.log",
-      "prettyPrint": true,
+      "prettyPrint": false,
       "rotation": {
         "enabled": false
       }
     },
     "prisma": {
       "level": "debug",
-      "destination": "logs/app-prisma.log", 
-      "prettyPrint": true,
+      "destination": "logs/app-prisma.log",
+      "prettyPrint": false,
       "rotation": {
         "enabled": false
       }
@@ -27,7 +27,7 @@
     "services": {
       "level": "debug",
       "destination": "logs/app-services.log",
-      "prettyPrint": true,
+      "prettyPrint": false,
       "rotation": {
         "enabled": false
       }
@@ -46,11 +46,11 @@
     },
     "http": {
       "level": "info",
-      "destination": "logs/app-http.log", 
+      "destination": "logs/app-http.log",
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d", 
+        "maxFiles": "14d",
         "maxSize": "10m"
       }
     },
@@ -91,7 +91,7 @@
   },
   "redactionPaths": [
     "password",
-    "token", 
+    "token",
     "accessToken",
     "refreshToken",
     "authorization",

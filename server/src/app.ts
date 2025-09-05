@@ -10,7 +10,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 
 // Import configuration and utilities
-import config from "./lib/config";
+import appConfig from "./lib/config-new";
 import { httpLogger } from "./lib/logger-factory";
 import { requestIdMiddleware } from "./lib/request-id";
 import { helmetMiddleware } from "./lib/security";
@@ -58,7 +58,7 @@ app.use(helmetMiddleware);
 app.use(
   cors({
     origin:
-      config.PUBLIC_URL || (config.NODE_ENV === "development" ? true : false),
+      appConfig.server.publicUrl || (appConfig.server.nodeEnv === "development" ? true : false),
     credentials: true,
     optionsSuccessStatus: 200,
   }),
@@ -82,7 +82,7 @@ app.get("/health", ((req: Request, res: Response) => {
   res.status(200).json({
     status: "healthy",
     timestamp: new Date().toISOString(),
-    environment: config.NODE_ENV,
+    environment: appConfig.server.nodeEnv,
     uptime: process.uptime(),
   });
 }) as RequestHandler);
@@ -121,7 +121,7 @@ app.use("/api/postgres", postgresRestoreRoutes);
 app.use("/api/postgres/progress", postgresProgressRoutes);
 
 // Serve static files in production
-if (config.NODE_ENV === "production") {
+if (appConfig.server.nodeEnv === "production") {
   app.use(express.static(path.join(__dirname, "../public")));
 
   // Handle client-side routing for SPA
@@ -140,11 +140,11 @@ if (config.NODE_ENV === "production") {
 }
 
 // Development welcome message
-if (config.NODE_ENV === "development") {
+if (appConfig.server.nodeEnv === "development") {
   app.get("/", ((req: Request, res: Response) => {
     res.json({
       message: "Mini Infra API Server",
-      environment: config.NODE_ENV,
+      environment: appConfig.server.nodeEnv,
       timestamp: new Date().toISOString(),
       docs: "/health for health check",
     });

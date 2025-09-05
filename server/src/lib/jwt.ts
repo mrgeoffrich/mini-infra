@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import config from "./config";
+import { authConfig } from "./config-new";
 import logger from "./logger";
 import type { UserProfile } from "@mini-infra/types";
 
@@ -15,7 +15,7 @@ export interface JwtPayload {
 
 // JWT configuration
 const JWT_SECRET =
-  config.SESSION_SECRET || "default-development-secret-change-in-production";
+  authConfig.session.secret || "default-development-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h"; // 24 hours
 const JWT_ISSUER = "mini-infra";
 

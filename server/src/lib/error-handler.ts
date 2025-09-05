@@ -5,7 +5,7 @@ import { appLogger } from "./logger-factory";
 // Use app logger for error handling
 const logger = appLogger();
 import { getRequestId } from "./request-id";
-import config from "./config";
+import { serverConfig } from "./config-new";
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -97,7 +97,7 @@ export const errorHandler = (
 
   // Don't leak error details in production
   const message =
-    config.NODE_ENV === "production" ? "Internal server error" : error.message;
+    serverConfig.nodeEnv === "production" ? "Internal server error" : error.message;
 
   return res.status(500).json({
     error: message,

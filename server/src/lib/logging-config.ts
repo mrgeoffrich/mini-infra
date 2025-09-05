@@ -1,7 +1,7 @@
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
-import config from "./config";
+import { serverConfig } from "./config-new";
 
 // Zod schemas for logging configuration validation
 const rotationConfigSchema = z.object({
@@ -100,7 +100,7 @@ export function loadLoggingConfig(): LoggingConfig {
 // Get logging configuration for current environment
 export function getEnvironmentLogConfig(): EnvironmentLogConfig {
   const fullConfig = loadLoggingConfig();
-  const environment = config.NODE_ENV;
+  const environment = serverConfig.nodeEnv;
   
   return fullConfig[environment];
 }

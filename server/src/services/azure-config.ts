@@ -6,7 +6,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
 import { servicesLogger } from "../lib/logger-factory";
-import config from "../lib/config";
+import { azureConfig } from "../lib/config-new";
 import {
   BlobServiceClient,
   BlobItem,
@@ -77,7 +77,7 @@ export class AzureConfigService extends ConfigurationService {
   });
 
   private get timeoutMs(): number {
-    return config.AZURE_API_TIMEOUT;
+    return azureConfig.apiTimeout;
   }
 
   constructor(prisma: PrismaClient) {

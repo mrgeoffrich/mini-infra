@@ -6,10 +6,13 @@ import {
   RequestHandler,
 } from "express";
 import passport from "../lib/passport";
-import logger from "../lib/logger";
-import config from "../lib/config";
+import { appLogger } from "../lib/logger-factory";
+import { serverConfig } from "../lib/config-new";
 import { generateToken } from "../lib/jwt";
 import type { AuthStatus, UserProfile, JWTUser } from "@mini-infra/types";
+
+// Use app logger for authentication routes
+const logger = appLogger();
 
 const router = Router();
 
@@ -71,8 +74,8 @@ router.get("/google/callback", ((
 
       // Get the redirect URL from state parameter or use default
       const frontendUrl =
-        config.PUBLIC_URL ||
-        (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
+        serverConfig.publicUrl ||
+        (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
 
       let redirectPath = "/dashboard";
       try {
@@ -89,8 +92,8 @@ router.get("/google/callback", ((
       // Set JWT token as HTTP-only cookie
       res.cookie("auth-token", token, {
         httpOnly: true,
-        secure: config.NODE_ENV === "production",
-        sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+        secure: serverConfig.nodeEnv === "production",
+        sameSite: serverConfig.nodeEnv === "production" ? "strict" : "lax",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
@@ -115,8 +118,8 @@ router.get("/failure", ((req: Request, res: Response) => {
 
   // Redirect to frontend login page with error
   const frontendUrl =
-    config.PUBLIC_URL ||
-    (config.NODE_ENV === "development" ? "http://localhost:3000" : "");
+    serverConfig.publicUrl ||
+    (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
   const redirectUrl = `${frontendUrl}/login?auth=error`;
 
   logger.info({ redirectUrl }, "Redirecting after failed OAuth");
@@ -131,8 +134,8 @@ router.post("/logout", ((req: Request, res: Response) => {
     // Clear the JWT token cookie
     res.clearCookie("auth-token", {
       httpOnly: true,
-      secure: config.NODE_ENV === "production",
-      sameSite: config.NODE_ENV === "production" ? "strict" : "lax",
+      secure: serverConfig.nodeEnv === "production",
+      sameSite: serverConfig.nodeEnv === "production" ? "strict" : "lax",
     });
 
     logger.info({ userId }, "User logged out successfully");

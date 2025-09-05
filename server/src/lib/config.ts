@@ -1,70 +1,23 @@
-import { z } from "zod";
-import dotenv from "dotenv";
+// This file is deprecated - use config-new.ts instead
+// Keeping for backward compatibility during transition
+import appConfig from "./config-new";
 
-// Load environment variables from .env file
-dotenv.config();
+// Map the new config structure to the old interface for backward compatibility
+const legacyConfig = {
+  NODE_ENV: appConfig.server.nodeEnv,
+  PORT: appConfig.server.port,
+  DATABASE_URL: appConfig.database.url,
+  GOOGLE_CLIENT_ID: appConfig.auth.google.clientId,
+  GOOGLE_CLIENT_SECRET: appConfig.auth.google.clientSecret,
+  SESSION_SECRET: appConfig.auth.session.secret,
+  LOG_LEVEL: appConfig.logging.level,
+  PUBLIC_URL: appConfig.server.publicUrl,
+  CONTAINER_CACHE_TTL: appConfig.docker.containerCacheTtl,
+  CONTAINER_POLL_INTERVAL: appConfig.docker.containerPollInterval,
+  AZURE_API_TIMEOUT: appConfig.azure.apiTimeout,
+  CONNECTIVITY_CHECK_INTERVAL: appConfig.connectivity.checkInterval,
+};
 
-const configSchema = z.object({
-  // Server configuration
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
-  PORT: z
-    .string()
-    .optional()
-    .default("5000")
-    .transform((val) => Number(val)),
+export type Config = typeof legacyConfig;
 
-  // Database
-  DATABASE_URL: z.string().default("file:./dev.db"),
-
-  // Authentication
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  SESSION_SECRET: z.string().optional(),
-
-  // Logging
-  LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
-    .default("info"),
-
-  // Security
-  PUBLIC_URL: z.string().optional(),
-
-  // Docker Configuration
-  CONTAINER_CACHE_TTL: z
-    .string()
-    .optional()
-    .default("3000")
-    .transform((val) => Number(val)), // 3 seconds
-  CONTAINER_POLL_INTERVAL: z
-    .string()
-    .optional()
-    .default("5000")
-    .transform((val) => Number(val)), // 5 seconds
-
-  // Azure Configuration
-  AZURE_API_TIMEOUT: z
-    .string()
-    .optional()
-    .default("15000")
-    .transform((val) => Number(val)), // 15 seconds
-  CONNECTIVITY_CHECK_INTERVAL: z
-    .string()
-    .optional()
-    .default("300000")
-    .transform((val) => Number(val)), // 5 minutes
-});
-
-export type Config = z.infer<typeof configSchema>;
-
-let config: Config;
-
-try {
-  config = configSchema.parse(process.env);
-} catch (error) {
-  console.error("❌ Invalid environment configuration:", error);
-  process.exit(1);
-}
-
-export default config;
+export default legacyConfig;

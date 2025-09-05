@@ -22,14 +22,17 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
     },
   };
 
-  // Add destination (file) if specified
+  // Configure transport targets (file and/or console)
+  const targets = [];
+
+  // Add file destination if specified
   if (config.destination) {
     ensureLogDirectory(config.destination);
     const destination = path.resolve(config.destination);
     
     if (config.rotation?.enabled) {
       // Use pino-roll for log rotation in production
-      baseOptions.transport = {
+      targets.push({
         target: "pino-roll",
         options: {
           file: destination,
@@ -38,28 +41,40 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
           ...(config.rotation.maxSize && { size: config.rotation.maxSize }),
           ...(config.rotation.maxFiles && { limit: config.rotation.maxFiles }),
         },
-      };
+        level: config.level,
+      });
     } else {
       // Simple file destination without rotation
-      baseOptions.transport = {
+      targets.push({
         target: "pino/file",
         options: {
           destination,
           mkdir: true,
         },
-      };
+        level: config.level,
+      });
     }
   }
 
-  // Pretty print for development
-  if (config.prettyPrint && !config.destination) {
-    baseOptions.transport = {
+  // Add console output with pretty print for development
+  if (config.prettyPrint) {
+    targets.push({
       target: "pino-pretty",
       options: {
         colorize: true,
         translateTime: "yyyy-mm-dd HH:MM:ss",
         ignore: "pid,hostname",
       },
+      level: config.level,
+    });
+  }
+
+  // Set up transport based on number of targets
+  if (targets.length === 1) {
+    baseOptions.transport = targets[0];
+  } else if (targets.length > 1) {
+    baseOptions.transport = {
+      targets: targets,
     };
   }
 

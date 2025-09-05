@@ -1,5 +1,5 @@
 import app from "./app";
-import config from "./lib/config";
+import appConfig from "./lib/config-new";
 import { appLogger } from "./lib/logger-factory";
 
 // Use app logger for server startup
@@ -21,7 +21,7 @@ const initializeServices = async () => {
     // Initialize connectivity scheduler
     connectivityScheduler = new ConnectivityScheduler(
       prisma,
-      config.CONNECTIVITY_CHECK_INTERVAL,
+      appConfig.connectivity.checkInterval,
     );
     connectivityScheduler.start();
 
@@ -42,19 +42,19 @@ const initializeServices = async () => {
 const startServer = async () => {
   await initializeServices();
 
-  const server = app.listen(config.PORT, () => {
+  const server = app.listen(appConfig.server.port, () => {
     logger.info(
       {
-        port: config.PORT,
-        environment: config.NODE_ENV,
-        logLevel: config.LOG_LEVEL,
+        port: appConfig.server.port,
+        environment: appConfig.server.nodeEnv,
+        logLevel: appConfig.logging.level,
       },
-      `🚀 Mini Infra server started on port ${config.PORT}`,
+      `🚀 Mini Infra server started on port ${appConfig.server.port}`,
     );
 
-    if (config.NODE_ENV === "development") {
+    if (appConfig.server.nodeEnv === "development") {
       logger.info(
-        `📊 Health check available at: http://localhost:${config.PORT}/health`,
+        `📊 Health check available at: http://localhost:${appConfig.server.port}/health`,
       );
     }
   });

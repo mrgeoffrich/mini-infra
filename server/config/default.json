@@ -1,0 +1,35 @@
+{
+  "server": {
+    "nodeEnv": "development",
+    "port": 5000,
+    "publicUrl": "http://localhost:3000"
+  },
+  "database": {
+    "url": "file:./dev.db"
+  },
+  "auth": {
+    "google": {
+      "clientId": null,
+      "clientSecret": null
+    },
+    "session": {
+      "secret": null
+    },
+    "apiKey": {
+      "secret": "default-secret-change-in-production"
+    }
+  },
+  "logging": {
+    "level": "info"
+  },
+  "docker": {
+    "containerCacheTtl": 3000,
+    "containerPollInterval": 5000
+  },
+  "azure": {
+    "apiTimeout": 15000
+  },
+  "connectivity": {
+    "checkInterval": 300000
+  }
+}

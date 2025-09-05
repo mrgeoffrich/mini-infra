@@ -1,7 +1,7 @@
 import Docker from "dockerode";
 import NodeCache from "node-cache";
 import { servicesLogger } from "../lib/logger-factory";
-import config from "../lib/config";
+import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
@@ -20,7 +20,7 @@ class DockerService {
 
     // Initialize cache with 3-second TTL
     this.cache = new NodeCache({
-      stdTTL: Math.floor((config.CONTAINER_CACHE_TTL || 3000) / 1000),
+      stdTTL: Math.floor(dockerConfig.containerCacheTtl / 1000),
       checkperiod: 5,
     });
 
