@@ -28,7 +28,8 @@
       "Read",
       "Write",
       "Bash(npm start)",
-      "Read(C:\\c\\Repos\\mini-infra/**)"
+      "Read(C:\\c\\Repos\\mini-infra/**)",
+      "Read(//c/c/Repos/mini-infra/server/**)"
     ],
     "deny": [],
     "ask": [],

@@ -11,7 +11,7 @@ import path from "path";
 
 // Import configuration and utilities
 import config from "./lib/config";
-import logger from "./lib/logger";
+import { httpLogger } from "./lib/logger-factory";
 import { requestIdMiddleware } from "./lib/request-id";
 import { helmetMiddleware } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
@@ -29,7 +29,7 @@ app.use(requestIdMiddleware as RequestHandler);
 // Pino HTTP logging middleware
 app.use(
   pinoHttp({
-    logger,
+    logger: httpLogger(),
     customLogLevel: (req, res) => {
       if (res.statusCode >= 400) return "warn";
       if (res.statusCode >= 300) return "info";
@@ -158,13 +158,15 @@ app.use(notFoundHandler as RequestHandler);
 app.use(errorHandler as any);
 
 // Graceful shutdown handling
+const appLoggerInstance = httpLogger(); // Use HTTP logger for shutdown messages since they relate to server lifecycle
+
 process.on("SIGTERM", () => {
-  logger.info("SIGTERM received, shutting down gracefully");
+  appLoggerInstance.info("SIGTERM received, shutting down gracefully");
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
-  logger.info("SIGINT received, shutting down gracefully");
+  appLoggerInstance.info("SIGINT received, shutting down gracefully");
   process.exit(0);
 });
 

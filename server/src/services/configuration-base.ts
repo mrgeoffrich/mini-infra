@@ -7,7 +7,7 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 
 export abstract class ConfigurationService implements IConfigurationService {
   protected prisma: PrismaClient;
@@ -61,7 +61,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           category: this.category,
           key: key,
@@ -70,7 +70,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         "Setting updated",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           category: this.category,
           key: key,
@@ -100,7 +100,7 @@ export abstract class ConfigurationService implements IConfigurationService {
 
       return setting?.value || null;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           category: this.category,
           key: key,
@@ -128,7 +128,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           category: this.category,
           key: key,
@@ -137,7 +137,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         "Setting deleted",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           category: this.category,
           key: key,
@@ -177,7 +177,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           service: this.category,
           status: status,
@@ -203,7 +203,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           service: this.category,
           error: error instanceof Error ? error.message : "Unknown error",

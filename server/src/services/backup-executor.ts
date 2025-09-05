@@ -1,6 +1,6 @@
 import { PrismaClient } from "../generated/prisma";
 import Bull from "bull";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { BackupConfigService } from "./backup-config";
 import { DatabaseConfigService } from "./postgres-config";
@@ -88,10 +88,10 @@ export class BackupExecutorService {
       // Initialize Docker executor
       await this.dockerExecutor.initialize();
 
-      logger.info("BackupExecutorService initialized successfully");
+      servicesLogger().info("BackupExecutorService initialized successfully");
       this.isInitialized = true;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -124,7 +124,7 @@ export class BackupExecutorService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           operationId: backupOperation.id,
           databaseId,
@@ -150,7 +150,7 @@ export class BackupExecutorService {
 
       return this.mapBackupOperationToInfo(backupOperation);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -180,7 +180,7 @@ export class BackupExecutorService {
 
       return this.mapBackupOperationToInfo(operation);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -217,12 +217,12 @@ export class BackupExecutorService {
 
       if (job) {
         await job.remove();
-        logger.info({ operationId, jobId: job.id }, "Backup job cancelled");
+        servicesLogger().info({ operationId, jobId: job.id }, "Backup job cancelled");
       }
 
       return true;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -241,7 +241,7 @@ export class BackupExecutorService {
     this.backupQueue.process("execute-backup", async (job) => {
       const { backupOperationId, databaseId, userId } = job.data;
 
-      logger.info(
+      servicesLogger().info(
         {
           jobId: job.id,
           operationId: backupOperationId,
@@ -253,7 +253,7 @@ export class BackupExecutorService {
       try {
         await this.executeBackup(backupOperationId, databaseId, userId);
       } catch (error) {
-        logger.error(
+        servicesLogger().error(
           {
             jobId: job.id,
             operationId: backupOperationId,
@@ -276,7 +276,7 @@ export class BackupExecutorService {
 
     // Handle job events
     this.backupQueue.on("completed", (job, result) => {
-      logger.info(
+      servicesLogger().info(
         {
           jobId: job.id,
           operationId: job.data.backupOperationId,
@@ -287,7 +287,7 @@ export class BackupExecutorService {
     });
 
     this.backupQueue.on("failed", (job, error) => {
-      logger.error(
+      servicesLogger().error(
         {
           jobId: job.id,
           operationId: job.data.backupOperationId,
@@ -457,7 +457,7 @@ export class BackupExecutorService {
       // Update backup configuration with last backup time
       await this.backupConfigService.updateLastBackupTime(backupConfig.id);
 
-      logger.info(
+      servicesLogger().info(
         {
           operationId,
           databaseId,
@@ -470,7 +470,7 @@ export class BackupExecutorService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           operationId,
           databaseId,
@@ -509,7 +509,7 @@ export class BackupExecutorService {
       // Default fallback
       return "postgres:15-alpine";
     } catch (error) {
-      logger.warn(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -584,7 +584,7 @@ export class BackupExecutorService {
       const blobUrl = `https://${blobServiceClient.accountName}.blob.core.windows.net/${containerName}/${latestBlob.name}`;
       const sizeBytes = BigInt(latestBlob.properties.contentLength || 0);
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           blobName: latestBlob.name,
@@ -600,7 +600,7 @@ export class BackupExecutorService {
         blobUrl,
       };
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerName,
@@ -637,7 +637,7 @@ export class BackupExecutorService {
         },
       });
 
-      logger.debug(
+      servicesLogger().debug(
         {
           operationId,
           status: progressData.status,
@@ -647,7 +647,7 @@ export class BackupExecutorService {
         "Backup progress updated",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -685,9 +685,9 @@ export class BackupExecutorService {
   public async shutdown(): Promise<void> {
     try {
       await this.backupQueue.close();
-      logger.info("BackupExecutorService shut down successfully");
+      servicesLogger().info("BackupExecutorService shut down successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

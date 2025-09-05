@@ -24,7 +24,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **ORM**: Prisma
 - **Authentication**: Passport with Google OAuth
 - **Validation**: Zod for runtime type checking
-- **Logging**: Pino (high-performance structured logging)
+- **Logging**: Pino with multi-file domain-specific logging architecture
 - **Security**: Helmet, CORS, secure sessions
 - **Middleware**: Request correlation IDs, error handling, graceful shutdown
 
@@ -419,6 +419,137 @@ SELECT * FROM system_settings;
 - **Development**: `server/prisma/dev.db`
 - **Test**: `server/test-1.db` (when running tests)
 - **Production**: Configured via `DATABASE_URL` environment variable
+
+## Logging Architecture
+
+The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
+
+### Core Logging Components
+
+#### Logger Factory (`server/src/lib/logger-factory.ts`)
+- **Domain-Specific Loggers**: Separate logger instances for different application domains
+- **Configuration-Driven**: Uses external JSON configuration for flexible log management
+- **Environment Aware**: Different behaviors for development, production, and test environments
+- **Log Rotation**: Built-in support for production log rotation using pino-roll
+
+#### Configuration System (`server/src/lib/logging-config.ts`)
+- **External Configuration**: JSON-based configuration file at `server/config/logging.json`
+- **Environment-Specific Settings**: Separate configurations for dev/prod/test
+- **Validation**: Zod schema validation for configuration integrity
+- **Dynamic Loading**: Runtime configuration loading with fallback defaults
+
+### Log File Structure
+
+#### Development Environment
+- **Pretty Printing**: Human-readable colored output with timestamps
+- **File Destinations**: All logs written to separate files in `server/logs/`
+- **Debug Level**: Detailed logging for development and troubleshooting
+
+#### Production Environment
+- **Structured JSON**: Machine-readable JSON format for log aggregation
+- **Log Rotation**: Automatic rotation with 14-day retention and 10MB size limits
+- **Optimized Levels**: Higher log thresholds for production performance
+- **Sensitive Data Redaction**: Comprehensive redaction of passwords, tokens, and secrets
+
+### Domain-Specific Logging
+
+#### Application Logger (`logs/app.log`)
+- **Purpose**: General application events, startup, shutdown, and core functionality
+- **Usage**: Server initialization, connectivity scheduling, error handling
+- **Level**: Debug (dev) / Info (prod)
+
+#### HTTP Logger (`logs/app-http.log`)  
+- **Purpose**: HTTP requests, responses, and API interactions
+- **Usage**: Request/response middleware, API completion timing, business events
+- **Level**: Info (all environments)
+- **Features**: Request correlation IDs, response times, status codes
+
+#### Prisma Logger (`logs/app-prisma.log`)
+- **Purpose**: Database operations, queries, and ORM events
+- **Usage**: SQL query logging, database connection events, query performance
+- **Level**: Info (dev) / Warn (prod)
+- **Features**: Query text, parameters, execution time, connection targets
+
+#### Services Logger (`logs/app-services.log`)
+- **Purpose**: Service layer operations and business logic
+- **Usage**: All files in `server/src/services/` directory
+- **Level**: Debug (dev) / Info (prod)
+- **Features**: Service validation, external API calls, configuration updates
+
+### Security and Data Protection
+
+#### Comprehensive Data Redaction
+- **Sensitive Fields**: Passwords, tokens, API keys, connection strings, cookies
+- **Header Protection**: Authorization headers, session tokens, set-cookie responses
+- **Request Body Filtering**: Password fields and authentication data
+- **Pattern Matching**: Wildcard patterns for nested object protection
+
+#### Log File Security
+- **Directory Exclusion**: `logs/` directory excluded from version control
+- **File Permissions**: Appropriate file system permissions for log access
+- **Rotation Cleanup**: Automatic cleanup of old log files in production
+
+### Implementation Details
+
+#### Service Integration
+- **Centralized Import**: All service files import `servicesLogger` from logger factory
+- **Consistent Usage**: Standardized logging patterns across all service classes
+- **Context Preservation**: Maintains existing logging context and correlation IDs
+
+#### HTTP Middleware Integration
+- **Dedicated HTTP Logger**: Separate logger instance for HTTP-specific events
+- **Request Correlation**: Maintains request ID correlation across log entries
+- **Performance Tracking**: Request timing and response status logging
+
+#### Backward Compatibility
+- **Legacy Support**: `server/src/lib/logger.ts` maintained for backward compatibility
+- **Seamless Migration**: Existing code continues to work without modifications
+- **Gradual Adoption**: New code can gradually adopt domain-specific loggers
+
+### Configuration Example
+
+```json
+{
+  "development": {
+    "services": {
+      "level": "debug",
+      "destination": "logs/app-services.log",
+      "prettyPrint": true,
+      "rotation": { "enabled": false }
+    }
+  },
+  "production": {
+    "services": {
+      "level": "info", 
+      "destination": "logs/app-services.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
+    }
+  }
+}
+```
+
+### Usage Patterns
+
+#### Service Layer Logging
+```typescript
+import { servicesLogger } from "../lib/logger-factory";
+
+const logger = servicesLogger();
+logger.info({ configKey: "docker.host" }, "Configuration updated");
+```
+
+#### HTTP Request Logging
+```typescript
+import { createApiLogger, logApiCompletion } from "../lib/api-logger";
+
+const { logger, context } = createApiLogger(req);
+logger.info("Processing API request");
+```
 
 ## Security Considerations
 

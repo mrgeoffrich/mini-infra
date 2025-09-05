@@ -1,6 +1,6 @@
 import { PrismaClient } from "../generated/prisma";
 import * as cron from "node-cron";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import { BackupConfigService } from "./backup-config";
 import { BackupExecutorService } from "./backup-executor";
 import { BackupOperationType } from "@mini-infra/types";
@@ -48,10 +48,10 @@ export class BackupSchedulerService {
       // Load existing backup configurations with schedules
       await this.loadExistingSchedules();
 
-      logger.info("BackupSchedulerService initialized successfully");
+      servicesLogger().info("BackupSchedulerService initialized successfully");
       this.isInitialized = true;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -114,7 +114,7 @@ export class BackupSchedulerService {
       // Update database with next scheduled time
       await this.updateNextScheduledTime(databaseId, nextScheduledAt);
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId,
           schedule,
@@ -123,7 +123,7 @@ export class BackupSchedulerService {
         "Backup schedule registered",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -153,10 +153,10 @@ export class BackupSchedulerService {
         // Clear next scheduled time in database
         await this.updateNextScheduledTime(databaseId, null);
 
-        logger.info({ databaseId }, "Backup schedule unregistered");
+        servicesLogger().info({ databaseId }, "Backup schedule unregistered");
       }
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -185,7 +185,7 @@ export class BackupSchedulerService {
         job.nextScheduledAt = this.calculateNextRunTime(job.schedule);
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
 
-        logger.info(
+        servicesLogger().info(
           {
             databaseId,
             nextScheduledAt: job.nextScheduledAt?.toISOString(),
@@ -194,7 +194,7 @@ export class BackupSchedulerService {
         );
       }
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -223,10 +223,10 @@ export class BackupSchedulerService {
         job.nextScheduledAt = null;
         await this.updateNextScheduledTime(databaseId, null);
 
-        logger.info({ databaseId }, "Backup schedule disabled");
+        servicesLogger().info({ databaseId }, "Backup schedule disabled");
       }
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -297,7 +297,7 @@ export class BackupSchedulerService {
 
       return nextDate;
     } catch (error) {
-      logger.warn(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           schedule,
@@ -316,7 +316,7 @@ export class BackupSchedulerService {
     userId: string,
   ): Promise<void> {
     try {
-      logger.info({ databaseId }, "Executing scheduled backup");
+      servicesLogger().info({ databaseId }, "Executing scheduled backup");
 
       // Queue the backup operation
       const backupOperation = await this.backupExecutorService.queueBackup(
@@ -332,7 +332,7 @@ export class BackupSchedulerService {
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
       }
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId,
           operationId: backupOperation.id,
@@ -341,7 +341,7 @@ export class BackupSchedulerService {
         "Scheduled backup queued successfully",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -367,7 +367,7 @@ export class BackupSchedulerService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         { count: backupConfigs.length },
         "Loading existing backup schedules",
       );
@@ -386,7 +386,7 @@ export class BackupSchedulerService {
               await this.enableSchedule(config.databaseId);
             }
           } catch (error) {
-            logger.warn(
+            servicesLogger().warn(
               {
                 error: error instanceof Error ? error.message : "Unknown error",
                 databaseId: config.databaseId,
@@ -398,7 +398,7 @@ export class BackupSchedulerService {
         }
       }
 
-      logger.info(
+      servicesLogger().info(
         {
           loaded: this.scheduledJobs.size,
           total: backupConfigs.length,
@@ -406,7 +406,7 @@ export class BackupSchedulerService {
         "Finished loading backup schedules",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -429,7 +429,7 @@ export class BackupSchedulerService {
         data: { nextScheduledAt },
       });
     } catch (error) {
-      logger.warn(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -445,7 +445,7 @@ export class BackupSchedulerService {
    */
   public async refreshSchedules(): Promise<void> {
     try {
-      logger.info("Refreshing backup schedules");
+      servicesLogger().info("Refreshing backup schedules");
 
       // Stop all existing jobs
       for (const [databaseId] of this.scheduledJobs) {
@@ -455,9 +455,9 @@ export class BackupSchedulerService {
       // Reload from database
       await this.loadExistingSchedules();
 
-      logger.info("Backup schedules refreshed successfully");
+      servicesLogger().info("Backup schedules refreshed successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -480,9 +480,9 @@ export class BackupSchedulerService {
       // Shutdown backup executor
       await this.backupExecutorService.shutdown();
 
-      logger.info("BackupSchedulerService shut down successfully");
+      servicesLogger().info("BackupSchedulerService shut down successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

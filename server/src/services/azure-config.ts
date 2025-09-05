@@ -5,7 +5,7 @@ import {
   ConnectivityStatusType,
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import config from "../lib/config";
 import {
   BlobServiceClient,
@@ -118,7 +118,7 @@ export class AzureConfigService extends ConfigurationService {
 
         // Exponential backoff with jitter
         const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 1000;
-        logger.warn(
+        servicesLogger().warn(
           {
             attempt: attempt + 1,
             maxRetries: maxRetries + 1,
@@ -199,7 +199,7 @@ export class AzureConfigService extends ConfigurationService {
           if (containers.length >= 10) break;
         }
       } catch (containerError) {
-        logger.warn(
+        servicesLogger().warn(
           {
             accountName,
             error:
@@ -290,7 +290,7 @@ export class AzureConfigService extends ConfigurationService {
         result.errorCode,
       );
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           errorCode,
@@ -402,7 +402,7 @@ export class AzureConfigService extends ConfigurationService {
       const connectionString = await this.getConnectionString();
 
       if (!connectionString) {
-        logger.warn(
+        servicesLogger().warn(
           "Cannot retrieve container info: Connection string not configured",
         );
         return [];
@@ -449,7 +449,7 @@ export class AzureConfigService extends ConfigurationService {
         timeoutPromise,
       ]);
 
-      logger.info(
+      servicesLogger().info(
         {
           containerCount: containers.length,
         },
@@ -461,7 +461,7 @@ export class AzureConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
         },
@@ -495,7 +495,7 @@ export class AzureConfigService extends ConfigurationService {
     }>(cacheKey);
 
     if (cached) {
-      logger.debug(
+      servicesLogger().debug(
         { containerName },
         "Container access test result returned from cache",
       );
@@ -552,7 +552,7 @@ export class AzureConfigService extends ConfigurationService {
       // Cache successful result
       AzureConfigService.containerAccessCache.set(cacheKey, result);
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           responseTimeMs: result.responseTimeMs,
@@ -597,7 +597,7 @@ export class AzureConfigService extends ConfigurationService {
       // Cache error result for shorter time (2 minutes)
       AzureConfigService.containerAccessCache.set(cacheKey, result, 120);
 
-      logger.warn(
+      servicesLogger().warn(
         {
           containerName,
           error: errorMessage,
@@ -708,7 +708,7 @@ export class AzureConfigService extends ConfigurationService {
       // Sort files by creation date (newest first)
       files.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           pathPrefix,
@@ -729,7 +729,7 @@ export class AzureConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerName,
@@ -779,7 +779,7 @@ export class AzureConfigService extends ConfigurationService {
 
       const fileName = blobName.split("/").pop() || blobName;
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           blobName,
@@ -799,7 +799,7 @@ export class AzureConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerName,
@@ -871,7 +871,7 @@ export class AzureConfigService extends ConfigurationService {
             deletedFiles.push(blob.name);
             totalSizeFreed += blob.properties.contentLength || 0;
 
-            logger.debug(
+            servicesLogger().debug(
               {
                 blobName: blob.name,
                 blobDate: blobDate.toISOString(),
@@ -886,7 +886,7 @@ export class AzureConfigService extends ConfigurationService {
                 : "Unknown error";
             errors.push(`Failed to delete ${blob.name}: ${deleteErrorMessage}`);
 
-            logger.warn(
+            servicesLogger().warn(
               {
                 blobName: blob.name,
                 error: deleteErrorMessage,
@@ -897,7 +897,7 @@ export class AzureConfigService extends ConfigurationService {
         }
       }
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           retentionDays,
@@ -920,7 +920,7 @@ export class AzureConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerName,
@@ -977,7 +977,7 @@ export class AzureConfigService extends ConfigurationService {
 
       await blobClient.setMetadata(validatedMetadata);
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           blobName,
@@ -991,7 +991,7 @@ export class AzureConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerName,
@@ -1068,7 +1068,7 @@ export class AzureConfigService extends ConfigurationService {
 
       const isValid = errors.length === 0;
 
-      logger.info(
+      servicesLogger().info(
         {
           containerName,
           blobName,
@@ -1094,7 +1094,7 @@ export class AzureConfigService extends ConfigurationService {
 
       errors.push(`Validation failed: ${errorMessage}`);
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerName,

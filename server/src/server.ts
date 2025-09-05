@@ -1,6 +1,9 @@
 import app from "./app";
 import config from "./lib/config";
-import logger from "./lib/logger";
+import { appLogger } from "./lib/logger-factory";
+
+// Use app logger for server startup
+const logger = appLogger();
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
 import prisma from "./lib/prisma";

@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import NodeCache from "node-cache";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import config from "../lib/config";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import { DockerConfigService } from "./docker-config";
@@ -36,7 +36,7 @@ class DockerService {
   }
 
   public async initialize(): Promise<void> {
-    logger.info("Initializing Docker connection at startup...");
+    servicesLogger().info("Initializing Docker connection at startup...");
 
     try {
       // Create Docker client based on settings
@@ -45,9 +45,9 @@ class DockerService {
       // Attempt to connect
       await this.connect(false); // Don't schedule reconnect during startup
       this.setupEventListeners();
-      logger.info("Docker service initialized successfully");
+      servicesLogger().info("Docker service initialized successfully");
     } catch (error) {
-      logger.warn(
+      servicesLogger().warn(
         {
           error,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -64,14 +64,14 @@ class DockerService {
           this.getDockerErrorCode(error),
         );
       } catch (dbError) {
-        logger.error(
+        servicesLogger().error(
           { error: dbError },
           "Failed to record Docker connectivity failure in database",
         );
       }
 
       // Don't throw error - allow server to start with degraded Docker functionality
-      logger.info(
+      servicesLogger().info(
         "Docker service initialized with degraded functionality - will retry connection attempts",
       );
 
@@ -94,7 +94,7 @@ class DockerService {
 
       if (dockerHost) {
         finalHost = dockerHost;
-        logger.info(
+        servicesLogger().info(
           { host: dockerHost },
           "Using Docker host from database settings",
         );
@@ -104,12 +104,12 @@ class DockerService {
 
       if (apiVersion) {
         finalApiVersion = apiVersion;
-        logger.info(
+        servicesLogger().info(
           { apiVersion },
           "Using Docker API version from database settings",
         );
       } else {
-        logger.info(
+        servicesLogger().info(
           "No Docker API version specified, using Docker daemon default",
         );
       }
@@ -117,9 +117,9 @@ class DockerService {
       // Create Docker client using the same logic as DockerConfigService
       this.docker = this.createDockerClient(finalHost, finalApiVersion);
 
-      logger.info("Docker client created successfully");
+      servicesLogger().info("Docker client created successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         { error: error instanceof Error ? error.message : "Unknown error" },
         "Failed to create Docker client from settings",
       );
@@ -140,7 +140,7 @@ class DockerService {
       const responseTimeMs = Date.now() - startTime;
 
       this.connected = true;
-      logger.info({ responseTimeMs }, "Docker service connected successfully");
+      servicesLogger().info({ responseTimeMs }, "Docker service connected successfully");
 
       // Record successful connection
       try {
@@ -149,7 +149,7 @@ class DockerService {
           responseTimeMs,
         );
       } catch (dbError) {
-        logger.error(
+        servicesLogger().error(
           { error: dbError },
           "Failed to record successful Docker connectivity in database",
         );
@@ -163,7 +163,7 @@ class DockerService {
       this.connected = false;
       const responseTimeMs = Date.now();
 
-      logger.error(
+      servicesLogger().error(
         {
           error,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -181,7 +181,7 @@ class DockerService {
           this.getDockerErrorCode(error),
         );
       } catch (dbError) {
-        logger.error(
+        servicesLogger().error(
           { error: dbError },
           "Failed to record Docker connectivity failure in database",
         );
@@ -199,13 +199,13 @@ class DockerService {
     if (this.reconnectInterval) return;
 
     this.reconnectInterval = setInterval(async () => {
-      logger.info("Attempting to reconnect to Docker...");
+      servicesLogger().info("Attempting to reconnect to Docker...");
       try {
         // Recreate client from current settings before reconnecting
         await this.createDockerClientFromSettings();
         await this.connect(true); // Allow scheduling reconnect in background
       } catch (error) {
-        logger.error({ error }, "Reconnection attempt failed");
+        servicesLogger().error({ error }, "Reconnection attempt failed");
       }
     }, 10000); // Try every 10 seconds
   }
@@ -285,7 +285,7 @@ class DockerService {
     // Subscribe to Docker events for cache invalidation
     this.docker.getEvents({}, (err, stream) => {
       if (err) {
-        logger.error({ error: err }, "Failed to subscribe to Docker events");
+        servicesLogger().error({ error: err }, "Failed to subscribe to Docker events");
         return;
       }
 
@@ -294,7 +294,7 @@ class DockerService {
           try {
             const event = JSON.parse(data.toString());
             if (event.Type === "container") {
-              logger.debug(
+              servicesLogger().debug(
                 {
                   action: event.Action,
                   containerId: event.id,
@@ -304,12 +304,12 @@ class DockerService {
               this.cache.flushAll();
             }
           } catch (error) {
-            logger.error({ error }, "Failed to parse Docker event");
+            servicesLogger().error({ error }, "Failed to parse Docker event");
           }
         });
 
         stream.on("error", (error) => {
-          logger.error({ error }, "Docker events stream error");
+          servicesLogger().error({ error }, "Docker events stream error");
         });
       }
     });
@@ -324,7 +324,7 @@ class DockerService {
     const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
 
     if (cached) {
-      logger.debug("Returning cached container list");
+      servicesLogger().debug("Returning cached container list");
       return cached;
     }
 
@@ -341,13 +341,13 @@ class DockerService {
       );
 
       this.cache.set(cacheKey, containerInfos);
-      logger.info(
+      servicesLogger().info(
         `Retrieved ${containerInfos.length} containers from Docker API`,
       );
 
       return containerInfos;
     } catch (error) {
-      logger.error({ error }, "Failed to list containers");
+      servicesLogger().error({ error }, "Failed to list containers");
       throw error;
     }
   }
@@ -381,7 +381,7 @@ class DockerService {
       if ((error as any).statusCode === 404) {
         return null;
       }
-      logger.error(
+      servicesLogger().error(
         {
           error,
           containerId: id,
@@ -549,7 +549,7 @@ class DockerService {
 
   public flushCache(): void {
     this.cache.flushAll();
-    logger.info("Docker service cache flushed");
+    servicesLogger().info("Docker service cache flushed");
   }
 
   /**
@@ -557,7 +557,7 @@ class DockerService {
    * This method can be called when Docker settings are updated
    */
   public async refreshConnection(): Promise<void> {
-    logger.info("Refreshing Docker connection with updated settings...");
+    servicesLogger().info("Refreshing Docker connection with updated settings...");
 
     try {
       // Stop current reconnection attempts
@@ -575,9 +575,9 @@ class DockerService {
       // Setup event listeners for new connection
       this.setupEventListeners();
 
-      logger.info("Docker connection refreshed successfully");
+      servicesLogger().info("Docker connection refreshed successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

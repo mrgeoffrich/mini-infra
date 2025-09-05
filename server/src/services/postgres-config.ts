@@ -1,7 +1,7 @@
 import { PrismaClient } from "../generated/prisma";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -43,7 +43,7 @@ export class DatabaseConfigService {
         this.encryptionKey,
       ).toString();
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -70,7 +70,7 @@ export class DatabaseConfigService {
       }
       return decrypted;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -111,7 +111,7 @@ export class DatabaseConfigService {
         sslMode: sslMode as PostgreSSLMode,
       };
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -185,7 +185,7 @@ export class DatabaseConfigService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId: createdDb.id,
           name: createdDb.name,
@@ -197,7 +197,7 @@ export class DatabaseConfigService {
 
       return this.toDatabaseInfo(createdDb);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           name: request.name,
           host: request.host,
@@ -320,7 +320,7 @@ export class DatabaseConfigService {
         data: updateData,
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId: updatedDb.id,
           name: updatedDb.name,
@@ -332,7 +332,7 @@ export class DatabaseConfigService {
 
       return this.toDatabaseInfo(updatedDb);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -368,7 +368,7 @@ export class DatabaseConfigService {
 
       return this.toDatabaseInfo(database);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -449,7 +449,7 @@ export class DatabaseConfigService {
 
       return databases.map((db) => this.toDatabaseInfo(db));
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -484,7 +484,7 @@ export class DatabaseConfigService {
         where: { id: databaseId },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId: databaseId,
           name: database.name,
@@ -493,7 +493,7 @@ export class DatabaseConfigService {
         "Database configuration deleted",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -538,7 +538,7 @@ export class DatabaseConfigService {
       const serverVersion = result.rows[0]?.version;
       const databaseName = result.rows[0]?.current_database;
 
-      logger.info(
+      servicesLogger().info(
         {
           host: config.host,
           port: config.port,
@@ -577,7 +577,7 @@ export class DatabaseConfigService {
         errorCode = "CONNECTION_REFUSED";
       }
 
-      logger.warn(
+      servicesLogger().warn(
         {
           host: config.host,
           port: config.port,
@@ -606,7 +606,7 @@ export class DatabaseConfigService {
         try {
           await client.end();
         } catch (endError) {
-          logger.warn(
+          servicesLogger().warn(
             {
               error:
                 endError instanceof Error ? endError.message : "Unknown error",
@@ -655,7 +655,7 @@ export class DatabaseConfigService {
 
       return result;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -720,7 +720,7 @@ export class DatabaseConfigService {
         metadata: validationResult.metadata,
       };
 
-      logger.info(
+      servicesLogger().info(
         {
           databaseId,
           healthStatus,
@@ -731,7 +731,7 @@ export class DatabaseConfigService {
 
       return result;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -771,7 +771,7 @@ export class DatabaseConfigService {
       );
       return this.parseConnectionString(connectionString);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId,
           userId,
@@ -809,7 +809,7 @@ export class DatabaseConfigService {
         },
       });
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId,
           error: error instanceof Error ? error.message : "Unknown error",

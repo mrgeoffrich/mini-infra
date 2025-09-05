@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
-import logger from "./logger";
+import { appLogger } from "./logger-factory";
+
+// Use app logger for error handling
+const logger = appLogger();
 import { getRequestId } from "./request-id";
 import config from "./config";
 

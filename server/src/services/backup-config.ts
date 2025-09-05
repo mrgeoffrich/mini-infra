@@ -1,6 +1,6 @@
 import { PrismaClient } from "../generated/prisma";
 import * as cron from "node-cron";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import { AzureConfigService } from "./azure-config";
 import {
   BackupConfiguration,
@@ -89,7 +89,7 @@ export class BackupConfigService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           configId: createdConfig.id,
           databaseId: databaseId,
@@ -102,7 +102,7 @@ export class BackupConfigService {
 
       return this.toBackupConfigInfo(createdConfig);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -218,7 +218,7 @@ export class BackupConfigService {
         data: updateData,
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           configId: configId,
           databaseId: existingConfig.databaseId,
@@ -229,7 +229,7 @@ export class BackupConfigService {
 
       return this.toBackupConfigInfo(updatedConfig);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           configId: configId,
           userId: userId,
@@ -265,7 +265,7 @@ export class BackupConfigService {
 
       return this.toBackupConfigInfo(config);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           databaseId: databaseId,
           userId: userId,
@@ -301,7 +301,7 @@ export class BackupConfigService {
         where: { id: configId },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           configId: configId,
           databaseId: config.databaseId,
@@ -310,7 +310,7 @@ export class BackupConfigService {
         "Backup configuration deleted",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           configId: configId,
           userId: userId,
@@ -351,7 +351,7 @@ export class BackupConfigService {
 
       return nextTime;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           cronExpression,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -376,7 +376,7 @@ export class BackupConfigService {
         );
       }
 
-      logger.debug(
+      servicesLogger().debug(
         {
           containerName,
           responseTime: accessResult.responseTimeMs,
@@ -385,7 +385,7 @@ export class BackupConfigService {
         "Azure container validation successful",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           containerName,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -411,7 +411,7 @@ export class BackupConfigService {
         },
       });
 
-      logger.debug(
+      servicesLogger().debug(
         {
           configId,
           lastBackupAt: now.toISOString(),
@@ -419,7 +419,7 @@ export class BackupConfigService {
         "Updated last backup time for configuration",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           configId,
           error: error instanceof Error ? error.message : "Unknown error",

@@ -1,6 +1,6 @@
 import Docker, { Container } from "dockerode";
 import { Readable, Writable } from "stream";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 
@@ -59,9 +59,9 @@ export class DockerExecutorService {
 
       // Test connection
       await this.docker.ping();
-      logger.info("DockerExecutor initialized successfully");
+      servicesLogger().info("DockerExecutor initialized successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -83,7 +83,7 @@ export class DockerExecutorService {
     let stderr = "";
 
     try {
-      logger.info(
+      servicesLogger().info(
         {
           image: options.image,
           envKeys: Object.keys(options.env),
@@ -96,7 +96,7 @@ export class DockerExecutorService {
       container = await this.createContainer(options);
       const containerId = container.id;
 
-      logger.info({ containerId }, "Container created successfully");
+      servicesLogger().info({ containerId }, "Container created successfully");
 
       // Set up output capture
       const outputCapture = await this.attachToContainer(container);
@@ -113,12 +113,12 @@ export class DockerExecutorService {
       outputCapture.stderr?.on("data", (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
-        logger.debug({ containerId, stderr: chunk }, "Container stderr");
+        servicesLogger().debug({ containerId, stderr: chunk }, "Container stderr");
       });
 
       // Start container
       await container.start();
-      logger.info({ containerId }, "Container started");
+      servicesLogger().info({ containerId }, "Container started");
 
       // Wait for container completion with timeout
       const result = await this.waitForContainer(
@@ -128,7 +128,7 @@ export class DockerExecutorService {
 
       const executionTimeMs = Date.now() - startTime;
 
-      logger.info(
+      servicesLogger().info(
         {
           containerId,
           exitCode: result.exitCode,
@@ -149,7 +149,7 @@ export class DockerExecutorService {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           containerId: container?.id,
@@ -244,7 +244,7 @@ export class DockerExecutorService {
         exitCode: data.State.ExitCode,
       };
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
@@ -267,13 +267,13 @@ export class DockerExecutorService {
 
       if (forceKill) {
         await container.kill();
-        logger.info({ containerId }, "Container killed");
+        servicesLogger().info({ containerId }, "Container killed");
       } else {
         await container.stop();
-        logger.info({ containerId }, "Container stopped");
+        servicesLogger().info({ containerId }, "Container stopped");
       }
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
@@ -313,7 +313,7 @@ export class DockerExecutorService {
 
       return await this.docker.createContainer(containerOptions);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           image: options.image,
@@ -365,7 +365,7 @@ export class DockerExecutorService {
 
       return { stdout, stderr };
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId: container.id,
@@ -412,17 +412,17 @@ export class DockerExecutorService {
       // Remove container if it exists and is not already being removed
       if (data.State.Status !== "removing") {
         await container.remove({ force: true });
-        logger.debug({ containerId: container.id }, "Container cleaned up");
+        servicesLogger().debug({ containerId: container.id }, "Container cleaned up");
       }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the operation
       if ((error as any).statusCode === 404) {
-        logger.debug(
+        servicesLogger().debug(
           { containerId: container.id },
           "Container already removed",
         );
       } else {
-        logger.warn(
+        servicesLogger().warn(
           {
             error: error instanceof Error ? error.message : "Unknown error",
             containerId: container.id,

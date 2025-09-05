@@ -5,7 +5,7 @@ import {
   ConnectivityStatusType,
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import Cloudflare from "cloudflare";
 
 /**
@@ -68,7 +68,7 @@ export class CloudflareConfigService extends ConfigurationService {
       ) {
         // Transition to half-open state to allow retry
         this.circuitBreaker.state = "half-open";
-        logger.info(
+        servicesLogger().info(
           {
             previousFailures: this.circuitBreaker.consecutiveFailures,
             lastFailureTime: this.circuitBreaker.lastFailureTime,
@@ -90,7 +90,7 @@ export class CloudflareConfigService extends ConfigurationService {
       this.circuitBreaker.state === "half-open" ||
       this.circuitBreaker.consecutiveFailures > 0
     ) {
-      logger.info(
+      servicesLogger().info(
         {
           previousState: this.circuitBreaker.state,
           previousFailures: this.circuitBreaker.consecutiveFailures,
@@ -124,7 +124,7 @@ export class CloudflareConfigService extends ConfigurationService {
         Date.now() + CloudflareConfigService.COOLDOWN_PERIOD_MS,
       );
 
-      logger.warn(
+      servicesLogger().warn(
         {
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
           errorCode,
@@ -133,7 +133,7 @@ export class CloudflareConfigService extends ConfigurationService {
         "Circuit breaker opened due to consecutive failures",
       );
     } else {
-      logger.debug(
+      servicesLogger().debug(
         {
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
           threshold: CloudflareConfigService.FAILURE_THRESHOLD,
@@ -288,7 +288,7 @@ export class CloudflareConfigService extends ConfigurationService {
     if (this.pendingValidation) {
       const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
       if (timeSinceRequest < CloudflareConfigService.DEDUP_WINDOW_MS) {
-        logger.debug(
+        servicesLogger().debug(
           {
             timeSinceRequest,
             dedupWindow: CloudflareConfigService.DEDUP_WINDOW_MS,
@@ -308,7 +308,7 @@ export class CloudflareConfigService extends ConfigurationService {
         ? this.circuitBreaker.nextRetryTime.getTime() - Date.now()
         : 0;
 
-      logger.info(
+      servicesLogger().info(
         {
           circuitState: "open",
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
@@ -356,7 +356,7 @@ export class CloudflareConfigService extends ConfigurationService {
     try {
       const apiToken = await this.get(CloudflareConfigService.API_TOKEN_KEY);
 
-      logger.debug(
+      servicesLogger().debug(
         this.redactSensitiveData({
           hasToken: !!apiToken,
           tokenLength: apiToken?.length,
@@ -419,7 +419,7 @@ export class CloudflareConfigService extends ConfigurationService {
           metadata.accountName = accountInfo.name;
           metadata.accountId = accountInfo.id;
         } catch (accountError) {
-          logger.warn(
+          servicesLogger().warn(
             {
               accountId,
               error:
@@ -450,7 +450,7 @@ export class CloudflareConfigService extends ConfigurationService {
         metadata,
       );
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           responseTime,
           userEmail: userResponse.email,
@@ -489,7 +489,7 @@ export class CloudflareConfigService extends ConfigurationService {
         result.errorCode,
       );
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           errorCode,
@@ -566,7 +566,7 @@ export class CloudflareConfigService extends ConfigurationService {
       consecutiveFailures: 0,
     };
 
-    logger.info(
+    servicesLogger().info(
       this.redactSensitiveData({
         userId,
         tokenLength: apiToken.length,
@@ -612,7 +612,7 @@ export class CloudflareConfigService extends ConfigurationService {
   async getTunnelConfig(tunnelId: string): Promise<any> {
     // Check circuit breaker before making API call
     if (this.isCircuitBreakerOpen()) {
-      logger.warn(
+      servicesLogger().warn(
         {
           circuitState: "open",
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
@@ -628,12 +628,12 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        logger.warn("Cannot retrieve tunnel config: API token not configured");
+        servicesLogger().warn("Cannot retrieve tunnel config: API token not configured");
         return null;
       }
 
       if (!accountId) {
-        logger.warn("Cannot retrieve tunnel config: Account ID not configured");
+        servicesLogger().warn("Cannot retrieve tunnel config: Account ID not configured");
         return null;
       }
 
@@ -662,7 +662,7 @@ export class CloudflareConfigService extends ConfigurationService {
       ])) as Response;
 
       if (!configResponse.ok) {
-        logger.warn(
+        servicesLogger().warn(
           this.redactSensitiveData({
             accountId,
             tunnelId,
@@ -679,7 +679,7 @@ export class CloudflareConfigService extends ConfigurationService {
       // Record success for circuit breaker
       this.recordSuccess();
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           accountId,
           tunnelId,
@@ -700,7 +700,7 @@ export class CloudflareConfigService extends ConfigurationService {
         this.recordFailure(errorCode);
       }
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           errorCode,
@@ -722,7 +722,7 @@ export class CloudflareConfigService extends ConfigurationService {
   async getTunnelInfo(): Promise<any[]> {
     // Check circuit breaker before making API call
     if (this.isCircuitBreakerOpen()) {
-      logger.warn(
+      servicesLogger().warn(
         {
           circuitState: "open",
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
@@ -736,12 +736,12 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        logger.warn("Cannot retrieve tunnel info: API token not configured");
+        servicesLogger().warn("Cannot retrieve tunnel info: API token not configured");
         return [];
       }
 
       if (!accountId) {
-        logger.warn("Cannot retrieve tunnel info: Account ID not configured");
+        servicesLogger().warn("Cannot retrieve tunnel info: Account ID not configured");
         return [];
       }
 
@@ -765,7 +765,7 @@ export class CloudflareConfigService extends ConfigurationService {
       // Record success for circuit breaker
       this.recordSuccess();
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           accountId,
           tunnelCount: tunnels.length,
@@ -793,7 +793,7 @@ export class CloudflareConfigService extends ConfigurationService {
         this.recordFailure(errorCode);
       }
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           errorCode,
@@ -815,7 +815,7 @@ export class CloudflareConfigService extends ConfigurationService {
   async updateTunnelConfig(tunnelId: string, config: any): Promise<any> {
     // Check circuit breaker before making API call
     if (this.isCircuitBreakerOpen()) {
-      logger.warn(
+      servicesLogger().warn(
         {
           circuitState: "open",
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
@@ -831,12 +831,12 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        logger.warn("Cannot update tunnel config: API token not configured");
+        servicesLogger().warn("Cannot update tunnel config: API token not configured");
         return null;
       }
 
       if (!accountId) {
-        logger.warn("Cannot update tunnel config: Account ID not configured");
+        servicesLogger().warn("Cannot update tunnel config: Account ID not configured");
         return null;
       }
 
@@ -865,7 +865,7 @@ export class CloudflareConfigService extends ConfigurationService {
 
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
-        logger.warn(
+        servicesLogger().warn(
           this.redactSensitiveData({
             accountId,
             tunnelId,
@@ -883,7 +883,7 @@ export class CloudflareConfigService extends ConfigurationService {
       // Record success for circuit breaker
       this.recordSuccess();
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           accountId,
           tunnelId,
@@ -904,7 +904,7 @@ export class CloudflareConfigService extends ConfigurationService {
         this.recordFailure(errorCode);
       }
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           errorCode,
@@ -977,7 +977,7 @@ export class CloudflareConfigService extends ConfigurationService {
         ingress,
       };
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           tunnelId,
           hostname,
@@ -993,7 +993,7 @@ export class CloudflareConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           tunnelId,
@@ -1051,7 +1051,7 @@ export class CloudflareConfigService extends ConfigurationService {
         ingress,
       };
 
-      logger.info(
+      servicesLogger().info(
         this.redactSensitiveData({
           tunnelId,
           hostname,
@@ -1066,7 +1066,7 @@ export class CloudflareConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         this.redactSensitiveData({
           error: errorMessage,
           tunnelId,

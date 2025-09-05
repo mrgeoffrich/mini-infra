@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import logger from "./logger";
+import { httpLogger } from "./logger-factory";
 import { getRequestId } from "./request-id";
 
 // Types imported for future use
@@ -29,7 +29,7 @@ export const createApiLogger = (req: Request) => {
     startTime: Date.now(),
   };
 
-  const requestLogger = logger.child({
+  const requestLogger = httpLogger().child({
     requestId: context.requestId,
     userId: context.userId,
     method: context.method,
@@ -49,7 +49,7 @@ export const startApiTiming = (context: ApiContext): TimingContext => {
 export const logApiCompletion = (
   timingContext: TimingContext,
   res: Response,
-  requestLogger: typeof logger,
+  requestLogger: ReturnType<typeof httpLogger>,
 ) => {
   const duration = Date.now() - timingContext.startTime;
 
@@ -65,7 +65,7 @@ export const logApiCompletion = (
 };
 
 export const logApiBusinessEvent = (
-  requestLogger: typeof logger,
+  requestLogger: ReturnType<typeof httpLogger>,
   event: string,
   data: Record<string, unknown> = {},
 ) => {
@@ -79,7 +79,7 @@ export const logApiBusinessEvent = (
 };
 
 export const logError = (
-  requestLogger: typeof logger,
+  requestLogger: ReturnType<typeof httpLogger>,
   error: Error,
   message: string,
   context: Record<string, unknown> = {},

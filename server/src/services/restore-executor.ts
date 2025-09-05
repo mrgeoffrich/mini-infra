@@ -1,6 +1,6 @@
 import { PrismaClient } from "../generated/prisma";
 import Bull from "bull";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { DatabaseConfigService } from "./postgres-config";
 import { AzureConfigService } from "./azure-config";
@@ -95,10 +95,10 @@ export class RestoreExecutorService {
       // Initialize Docker executor
       await this.dockerExecutor.initialize();
 
-      logger.info("RestoreExecutorService initialized successfully");
+      servicesLogger().info("RestoreExecutorService initialized successfully");
       this.isInitialized = true;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -131,7 +131,7 @@ export class RestoreExecutorService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           operationId: restoreOperation.id,
           databaseId,
@@ -157,7 +157,7 @@ export class RestoreExecutorService {
 
       return this.mapRestoreOperationToInfo(restoreOperation);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -187,7 +187,7 @@ export class RestoreExecutorService {
 
       return this.mapRestoreOperationToInfo(operation);
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -224,12 +224,12 @@ export class RestoreExecutorService {
 
       if (job) {
         await job.remove();
-        logger.info({ operationId, jobId: job.id }, "Restore job cancelled");
+        servicesLogger().info({ operationId, jobId: job.id }, "Restore job cancelled");
       }
 
       return true;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -248,7 +248,7 @@ export class RestoreExecutorService {
     this.restoreQueue.process("execute-restore", async (job) => {
       const { restoreOperationId, databaseId, backupUrl, userId } = job.data;
 
-      logger.info(
+      servicesLogger().info(
         {
           jobId: job.id,
           operationId: restoreOperationId,
@@ -266,7 +266,7 @@ export class RestoreExecutorService {
           userId,
         );
       } catch (error) {
-        logger.error(
+        servicesLogger().error(
           {
             jobId: job.id,
             operationId: restoreOperationId,
@@ -289,7 +289,7 @@ export class RestoreExecutorService {
 
     // Handle job events
     this.restoreQueue.on("completed", (job, result) => {
-      logger.info(
+      servicesLogger().info(
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,
@@ -300,7 +300,7 @@ export class RestoreExecutorService {
     });
 
     this.restoreQueue.on("failed", (job, error) => {
-      logger.error(
+      servicesLogger().error(
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,
@@ -515,7 +515,7 @@ export class RestoreExecutorService {
         },
       });
 
-      logger.info(
+      servicesLogger().info(
         {
           operationId,
           databaseId,
@@ -528,7 +528,7 @@ export class RestoreExecutorService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           operationId,
           databaseId,
@@ -603,7 +603,7 @@ export class RestoreExecutorService {
       const ageInDays = ageInMs / (1000 * 60 * 60 * 24);
 
       if (ageInDays > maxAgeInDays) {
-        logger.warn(
+        servicesLogger().warn(
           {
             backupUrl,
             ageInDays: Math.round(ageInDays),
@@ -613,7 +613,7 @@ export class RestoreExecutorService {
         );
       }
 
-      logger.info(
+      servicesLogger().info(
         {
           backupUrl,
           sizeBytes,
@@ -634,7 +634,7 @@ export class RestoreExecutorService {
         },
       };
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           backupUrl,
@@ -659,7 +659,7 @@ export class RestoreExecutorService {
     databaseName: string,
   ): Promise<string> {
     try {
-      logger.info(
+      servicesLogger().info(
         { databaseName },
         "Creating pre-restore backup for rollback purposes",
       );
@@ -692,14 +692,14 @@ export class RestoreExecutorService {
 
       const rollbackBackupUrl = `https://${this.getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackPathPrefix}`;
 
-      logger.info(
+      servicesLogger().info(
         { rollbackBackupUrl, databaseName },
         "Rollback backup created successfully",
       );
 
       return rollbackBackupUrl;
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseName,
@@ -720,7 +720,7 @@ export class RestoreExecutorService {
     dockerImage: string,
   ): Promise<void> {
     try {
-      logger.info(
+      servicesLogger().info(
         { rollbackBackupUrl },
         "Executing rollback to pre-restore state",
       );
@@ -747,9 +747,9 @@ export class RestoreExecutorService {
         throw new Error(`Rollback execution failed: ${containerResult.stderr}`);
       }
 
-      logger.info({ rollbackBackupUrl }, "Rollback executed successfully");
+      servicesLogger().info({ rollbackBackupUrl }, "Rollback executed successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           rollbackBackupUrl,
@@ -779,7 +779,7 @@ export class RestoreExecutorService {
         };
       }
 
-      logger.info(
+      servicesLogger().info(
         { database: connectionConfig.database },
         "Restored database verified successfully",
       );
@@ -789,7 +789,7 @@ export class RestoreExecutorService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           database: connectionConfig.database,
@@ -814,7 +814,7 @@ export class RestoreExecutorService {
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
       if (!azureConnectionString) {
-        logger.warn("Azure connection string not available for cleanup");
+        servicesLogger().warn("Azure connection string not available for cleanup");
         return;
       }
 
@@ -830,13 +830,13 @@ export class RestoreExecutorService {
 
       await blobClient.deleteIfExists();
 
-      logger.info(
+      servicesLogger().info(
         { rollbackBackupUrl },
         "Rollback backup cleaned up successfully",
       );
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the restore
-      logger.warn(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           rollbackBackupUrl,
@@ -878,7 +878,7 @@ export class RestoreExecutorService {
       // Default fallback
       return "postgres:15-alpine";
     } catch (error) {
-      logger.warn(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -952,7 +952,7 @@ export class RestoreExecutorService {
         },
       });
 
-      logger.debug(
+      servicesLogger().debug(
         {
           operationId,
           status: progressData.status,
@@ -962,7 +962,7 @@ export class RestoreExecutorService {
         "Restore progress updated",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -997,9 +997,9 @@ export class RestoreExecutorService {
   public async shutdown(): Promise<void> {
     try {
       await this.restoreQueue.close();
-      logger.info("RestoreExecutorService shut down successfully");
+      servicesLogger().info("RestoreExecutorService shut down successfully");
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

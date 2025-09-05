@@ -7,7 +7,7 @@ import {
   ConnectivityStatusType,
 } from "@mini-infra/types";
 import { PrismaClient } from "../generated/prisma";
-import logger from "../lib/logger";
+import { servicesLogger } from "../lib/logger-factory";
 
 /**
  * PostgreSQL Settings Configuration Service
@@ -49,7 +49,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
         );
       }
 
-      logger.info(
+      servicesLogger().info(
         {
           userId,
           backupImageSet: !existingBackupSetting,
@@ -58,7 +58,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
         "PostgreSQL Docker image defaults initialized",
       );
     } catch (error) {
-      logger.error(
+      servicesLogger().error(
         {
           userId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -87,7 +87,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       const effectiveRestoreImage =
         restoreImage || PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE;
 
-      logger.info(
+      servicesLogger().info(
         {
           backupImage: effectiveBackupImage,
           restoreImage: effectiveRestoreImage,
@@ -158,7 +158,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
         metadata,
       );
 
-      logger.info(
+      servicesLogger().info(
         {
           responseTimeMs,
           backupImage: effectiveBackupImage,
@@ -178,7 +178,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logger.error(
+      servicesLogger().error(
         {
           error: errorMessage,
           responseTimeMs,
@@ -263,7 +263,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
     await this.set("backupDockerImage", image, userId);
 
-    logger.info(
+    servicesLogger().info(
       {
         image,
         userId,
@@ -283,7 +283,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
     await this.set("restoreDockerImage", image, userId);
 
-    logger.info(
+    servicesLogger().info(
       {
         image,
         userId,
@@ -319,7 +319,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       this.delete("restoreDockerImage", userId),
     ]);
 
-    logger.info(
+    servicesLogger().info(
       {
         userId,
         defaultBackupImage: PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,

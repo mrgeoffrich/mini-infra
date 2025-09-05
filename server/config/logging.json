@@ -1,0 +1,113 @@
+{
+  "development": {
+    "app": {
+      "level": "debug",
+      "destination": "logs/app.log",
+      "prettyPrint": true,
+      "rotation": {
+        "enabled": false
+      }
+    },
+    "http": {
+      "level": "info", 
+      "destination": "logs/app-http.log",
+      "prettyPrint": true,
+      "rotation": {
+        "enabled": false
+      }
+    },
+    "prisma": {
+      "level": "debug",
+      "destination": "logs/app-prisma.log", 
+      "prettyPrint": true,
+      "rotation": {
+        "enabled": false
+      }
+    },
+    "services": {
+      "level": "debug",
+      "destination": "logs/app-services.log",
+      "prettyPrint": true,
+      "rotation": {
+        "enabled": false
+      }
+    }
+  },
+  "production": {
+    "app": {
+      "level": "info",
+      "destination": "logs/app.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
+    },
+    "http": {
+      "level": "info",
+      "destination": "logs/app-http.log", 
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d", 
+        "maxSize": "10m"
+      }
+    },
+    "prisma": {
+      "level": "warn",
+      "destination": "logs/app-prisma.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
+    },
+    "services": {
+      "level": "info",
+      "destination": "logs/app-services.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
+    }
+  },
+  "test": {
+    "app": {
+      "level": "silent"
+    },
+    "http": {
+      "level": "silent"
+    },
+    "prisma": {
+      "level": "silent"
+    },
+    "services": {
+      "level": "silent"
+    }
+  },
+  "redactionPaths": [
+    "password",
+    "token", 
+    "accessToken",
+    "refreshToken",
+    "authorization",
+    "cookie",
+    "sessionToken",
+    "connectionString",
+    "apiKey",
+    "secret",
+    "*.password",
+    "*.token",
+    "*.connectionString",
+    "*.apiKey",
+    "*.secret",
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "req.body.password",
+    "res.headers[\"set-cookie\"]"
+  ]
+}
