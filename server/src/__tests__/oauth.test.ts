@@ -87,57 +87,45 @@ describe("OAuth Strategy and Callback Handling", () => {
     };
 
     it("should create a new user when no existing user found", async () => {
-      // Import the passport configuration to execute the strategy callback
-      const passport = await import("../lib/passport");
+      // Mock the Google OAuth strategy constructor
+      const mockVerifyCallback = jest.fn();
+      
+      // Mock the GoogleStrategy class to capture the verify callback
+      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
+        mockVerifyCallback.mockImplementation(callback);
+        return {
+          name: 'google',
+          _verify: callback,
+        };
+      });
 
-      // Get the strategy callback function that was registered
-      const mockUse = passport.default.use as jest.MockedFunction<any>;
+      // Temporarily mock the passport-google-oauth20 module
+      jest.doMock("passport-google-oauth20", () => ({
+        Strategy: GoogleStrategy,
+      }));
 
-      // Ensure passport is called at least once
-      if (mockUse.mock.calls.length === 0) {
-        // Force initialization of passport strategies
-        jest.doMock("../lib/passport", () => ({
-          __esModule: true,
-          default: {
-            use: mockUse,
-            serializeUser: jest.fn(),
-            deserializeUser: jest.fn(),
-          },
-        }));
-      }
+      // Re-import the passport module to trigger strategy registration
+      jest.resetModules();
+      await import("../lib/passport");
 
-      const strategyArgs = mockUse.mock.calls[0];
+      // Execute the strategy callback directly
+      await mockVerifyCallback(
+        "accessToken",
+        "refreshToken",
+        mockProfile,
+        mockDone,
+      );
 
-      if (strategyArgs && strategyArgs.length > 0) {
-        const strategyInstance = strategyArgs[0];
-        const callbackFunction = strategyInstance._verify || strategyInstance;
+      // Verify user was created
+      const createdUser = await testPrisma.user.findUnique({
+        where: { googleId: mockProfile.id },
+      });
 
-        if (callbackFunction && typeof callbackFunction === "function") {
-          await callbackFunction(
-            "accessToken",
-            "refreshToken",
-            mockProfile,
-            mockDone,
-          );
-
-          // Verify user was created
-          const createdUser = await testPrisma.user.findUnique({
-            where: { googleId: mockProfile.id },
-          });
-
-          expect(createdUser).toBeTruthy();
-          expect(createdUser?.email).toBe("test@example.com");
-          expect(createdUser?.name).toBe("Test User");
-          expect(createdUser?.googleId).toBe("google-test-123");
-          expect(mockDone).toHaveBeenCalledWith(null, createdUser);
-        } else {
-          throw new Error("Could not find OAuth strategy callback function");
-        }
-      } else {
-        // Skip this test if no strategy is registered - indicates module loading issue
-        console.warn("Skipping OAuth test - no strategy registered");
-        expect(true).toBe(true);
-      }
+      expect(createdUser).toBeTruthy();
+      expect(createdUser?.email).toBe("test@example.com");
+      expect(createdUser?.name).toBe("Test User");
+      expect(createdUser?.googleId).toBe("google-test-123");
+      expect(mockDone).toHaveBeenCalledWith(null, createdUser);
     });
 
     it("should update existing user with matching googleId", async () => {
@@ -150,37 +138,43 @@ describe("OAuth Strategy and Callback Handling", () => {
         },
       });
 
-      const passport = await import("../lib/passport");
-      const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyArgs = mockUse.mock.calls[0];
+      // Mock the Google OAuth strategy constructor
+      const mockVerifyCallback = jest.fn();
+      
+      // Mock the GoogleStrategy class to capture the verify callback
+      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
+        mockVerifyCallback.mockImplementation(callback);
+        return {
+          name: 'google',
+          _verify: callback,
+        };
+      });
 
-      if (strategyArgs && strategyArgs.length > 0) {
-        const strategyInstance = strategyArgs[0];
-        const callbackFunction = strategyInstance._verify || strategyInstance;
+      // Temporarily mock the passport-google-oauth20 module
+      jest.doMock("passport-google-oauth20", () => ({
+        Strategy: GoogleStrategy,
+      }));
 
-        if (callbackFunction && typeof callbackFunction === "function") {
-          await callbackFunction(
-            "accessToken",
-            "refreshToken",
-            mockProfile,
-            mockDone,
-          );
+      // Re-import the passport module to trigger strategy registration
+      jest.resetModules();
+      await import("../lib/passport");
 
-          // Verify user was updated
-          const updatedUser = await testPrisma.user.findUnique({
-            where: { id: existingUser.id },
-          });
+      // Execute the strategy callback directly
+      await mockVerifyCallback(
+        "accessToken",
+        "refreshToken",
+        mockProfile,
+        mockDone,
+      );
 
-          expect(updatedUser?.name).toBe("Test User"); // Should be updated
-          expect(updatedUser?.email).toBe("test@example.com"); // Should be updated
-          expect(mockDone).toHaveBeenCalledWith(null, updatedUser);
-        } else {
-          throw new Error("Could not find OAuth strategy callback function");
-        }
-      } else {
-        console.warn("Skipping OAuth test - no strategy registered");
-        expect(true).toBe(true);
-      }
+      // Verify user was updated
+      const updatedUser = await testPrisma.user.findUnique({
+        where: { id: existingUser.id },
+      });
+
+      expect(updatedUser?.name).toBe("Test User"); // Should be updated
+      expect(updatedUser?.email).toBe("test@example.com"); // Should be updated
+      expect(mockDone).toHaveBeenCalledWith(null, updatedUser);
     });
 
     it("should link existing user with matching email but no googleId", async () => {
@@ -192,37 +186,43 @@ describe("OAuth Strategy and Callback Handling", () => {
         },
       });
 
-      const passport = await import("../lib/passport");
-      const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyArgs = mockUse.mock.calls[0];
+      // Mock the Google OAuth strategy constructor
+      const mockVerifyCallback = jest.fn();
+      
+      // Mock the GoogleStrategy class to capture the verify callback
+      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
+        mockVerifyCallback.mockImplementation(callback);
+        return {
+          name: 'google',
+          _verify: callback,
+        };
+      });
 
-      if (strategyArgs && strategyArgs.length > 0) {
-        const strategyInstance = strategyArgs[0];
-        const callbackFunction = strategyInstance._verify || strategyInstance;
+      // Temporarily mock the passport-google-oauth20 module
+      jest.doMock("passport-google-oauth20", () => ({
+        Strategy: GoogleStrategy,
+      }));
 
-        if (callbackFunction && typeof callbackFunction === "function") {
-          await callbackFunction(
-            "accessToken",
-            "refreshToken",
-            mockProfile,
-            mockDone,
-          );
+      // Re-import the passport module to trigger strategy registration
+      jest.resetModules();
+      await import("../lib/passport");
 
-          // Verify user was linked
-          const linkedUser = await testPrisma.user.findUnique({
-            where: { id: existingUser.id },
-          });
+      // Execute the strategy callback directly
+      await mockVerifyCallback(
+        "accessToken",
+        "refreshToken",
+        mockProfile,
+        mockDone,
+      );
 
-          expect(linkedUser?.googleId).toBe("google-test-123");
-          expect(linkedUser?.name).toBe("Test User"); // Updated from OAuth
-          expect(mockDone).toHaveBeenCalledWith(null, linkedUser);
-        } else {
-          throw new Error("Could not find OAuth strategy callback function");
-        }
-      } else {
-        console.warn("Skipping OAuth test - no strategy registered");
-        expect(true).toBe(true);
-      }
+      // Verify user was linked
+      const linkedUser = await testPrisma.user.findUnique({
+        where: { id: existingUser.id },
+      });
+
+      expect(linkedUser?.googleId).toBe("google-test-123");
+      expect(linkedUser?.name).toBe("Test User"); // Updated from OAuth
+      expect(mockDone).toHaveBeenCalledWith(null, linkedUser);
     });
 
     it("should handle error when no email provided in profile", async () => {
@@ -234,22 +234,41 @@ describe("OAuth Strategy and Callback Handling", () => {
         provider: "google",
       };
 
-      const passport = await import("../lib/passport");
-      const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyConfig = mockUse.mock.calls[0]?.[0];
-      const callbackFunction =
-        strategyConfig?.verify || strategyConfig?._verify;
+      // Mock the Google OAuth strategy constructor
+      const mockVerifyCallback = jest.fn();
+      
+      // Mock the GoogleStrategy class to capture the verify callback
+      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
+        mockVerifyCallback.mockImplementation(callback);
+        return {
+          name: 'google',
+          _verify: callback,
+        };
+      });
 
-      if (callbackFunction) {
-        await callbackFunction("google.com", profileWithoutEmail, mockDone);
+      // Temporarily mock the passport-google-oauth20 module
+      jest.doMock("passport-google-oauth20", () => ({
+        Strategy: GoogleStrategy,
+      }));
 
-        expect(mockDone).toHaveBeenCalledWith(
-          expect.objectContaining({
-            message: "No email found in Google profile",
-          }),
-          null,
-        );
-      }
+      // Re-import the passport module to trigger strategy registration
+      jest.resetModules();
+      await import("../lib/passport");
+
+      // Execute the strategy callback directly
+      await mockVerifyCallback(
+        "accessToken",
+        "refreshToken",
+        profileWithoutEmail,
+        mockDone,
+      );
+
+      expect(mockDone).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "No email found in Google profile",
+        }),
+        null,
+      );
     });
 
     it("should handle database errors gracefully", async () => {
@@ -259,30 +278,41 @@ describe("OAuth Strategy and Callback Handling", () => {
         .fn()
         .mockRejectedValue(new Error("Database error") as any);
 
-      const passport = await import("../lib/passport");
-      const mockUse = passport.default.use as jest.MockedFunction<any>;
-      const strategyArgs = mockUse.mock.calls[0];
+      // Mock the Google OAuth strategy constructor
+      const mockVerifyCallback = jest.fn();
+      
+      // Mock the GoogleStrategy class to capture the verify callback
+      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
+        mockVerifyCallback.mockImplementation(callback);
+        return {
+          name: 'google',
+          _verify: callback,
+        };
+      });
 
-      if (strategyArgs && strategyArgs.length > 0) {
-        const strategyInstance = strategyArgs[0];
-        const callbackFunction = strategyInstance._verify;
+      // Temporarily mock the passport-google-oauth20 module
+      jest.doMock("passport-google-oauth20", () => ({
+        Strategy: GoogleStrategy,
+      }));
 
-        if (callbackFunction) {
-          await callbackFunction(
-            "accessToken",
-            "refreshToken",
-            mockProfile,
-            mockDone,
-          );
+      // Re-import the passport module to trigger strategy registration
+      jest.resetModules();
+      await import("../lib/passport");
 
-          expect(mockDone).toHaveBeenCalledWith(
-            expect.objectContaining({
-              message: "Database error",
-            }),
-            null,
-          );
-        }
-      }
+      // Execute the strategy callback directly
+      await mockVerifyCallback(
+        "accessToken",
+        "refreshToken",
+        mockProfile,
+        mockDone,
+      );
+
+      expect(mockDone).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: "Database error",
+        }),
+        null,
+      );
 
       // Restore the original method
       (testPrisma.user as any).findUnique = originalFindUnique;
@@ -293,13 +323,30 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should serialize user correctly", async () => {
       const testUser = await createTestUser();
 
-      const passport = await import("../lib/passport");
-      const mockSerializeUser = passport.default
-        .serializeUser as jest.MockedFunction<any>;
+      // Mock the passport serializeUser function
+      const mockSerializeUser = jest.fn();
+      let serializeFunction: any;
+      
+      // Mock passport to capture the serialize function
+      const mockPassport = {
+        use: jest.fn(),
+        serializeUser: jest.fn().mockImplementation((fn) => {
+          serializeFunction = fn;
+        }),
+        deserializeUser: jest.fn(),
+      };
 
-      // Get the serialization function
-      const serializeFunction = mockSerializeUser.mock.calls[0]?.[0];
+      // Mock the passport module
+      jest.doMock("passport", () => ({
+        __esModule: true,
+        default: mockPassport,
+      }));
 
+      // Re-import to trigger registration
+      jest.resetModules();
+      await import("../lib/passport");
+
+      // Execute the serialization function
       if (serializeFunction) {
         const mockSerializeDone = jest.fn();
         serializeFunction(testUser, mockSerializeDone);
@@ -313,13 +360,29 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should deserialize user correctly", async () => {
       const testUser = await createTestUser();
 
-      const passport = await import("../lib/passport");
-      const mockDeserializeUser = passport.default
-        .deserializeUser as jest.MockedFunction<any>;
+      // Mock the passport deserializeUser function
+      let deserializeFunction: any;
+      
+      // Mock passport to capture the deserialize function
+      const mockPassport = {
+        use: jest.fn(),
+        serializeUser: jest.fn(),
+        deserializeUser: jest.fn().mockImplementation((fn) => {
+          deserializeFunction = fn;
+        }),
+      };
 
-      // Get the deserialization function
-      const deserializeFunction = mockDeserializeUser.mock.calls[0]?.[0];
+      // Mock the passport module
+      jest.doMock("passport", () => ({
+        __esModule: true,
+        default: mockPassport,
+      }));
 
+      // Re-import to trigger registration
+      jest.resetModules();
+      await import("../lib/passport");
+
+      // Execute the deserialization function
       if (deserializeFunction) {
         const mockDeserializeDone = jest.fn();
         await deserializeFunction(testUser.id, mockDeserializeDone);
@@ -336,13 +399,29 @@ describe("OAuth Strategy and Callback Handling", () => {
     });
 
     it("should handle non-existent user during deserialization", async () => {
-      const passport = await import("../lib/passport");
-      const mockDeserializeUser = passport.default
-        .deserializeUser as jest.MockedFunction<any>;
+      // Mock the passport deserializeUser function
+      let deserializeFunction: any;
+      
+      // Mock passport to capture the deserialize function
+      const mockPassport = {
+        use: jest.fn(),
+        serializeUser: jest.fn(),
+        deserializeUser: jest.fn().mockImplementation((fn) => {
+          deserializeFunction = fn;
+        }),
+      };
 
-      // Get the deserialization function
-      const deserializeFunction = mockDeserializeUser.mock.calls[0]?.[0];
+      // Mock the passport module
+      jest.doMock("passport", () => ({
+        __esModule: true,
+        default: mockPassport,
+      }));
 
+      // Re-import to trigger registration
+      jest.resetModules();
+      await import("../lib/passport");
+
+      // Execute the deserialization function
       if (deserializeFunction) {
         const mockDeserializeDone = jest.fn();
         await deserializeFunction("non-existent-id", mockDeserializeDone);
@@ -358,13 +437,29 @@ describe("OAuth Strategy and Callback Handling", () => {
         .fn()
         .mockRejectedValue(new Error("Database error") as any);
 
-      const passport = await import("../lib/passport");
-      const mockDeserializeUser = passport.default
-        .deserializeUser as jest.MockedFunction<any>;
+      // Mock the passport deserializeUser function
+      let deserializeFunction: any;
+      
+      // Mock passport to capture the deserialize function
+      const mockPassport = {
+        use: jest.fn(),
+        serializeUser: jest.fn(),
+        deserializeUser: jest.fn().mockImplementation((fn) => {
+          deserializeFunction = fn;
+        }),
+      };
 
-      // Get the deserialization function
-      const deserializeFunction = mockDeserializeUser.mock.calls[0]?.[0];
+      // Mock the passport module
+      jest.doMock("passport", () => ({
+        __esModule: true,
+        default: mockPassport,
+      }));
 
+      // Re-import to trigger registration
+      jest.resetModules();
+      await import("../lib/passport");
+
+      // Execute the deserialization function
       if (deserializeFunction) {
         const mockDeserializeDone = jest.fn();
         await deserializeFunction("test-user-id", mockDeserializeDone);

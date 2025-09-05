@@ -123,6 +123,20 @@ if (googleClientId === "not-configured" || googleClientSecret === "not-configure
   logger.info("Google OAuth strategy registered successfully");
 }
 
-// Note: No session serialization needed - using JWT tokens for stateless authentication
+// Serialization functions (needed for testing even if using JWT for production)
+passport.serializeUser((user: any, done: PassportDoneCallback) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: string, done: PassportDoneCallback) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id },
+    });
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
+});
 
 export default passport;

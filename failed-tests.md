@@ -56,13 +56,26 @@ Updated the Docker service test mocks to properly configure DockerConfigService 
 
 ---
 
-## 4. `src/__tests__/oauth.test.ts`
+## 4. `src/__tests__/oauth.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Issues Fixed:
+- **OAuth strategy callback function not found** - Fixed by properly mocking GoogleStrategy class and capturing verify callback
+- **Passport module mocking issues** - Fixed by using doMock instead of static mocks and properly handling module reset
+- **Serialization/deserialization functions missing** - Added passport serialization functions for testing compatibility
 
-### Failed Tests:
-- Multiple OAuth-related tests (details truncated)
+### Previously Failed Tests (Now Passing):
+1. `OAuth Strategy and Callback Handling › Google OAuth Strategy Callback › should create a new user when no existing user found` ✅
+2. `OAuth Strategy and Callback Handling › Google OAuth Strategy Callback › should update existing user with matching googleId` ✅
+3. `OAuth Strategy and Callback Handling › Google OAuth Strategy Callback › should link existing user with matching email but no googleId` ✅
+4. `OAuth Strategy and Callback Handling › Google OAuth Strategy Callback › should handle error when no email provided in profile` ✅
+5. `OAuth Strategy and Callback Handling › Google OAuth Strategy Callback › should handle database errors gracefully` ✅
+6. `OAuth Strategy and Callback Handling › User Serialization › should serialize user correctly` ✅
+7. `OAuth Strategy and Callback Handling › User Deserialization › should deserialize user correctly` ✅
+8. `OAuth Strategy and Callback Handling › User Deserialization › should handle non-existent user during deserialization` ✅
+9. `OAuth Strategy and Callback Handling › User Deserialization › should handle database errors during deserialization` ✅
+
+### Fix Summary:
+Updated the OAuth test suite to properly mock the GoogleStrategy class and passport functions. Added serialization/deserialization functions to the passport configuration for testing compatibility while maintaining JWT-based stateless authentication for production use.
 
 ---
 
