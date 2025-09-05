@@ -36,18 +36,18 @@ export class CloudflareConfigService extends ConfigurationService {
   private static readonly TIMEOUT_MS = 10000; // 10 second timeout
   private static readonly API_TOKEN_KEY = "api_token";
   private static readonly ACCOUNT_ID_KEY = "account_id";
-  
+
   // Circuit breaker configuration
   private static readonly FAILURE_THRESHOLD = 5; // Open circuit after 5 consecutive failures
   private static readonly COOLDOWN_PERIOD_MS = 5 * 60 * 1000; // 5 minutes cooldown
   private static readonly DEDUP_WINDOW_MS = 1000; // 1 second deduplication window
-  
+
   // Circuit breaker state
   private circuitBreaker: CircuitBreakerState = {
     state: "closed",
     consecutiveFailures: 0,
   };
-  
+
   // Request deduplication
   private pendingValidation: PendingRequest | null = null;
 
@@ -86,7 +86,10 @@ export class CloudflareConfigService extends ConfigurationService {
    * Record a successful API call and reset circuit breaker if needed
    */
   private recordSuccess(): void {
-    if (this.circuitBreaker.state === "half-open" || this.circuitBreaker.consecutiveFailures > 0) {
+    if (
+      this.circuitBreaker.state === "half-open" ||
+      this.circuitBreaker.consecutiveFailures > 0
+    ) {
       logger.info(
         {
           previousState: this.circuitBreaker.state,
@@ -95,7 +98,7 @@ export class CloudflareConfigService extends ConfigurationService {
         "Circuit breaker reset after successful API call",
       );
     }
-    
+
     this.circuitBreaker = {
       state: "closed",
       consecutiveFailures: 0,
@@ -112,12 +115,15 @@ export class CloudflareConfigService extends ConfigurationService {
     this.circuitBreaker.lastFailureTime = new Date();
 
     // Check if we should open the circuit
-    if (this.circuitBreaker.consecutiveFailures >= CloudflareConfigService.FAILURE_THRESHOLD) {
+    if (
+      this.circuitBreaker.consecutiveFailures >=
+      CloudflareConfigService.FAILURE_THRESHOLD
+    ) {
       this.circuitBreaker.state = "open";
       this.circuitBreaker.nextRetryTime = new Date(
         Date.now() + CloudflareConfigService.COOLDOWN_PERIOD_MS,
       );
-      
+
       logger.warn(
         {
           consecutiveFailures: this.circuitBreaker.consecutiveFailures,
@@ -150,7 +156,7 @@ export class CloudflareConfigService extends ConfigurationService {
   } {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const statusCode = error?.response?.status || error?.status;
-    
+
     // Handle specific HTTP status codes
     if (statusCode) {
       switch (statusCode) {
@@ -183,7 +189,7 @@ export class CloudflareConfigService extends ConfigurationService {
           };
       }
     }
-    
+
     // Parse error messages
     if (errorMessage.includes("timeout")) {
       return {
@@ -222,7 +228,7 @@ export class CloudflareConfigService extends ConfigurationService {
         isRetriable: true,
       };
     }
-    
+
     return {
       errorCode: "CLOUDFLARE_API_ERROR",
       connectivityStatus: "failed",
@@ -240,22 +246,33 @@ export class CloudflareConfigService extends ConfigurationService {
       // Redact API tokens (typically 40+ characters starting with specific patterns)
       return data.replace(/[a-zA-Z0-9_-]{40,}/g, "[REDACTED_TOKEN]");
     }
-    
+
     if (typeof data === "object" && data !== null) {
       const redacted = { ...data };
-      const sensitiveKeys = ["apiToken", "api_token", "token", "secret", "password", "key"];
-      
+      const sensitiveKeys = [
+        "apiToken",
+        "api_token",
+        "token",
+        "secret",
+        "password",
+        "key",
+      ];
+
       for (const key of Object.keys(redacted)) {
-        if (sensitiveKeys.some(sensitive => key.toLowerCase().includes(sensitive))) {
+        if (
+          sensitiveKeys.some((sensitive) =>
+            key.toLowerCase().includes(sensitive),
+          )
+        ) {
           redacted[key] = "[REDACTED]";
         } else if (typeof redacted[key] === "object") {
           redacted[key] = this.redactSensitiveData(redacted[key]);
         }
       }
-      
+
       return redacted;
     }
-    
+
     return data;
   }
 
@@ -266,7 +283,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async validate(): Promise<ValidationResult> {
     const startTime = Date.now();
-    
+
     // Check for request deduplication
     if (this.pendingValidation) {
       const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
@@ -281,7 +298,7 @@ export class CloudflareConfigService extends ConfigurationService {
         return this.pendingValidation.promise;
       }
     }
-    
+
     // Check circuit breaker state
     if (this.isCircuitBreakerOpen()) {
       const timeSinceFailure = this.circuitBreaker.lastFailureTime
@@ -290,7 +307,7 @@ export class CloudflareConfigService extends ConfigurationService {
       const timeUntilRetry = this.circuitBreaker.nextRetryTime
         ? this.circuitBreaker.nextRetryTime.getTime() - Date.now()
         : 0;
-        
+
       logger.info(
         {
           circuitState: "open",
@@ -300,44 +317,45 @@ export class CloudflareConfigService extends ConfigurationService {
         },
         "Circuit breaker is open, skipping validation",
       );
-      
+
       const result: ValidationResult = {
         isValid: false,
         message: `Circuit breaker open after ${this.circuitBreaker.consecutiveFailures} consecutive failures. Retry in ${Math.ceil(timeUntilRetry / 1000)} seconds.`,
         errorCode: "CIRCUIT_BREAKER_OPEN",
         responseTimeMs: Date.now() - startTime,
       };
-      
+
       return result;
     }
-    
+
     // Create the validation promise
     const validationPromise = this.performValidation(startTime);
-    
+
     // Store for deduplication
     this.pendingValidation = {
       promise: validationPromise,
       timestamp: Date.now(),
     };
-    
+
     // Clear pending validation after completion
     validationPromise.finally(() => {
       this.pendingValidation = null;
     });
-    
+
     return validationPromise;
   }
-  
+
   /**
    * Perform the actual validation logic
    * @param startTime The start time of the validation request
    * @returns ValidationResult with connectivity status and details
    */
-  private async performValidation(startTime: number): Promise<ValidationResult> {
-
+  private async performValidation(
+    startTime: number,
+  ): Promise<ValidationResult> {
     try {
       const apiToken = await this.get(CloudflareConfigService.API_TOKEN_KEY);
-      
+
       logger.debug(
         this.redactSensitiveData({
           hasToken: !!apiToken,
@@ -416,7 +434,7 @@ export class CloudflareConfigService extends ConfigurationService {
 
       // Record success for circuit breaker
       this.recordSuccess();
-      
+
       const result: ValidationResult = {
         isValid: true,
         message: `Cloudflare API connection successful (${userResponse.email})`,
@@ -431,7 +449,7 @@ export class CloudflareConfigService extends ConfigurationService {
         undefined,
         metadata,
       );
-      
+
       logger.info(
         this.redactSensitiveData({
           responseTime,
@@ -447,10 +465,11 @@ export class CloudflareConfigService extends ConfigurationService {
       const responseTime = Date.now() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      
+
       // Parse and categorize the error
-      const { errorCode, connectivityStatus, isRetriable } = this.parseApiError(error);
-      
+      const { errorCode, connectivityStatus, isRetriable } =
+        this.parseApiError(error);
+
       // Record failure for circuit breaker (only for retriable errors)
       if (isRetriable) {
         this.recordFailure(errorCode);
@@ -540,13 +559,13 @@ export class CloudflareConfigService extends ConfigurationService {
     }
 
     await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
-    
+
     // Reset circuit breaker when new credentials are set
     this.circuitBreaker = {
       state: "closed",
       consecutiveFailures: 0,
     };
-    
+
     logger.info(
       this.redactSensitiveData({
         userId,
@@ -625,12 +644,15 @@ export class CloudflareConfigService extends ConfigurationService {
       // Try to fetch tunnel configuration using the proper API endpoint
       const configResponse = (await Promise.race([
         // Use the tunnel configurations endpoint
-        fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`, {
-          headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json'
-          }
-        }),
+        fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
+          {
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              "Content-Type": "application/json",
+            },
+          },
+        ),
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel config API request timeout")),
@@ -653,7 +675,7 @@ export class CloudflareConfigService extends ConfigurationService {
       }
 
       const configData = await configResponse.json();
-      
+
       // Record success for circuit breaker
       this.recordSuccess();
 
@@ -671,7 +693,7 @@ export class CloudflareConfigService extends ConfigurationService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      
+
       // Parse error and record failure if retriable
       const { errorCode, isRetriable } = this.parseApiError(error);
       if (isRetriable) {
@@ -742,7 +764,7 @@ export class CloudflareConfigService extends ConfigurationService {
 
       // Record success for circuit breaker
       this.recordSuccess();
-      
+
       logger.info(
         this.redactSensitiveData({
           accountId,
@@ -764,7 +786,7 @@ export class CloudflareConfigService extends ConfigurationService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      
+
       // Parse error and record failure if retriable
       const { errorCode, isRetriable } = this.parseApiError(error);
       if (isRetriable) {
@@ -820,16 +842,19 @@ export class CloudflareConfigService extends ConfigurationService {
 
       // Update tunnel configuration using the proper API endpoint
       const updateResponse = (await Promise.race([
-        fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${apiToken}`,
-            'Content-Type': 'application/json'
+        fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              config: config,
+            }),
           },
-          body: JSON.stringify({
-            config: config
-          })
-        }),
+        ),
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel config update API request timeout")),
@@ -854,7 +879,7 @@ export class CloudflareConfigService extends ConfigurationService {
       }
 
       const updateData = await updateResponse.json();
-      
+
       // Record success for circuit breaker
       this.recordSuccess();
 
@@ -872,7 +897,7 @@ export class CloudflareConfigService extends ConfigurationService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      
+
       // Parse error and record failure if retriable
       const { errorCode, isRetriable } = this.parseApiError(error);
       if (isRetriable) {
@@ -901,30 +926,39 @@ export class CloudflareConfigService extends ConfigurationService {
    * @param path Optional path pattern for the hostname
    * @returns Updated configuration or null if update fails
    */
-  async addHostname(tunnelId: string, hostname: string, service: string, path?: string): Promise<any> {
+  async addHostname(
+    tunnelId: string,
+    hostname: string,
+    service: string,
+    path?: string,
+  ): Promise<any> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
-      
+
       if (!currentConfig || !currentConfig.config) {
         throw new Error("Unable to retrieve current tunnel configuration");
       }
 
       const ingress = [...(currentConfig.config.ingress || [])];
-      
+
       // Check if hostname already exists
-      const existingRuleIndex = ingress.findIndex(rule => rule.hostname === hostname && rule.path === path);
+      const existingRuleIndex = ingress.findIndex(
+        (rule) => rule.hostname === hostname && rule.path === path,
+      );
       if (existingRuleIndex !== -1) {
-        throw new Error(`Hostname ${hostname}${path ? ` with path ${path}` : ''} already exists`);
+        throw new Error(
+          `Hostname ${hostname}${path ? ` with path ${path}` : ""} already exists`,
+        );
       }
 
       // Find the catch-all rule (rule without hostname) and insert before it
-      const catchAllIndex = ingress.findIndex(rule => !rule.hostname);
+      const catchAllIndex = ingress.findIndex((rule) => !rule.hostname);
       const newRule: any = {
         hostname,
         service,
       };
-      
+
       if (path) {
         newRule.path = path;
       }
@@ -956,8 +990,9 @@ export class CloudflareConfigService extends ConfigurationService {
 
       return await this.updateTunnelConfig(tunnelId, updatedConfig);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
       logger.error(
         this.redactSensitiveData({
           error: errorMessage,
@@ -979,25 +1014,32 @@ export class CloudflareConfigService extends ConfigurationService {
    * @param path Optional path pattern for the hostname
    * @returns Updated configuration or null if update fails
    */
-  async removeHostname(tunnelId: string, hostname: string, path?: string): Promise<any> {
+  async removeHostname(
+    tunnelId: string,
+    hostname: string,
+    path?: string,
+  ): Promise<any> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
-      
+
       if (!currentConfig || !currentConfig.config) {
         throw new Error("Unable to retrieve current tunnel configuration");
       }
 
       const ingress = [...(currentConfig.config.ingress || [])];
-      
+
       // Find the rule to remove
-      const ruleIndex = ingress.findIndex(rule => 
-        rule.hostname === hostname && 
-        (path ? rule.path === path : !rule.path)
+      const ruleIndex = ingress.findIndex(
+        (rule) =>
+          rule.hostname === hostname &&
+          (path ? rule.path === path : !rule.path),
       );
-      
+
       if (ruleIndex === -1) {
-        throw new Error(`Hostname ${hostname}${path ? ` with path ${path}` : ''} not found`);
+        throw new Error(
+          `Hostname ${hostname}${path ? ` with path ${path}` : ""} not found`,
+        );
       }
 
       // Remove the rule
@@ -1021,8 +1063,9 @@ export class CloudflareConfigService extends ConfigurationService {
 
       return await this.updateTunnelConfig(tunnelId, updatedConfig);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
       logger.error(
         this.redactSensitiveData({
           error: errorMessage,

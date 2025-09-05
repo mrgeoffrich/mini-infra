@@ -37,9 +37,7 @@ const TUNNEL_CACHE_TTL = 60000; // 60 seconds
 
 // Request validation schemas
 const createCloudflareSettingSchema = z.object({
-  api_token: z
-    .string()
-    .min(40, "API token must be at least 40 characters"),
+  api_token: z.string().min(40, "API token must be at least 40 characters"),
   account_id: z.string().optional(),
   encrypt: z.boolean().optional().default(true),
 });
@@ -495,7 +493,7 @@ router.get("/tunnels", requireAuth, (async (
     // Check cache first
     const cacheKey = "tunnels_list";
     const cached = tunnelCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < TUNNEL_CACHE_TTL) {
       logger.debug(
         {
@@ -520,20 +518,23 @@ router.get("/tunnels", requireAuth, (async (
     // Check if API token and account ID are configured
     const apiToken = await cloudflareConfigService.getApiToken();
     const accountId = await cloudflareConfigService.getAccountId();
-    
+
     logger.info(
       {
         requestId,
         userId,
         hasApiToken: !!apiToken,
         hasAccountId: !!accountId,
-        accountId: accountId ? `${accountId.substring(0, 8)}...` : 'not set',
+        accountId: accountId ? `${accountId.substring(0, 8)}...` : "not set",
       },
       "Cloudflare configuration check for tunnels",
     );
 
     if (!apiToken) {
-      logger.warn({ requestId, userId }, "API token not configured for tunnel retrieval");
+      logger.warn(
+        { requestId, userId },
+        "API token not configured for tunnel retrieval",
+      );
       return res.status(400).json({
         success: false,
         error: "Cloudflare API token not configured",
@@ -542,23 +543,26 @@ router.get("/tunnels", requireAuth, (async (
     }
 
     if (!accountId) {
-      logger.warn({ requestId, userId }, "Account ID not configured for tunnel retrieval");
+      logger.warn(
+        { requestId, userId },
+        "Account ID not configured for tunnel retrieval",
+      );
       return res.status(400).json({
         success: false,
-        error: "Cloudflare account ID not configured", 
+        error: "Cloudflare account ID not configured",
         details: "Please configure your Cloudflare account ID first",
       });
     }
 
     // Fetch tunnel information from Cloudflare API
     const tunnels = await cloudflareConfigService.getTunnelInfo();
-    
+
     logger.info(
       {
         requestId,
         userId,
         tunnelCount: tunnels.length,
-        tunnelNames: tunnels.map(t => t.name),
+        tunnelNames: tunnels.map((t) => t.name),
       },
       "Raw tunnel data from Cloudflare API",
     );
@@ -600,8 +604,9 @@ router.get("/tunnels", requireAuth, (async (
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       {
         requestId,
@@ -674,7 +679,7 @@ router.get("/tunnels/:id", requireAuth, (async (
     // Check cache first for tunnel list
     const cacheKey = `tunnel_${tunnelId}`;
     const cached = tunnelCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < TUNNEL_CACHE_TTL) {
       logger.debug(
         {
@@ -729,8 +734,10 @@ router.get("/tunnels/:id", requireAuth, (async (
     ])) as any;
 
     // Find the specific tunnel from the list
-    const tunnelResponse = tunnelsResponse.result?.find((t: any) => t.id === tunnelId);
-    
+    const tunnelResponse = tunnelsResponse.result?.find(
+      (t: any) => t.id === tunnelId,
+    );
+
     if (!tunnelResponse) {
       return res.status(404).json({
         success: false,
@@ -743,7 +750,11 @@ router.get("/tunnels/:id", requireAuth, (async (
     const transformedTunnel: CloudflareTunnelInfo = {
       id: tunnelResponse.id,
       name: tunnelResponse.name,
-      status: tunnelResponse.status as "healthy" | "degraded" | "down" | "inactive",
+      status: tunnelResponse.status as
+        | "healthy"
+        | "degraded"
+        | "down"
+        | "inactive",
       createdAt: tunnelResponse.created_at,
       deletedAt: tunnelResponse.deleted_at,
       connections: tunnelResponse.connections || [],
@@ -778,8 +789,9 @@ router.get("/tunnels/:id", requireAuth, (async (
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       {
         requestId,
@@ -845,7 +857,7 @@ router.get("/tunnels/:id/config", requireAuth, (async (
     // Check cache first for tunnel config
     const cacheKey = `tunnel_config_${tunnelId}`;
     const cached = tunnelCache.get(cacheKey);
-    
+
     if (cached && Date.now() - cached.timestamp < TUNNEL_CACHE_TTL) {
       logger.debug(
         {
@@ -885,8 +897,9 @@ router.get("/tunnels/:id/config", requireAuth, (async (
     }
 
     // Fetch tunnel configuration
-    const tunnelConfig = await cloudflareConfigService.getTunnelConfig(tunnelId);
-    
+    const tunnelConfig =
+      await cloudflareConfigService.getTunnelConfig(tunnelId);
+
     if (!tunnelConfig) {
       return res.status(404).json({
         success: false,
@@ -919,8 +932,9 @@ router.get("/tunnels/:id/config", requireAuth, (async (
 
     res.json(response);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       {
         requestId,
@@ -987,27 +1001,37 @@ router.post("/tunnels/:id/hostnames", requireAuth, (async (
   try {
     // Validate request body
     const addHostnameSchema = z.object({
-      hostname: z.string().min(1, "Hostname is required").refine(
-        (hostname) => {
-          // Basic hostname validation
-          const hostnameRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
-          return hostnameRegex.test(hostname) || hostname.startsWith("*.");
-        },
-        { message: "Invalid hostname format" }
-      ),
-      service: z.string().min(1, "Service is required").refine(
-        (service) => {
-          // Basic service URL validation
-          try {
-            new URL(service);
-            return true;
-          } catch {
-            // Also allow simple formats like "localhost:3000"
-            return /^[a-zA-Z0-9.-]+:\d+$/.test(service) || /^https?:\/\//.test(service);
-          }
-        },
-        { message: "Invalid service URL format" }
-      ),
+      hostname: z
+        .string()
+        .min(1, "Hostname is required")
+        .refine(
+          (hostname) => {
+            // Basic hostname validation
+            const hostnameRegex =
+              /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+            return hostnameRegex.test(hostname) || hostname.startsWith("*.");
+          },
+          { message: "Invalid hostname format" },
+        ),
+      service: z
+        .string()
+        .min(1, "Service is required")
+        .refine(
+          (service) => {
+            // Basic service URL validation
+            try {
+              new URL(service);
+              return true;
+            } catch {
+              // Also allow simple formats like "localhost:3000"
+              return (
+                /^[a-zA-Z0-9.-]+:\d+$/.test(service) ||
+                /^https?:\/\//.test(service)
+              );
+            }
+          },
+          { message: "Invalid service URL format" },
+        ),
       path: z.string().optional(),
     });
 
@@ -1057,7 +1081,7 @@ router.post("/tunnels/:id/hostnames", requireAuth, (async (
       tunnelId,
       hostname,
       service,
-      path
+      path,
     );
 
     if (!updatedConfig) {
@@ -1092,8 +1116,9 @@ router.post("/tunnels/:id/hostnames", requireAuth, (async (
       },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       {
         requestId,
@@ -1187,7 +1212,7 @@ router.delete("/tunnels/:id/hostnames/:hostname", requireAuth, (async (
     const updatedConfig = await cloudflareConfigService.removeHostname(
       tunnelId,
       decodedHostname,
-      path as string | undefined
+      path as string | undefined,
     );
 
     if (!updatedConfig) {
@@ -1220,8 +1245,9 @@ router.delete("/tunnels/:id/hostnames/:hostname", requireAuth, (async (
       },
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
     logger.error(
       {
         requestId,

@@ -176,10 +176,53 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Traefik API**: Load balancer configuration
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
+- **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
 - **Google OAuth API**: User authentication
 
 ### Docker Integration Implementation
 - **Service Class**: `server/src/services/docker.ts` - Singleton Docker service with database-driven configuration and automatic reconnection
+
+### PostgreSQL Database Configuration Service Implementation
+- **Service Class**: `server/src/services/postgres-config.ts` - Complete PostgreSQL database configuration management service
+- **Features**: CRUD operations for database configurations, connection string encryption/decryption using crypto-js, connection testing and health checks, user-scoped database management
+- **Security**: AES encryption for sensitive connection strings, secure validation with timeout protection (10s connection, 5s query), comprehensive error handling with categorized error codes
+- **Database Integration**: Uses PostgresDatabase, BackupConfiguration, BackupOperation, and RestoreOperation Prisma models with full relationship support
+
+### PostgreSQL Backup Configuration Service Implementation
+- **Service Class**: `server/src/services/backup-config.ts` - Complete backup configuration management service for PostgreSQL databases
+- **Features**: CRUD operations for backup configurations, cron expression validation using node-cron, Azure container validation, retention policy management
+- **Scheduling**: Automated next scheduled backup time calculation, support for enabling/disabling backup schedules
+- **Integration**: Azure Storage container validation, comprehensive error handling and logging
+
+### PostgreSQL Database API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-databases.ts` - RESTful CRUD endpoints for PostgreSQL database configuration management
+- **Endpoints**: 
+  - `GET /api/postgres/databases` - List database configurations with filtering and pagination
+  - `GET /api/postgres/databases/:id` - Get specific database configuration
+  - `POST /api/postgres/databases` - Create new database configuration
+  - `PUT /api/postgres/databases/:id` - Update existing database configuration
+  - `DELETE /api/postgres/databases/:id` - Delete database configuration
+  - `POST /api/postgres/databases/:id/test` - Test connection for existing database
+  - `POST /api/postgres/test-connection` - Test connection with provided credentials (without saving)
+- **Features**: Complete CRUD operations, Zod validation schemas, comprehensive error handling with categorized status codes, business event logging, sensitive data redaction in logs
+
+### PostgreSQL Backup Configuration API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-backup-configs.ts` - RESTful endpoints for backup configuration management
+- **Endpoints**:
+  - `GET /api/postgres/backup-configs/:databaseId` - Get backup configuration for a specific database
+  - `POST /api/postgres/backup-configs` - Create new backup configuration
+  - `DELETE /api/postgres/backup-configs/:id` - Delete backup configuration
+- **Features**: Backup configuration CRUD operations, cron expression validation, Azure container validation, Zod validation schemas, comprehensive error handling, business event logging
+
+### PostgreSQL Restore Operations API Endpoints Implementation
+- **API Router**: `server/src/routes/postgres-restore.ts` - RESTful endpoints for restore operations management
+- **Endpoints**:
+  - `POST /api/postgres/restore/:databaseId` - Initiate restore operation for a specific database
+  - `GET /api/postgres/restore/:operationId/status` - Get status of a specific restore operation  
+  - `GET /api/postgres/restore/backups/:containerName` - Browse available backups in Azure container for restore
+  - `GET /api/postgres/restore/:databaseId/operations` - List restore operations for a specific database
+  - `GET /api/postgres/restore/:operationId/progress` - Get detailed progress information for a restore operation
+- **Features**: Restore operation CRUD operations, backup browser for Azure Storage, restore confirmation workflow, progress tracking with detailed status updates, comprehensive error handling, business event logging, sensitive data redaction in logs
 
 ### Settings Service Layer Architecture
 - **Code**: `server/src/services/**` - all the settings code

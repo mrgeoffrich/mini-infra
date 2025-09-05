@@ -7,7 +7,12 @@ import {
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useCloudfareTunnels, useCloudfareTunnelConfig, useAddTunnelHostname, useRemoveTunnelHostname } from "@/hooks/use-cloudflare-settings";
+import {
+  useCloudfareTunnels,
+  useCloudfareTunnelConfig,
+  useAddTunnelHostname,
+  useRemoveTunnelHostname,
+} from "@/hooks/use-cloudflare-settings";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +22,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 interface TunnelConnection {
@@ -48,12 +60,12 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
   const [hostname, setHostname] = useState("");
   const [service, setService] = useState("");
   const [path, setPath] = useState("");
-  
+
   const addHostname = useAddTunnelHostname();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!hostname.trim() || !service.trim()) {
       toast.error("Hostname and service are required fields.");
       return;
@@ -66,16 +78,18 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
         service: service.trim(),
         path: path.trim() || undefined,
       });
-      
+
       toast.success(`Hostname ${hostname} added successfully.`);
-      
+
       // Reset form and close dialog
       setHostname("");
       setService("");
       setPath("");
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add hostname");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to add hostname",
+      );
     }
   };
 
@@ -109,7 +123,7 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
               Can include wildcards like *.example.com
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="service">Backend Service *</Label>
             <Input
@@ -124,7 +138,7 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
               The URL or address:port of your backend service
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="path">Path Pattern (optional)</Label>
             <Input
@@ -138,9 +152,13 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
               Optional path pattern for this hostname
             </div>
           </div>
-          
+
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={addHostname.isPending}>
@@ -160,7 +178,7 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
     isLoading: configLoading,
     error: configError,
   } = useCloudfareTunnelConfig(tunnelId);
-  
+
   const removeHostname = useRemoveTunnelHostname();
 
   if (configLoading) {
@@ -209,10 +227,12 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
         hostname,
         path,
       });
-      
+
       toast.success(`Hostname ${hostname} removed successfully.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to remove hostname");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to remove hostname",
+      );
     }
   };
 
@@ -222,7 +242,7 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
         <div className="text-sm font-medium">Public Hostnames & Services</div>
         <AddHostnameDialog tunnelId={tunnelId} />
       </div>
-      
+
       {publicHostnames.length > 0 ? (
         <div className="space-y-2">
           {publicHostnames.map((hostname, index) => (
@@ -248,13 +268,16 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
                     </div>
                   )}
                   <div className="text-muted-foreground">
-                    Service: <span className="font-mono">{hostname.service}</span>
+                    Service:{" "}
+                    <span className="font-mono">{hostname.service}</span>
                   </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleRemoveHostname(hostname.hostname, hostname.path)}
+                  onClick={() =>
+                    handleRemoveHostname(hostname.hostname, hostname.path)
+                  }
                   disabled={removeHostname.isPending}
                   className="ml-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
@@ -273,7 +296,9 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
       {/* Show catch-all rule if it exists */}
       {ingressRules.some((rule) => !rule.hostname) && (
         <div className="space-y-2">
-          <div className="text-sm font-medium text-muted-foreground">Catch-All Rule</div>
+          <div className="text-sm font-medium text-muted-foreground">
+            Catch-All Rule
+          </div>
           {ingressRules
             .filter((rule) => !rule.hostname)
             .map((rule, index) => (
@@ -282,7 +307,8 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
                 className="p-2 bg-muted/50 rounded border text-xs"
               >
                 <div className="text-muted-foreground">
-                  Default service: <span className="font-mono">{rule.service}</span>
+                  Default service:{" "}
+                  <span className="font-mono">{rule.service}</span>
                 </div>
               </div>
             ))}
@@ -312,7 +338,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
   useEffect(() => {
     const tunnelData = tunnels?.data?.tunnels as Tunnel[] | undefined;
     if (tunnelData && tunnelData.length > 0) {
-      const allTunnelIds = new Set(tunnelData.map(tunnel => tunnel.id));
+      const allTunnelIds = new Set(tunnelData.map((tunnel) => tunnel.id));
       setExpandedTunnels(allTunnelIds);
     }
   }, [tunnels?.data?.tunnels]);
@@ -359,7 +385,10 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
     }
   };
 
-  const formatDate = (dateStr: string | null | undefined, formatStr: string): string => {
+  const formatDate = (
+    dateStr: string | null | undefined,
+    formatStr: string,
+  ): string => {
     if (!dateStr) return "N/A";
     const date = new Date(dateStr);
     if (!isValid(date)) return "Invalid date";
@@ -507,7 +536,10 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
                           <div>
                             <div className="text-muted-foreground">Created</div>
                             <div className="mt-1">
-                              {formatDate(tunnel.created_at, "MMM d, yyyy HH:mm")}
+                              {formatDate(
+                                tunnel.created_at,
+                                "MMM d, yyyy HH:mm",
+                              )}
                             </div>
                           </div>
                         </div>
@@ -518,9 +550,16 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
                           </div>
                           <div className="p-2 bg-background rounded border text-sm">
                             {connectionCount > 0 ? (
-                              <span>{connectionCount} active {connectionCount === 1 ? "connection" : "connections"}</span>
+                              <span>
+                                {connectionCount} active{" "}
+                                {connectionCount === 1
+                                  ? "connection"
+                                  : "connections"}
+                              </span>
                             ) : (
-                              <span className="text-muted-foreground">No active connections</span>
+                              <span className="text-muted-foreground">
+                                No active connections
+                              </span>
                             )}
                           </div>
                         </div>

@@ -43,8 +43,8 @@ const data = {
       icon: IconBrandDocker,
     },
     {
-      title: "Databases",
-      url: "/databases",
+      title: "PostgreSQL",
+      url: "/postgres",
       icon: IconDatabase,
     },
     {
