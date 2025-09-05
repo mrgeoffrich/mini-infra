@@ -102,14 +102,38 @@ export const createTestApiKey = async (
   return apiKey;
 };
 
-// Mock logger to silence logs during tests
-jest.mock("../lib/logger.ts", () => ({
-  logger: {
+// Mock logger factory to silence logs during tests
+jest.mock("../lib/logger-factory.ts", () => ({
+  createLogger: jest.fn(() => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  },
+  })),
+  applicationLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  httpLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
 }));
 
 // Mock Passport for authentication tests

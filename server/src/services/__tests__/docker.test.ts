@@ -44,7 +44,14 @@ const mockLogger = {
   debug: jest.fn(),
 };
 
-jest.mock("../../lib/logger", () => mockLogger);
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => mockLogger),
+  servicesLogger: jest.fn(() => mockLogger),
+  httpLogger: jest.fn(() => mockLogger),
+  prismaLogger: jest.fn(() => mockLogger),
+  __esModule: true,
+  default: jest.fn(() => mockLogger),
+}));
 
 // Mock config
 jest.mock("../../lib/config", () => ({

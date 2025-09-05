@@ -35,7 +35,14 @@ const mockLogger = {
   debug: jest.fn(),
 };
 
-jest.mock("../../lib/logger", () => mockLogger);
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => mockLogger),
+  servicesLogger: jest.fn(() => mockLogger),
+  httpLogger: jest.fn(() => mockLogger),
+  prismaLogger: jest.fn(() => mockLogger),
+  __esModule: true,
+  default: jest.fn(() => mockLogger),
+}));
 
 // Mock auth middleware
 const mockRequireAuth = jest.fn((req: any, res: any, next: any) => {
@@ -52,6 +59,9 @@ jest.mock("../../lib/auth-middleware", () => ({
   requireAuth: mockRequireAuth,
   getAuthenticatedUser: mockGetAuthenticatedUser,
 }));
+
+// Get reference to the mocked logger
+const mockLogger = require("../../lib/logger-factory").httpLogger();
 
 // Mock AzureConfigService
 const mockAzureConfigService = {

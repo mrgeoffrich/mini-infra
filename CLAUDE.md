@@ -47,16 +47,6 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 ### 2. PostgreSQL Database Management
 ### 3. Zero-Downtime Deployment System
 ### 4. Cloudflare Tunnel Management
-### 5. Authentication & Authorization
-- **Full OAuth 2.0 with Google Integration**: Complete end-to-end authentication flow with seamless redirects
-- **Session Management**: Secure session handling with database persistence and automatic cleanup
-- **API Key Authentication**: For webhooks and programmatic access with proper validation
-- **Cross-Tab Synchronization**: Authentication state synchronized across browser tabs using BroadcastChannel API
-- **Comprehensive Error Handling**: User-friendly error messages with proper error boundaries and recovery options
-- **Toast Notifications**: Real-time feedback for authentication events (login success, logout, errors)
-- **Route Protection**: Protected and public route components with authentication guards and loading states
-- **Session Persistence**: Authentication state persists across browser sessions with localStorage backup
-- **Team Support**: Multiple users with proper user context management and profile display
 
 ## Project Structure
 

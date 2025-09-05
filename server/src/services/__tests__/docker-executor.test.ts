@@ -24,7 +24,11 @@ const mockDocker = {
 };
 
 jest.mock("dockerode", () => {
-  return jest.fn().mockImplementation(() => mockDocker);
+  return jest.fn().mockImplementation(() => ({
+    createContainer: jest.fn(),
+    ping: jest.fn(),
+    getContainer: jest.fn(() => mockContainer),
+  }));
 });
 
 // Mock DockerConfigService
@@ -37,19 +41,48 @@ jest.mock("../../lib/prisma", () => ({
 }));
 
 // Mock logger
-jest.mock("../../lib/logger", () => ({
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  httpLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  __esModule: true,
+  default: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
 }));
+
+// Get reference to the mocked logger
+const mockLogger = require("../../lib/logger-factory").servicesLogger();
 
 // Mock DockerConfigService
 const mockDockerConfigService = {
   get: jest.fn(),
 } as unknown as DockerConfigService;
 
-import mockLogger from "../../lib/logger";
 
 describe("DockerExecutorService", () => {
   let dockerExecutorService: DockerExecutorService;
@@ -60,6 +93,17 @@ describe("DockerExecutorService", () => {
     // Mock the docker config service instance
     (dockerExecutorService as any).dockerConfigService =
       mockDockerConfigService;
+    
+    // Set up the docker client mock properly
+    const mockDockerInstance = {
+      createContainer: jest.fn().mockResolvedValue(mockContainer),
+      ping: jest.fn(),
+      getContainer: jest.fn(() => mockContainer),
+    };
+    (dockerExecutorService as any).docker = mockDockerInstance;
+    
+    // Update the mockDocker reference to the same instance
+    Object.assign(mockDocker, mockDockerInstance);
   });
 
   describe("constructor", () => {
@@ -77,13 +121,17 @@ describe("DockerExecutorService", () => {
     });
 
     it("should initialize Docker client successfully", async () => {
-      mockDocker.ping = jest.fn().mockResolvedValue({});
+      const mockPing = jest.fn().mockResolvedValue({});
+      // Mock the createDockerClient method to return our mock docker instance
+      jest.spyOn(dockerExecutorService as any, 'createDockerClient').mockReturnValue({
+        ping: mockPing
+      });
 
       await dockerExecutorService.initialize();
 
       expect(mockDockerConfigService.get).toHaveBeenCalledWith("host");
       expect(mockDockerConfigService.get).toHaveBeenCalledWith("apiVersion");
-      expect(mockDocker.ping).toHaveBeenCalled();
+      expect(mockPing).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
         "DockerExecutor initialized successfully",
       );
@@ -101,9 +149,10 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle Docker ping failure", async () => {
-      mockDocker.ping = jest
-        .fn()
-        .mockRejectedValue(new Error("Docker not available"));
+      const mockPing = jest.fn().mockRejectedValue(new Error("Docker not available"));
+      jest.spyOn(dockerExecutorService as any, 'createDockerClient').mockReturnValue({
+        ping: mockPing
+      });
 
       await expect(dockerExecutorService.initialize()).rejects.toThrow(
         "Docker not available",
@@ -130,20 +179,30 @@ describe("DockerExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
-      mockContainer.start = jest.fn().mockResolvedValue(undefined);
-      mockContainer.wait = jest.fn().mockResolvedValue({ StatusCode: 0 });
-      mockContainer.inspect = jest.fn().mockResolvedValue({
-        State: { Status: "exited" },
+      // Reset all mock functions
+      Object.assign(mockContainer, {
+        id: "container-123",
+        attach: jest.fn(),
+        start: jest.fn().mockResolvedValue(undefined),
+        wait: jest.fn().mockResolvedValue({ StatusCode: 0 }),
+        inspect: jest.fn().mockResolvedValue({
+          State: { Status: "exited" },
+        }),
+        remove: jest.fn().mockResolvedValue(undefined),
+        kill: jest.fn(),
+        stop: jest.fn(),
       });
-      mockContainer.remove = jest.fn().mockResolvedValue(undefined);
 
+      // Update the docker instance mock
+      const dockerInstance = (dockerExecutorService as any).docker;
+      dockerInstance.createContainer = jest.fn().mockResolvedValue(mockContainer);
+      
       // Mock attach stream
       const mockStream = new Readable({ read() {} });
       mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
 
-      // Simulate stream data for testing
-      setTimeout(() => {
+      // Simulate stream data for testing with proper timing
+      process.nextTick(() => {
         // Simulate stdout data with Docker stream format
         const stdoutData = Buffer.alloc(8 + 11); // Header + "Hello World"
         stdoutData.writeUInt8(1, 0); // stdout stream type
@@ -159,10 +218,43 @@ describe("DockerExecutorService", () => {
         mockStream.emit("data", stderrData);
 
         mockStream.emit("end");
-      }, 10);
+      });
     });
 
     it("should execute container successfully", async () => {
+      // Set up the stream with immediate data emission
+      const mockStream = new Readable({ read() {} });
+      
+      // Mock attach to return our stream and immediately emit events
+      mockContainer.attach = jest.fn().mockImplementation(async () => {
+        // Emit data on the next tick to ensure event listeners are set up
+        process.nextTick(() => {
+          // Simulate stdout data with Docker stream format
+          const stdoutData = Buffer.alloc(8 + 11); // Header + "Hello World"
+          stdoutData.writeUInt8(1, 0); // stdout stream type
+          stdoutData.writeUInt32BE(11, 4); // data size
+          stdoutData.write("Hello World", 8);
+          mockStream.emit("data", stdoutData);
+
+          // Simulate stderr data
+          const stderrData = Buffer.alloc(8 + 5); // Header + "Error"
+          stderrData.writeUInt8(2, 0); // stderr stream type
+          stderrData.writeUInt32BE(5, 4); // data size
+          stderrData.write("Error", 8);
+          mockStream.emit("data", stderrData);
+
+          mockStream.emit("end");
+        });
+        return mockStream;
+      });
+
+      // Mock container.wait to resolve after stream events
+      mockContainer.wait = jest.fn().mockImplementation(() => {
+        return new Promise((resolve) => {
+          setTimeout(() => resolve({ StatusCode: 0 }), 100);
+        });
+      });
+
       const result =
         await dockerExecutorService.executeContainer(containerOptions);
 
@@ -172,7 +264,8 @@ describe("DockerExecutorService", () => {
       expect(result.executionTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.containerId).toBe("container-123");
 
-      expect(mockDocker.createContainer).toHaveBeenCalledWith({
+      const dockerInstance = (dockerExecutorService as any).docker;
+      expect(dockerInstance.createContainer).toHaveBeenCalledWith({
         Image: "postgres:15-alpine",
         Env: [
           "POSTGRES_HOST=localhost",
@@ -194,7 +287,8 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container creation failure", async () => {
-      mockDocker.createContainer = jest
+      const dockerInstance = (dockerExecutorService as any).docker;
+      dockerInstance.createContainer = jest
         .fn()
         .mockRejectedValue(new Error("Image not found"));
 
@@ -697,6 +791,11 @@ describe("DockerExecutorService", () => {
   });
 
   describe("container lifecycle", () => {
+    beforeEach(() => {
+      // Reset mocks for each test
+      jest.clearAllMocks();
+    });
+
     it("should handle attach failure", async () => {
       mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
       mockContainer.attach = jest
@@ -748,6 +847,11 @@ describe("DockerExecutorService", () => {
   });
 
   describe("resource limits", () => {
+    beforeEach(() => {
+      // Reset mocks for each test
+      jest.clearAllMocks();
+    });
+
     it("should set memory and CPU limits", async () => {
       mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
       mockContainer.start = jest.fn().mockResolvedValue(undefined);

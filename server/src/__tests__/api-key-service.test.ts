@@ -2,19 +2,39 @@ import { describe, it, expect, jest } from "@jest/globals";
 import { testPrisma, createTestUser } from "./setup";
 import { generateApiKey, hashApiKey } from "../lib/api-key-service";
 
-// Mock logger
-jest.mock("../lib/logger.ts", () => ({
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-  __esModule: true,
-  default: {
+// Mock logger factory
+jest.mock("../lib/logger-factory.ts", () => ({
+  appLogger: jest.fn(() => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  },
+  })),
+  servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  httpLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  __esModule: true,
+  default: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
 }));
 
 describe("API Key Generation and Validation", () => {

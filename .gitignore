@@ -26,3 +26,4 @@ dist-ssr
 # Build artifacts
 server/public/assets/
 server/public/
+docker-compose.yaml

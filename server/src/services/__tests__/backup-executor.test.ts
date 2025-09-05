@@ -27,11 +27,38 @@ jest.mock("../postgres-config");
 jest.mock("../azure-config");
 
 // Mock logger
-jest.mock("../../lib/logger", () => ({
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  httpLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  __esModule: true,
+  default: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
 }));
 
 // Mock Azure Storage Blob
@@ -49,6 +76,9 @@ jest.mock("@azure/storage-blob", () => ({
     fromConnectionString: jest.fn(() => mockBlobServiceClient),
   },
 }));
+
+// Get reference to the mocked logger
+const mockLogger = require("../../lib/logger-factory").servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
@@ -82,7 +112,6 @@ const mockAzureConfigService = {
   get: jest.fn(),
 } as unknown as AzureConfigService;
 
-import mockLogger from "../../lib/logger";
 
 describe("BackupExecutorService", () => {
   let backupExecutorService: BackupExecutorService;

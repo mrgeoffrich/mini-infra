@@ -6,12 +6,42 @@ import { CloudflareConfigService } from "../cloudflare-config";
 import { AzureConfigService } from "../azure-config";
 
 // Mock logger
-jest.mock("../../lib/logger", () => ({
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  httpLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  __esModule: true,
+  default: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
 }));
+
+// Get reference to the mocked logger
+const mockLogger = require("../../lib/logger-factory").servicesLogger();
 
 // Mock configuration services
 jest.mock("../docker-config");
@@ -35,7 +65,6 @@ const mockPrisma = {
 } as unknown as PrismaClient;
 
 // Import the mock after the jest.mock calls
-import mockLogger from "../../lib/logger";
 
 describe("ConfigurationServiceFactory", () => {
   let factory: ConfigurationServiceFactory;
