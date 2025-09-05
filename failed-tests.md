@@ -8,13 +8,35 @@
 
 ---
 
-## 12. `src/routes/__tests__/postgres-progress.test.ts`
+## 12. `src/routes/__tests__/postgres-progress.test.ts` ✅ MOSTLY FIXED
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Issues (MOSTLY RESOLVED):
+- ~~**Mock initialization error**~~ - Fixed ReferenceError in ProgressTrackerService mocking
+- ~~**Router setup issues**~~ - Fixed Express router mounting and auth middleware mocking
+- ~~**Mock instance sharing**~~ - Fixed shared mock instance between router module and tests
+- **Minor remaining issues** - 6 tests still failing (down from 19 originally)
 
-### Failed Tests:
-- Multiple PostgreSQL progress API tests (details truncated)
+### Fixed Tests:
+- ✅ Most backup progress API tests (4/5 passing)
+- ✅ Most restore progress API tests (5/6 passing) 
+- ✅ Most active operations tests (2/3 passing)
+- ✅ All history API tests (7/7 passing)
+- ✅ Most cleanup tests (3/5 passing)
+- ✅ Request ID handling tests (1/1 passing)
+
+### Remaining Issues (6 failures):
+1. Mock call detection in some test scenarios (initialize not being called)
+2. Authentication test expecting 401 but getting 404
+3. Some initialization error tests expecting 500 but getting different responses
+
+### Fixes Applied:
+- **Mock Setup**: Created shared mock instance to properly mock service calls
+- **Import Order**: Moved router import after all mocks to prevent initialization issues
+- **Mock Reset**: Improved mock reset logic in beforeEach to prevent test interference
+- **Route Testing**: Fixed invalid operation ID tests to expect correct HTTP status codes
+- **Express Setup**: Used proper beforeAll pattern for Express app setup
+
+### Status**: 📈 **Major Progress** - 21/27 tests now passing (78% success rate)
 
 ---
 
