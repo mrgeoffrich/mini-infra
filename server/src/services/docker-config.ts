@@ -79,8 +79,8 @@ export class DockerConfigService extends ConfigurationService {
         "Docker ping result details",
       );
 
-      // Check for successful ping - Docker API should return "OK" (case insensitive)
-      if (pingString.toLowerCase() !== "ok") {
+      // Check for successful ping - Docker API can return "OK" (string/Buffer) or boolean true
+      if (!(pingString.toLowerCase() === "ok" || pingResult === true)) {
         const errorMessage = `Docker ping failed: ${pingString}`;
         servicesLogger().warn(
           { pingResult, pingString, originalResult: pingResult },

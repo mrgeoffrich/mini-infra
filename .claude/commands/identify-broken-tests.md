@@ -1,0 +1,1 @@
+run all the tests. save the failed tests files to a markdown file so I can work through them one by one.
