@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 import {
   BackupOperationInfo,
@@ -75,7 +75,7 @@ export class ProgressTrackerService extends EventEmitter {
   private static readonly COMPLETED_OPERATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   private static readonly FAILED_OPERATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: typeof prisma) {
     super();
     this.prisma = prisma;
   }

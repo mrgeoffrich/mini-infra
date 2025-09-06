@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import * as cron from "node-cron";
 import { servicesLogger } from "../lib/logger-factory";
 import { AzureConfigService } from "./azure-config";
@@ -12,7 +12,7 @@ export class BackupConfigService {
   private prisma: PrismaClient;
   private azureConfigService: AzureConfigService;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: typeof prisma) {
     this.prisma = prisma;
     this.azureConfigService = new AzureConfigService(prisma);
   }

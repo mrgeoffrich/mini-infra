@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { DatabaseConfigService } from "../postgres-config";
 import {
@@ -65,7 +66,7 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 
 describe("DatabaseConfigService", () => {

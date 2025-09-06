@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
 import { CloudflareConfigService } from "../cloudflare-config";
@@ -56,7 +57,7 @@ const mockPrisma = {
     create: jest.fn(),
     findFirst: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Import the mock after the jest.mock calls
 

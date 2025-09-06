@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -51,7 +51,7 @@ export class CloudflareConfigService extends ConfigurationService {
   // Request deduplication
   private pendingValidation: PendingRequest | null = null;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: typeof prisma) {
     super(prisma, "cloudflare");
   }
 

@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
@@ -44,7 +45,7 @@ const mockPrisma = {
   settingsAudit: {
     create: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Import the mock after the jest.mock calls
 

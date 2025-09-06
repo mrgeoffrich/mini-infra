@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupSchedulerService } from "../backup-scheduler";
 import { BackupConfigService } from "../backup-config";
@@ -60,7 +61,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     updateMany: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Mock service instances
 const mockBackupConfigService = {} as unknown as BackupConfigService;

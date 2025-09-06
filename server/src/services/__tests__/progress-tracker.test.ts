@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ProgressTrackerService } from "../progress-tracker";
 import {
@@ -43,7 +44,7 @@ const mockPrisma = {
     count: jest.fn(),
     deleteMany: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 
 describe("ProgressTrackerService", () => {

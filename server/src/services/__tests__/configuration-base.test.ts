@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import {
   ValidationResult,
@@ -36,7 +37,7 @@ const mockPrisma = {
     create: jest.fn(),
     findFirst: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Test implementation of abstract ConfigurationService
 class TestConfigurationService extends ConfigurationService {

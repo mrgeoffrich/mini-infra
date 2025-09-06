@@ -6,7 +6,7 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 
 /**
@@ -18,7 +18,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   private static readonly DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
   private static readonly DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: typeof prisma) {
     super(prisma, "postgres" as SettingsCategory);
   }
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
@@ -17,7 +17,6 @@ import {
 } from "@mini-infra/types";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Initialize backup executor service
 const backupExecutorService = new BackupExecutorService(prisma);

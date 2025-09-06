@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupConfigService } from "../backup-config";
 import { AzureConfigService } from "../azure-config";
@@ -47,7 +48,7 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Mock Azure config service
 const mockAzureConfigService = {

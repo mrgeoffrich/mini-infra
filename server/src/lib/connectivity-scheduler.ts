@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import prisma from "./prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import { SettingsCategory, ConnectivityStatusType } from "@mini-infra/types";
 import { appLogger } from "./logger-factory";
@@ -242,7 +242,7 @@ class ServiceMonitor {
  * ConnectivityScheduler manages periodic health checks for all configuration services
  */
 export class ConnectivityScheduler {
-  private readonly prisma: PrismaClient;
+  private readonly prisma: typeof prisma;
   private readonly factory: ConfigurationServiceFactory;
   private readonly monitors: Map<SettingsCategory, ServiceMonitor>;
   private readonly checkInterval: number;
@@ -250,11 +250,11 @@ export class ConnectivityScheduler {
   private isRunning = false;
 
   constructor(
-    prisma: PrismaClient,
+    prismaClient: typeof prisma,
     checkInterval: number = 5 * 60 * 1000, // 5 minutes default
     delayFn?: (ms: number) => Promise<void>,
   ) {
-    this.prisma = prisma;
+    this.prisma = prismaClient;
     this.factory = new ConfigurationServiceFactory(prisma);
     this.monitors = new Map();
     this.checkInterval = checkInterval;

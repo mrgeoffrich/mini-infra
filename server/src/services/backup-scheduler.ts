@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import prisma from "../lib/prisma";
 import * as cron from "node-cron";
 import { servicesLogger } from "../lib/logger-factory";
 import { BackupConfigService } from "./backup-config";
@@ -27,7 +27,7 @@ export class BackupSchedulerService {
   private scheduledJobs: Map<string, ScheduledJob> = new Map();
   private isInitialized = false;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: typeof prisma) {
     this.prisma = prisma;
     this.backupConfigService = new BackupConfigService(prisma);
     this.backupExecutorService = new BackupExecutorService(prisma);

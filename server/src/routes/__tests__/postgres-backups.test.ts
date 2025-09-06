@@ -4,7 +4,26 @@ import { PrismaClient } from "../../generated/prisma";
 import router from "../postgres-backups";
 import { BackupExecutorService } from "../../services/backup-executor";
 
-// Mock the PrismaClient
+// Mock the Prisma module
+jest.mock("../../lib/prisma", () => ({
+  __esModule: true,
+  default: {
+    postgresDatabase: {
+      findFirst: jest.fn(),
+    },
+    backupConfiguration: {
+      findFirst: jest.fn(),
+    },
+    backupOperation: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      delete: jest.fn(),
+    },
+  },
+}));
+
+// Mock the PrismaClient for type exports
 jest.mock("../../generated/prisma", () => {
   const mockClient = {
     postgresDatabase: {
@@ -28,7 +47,7 @@ jest.mock("../../generated/prisma", () => {
 });
 
 // Get the mock client for use in tests
-const { __mockClient: mockPrismaClient } = jest.requireMock("../../generated/prisma");
+const mockPrismaClient = jest.requireMock("../../lib/prisma").default;
 
 // Mock the BackupExecutorService
 jest.mock("../../services/backup-executor", () => {

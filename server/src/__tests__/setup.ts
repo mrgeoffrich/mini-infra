@@ -1,4 +1,5 @@
-import { PrismaClient } from "../generated/prisma/index";
+import prisma from "../lib/prisma";
+import { PrismaClient } from "../generated/prisma";
 import { jest } from "@jest/globals";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -12,7 +13,7 @@ process.env.GOOGLE_CLIENT_SECRET = "test-google-client-secret";
 process.env.LOG_LEVEL = "silent";
 
 // Global test Prisma client
-let testPrisma: PrismaClient;
+let testPrisma: typeof prisma;
 
 // Global setup
 beforeAll(async () => {

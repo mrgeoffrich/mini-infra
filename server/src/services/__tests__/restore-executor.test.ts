@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { RestoreExecutorService } from "../restore-executor";
 import { DockerExecutorService } from "../docker-executor";
@@ -78,7 +79,7 @@ const mockPrisma = {
   systemSettings: {
     findFirst: jest.fn(),
   },
-} as unknown as PrismaClient;
+} as unknown as typeof prisma;
 
 // Mock service instances
 const mockDockerExecutor = {

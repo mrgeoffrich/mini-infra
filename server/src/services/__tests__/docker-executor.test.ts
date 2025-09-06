@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import Docker, { Container } from "dockerode";
+import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { DockerExecutorService } from "../docker-executor";
 import { DockerConfigService } from "../docker-config";
@@ -37,7 +38,7 @@ jest.mock("../docker-config");
 // Mock Prisma
 jest.mock("../../lib/prisma", () => ({
   __esModule: true,
-  default: {} as PrismaClient,
+  default: {} as typeof prisma,
 }));
 
 // Mock logger functions
