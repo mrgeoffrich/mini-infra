@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { PrismaClient } from "../generated/prisma";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireAuth } from "../lib/auth-middleware";
+import prisma from "../lib/prisma";
 import { RestoreExecutorService } from "../services/restore-executor";
 import { AzureConfigService } from "../services/azure-config";
 import { BlobServiceClient } from "@azure/storage-blob";
@@ -22,7 +22,6 @@ import {
 } from "@mini-infra/types";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Initialize services
 const restoreExecutorService = new RestoreExecutorService(prisma);
