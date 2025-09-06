@@ -24,40 +24,27 @@ jest.mock("../docker-executor");
 jest.mock("../postgres-config");
 jest.mock("../azure-config");
 
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
+// Mock logger factory
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
+
+// Get the mocked logger
+const { servicesLogger } = jest.requireMock("../../lib/logger-factory") as any;
+const mockLogger = servicesLogger();
 
 // Mock Azure Storage Blob
 const mockBlobServiceClient = {
@@ -80,9 +67,6 @@ jest.mock("@azure/storage-blob", () => ({
     fromConnectionString: jest.fn(() => mockBlobServiceClient),
   },
 }));
-
-// Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
@@ -688,14 +672,17 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
+      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+
       const result = await (restoreExecutorService as any).createRollbackBackup(
         connectionConfig,
-        "azure-connection-string",
+        azureConnectionString,
         "postgres:15-alpine",
         "testdb",
       );
 
       expect(result).toContain("rollback-backups/testdb/rollback-");
+      expect(result).toContain("testaccount.blob.core.windows.net");
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
           image: "postgres:15-alpine",
@@ -704,7 +691,7 @@ describe("RestoreExecutorService", () => {
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
-            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "azure-connection-string",
+            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
             AZURE_CONTAINER_NAME: "rollback-backups",
           }),
           timeout: 30 * 60 * 1000,
@@ -719,10 +706,12 @@ describe("RestoreExecutorService", () => {
         stderr: "Backup failed",
       });
 
+      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+
       await expect(
         (restoreExecutorService as any).createRollbackBackup(
           connectionConfig,
-          "azure-connection-string",
+          azureConnectionString,
           "postgres:15-alpine",
           "testdb",
         ),
@@ -748,10 +737,12 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
+      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+
       await (restoreExecutorService as any).executeRollback(
         connectionConfig,
         rollbackUrl,
-        "azure-connection-string",
+        azureConnectionString,
         "postgres:15-alpine",
       );
 
@@ -763,7 +754,7 @@ describe("RestoreExecutorService", () => {
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
-            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "azure-connection-string",
+            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
             AZURE_CONTAINER_NAME: "rollback-backups",
             RESTORE: "yes",
             DROP_PUBLIC: "yes",
@@ -786,11 +777,13 @@ describe("RestoreExecutorService", () => {
         stderr: "Rollback failed",
       });
 
+      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+
       await expect(
         (restoreExecutorService as any).executeRollback(
           connectionConfig,
           rollbackUrl,
-          "azure-connection-string",
+          azureConnectionString,
           "postgres:15-alpine",
         ),
       ).rejects.toThrow("Rollback execution failed: Rollback failed");

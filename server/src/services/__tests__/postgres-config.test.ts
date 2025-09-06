@@ -9,7 +9,7 @@ import {
 } from "@mini-infra/types";
 
 // Mock crypto-js
-const mockCryptoJS = {
+jest.mock("crypto-js", () => ({
   AES: {
     encrypt: jest.fn(),
     decrypt: jest.fn(),
@@ -17,9 +17,10 @@ const mockCryptoJS = {
   enc: {
     Utf8: "utf8",
   },
-};
+}));
 
-jest.mock("crypto-js", () => mockCryptoJS);
+// Get the mocked crypto-js
+const mockCryptoJS = jest.requireMock("crypto-js") as any;
 
 // Mock pg client
 const mockPgClient = {
@@ -33,42 +34,26 @@ jest.mock("pg", () => ({
 }));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+const { servicesLogger } = jest.requireMock("../../lib/logger-factory") as any;
+const mockLogger = servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {

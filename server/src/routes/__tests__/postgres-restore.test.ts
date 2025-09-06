@@ -7,38 +7,41 @@ import { AzureConfigService } from "../../services/azure-config";
 import { BlobServiceClient } from "@azure/storage-blob";
 
 // Mock the PrismaClient
-const mockPrismaClient = {
-  postgresDatabase: {
-    findFirst: jest.fn(),
-  },
-  restoreOperation: {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-  },
-};
-
 jest.mock("../../generated/prisma", () => ({
-  PrismaClient: jest.fn(() => mockPrismaClient),
+  PrismaClient: jest.fn(() => ({
+    postgresDatabase: {
+      findFirst: jest.fn(),
+    },
+    restoreOperation: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+  })),
 }));
+
+// Get the mocked PrismaClient instance
+const mockPrismaClient = new (jest.requireMock("../../generated/prisma") as any).PrismaClient();
 
 // Mock the RestoreExecutorService
-const mockRestoreExecutorService = {
-  queueRestore: jest.fn(),
-};
-
 jest.mock("../../services/restore-executor", () => ({
-  RestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
+  RestoreExecutorService: jest.fn(() => ({
+    queueRestore: jest.fn(),
+  })),
 }));
+
+// Get the mocked RestoreExecutorService instance
+const mockRestoreExecutorService = new (jest.requireMock("../../services/restore-executor") as any).RestoreExecutorService();
 
 // Mock the AzureConfigService
-const mockAzureConfigService = {
-  get: jest.fn(),
-};
-
 jest.mock("../../services/azure-config", () => ({
-  AzureConfigService: jest.fn(() => mockAzureConfigService),
+  AzureConfigService: jest.fn(() => ({
+    get: jest.fn(),
+  })),
 }));
+
+// Get the mocked AzureConfigService instance
+const mockAzureConfigService = new (jest.requireMock("../../services/azure-config") as any).AzureConfigService();
 
 // Mock Azure Storage
 const mockContainerClient = {
