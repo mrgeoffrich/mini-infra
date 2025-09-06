@@ -40,13 +40,21 @@ Core functionality tests are working correctly. The memory issue appears when ru
 
 ---
 
-## 4. `src/services/__tests__/configuration-base.test.ts`
+## 4. `src/services/__tests__/configuration-base.test.ts` ✅ FIXED
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Fixed Issues:
+- **Logger mock setup** - Fixed the logger factory mock to properly return consistent mock instances
+- **Mock instance consistency** - Created a single mock logger instance that gets reused across all `servicesLogger()` calls
 
-### Failed Tests:
-- Multiple configuration base service tests (details truncated)
+### Root Cause:
+The original logger mock was creating new jest.fn() instances on each call to `servicesLogger()`, but tests were expecting calls on a specific instance. Each call in the service code got a different mock instance than what the tests were spying on.
+
+### Solution:
+- Created a single mock logger object before the jest.mock() call
+- Made all logger factory functions return the same mock instance
+- This ensures test assertions can properly track logger method calls
+
+### Status: ALL TESTS PASSING
 
 ---
 

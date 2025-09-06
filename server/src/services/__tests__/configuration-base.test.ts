@@ -7,43 +7,23 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+// Create a single mock logger instance that will be reused
+const mockLogger = {
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+};
 
-// Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+// Mock logger factory to always return the same mock instances
+jest.mock("../../lib/logger-factory", () => ({
+  appLogger: jest.fn(() => mockLogger),
+  servicesLogger: jest.fn(() => mockLogger),
+  httpLogger: jest.fn(() => mockLogger),
+  prismaLogger: jest.fn(() => mockLogger),
+  __esModule: true,
+  default: jest.fn(() => mockLogger),
+}));
 
 // Mock Prisma client
 const mockPrisma = {
