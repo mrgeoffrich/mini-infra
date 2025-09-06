@@ -26,40 +26,24 @@ jest.mock("../backup-config");
 jest.mock("../postgres-config");
 jest.mock("../azure-config");
 
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
+// Mock logger factory - create the mock instance inline
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+  
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Mock Azure Storage Blob
 const mockBlobServiceClient = {
@@ -78,7 +62,8 @@ jest.mock("@azure/storage-blob", () => ({
 }));
 
 // Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+const { servicesLogger } = require("../../lib/logger-factory");
+const mockLogger = servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
@@ -514,17 +499,32 @@ describe("BackupExecutorService", () => {
       mockBlobServiceClient.getContainerClient = jest
         .fn()
         .mockReturnValue(mockContainerClient);
-      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(
-        [
-          {
-            name: "db-backups/testdb/backup-2023-01-01.sql",
-            properties: {
-              createdOn: new Date("2023-01-01T02:00:00Z"),
-              contentLength: 1000000,
-            },
+      const mockBlobs = [
+        {
+          name: "db-backups/testdb/backup-2023-01-01.sql",
+          properties: {
+            createdOn: new Date("2023-01-01T02:00:00Z"),
+            contentLength: 1000000,
           },
-        ][Symbol.asyncIterator](),
-      );
+        },
+      ];
+      
+      // Create async iterator
+      const mockAsyncIterator = {
+        [Symbol.asyncIterator]() {
+          let index = 0;
+          return {
+            async next() {
+              if (index < mockBlobs.length) {
+                return { value: mockBlobs[index++], done: false };
+              }
+              return { done: true };
+            }
+          };
+        }
+      };
+
+      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(mockAsyncIterator);
 
       mockBackupConfigService.updateLastBackupTime = jest
         .fn()
@@ -578,18 +578,34 @@ describe("BackupExecutorService", () => {
         },
       ];
 
+      // Create another async iterator for the verification test
+      const verifyMockAsyncIterator = {
+        [Symbol.asyncIterator]() {
+          let index = 0;
+          return {
+            async next() {
+              if (index < mockBlobs.length) {
+                return { value: mockBlobs[index++], done: false };
+              }
+              return { done: true };
+            }
+          };
+        }
+      };
+      
       mockContainerClient.listBlobsFlat = jest
         .fn()
-        .mockReturnValue(mockBlobs[Symbol.asyncIterator]());
+        .mockReturnValue(verifyMockAsyncIterator);
 
-      // Mock today's date
+      // Mock the Date constructor to return a fixed date
+      const RealDate = Date;
       const fixedDate = new Date("2023-01-01T12:00:00Z");
-      const originalDate = global.Date;
-      global.Date = jest.fn(() => fixedDate) as any;
-      global.Date.prototype = originalDate.prototype;
-      global.Date.prototype.toISOString = jest.fn(
-        () => "2023-01-01T12:00:00.000Z",
-      );
+      jest.spyOn(global, 'Date').mockImplementation((dateString?: any) => {
+        if (dateString) {
+          return new RealDate(dateString);
+        }
+        return fixedDate;
+      }) as any;
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -603,13 +619,24 @@ describe("BackupExecutorService", () => {
         "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
       );
 
-      global.Date = originalDate;
+      jest.restoreAllMocks();
     });
 
     it("should return error when no backup files found", async () => {
+      // Create empty async iterator
+      const emptyAsyncIterator = {
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              return { done: true };
+            }
+          };
+        }
+      };
+      
       mockContainerClient.listBlobsFlat = jest
         .fn()
-        .mockReturnValue([][Symbol.asyncIterator]());
+        .mockReturnValue(emptyAsyncIterator);
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",

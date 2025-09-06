@@ -22,43 +22,28 @@ jest.mock("cloudflare", () => {
   return jest.fn().mockImplementation(() => mockCloudflare);
 });
 
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
+// Mock logger factory - create the mock instance inline  
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+  
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+const { servicesLogger } = require("../../lib/logger-factory");
+const mockLogger = servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
@@ -431,9 +416,6 @@ describe("CloudflareConfigService", () => {
       );
       parentSetSpy.mockResolvedValue(undefined);
 
-        Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
-      );
-
       await cloudflareConfigService.setApiToken(
         "new-api-token-12345678901234567890",
         "user1",
@@ -473,9 +455,6 @@ describe("CloudflareConfigService", () => {
         "set",
       );
       parentSetSpy.mockResolvedValue(undefined);
-
-        Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
-      );
 
       await cloudflareConfigService.setAccountId("account-123", "user1");
 
@@ -652,6 +631,8 @@ describe("CloudflareConfigService", () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
           error: "Tunnel API request timeout",
+          errorCode: "TIMEOUT",
+          isRetriable: true,
         },
         "Failed to retrieve Cloudflare tunnel information",
       );
@@ -674,6 +655,8 @@ describe("CloudflareConfigService", () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
           error: "Cloudflare API error",
+          errorCode: "CLOUDFLARE_API_ERROR",
+          isRetriable: true,
         },
         "Failed to retrieve Cloudflare tunnel information",
       );
@@ -949,6 +932,8 @@ describe("CloudflareConfigService", () => {
     it("should remove both API token and account ID", async () => {
       const parentDeleteSpy = jest.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
+        "delete",
+      );
       parentDeleteSpy.mockResolvedValue(undefined);
 
       const parentGetSpy = jest.spyOn(
@@ -956,9 +941,6 @@ describe("CloudflareConfigService", () => {
         "get",
       );
       parentGetSpy.mockResolvedValue("old-account-id");
-
-        Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
-      );
 
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
 
@@ -991,6 +973,8 @@ describe("CloudflareConfigService", () => {
     it("should continue even if token or account ID deletion fails", async () => {
       const parentDeleteSpy = jest.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
+        "delete",
+      );
       parentDeleteSpy
         .mockRejectedValueOnce(new Error("Token not found"))
         .mockRejectedValueOnce(new Error("Account ID not found"));

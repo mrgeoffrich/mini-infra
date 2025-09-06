@@ -5,61 +5,55 @@ import { BackupConfigService } from "../backup-config";
 import { BackupExecutorService } from "../backup-executor";
 import * as cron from "node-cron";
 
-// Mock node-cron
+// Mock objects that need to be referenced in tests
 const mockScheduledTask = {
   start: jest.fn(),
   stop: jest.fn(),
   destroy: jest.fn(),
 };
 
-const mockCron = {
+// Mock node-cron
+jest.mock("node-cron", () => ({
   validate: jest.fn(),
   schedule: jest.fn(() => mockScheduledTask),
-};
-
-jest.mock("node-cron", () => mockCron);
+}));
 
 // Mock services
 jest.mock("../backup-config");
 jest.mock("../backup-executor");
-
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
+jest.mock("../../lib/prisma", () => ({
   __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
+  default: {
+    backupConfiguration: {
+      findMany: jest.fn(),
+      updateMany: jest.fn(),
+    },
+  },
 }));
 
-// Get reference to the mocked logger
-const mockLogger = require("../../lib/logger-factory").servicesLogger();
+// Mock logger factory - create the mock instance inline
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  };
+  
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
+
+// Get references to the mocked objects
+const { servicesLogger } = require("../../lib/logger-factory");
+const mockLogger = servicesLogger();
+const mockCron = require("node-cron");
 
 // Mock Prisma client
 const mockPrisma = {
@@ -86,6 +80,12 @@ describe("BackupSchedulerService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    // Set default mock return values
+    mockPrisma.backupConfiguration.findMany = jest.fn().mockResolvedValue([]);
+    mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
+    mockCron.validate.mockReturnValue(true);
+    
     backupSchedulerService = new BackupSchedulerService(mockPrisma);
 
     // Mock service instances
@@ -227,7 +227,9 @@ describe("BackupSchedulerService", () => {
 
   describe("registerSchedule", () => {
     beforeEach(() => {
+      // Reset all mocks
       mockCron.validate.mockReturnValue(true);
+      mockCron.schedule.mockReturnValue(mockScheduledTask);
       mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
       mockBackupExecutorService.initialize = jest.fn().mockResolvedValue(undefined);
     });
@@ -261,15 +263,21 @@ describe("BackupSchedulerService", () => {
     });
 
     it("should replace existing schedule", async () => {
+      // Ensure service is initialized first to avoid extra calls during init
+      (backupSchedulerService as any).isInitialized = true;
+      
+      // Clear mocks specifically for this test  
+      jest.clearAllMocks();
+      
       // Register first schedule
       await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
 
       // Register second schedule for same database
       await backupSchedulerService.registerSchedule("db-123", "0 3 * * *", "user-123");
 
-      expect(mockCron.schedule).toHaveBeenCalledTimes(2);
-      expect(mockScheduledTask.stop).toHaveBeenCalledTimes(2);
-      expect(mockScheduledTask.destroy).toHaveBeenCalledTimes(1); // First schedule destroyed
+      expect(mockCron.schedule).toHaveBeenCalledTimes(4); // 2 actual tasks + 2 temp tasks for calculateNextRunTime  
+      expect(mockScheduledTask.stop).toHaveBeenCalledTimes(3); // 2 actual tasks stopped + 1 from destroyed first schedule 
+      expect(mockScheduledTask.destroy).toHaveBeenCalledTimes(3); // First schedule destroyed + 2 temp tasks
     });
 
     it("should initialize if not already initialized", async () => {
@@ -303,7 +311,9 @@ describe("BackupSchedulerService", () => {
 
   describe("unregisterSchedule", () => {
     beforeEach(() => {
+      // Reset all mocks
       mockCron.validate.mockReturnValue(true);
+      mockCron.schedule.mockReturnValue(mockScheduledTask);
       mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
     });
 
@@ -772,7 +782,7 @@ describe("BackupSchedulerService", () => {
   });
 
   describe("schedule persistence", () => {
-    beforeEach () => {
+    beforeEach(() => {
       mockBackupExecutorService.initialize = jest.fn().mockResolvedValue(undefined);
     });
 
