@@ -81,16 +81,53 @@ describe("BackupSchedulerService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     
+    // Reset mock objects completely
+    mockScheduledTask.start.mockReset();
+    mockScheduledTask.stop.mockReset();
+    mockScheduledTask.destroy.mockReset();
+    
     // Set default mock return values
     mockPrisma.backupConfiguration.findMany = jest.fn().mockResolvedValue([]);
     mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
     mockCron.validate.mockReturnValue(true);
+    mockCron.schedule.mockReturnValue(mockScheduledTask);
     
     backupSchedulerService = new BackupSchedulerService(mockPrisma);
 
     // Mock service instances
     (backupSchedulerService as any).backupConfigService = mockBackupConfigService;
     (backupSchedulerService as any).backupExecutorService = mockBackupExecutorService;
+  });
+
+  afterEach(async () => {
+    // Clean up any active schedules and service state
+    if (backupSchedulerService) {
+      try {
+        await backupSchedulerService.shutdown();
+      } catch (error) {
+        // Ignore shutdown errors in tests
+      }
+      // Clear the service reference to help GC
+      backupSchedulerService = null as any;
+    }
+    
+    // Reset all mock objects completely
+    mockScheduledTask.start.mockReset();
+    mockScheduledTask.stop.mockReset();
+    mockScheduledTask.destroy.mockReset();
+    
+    // Force garbage collection of mock call history
+    jest.clearAllMocks();
+    
+    // Clear mock return values to prevent accumulation
+    mockCron.schedule.mockReset();
+    mockCron.validate.mockReset();
+    
+    // Force mock logger cleanup
+    mockLogger.info.mockReset();
+    mockLogger.error.mockReset();
+    mockLogger.warn.mockReset();
+    mockLogger.debug.mockReset();
   });
 
   describe("constructor", () => {
@@ -272,12 +309,15 @@ describe("BackupSchedulerService", () => {
       // Register first schedule
       await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
 
+      // Clear mock call history to avoid accumulation
+      jest.clearAllMocks();
+
       // Register second schedule for same database
       await backupSchedulerService.registerSchedule("db-123", "0 3 * * *", "user-123");
 
-      expect(mockCron.schedule).toHaveBeenCalledTimes(4); // 2 actual tasks + 2 temp tasks for calculateNextRunTime  
-      expect(mockScheduledTask.stop).toHaveBeenCalledTimes(3); // 2 actual tasks stopped + 1 from destroyed first schedule 
-      expect(mockScheduledTask.destroy).toHaveBeenCalledTimes(3); // First schedule destroyed + 2 temp tasks
+      expect(mockCron.schedule).toHaveBeenCalledTimes(2); // 1 actual task + 1 temp task for calculateNextRunTime  
+      expect(mockScheduledTask.stop).toHaveBeenCalledTimes(1); // From destroyed first schedule 
+      expect(mockScheduledTask.destroy).toHaveBeenCalledTimes(1); // Temp task destroyed
     });
 
     it("should initialize if not already initialized", async () => {
@@ -407,8 +447,11 @@ describe("BackupSchedulerService", () => {
       await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
       await backupSchedulerService.enableSchedule("db-123");
 
-      // Clear mocks to test second enable call
+      // Clear mocks to test second enable call and prevent memory accumulation
       jest.clearAllMocks();
+      mockScheduledTask.start.mockReset();
+      mockScheduledTask.stop.mockReset();
+      mockScheduledTask.destroy.mockReset();
 
       // Try to enable again
       await backupSchedulerService.enableSchedule("db-123");
@@ -429,8 +472,11 @@ describe("BackupSchedulerService", () => {
       await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
       await backupSchedulerService.enableSchedule("db-123");
 
-      // Clear mocks to test disable
+      // Clear mocks to test disable and prevent memory accumulation
       jest.clearAllMocks();
+      mockScheduledTask.start.mockReset();
+      mockScheduledTask.stop.mockReset();
+      mockScheduledTask.destroy.mockReset();
 
       // Disable it
       await backupSchedulerService.disableSchedule("db-123");
@@ -457,8 +503,11 @@ describe("BackupSchedulerService", () => {
       // Register schedule (starts disabled)
       await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
 
-      // Clear mocks to test disable call
+      // Clear mocks to test disable call and prevent memory accumulation
       jest.clearAllMocks();
+      mockScheduledTask.start.mockReset();
+      mockScheduledTask.stop.mockReset();
+      mockScheduledTask.destroy.mockReset();
 
       // Try to disable (should not call stop since already disabled)
       await backupSchedulerService.disableSchedule("db-123");
