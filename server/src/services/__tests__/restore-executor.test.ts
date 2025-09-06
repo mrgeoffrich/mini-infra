@@ -113,6 +113,11 @@ describe("RestoreExecutorService", () => {
     (restoreExecutorService as any).restoreQueue = mockQueue;
   });
 
+  afterAll(() => {
+    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
+    AzureConfigService.cleanupCache();
+  });
+
   describe("constructor", () => {
     it("should initialize with Prisma client and create queue", () => {
       expect(restoreExecutorService).toBeInstanceOf(RestoreExecutorService);

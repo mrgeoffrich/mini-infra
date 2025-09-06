@@ -65,6 +65,11 @@ describe("BackupConfigService", () => {
     (backupConfigService as any).azureConfigService = mockAzureConfigService;
   });
 
+  afterAll(() => {
+    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
+    AzureConfigService.cleanupCache();
+  });
+
   describe("constructor", () => {
     it("should initialize with Prisma client", () => {
       expect(backupConfigService).toBeInstanceOf(BackupConfigService);

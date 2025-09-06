@@ -56,6 +56,11 @@ describe("ConfigurationServiceFactory", () => {
     factory = new ConfigurationServiceFactory(mockPrisma);
   });
 
+  afterAll(() => {
+    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
+    AzureConfigService.cleanupCache();
+  });
+
   describe("Constructor", () => {
     it("should initialize with correct prisma client", () => {
       expect((factory as any).prisma).toBe(mockPrisma);

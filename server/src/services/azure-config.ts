@@ -1143,4 +1143,15 @@ export class AzureConfigService extends ConfigurationService {
       userId,
     );
   }
+
+  /**
+   * Static cleanup method for tests to properly close the cache
+   * This prevents the NodeCache timer from keeping the process alive
+   */
+  static cleanupCache(): void {
+    if (AzureConfigService.containerAccessCache) {
+      AzureConfigService.containerAccessCache.flushAll();
+      AzureConfigService.containerAccessCache.close();
+    }
+  }
 }
