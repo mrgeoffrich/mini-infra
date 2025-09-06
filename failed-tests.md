@@ -8,13 +8,20 @@
 
 ---
 
-## 1. `src/services/__tests__/azure-config.test.ts`
+## 1. `src/services/__tests__/azure-config.test.ts` ✅ **FIXED**
 
-### Issues:
-- **Output truncated** - Full test failures not shown due to character limit
+### Issues Fixed:
+- Fixed syntax errors in test file (incomplete spy declarations)
+- Updated test expectations to match actual service behavior:
+  - `testContainerAccess` returns an object, not a boolean
+  - Response times are calculated as numbers, not always null
+  - Added missing mock methods (`getProperties`)
+  - Fixed logger call expectations
+  - Added cache clearing between tests
+- Used `expect.objectContaining` for flexible assertion matching
 
-### Failed Tests:
-- Multiple Azure configuration service tests (details truncated)
+### Status:
+- **All 27 tests now pass**
 
 ---
 

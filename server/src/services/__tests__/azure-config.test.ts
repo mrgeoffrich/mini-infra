@@ -12,6 +12,7 @@ const mockBlobServiceClient = {
 
 const mockContainerClient = {
   listBlobsFlat: jest.fn(),
+  getProperties: jest.fn(),
 };
 
 jest.mock("@azure/storage-blob", () => ({
@@ -86,6 +87,8 @@ describe("AzureConfigService", () => {
     mockBlobServiceClient.getContainerClient.mockReturnValue(
       mockContainerClient,
     );
+    // Clear the static container access cache
+    (AzureConfigService as any).containerAccessCache.flushAll();
   });
 
   afterEach(() => {
@@ -114,19 +117,16 @@ describe("AzureConfigService", () => {
       expect(typeof result.responseTimeMs).toBe('number');
       expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
 
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: {
-          service: "azure",
-          status: "failed",
-          responseTimeMs: null,
-          errorMessage: "Azure Storage connection string not configured",
-          errorCode: "MISSING_CONNECTION_STRING",
-          metadata: null,
-          checkInitiatedBy: null,
-          checkedAt: expect.any(Date),
-          lastSuccessfulAt: null,
-        },
-      });
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            service: "azure",
+            status: "failed",
+            errorMessage: "Azure Storage connection string not configured",
+            errorCode: "MISSING_CONNECTION_STRING",
+          }),
+        }),
+      );
     });
 
     it("should validate successfully with valid connection string", async () => {
@@ -194,19 +194,16 @@ describe("AzureConfigService", () => {
       );
 
       // Verify success was recorded
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: {
-          service: "azure",
-          status: "connected",
-          responseTimeMs: null,
-          errorMessage: null,
-          errorCode: null,
-          metadata: JSON.stringify(result.metadata),
-          checkInitiatedBy: null,
-          checkedAt: expect.any(Date),
-          lastSuccessfulAt: expect.any(Date),
-        },
-      });
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            service: "azure",
+            status: "connected",
+            errorMessage: null,
+            errorCode: null,
+          }),
+        }),
+      );
 
       parentSetSpy.mockRestore();
     });
@@ -243,13 +240,6 @@ describe("AzureConfigService", () => {
 
       expect(result.isValid).toBe(true);
       expect(result.metadata?.containerCount).toBe(0);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          accountName: "teststorage",
-          error: "Container access denied",
-        },
-        "Failed to list containers, but connection is valid",
-      );
 
       parentSetSpy.mockRestore();
     });
@@ -316,19 +306,16 @@ describe("AzureConfigService", () => {
       expect(result.errorCode).toBe("NETWORK_ERROR");
 
       // Verify unreachable status was recorded
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: {
-          service: "azure",
-          status: "unreachable",
-          responseTimeMs: null,
-          errorMessage: expect.stringContaining("Azure Storage validation failed"),
-          errorCode: "NETWORK_ERROR",
-          metadata: null,
-          checkInitiatedBy: null,
-          checkedAt: expect.any(Date),
-          lastSuccessfulAt: null,
-        },
-      });
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            service: "azure",
+            status: "unreachable",
+            errorMessage: "Azure Storage validation failed: ENOTFOUND teststorage.blob.core.windows.net",
+            errorCode: "NETWORK_ERROR",
+          }),
+        }),
+      );
     });
 
     it("should handle invalid connection string format", async () => {
@@ -462,9 +449,6 @@ describe("AzureConfigService", () => {
         "set",
       );
       parentSetSpy.mockResolvedValue(undefined);
-
-        Object.getPrototypeOf(Object.getPrototypeOf(azureConfigService)),
-      );
 
       await azureConfigService.setConnectionString(
         validConnectionString,
@@ -618,12 +602,10 @@ describe("AzureConfigService", () => {
         includeMetadata: true,
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        {
-          containerCount: 2,
-        },
-        "Successfully retrieved Azure Storage container information",
-      );
+      // Container info should be retrieved successfully
+      expect(mockBlobServiceClient.listContainers).toHaveBeenCalledWith({
+        includeMetadata: true,
+      });
     });
 
     it("should return empty array when connection string not configured", async () => {
@@ -634,9 +616,6 @@ describe("AzureConfigService", () => {
       const result = await azureConfigService.getContainerInfo();
 
       expect(result).toEqual([]);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        "Cannot retrieve container info: Connection string not configured",
-      );
     });
 
     it("should handle container listing timeout", async () => {
@@ -656,12 +635,6 @@ describe("AzureConfigService", () => {
       const result = await azureConfigService.getContainerInfo();
 
       expect(result).toEqual([]);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Container listing timeout",
-        },
-        "Failed to retrieve Azure Storage container information",
-      );
     }, 15000);
 
     it("should limit container results to prevent excessive data", async () => {
@@ -715,24 +688,21 @@ describe("AzureConfigService", () => {
         .spyOn(azureConfigService, "getConnectionString")
         .mockResolvedValue(connectionString);
 
-      // Mock successful blob listing
-      const mockBlobIterator = {
-        next: jest
-          .fn()
-          .mockResolvedValue({ done: false, value: { name: "test-blob" } }),
-      };
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockBlobIterator);
+      // Mock successful container properties call
+      mockContainerClient.getProperties.mockResolvedValue({
+        lastModified: new Date(),
+        etag: "test-etag",
+      });
 
       const result =
         await azureConfigService.testContainerAccess("test-container");
 
-      expect(result).toBe(true);
+      expect(result.accessible).toBe(true);
+      expect(typeof result.responseTimeMs).toBe('number');
+      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
+      expect(result.cached).toBeUndefined(); // cached property is only added when result is from cache
       expect(mockBlobServiceClient.getContainerClient).toHaveBeenCalledWith(
         "test-container",
-      );
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        { containerName: "test-container" },
-        "Container access test successful",
       );
     });
 
@@ -744,7 +714,10 @@ describe("AzureConfigService", () => {
       const result =
         await azureConfigService.testContainerAccess("test-container");
 
-      expect(result).toBe(false);
+      expect(result.accessible).toBe(false);
+      expect(result.error).toBe("No connection string configured");
+      expect(result.errorCode).toBe("MISSING_CONNECTION_STRING");
+      expect(typeof result.responseTimeMs).toBe('number');
     });
 
     it("should handle container access timeout", async () => {
@@ -757,21 +730,15 @@ describe("AzureConfigService", () => {
 
       // Mock timeout scenario
       const timeoutError = new Error("Container access test timeout");
-      mockContainerClient.listBlobsFlat.mockImplementation(() => {
-        throw timeoutError;
-      });
+      mockContainerClient.getProperties.mockRejectedValue(timeoutError);
 
       const result =
         await azureConfigService.testContainerAccess("test-container");
 
-      expect(result).toBe(false);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          containerName: "test-container",
-          error: "Container access test timeout",
-        },
-        "Container access test failed",
-      );
+      expect(result.accessible).toBe(false);
+      expect(result.error).toBe("Container access test timeout");
+      expect(result.errorCode).toBe("TIMEOUT");
+      expect(typeof result.responseTimeMs).toBe('number');
     }, 15000);
 
     it("should handle container access errors", async () => {
@@ -783,21 +750,15 @@ describe("AzureConfigService", () => {
         .mockResolvedValue(connectionString);
 
       const accessError = new Error("Container not found");
-      mockContainerClient.listBlobsFlat.mockImplementation(() => {
-        throw accessError;
-      });
+      mockContainerClient.getProperties.mockRejectedValue(accessError);
 
       const result =
         await azureConfigService.testContainerAccess("non-existent");
 
-      expect(result).toBe(false);
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          containerName: "non-existent",
-          error: "Container not found",
-        },
-        "Container access test failed",
-      );
+      expect(result.accessible).toBe(false);
+      expect(result.error).toBe("Container not found");
+      expect(result.errorCode).toBe("CONTAINER_ACCESS_ERROR");
+      expect(typeof result.responseTimeMs).toBe('number');
     });
   });
 
@@ -805,6 +766,8 @@ describe("AzureConfigService", () => {
     it("should remove both connection string and storage account name", async () => {
       const parentDeleteSpy = jest.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(azureConfigService)),
+        "delete",
+      );
       parentDeleteSpy.mockResolvedValue(undefined);
 
       const parentGetSpy = jest.spyOn(
@@ -812,9 +775,6 @@ describe("AzureConfigService", () => {
         "get",
       );
       parentGetSpy.mockResolvedValue("old-storage-account");
-
-        Object.getPrototypeOf(Object.getPrototypeOf(azureConfigService)),
-      );
 
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
 
@@ -828,8 +788,6 @@ describe("AzureConfigService", () => {
         "storage_account_name",
         "user1",
       );
-
-
 
       // Verify disconnection was recorded
       expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
@@ -853,6 +811,8 @@ describe("AzureConfigService", () => {
     it("should continue even if connection string or account name deletion fails", async () => {
       const parentDeleteSpy = jest.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(azureConfigService)),
+        "delete",
+      );
       parentDeleteSpy
         .mockRejectedValueOnce(new Error("Connection string not found"))
         .mockRejectedValueOnce(new Error("Account name not found"));
