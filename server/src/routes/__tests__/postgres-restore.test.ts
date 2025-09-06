@@ -1,12 +1,4 @@
-import request from "supertest";
-import express from "express";
-import { PrismaClient } from "../../generated/prisma";
-import router from "../postgres-restore";
-import { RestoreExecutorService } from "../../services/restore-executor";
-import { AzureConfigService } from "../../services/azure-config";
-import { BlobServiceClient } from "@azure/storage-blob";
-
-// Mock the PrismaClient
+// Mock the PrismaClient BEFORE any imports
 jest.mock("../../generated/prisma", () => ({
   PrismaClient: jest.fn(() => ({
     postgresDatabase: {
@@ -20,8 +12,9 @@ jest.mock("../../generated/prisma", () => ({
   })),
 }));
 
-// Get the mocked PrismaClient instance
-const mockPrismaClient = new (jest.requireMock("../../generated/prisma") as any).PrismaClient();
+// Mock all services that RestoreExecutorService depends on
+jest.mock("../../services/docker-executor");
+jest.mock("../../services/postgres-config");
 
 // Mock the RestoreExecutorService
 jest.mock("../../services/restore-executor", () => ({
@@ -30,9 +23,6 @@ jest.mock("../../services/restore-executor", () => ({
   })),
 }));
 
-// Get the mocked RestoreExecutorService instance
-const mockRestoreExecutorService = new (jest.requireMock("../../services/restore-executor") as any).RestoreExecutorService();
-
 // Mock the AzureConfigService
 jest.mock("../../services/azure-config", () => ({
   AzureConfigService: jest.fn(() => ({
@@ -40,22 +30,15 @@ jest.mock("../../services/azure-config", () => ({
   })),
 }));
 
-// Get the mocked AzureConfigService instance
-const mockAzureConfigService = new (jest.requireMock("../../services/azure-config") as any).AzureConfigService();
-
 // Mock Azure Storage
-const mockContainerClient = {
-  listBlobsFlat: jest.fn(),
-  getBlobClient: jest.fn(),
-};
-
-const mockBlobServiceClient = {
-  getContainerClient: jest.fn(() => mockContainerClient),
-};
-
 jest.mock("@azure/storage-blob", () => ({
   BlobServiceClient: {
-    fromConnectionString: jest.fn(() => mockBlobServiceClient),
+    fromConnectionString: jest.fn(() => ({
+      getContainerClient: jest.fn(() => ({
+        listBlobsFlat: jest.fn(),
+        getBlobClient: jest.fn(),
+      })),
+    })),
   },
 }));
 
@@ -104,6 +87,40 @@ jest.mock("../../lib/auth-middleware", () => ({
     next();
   },
 }));
+
+// Mock Bull queue
+jest.mock("bull", () => {
+  return jest.fn().mockImplementation(() => ({
+    add: jest.fn(),
+    process: jest.fn(),
+    getJobs: jest.fn(),
+    close: jest.fn(),
+    on: jest.fn(),
+  }));
+});
+
+import request from "supertest";
+import express from "express";
+import { PrismaClient } from "../../generated/prisma";
+import { RestoreExecutorService } from "../../services/restore-executor";
+import { AzureConfigService } from "../../services/azure-config";
+import { BlobServiceClient } from "@azure/storage-blob";
+import router from "../postgres-restore";
+
+
+// Get the mocked instances
+const mockPrismaClient = new (jest.requireMock("../../generated/prisma") as any).PrismaClient();
+const mockRestoreExecutorService = new (jest.requireMock("../../services/restore-executor") as any).RestoreExecutorService();
+const mockAzureConfigService = new (jest.requireMock("../../services/azure-config") as any).AzureConfigService();
+
+const mockContainerClient = {
+  listBlobsFlat: jest.fn(),
+  getBlobClient: jest.fn(),
+};
+
+const mockBlobServiceClient = {
+  getContainerClient: jest.fn(() => mockContainerClient),
+};
 
 const app = express();
 app.use(express.json());

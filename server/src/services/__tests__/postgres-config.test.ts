@@ -597,10 +597,9 @@ describe("DatabaseConfigService", () => {
     });
 
     it("should throw error for unauthorized access", async () => {
-      const unauthorizedDb = { ...existingDb, userId: "other-user" };
-      mockPrisma.postgresDatabase.findFirst = jest
-        .fn()
-        .mockResolvedValue(unauthorizedDb);
+      // Mock findFirst to return null because the userId doesn't match
+      // (simulating the actual Prisma query behavior where both id and userId must match)
+      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
 
       await expect(
         databaseConfigService.deleteDatabase("db-123", "user-123"),
