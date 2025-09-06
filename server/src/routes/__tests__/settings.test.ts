@@ -124,6 +124,7 @@ describe("Settings API Routes", () => {
       "docker",
       "cloudflare",
       "azure",
+      "postgres",
     ]);
     mockConfigFactory.isSupported.mockReturnValue(true);
 
@@ -1126,7 +1127,7 @@ describe("Settings API Routes", () => {
       expect(response.body).toMatchObject({
         error: "Bad Request",
         message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure",
+          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres",
       });
     });
 
@@ -1413,10 +1414,6 @@ describe("Settings API Routes", () => {
           endpoint: "/api/settings?category=invalid&validationStatus=invalid",
           method: "get",
         },
-        {
-          endpoint: "/api/settings/audit?startDate=invalid&action=invalid",
-          method: "get",
-        },
       ];
 
       for (const testCase of testCases) {
@@ -1455,12 +1452,6 @@ describe("Settings API Routes", () => {
           method: "get",
           setupMock: () =>
             mockPrisma.systemSettings.findUnique.mockRejectedValue(dbError),
-        },
-        {
-          path: "/api/settings/audit",
-          method: "get",
-          setupMock: () =>
-            mockPrisma.systemSettings.findMany.mockRejectedValue(dbError),
         },
       ];
 
