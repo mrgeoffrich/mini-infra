@@ -123,6 +123,41 @@ export interface LogoutOptions {
 }
 
 // ====================
+// User Preferences Types  
+// ====================
+
+export interface UserPreference {
+  id: string;
+  userId: string;
+  containerSortField: string | null;
+  containerSortOrder: string | null; 
+  containerFilters: any | null;
+  containerColumns: any | null;
+  timezone: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserPreferenceInfo {
+  id: string;
+  containerSortField: string | null;
+  containerSortOrder: string | null;
+  containerFilters: any | null;
+  containerColumns: any | null;
+  timezone: string | null;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+}
+
+export interface UpdateUserPreferencesRequest {
+  timezone?: string;
+  containerSortField?: string;
+  containerSortOrder?: string;
+  containerFilters?: any;
+  containerColumns?: any;
+}
+
+// ====================
 // Frontend Context Types
 // ====================
 

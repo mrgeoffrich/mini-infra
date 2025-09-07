@@ -12,6 +12,7 @@ import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
 import AzureSettingsPage from "@/app/settings/azure/page";
 import PostgresPage from "@/app/postgres/page";
 import { TunnelsPage } from "@/app/tunnels/page";
+import { UserSettingsPage } from "@/app/user/settings/page";
 
 export const router = createBrowserRouter([
   {
@@ -81,6 +82,10 @@ export const router = createBrowserRouter([
       {
         path: "settings/azure",
         element: <AzureSettingsPage />,
+      },
+      {
+        path: "user/settings",
+        element: <UserSettingsPage />,
       },
     ],
   },

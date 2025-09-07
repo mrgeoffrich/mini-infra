@@ -41,6 +41,13 @@ const CATEGORY_INFO = {
     color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
     path: "/settings/azure",
   },
+  postgres: {
+    name: "PostgreSQL",
+    description: "Database management and connectivity",
+    icon: Database,
+    color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
+    path: "/postgres",
+  },
 } as const;
 
 // Map connectivity status to badge variants

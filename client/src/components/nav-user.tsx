@@ -1,8 +1,6 @@
 import {
-  IconCreditCard,
   IconDotsVertical,
-  IconNotification,
-  IconUserCircle,
+  IconSettings,
 } from "@tabler/icons-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -24,6 +22,7 @@ import {
 import { useUser } from "@/hooks/use-user";
 import { useLogout } from "@/hooks/use-logout";
 import { Loader2, LogOut } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
@@ -125,17 +124,11 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <IconUserCircle />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <IconCreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <IconNotification />
-                Notifications
+              <DropdownMenuItem asChild>
+                <Link to="/user/settings" className="flex items-center">
+                  <IconSettings className="mr-2 h-4 w-4" />
+                  Settings
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

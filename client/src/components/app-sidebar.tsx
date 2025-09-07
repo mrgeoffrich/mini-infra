@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   IconBrandDocker,
   IconCloud,
@@ -19,15 +19,10 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 
 const data = {
@@ -57,70 +52,37 @@ const data = {
       url: "/tunnels",
       icon: IconCloud,
     },
+    {
+      title: "Connectivity",
+      url: "/settings",
+      icon: IconSettings,
+      items: [
+        {
+          title: "Overview",
+          url: "/settings/overview",
+          icon: IconViewfinder,
+        },
+        {
+          title: "Docker Configuration",
+          url: "/settings/docker",
+          icon: IconBrandDocker,
+        },
+        {
+          title: "Cloudflare Settings",
+          url: "/settings/cloudflare",
+          icon: IconCloudComputing,
+        },
+        {
+          title: "Azure Storage",
+          url: "/settings/azure",
+          icon: IconCloud,
+        },
+      ],
+    },
   ],
   navSecondary: [],
-  settingsNav: [
-    {
-      title: "Overview",
-      url: "/settings/overview",
-      icon: IconViewfinder,
-    },
-    {
-      title: "Docker Configuration",
-      url: "/settings/docker",
-      icon: IconBrandDocker,
-    },
-    {
-      title: "Cloudflare Settings",
-      url: "/settings/cloudflare",
-      icon: IconCloudComputing,
-    },
-    {
-      title: "Azure Storage",
-      url: "/settings/azure",
-      icon: IconCloud,
-    },
-  ],
 };
 
-function NavSettings() {
-  const location = useLocation();
-  const isSettingsActive = location.pathname.startsWith("/settings");
-
-  return (
-    <SidebarGroup>
-      <SidebarGroupContent>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={isSettingsActive}>
-              <Link to="/settings">
-                <IconSettings />
-                <span>Admin Settings</span>
-              </Link>
-            </SidebarMenuButton>
-            {isSettingsActive && (
-              <SidebarMenuSub>
-                {data.settingsNav.map((item) => (
-                  <SidebarMenuSubItem key={item.title}>
-                    <SidebarMenuSubButton
-                      asChild
-                      isActive={location.pathname === item.url}
-                    >
-                      <Link to={item.url}>
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                ))}
-              </SidebarMenuSub>
-            )}
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
@@ -145,7 +107,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavSettings />
         <NavUser />
       </SidebarFooter>
     </Sidebar>

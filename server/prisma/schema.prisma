@@ -58,6 +58,9 @@ model UserPreference {
   containerFilters      Json?    // Stored filter preferences
   containerColumns      Json?    // Visible columns configuration
   
+  // User preferences
+  timezone              String?  @default("UTC")
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
