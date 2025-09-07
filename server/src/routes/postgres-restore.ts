@@ -4,6 +4,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { RestoreExecutorService } from "../services/restore-executor";
 import { AzureConfigService } from "../services/azure-config";
@@ -315,12 +316,22 @@ async function listAvailableBackups(
  */
 router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const user = getAuthenticatedUser(req);
   const { databaseId } = req.params;
+
+  if (!user?.id) {
+    return res.status(401).json({
+      success: false,
+      error: "Authentication required",
+      message: "Valid authentication required",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  }
 
   try {
     logger.info(
-      { requestId, userId, databaseId },
+      { requestId, userId: user?.id, databaseId },
       "Creating restore operation",
     );
 
@@ -334,13 +345,13 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
     const database = await prisma.postgresDatabase.findFirst({
       where: {
         id: databaseId,
-        userId: userId,
+        userId: user?.id,
       },
     });
 
     if (!database) {
       logger.warn(
-        { requestId, userId, databaseId },
+        { requestId, userId: user?.id, databaseId },
         "Database not found or access denied",
       );
       return res.status(404).json({
@@ -355,7 +366,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
     // Check for confirmation if not explicitly provided
     if (validatedData.confirmRestore !== true) {
       logger.info(
-        { requestId, userId, databaseId },
+        { requestId, userId: user?.id, databaseId },
         "Restore operation requires confirmation",
       );
       return res.status(400).json({
@@ -378,7 +389,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
 
     if (runningRestore) {
       logger.warn(
-        { requestId, userId, databaseId, runningRestoreId: runningRestore.id },
+        { requestId, userId: user?.id, databaseId, runningRestoreId: runningRestore.id },
         "Restore already in progress",
       );
       return res.status(409).json({
@@ -394,11 +405,11 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
     const restoreOperation = await restoreExecutorService.queueRestore(
       databaseId,
       validatedData.backupUrl,
-      userId,
+      user.id,
     );
 
     logger.info(
-      { requestId, userId, databaseId, operationId: restoreOperation.id },
+      { requestId, userId: user?.id, databaseId, operationId: restoreOperation.id },
       "Restore operation queued successfully",
     );
 
@@ -423,7 +434,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
         .join(", ");
 
       logger.warn(
-        { requestId, userId, databaseId, validationErrors: error.issues },
+        { requestId, userId: user?.id, databaseId, validationErrors: error.issues },
         "Invalid restore operation request",
       );
 
@@ -440,7 +451,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, databaseId, error: errorMessage },
+      { requestId, userId: user?.id, databaseId, error: errorMessage },
       "Failed to create restore operation",
     );
 
@@ -460,12 +471,22 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
  */
 router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const user = getAuthenticatedUser(req);
   const { operationId } = req.params;
+
+  if (!user?.id) {
+    return res.status(401).json({
+      success: false,
+      error: "Authentication required",
+      message: "Valid authentication required",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  }
 
   try {
     logger.info(
-      { requestId, userId, operationId },
+      { requestId, userId: user?.id, operationId },
       "Fetching restore operation status",
     );
 
@@ -473,7 +494,7 @@ router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, r
     const operation = await prisma.restoreOperation.findFirst({
       where: {
         id: operationId,
-        database: { userId },
+        database: { userId: user?.id },
       },
       include: {
         database: true,
@@ -482,7 +503,7 @@ router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, r
 
     if (!operation) {
       logger.warn(
-        { requestId, userId, operationId },
+        { requestId, userId: user?.id, operationId },
         "Restore operation not found or access denied",
       );
       return res.status(404).json({
@@ -512,7 +533,7 @@ router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, r
     };
 
     logger.info(
-      { requestId, userId, operationId, status: operation.status },
+      { requestId, userId: user?.id, operationId, status: operation.status },
       "Successfully fetched restore operation status",
     );
 
@@ -522,7 +543,7 @@ router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, r
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, operationId, error: errorMessage },
+      { requestId, userId: user?.id, operationId, error: errorMessage },
       "Failed to fetch restore operation status",
     );
 
@@ -542,12 +563,22 @@ router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, r
  */
 router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const user = getAuthenticatedUser(req);
   const { containerName, databaseId } = req.params;
+
+  if (!user?.id) {
+    return res.status(401).json({
+      success: false,
+      error: "Authentication required",
+      message: "Valid authentication required",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  }
 
   try {
     logger.info(
-      { requestId, userId, containerName, databaseId },
+      { requestId, userId: user?.id, containerName, databaseId },
       "Browsing available backups for database",
     );
 
@@ -555,13 +586,13 @@ router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey
     const database = await prisma.postgresDatabase.findFirst({
       where: {
         id: databaseId,
-        userId: userId,
+        userId: user?.id,
       },
     });
 
     if (!database) {
       logger.warn(
-        { requestId, userId, databaseId },
+        { requestId, userId: user?.id, databaseId },
         "Database not found or access denied",
       );
       return res.status(404).json({
@@ -600,7 +631,7 @@ router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey
     };
 
     logger.info(
-      { requestId, userId, containerName, count: items.length },
+      { requestId, userId: user?.id, containerName, count: items.length },
       "Successfully fetched available backups",
     );
 
@@ -610,7 +641,7 @@ router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, containerName, databaseId, error: errorMessage },
+      { requestId, userId: user?.id, containerName, databaseId, error: errorMessage },
       "Failed to browse available backups",
     );
 
@@ -630,12 +661,22 @@ router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey
  */
 router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const user = getAuthenticatedUser(req);
   const { databaseId } = req.params;
+
+  if (!user?.id) {
+    return res.status(401).json({
+      success: false,
+      error: "Authentication required",
+      message: "Valid authentication required",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  }
 
   try {
     logger.info(
-      { requestId, userId, databaseId },
+      { requestId, userId: user?.id, databaseId },
       "Fetching restore operations for database",
     );
 
@@ -643,13 +684,13 @@ router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req
     const database = await prisma.postgresDatabase.findFirst({
       where: {
         id: databaseId,
-        userId: userId,
+        userId: user?.id,
       },
     });
 
     if (!database) {
       logger.warn(
-        { requestId, userId, databaseId },
+        { requestId, userId: user?.id, databaseId },
         "Database not found or access denied",
       );
       return res.status(404).json({
@@ -693,7 +734,7 @@ router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req
     };
 
     logger.info(
-      { requestId, userId, databaseId, count: restoreOperations.length },
+      { requestId, userId: user?.id, databaseId, count: restoreOperations.length },
       "Successfully fetched restore operations",
     );
 
@@ -703,7 +744,7 @@ router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, databaseId, error: errorMessage },
+      { requestId, userId: user?.id, databaseId, error: errorMessage },
       "Failed to fetch restore operations",
     );
 
@@ -723,12 +764,22 @@ router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req
  */
 router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const user = getAuthenticatedUser(req);
   const { operationId } = req.params;
+
+  if (!user?.id) {
+    return res.status(401).json({
+      success: false,
+      error: "Authentication required",
+      message: "Valid authentication required",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  }
 
   try {
     logger.info(
-      { requestId, userId, operationId },
+      { requestId, userId: user?.id, operationId },
       "Fetching restore operation progress",
     );
 
@@ -736,7 +787,7 @@ router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req,
     const operation = await prisma.restoreOperation.findFirst({
       where: {
         id: operationId,
-        database: { userId },
+        database: { userId: user?.id },
       },
       include: {
         database: true,
@@ -745,7 +796,7 @@ router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req,
 
     if (!operation) {
       logger.warn(
-        { requestId, userId, operationId },
+        { requestId, userId: user?.id, operationId },
         "Restore operation not found or access denied",
       );
       return res.status(404).json({
@@ -778,7 +829,7 @@ router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req,
     };
 
     logger.info(
-      { requestId, userId, operationId, progress: operation.progress },
+      { requestId, userId: user?.id, operationId, progress: operation.progress },
       "Successfully fetched restore operation progress",
     );
 
@@ -793,7 +844,7 @@ router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req,
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, operationId, error: errorMessage },
+      { requestId, userId: user?.id, operationId, error: errorMessage },
       "Failed to fetch restore operation progress",
     );
 
