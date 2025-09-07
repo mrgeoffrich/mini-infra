@@ -1,6 +1,6 @@
 import Docker, { Container } from "dockerode";
 import { Readable, Writable } from "stream";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 
@@ -122,6 +122,14 @@ export class DockerExecutorService {
       outputCapture.stdout?.on("data", (data: Buffer) => {
         const chunk = data.toString();
         stdout += chunk;
+        // Log container stdout to dedicated dockerexecutor logger with full container context
+        dockerExecutorLogger().debug({
+          containerId,
+          image: options.image,
+          envKeys: Object.keys(options.env),
+          timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
+          stdout: chunk
+        }, "Container stdout");
         if (options.outputHandler) {
           options.outputHandler(Readable.from([chunk]));
         }
@@ -130,7 +138,14 @@ export class DockerExecutorService {
       outputCapture.stderr?.on("data", (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
-        servicesLogger().debug({ containerId, stderr: chunk }, "Container stderr");
+        // Log container stderr to dedicated dockerexecutor logger with full container context
+        dockerExecutorLogger().debug({
+          containerId,
+          image: options.image,
+          envKeys: Object.keys(options.env),
+          timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
+          stderr: chunk
+        }, "Container stderr");
       });
 
       // Start container

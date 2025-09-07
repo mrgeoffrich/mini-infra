@@ -52,37 +52,120 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ```
 mini-infra/
-├── client/                   # Frontend React application
+├── client/                   # Vite + React 19 frontend application
 │   ├── src/
-│   │   ├── app/             # Application pages
-│   │   │   ├── dashboard/   # Dashboard components and data
-│   │   │   └── login/       # Login page
+│   │   ├── app/             # Application pages (route-based)
+│   │   │   ├── dashboard/   # Main dashboard overview
+│   │   │   ├── login/       # Authentication page
+│   │   │   ├── containers/  # Docker container management
+│   │   │   ├── postgres/    # PostgreSQL database management
+│   │   │   ├── tunnels/     # Cloudflare tunnel monitoring
+│   │   │   ├── connectivity/ # Service health monitoring
+│   │   │   │   ├── overview/ # Connectivity dashboard
+│   │   │   │   ├── docker/   # Docker service status
+│   │   │   │   ├── azure/    # Azure service status
+│   │   │   │   └── cloudflare/ # Cloudflare service status
+│   │   │   ├── settings/    # System configuration
+│   │   │   │   └── system/  # Docker registry settings
+│   │   │   └── user/        # User preferences
+│   │   │       └── settings/ # Personal settings (timezone)
 │   │   ├── components/      # Reusable UI components
 │   │   │   ├── ui/          # shadcn UI components
-│   │   ├── hooks/           # Custom React hooks (useAuth, useUser, useContainers, etc.)
-│   │   └── lib/             # Frontend utilities
+│   │   │   ├── postgres/    # PostgreSQL-specific components
+│   │   │   └── cloudflare/  # Cloudflare tunnel components
+│   │   ├── hooks/           # Custom React hooks
+│   │   │   ├── use-auth.ts  # Authentication hooks
+│   │   │   ├── use-containers.ts # Docker container hooks
+│   │   │   ├── use-settings.ts   # Settings management hooks
+│   │   │   ├── use-user-preferences.ts # User preference hooks
+│   │   │   ├── use-formatted-date.ts   # Timezone-aware date formatting
+│   │   │   └── use-*.ts     # Various specialized hooks
+│   │   └── lib/             # Frontend utilities and configuration
+│   │       ├── routes.tsx   # Application routing configuration
+│   │       ├── date-utils.ts # Date formatting utilities
+│   │       └── utils.ts     # General utilities
 │   ├── public/              # Static assets
-│   ├── dist/                # Build output
-│   └── package.json         # Frontend dependencies
-├── server/                  # Backend Express.js application
+│   ├── dist/                # Build output (→ ../server/public)
+│   ├── package.json         # Frontend dependencies
+│   ├── vite.config.ts       # Vite configuration
+│   └── tailwind.config.js   # Tailwind CSS configuration
+├── server/                  # Express.js 5 + Prisma backend
 │   ├── src/
 │   │   ├── app.ts          # Express app configuration
 │   │   ├── server.ts       # Server entry point
-│   │   ├── lib/
-│   │   │   └── prisma.ts   # Prisma client configuration
-│   │   └── generated/      # Generated Prisma client
+│   │   ├── routes/         # API endpoints
+│   │   │   ├── auth.ts     # Google OAuth authentication
+│   │   │   ├── containers.ts # Docker management
+│   │   │   ├── settings.ts   # System settings CRUD
+│   │   │   ├── system-settings.ts # Docker registry config
+│   │   │   ├── azure-settings.ts  # Azure Storage config
+│   │   │   ├── cloudflare-settings.ts # Cloudflare API config
+│   │   │   ├── azure-connectivity.ts  # Azure health status
+│   │   │   ├── cloudflare-connectivity.ts # Cloudflare status
+│   │   │   ├── postgres-databases.ts  # PostgreSQL CRUD
+│   │   │   ├── postgres-backup-configs.ts # Backup scheduling
+│   │   │   ├── postgres-backups.ts    # Backup execution
+│   │   │   ├── postgres-restore.ts    # Restore operations
+│   │   │   ├── postgres-progress.ts   # Operation progress
+│   │   │   ├── user-preferences.ts    # User settings
+│   │   │   └── api-keys.ts # API key management
+│   │   ├── services/       # Business logic layer
+│   │   │   ├── configuration-base.ts   # Abstract config base
+│   │   │   ├── configuration-factory.ts # Service factory
+│   │   │   ├── docker-config.ts        # Docker configuration
+│   │   │   ├── azure-config.ts         # Azure Storage config
+│   │   │   ├── cloudflare-config.ts    # Cloudflare API config
+│   │   │   ├── docker.ts              # Docker API integration
+│   │   │   ├── docker-executor.ts     # Docker operations
+│   │   │   ├── postgres-config.ts     # PostgreSQL connection
+│   │   │   ├── backup-config.ts       # Backup configuration
+│   │   │   ├── backup-executor.ts     # Backup execution
+│   │   │   ├── restore-executor.ts    # Restore operations
+│   │   │   ├── user-preferences.ts    # User settings service
+│   │   │   └── progress-tracker.ts    # Progress monitoring
+│   │   ├── lib/            # Core utilities and middleware
+│   │   │   ├── prisma.ts   # Prisma client configuration
+│   │   │   ├── logger-factory.ts # Multi-domain logging
+│   │   │   ├── logging-config.ts # Logging configuration
+│   │   │   ├── api-logger.ts     # API request logging
+│   │   │   ├── connectivity-scheduler.ts # Health monitoring
+│   │   │   ├── auth-middleware.ts # Authentication middleware
+│   │   │   └── validation.ts      # Request validation
+│   │   └── __tests__/      # Test files
 │   ├── prisma/
-│   │   └── schema.prisma   # Database schema definition
-│   ├── dist/                # Backend build output
-│   └── package.json         # Backend dependencies
-├── lib/                     # Shared TypeScript types package (@mini-infra/types)
-│   ├── types/              # TypeScript type definitions
-│   ├── dist/               # Compiled JavaScript and declaration files
-│   ├── package.json        # Shared types package configuration
-│   └── tsconfig.json       # TypeScript configuration for lib
-├── projectmanagement/       # Project documentation
-├── CLAUDE.md                # Claude Code context and instructions
-└── package.json             # Root package.json with workspaces
+│   │   ├── schema.prisma   # Database schema definition
+│   │   └── dev.db          # SQLite database file
+│   ├── config/
+│   │   └── logging.json    # Logging configuration
+│   ├── logs/               # Log files (excluded from git)
+│   │   ├── app.log         # Application events
+│   │   ├── app-http.log    # HTTP requests/responses
+│   │   ├── app-prisma.log  # Database operations
+│   │   ├── app-services.log # Service layer operations
+│   │   └── app-dockerexecutor.log # Docker operations
+│   ├── public/             # Static files served by Express
+│   ├── dist/               # Backend build output
+│   ├── package.json        # Backend dependencies
+│   ├── .env                # Environment variables (not in git)
+│   └── .env.example        # Environment template
+├── lib/                    # Shared TypeScript types (@mini-infra/types)
+│   ├── types/             # TypeScript type definitions
+│   │   ├── auth.ts        # Authentication types
+│   │   ├── containers.ts  # Docker container types
+│   │   ├── settings.ts    # Configuration types
+│   │   ├── azure.ts       # Azure Storage types
+│   │   ├── cloudflare.ts  # Cloudflare API types
+│   │   ├── postgres.ts    # PostgreSQL operation types
+│   │   ├── api.ts         # API response types
+│   │   └── index.ts       # Utility types
+│   ├── dist/              # Compiled JavaScript and declarations
+│   ├── package.json       # Shared types package configuration
+│   └── tsconfig.json      # TypeScript configuration
+├── projectmanagement/      # Project documentation and specs
+├── .claude/               # Claude Code configuration
+├── CLAUDE.md              # Claude Code context and instructions
+├── README.md              # Project documentation
+└── package.json           # Root workspace configuration
 ```
 
 ## Shared Types Architecture
@@ -97,15 +180,40 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 
 ## Database Schema
 
-### Authentication Models
-
-The application uses Prisma ORM with SQLite for data persistence.
+The application uses Prisma ORM with SQLite for data persistence with comprehensive models for authentication, system configuration, and operational data.
 
 ### Database Configuration
 - **Provider**: SQLite
-- **File Location**: `server/dev.db`
-- **Client Location**: `server/src/generated/prisma`
+- **File Location**: `server/prisma/dev.db`
+- **Client Location**: `server/node_modules/.prisma/client`
 - **Schema File**: `server/prisma/schema.prisma`
+
+### Core Models
+
+#### Authentication System
+- **User**: Google OAuth user profile data with relations to preferences and operations
+- **ApiKey**: Webhook authentication system with hashed keys and metadata
+- **UserPreference**: User-specific settings including timezone preferences and UI customizations
+
+#### System Configuration
+- **SystemSettings**: Encrypted key-value configuration storage for all external service settings
+- **ConnectivityStatus**: External service health monitoring with status history and metadata
+
+#### Docker Management
+- **ContainerCache**: Cached Docker container information with TTL for performance optimization
+
+#### PostgreSQL Database Management
+- **PostgresDatabase**: Database connection configurations with encrypted connection strings
+- **BackupConfiguration**: Automated backup scheduling with cron expressions and retention policies
+- **BackupOperation**: Individual backup execution records with status tracking and file metadata
+- **RestoreOperation**: Database restore operations with progress tracking and validation
+
+### Key Schema Features
+- **Encryption Support**: Sensitive data automatically encrypted using crypto-js AES encryption
+- **User Scoping**: All user-related data properly scoped via userId foreign keys
+- **Operation Tracking**: Comprehensive audit trail for all backup/restore operations
+- **Relationship Management**: Full Prisma relations between related entities
+- **Unique Constraints**: Proper indexing and unique constraints for data integrity
 
 ## Authentication System Implementation
 
@@ -366,14 +474,63 @@ model UserPreference {
   - `GET /api/postgres/restore/:operationId/progress` - Get detailed progress information for a restore operation
 - **Features**: Restore operation CRUD operations, backup browser for Azure Storage, restore confirmation workflow, progress tracking with detailed status updates, comprehensive error handling, business event logging, sensitive data redaction in logs
 
-### Settings Service Layer Architecture
-- **Code**: `server/src/services/**` - all the settings code
+## Service Layer Architecture
 
-### Settings API Endpoints Implementation
-- **API Router**: `server/src/routes/settings.ts` - RESTful CRUD endpoints for system settings management
+The backend implements a sophisticated service layer with dependency injection, configuration management, and comprehensive external API integration.
 
-### Docker Configuration Service Implementation
-- **Service Class**: `server/src/services/docker-config.ts` - Complete Docker configuration management service
+### Configuration Services Framework
+
+#### Base Architecture
+- **ConfigurationBase** (`server/src/services/configuration-base.ts`): Abstract base class providing common functionality for all configuration services including validation, caching, and error handling
+- **ConfigurationFactory** (`server/src/services/configuration-factory.ts`): Service factory with dependency injection pattern for creating and managing configuration service instances
+
+#### External Service Configurations
+- **DockerConfig** (`server/src/services/docker-config.ts`): Docker host and API configuration management with connection testing and singleton pattern
+- **AzureConfig** (`server/src/services/azure-config.ts`): Azure Storage configuration with connection string validation, container access testing, and retry logic with caching
+- **CloudflareConfig** (`server/src/services/cloudflare-config.ts`): Cloudflare API configuration with circuit breaker pattern (opens after 5 failures, 5-minute cooldown), request deduplication, and comprehensive error handling
+
+### Business Logic Services
+
+#### Docker Integration
+- **DockerService** (`server/src/services/docker.ts`): Singleton Docker API integration with database-driven configuration and automatic reconnection
+- **DockerExecutorService** (`server/src/services/docker-executor.ts`): Docker operations including image pulling, registry authentication testing, and container management with comprehensive error handling
+
+#### PostgreSQL Database Management
+- **PostgresConfigService** (`server/src/services/postgres-config.ts`): PostgreSQL database configuration management with connection string encryption/decryption, connection testing with timeout protection, and user-scoped database management
+- **BackupConfigService** (`server/src/services/backup-config.ts`): Backup configuration management with cron expression validation, Azure container validation, and automated scheduling calculations
+- **BackupExecutorService** (`server/src/services/backup-executor.ts`): Automated backup execution with progress tracking and Azure Storage integration
+- **RestoreExecutorService** (`server/src/services/restore-executor.ts`): Database restore operations with progress monitoring and validation
+
+#### User Management
+- **UserPreferencesService** (`server/src/services/user-preferences.ts`): User settings management with timezone validation, preference persistence, and cache invalidation
+- **ProgressTrackerService** (`server/src/services/progress-tracker.ts`): Real-time operation progress tracking for backup/restore operations
+
+### API Endpoints Architecture
+
+#### Authentication & User Management
+- **Authentication** (`server/src/routes/auth.ts`): Google OAuth 2.0 integration with JWT token management
+- **User Preferences** (`server/src/routes/user-preferences.ts`): User settings API with timezone management and preference validation
+- **API Keys** (`server/src/routes/api-keys.ts`): Webhook authentication system with key generation and management
+
+#### System Configuration
+- **Settings** (`server/src/routes/settings.ts`): Generic system settings CRUD with encrypted storage
+- **System Settings** (`server/src/routes/system-settings.ts`): Docker registry configuration with connection testing
+- **Azure Settings** (`server/src/routes/azure-settings.ts`): Azure Storage configuration management
+- **Cloudflare Settings** (`server/src/routes/cloudflare-settings.ts`): Cloudflare API configuration with tunnel management
+
+#### Connectivity Monitoring
+- **Azure Connectivity** (`server/src/routes/azure-connectivity.ts`): Azure service health status retrieval
+- **Cloudflare Connectivity** (`server/src/routes/cloudflare-connectivity.ts`): Cloudflare service status with caching and historical data
+
+#### PostgreSQL Management
+- **Postgres Databases** (`server/src/routes/postgres-databases.ts`): Database configuration CRUD with connection testing
+- **Postgres Backup Configs** (`server/src/routes/postgres-backup-configs.ts`): Backup scheduling and configuration
+- **Postgres Backups** (`server/src/routes/postgres-backups.ts`): Backup execution and monitoring
+- **Postgres Restore** (`server/src/routes/postgres-restore.ts`): Restore operations with backup browsing
+- **Postgres Progress** (`server/src/routes/postgres-progress.ts`): Real-time operation progress tracking
+
+#### Container Management
+- **Containers** (`server/src/routes/containers.ts`): Docker container management with real-time polling and caching
 
 ### Cloudflare Configuration Service Implementation
 - **Service Class**: `server/src/services/cloudflare-config.ts` - Complete Cloudflare API configuration management service with circuit breaker pattern
@@ -420,13 +577,120 @@ model UserPreference {
 - **Tunnel Status Component**: `client/src/components/cloudflare/tunnel-status.tsx` - Real-time Cloudflare tunnel monitoring display
 - **Features**: Tunnel list with health indicators, expandable details for each tunnel, active connection information, manual refresh capability, real-time status badges (healthy, degraded, inactive, down)
 
-### Settings Navigation and Routing Implementation
-- **Settings Routes**: Complete nested routing structure in `client/src/lib/routes.tsx` with protected settings pages
-  - `/settings` - Redirects to settings overview
-  - `/settings/overview` - Settings dashboard overview
-  - `/settings/docker` - Docker configuration management
-  - `/settings/cloudflare` - Cloudflare API and tunnel settings  
-  - `/settings/azure` - Azure Storage configuration
+## Frontend Architecture
+
+### Application Routing Structure
+
+The frontend uses React Router v7 with protected route guards and nested routing. All routes except `/login` require authentication.
+
+#### Current Route Implementation (`client/src/lib/routes.tsx`)
+```
+/ → /dashboard (redirect)
+/login (public route - Google OAuth)
+/dashboard (main application dashboard)
+/containers (Docker container management)
+/postgres (PostgreSQL database management)
+/tunnels (Cloudflare tunnel monitoring)
+/connectivity/* (service health monitoring)
+  ├─ /overview (connectivity dashboard)
+  ├─ /docker (Docker service status)
+  ├─ /azure (Azure service status)
+  └─ /cloudflare (Cloudflare service status)
+/settings/* (system configuration)
+  └─ /system (Docker registry configuration)
+/user/settings (personal preferences including timezone)
+```
+
+### Component Architecture
+
+#### Core Layout Components
+- **App** (`client/src/app/App.tsx`): Main application shell with authentication context
+- **Layout** (`client/src/components/Layout.tsx`): Application layout with navigation and user profile
+- **ProtectedRoute** (`client/src/components/ProtectedRoute.tsx`): Route guard with authentication checking
+- **PublicRoute** (`client/src/components/PublicRoute.tsx`): Public route wrapper for login page
+
+#### Page Components
+
+**Dashboard & Navigation**
+- **Dashboard** (`client/src/app/dashboard/page.tsx`): Main overview with service status and container summary
+- **Login** (`client/src/app/login/page.tsx`): Google OAuth authentication interface
+
+**Container Management**
+- **Containers** (`client/src/app/containers/page.tsx`): Docker container management with real-time polling
+- **ContainerTable** (`client/src/app/containers/ContainerTable.tsx`): Data table with filtering and sorting
+- **ContainerDashboard** (`client/src/app/containers/ContainerDashboard.tsx`): Container overview with connectivity status
+
+**PostgreSQL Management**
+- **Postgres** (`client/src/app/postgres/page.tsx`): Database management dashboard
+- **Database Components** (`client/src/components/postgres/`):
+  - `database-table.tsx` - Database configuration table with health checks
+  - `backup-configuration-modal.tsx` - Backup scheduling interface
+  - `operation-history-list.tsx` - Backup/restore operation history
+  - `active-operations-display.tsx` - Real-time operation progress
+
+**Service Monitoring**
+- **Connectivity Overview** (`client/src/app/connectivity/overview/page.tsx`): Service health dashboard
+- **Docker Status** (`client/src/app/connectivity/docker/page.tsx`): Docker service connectivity
+- **Azure Status** (`client/src/app/connectivity/azure/page.tsx`): Azure Storage service status
+- **Cloudflare Status** (`client/src/app/connectivity/cloudflare/page.tsx`): Cloudflare API and tunnel status
+- **Tunnels** (`client/src/app/tunnels/page.tsx`): Cloudflare tunnel monitoring with detailed status
+
+**Configuration Management**
+- **System Settings** (`client/src/app/settings/system/page.tsx`): Docker registry configuration with connection testing
+- **User Settings** (`client/src/app/user/settings/page.tsx`): Personal preferences including timezone selection
+
+#### Specialized Components
+
+**Authentication Components**
+- **Error Boundary** (`client/src/components/ErrorBoundary.tsx`): Application-level error handling
+- **Auth Forms** (`client/src/components/auth/`): Login forms and authentication UI
+
+**Service Status Components**
+- **ConnectivityStatus** (`client/src/components/connectivity-status.tsx`): Generic service status display
+- **AzureConnectivityStatus** (`client/src/components/AzureConnectivityStatus.tsx`): Azure-specific status monitoring
+- **Cloudflare Tunnel Status** (`client/src/components/cloudflare/tunnel-status.tsx`): Tunnel monitoring with health indicators
+
+### React Hooks Architecture
+
+#### Authentication Hooks (`client/src/hooks/`)
+- **useAuth** (`use-auth.ts`): Core authentication state management
+- **useLogin** (`use-login.ts`): Google OAuth login flow
+- **useLogout** (`use-logout.ts`): Session termination
+- **useUser** (`use-user.ts`): Current user information
+
+#### Data Management Hooks
+- **useContainers** (`use-containers.ts`): Docker container data with 5-second polling
+- **useUserPreferences** (`use-user-preferences.ts`): User settings with cache management
+- **useFormattedDate** (`use-formatted-date.ts`): Timezone-aware date formatting
+
+#### Configuration Hooks
+- **useSettings** (`use-settings.ts`): Generic system settings management
+- **useSystemSettings** (`use-system-settings.ts`): Docker registry configuration
+- **useAzureSettings** (`use-azure-settings.ts`): Azure Storage configuration
+- **useCloudflareSettings** (`use-cloudflare-settings.ts`): Cloudflare API configuration
+
+#### Validation & Testing Hooks
+- **useSettingsValidation** (`use-settings-validation.ts`): Configuration validation
+- **useTestDockerRegistry** (`use-system-settings.ts`): Docker registry connection testing
+
+### System Settings Implementation
+- **System Settings Page**: `client/src/app/settings/system/page.tsx` - Docker container configuration management
+- **Features**: 
+  - Docker image configuration for backup and restore operations
+  - Registry authentication with username/password fields
+  - **Docker Registry Test Connection**: Test Docker registry connectivity and image access
+  - Form validation with Zod schemas for Docker image format
+  - Encrypted storage of registry passwords
+- **Backend Routes**: `server/src/routes/system-settings.ts` - System-specific settings endpoints
+  - `POST /api/settings/system/test-docker-registry` - Test Docker registry connection endpoint
+- **Docker Integration**: Enhanced `DockerExecutorService` with `testDockerRegistryConnection()` method
+  - Performs actual Docker image pull to verify registry access
+  - Supports both public and private registries with authentication
+  - Comprehensive error handling with specific error codes (AUTHENTICATION_REQUIRED, IMAGE_NOT_FOUND, TIMEOUT, NETWORK_ERROR)
+  - Performance metrics and detailed test results
+- **Frontend Hook**: `client/src/hooks/use-system-settings.ts` - React Query hooks for system settings operations
+  - `useTestDockerRegistry()` mutation for testing registry connections
+  - Error handling and loading states
 
 ## Environment Variables
 
@@ -618,6 +882,12 @@ The application uses a sophisticated multi-file logging architecture built on Pi
 - **Level**: Debug (dev) / Info (prod)
 - **Features**: Service validation, external API calls, configuration updates
 
+#### Docker Executor Logger (`logs/app-dockerexecutor.log`)
+- **Purpose**: Docker operations and container management
+- **Usage**: Docker image pulling, registry authentication, container operations
+- **Level**: Debug (dev) / Info (prod)
+- **Features**: Docker API calls, image pull progress, registry validation, error handling
+
 ### Security and Data Protection
 
 #### Comprehensive Data Redaction
@@ -693,10 +963,114 @@ const { logger, context } = createApiLogger(req);
 logger.info("Processing API request");
 ```
 
+## Implementation Status & Feature Completeness
+
+### Fully Implemented & Production Ready
+
+#### ✅ Core Infrastructure
+- **Authentication System**: Complete Google OAuth 2.0 integration with JWT tokens, secure session management, and cross-tab synchronization
+- **Database Management**: Full Prisma ORM implementation with SQLite, comprehensive model relationships, and encrypted sensitive data storage
+- **Logging Architecture**: Multi-file domain-specific logging with Pino, comprehensive data redaction, and production log rotation
+- **Configuration Management**: Encrypted settings storage, external service configuration, and validation with timeout protection
+
+#### ✅ Docker Container Management
+- **Real-time Container Monitoring**: Live polling with 5-second intervals, container status tracking, and automatic cache refresh
+- **Docker API Integration**: Singleton service pattern with database-driven configuration and automatic reconnection
+- **Docker Registry Testing**: Registry authentication validation, image pull testing, and comprehensive error handling
+
+#### ✅ PostgreSQL Database Operations
+- **Database Configuration**: Complete CRUD operations with encrypted connection strings and connection testing
+- **Automated Backup System**: Cron-based scheduling, Azure Storage integration, retention policies, and progress tracking
+- **Restore Operations**: Database restoration with backup browsing, progress monitoring, and validation
+- **Operation History**: Complete audit trail for all backup/restore operations with detailed metadata
+
+#### ✅ External Service Integration
+- **Azure Storage**: Connection validation, container access testing, blob operations, and retry logic with caching
+- **Cloudflare API**: Circuit breaker pattern, tunnel monitoring, account management, and request deduplication
+- **Service Health Monitoring**: Background connectivity checking with exponential backoff and configurable intervals
+
+#### ✅ User Experience
+- **Timezone-Aware Date Display**: Complete user preference system with real-time timezone conversion across all components
+- **Responsive UI**: Modern React 19 + shadcn/ui interface with Tailwind CSS 4 and comprehensive component library
+- **Real-time Updates**: Live data polling, progress tracking, and automatic UI updates without page refresh
+
+### Partially Implemented Features
+
+#### ⚠️ Settings Management
+- **Current State**: System settings (Docker registry) fully implemented, but settings overview page redirects instead of showing dashboard
+- **Missing**: General settings overview interface and navigation structure
+- **Impact**: Users must navigate directly to specific settings categories
+
+#### ⚠️ Cloudflare Tunnel Management  
+- **Current State**: Comprehensive tunnel monitoring and status display with health indicators
+- **Missing**: Tunnel configuration management (create/edit/delete tunnels)
+- **Impact**: Read-only tunnel monitoring, no tunnel lifecycle management
+
+### Documented But Not Implemented
+
+#### ❌ Zero-Downtime Deployment System
+- **Status**: Documented in project overview but no implementation found
+- **Missing**: Traefik integration, deployment pipeline, rolling updates
+- **Impact**: No automated deployment capabilities
+
+#### ❌ Activity Logs Interface
+- **Status**: Route exists (`/activity-logs`) but shows "Coming Soon" placeholder
+- **Missing**: User activity tracking, system event logging interface, audit trail UI
+- **Impact**: No visibility into system activities and user actions
+
+#### ❌ General Settings Overview
+- **Status**: Settings navigation redirects to system settings instead of overview
+- **Missing**: Settings dashboard, category overview, quick access to all configurations
+- **Impact**: Limited settings navigation experience
+
+### Architecture Discrepancies
+
+#### Route Structure Changes
+- **Documentation**: Suggests `/settings/overview`, `/settings/docker`, `/settings/azure`, `/settings/cloudflare`
+- **Implementation**: Uses `/connectivity/*` structure and `/settings/system` only
+- **Impact**: Navigation differs from documented structure but provides better UX grouping
+
+#### Service Health Monitoring
+- **Enhancement**: Implemented more comprehensive connectivity monitoring than documented
+- **Added Features**: Circuit breaker patterns, historical status data, and automated health checks
+- **Impact**: Better than documented functionality
+
+### Testing & Quality Assurance
+
+#### ✅ Comprehensive Test Coverage
+- **Backend Testing**: Jest + Supertest with comprehensive API endpoint coverage, service layer unit tests, and database integration tests
+- **Test Isolation**: User-scoped test data, database cleanup, and concurrent test execution
+- **Mocking Strategy**: External API mocking, authentication mocking, and service layer isolation
+
+#### ✅ Code Quality
+- **TypeScript**: Strict type checking across frontend and backend with shared types package
+- **Linting**: ESLint configuration with automatic fixes and code formatting
+- **Build System**: Proper dependency management and build ordering for monorepo
+
+### Development Experience
+
+#### ✅ Developer Workflow
+- **Hot Reload**: Live recompilation for both frontend and backend during development
+- **Concurrent Development**: All services run simultaneously with proper dependency management
+- **Database Management**: Prisma Studio access, migration system, and schema synchronization
+
+### Production Readiness Assessment
+
+#### ✅ Production Ready Components
+- Authentication, database operations, external service integrations, logging, monitoring, and core UI functionality
+
+#### ⚠️ Needs Completion for Full Production
+- Settings overview interface, activity logging UI, and deployment management system
+
+#### 🚀 Ready for Initial Deployment  
+The application is production-ready for Docker container management and PostgreSQL backup operations with comprehensive monitoring capabilities.
+
 ## Security Considerations
 
-- HTTPS enforcement for all communications
-- Encrypted storage for sensitive configuration
-- Automatic data redaction in logs (passwords, tokens, cookies)
-- Secure OAuth implementation
-- API key generation and validation
+- **HTTPS Enforcement**: All communications secured with HTTPS
+- **Encrypted Storage**: Sensitive configuration data encrypted using crypto-js AES encryption
+- **Automatic Data Redaction**: Comprehensive logging redaction for passwords, tokens, and cookies
+- **Secure OAuth Implementation**: Google OAuth 2.0 with proper token management and session security
+- **API Key Generation**: Secure webhook authentication with hashed keys and metadata
+- **Input Validation**: Zod schema validation for all API endpoints and user inputs
+- **User Isolation**: All data properly scoped by user ID with secure access controls

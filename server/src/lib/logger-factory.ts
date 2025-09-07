@@ -137,9 +137,10 @@ export const appLogger = () => createLogger("app");
 export const httpLogger = () => createLogger("http");
 export const prismaLogger = () => createLogger("prisma");
 export const servicesLogger = () => createLogger("services");
+export const dockerExecutorLogger = () => createLogger("dockerexecutor");
 
 // Generic logger factory function
-export function getLogger(loggerType: "app" | "http" | "prisma" | "services"): pino.Logger {
+export function getLogger(loggerType: "app" | "http" | "prisma" | "services" | "dockerexecutor"): pino.Logger {
   return createLogger(loggerType);
 }
 
@@ -150,7 +151,7 @@ export function clearLoggerCache(): void {
 
 // Create child logger with additional context
 export function createChildLogger(
-  loggerType: "app" | "http" | "prisma" | "services",
+  loggerType: "app" | "http" | "prisma" | "services" | "dockerexecutor",
   context: Record<string, unknown>
 ): pino.Logger {
   const parentLogger = getLogger(loggerType);
