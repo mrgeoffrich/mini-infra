@@ -362,6 +362,10 @@ export class BackupExecutorService {
         message: "Starting backup container",
       });
 
+      // Generate blob name with database ID as path and backup ID + timestamp as filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const blobName = `${databaseId}/${operationId}_${timestamp}.dump`;
+
       // Execute backup using Docker
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
@@ -369,12 +373,13 @@ export class BackupExecutorService {
             image: dockerImage,
             env: {
               POSTGRES_HOST: connectionConfig.host,
+              POSTGRES_PORT: connectionConfig.port.toString(),
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
               AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
               AZURE_CONTAINER_NAME: backupConfig.azureContainerName,
-              BACKUP_PATH_PREFIX: backupConfig.azurePathPrefix,
+              AZURE_BLOB_NAME: blobName,
               BACKUP_FORMAT: backupConfig.backupFormat,
               COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
             },
@@ -427,8 +432,7 @@ export class BackupExecutorService {
       // Verify backup files in Azure Storage
       const backupVerification = await this.verifyBackupInAzure(
         backupConfig.azureContainerName,
-        backupConfig.azurePathPrefix,
-        database.database,
+        blobName,
       );
 
       if (!backupVerification.success) {
@@ -524,8 +528,7 @@ export class BackupExecutorService {
    */
   private async verifyBackupInAzure(
     containerName: string,
-    pathPrefix: string,
-    databaseName: string,
+    blobName: string,
   ): Promise<{
     success: boolean;
     error?: string;
@@ -548,64 +551,41 @@ export class BackupExecutorService {
       const containerClient =
         blobServiceClient.getContainerClient(containerName);
 
-      // Generate expected blob path (assuming backup creates files with timestamp)
-      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      const blobPrefix = pathPrefix
-        ? `${pathPrefix}/${databaseName}`
-        : databaseName;
+      // Check if the specific blob exists
+      const blobClient = containerClient.getBlobClient(blobName);
+      
+      try {
+        const properties = await blobClient.getProperties();
+        const blobUrl = blobClient.url;
+        const sizeBytes = BigInt(properties.contentLength || 0);
 
-      // List blobs that match the pattern
-      const blobs = [];
-      for await (const blob of containerClient.listBlobsFlat({
-        prefix: blobPrefix,
-      })) {
-        // Check if blob was created today (rough verification)
-        const blobDate = blob.properties.createdOn?.toISOString().split("T")[0];
-        if (blobDate === today) {
-          blobs.push(blob);
-        }
-      }
+        servicesLogger().info(
+          {
+            containerName,
+            blobName,
+            sizeBytes: sizeBytes.toString(),
+            blobUrl,
+          },
+          "Backup file verified in Azure Storage",
+        );
 
-      if (blobs.length === 0) {
+        return {
+          success: true,
+          sizeBytes,
+          blobUrl,
+        };
+      } catch (blobError) {
         return {
           success: false,
-          error: `No backup files found for database ${databaseName} created today`,
+          error: `Backup file not found: ${blobName}`,
         };
       }
-
-      // Get the largest/most recent blob
-      const latestBlob = blobs.reduce((latest, current) =>
-        (current.properties.createdOn || new Date(0)) >
-        (latest.properties.createdOn || new Date(0))
-          ? current
-          : latest,
-      );
-
-      const blobUrl = `https://${blobServiceClient.accountName}.blob.core.windows.net/${containerName}/${latestBlob.name}`;
-      const sizeBytes = BigInt(latestBlob.properties.contentLength || 0);
-
-      servicesLogger().info(
-        {
-          containerName,
-          blobName: latestBlob.name,
-          sizeBytes: sizeBytes.toString(),
-          blobUrl,
-        },
-        "Backup file verified in Azure Storage",
-      );
-
-      return {
-        success: true,
-        sizeBytes,
-        blobUrl,
-      };
     } catch (error) {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerName,
-          pathPrefix,
-          databaseName,
+          blobName,
         },
         "Failed to verify backup in Azure Storage",
       );

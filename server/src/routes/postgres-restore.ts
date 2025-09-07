@@ -155,37 +155,34 @@ function mapRestoreOperationToInfo(operation: any) {
 }
 
 /**
- * Extract database name from backup URL or filename
+ * Extract backup ID from blob name
+ * Expected format: databaseId/backupId_timestamp.dump
  */
-function extractDatabaseNameFromBackup(
-  backupUrl: string,
-  blobName: string,
-): string {
+function extractBackupIdFromBlobName(blobName: string): string {
   try {
-    // Try to extract from path structure
+    // Extract filename from path
     const pathParts = blobName.split("/");
-    if (pathParts.length >= 2) {
-      return pathParts[0]; // Assume first part is database name
-    }
-
-    // Try to extract from filename
     const filename = pathParts[pathParts.length - 1];
-    const match = filename.match(/^([^_]+)_/); // Match database name before first underscore
+    
+    // Extract backup ID (everything before the first underscore, excluding .dump extension)
+    const match = filename.match(/^([^_]+)_/);
     if (match) {
       return match[1];
     }
-
-    return "unknown";
+    
+    // Fallback - remove extension
+    return filename.replace(/\.dump$/, "");
   } catch {
     return "unknown";
   }
 }
 
 /**
- * List available backups from Azure Storage
+ * List available backups from Azure Storage for a specific database
  */
 async function listAvailableBackups(
   containerName: string,
+  databaseId: string,
   filter: BackupBrowserFilter,
   sort: BackupBrowserSortOptions,
   pagination: { page: number; limit: number },
@@ -204,16 +201,13 @@ async function listAvailableBackups(
 
     const blobs: BackupBrowserItem[] = [];
 
-    // List all blobs in container
+    // List blobs in container filtered by database ID prefix
     for await (const blob of containerClient.listBlobsFlat({
+      prefix: `${databaseId}/`,
       includeMetadata: true,
     })) {
-      // Skip if not a backup file (basic heuristic)
-      if (
-        !blob.name.includes(".dump") &&
-        !blob.name.includes(".sql") &&
-        !blob.name.includes("backup")
-      ) {
+      // Skip if not a backup file (should be .dump files based on our naming convention)
+      if (!blob.name.endsWith(".dump")) {
         continue;
       }
 
@@ -230,7 +224,8 @@ async function listAvailableBackups(
           blob.properties.lastModified?.toISOString() ||
           new Date().toISOString(),
         metadata: {
-          databaseName: extractDatabaseNameFromBackup(blobUrl, blob.name),
+          databaseId: databaseId,
+          backupId: extractBackupIdFromBlobName(blob.name),
           contentType: blob.properties.contentType,
           etag: blob.properties.etag,
           ...blob.metadata,
@@ -302,6 +297,7 @@ async function listAvailableBackups(
       {
         error: error instanceof Error ? error.message : "Unknown error",
         containerName,
+        databaseId,
       },
       "Failed to list available backups",
     );
@@ -541,26 +537,49 @@ router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
 });
 
 /**
- * GET /api/postgres/restore/backups/:containerName
- * Browse available backups in Azure container for restore
+ * GET /api/postgres/restore/backups/:containerName/:databaseId
+ * Browse available backups in Azure container for a specific database
  */
-router.get("/restore/backups/:containerName", requireAuth, async (req, res) => {
+router.get("/restore/backups/:containerName/:databaseId", requireAuth, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
-  const { containerName } = req.params;
+  const { containerName, databaseId } = req.params;
 
   try {
     logger.info(
-      { requestId, userId, containerName },
-      "Browsing available backups",
+      { requestId, userId, containerName, databaseId },
+      "Browsing available backups for database",
     );
+
+    // Verify database exists and user has access
+    const database = await prisma.postgresDatabase.findFirst({
+      where: {
+        id: databaseId,
+        userId: userId,
+      },
+    });
+
+    if (!database) {
+      logger.warn(
+        { requestId, userId, databaseId },
+        "Database not found or access denied",
+      );
+      return res.status(404).json({
+        success: false,
+        error: "Database not found",
+        message: "Database not found or you don't have access to it",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
 
     // Parse query parameters
     const { pagination, filter, sort } = parseBackupBrowserQuery(req.query);
 
-    // List available backups from Azure Storage
+    // List available backups from Azure Storage for this database
     const { items, totalCount } = await listAvailableBackups(
       containerName,
+      databaseId,
       filter,
       sort,
       pagination,
@@ -591,7 +610,7 @@ router.get("/restore/backups/:containerName", requireAuth, async (req, res) => {
       error instanceof Error ? error.message : "Unknown error";
 
     logger.error(
-      { requestId, userId, containerName, error: errorMessage },
+      { requestId, userId, containerName, databaseId, error: errorMessage },
       "Failed to browse available backups",
     );
 
