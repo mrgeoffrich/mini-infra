@@ -188,7 +188,7 @@ export class RestoreExecutorService {
       servicesLogger().debug(
         {
           operationId: restoreOperation.id,
-          queuePosition: await this.restoreQueue.count(),
+          queuePosition: this.restoreQueue.getStats().total,
         },
         "Job added to restore queue"
       );
@@ -1049,12 +1049,12 @@ export class RestoreExecutorService {
       // Generate unique container name and path for rollback backup
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const rollbackContainerName = "rollback-backups";
-      const rollbackPathPrefix = `${databaseName}/rollback-${timestamp}`;
+      const rollbackBlobName = `${databaseName}/rollback-${timestamp}.dump`;
       
       servicesLogger().debug(
         {
           rollbackContainerName,
-          rollbackPathPrefix,
+          rollbackBlobName,
           timestamp,
         },
         "Generated rollback backup path and container"
@@ -1068,7 +1068,7 @@ export class RestoreExecutorService {
         POSTGRES_DATABASE: connectionConfig.database,
         AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
         AZURE_CONTAINER_NAME: rollbackContainerName,
-        BACKUP_PATH_PREFIX: rollbackPathPrefix,
+        AZURE_BLOB_NAME: rollbackBlobName,
       };
       
       servicesLogger().info(
@@ -1091,7 +1091,7 @@ export class RestoreExecutorService {
           POSTGRES_DATABASE: connectionConfig.database,
           AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
           AZURE_CONTAINER_NAME: rollbackContainerName,
-          BACKUP_PATH_PREFIX: rollbackPathPrefix,
+          AZURE_BLOB_NAME: rollbackBlobName,
         },
         timeout: 30 * 60 * 1000, // 30 minutes for rollback backup
       });
@@ -1138,7 +1138,7 @@ export class RestoreExecutorService {
         );
       }
 
-      const rollbackBackupUrl = `https://${this.getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackPathPrefix}`;
+      const rollbackBackupUrl = `https://${this.getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackBlobName}`;
 
       servicesLogger().info(
         { 
