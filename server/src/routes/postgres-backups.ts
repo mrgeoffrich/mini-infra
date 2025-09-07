@@ -5,6 +5,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import { BackupExecutorService } from "../services/backup-executor";
 import {
   BackupOperationListResponse,
@@ -222,8 +223,9 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
  * Trigger a manual backup for a specific database
  */
 router.post("/backups/:databaseId/manual", requireSessionOrApiKey, async (req, res) => {
-  const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const { databaseId } = req.params;
 
   try {
