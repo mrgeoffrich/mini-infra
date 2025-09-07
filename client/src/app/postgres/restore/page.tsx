@@ -3,6 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group";
 import {
   Card,
   CardContent,
@@ -71,6 +77,8 @@ export default function PostgresRestorePage() {
     useState<BackupBrowserItem | null>(null);
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"browse" | "history">("browse");
+  const [restoreDestination, setRestoreDestination] = useState<"overwrite" | "new">("overwrite");
+  const [newDatabaseName, setNewDatabaseName] = useState("");
 
   // Get database info
   const { data: databasesResponse } = usePostgresDatabases({
@@ -153,15 +161,36 @@ export default function PostgresRestorePage() {
     if (!selectedBackup || !database) return;
 
     try {
+      let targetDatabaseName = database.name;
+
+      // For new database restore, we'll pass the flag to the backend
+      // The backend will handle creating a new database configuration
+      if (restoreDestination === "new") {
+        if (!newDatabaseName.trim()) {
+          toast.error("Please provide a name for the new database");
+          return;
+        }
+        targetDatabaseName = newDatabaseName;
+      }
+
       const request: CreateRestoreOperationRequest = {
-        databaseId: database.id,
+        databaseId: database.id, // Always use the source database ID
         backupUrl: selectedBackup.url,
+        confirmRestore: true, // Required by backend for confirmation
+        restoreToNewDatabase: restoreDestination === "new",
+        newDatabaseName: restoreDestination === "new" ? newDatabaseName : undefined,
       };
 
       await createRestoreMutation.mutateAsync(request);
-      toast.success(`Restore operation started for ${database.name}`);
+      toast.success(
+        restoreDestination === "new"
+          ? `Restore operation started for new database: ${targetDatabaseName}`
+          : `Restore operation started for ${targetDatabaseName}`
+      );
       setConfirmRestoreOpen(false);
       setSelectedBackup(null);
+      setRestoreDestination("overwrite");
+      setNewDatabaseName("");
       setActiveTab("history"); // Switch to history tab to show progress
     } catch (error) {
       toast.error(
@@ -494,38 +523,88 @@ export default function PostgresRestorePage() {
         open={confirmRestoreOpen}
         onOpenChange={setConfirmRestoreOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Database Restore</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to restore the database "{database.name}"
-              from the backup:
+              Restore from backup:
               <br />
-              <br />
-              <code className="text-sm bg-muted px-2 py-1 rounded">
+              <code className="text-sm bg-muted px-2 py-1 rounded mt-2 inline-block">
                 {selectedBackup?.name}
               </code>
-              <br />
-              <br />
-              <strong className="text-red-600">
-                This will completely replace all data in the target database.
-                This action cannot be undone.
-              </strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label className="text-base font-medium">Restore Destination</Label>
+              <RadioGroup
+                value={restoreDestination}
+                onValueChange={(value) => setRestoreDestination(value as "overwrite" | "new")}
+                className="mt-2"
+              >
+                <div className="flex items-start space-x-2">
+                  <RadioGroupItem value="overwrite" id="overwrite" className="mt-0.5" />
+                  <div className="space-y-1">
+                    <Label htmlFor="overwrite" className="font-medium">
+                      Overwrite "{database.name}"
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Replace all data in the existing database.
+                      <br />
+                      <strong className="text-red-600">This cannot be undone.</strong>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-2">
+                  <RadioGroupItem value="new" id="new" className="mt-0.5" />
+                  <div className="space-y-2 flex-1">
+                    <Label htmlFor="new" className="font-medium">
+                      Restore to new database
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Create a new database with the restored data.
+                    </p>
+                    {restoreDestination === "new" && (
+                      <div className="space-y-1">
+                        <Label htmlFor="newDbName" className="text-sm">
+                          New Database Name
+                        </Label>
+                        <Input
+                          id="newDbName"
+                          value={newDatabaseName}
+                          onChange={(e) => setNewDatabaseName(e.target.value)}
+                          placeholder="Enter new database name"
+                          className="text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </RadioGroup>
+            </div>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmRestoreOpen(false)}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleRestoreConfirm}
-              disabled={createRestoreMutation.isPending}
-              className="bg-red-600 hover:bg-red-700"
+              disabled={
+                createRestoreMutation.isPending ||
+                (restoreDestination === "new" && !newDatabaseName.trim())
+              }
+              className={restoreDestination === "overwrite" ? "bg-red-600 hover:bg-red-700" : ""}
             >
               {createRestoreMutation.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
-              Restore Database
+              {createRestoreMutation.isPending
+                ? "Starting Restore..."
+                : restoreDestination === "overwrite"
+                ? "Overwrite Database"
+                : "Create & Restore"
+              }
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

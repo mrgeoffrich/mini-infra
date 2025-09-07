@@ -471,6 +471,8 @@ export interface CreateRestoreOperationRequest {
   databaseId: string;
   backupUrl: string;
   confirmRestore?: boolean; // For confirmation workflow
+  restoreToNewDatabase?: boolean; // If true, create a new database for restoration
+  newDatabaseName?: string; // Required if restoreToNewDatabase is true
 }
 
 export interface RestoreOperationFilter {

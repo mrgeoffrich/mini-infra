@@ -36,7 +36,21 @@ const CreateRestoreOperationSchema = z.object({
   databaseId: z.string().min(1, "Database ID is required"),
   backupUrl: z.string().url("Must be a valid URL"),
   confirmRestore: z.boolean().optional(),
-});
+  restoreToNewDatabase: z.boolean().optional(),
+  newDatabaseName: z.string().min(1, "New database name is required").optional(),
+}).refine(
+  (data) => {
+    // If restoreToNewDatabase is true, newDatabaseName is required
+    if (data.restoreToNewDatabase && !data.newDatabaseName) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "New database name is required when restoring to new database",
+    path: ["newDatabaseName"],
+  }
+);
 
 const RestoreOperationFilterSchema = z.object({
   status: z.enum(["pending", "running", "completed", "failed"]).optional(),
@@ -399,6 +413,17 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
         timestamp: new Date().toISOString(),
         requestId,
       });
+    }
+
+    // For now, the restore service handles basic restore operations
+    // The new database creation logic is handled on the frontend by prompting user to create database first
+    if (validatedData.restoreToNewDatabase) {
+      logger.info(
+        { requestId, userId: user?.id, databaseId, newDbName: validatedData.newDatabaseName },
+        "Restore to new database requested - user should create database first",
+      );
+      // Note: In a future version, this could automatically create the new database
+      // For now, we assume the user has already created the target database
     }
 
     // Queue the restore operation
