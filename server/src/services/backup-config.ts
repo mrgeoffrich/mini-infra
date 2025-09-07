@@ -1,6 +1,6 @@
 import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
 import { AzureConfigService } from "./azure-config";
 import { UserPreferencesService } from "./user-preferences";
@@ -460,7 +460,7 @@ export class BackupConfigService {
       }
 
       // Use cron-parser for accurate next execution time calculation with timezone support
-      const interval = cronParser.parseExpression(cronExpression, {
+      const interval = CronExpressionParser.parse(cronExpression, {
         tz: timezone,
         currentDate: new Date()
       });

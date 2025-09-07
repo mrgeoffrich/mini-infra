@@ -1,6 +1,6 @@
 import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
 import { BackupConfigService } from "./backup-config";
 import { BackupExecutorService } from "./backup-executor";
@@ -310,7 +310,7 @@ export class BackupSchedulerService {
       }
 
       // Use cron-parser for accurate next execution time calculation with timezone support
-      const interval = cronParser.parseExpression(schedule, {
+      const interval = CronExpressionParser.parse(schedule, {
         tz: timezone,
         currentDate: new Date()
       });

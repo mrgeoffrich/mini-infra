@@ -328,6 +328,149 @@ router.post("/", requireAuth, (async (
 }) as RequestHandler);
 
 /**
+ * PUT /api/postgres/backup-configs/:id - Update backup configuration
+ */
+router.put("/:id", requireAuth, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const configId = req.params.id;
+
+  logger.info(
+    {
+      requestId,
+      userId,
+      configId,
+      body: req.body,
+    },
+    "Backup configuration update requested",
+  );
+
+  try {
+    // Validate config ID
+    if (!configId || configId.trim().length === 0) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid backup configuration ID format",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate request body
+    const bodyValidation = updateBackupConfigSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          configId,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for backup configuration update",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const updateRequest: UpdateBackupConfigurationRequest = bodyValidation.data;
+
+    // Update backup configuration
+    const updatedConfig = await backupConfigService.updateBackupConfig(
+      configId,
+      updateRequest,
+      userId!,
+    );
+
+    logger.info(
+      {
+        requestId,
+        userId,
+        configId,
+        updates: Object.keys(updateRequest),
+        isEnabled: updatedConfig.isEnabled,
+        schedule: updatedConfig.schedule,
+      },
+      "Backup configuration updated successfully",
+    );
+
+    // Log business event
+    logger.info(
+      {
+        event: "postgres_backup_config_updated",
+        userId,
+        requestId,
+        configId,
+        databaseId: updatedConfig.databaseId,
+        updates: Object.keys(updateRequest),
+        isEnabled: updatedConfig.isEnabled,
+        hasSchedule: !!updatedConfig.schedule,
+      },
+      "Business event: Backup configuration updated",
+    );
+
+    const response: BackupConfigurationResponse = {
+      success: true,
+      data: updatedConfig,
+      message: "Backup configuration updated successfully",
+      timestamp: new Date().toISOString(),
+      requestId,
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        requestId,
+        userId,
+        configId,
+      },
+      "Failed to update backup configuration",
+    );
+
+    if (error instanceof Error) {
+      if (
+        error.message.includes("not found") ||
+        error.message.includes("Access denied")
+      ) {
+        return res.status(404).json({
+          error: "Not Found",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      if (
+        error.message.includes("Invalid") ||
+        error.message.includes("not accessible") ||
+        error.message.includes("cron")
+      ) {
+        return res.status(400).json({
+          error: "Bad Request",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+    }
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
  * DELETE /api/postgres/backup-configs/:id - Delete backup configuration
  */
 router.delete("/:id", requireAuth, (async (
