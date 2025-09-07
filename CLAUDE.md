@@ -288,6 +288,7 @@ The backend implements a sophisticated service layer with dependency injection, 
 
 #### Deployment Infrastructure Services
 - **DeploymentInfrastructureService** (`server/src/services/deployment-infrastructure.ts`): Docker network and Traefik container management with automated deployment, status monitoring, and cleanup operations
+- **TraefikIntegrationService** (`server/src/services/traefik-integration.ts`): Traefik label generation and traffic routing management for blue-green deployments including priority-based routing, container label management, configuration validation, and service discovery
 
 ## Frontend Architecture
 
