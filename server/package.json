@@ -6,7 +6,7 @@
         "dev": "npx prisma db push && tsx watch src/server.ts",
         "build": "npx prisma generate && tsc",
         "start": "node dist/server.js",
-        "test": "npm run test:cleanup && cross-env NODE_ENV=test DATABASE_URL=file:./test.db npx prisma db push && cross-env NODE_ENV=test DATABASE_URL=file:./test.db jest",
+        "test": "npm run test:cleanup && cross-env NODE_ENV=test DATABASE_URL=file:./test.db jest",
         "test:watch": "cross-env NODE_ENV=test jest --watch",
         "test:coverage": "cross-env NODE_ENV=test jest --coverage && npm run test:cleanup",
         "test:cleanup": "rimraf --glob \"prisma/test*.db\"",
