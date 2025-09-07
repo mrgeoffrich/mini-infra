@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AuthContextType,
@@ -10,6 +10,7 @@ import {
 } from "./auth-types";
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
+import { userPreferencesKeys } from "../hooks/use-user-preferences";
 
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {
@@ -141,6 +142,7 @@ interface AuthProviderProps {
 
 function AuthProviderInner({ children }: AuthProviderProps) {
   const { data: authStatus, refetch, isLoading, error } = useAuthStatus();
+  const queryClient = useQueryClient();
 
   // Cross-tab synchronization using BroadcastChannel
   useEffect(() => {
@@ -195,6 +197,26 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         lastLoginTime: new Date().toISOString(),
       });
 
+      // Prefetch user preferences when user logs in (both new logins and status refreshes)
+      queryClient.prefetchQuery({
+        queryKey: userPreferencesKeys.preferences(),
+        queryFn: async () => {
+          const response = await fetch("/api/user/preferences", {
+            method: "GET",
+            credentials: "include",
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to fetch user preferences: ${response.statusText}`);
+          }
+          const result = await response.json();
+          if (!result.success) {
+            throw new Error(result.error || "Failed to fetch user preferences");
+          }
+          return result.data;
+        },
+        staleTime: 5 * 60 * 1000, // 5 minutes
+      });
+
       // Only broadcast if this is a new login (not just a status refresh)
       if (!wasAlreadyAuthenticated) {
         broadcastAuthEvent("AUTH_LOGIN", { user: authStatus.user });
@@ -208,13 +230,18 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       const wasAuthenticated = sessionData.lastLoginTime;
 
       clearSessionData();
+      
+      // Clear user preferences from cache when logging out
+      queryClient.removeQueries({
+        queryKey: userPreferencesKeys.all,
+      });
 
       // Only broadcast if user was previously authenticated
       if (wasAuthenticated) {
         broadcastAuthEvent("AUTH_LOGOUT");
       }
     }
-  }, [authStatus]);
+  }, [authStatus, queryClient]);
 
   const authState: AuthState = {
     user: authStatus?.user || null,

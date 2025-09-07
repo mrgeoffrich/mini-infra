@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   AlertCircle,
   ArrowRight,
@@ -16,6 +17,9 @@ import {
 } from "lucide-react";
 
 export function ContainerSummary() {
+  // Get formatted date utilities with user's timezone
+  const { formatDateTime, formatContainerDate } = useFormattedDate();
+  
   // Check Docker connectivity first
   const { data: connectivityData, isLoading: isConnectivityLoading } =
     useConnectivityStatus({
@@ -83,7 +87,7 @@ export function ContainerSummary() {
                 {latestDockerStatus?.checkedAt && (
                   <div className="text-sm text-muted-foreground mt-1">
                     Last checked:{" "}
-                    {new Date(latestDockerStatus.checkedAt).toLocaleString()}
+                    {formatDateTime(latestDockerStatus.checkedAt)}
                   </div>
                 )}
               </div>
@@ -258,7 +262,7 @@ export function ContainerSummary() {
                   <span className="font-medium">{container.name}</span>
                   {container.startedAt && (
                     <span className="text-muted-foreground ml-2">
-                      started {new Date(container.startedAt).toLocaleString()}
+                      started {formatContainerDate(container.startedAt)}
                     </span>
                   )}
                 </div>
