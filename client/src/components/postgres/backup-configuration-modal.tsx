@@ -61,7 +61,7 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { cn } from "@/lib/utils";
 import { backupConfigSchema, type BackupConfigFormData } from "./schemas";
 import type {
@@ -84,6 +84,7 @@ export function BackupConfigurationModal({
   isOpen,
   onClose,
 }: BackupConfigurationModalProps) {
+  const { formatDateTime } = useFormattedDate();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const isEditing = !!backupConfig;
@@ -501,10 +502,7 @@ export function BackupConfigurationModal({
                 <div className="flex items-center justify-between">
                   <div className="text-sm">
                     <span className="font-medium">Last backup:</span>{" "}
-                    {format(
-                      new Date(backupConfig.lastBackupAt),
-                      "MMM d, yyyy HH:mm"
-                    )}
+                    {formatDateTime(backupConfig.lastBackupAt)}
                   </div>
                   <Button
                     type="button"

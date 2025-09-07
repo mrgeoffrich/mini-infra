@@ -6,7 +6,7 @@ import {
   useReactTable,
   Cell,
 } from "@tanstack/react-table";
-import { format } from "date-fns";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   Table,
   TableBody,
@@ -177,12 +177,12 @@ ContainerPortsCell.displayName = "ContainerPortsCell";
 
 const ContainerDateCell = React.memo(
   ({ createdAt }: { createdAt: string }) => {
-    const date = React.useMemo(() => new Date(createdAt), [createdAt]);
+    const { formatDate, formatTime } = useFormattedDate();
     const formattedDate = React.useMemo(
-      () => format(date, "MMM d, yyyy"),
-      [date],
+      () => formatDate(createdAt),
+      [createdAt, formatDate],
     );
-    const formattedTime = React.useMemo(() => format(date, "HH:mm:ss"), [date]);
+    const formattedTime = React.useMemo(() => formatTime(createdAt), [createdAt, formatTime]);
 
     return (
       <div className="text-sm">

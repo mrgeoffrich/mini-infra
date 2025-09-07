@@ -13,7 +13,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { format } from "date-fns";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { HealthStatusBadge, BackupStatusDisplay } from "./status-badges";
 import type { PostgresDatabaseInfo } from "@mini-infra/types";
 
@@ -32,6 +32,7 @@ export function DatabaseTable({
   onConfigureBackup,
   onBrowseBackups,
 }: DatabaseTableProps) {
+  const { formatDateTime } = useFormattedDate();
   return (
     <Table>
       <TableHeader>
@@ -63,10 +64,7 @@ export function DatabaseTable({
             </TableCell>
             <TableCell>
               {database.lastHealthCheck
-                ? format(
-                    new Date(database.lastHealthCheck),
-                    "MMM d, yyyy HH:mm"
-                  )
+                ? formatDateTime(database.lastHealthCheck)
                 : "Never"}
             </TableCell>
             <TableCell className="text-right">

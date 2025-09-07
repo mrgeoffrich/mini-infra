@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +69,7 @@ const STATUS_VARIANTS = {
 } as const;
 
 export function SettingsOverview() {
+  const { formatDateTime } = useFormattedDate();
   const {
     data: settingsData,
     isLoading: settingsLoading,
@@ -229,7 +231,7 @@ export function SettingsOverview() {
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Last checked</span>
                         <span>
-                          {new Date(connectivity.checkedAt).toLocaleString()}
+                          {formatDateTime(connectivity.checkedAt)}
                         </span>
                       </div>
                     )}

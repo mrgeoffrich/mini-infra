@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "react-router-dom";
@@ -101,6 +102,7 @@ const STATUS_VARIANTS = {
 } as const;
 
 export default function AzureSettingsPage() {
+  const { formatDateTime } = useFormattedDate();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [showConnectionString, setShowConnectionString] = useState(false);
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -559,14 +561,12 @@ export default function AzureSettingsPage() {
                   {latestConnectivity.lastSuccessfulAt && (
                     <div className="text-sm text-muted-foreground mb-1">
                       Last successful:{" "}
-                      {new Date(
-                        latestConnectivity.lastSuccessfulAt,
-                      ).toLocaleString()}
+                      {formatDateTime(latestConnectivity.lastSuccessfulAt)}
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground">
                     Checked:{" "}
-                    {new Date(latestConnectivity.checkedAt).toLocaleString()}
+                    {formatDateTime(latestConnectivity.checkedAt)}
                   </div>
                   {latestConnectivity.errorMessage && (
                     <div className="text-sm text-red-600 mt-2">

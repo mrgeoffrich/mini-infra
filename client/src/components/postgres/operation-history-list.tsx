@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { format } from "date-fns";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   Card,
   CardContent,
@@ -125,7 +125,7 @@ function OperationDetailsRow({
           <ProgressBadge progress={operation.progress} variant="compact" />
         </TableCell>
         <TableCell className="text-sm">
-          {format(new Date(operation.startedAt), "MMM d, HH:mm")}
+          {formatDateTime(operation.startedAt, { showSeconds: false })}
         </TableCell>
         <TableCell className="text-sm">
           {formatDuration(operation.startedAt, operation.completedAt)}
@@ -161,10 +161,7 @@ function OperationDetailsRow({
                       Started At:
                     </span>
                     <div className="mt-1">
-                      {format(
-                        new Date(operation.startedAt),
-                        "MMM d, yyyy HH:mm:ss",
-                      )}
+                      {formatDateTime(operation.startedAt)}
                     </div>
                   </div>
                   {operation.completedAt && (
@@ -173,10 +170,7 @@ function OperationDetailsRow({
                         Completed At:
                       </span>
                       <div className="mt-1">
-                        {format(
-                          new Date(operation.completedAt),
-                          "MMM d, yyyy HH:mm:ss",
-                        )}
+                        {formatDateTime(operation.completedAt)}
                       </div>
                     </div>
                   )}
@@ -225,6 +219,7 @@ export function OperationHistoryList({
   maxHeight = "600px",
   className,
 }: OperationHistoryListProps) {
+  const { formatDateTime } = useFormattedDate();
   const { filters, updateFilter, resetFilters } = useOperationHistoryFilters();
   const [showFilters, setShowFilters] = useState(false);
 

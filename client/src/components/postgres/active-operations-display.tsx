@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { format } from "date-fns";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,7 +128,7 @@ function OperationProgressCard({
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center space-x-4">
               <span>
-                Started: {format(new Date(operation.startedAt), "HH:mm:ss")}
+                Started: {formatTime(operation.startedAt)}
               </span>
               {operation.currentStep && (
                 <span>Step: {operation.currentStep}</span>
@@ -167,10 +167,7 @@ function OperationProgressCard({
                     Started At:
                   </span>
                   <div className="mt-1">
-                    {format(
-                      new Date(operation.startedAt),
-                      "MMM d, yyyy HH:mm:ss",
-                    )}
+                    {formatDateTime(operation.startedAt)}
                   </div>
                 </div>
                 {operation.estimatedCompletion && (
@@ -179,10 +176,7 @@ function OperationProgressCard({
                       Estimated Completion:
                     </span>
                     <div className="mt-1">
-                      {format(
-                        new Date(operation.estimatedCompletion),
-                        "MMM d, yyyy HH:mm:ss",
-                      )}
+                      {formatDateTime(operation.estimatedCompletion)}
                     </div>
                   </div>
                 )}
@@ -281,6 +275,7 @@ export function ActiveOperationsDisplay({
   onCancelOperation,
   className,
 }: ActiveOperationsDisplayProps) {
+  const { formatDateTime, formatTime } = useFormattedDate();
   const {
     isLoading,
     error,

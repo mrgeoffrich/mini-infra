@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   Card,
   CardContent,
@@ -17,6 +18,7 @@ import { ContainerFilters } from "./ContainerFilters";
 import { AlertCircle, Settings } from "lucide-react";
 
 export function ContainerDashboard() {
+  const { formatDateTime } = useFormattedDate();
   const filterState = useContainerFilters();
   const { queryParams } = filterState;
 
@@ -120,7 +122,7 @@ export function ContainerDashboard() {
                   {latestDockerStatus?.checkedAt && (
                     <div className="text-sm text-muted-foreground mt-1">
                       Last checked:{" "}
-                      {new Date(latestDockerStatus.checkedAt).toLocaleString()}
+                      {formatDateTime(latestDockerStatus.checkedAt)}
                     </div>
                   )}
                 </div>
