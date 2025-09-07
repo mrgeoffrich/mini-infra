@@ -35,7 +35,7 @@ const getPageTitle = (pathname: string): string => {
       return "Activity Logs";
     case "/settings":
     case "/settings/overview":
-      return "Settings";
+      return "Connectivity";
     case "/settings/docker":
       return "Docker Configuration";
     case "/settings/cloudflare":
@@ -44,6 +44,10 @@ const getPageTitle = (pathname: string): string => {
       return "Azure Storage";
     case "/settings/audit":
       return "Audit History";
+    case "/user/settings":
+      return "User Settings";
+    case "/postgres":
+      return "PostgreSQL Backups";
     default:
       return "Dashboard";
   }
