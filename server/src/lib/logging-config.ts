@@ -24,6 +24,7 @@ const environmentLogConfigSchema = z.object({
   prisma: loggerConfigSchema,
   services: loggerConfigSchema,
   dockerexecutor: loggerConfigSchema,
+  deployments: loggerConfigSchema,
 });
 
 const loggingConfigSchema = z.object({
@@ -63,6 +64,7 @@ export function loadLoggingConfig(): LoggingConfig {
         prisma: { level: "info" },
         services: { level: "debug" },
         dockerexecutor: { level: "debug" },
+        deployments: { level: "debug" },
       },
       production: {
         app: { level: "info" },
@@ -70,6 +72,7 @@ export function loadLoggingConfig(): LoggingConfig {
         prisma: { level: "warn" },
         services: { level: "info" },
         dockerexecutor: { level: "info" },
+        deployments: { level: "info" },
       },
       test: {
         app: { level: "silent" },
@@ -77,6 +80,7 @@ export function loadLoggingConfig(): LoggingConfig {
         prisma: { level: "silent" },
         services: { level: "silent" },
         dockerexecutor: { level: "silent" },
+        deployments: { level: "silent" },
       },
       redactionPaths: [
         "password",

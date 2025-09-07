@@ -289,6 +289,7 @@ The backend implements a sophisticated service layer with dependency injection, 
 #### Deployment Infrastructure Services
 - **DeploymentInfrastructureService** (`server/src/services/deployment-infrastructure.ts`): Docker network and Traefik container management with automated deployment, status monitoring, and cleanup operations
 - **TraefikIntegrationService** (`server/src/services/traefik-integration.ts`): Traefik label generation and traffic routing management for blue-green deployments including priority-based routing, container label management, configuration validation, and service discovery
+- **DeploymentOrchestrator** (`server/src/services/deployment-orchestrator.ts`): XState-powered deployment state machine with comprehensive workflow execution including image pulling, container lifecycle management, health checking, traffic switching, and rollback capabilities. Features database progress tracking and deployment-specific logging to `app-deployments.log`
 
 ## Frontend Architecture
 
@@ -367,3 +368,4 @@ Logs are found in `server/logs/` directory with the following files:
  - `app-services.log` - log from services that run from `server/src/service/*.ts`
  - `app-dockerexecutor.log` - logs from container execution
  - `app-prisma.log` - log from prisma
+ - `app-deployments.log` - logs from deployment orchestrator and deployment operations
