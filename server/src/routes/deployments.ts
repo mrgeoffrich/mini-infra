@@ -69,7 +69,7 @@ const createConfigSchema = z.object({
         value: z.string(),
       }),
     ),
-    labels: z.record(z.string()),
+    labels: z.record(z.string(), z.string()),
     networks: z.array(z.string()),
   }),
   healthCheckConfig: z.object({
@@ -408,15 +408,7 @@ router.put(
         });
       }
 
-      const updateData: UpdateDeploymentConfigRequest = parseResult.data.containerConfig 
-        ? {
-            ...parseResult.data,
-            containerConfig: {
-              ...parseResult.data.containerConfig,
-              labels: parseResult.data.containerConfig.labels as Record<string, string>,
-            },
-          }
-        : parseResult.data;
+      const updateData: UpdateDeploymentConfigRequest = parseResult.data as UpdateDeploymentConfigRequest;
 
       const config = await deploymentConfigService.updateDeploymentConfig(
         id,

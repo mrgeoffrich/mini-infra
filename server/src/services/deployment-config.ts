@@ -45,7 +45,7 @@ const containerConfigSchema = z.object({
   ports: z.array(deploymentPortSchema),
   volumes: z.array(deploymentVolumeSchema),
   environment: z.array(containerEnvVarSchema),
-  labels: z.record(z.string()),
+  labels: z.record(z.string(), z.string()),
   networks: z.array(z.string()),
 });
 
