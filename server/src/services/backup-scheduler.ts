@@ -90,9 +90,7 @@ export class BackupSchedulerService {
     timezone: string,
     userId: string,
   ): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
+    // Note: Don't auto-initialize here to avoid recursive loops during initialization
 
     try {
       // Validate cron expression
