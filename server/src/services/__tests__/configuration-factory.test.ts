@@ -69,7 +69,12 @@ describe("ConfigurationServiceFactory", () => {
 
     it("should initialize with supported categories", () => {
       const supportedCategories = factory.getSupportedCategories();
-      expect(supportedCategories).toEqual(["docker", "cloudflare", "azure", "postgres"]);
+      expect(supportedCategories).toEqual([
+        "docker",
+        "cloudflare",
+        "azure",
+        "postgres",
+      ]);
     });
   });
 
@@ -177,8 +182,18 @@ describe("ConfigurationServiceFactory", () => {
       const categories1 = factory.getSupportedCategories();
       const categories2 = factory.getSupportedCategories();
 
-      expect(categories1).toEqual(["docker", "cloudflare", "azure", "postgres"]);
-      expect(categories2).toEqual(["docker", "cloudflare", "azure", "postgres"]);
+      expect(categories1).toEqual([
+        "docker",
+        "cloudflare",
+        "azure",
+        "postgres",
+      ]);
+      expect(categories2).toEqual([
+        "docker",
+        "cloudflare",
+        "azure",
+        "postgres",
+      ]);
 
       // Should be different array instances
       expect(categories1).not.toBe(categories2);

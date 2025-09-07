@@ -97,7 +97,9 @@ export const errorHandler = (
 
   // Don't leak error details in production
   const message =
-    serverConfig.nodeEnv === "production" ? "Internal server error" : error.message;
+    serverConfig.nodeEnv === "production"
+      ? "Internal server error"
+      : error.message;
 
   return res.status(500).json({
     error: message,

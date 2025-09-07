@@ -91,7 +91,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Reset auth middleware to default behavior (authenticated)
     mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
       req.user = { id: "test-user-id", email: "test@example.com" };
@@ -146,7 +146,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       expect(response.body).toMatchObject({
         error: "Not Found",
-        message: "Backup configuration for database with ID 'nonexistent' not found",
+        message:
+          "Backup configuration for database with ID 'nonexistent' not found",
       });
     });
 
@@ -296,9 +297,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
     it("should handle Azure container validation failure", async () => {
       mockBackupConfigService.createBackupConfig.mockRejectedValue(
-        new Error(
-          "Database not found or access denied",
-        ),
+        new Error("Database not found or access denied"),
       );
 
       const response = await request(app)

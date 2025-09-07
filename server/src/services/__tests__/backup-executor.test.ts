@@ -38,7 +38,7 @@ jest.mock("../../lib/logger-factory", () => {
     warn: jest.fn(),
     debug: jest.fn(),
   };
-  
+
   return {
     appLogger: jest.fn(() => mockLoggerInstance),
     servicesLogger: jest.fn(() => mockLoggerInstance),
@@ -100,7 +100,6 @@ const mockDatabaseConfigService = {
 const mockAzureConfigService = {
   get: jest.fn(),
 } as unknown as AzureConfigService;
-
 
 describe("BackupExecutorService", () => {
   let backupExecutorService: BackupExecutorService;
@@ -517,7 +516,7 @@ describe("BackupExecutorService", () => {
           },
         },
       ];
-      
+
       // Create async iterator
       const mockAsyncIterator = {
         [Symbol.asyncIterator]() {
@@ -528,12 +527,14 @@ describe("BackupExecutorService", () => {
                 return { value: mockBlobs[index++], done: false };
               }
               return { done: true };
-            }
+            },
           };
-        }
+        },
       };
 
-      mockContainerClient.listBlobsFlat = jest.fn().mockReturnValue(mockAsyncIterator);
+      mockContainerClient.listBlobsFlat = jest
+        .fn()
+        .mockReturnValue(mockAsyncIterator);
 
       mockBackupConfigService.updateLastBackupTime = jest
         .fn()
@@ -597,11 +598,11 @@ describe("BackupExecutorService", () => {
                 return { value: mockBlobs[index++], done: false };
               }
               return { done: true };
-            }
+            },
           };
-        }
+        },
       };
-      
+
       mockContainerClient.listBlobsFlat = jest
         .fn()
         .mockReturnValue(verifyMockAsyncIterator);
@@ -609,7 +610,7 @@ describe("BackupExecutorService", () => {
       // Mock the Date constructor to return a fixed date
       const RealDate = Date;
       const fixedDate = new Date("2023-01-01T12:00:00Z");
-      jest.spyOn(global, 'Date').mockImplementation((dateString?: any) => {
+      jest.spyOn(global, "Date").mockImplementation((dateString?: any) => {
         if (dateString) {
           return new RealDate(dateString);
         }
@@ -638,11 +639,11 @@ describe("BackupExecutorService", () => {
           return {
             async next() {
               return { done: true };
-            }
+            },
           };
-        }
+        },
       };
-      
+
       mockContainerClient.listBlobsFlat = jest
         .fn()
         .mockReturnValue(emptyAsyncIterator);

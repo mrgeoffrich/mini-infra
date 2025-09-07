@@ -11,8 +11,14 @@ import type {
 } from "@mini-infra/types";
 
 // Configure Google OAuth2 strategy - always register but handle missing credentials
-const googleClientId = authConfig.google.clientId || process.env.GOOGLE_CLIENT_ID || "not-configured";
-const googleClientSecret = authConfig.google.clientSecret || process.env.GOOGLE_CLIENT_SECRET || "not-configured";
+const googleClientId =
+  authConfig.google.clientId ||
+  process.env.GOOGLE_CLIENT_ID ||
+  "not-configured";
+const googleClientSecret =
+  authConfig.google.clientSecret ||
+  process.env.GOOGLE_CLIENT_SECRET ||
+  "not-configured";
 
 passport.use(
   "google",
@@ -31,8 +37,13 @@ passport.use(
     ) => {
       try {
         // Check if credentials are properly configured
-        if (googleClientId === "not-configured" || googleClientSecret === "not-configured") {
-          logger.error("Google OAuth not properly configured - missing client ID or secret");
+        if (
+          googleClientId === "not-configured" ||
+          googleClientSecret === "not-configured"
+        ) {
+          logger.error(
+            "Google OAuth not properly configured - missing client ID or secret",
+          );
           return done(new Error("Google OAuth not configured"), null);
         }
 
@@ -117,7 +128,10 @@ passport.use(
 );
 
 // Log configuration status
-if (googleClientId === "not-configured" || googleClientSecret === "not-configured") {
+if (
+  googleClientId === "not-configured" ||
+  googleClientSecret === "not-configured"
+) {
   logger.warn("Google OAuth not configured - missing client ID or secret");
 } else {
   logger.info("Google OAuth strategy registered successfully");

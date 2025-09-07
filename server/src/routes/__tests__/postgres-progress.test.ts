@@ -18,7 +18,9 @@ const mockProgressTrackerInstance = {
 };
 
 jest.mock("../../services/progress-tracker", () => ({
-  ProgressTrackerService: jest.fn().mockImplementation(() => mockProgressTrackerInstance),
+  ProgressTrackerService: jest
+    .fn()
+    .mockImplementation(() => mockProgressTrackerInstance),
 }));
 
 // Mock logger
@@ -70,7 +72,9 @@ import router from "../postgres-progress";
 import { ProgressTrackerService } from "../../services/progress-tracker";
 
 // Get the mocked constructor for type safety
-const MockedProgressTrackerService = ProgressTrackerService as jest.MockedClass<typeof ProgressTrackerService>;
+const MockedProgressTrackerService = ProgressTrackerService as jest.MockedClass<
+  typeof ProgressTrackerService
+>;
 
 describe("PostgreSQL Progress API", () => {
   let app: express.Application;
@@ -78,40 +82,40 @@ describe("PostgreSQL Progress API", () => {
   beforeAll(() => {
     app = express();
     app.use(express.json());
-    
+
     // Add request ID middleware
     app.use((req, res, next) => {
       req.headers["x-request-id"] = "test-request-id";
       next();
     });
-    
+
     app.use("/api/postgres/progress", router);
   });
 
   beforeEach(() => {
     // Reset all mock functions
     Object.values(mockProgressTrackerInstance).forEach((mockFn: any) => {
-      if (typeof mockFn === 'function') {
+      if (typeof mockFn === "function") {
         mockFn.mockReset();
       }
     });
-    
+
     // Set default mock implementations
     mockProgressTrackerInstance.initialize.mockResolvedValue(undefined);
     mockProgressTrackerInstance.getBackupProgress.mockResolvedValue(null);
     mockProgressTrackerInstance.getRestoreProgress.mockResolvedValue(null);
     mockProgressTrackerInstance.getActiveOperations.mockResolvedValue({
       backupOperations: [],
-      restoreOperations: []
+      restoreOperations: [],
     });
     mockProgressTrackerInstance.getOperationHistory.mockResolvedValue({
       operations: [],
       totalCount: 0,
-      hasMore: false
+      hasMore: false,
     });
     mockProgressTrackerInstance.cleanupOldOperations.mockResolvedValue({
       deletedBackupOperations: 0,
-      deletedRestoreOperations: 0
+      deletedRestoreOperations: 0,
     });
   });
 
@@ -146,10 +150,9 @@ describe("PostgreSQL Progress API", () => {
       expect(response.body.data).toEqual(mockBackupProgress);
 
       expect(mockProgressTrackerInstance.initialize).toHaveBeenCalled();
-      expect(mockProgressTrackerInstance.getBackupProgress).toHaveBeenCalledWith(
-        "backup-1",
-        "test-user-id",
-      );
+      expect(
+        mockProgressTrackerInstance.getBackupProgress,
+      ).toHaveBeenCalledWith("backup-1", "test-user-id");
     });
 
     it("should return 404 if backup operation not found", async () => {
@@ -651,7 +654,7 @@ describe("PostgreSQL Progress API", () => {
     it("should return 401 for unauthenticated requests", async () => {
       // Reset module cache to allow re-mocking
       jest.resetModules();
-      
+
       // Re-mock the auth middleware to not set user
       jest.doMock("../../lib/auth-middleware", () => ({
         requireAuth: (req: any, res: any, next: any) => {
@@ -660,17 +663,19 @@ describe("PostgreSQL Progress API", () => {
         },
         getAuthenticatedUser: jest.fn(),
       }));
-      
+
       // Re-mock other dependencies that the router needs
       jest.doMock("../../lib/prisma", () => ({
         __esModule: true,
         default: {},
       }));
-      
+
       jest.doMock("../../services/progress-tracker", () => ({
-        ProgressTrackerService: jest.fn().mockImplementation(() => mockProgressTrackerInstance),
+        ProgressTrackerService: jest
+          .fn()
+          .mockImplementation(() => mockProgressTrackerInstance),
       }));
-      
+
       jest.doMock("../../lib/logger-factory", () => ({
         appLogger: jest.fn(() => ({
           info: jest.fn(),
@@ -679,10 +684,10 @@ describe("PostgreSQL Progress API", () => {
           debug: jest.fn(),
         })),
       }));
-      
+
       // Now import the router with the new mocks
       const unauthRouter = require("../postgres-progress").default;
-      
+
       // Create a new app with the re-mocked router
       const unauthApp = express();
       unauthApp.use(express.json());
@@ -691,14 +696,14 @@ describe("PostgreSQL Progress API", () => {
         next();
       });
       unauthApp.use("/api/postgres/progress", unauthRouter);
-      
+
       const response = await request(unauthApp)
         .get("/api/postgres/progress/backup/backup-1")
         .expect(401);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Authentication required");
-      
+
       // Reset modules again to restore original state
       jest.resetModules();
     });

@@ -222,396 +222,417 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
  * POST /api/postgres/backups/:databaseId/manual
  * Trigger a manual backup for a specific database
  */
-router.post("/backups/:databaseId/manual", requireSessionOrApiKey, async (req, res) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
-  const { databaseId } = req.params;
+router.post(
+  "/backups/:databaseId/manual",
+  requireSessionOrApiKey,
+  async (req, res) => {
+    const requestId = req.headers["x-request-id"] as string;
+    const user = getAuthenticatedUser(req);
+    const userId = user?.id;
+    const { databaseId } = req.params;
 
-  try {
-    logger.info({ requestId, userId, databaseId }, "Triggering manual backup");
-
-    // Verify database exists and user has access
-    const database = await prisma.postgresDatabase.findFirst({
-      where: {
-        id: databaseId,
-        userId: userId,
-      },
-    });
-
-    if (!database) {
-      logger.warn(
+    try {
+      logger.info(
         { requestId, userId, databaseId },
-        "Database not found or access denied",
+        "Triggering manual backup",
       );
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-        message: "Database not found or you don't have access to it",
-        timestamp: new Date().toISOString(),
-        requestId,
+
+      // Verify database exists and user has access
+      const database = await prisma.postgresDatabase.findFirst({
+        where: {
+          id: databaseId,
+          userId: userId,
+        },
       });
-    }
 
-    // Check if backup configuration exists
-    const backupConfig = await prisma.backupConfiguration.findFirst({
-      where: { databaseId },
-    });
+      if (!database) {
+        logger.warn(
+          { requestId, userId, databaseId },
+          "Database not found or access denied",
+        );
+        return res.status(404).json({
+          success: false,
+          error: "Database not found",
+          message: "Database not found or you don't have access to it",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
 
-    if (!backupConfig) {
-      logger.warn(
-        { requestId, userId, databaseId },
-        "Backup configuration not found",
-      );
-      return res.status(400).json({
-        success: false,
-        error: "Backup configuration required",
-        message: "Please configure backup settings before creating a backup",
-        timestamp: new Date().toISOString(),
-        requestId,
+      // Check if backup configuration exists
+      const backupConfig = await prisma.backupConfiguration.findFirst({
+        where: { databaseId },
       });
-    }
 
-    // Check if there's already a running backup for this database
-    const runningBackup = await prisma.backupOperation.findFirst({
-      where: {
+      if (!backupConfig) {
+        logger.warn(
+          { requestId, userId, databaseId },
+          "Backup configuration not found",
+        );
+        return res.status(400).json({
+          success: false,
+          error: "Backup configuration required",
+          message: "Please configure backup settings before creating a backup",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // Check if there's already a running backup for this database
+      const runningBackup = await prisma.backupOperation.findFirst({
+        where: {
+          databaseId,
+          status: { in: ["pending", "running"] },
+        },
+      });
+
+      if (runningBackup) {
+        logger.warn(
+          { requestId, userId, databaseId, runningBackupId: runningBackup.id },
+          "Backup already in progress",
+        );
+        return res.status(409).json({
+          success: false,
+          error: "Backup in progress",
+          message: "A backup is already in progress for this database",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // Queue the backup operation
+      const backupOperation = await backupExecutorService.queueBackup(
         databaseId,
-        status: { in: ["pending", "running"] },
-      },
-    });
-
-    if (runningBackup) {
-      logger.warn(
-        { requestId, userId, databaseId, runningBackupId: runningBackup.id },
-        "Backup already in progress",
+        "manual",
+        userId,
       );
-      return res.status(409).json({
+
+      logger.info(
+        { requestId, userId, databaseId, operationId: backupOperation.id },
+        "Manual backup queued successfully",
+      );
+
+      const response: ManualBackupResponse = {
+        success: true,
+        data: {
+          operationId: backupOperation.id,
+          status: backupOperation.status,
+          message: "Backup operation queued successfully",
+        },
+        timestamp: new Date().toISOString(),
+        requestId,
+      };
+
+      res.status(201).json(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        { requestId, userId, databaseId, error: errorMessage },
+        "Failed to trigger manual backup",
+      );
+
+      res.status(500).json({
         success: false,
-        error: "Backup in progress",
-        message: "A backup is already in progress for this database",
+        error: "Internal server error",
+        message: "Failed to trigger backup operation",
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
-
-    // Queue the backup operation
-    const backupOperation = await backupExecutorService.queueBackup(
-      databaseId,
-      "manual",
-      userId,
-    );
-
-    logger.info(
-      { requestId, userId, databaseId, operationId: backupOperation.id },
-      "Manual backup queued successfully",
-    );
-
-    const response: ManualBackupResponse = {
-      success: true,
-      data: {
-        operationId: backupOperation.id,
-        status: backupOperation.status,
-        message: "Backup operation queued successfully",
-      },
-      timestamp: new Date().toISOString(),
-      requestId,
-    };
-
-    res.status(201).json(response);
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logger.error(
-      { requestId, userId, databaseId, error: errorMessage },
-      "Failed to trigger manual backup",
-    );
-
-    res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      message: "Failed to trigger backup operation",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /api/postgres/backups/:backupId/status
  * Get status of a specific backup operation
  */
-router.get("/backups/:backupId/status", requireSessionOrApiKey, async (req, res) => {
-  const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
-  const { backupId } = req.params;
+router.get(
+  "/backups/:backupId/status",
+  requireSessionOrApiKey,
+  async (req, res) => {
+    const requestId = res.locals.requestId;
+    const userId = res.locals.user.id;
+    const { backupId } = req.params;
 
-  try {
-    logger.info(
-      { requestId, userId, backupId },
-      "Fetching backup operation status",
-    );
-
-    // Get backup operation with database check for access control
-    const operation = await prisma.backupOperation.findFirst({
-      where: {
-        id: backupId,
-        database: { userId },
-      },
-      include: {
-        database: true,
-      },
-    });
-
-    if (!operation) {
-      logger.warn(
+    try {
+      logger.info(
         { requestId, userId, backupId },
-        "Backup operation not found or access denied",
+        "Fetching backup operation status",
       );
-      return res.status(404).json({
+
+      // Get backup operation with database check for access control
+      const operation = await prisma.backupOperation.findFirst({
+        where: {
+          id: backupId,
+          database: { userId },
+        },
+        include: {
+          database: true,
+        },
+      });
+
+      if (!operation) {
+        logger.warn(
+          { requestId, userId, backupId },
+          "Backup operation not found or access denied",
+        );
+        return res.status(404).json({
+          success: false,
+          error: "Backup operation not found",
+          message: "Backup operation not found or you don't have access to it",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      const response: BackupOperationStatusResponse = {
+        success: true,
+        data: {
+          id: operation.id,
+          status: operation.status as any,
+          progress: operation.progress,
+          startedAt: operation.startedAt.toISOString(),
+          completedAt: operation.completedAt?.toISOString() || null,
+          errorMessage: operation.errorMessage,
+          sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
+          azureBlobUrl: operation.azureBlobUrl,
+          metadata: operation.metadata ? JSON.parse(operation.metadata) : null,
+        },
+        message: `Backup operation is ${operation.status}`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      };
+
+      logger.info(
+        { requestId, userId, backupId, status: operation.status },
+        "Successfully fetched backup operation status",
+      );
+
+      res.json(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        { requestId, userId, backupId, error: errorMessage },
+        "Failed to fetch backup operation status",
+      );
+
+      res.status(500).json({
         success: false,
-        error: "Backup operation not found",
-        message: "Backup operation not found or you don't have access to it",
+        error: "Internal server error",
+        message: "Failed to fetch backup operation status",
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
-
-    const response: BackupOperationStatusResponse = {
-      success: true,
-      data: {
-        id: operation.id,
-        status: operation.status as any,
-        progress: operation.progress,
-        startedAt: operation.startedAt.toISOString(),
-        completedAt: operation.completedAt?.toISOString() || null,
-        errorMessage: operation.errorMessage,
-        sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
-        azureBlobUrl: operation.azureBlobUrl,
-        metadata: operation.metadata ? JSON.parse(operation.metadata) : null,
-      },
-      message: `Backup operation is ${operation.status}`,
-      timestamp: new Date().toISOString(),
-      requestId,
-    };
-
-    logger.info(
-      { requestId, userId, backupId, status: operation.status },
-      "Successfully fetched backup operation status",
-    );
-
-    res.json(response);
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logger.error(
-      { requestId, userId, backupId, error: errorMessage },
-      "Failed to fetch backup operation status",
-    );
-
-    res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      message: "Failed to fetch backup operation status",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  }
-});
+  },
+);
 
 /**
  * DELETE /api/postgres/backups/:backupId
  * Delete a backup operation and its associated Azure blob
  */
-router.delete("/backups/:backupId", requireSessionOrApiKey, async (req, res) => {
-  const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
-  const { backupId } = req.params;
+router.delete(
+  "/backups/:backupId",
+  requireSessionOrApiKey,
+  async (req, res) => {
+    const requestId = res.locals.requestId;
+    const userId = res.locals.user.id;
+    const { backupId } = req.params;
 
-  try {
-    logger.info({ requestId, userId, backupId }, "Deleting backup operation");
+    try {
+      logger.info({ requestId, userId, backupId }, "Deleting backup operation");
 
-    // Get backup operation with database check for access control
-    const operation = await prisma.backupOperation.findFirst({
-      where: {
-        id: backupId,
-        database: { userId },
-      },
-      include: {
-        database: true,
-      },
-    });
-
-    if (!operation) {
-      logger.warn(
-        { requestId, userId, backupId },
-        "Backup operation not found or access denied",
-      );
-      return res.status(404).json({
-        success: false,
-        error: "Backup operation not found",
-        message: "Backup operation not found or you don't have access to it",
-        timestamp: new Date().toISOString(),
-        requestId,
+      // Get backup operation with database check for access control
+      const operation = await prisma.backupOperation.findFirst({
+        where: {
+          id: backupId,
+          database: { userId },
+        },
+        include: {
+          database: true,
+        },
       });
-    }
 
-    // Don't allow deletion of running backups
-    if (operation.status === "running" || operation.status === "pending") {
-      logger.warn(
-        { requestId, userId, backupId, status: operation.status },
-        "Cannot delete running backup operation",
-      );
-      return res.status(400).json({
-        success: false,
-        error: "Backup in progress",
-        message: "Cannot delete a backup operation that is currently running",
-        timestamp: new Date().toISOString(),
-        requestId,
+      if (!operation) {
+        logger.warn(
+          { requestId, userId, backupId },
+          "Backup operation not found or access denied",
+        );
+        return res.status(404).json({
+          success: false,
+          error: "Backup operation not found",
+          message: "Backup operation not found or you don't have access to it",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // Don't allow deletion of running backups
+      if (operation.status === "running" || operation.status === "pending") {
+        logger.warn(
+          { requestId, userId, backupId, status: operation.status },
+          "Cannot delete running backup operation",
+        );
+        return res.status(400).json({
+          success: false,
+          error: "Backup in progress",
+          message: "Cannot delete a backup operation that is currently running",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // TODO: Delete Azure blob if it exists
+      // This would require Azure Storage integration
+      if (operation.azureBlobUrl) {
+        logger.info(
+          { requestId, backupId, blobUrl: operation.azureBlobUrl },
+          "TODO: Delete Azure blob (not implemented yet)",
+        );
+      }
+
+      // Delete the backup operation record
+      await prisma.backupOperation.delete({
+        where: { id: backupId },
       });
-    }
 
-    // TODO: Delete Azure blob if it exists
-    // This would require Azure Storage integration
-    if (operation.azureBlobUrl) {
       logger.info(
-        { requestId, backupId, blobUrl: operation.azureBlobUrl },
-        "TODO: Delete Azure blob (not implemented yet)",
+        { requestId, userId, backupId },
+        "Successfully deleted backup operation",
       );
+
+      const response: BackupOperationDeleteResponse = {
+        success: true,
+        message: "Backup operation deleted successfully",
+        timestamp: new Date().toISOString(),
+        requestId,
+      };
+
+      res.json(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        { requestId, userId, backupId, error: errorMessage },
+        "Failed to delete backup operation",
+      );
+
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
+        message: "Failed to delete backup operation",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
     }
-
-    // Delete the backup operation record
-    await prisma.backupOperation.delete({
-      where: { id: backupId },
-    });
-
-    logger.info(
-      { requestId, userId, backupId },
-      "Successfully deleted backup operation",
-    );
-
-    const response: BackupOperationDeleteResponse = {
-      success: true,
-      message: "Backup operation deleted successfully",
-      timestamp: new Date().toISOString(),
-      requestId,
-    };
-
-    res.json(response);
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logger.error(
-      { requestId, userId, backupId, error: errorMessage },
-      "Failed to delete backup operation",
-    );
-
-    res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      message: "Failed to delete backup operation",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /api/postgres/backups/:backupId/progress
  * Get detailed progress information for a backup operation
  */
-router.get("/backups/:backupId/progress", requireSessionOrApiKey, async (req, res) => {
-  const requestId = res.locals.requestId;
-  const userId = res.locals.user.id;
-  const { backupId } = req.params;
+router.get(
+  "/backups/:backupId/progress",
+  requireSessionOrApiKey,
+  async (req, res) => {
+    const requestId = res.locals.requestId;
+    const userId = res.locals.user.id;
+    const { backupId } = req.params;
 
-  try {
-    logger.info(
-      { requestId, userId, backupId },
-      "Fetching backup operation progress",
-    );
-
-    // Get backup operation with database check for access control
-    const operation = await prisma.backupOperation.findFirst({
-      where: {
-        id: backupId,
-        database: { userId },
-      },
-      include: {
-        database: true,
-      },
-    });
-
-    if (!operation) {
-      logger.warn(
+    try {
+      logger.info(
         { requestId, userId, backupId },
-        "Backup operation not found or access denied",
+        "Fetching backup operation progress",
       );
-      return res.status(404).json({
+
+      // Get backup operation with database check for access control
+      const operation = await prisma.backupOperation.findFirst({
+        where: {
+          id: backupId,
+          database: { userId },
+        },
+        include: {
+          database: true,
+        },
+      });
+
+      if (!operation) {
+        logger.warn(
+          { requestId, userId, backupId },
+          "Backup operation not found or access denied",
+        );
+        return res.status(404).json({
+          success: false,
+          error: "Backup operation not found",
+          message: "Backup operation not found or you don't have access to it",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // Calculate estimated completion time for running operations
+      let estimatedCompletion: string | undefined;
+      if (operation.status === "running" && operation.progress > 0) {
+        const elapsed = Date.now() - operation.startedAt.getTime();
+        const totalEstimated = (elapsed / operation.progress) * 100;
+        const remaining = totalEstimated - elapsed;
+        estimatedCompletion = new Date(Date.now() + remaining).toISOString();
+      }
+
+      // Parse metadata for additional progress details
+      const metadata = operation.metadata
+        ? JSON.parse(operation.metadata)
+        : null;
+
+      const progressData: BackupOperationProgress = {
+        id: operation.id,
+        databaseId: operation.databaseId,
+        status: operation.status as any,
+        progress: operation.progress,
+        startedAt: operation.startedAt.toISOString(),
+        estimatedCompletion,
+        currentStep: metadata?.currentStep,
+        totalSteps: metadata?.totalSteps,
+        completedSteps: metadata?.completedSteps,
+        errorMessage: operation.errorMessage || undefined,
+        metadata,
+      };
+
+      logger.info(
+        { requestId, userId, backupId, progress: operation.progress },
+        "Successfully fetched backup operation progress",
+      );
+
+      res.json({
+        success: true,
+        data: progressData,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        { requestId, userId, backupId, error: errorMessage },
+        "Failed to fetch backup operation progress",
+      );
+
+      res.status(500).json({
         success: false,
-        error: "Backup operation not found",
-        message: "Backup operation not found or you don't have access to it",
+        error: "Internal server error",
+        message: "Failed to fetch backup operation progress",
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
-
-    // Calculate estimated completion time for running operations
-    let estimatedCompletion: string | undefined;
-    if (operation.status === "running" && operation.progress > 0) {
-      const elapsed = Date.now() - operation.startedAt.getTime();
-      const totalEstimated = (elapsed / operation.progress) * 100;
-      const remaining = totalEstimated - elapsed;
-      estimatedCompletion = new Date(Date.now() + remaining).toISOString();
-    }
-
-    // Parse metadata for additional progress details
-    const metadata = operation.metadata ? JSON.parse(operation.metadata) : null;
-
-    const progressData: BackupOperationProgress = {
-      id: operation.id,
-      databaseId: operation.databaseId,
-      status: operation.status as any,
-      progress: operation.progress,
-      startedAt: operation.startedAt.toISOString(),
-      estimatedCompletion,
-      currentStep: metadata?.currentStep,
-      totalSteps: metadata?.totalSteps,
-      completedSteps: metadata?.completedSteps,
-      errorMessage: operation.errorMessage || undefined,
-      metadata,
-    };
-
-    logger.info(
-      { requestId, userId, backupId, progress: operation.progress },
-      "Successfully fetched backup operation progress",
-    );
-
-    res.json({
-      success: true,
-      data: progressData,
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logger.error(
-      { requestId, userId, backupId, error: errorMessage },
-      "Failed to fetch backup operation progress",
-    );
-
-    res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      message: "Failed to fetch backup operation progress",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
-  }
-});
+  },
+);
 
 export default router;

@@ -46,7 +46,6 @@ const mockPrisma = {
   },
 } as unknown as typeof prisma;
 
-
 describe("ProgressTrackerService", () => {
   let progressTrackerService: ProgressTrackerService;
 
@@ -740,7 +739,7 @@ describe("ProgressTrackerService", () => {
           backupCalls.push(args);
           return Promise.resolve({ count: 0 });
         });
-      
+
       mockPrisma.restoreOperation.deleteMany = jest
         .fn()
         .mockImplementation((args) => {
@@ -757,7 +756,7 @@ describe("ProgressTrackerService", () => {
       jest.runOnlyPendingTimers();
 
       // Wait for async operations to complete
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         jest.useRealTimers();
         setTimeout(() => {
           jest.useFakeTimers();
@@ -768,18 +767,26 @@ describe("ProgressTrackerService", () => {
       // Should have at least some calls
       expect(mockPrisma.backupOperation.deleteMany).toHaveBeenCalled();
       expect(mockPrisma.restoreOperation.deleteMany).toHaveBeenCalled();
-      
+
       // Check that both completed and failed operations are being cleaned up
-      expect(backupCalls.some(call => call.where.status === "completed")).toBe(true);
-      expect(backupCalls.some(call => call.where.status === "failed")).toBe(true);
-      expect(restoreCalls.some(call => call.where.status === "completed")).toBe(true);
-      expect(restoreCalls.some(call => call.where.status === "failed")).toBe(true);
+      expect(
+        backupCalls.some((call) => call.where.status === "completed"),
+      ).toBe(true);
+      expect(backupCalls.some((call) => call.where.status === "failed")).toBe(
+        true,
+      );
+      expect(
+        restoreCalls.some((call) => call.where.status === "completed"),
+      ).toBe(true);
+      expect(restoreCalls.some((call) => call.where.status === "failed")).toBe(
+        true,
+      );
     });
 
     it("should handle periodic cleanup errors gracefully", async () => {
       let cleanupErrorCount = 0;
       let periodicErrorCount = 0;
-      
+
       // Override the mock logger to track calls
       mockLogger.error = jest.fn().mockImplementation((context, message) => {
         if (message === "Failed to clean up old operations") {
@@ -802,7 +809,7 @@ describe("ProgressTrackerService", () => {
       jest.runOnlyPendingTimers();
 
       // Wait a bit for async error handling to complete
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         jest.useRealTimers();
         setTimeout(() => {
           jest.useFakeTimers();
@@ -813,14 +820,14 @@ describe("ProgressTrackerService", () => {
       // Should log both error types
       expect(cleanupErrorCount).toBeGreaterThan(0);
       expect(periodicErrorCount).toBeGreaterThan(0);
-      
+
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
           error: "Database error",
         },
         "Failed to clean up old operations",
       );
-      
+
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
           error: "Database error",

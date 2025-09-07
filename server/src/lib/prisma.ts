@@ -12,56 +12,71 @@ const logger = prismaLogger();
 const prisma =
   globalThis.prisma ??
   new PrismaClient({
-    log: process.env.NODE_ENV === "test" ? [] : [
-      {
-        emit: "event",
-        level: "query",
-      },
-      {
-        emit: "event", 
-        level: "info",
-      },
-      {
-        emit: "event",
-        level: "warn",
-      },
-      {
-        emit: "event",
-        level: "error",
-      },
-    ],
+    log:
+      process.env.NODE_ENV === "test"
+        ? []
+        : [
+            {
+              emit: "event",
+              level: "query",
+            },
+            {
+              emit: "event",
+              level: "info",
+            },
+            {
+              emit: "event",
+              level: "warn",
+            },
+            {
+              emit: "event",
+              level: "error",
+            },
+          ],
   } as any);
 
 // Set up Prisma event listeners to route logs to dedicated logger
 if (process.env.NODE_ENV !== "test") {
   (prisma as any).$on("query", (e: any) => {
-    logger.debug({
-      query: e.query,
-      params: e.params,
-      duration: `${e.duration}ms`,
-      target: e.target,
-    }, "Prisma Query");
+    logger.debug(
+      {
+        query: e.query,
+        params: e.params,
+        duration: `${e.duration}ms`,
+        target: e.target,
+      },
+      "Prisma Query",
+    );
   });
 
   (prisma as any).$on("info", (e: any) => {
-    logger.info({
-      message: e.message,
-      target: e.target,
-    }, "Prisma Info");
+    logger.info(
+      {
+        message: e.message,
+        target: e.target,
+      },
+      "Prisma Info",
+    );
   });
 
   (prisma as any).$on("warn", (e: any) => {
-    logger.warn({
-      message: e.message,
-      target: e.target,
-    }, "Prisma Warning");
+    logger.warn(
+      {
+        message: e.message,
+        target: e.target,
+      },
+      "Prisma Warning",
+    );
   });
 
   (prisma as any).$on("error", (e: any) => {
-    logger.error({
-      message: e.message,
-      target: e.target,
-    }, "Prisma Error");
+    logger.error(
+      {
+        message: e.message,
+        target: e.target,
+      },
+      "Prisma Error",
+    );
   });
 }
 

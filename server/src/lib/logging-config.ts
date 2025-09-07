@@ -49,12 +49,12 @@ export function loadLoggingConfig(): LoggingConfig {
     const configPath = path.join(process.cwd(), "config", "logging.json");
     const configFile = fs.readFileSync(configPath, "utf8");
     const rawConfig = JSON.parse(configFile);
-    
+
     loggingConfig = loggingConfigSchema.parse(rawConfig);
     return loggingConfig;
   } catch (error) {
     console.error("❌ Failed to load logging configuration:", error);
-    
+
     // Fallback to default configuration
     loggingConfig = {
       development: {
@@ -97,7 +97,7 @@ export function loadLoggingConfig(): LoggingConfig {
         'res.headers["set-cookie"]',
       ],
     };
-    
+
     return loggingConfig;
   }
 }
@@ -106,12 +106,14 @@ export function loadLoggingConfig(): LoggingConfig {
 export function getEnvironmentLogConfig(): EnvironmentLogConfig {
   const fullConfig = loadLoggingConfig();
   const environment = serverConfig.nodeEnv;
-  
+
   return fullConfig[environment];
 }
 
 // Get specific logger configuration
-export function getLoggerConfig(loggerType: keyof EnvironmentLogConfig): LoggerConfig {
+export function getLoggerConfig(
+  loggerType: keyof EnvironmentLogConfig,
+): LoggerConfig {
   const envConfig = getEnvironmentLogConfig();
   return envConfig[loggerType];
 }
@@ -125,7 +127,7 @@ export function getRedactionPaths(): string[] {
 // Ensure log directory exists
 export function ensureLogDirectory(destination?: string): void {
   if (!destination) return;
-  
+
   const logDir = path.dirname(path.resolve(destination));
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });

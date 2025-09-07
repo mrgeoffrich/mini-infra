@@ -23,7 +23,7 @@ jest.mock("cloudflare", () => {
   return jest.fn().mockImplementation(() => mockCloudflare);
 });
 
-// Mock logger factory - create the mock instance inline  
+// Mock logger factory - create the mock instance inline
 jest.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
     info: jest.fn(),
@@ -31,7 +31,7 @@ jest.mock("../../lib/logger-factory", () => {
     warn: jest.fn(),
     debug: jest.fn(),
   };
-  
+
   return {
     appLogger: jest.fn(() => mockLoggerInstance),
     servicesLogger: jest.fn(() => mockLoggerInstance),
@@ -251,7 +251,9 @@ describe("CloudflareConfigService", () => {
       });
 
       // Mock timeout scenario by directly rejecting with timeout error
-      mockCloudflare.user.get.mockRejectedValue(new Error("API request timeout"));
+      mockCloudflare.user.get.mockRejectedValue(
+        new Error("API request timeout"),
+      );
 
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
 
@@ -428,7 +430,6 @@ describe("CloudflareConfigService", () => {
         "user1",
       );
 
-
       parentSetSpy.mockRestore();
     });
 
@@ -464,7 +465,6 @@ describe("CloudflareConfigService", () => {
         "account-123",
         "user1",
       );
-
 
       parentSetSpy.mockRestore();
     });
@@ -669,44 +669,46 @@ describe("CloudflareConfigService", () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "valid-api-token",
       });
-      
+
       // Mock 5 consecutive failures
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Make 5 failed requests
       for (let i = 0; i < 5; i++) {
         const result = await cloudflareConfigService.validate();
         expect(result.isValid).toBe(false);
         expect(result.errorCode).toBe("NETWORK_ERROR");
       }
-      
+
       // 6th request should be blocked by circuit breaker
       const result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
-      expect(result.message).toContain("Circuit breaker open after 5 consecutive failures");
-      
+      expect(result.message).toContain(
+        "Circuit breaker open after 5 consecutive failures",
+      );
+
       // Verify API was not called on 6th attempt
       expect(mockCloudflare.user.get).toHaveBeenCalledTimes(5);
     });
-    
+
     it("should reset circuit breaker on successful request", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "valid-api-token",
       });
-      
+
       // First cause some failures (but not enough to open circuit)
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Make 3 failed requests
       for (let i = 0; i < 3; i++) {
         await cloudflareConfigService.validate();
       }
-      
+
       // Now mock a successful response
       const mockUserResponse = {
         email: "test@example.com",
@@ -716,54 +718,54 @@ describe("CloudflareConfigService", () => {
         suspended: false,
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-      
+
       // Make successful request
       const result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
-      
+
       // Circuit breaker should be reset, so failures should start counting from 0
       mockCloudflare.user.get.mockRejectedValue(networkError);
-      
+
       // Make 4 more failed requests (should not open circuit yet)
       for (let i = 0; i < 4; i++) {
         const failResult = await cloudflareConfigService.validate();
         expect(failResult.errorCode).toBe("NETWORK_ERROR");
       }
-      
+
       // Circuit should still be closed (only 4 failures after reset)
       const finalResult = await cloudflareConfigService.validate();
       expect(finalResult.errorCode).toBe("NETWORK_ERROR");
       expect(finalResult.errorCode).not.toBe("CIRCUIT_BREAKER_OPEN");
     });
-    
+
     it("should not count non-retriable errors toward circuit breaker", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "invalid-api-token",
       });
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Mock 401 errors (non-retriable)
       const authError = new Error("Unauthorized") as any;
       authError.response = { status: 401 };
       mockCloudflare.user.get.mockRejectedValue(authError);
-      
+
       // Make 10 requests with auth errors
       for (let i = 0; i < 10; i++) {
         const result = await cloudflareConfigService.validate();
         expect(result.isValid).toBe(false);
         expect(result.errorCode).toBe("INVALID_API_TOKEN");
       }
-      
+
       // Circuit should still be closed
       // All requests should have gone through (not blocked by circuit breaker)
       expect(mockCloudflare.user.get).toHaveBeenCalledTimes(10);
     });
-    
+
     it("should handle request deduplication within 1-second window", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "valid-api-token",
       });
-      
+
       const mockUserResponse = {
         email: "test@example.com",
         id: "user-123",
@@ -773,88 +775,90 @@ describe("CloudflareConfigService", () => {
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Make multiple concurrent requests
       const promises = [
         cloudflareConfigService.validate(),
         cloudflareConfigService.validate(),
         cloudflareConfigService.validate(),
       ];
-      
+
       const results = await Promise.all(promises);
-      
+
       // All should get the same successful result
-      results.forEach(result => {
+      results.forEach((result) => {
         expect(result.isValid).toBe(true);
-        expect(result.message).toBe("Cloudflare API connection successful (test@example.com)");
+        expect(result.message).toBe(
+          "Cloudflare API connection successful (test@example.com)",
+        );
       });
-      
+
       // But API should only be called once due to deduplication
       expect(mockCloudflare.user.get).toHaveBeenCalledTimes(1);
     });
-    
+
     it("should properly categorize different HTTP error codes", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "valid-api-token",
       });
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Test 403 Forbidden
       const forbiddenError = new Error("Forbidden") as any;
       forbiddenError.response = { status: 403 };
       mockCloudflare.user.get.mockRejectedValue(forbiddenError);
-      
+
       let result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("INSUFFICIENT_PERMISSIONS");
-      
+
       // Test 429 Rate Limited
       const rateLimitError = new Error("Too Many Requests") as any;
       rateLimitError.response = { status: 429 };
       mockCloudflare.user.get.mockRejectedValue(rateLimitError);
-      
+
       result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("RATE_LIMITED");
-      
+
       // Test 503 Service Unavailable
       const serviceError = new Error("Service Unavailable") as any;
       serviceError.response = { status: 503 };
       mockCloudflare.user.get.mockRejectedValue(serviceError);
-      
+
       result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("SERVER_ERROR_503");
     });
-    
+
     it("should transition circuit from open to half-open after cooldown", async () => {
       // Use fake timers for this test
       jest.useFakeTimers();
-      
+
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "valid-api-token",
       });
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Cause 5 failures to open circuit
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
-      
+
       for (let i = 0; i < 5; i++) {
         await cloudflareConfigService.validate();
       }
-      
+
       // Circuit should be open
       let result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
-      
+
       // Advance time by 4 minutes (less than cooldown)
       jest.advanceTimersByTime(4 * 60 * 1000);
-      
+
       // Circuit should still be open
       result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
-      
+
       // Advance time by 2 more minutes (total 6 minutes, past cooldown)
       jest.advanceTimersByTime(2 * 60 * 1000);
-      
+
       // Now mock a successful response for half-open test
       const mockUserResponse = {
         email: "test@example.com",
@@ -864,53 +868,53 @@ describe("CloudflareConfigService", () => {
         suspended: false,
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-      
+
       // Circuit should transition to half-open and allow request
       result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
-      
+
       // Circuit should be fully closed after success
       result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
-      
+
       jest.useRealTimers();
     });
-    
+
     it("should reset circuit breaker when new API token is set", async () => {
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "bad-token",
       });
       mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
-      
+
       // Cause failures to open circuit
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
-      
+
       for (let i = 0; i < 5; i++) {
         await cloudflareConfigService.validate();
       }
-      
+
       // Circuit should be open
       let result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
-      
+
       // Set new API token
       const parentSetSpy = jest.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "set",
       );
       parentSetSpy.mockResolvedValue(undefined);
-      
+
       await cloudflareConfigService.setApiToken(
         "new-valid-token-12345678901234567890",
         "user1",
       );
-      
+
       // Mock successful response with new token
       mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
         value: "new-valid-token-12345678901234567890",
       });
-      
+
       const mockUserResponse = {
         email: "test@example.com",
         id: "user-123",
@@ -919,12 +923,12 @@ describe("CloudflareConfigService", () => {
         suspended: false,
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-      
+
       // Circuit should be reset and allow request
       result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
       expect(result.errorCode).toBeUndefined();
-      
+
       parentSetSpy.mockRestore();
     });
   });
@@ -949,8 +953,6 @@ describe("CloudflareConfigService", () => {
 
       expect(parentDeleteSpy).toHaveBeenCalledWith("api_token", "user1");
       expect(parentDeleteSpy).toHaveBeenCalledWith("account_id", "user1");
-
-
 
       // Verify disconnection was recorded
       expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({

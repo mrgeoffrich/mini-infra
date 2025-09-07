@@ -99,9 +99,10 @@ describe("DockerService", () => {
     mockDockerConfigService.get.mockImplementation((key) => {
       if (key === "host") {
         // Provide default socket path based on platform
-        const defaultSocketPath = process.platform === "win32" 
-          ? "//./pipe/docker_engine" 
-          : "/var/run/docker.sock";
+        const defaultSocketPath =
+          process.platform === "win32"
+            ? "//./pipe/docker_engine"
+            : "/var/run/docker.sock";
         return Promise.resolve(defaultSocketPath);
       }
       if (key === "apiVersion") return Promise.resolve("1.41");

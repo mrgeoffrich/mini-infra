@@ -39,7 +39,7 @@ jest.mock("../../generated/prisma", () => {
       delete: jest.fn(),
     },
   };
-  
+
   return {
     PrismaClient: jest.fn(() => mockClient),
     __mockClient: mockClient, // Export the mock client for tests
@@ -54,7 +54,7 @@ jest.mock("../../services/backup-executor", () => {
   const mockService = {
     queueBackup: jest.fn(),
   };
-  
+
   return {
     BackupExecutorService: jest.fn(() => mockService),
     __mockService: mockService, // Export the mock service for tests
@@ -62,7 +62,9 @@ jest.mock("../../services/backup-executor", () => {
 });
 
 // Get the mock service for use in tests
-const { __mockService: mockBackupExecutorService } = jest.requireMock("../../services/backup-executor");
+const { __mockService: mockBackupExecutorService } = jest.requireMock(
+  "../../services/backup-executor",
+);
 
 // Mock logger
 jest.mock("../../lib/logger-factory", () => ({

@@ -63,7 +63,9 @@ function serializeConnectivityStatus(
 
 // Query parameter validation schema for listing settings
 const settingsQuerySchema = z.object({
-  category: z.enum(["docker", "cloudflare", "azure", "postgres", "system"]).optional(),
+  category: z
+    .enum(["docker", "cloudflare", "azure", "postgres", "system"])
+    .optional(),
   isActive: z
     .string()
     .optional()
@@ -123,7 +125,9 @@ const validateServiceSchema = z.object({
 
 // Connectivity query parameter validation schema
 const connectivityQuerySchema = z.object({
-  service: z.enum(["docker", "cloudflare", "azure", "postgres", "system"]).optional(),
+  service: z
+    .enum(["docker", "cloudflare", "azure", "postgres", "system"])
+    .optional(),
   status: z
     .enum(["connected", "failed", "timeout", "unreachable", "error"])
     .optional(),
@@ -613,7 +617,9 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
     }
 
     // Validate service parameter
-    if (!["docker", "cloudflare", "azure", "postgres", "system"].includes(service)) {
+    if (
+      !["docker", "cloudflare", "azure", "postgres", "system"].includes(service)
+    ) {
       return res.status(400).json({
         error: "Bad Request",
         message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system`,

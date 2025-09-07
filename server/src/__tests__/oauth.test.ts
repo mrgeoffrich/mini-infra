@@ -89,15 +89,17 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should create a new user when no existing user found", async () => {
       // Mock the Google OAuth strategy constructor
       const mockVerifyCallback = jest.fn();
-      
+
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
-        mockVerifyCallback.mockImplementation(callback);
-        return {
-          name: 'google',
-          _verify: callback,
-        };
-      });
+      const GoogleStrategy = jest
+        .fn()
+        .mockImplementation((options, callback) => {
+          mockVerifyCallback.mockImplementation(callback);
+          return {
+            name: "google",
+            _verify: callback,
+          };
+        });
 
       // Temporarily mock the passport-google-oauth20 module
       jest.doMock("passport-google-oauth20", () => ({
@@ -140,15 +142,17 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the Google OAuth strategy constructor
       const mockVerifyCallback = jest.fn();
-      
+
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
-        mockVerifyCallback.mockImplementation(callback);
-        return {
-          name: 'google',
-          _verify: callback,
-        };
-      });
+      const GoogleStrategy = jest
+        .fn()
+        .mockImplementation((options, callback) => {
+          mockVerifyCallback.mockImplementation(callback);
+          return {
+            name: "google",
+            _verify: callback,
+          };
+        });
 
       // Temporarily mock the passport-google-oauth20 module
       jest.doMock("passport-google-oauth20", () => ({
@@ -188,15 +192,17 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the Google OAuth strategy constructor
       const mockVerifyCallback = jest.fn();
-      
+
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
-        mockVerifyCallback.mockImplementation(callback);
-        return {
-          name: 'google',
-          _verify: callback,
-        };
-      });
+      const GoogleStrategy = jest
+        .fn()
+        .mockImplementation((options, callback) => {
+          mockVerifyCallback.mockImplementation(callback);
+          return {
+            name: "google",
+            _verify: callback,
+          };
+        });
 
       // Temporarily mock the passport-google-oauth20 module
       jest.doMock("passport-google-oauth20", () => ({
@@ -236,15 +242,17 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the Google OAuth strategy constructor
       const mockVerifyCallback = jest.fn();
-      
+
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
-        mockVerifyCallback.mockImplementation(callback);
-        return {
-          name: 'google',
-          _verify: callback,
-        };
-      });
+      const GoogleStrategy = jest
+        .fn()
+        .mockImplementation((options, callback) => {
+          mockVerifyCallback.mockImplementation(callback);
+          return {
+            name: "google",
+            _verify: callback,
+          };
+        });
 
       // Temporarily mock the passport-google-oauth20 module
       jest.doMock("passport-google-oauth20", () => ({
@@ -280,15 +288,17 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the Google OAuth strategy constructor
       const mockVerifyCallback = jest.fn();
-      
+
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest.fn().mockImplementation((options, callback) => {
-        mockVerifyCallback.mockImplementation(callback);
-        return {
-          name: 'google',
-          _verify: callback,
-        };
-      });
+      const GoogleStrategy = jest
+        .fn()
+        .mockImplementation((options, callback) => {
+          mockVerifyCallback.mockImplementation(callback);
+          return {
+            name: "google",
+            _verify: callback,
+          };
+        });
 
       // Temporarily mock the passport-google-oauth20 module
       jest.doMock("passport-google-oauth20", () => ({
@@ -326,7 +336,7 @@ describe("OAuth Strategy and Callback Handling", () => {
       // Mock the passport serializeUser function
       const mockSerializeUser = jest.fn();
       let serializeFunction: any;
-      
+
       // Mock passport to capture the serialize function
       const mockPassport = {
         use: jest.fn(),
@@ -362,7 +372,7 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the passport deserializeUser function
       let deserializeFunction: any;
-      
+
       // Mock passport to capture the deserialize function
       const mockPassport = {
         use: jest.fn(),
@@ -401,7 +411,7 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should handle non-existent user during deserialization", async () => {
       // Mock the passport deserializeUser function
       let deserializeFunction: any;
-      
+
       // Mock passport to capture the deserialize function
       const mockPassport = {
         use: jest.fn(),
@@ -439,7 +449,7 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock the passport deserializeUser function
       let deserializeFunction: any;
-      
+
       // Mock passport to capture the deserialize function
       const mockPassport = {
         use: jest.fn(),

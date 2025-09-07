@@ -39,7 +39,7 @@ jest.mock("../../lib/logger-factory", () => {
     warn: jest.fn(),
     debug: jest.fn(),
   };
-  
+
   return {
     appLogger: jest.fn(() => mockLoggerInstance),
     servicesLogger: jest.fn(() => mockLoggerInstance),
@@ -76,23 +76,25 @@ describe("BackupSchedulerService - Memory Test", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Reset mock objects completely
     mockScheduledTask.start.mockReset();
     mockScheduledTask.stop.mockReset();
     mockScheduledTask.destroy.mockReset();
-    
+
     // Set default mock return values
     mockPrisma.backupConfiguration.findMany = jest.fn().mockResolvedValue([]);
     mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
     mockCron.validate.mockReturnValue(true);
     mockCron.schedule.mockReturnValue(mockScheduledTask);
-    
+
     backupSchedulerService = new BackupSchedulerService(mockPrisma);
 
     // Mock service instances
-    (backupSchedulerService as any).backupConfigService = mockBackupConfigService;
-    (backupSchedulerService as any).backupExecutorService = mockBackupExecutorService;
+    (backupSchedulerService as any).backupConfigService =
+      mockBackupConfigService;
+    (backupSchedulerService as any).backupExecutorService =
+      mockBackupExecutorService;
   });
 
   afterEach(async () => {
@@ -106,19 +108,19 @@ describe("BackupSchedulerService - Memory Test", () => {
       // Clear the service reference to help GC
       backupSchedulerService = null as any;
     }
-    
+
     // Reset all mock objects completely
     mockScheduledTask.start.mockReset();
     mockScheduledTask.stop.mockReset();
     mockScheduledTask.destroy.mockReset();
-    
+
     // Force garbage collection of mock call history
     jest.clearAllMocks();
-    
+
     // Clear mock return values to prevent accumulation
     mockCron.schedule.mockReset();
     mockCron.validate.mockReset();
-    
+
     // Force mock logger cleanup
     mockLogger.info.mockReset();
     mockLogger.error.mockReset();
@@ -132,7 +134,12 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should register schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
+      await backupSchedulerService.registerSchedule(
+        "db-123",
+        "0 2 * * *",
+        "UTC",
+        "user-123",
+      );
 
       expect(mockCron.validate).toHaveBeenCalledWith("0 2 * * *");
       expect(mockCron.schedule).toHaveBeenCalled();
@@ -148,7 +155,12 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should enable schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
+      await backupSchedulerService.registerSchedule(
+        "db-123",
+        "0 2 * * *",
+        "UTC",
+        "user-123",
+      );
       await backupSchedulerService.enableSchedule("db-123");
 
       expect(mockScheduledTask.start).toHaveBeenCalled();
@@ -161,7 +173,12 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should unregister schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
+      await backupSchedulerService.registerSchedule(
+        "db-123",
+        "0 2 * * *",
+        "UTC",
+        "user-123",
+      );
       await backupSchedulerService.unregisterSchedule("db-123");
 
       expect(mockScheduledTask.destroy).toHaveBeenCalled();

@@ -140,7 +140,10 @@ class DockerService {
       const responseTimeMs = Date.now() - startTime;
 
       this.connected = true;
-      servicesLogger().info({ responseTimeMs }, "Docker service connected successfully");
+      servicesLogger().info(
+        { responseTimeMs },
+        "Docker service connected successfully",
+      );
 
       // Record successful connection
       try {
@@ -285,7 +288,10 @@ class DockerService {
     // Subscribe to Docker events for cache invalidation
     this.docker.getEvents({}, (err, stream) => {
       if (err) {
-        servicesLogger().error({ error: err }, "Failed to subscribe to Docker events");
+        servicesLogger().error(
+          { error: err },
+          "Failed to subscribe to Docker events",
+        );
         return;
       }
 
@@ -557,7 +563,9 @@ class DockerService {
    * This method can be called when Docker settings are updated
    */
   public async refreshConnection(): Promise<void> {
-    servicesLogger().info("Refreshing Docker connection with updated settings...");
+    servicesLogger().info(
+      "Refreshing Docker connection with updated settings...",
+    );
 
     try {
       // Stop current reconnection attempts

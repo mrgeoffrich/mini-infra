@@ -19,11 +19,11 @@ export const serializeError = (error: any) => {
       syscall: (error as any).syscall || undefined,
       // Include any additional enumerable properties
       ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
-        if (!['name', 'message', 'stack'].includes(key)) {
+        if (!["name", "message", "stack"].includes(key)) {
           acc[key] = (error as any)[key];
         }
         return acc;
-      }, {} as any)
+      }, {} as any),
     };
   }
   return error;
@@ -35,37 +35,46 @@ const loggerCache = new Map<string, pino.Logger>();
 // Constants for stack trace parsing
 const STACKTRACE_OFFSET = 2;
 const LINE_OFFSET = 7;
-const { symbols: { asJsonSym } } = pino;
+const {
+  symbols: { asJsonSym },
+} = pino;
 
 // Function to create a proxy wrapper for adding caller information
 function traceCaller(pinoInstance: pino.Logger): pino.Logger {
-  const get = (target: any, name: string | symbol) => 
+  const get = (target: any, name: string | symbol) =>
     name === asJsonSym ? asJson : target[name];
 
   function asJson(this: any, ...args: any[]) {
     try {
       args[0] = args[0] || Object.create(null);
-      
+
       // Extract caller information from stack trace
       const stack = Error().stack;
       if (stack) {
-        const stackLines = stack.split('\n')
-          .filter(s => !s.includes('node_modules/pino') && 
-                       !s.includes('node_modules\\pino') &&
-                       !s.includes('logger-factory') &&
-                       s.includes(' at '));
-        
+        const stackLines = stack
+          .split("\n")
+          .filter(
+            (s) =>
+              !s.includes("node_modules/pino") &&
+              !s.includes("node_modules\\pino") &&
+              !s.includes("logger-factory") &&
+              s.includes(" at "),
+          );
+
         if (stackLines.length > STACKTRACE_OFFSET) {
           const callerLine = stackLines[STACKTRACE_OFFSET];
-          const match = callerLine.match(/at .* \((.+):(\d+):\d+\)/) || 
-                       callerLine.match(/at (.+):(\d+):\d+/);
-          
+          const match =
+            callerLine.match(/at .* \((.+):(\d+):\d+\)/) ||
+            callerLine.match(/at (.+):(\d+):\d+/);
+
           if (match) {
             const fullPath = match[1];
             const lineNumber = match[2];
             // Make path relative to project root
             const projectRoot = path.resolve(process.cwd());
-            const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, '/');
+            const relativePath = path
+              .relative(projectRoot, fullPath)
+              .replace(/\\/g, "/");
             args[0].caller = `${relativePath}:${lineNumber}`;
           }
         }
@@ -100,7 +109,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
   if (config.destination) {
     ensureLogDirectory(config.destination);
     const destination = path.resolve(config.destination);
-    
+
     if (config.rotation?.enabled) {
       // Use pino-roll for log rotation in production
       targets.push({
@@ -129,7 +138,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
     // Add aggregate log file target (app-all.log) for all loggers
     const aggregateDestination = path.resolve("logs/app-all.log");
     ensureLogDirectory(aggregateDestination);
-    
+
     if (config.rotation?.enabled) {
       // Use pino-roll for aggregate log rotation in production
       targets.push({
@@ -216,7 +225,9 @@ export const servicesLogger = () => createLogger("services");
 export const dockerExecutorLogger = () => createLogger("dockerexecutor");
 
 // Generic logger factory function
-export function getLogger(loggerType: "app" | "http" | "prisma" | "services" | "dockerexecutor"): pino.Logger {
+export function getLogger(
+  loggerType: "app" | "http" | "prisma" | "services" | "dockerexecutor",
+): pino.Logger {
   return createLogger(loggerType);
 }
 
@@ -228,7 +239,7 @@ export function clearLoggerCache(): void {
 // Create child logger with additional context
 export function createChildLogger(
   loggerType: "app" | "http" | "prisma" | "services" | "dockerexecutor",
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
 ): pino.Logger {
   const parentLogger = getLogger(loggerType);
   return parentLogger.child(context);

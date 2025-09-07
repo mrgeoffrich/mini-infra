@@ -101,7 +101,6 @@ const mockAzureConfigService = {
   get: jest.fn(),
 } as unknown as AzureConfigService;
 
-
 describe("RestoreExecutorService", () => {
   let restoreExecutorService: RestoreExecutorService;
 
@@ -681,7 +680,8 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
-      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+      const azureConnectionString =
+        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
 
       const result = await (restoreExecutorService as any).createRollbackBackup(
         connectionConfig,
@@ -715,7 +715,8 @@ describe("RestoreExecutorService", () => {
         stderr: "Backup failed",
       });
 
-      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+      const azureConnectionString =
+        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
 
       await expect(
         (restoreExecutorService as any).createRollbackBackup(
@@ -746,7 +747,8 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
-      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+      const azureConnectionString =
+        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
 
       await (restoreExecutorService as any).executeRollback(
         connectionConfig,
@@ -786,7 +788,8 @@ describe("RestoreExecutorService", () => {
         stderr: "Rollback failed",
       });
 
-      const azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
+      const azureConnectionString =
+        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
 
       await expect(
         (restoreExecutorService as any).executeRollback(

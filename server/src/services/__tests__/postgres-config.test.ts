@@ -68,7 +68,6 @@ const mockPrisma = {
   },
 } as unknown as typeof prisma;
 
-
 describe("DatabaseConfigService", () => {
   let databaseConfigService: DatabaseConfigService;
   const testEncryptionKey = "test-encryption-key";

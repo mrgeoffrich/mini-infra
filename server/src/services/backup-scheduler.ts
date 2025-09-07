@@ -39,7 +39,9 @@ export class BackupSchedulerService {
   /**
    * Get the singleton instance of BackupSchedulerService
    */
-  public static getInstance(prisma?: typeof prisma): BackupSchedulerService | null {
+  public static getInstance(
+    prisma?: typeof prisma,
+  ): BackupSchedulerService | null {
     if (!BackupSchedulerService.instance && prisma) {
       BackupSchedulerService.instance = new BackupSchedulerService(prisma);
     }
@@ -202,7 +204,10 @@ export class BackupSchedulerService {
         job.isEnabled = true;
 
         // Update next scheduled time
-        job.nextScheduledAt = this.calculateNextRunTime(job.schedule, job.timezone);
+        job.nextScheduledAt = this.calculateNextRunTime(
+          job.schedule,
+          job.timezone,
+        );
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
 
         servicesLogger().info(
@@ -303,7 +308,10 @@ export class BackupSchedulerService {
   /**
    * Calculate next run time for a cron expression
    */
-  private calculateNextRunTime(schedule: string, timezone: string = "UTC"): Date | null {
+  private calculateNextRunTime(
+    schedule: string,
+    timezone: string = "UTC",
+  ): Date | null {
     try {
       if (!cron.validate(schedule)) {
         return null;
@@ -312,9 +320,9 @@ export class BackupSchedulerService {
       // Use cron-parser for accurate next execution time calculation with timezone support
       const interval = CronExpressionParser.parse(schedule, {
         tz: timezone,
-        currentDate: new Date()
+        currentDate: new Date(),
       });
-      
+
       return interval.next().toDate();
     } catch (error) {
       servicesLogger().warn(
@@ -349,7 +357,10 @@ export class BackupSchedulerService {
       // Update next scheduled time for this job
       const job = this.scheduledJobs.get(databaseId);
       if (job) {
-        job.nextScheduledAt = this.calculateNextRunTime(job.schedule, job.timezone);
+        job.nextScheduledAt = this.calculateNextRunTime(
+          job.schedule,
+          job.timezone,
+        );
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
       }
 

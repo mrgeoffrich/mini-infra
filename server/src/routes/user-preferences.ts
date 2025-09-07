@@ -3,19 +3,25 @@ import { z } from "zod";
 import { httpLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { UserPreferencesService } from "../services/user-preferences";
-import type { JWTUser, UserPreferenceInfo, UpdateUserPreferencesRequest } from "@mini-infra/types";
+import type {
+  JWTUser,
+  UserPreferenceInfo,
+  UpdateUserPreferencesRequest,
+} from "@mini-infra/types";
 
 const logger = httpLogger();
 const router = Router();
 
 // Validation schemas
-const UpdateUserPreferencesSchema = z.object({
-  timezone: z.string().optional(),
-  containerSortField: z.string().optional(),
-  containerSortOrder: z.enum(["asc", "desc"]).optional(),
-  containerFilters: z.any().optional(),
-  containerColumns: z.any().optional(),
-}).strict();
+const UpdateUserPreferencesSchema = z
+  .object({
+    timezone: z.string().optional(),
+    containerSortField: z.string().optional(),
+    containerSortOrder: z.enum(["asc", "desc"]).optional(),
+    containerFilters: z.any().optional(),
+    containerColumns: z.any().optional(),
+  })
+  .strict();
 
 // Helper function to serialize UserPreference for API responses
 function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
@@ -48,21 +54,23 @@ router.get("/preferences", async (req: Request, res: Response) => {
     const preferences = await UserPreferencesService.getUserPreferences(userId);
     const preferenceInfo = serializeUserPreferenceInfo(preferences);
 
-    logger.info({ userId, preferencesId: preferences.id }, "User preferences retrieved successfully");
+    logger.info(
+      { userId, preferencesId: preferences.id },
+      "User preferences retrieved successfully",
+    );
 
     res.json({
       success: true,
       data: preferenceInfo,
-      message: "User preferences retrieved successfully"
+      message: "User preferences retrieved successfully",
     });
-
   } catch (error: any) {
     logger.error({ error: error.message }, "Failed to get user preferences");
 
     res.status(500).json({
       success: false,
       message: "Failed to get user preferences",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -81,24 +89,32 @@ router.put("/preferences", async (req: Request, res: Response) => {
     // Validate request body
     const validatedData = UpdateUserPreferencesSchema.parse(req.body);
 
-    const preferences = await UserPreferencesService.updateUserPreferences(userId, validatedData);
+    const preferences = await UserPreferencesService.updateUserPreferences(
+      userId,
+      validatedData,
+    );
     const preferenceInfo = serializeUserPreferenceInfo(preferences);
 
-    logger.info({ userId, preferencesId: preferences.id }, "User preferences updated successfully");
+    logger.info(
+      { userId, preferencesId: preferences.id },
+      "User preferences updated successfully",
+    );
 
     res.json({
       success: true,
       data: preferenceInfo,
-      message: "User preferences updated successfully"
+      message: "User preferences updated successfully",
     });
-
   } catch (error: any) {
     if (error.name === "ZodError") {
-      logger.warn({ error: error.errors }, "Invalid request data for user preferences update");
+      logger.warn(
+        { error: error.errors },
+        "Invalid request data for user preferences update",
+      );
       return res.status(400).json({
         success: false,
         message: "Invalid request data",
-        error: error.errors
+        error: error.errors,
       });
     }
 
@@ -106,7 +122,7 @@ router.put("/preferences", async (req: Request, res: Response) => {
       logger.warn({ error: error.message }, "Invalid timezone provided");
       return res.status(400).json({
         success: false,
-        message: error.message
+        message: error.message,
       });
     }
 
@@ -115,7 +131,7 @@ router.put("/preferences", async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Failed to update user preferences",
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -136,16 +152,15 @@ router.get("/timezones", async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: timezones,
-      message: "Timezones retrieved successfully"
+      message: "Timezones retrieved successfully",
     });
-
   } catch (error: any) {
     logger.error({ error: error.message }, "Failed to get timezones");
 
     res.status(500).json({
       success: false,
       message: "Failed to get timezones",
-      error: error.message
+      error: error.message,
     });
   }
 });

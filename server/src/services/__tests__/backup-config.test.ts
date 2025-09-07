@@ -55,7 +55,6 @@ const mockAzureConfigService = {
   testContainerAccess: jest.fn(),
 } as unknown as AzureConfigService;
 
-
 describe("BackupConfigService", () => {
   let backupConfigService: BackupConfigService;
 
@@ -181,11 +180,9 @@ describe("BackupConfigService", () => {
     });
 
     it("should throw error for unauthorized database access", async () => {
-      // Since the service queries with both databaseId AND userId, 
+      // Since the service queries with both databaseId AND userId,
       // unauthorized access should return null (no matching record)
-      mockPrisma.postgresDatabase.findFirst = jest
-        .fn()
-        .mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
 
       await expect(
         backupConfigService.createBackupConfig(
@@ -748,21 +745,24 @@ describe("BackupConfigService", () => {
 
     it("should handle calculation errors", () => {
       mockCron.validate.mockReturnValue(true);
-      
+
       // Mock the service's calculateNextScheduledTime to simulate an error
       const originalMethod = backupConfigService.calculateNextScheduledTime;
-      jest.spyOn(backupConfigService, 'calculateNextScheduledTime').mockImplementation(() => {
-        try {
-          throw new Error("Calculation error");
-        } catch (error) {
-          return null;
-        }
-      });
+      jest
+        .spyOn(backupConfigService, "calculateNextScheduledTime")
+        .mockImplementation(() => {
+          try {
+            throw new Error("Calculation error");
+          } catch (error) {
+            return null;
+          }
+        });
 
-      const result = backupConfigService.calculateNextScheduledTime("0 2 * * *");
+      const result =
+        backupConfigService.calculateNextScheduledTime("0 2 * * *");
 
       expect(result).toBeNull();
-      
+
       // Restore original method
       jest.restoreAllMocks();
     });
