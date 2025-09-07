@@ -20,6 +20,9 @@ export * from "./cloudflare";
 // PostgreSQL types
 export * from "./postgres";
 
+// Deployment types
+export * from "./deployments";
+
 // API response types
 export * from "./api";
 
