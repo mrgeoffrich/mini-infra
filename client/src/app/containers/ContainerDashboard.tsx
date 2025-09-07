@@ -127,7 +127,7 @@ export function ContainerDashboard() {
                   )}
                 </div>
                 <Button asChild variant="outline" size="sm">
-                  <Link to="/settings/docker">
+                  <Link to="/connectivity/docker">
                     <Settings className="mr-2 h-4 w-4" />
                     Configure
                   </Link>
@@ -163,7 +163,7 @@ export function ContainerDashboard() {
             <CardContent>
               <div className="text-center py-8">
                 <Button asChild variant="outline">
-                  <Link to="/settings/docker">
+                  <Link to="/connectivity/docker">
                     <Settings className="mr-2 h-4 w-4" />
                     Configure Docker
                   </Link>

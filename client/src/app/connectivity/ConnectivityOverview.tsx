@@ -18,14 +18,14 @@ import {
 } from "lucide-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
 
-// Map settings categories to display info
+// Map connectivity categories to display info
 const CATEGORY_INFO = {
   docker: {
     name: "Docker",
     description: "Container management configuration",
     icon: Container,
     color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-    path: "/settings/docker",
+    path: "/connectivity/docker",
   },
   cloudflare: {
     name: "Cloudflare",
@@ -33,14 +33,14 @@ const CATEGORY_INFO = {
     icon: Cloud,
     color:
       "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-    path: "/settings/cloudflare",
+    path: "/connectivity/cloudflare",
   },
   azure: {
     name: "Azure Storage",
     description: "Backup and storage configuration",
     icon: Database,
     color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
-    path: "/settings/azure",
+    path: "/connectivity/azure",
   },
 } as const;
 
@@ -68,7 +68,7 @@ const STATUS_VARIANTS = {
   },
 } as const;
 
-export function SettingsOverview() {
+export function ConnectivityOverview() {
   const { formatDateTime } = useFormattedDate();
   const {
     data: settingsData,
@@ -95,9 +95,9 @@ export function SettingsOverview() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
+          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
           <p className="text-muted-foreground mb-6">
-            System configuration and connectivity overview
+            Infrastructure and service connectivity overview
           </p>
         </div>
         <div className="px-4 lg:px-6">
@@ -117,9 +117,9 @@ export function SettingsOverview() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
+          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
           <p className="text-muted-foreground mb-6">
-            System configuration and connectivity overview
+            Infrastructure and service connectivity overview
           </p>
         </div>
         <div className="px-4 lg:px-6 space-y-6">
@@ -158,9 +158,9 @@ export function SettingsOverview() {
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
+          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
           <p className="text-muted-foreground mb-6">
-            System configuration and connectivity overview
+            Infrastructure and service connectivity overview
           </p>
         </div>
       </div>

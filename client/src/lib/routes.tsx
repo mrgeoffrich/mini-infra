@@ -6,10 +6,10 @@ import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
-import { SettingsPage } from "@/app/settings/page";
-import DockerSettingsPage from "@/app/settings/docker/page";
-import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
-import AzureSettingsPage from "@/app/settings/azure/page";
+import DockerSettingsPage from "@/app/connectivity/docker/page";
+import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
+import AzureSettingsPage from "@/app/connectivity/azure/page";
+import { ConnectivityPage } from "@/app/connectivity/page";
 import SystemSettingsPage from "@/app/settings/system/page";
 import PostgresPage from "@/app/postgres/page";
 import { TunnelsPage } from "@/app/tunnels/page";
@@ -66,22 +66,30 @@ export const router = createBrowserRouter([
       },
       {
         path: "settings",
-        element: <Navigate to="/settings/overview" replace />,
+        element: <Navigate to="/settings/system" replace />,
       },
       {
         path: "settings/overview",
-        element: <SettingsPage />,
+        element: <Navigate to="/settings/system" replace />,
       },
       {
-        path: "settings/docker",
+        path: "connectivity",
+        element: <Navigate to="/connectivity/overview" replace />,
+      },
+      {
+        path: "connectivity/overview",
+        element: <ConnectivityPage />,
+      },
+      {
+        path: "connectivity/docker",
         element: <DockerSettingsPage />,
       },
       {
-        path: "settings/cloudflare",
+        path: "connectivity/cloudflare",
         element: <CloudflareSettingsPage />,
       },
       {
-        path: "settings/azure",
+        path: "connectivity/azure",
         element: <AzureSettingsPage />,
       },
       {

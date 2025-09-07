@@ -9,7 +9,6 @@ import {
   IconInnerShadowTop,
   IconRocket,
   IconSettings,
-  IconViewfinder,
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -54,38 +53,34 @@ const data = {
     },
     {
       title: "Connectivity",
-      url: "/settings",
+      url: "/connectivity",
       icon: IconSettings,
       items: [
         {
-          title: "Overview",
-          url: "/settings/overview",
-          icon: IconViewfinder,
-        },
-        {
           title: "Docker Configuration",
-          url: "/settings/docker",
+          url: "/connectivity/docker",
           icon: IconBrandDocker,
         },
         {
           title: "Cloudflare Settings",
-          url: "/settings/cloudflare",
+          url: "/connectivity/cloudflare",
           icon: IconCloudComputing,
         },
         {
           title: "Azure Storage",
-          url: "/settings/azure",
+          url: "/connectivity/azure",
           icon: IconCloud,
         },
       ],
     },
+  ],
+  navSecondary: [
     {
       title: "System Settings",
       url: "/settings/system",
       icon: IconSettings,
     },
   ],
-  navSecondary: [],
 };
 
 

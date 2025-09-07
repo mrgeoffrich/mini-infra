@@ -224,7 +224,7 @@ export default function SystemSettingsPage() {
       <div className="space-y-6">
         <div className="flex items-center space-x-2">
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/settings/overview">
+            <Link to="/connectivity/overview">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -242,237 +242,241 @@ export default function SystemSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center space-x-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/settings/overview">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <Settings className="h-6 w-6 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold">System Settings</h1>
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
+            <Settings className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">System Settings</h1>
+            <p className="text-muted-foreground">
+              Configure system-wide settings for backup and restore operations
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-6">
-        {/* Description */}
-        <div className="space-y-2">
-          <p className="text-muted-foreground">
-            Configure system-wide settings for backup and restore operations. These settings
-            control the Docker containers used for PostgreSQL database operations.
-          </p>
-        </div>
-
-        {settingsLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-48 w-full" />
+      <div className="px-4 lg:px-6 max-w-6xl">
+        <div className="grid gap-6">
+          {/* Description */}
+          <div className="space-y-2">
+            <p className="text-muted-foreground">
+              These settings control the Docker containers used for PostgreSQL database operations.
+            </p>
           </div>
-        ) : (
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-              {/* Backup Container Settings */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Container className="h-5 w-5" />
-                    <span>Backup Container Settings</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Configure the Docker container used for database backup operations
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="backupDockerImage"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Docker Image</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="postgres:15-alpine"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Docker image for backup operations (e.g., postgres:15-alpine, myregistry/postgres:latest)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
 
-                  <FormField
-                    control={form.control}
-                    name="backupRegistryUsername"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Registry Username (Optional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="username"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Username for private Docker registry authentication
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="backupRegistryPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Registry Password (Optional)</FormLabel>
-                        <FormControl>
-                          <div className="relative">
+          {settingsLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-48 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : (
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                {/* Backup Container Settings */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Container className="h-5 w-5" />
+                      <span>Backup Container Settings</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure the Docker container used for database backup operations
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="backupDockerImage"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Docker Image</FormLabel>
+                          <FormControl>
                             <Input
-                              type={showBackupPassword ? "text" : "password"}
-                              placeholder="password"
+                              placeholder="postgres:15-alpine"
                               {...field}
                             />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="absolute right-0 top-0 h-full px-3"
-                              onClick={() => setShowBackupPassword(!showBackupPassword)}
-                            >
-                              {showBackupPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          Password for private Docker registry authentication (encrypted when stored)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+                          </FormControl>
+                          <FormDescription>
+                            Docker image for backup operations (e.g., postgres:15-alpine, myregistry/postgres:latest)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-              {/* Restore Container Settings */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Container className="h-5 w-5" />
-                    <span>Restore Container Settings</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Configure the Docker container used for database restore operations
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="restoreDockerImage"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Docker Image</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="postgres:15-alpine"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Docker image for restore operations (e.g., postgres:15-alpine, myregistry/postgres:latest)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="restoreRegistryUsername"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Registry Username (Optional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="username"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Username for private Docker registry authentication
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="restoreRegistryPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Registry Password (Optional)</FormLabel>
-                        <FormControl>
-                          <div className="relative">
+                    <FormField
+                      control={form.control}
+                      name="backupRegistryUsername"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registry Username (Optional)</FormLabel>
+                          <FormControl>
                             <Input
-                              type={showRestorePassword ? "text" : "password"}
-                              placeholder="password"
+                              placeholder="username"
                               {...field}
                             />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="absolute right-0 top-0 h-full px-3"
-                              onClick={() => setShowRestorePassword(!showRestorePassword)}
-                            >
-                              {showRestorePassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          Password for private Docker registry authentication (encrypted when stored)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
+                          </FormControl>
+                          <FormDescription>
+                            Username for private Docker registry authentication
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-              {/* Actions */}
-              <div className="flex justify-end space-x-2">
-                <Button
-                  type="submit"
-                  disabled={isSaving || !form.formState.isDirty}
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Settings
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        )}
+                    <FormField
+                      control={form.control}
+                      name="backupRegistryPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registry Password (Optional)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showBackupPassword ? "text" : "password"}
+                                placeholder="password"
+                                {...field}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="absolute right-0 top-0 h-full px-3"
+                                onClick={() => setShowBackupPassword(!showBackupPassword)}
+                              >
+                                {showBackupPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormDescription>
+                            Password for private Docker registry authentication (encrypted when stored)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Restore Container Settings */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Container className="h-5 w-5" />
+                      <span>Restore Container Settings</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure the Docker container used for database restore operations
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="restoreDockerImage"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Docker Image</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="postgres:15-alpine"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Docker image for restore operations (e.g., postgres:15-alpine, myregistry/postgres:latest)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="restoreRegistryUsername"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registry Username (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="username"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Username for private Docker registry authentication
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="restoreRegistryPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Registry Password (Optional)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showRestorePassword ? "text" : "password"}
+                                placeholder="password"
+                                {...field}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="absolute right-0 top-0 h-full px-3"
+                                onClick={() => setShowRestorePassword(!showRestorePassword)}
+                              >
+                                {showRestorePassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </FormControl>
+                          <FormDescription>
+                            Password for private Docker registry authentication (encrypted when stored)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Actions */}
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    type="submit"
+                    disabled={isSaving || !form.formState.isDirty}
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Settings
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          )}
+        </div>
       </div>
     </div>
   );

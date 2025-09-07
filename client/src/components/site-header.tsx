@@ -34,13 +34,13 @@ const getPageTitle = (pathname: string): string => {
     case "/logs":
       return "Activity Logs";
     case "/settings":
-    case "/settings/overview":
+    case "/connectivity/overview":
       return "Connectivity";
-    case "/settings/docker":
+    case "/connectivity/docker":
       return "Docker Configuration";
-    case "/settings/cloudflare":
+    case "/connectivity/cloudflare":
       return "Cloudflare Settings";
-    case "/settings/azure":
+    case "/connectivity/azure":
       return "Azure Storage";
     case "/settings/audit":
       return "Audit History";
@@ -55,13 +55,11 @@ const getPageTitle = (pathname: string): string => {
 
 const getSettingsPageTitle = (pathname: string): string => {
   switch (pathname) {
-    case "/settings/overview":
-      return "Overview";
-    case "/settings/docker":
+    case "/connectivity/docker":
       return "Docker Configuration";
-    case "/settings/cloudflare":
+    case "/connectivity/cloudflare":
       return "Cloudflare Settings";
-    case "/settings/azure":
+    case "/connectivity/azure":
       return "Azure Storage";
     case "/settings/audit":
       return "Audit History";
@@ -89,17 +87,17 @@ function ConnectivityIndicator({
   const latestStatus = connectivityData?.data?.[0];
   const isConnected = latestStatus?.status === "connected";
 
-  // Map services to their settings page routes
-  const getSettingsRoute = (serviceName: string): string => {
+  // Map services to their connectivity page routes
+  const getConnectivityRoute = (serviceName: string): string => {
     switch (serviceName) {
       case "docker":
-        return "/settings/docker";
+        return "/connectivity/docker";
       case "cloudflare":
-        return "/settings/cloudflare";
+        return "/connectivity/cloudflare";
       case "azure":
-        return "/settings/azure";
+        return "/connectivity/azure";
       default:
-        return "/settings";
+        return "/connectivity";
     }
   };
 
@@ -118,7 +116,7 @@ function ConnectivityIndicator({
   if (!isConnected) {
     return (
       <Link
-        to={getSettingsRoute(service)}
+        to={getConnectivityRoute(service)}
         className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
         title={`${label}: Disconnected - Click to configure`}
       >

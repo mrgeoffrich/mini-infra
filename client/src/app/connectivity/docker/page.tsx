@@ -220,9 +220,9 @@ export default function DockerSettingsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3 mb-6">
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/settings/overview">
+              <Link to="/connectivity/overview">
                 <ArrowLeft className="h-4 w-4" />
-                Back to Settings
+                Back to Connectivity
               </Link>
             </Button>
           </div>
@@ -248,9 +248,9 @@ export default function DockerSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/settings/overview">
+            <Link to="/connectivity/overview">
               <ArrowLeft className="h-4 w-4" />
-              Back to Settings
+              Back to Connectivity
             </Link>
           </Button>
         </div>
