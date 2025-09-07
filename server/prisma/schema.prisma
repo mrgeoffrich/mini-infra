@@ -25,6 +25,7 @@ model User {
   apiKeys       ApiKey[]
   userPreference UserPreference?
   postgresDatabases PostgresDatabase[]
+  deploymentConfigurations DeploymentConfiguration[]
 
   @@map("users")
 }
@@ -210,4 +211,81 @@ model RestoreOperation {
   
   @@index([databaseId, status])
   @@map("restore_operations")
+}
+
+// Zero-Downtime Deployment System Models
+
+// DeploymentConfiguration model for managing per-application deployment settings
+model DeploymentConfiguration {
+  id                String   @id @default(cuid())
+  applicationName   String   @unique
+  dockerImage       String
+  dockerRegistry    String?
+  containerConfig   Json     // Ports, volumes, env vars
+  healthCheckConfig Json     // Endpoint, validation rules
+  traefikConfig     Json     // Routing rules
+  rollbackConfig    Json     // Rollback settings
+  isActive          Boolean  @default(true)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  deployments       Deployment[]
+  
+  @@index([userId])
+  @@map("deployment_configurations")
+}
+
+// Deployment model for tracking individual deployments
+model Deployment {
+  id                String   @id @default(cuid())
+  configurationId   String
+  configuration     DeploymentConfiguration @relation(fields: [configurationId], references: [id])
+  triggerType       String   // 'manual', 'webhook', 'scheduled'
+  triggeredBy       String?  // User ID or API key ID
+  dockerImage       String   // Full image with tag
+  status            String   // 'pending', 'deploying', 'health_checking', etc.
+  currentState      String   // State machine state
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  
+  // Container tracking
+  oldContainerId    String?
+  newContainerId    String?
+  
+  // Health check results
+  healthCheckPassed Boolean  @default(false)
+  healthCheckLogs   Json?
+  
+  // Error tracking
+  errorMessage      String?
+  errorDetails      Json?
+  
+  // Metrics
+  deploymentTime    Int?     // Seconds
+  downtime          Int      @default(0) // Milliseconds
+  
+  deploymentSteps   DeploymentStep[]
+  
+  @@index([configurationId, status])
+  @@index([startedAt])
+  @@map("deployments")
+}
+
+// DeploymentStep model for granular progress tracking
+model DeploymentStep {
+  id              String   @id @default(cuid())
+  deploymentId    String
+  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  stepName        String   // 'pull_image', 'create_container', etc.
+  status          String   // 'pending', 'running', 'completed', 'failed'
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  duration        Int?     // Milliseconds
+  output          String?  // Step output/logs
+  errorMessage    String?
+  
+  @@index([deploymentId])
+  @@map("deployment_steps")
 }
