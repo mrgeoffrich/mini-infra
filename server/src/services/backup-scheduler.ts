@@ -1,5 +1,6 @@
 import prisma from "../lib/prisma";
 import * as cron from "node-cron";
+import * as cronParser from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
 import { BackupConfigService } from "./backup-config";
 import { BackupExecutorService } from "./backup-executor";
@@ -12,6 +13,7 @@ export interface ScheduledJob {
   id: string;
   databaseId: string;
   schedule: string;
+  timezone: string;
   task: cron.ScheduledTask;
   isEnabled: boolean;
   nextScheduledAt: Date | null;
@@ -67,6 +69,7 @@ export class BackupSchedulerService {
   public async registerSchedule(
     databaseId: string,
     schedule: string,
+    timezone: string,
     userId: string,
   ): Promise<void> {
     if (!this.isInitialized) {
@@ -89,7 +92,7 @@ export class BackupSchedulerService {
           await this.executeScheduledBackup(databaseId, userId);
         },
         {
-          timezone: "UTC",
+          timezone: timezone,
         },
       );
 
@@ -97,13 +100,14 @@ export class BackupSchedulerService {
       task.stop();
 
       // Calculate next scheduled time
-      const nextScheduledAt = this.calculateNextRunTime(schedule);
+      const nextScheduledAt = this.calculateNextRunTime(schedule, timezone);
 
       // Store job information
       const scheduledJob: ScheduledJob = {
         id: `${databaseId}-${Date.now()}`,
         databaseId,
         schedule,
+        timezone,
         task,
         isEnabled: false,
         nextScheduledAt,
@@ -182,7 +186,7 @@ export class BackupSchedulerService {
         job.isEnabled = true;
 
         // Update next scheduled time
-        job.nextScheduledAt = this.calculateNextRunTime(job.schedule);
+        job.nextScheduledAt = this.calculateNextRunTime(job.schedule, job.timezone);
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
 
         servicesLogger().info(
@@ -243,12 +247,14 @@ export class BackupSchedulerService {
   public getScheduleStatus(): Array<{
     databaseId: string;
     schedule: string;
+    timezone: string;
     isEnabled: boolean;
     nextScheduledAt: string | null;
   }> {
     return Array.from(this.scheduledJobs.values()).map((job) => ({
       databaseId: job.databaseId,
       schedule: job.schedule,
+      timezone: job.timezone,
       isEnabled: job.isEnabled,
       nextScheduledAt: job.nextScheduledAt?.toISOString() || null,
     }));
@@ -260,6 +266,7 @@ export class BackupSchedulerService {
   public getScheduleStatusForDatabase(databaseId: string): {
     databaseId: string;
     schedule: string;
+    timezone: string;
     isEnabled: boolean;
     nextScheduledAt: string | null;
   } | null {
@@ -271,6 +278,7 @@ export class BackupSchedulerService {
     return {
       databaseId: job.databaseId,
       schedule: job.schedule,
+      timezone: job.timezone,
       isEnabled: job.isEnabled,
       nextScheduledAt: job.nextScheduledAt?.toISOString() || null,
     };
@@ -279,28 +287,25 @@ export class BackupSchedulerService {
   /**
    * Calculate next run time for a cron expression
    */
-  private calculateNextRunTime(schedule: string): Date | null {
+  private calculateNextRunTime(schedule: string, timezone: string = "UTC"): Date | null {
     try {
       if (!cron.validate(schedule)) {
         return null;
       }
 
-      // Use a temporary task to get the next execution time
-      const tempTask = cron.schedule(schedule, () => {});
-      // Note: node-cron doesn't provide nextDate method, so we calculate manually
-      // This is a simplified approach - for production, consider using a proper cron library
-      const now = new Date();
-      // For now, return one hour from now as a placeholder
-      // This would need proper cron expression parsing for accurate next execution time
-      const nextDate = new Date(now.getTime() + 60 * 60 * 1000);
-      tempTask.destroy();
-
-      return nextDate;
+      // Use cron-parser for accurate next execution time calculation with timezone support
+      const interval = cronParser.parseExpression(schedule, {
+        tz: timezone,
+        currentDate: new Date()
+      });
+      
+      return interval.next().toDate();
     } catch (error) {
       servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           schedule,
+          timezone,
         },
         "Failed to calculate next run time",
       );
@@ -328,7 +333,7 @@ export class BackupSchedulerService {
       // Update next scheduled time for this job
       const job = this.scheduledJobs.get(databaseId);
       if (job) {
-        job.nextScheduledAt = this.calculateNextRunTime(job.schedule);
+        job.nextScheduledAt = this.calculateNextRunTime(job.schedule, job.timezone);
         await this.updateNextScheduledTime(databaseId, job.nextScheduledAt);
       }
 
@@ -378,6 +383,7 @@ export class BackupSchedulerService {
             await this.registerSchedule(
               config.databaseId,
               config.schedule,
+              config.timezone || "UTC",
               config.database.userId,
             );
 

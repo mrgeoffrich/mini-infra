@@ -38,6 +38,7 @@ export type PostgresDbFormData = z.infer<typeof postgresDbSchema>;
 
 export const backupConfigSchema = z.object({
   schedule: z.string().optional(),
+  timezone: z.string().optional(),
   azureContainerName: z
     .string()
     .min(1, "Azure container name is required")

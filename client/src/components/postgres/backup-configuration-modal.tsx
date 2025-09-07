@@ -30,12 +30,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   useCreatePostgresBackupConfig,
   useUpdatePostgresBackupConfig,
   useDeletePostgresBackupConfig,
 } from "@/hooks/use-postgres-backup-configs";
 import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
 import { useAzureContainers } from "@/hooks/use-azure-settings";
+import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import {
   AlertCircle,
   Loader2,
@@ -43,9 +57,12 @@ import {
   Clock,
   Play,
   Save,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { backupConfigSchema, type BackupConfigFormData } from "./schemas";
 import type {
   PostgresDatabaseInfo,
@@ -68,6 +85,7 @@ export function BackupConfigurationModal({
   onClose,
 }: BackupConfigurationModalProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const isEditing = !!backupConfig;
 
   const createMutation = useCreatePostgresBackupConfig();
@@ -81,10 +99,15 @@ export function BackupConfigurationModal({
       enabled: isOpen, // Only fetch when modal is open
     });
 
+  // Fetch user preferences and timezones
+  const { data: userPreferences } = useUserPreferences();
+  const { data: timezones } = useTimezones();
+
   const form = useForm<BackupConfigFormData>({
     resolver: zodResolver(backupConfigSchema),
     defaultValues: {
       schedule: backupConfig?.schedule || "0 2 * * *", // Daily at 2 AM
+      timezone: backupConfig?.timezone || userPreferences?.timezone || "UTC",
       azureContainerName:
         backupConfig?.azureContainerName || "postgres-backups",
       azurePathPrefix: backupConfig?.azurePathPrefix || database.name,
@@ -240,16 +263,86 @@ export function BackupConfigurationModal({
               )}
             />
 
+            {/* Timezone Configuration */}
+            <FormField
+              control={form.control}
+              name="timezone"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Timezone</FormLabel>
+                  <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "w-full justify-between",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value
+                            ? timezones?.find((timezone) => timezone.value === field.value)?.label
+                            : "Select a timezone"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] max-w-[400px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search timezones..." />
+                        <CommandList>
+                          <CommandEmpty>No timezone found.</CommandEmpty>
+                          <CommandGroup>
+                            {(timezones || []).map((timezone) => (
+                              <CommandItem
+                                value={timezone.label}
+                                key={timezone.value}
+                                onSelect={() => {
+                                  field.onChange(timezone.value);
+                                  setTimezonePopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    timezone.value === field.value
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {timezone.label}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormDescription>
+                    Timezone for the backup schedule. Current time: {" "}
+                    {form.watch("timezone") && new Date().toLocaleString("en-US", { 
+                      timeZone: form.watch("timezone") || "UTC",
+                      dateStyle: "short",
+                      timeStyle: "medium"
+                    })}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Next Scheduled Time */}
             {backupConfig?.nextScheduledAt && form.watch("isEnabled") && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <Clock className="w-4 h-4" />
                 <span>
                   Next backup scheduled for:{" "}
-                  {format(
-                    new Date(backupConfig.nextScheduledAt),
-                    "MMM d, yyyy HH:mm"
-                  )}
+                  {new Date(backupConfig.nextScheduledAt).toLocaleString("en-US", {
+                    timeZone: form.watch("timezone") || backupConfig.timezone || "UTC",
+                    dateStyle: "medium",
+                    timeStyle: "short"
+                  })} ({form.watch("timezone") || backupConfig.timezone || "UTC"})
                 </span>
               </div>
             )}

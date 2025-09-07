@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import * as cron from "node-cron";
 import { servicesLogger } from "../lib/logger-factory";
 import { AzureConfigService } from "./azure-config";
+import { UserPreferencesService } from "./user-preferences";
 import {
   BackupConfiguration,
   BackupConfigurationInfo,
@@ -24,6 +25,7 @@ export class BackupConfigService {
     databaseId: string,
     config: {
       schedule?: string;
+      timezone?: string;
       azureContainerName: string;
       azurePathPrefix: string;
       retentionDays?: number;
@@ -49,6 +51,22 @@ export class BackupConfigService {
       // Validate cron expression if provided
       if (config.schedule && !this.isValidCronExpression(config.schedule)) {
         throw new Error("Invalid cron expression");
+      }
+
+      // Determine timezone - use provided timezone, user preference, or default to UTC
+      let timezone = config.timezone;
+      if (!timezone) {
+        try {
+          const userPreferences = await UserPreferencesService.getUserPreferences(userId);
+          timezone = userPreferences.timezone || "UTC";
+        } catch (error) {
+          timezone = "UTC"; // fallback to UTC if user preferences fails
+        }
+      }
+
+      // Validate timezone
+      if (!UserPreferencesService.validateTimezone(timezone)) {
+        throw new Error(`Invalid timezone: ${timezone}`);
       }
 
       // Validate Azure container if Azure is configured
@@ -79,6 +97,7 @@ export class BackupConfigService {
         data: {
           databaseId: databaseId,
           schedule: config.schedule || null,
+          timezone: timezone,
           azureContainerName: config.azureContainerName,
           azurePathPrefix: config.azurePathPrefix,
           retentionDays: config.retentionDays || 30,
@@ -94,6 +113,7 @@ export class BackupConfigService {
           configId: createdConfig.id,
           databaseId: databaseId,
           schedule: config.schedule,
+          timezone: timezone,
           azureContainer: config.azureContainerName,
           userId: userId,
         },
@@ -121,6 +141,7 @@ export class BackupConfigService {
     configId: string,
     updates: {
       schedule?: string | null;
+      timezone?: string;
       azureContainerName?: string;
       azurePathPrefix?: string;
       retentionDays?: number;
@@ -156,6 +177,11 @@ export class BackupConfigService {
         throw new Error("Invalid cron expression");
       }
 
+      // Validate timezone if provided
+      if (updates.timezone && !UserPreferencesService.validateTimezone(updates.timezone)) {
+        throw new Error(`Invalid timezone: ${updates.timezone}`);
+      }
+
       // Validate Azure container if changed
       if (updates.azureContainerName) {
         await this.validateAzureContainer(updates.azureContainerName);
@@ -181,6 +207,9 @@ export class BackupConfigService {
       // Update fields if provided
       if (updates.schedule !== undefined) {
         updateData.schedule = updates.schedule;
+      }
+      if (updates.timezone) {
+        updateData.timezone = updates.timezone;
       }
       if (updates.azureContainerName) {
         updateData.azureContainerName = updates.azureContainerName;
@@ -494,6 +523,7 @@ export class BackupConfigService {
       id: config.id,
       databaseId: config.databaseId,
       schedule: config.schedule,
+      timezone: config.timezone,
       azureContainerName: config.azureContainerName,
       azurePathPrefix: config.azurePathPrefix,
       retentionDays: config.retentionDays,

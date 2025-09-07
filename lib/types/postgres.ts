@@ -196,6 +196,7 @@ export interface BackupConfiguration {
   id: string;
   databaseId: string;
   schedule: string | null; // Cron expression
+  timezone: string;
   azureContainerName: string;
   azurePathPrefix: string;
   retentionDays: number;
@@ -212,6 +213,7 @@ export interface BackupConfigurationInfo {
   id: string;
   databaseId: string;
   schedule: string | null; // Cron expression
+  timezone: string;
   azureContainerName: string;
   azurePathPrefix: string;
   retentionDays: number;
@@ -297,6 +299,7 @@ export type RestoreOperationStatus = "pending" | "running" | "completed" | "fail
 export interface CreateBackupConfigurationRequest {
   databaseId: string;
   schedule?: string; // Cron expression
+  timezone?: string;
   azureContainerName: string;
   azurePathPrefix?: string;
   retentionDays?: number;
@@ -307,6 +310,7 @@ export interface CreateBackupConfigurationRequest {
 
 export interface UpdateBackupConfigurationRequest {
   schedule?: string | null; // Cron expression
+  timezone?: string;
   azureContainerName?: string;
   azurePathPrefix?: string;
   retentionDays?: number;

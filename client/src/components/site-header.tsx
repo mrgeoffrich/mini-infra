@@ -47,7 +47,7 @@ const getPageTitle = (pathname: string): string => {
     case "/user/settings":
       return "User Settings";
     case "/postgres":
-      return "PostgreSQL Backups";
+      return "PostgreSQL";
     default:
       return "Dashboard";
   }

@@ -30,6 +30,7 @@ const backupConfigService = new BackupConfigService(prisma);
 const createBackupConfigSchema = z.object({
   databaseId: z.string().min(1, "Database ID is required"),
   schedule: z.string().optional(),
+  timezone: z.string().optional(),
   azureContainerName: z
     .string()
     .min(3, "Azure container name must be at least 3 characters")
@@ -59,6 +60,7 @@ const createBackupConfigSchema = z.object({
 // Update backup configuration request validation schema
 const updateBackupConfigSchema = z.object({
   schedule: z.string().nullable().optional(),
+  timezone: z.string().optional(),
   azureContainerName: z
     .string()
     .min(3, "Azure container name must be at least 3 characters")

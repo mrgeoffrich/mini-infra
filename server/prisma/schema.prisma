@@ -160,6 +160,7 @@ model BackupConfiguration {
   databaseId        String   @unique
   database          PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
   schedule          String?  // Cron expression
+  timezone          String   @default("UTC")
   azureContainerName String
   azurePathPrefix   String
   retentionDays     Int      @default(30)
