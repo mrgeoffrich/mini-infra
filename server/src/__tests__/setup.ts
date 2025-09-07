@@ -2,6 +2,9 @@ import prisma from "../lib/prisma";
 import { PrismaClient } from "../generated/prisma";
 import { jest } from "@jest/globals";
 import { createId } from "@paralleldrive/cuid2";
+import { execSync } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 
 // Mock environment variables for testing
 process.env.NODE_ENV = "test";
@@ -20,6 +23,26 @@ beforeAll(async () => {
   // Use worker ID to create separate test databases for parallel execution
   const workerId = process.env.JEST_WORKER_ID || "1";
   const testDbUrl = `file:./test-${workerId}.db`;
+  const testDbPath = path.join(process.cwd(), `test-${workerId}.db`);
+
+  // Remove existing test database if it exists
+  if (fs.existsSync(testDbPath)) {
+    fs.unlinkSync(testDbPath);
+  }
+
+  // Set the DATABASE_URL for this specific test worker
+  process.env.DATABASE_URL = testDbUrl;
+
+  // Use Prisma to push the schema to the test database
+  try {
+    execSync(`npx prisma db push --skip-generate --accept-data-loss`, {
+      env: { ...process.env, DATABASE_URL: testDbUrl },
+      stdio: "pipe", // Suppress output
+    });
+  } catch (error) {
+    console.error("Failed to push Prisma schema to test database:", error);
+    throw error;
+  }
 
   testPrisma = new PrismaClient({
     datasources: {
@@ -29,34 +52,6 @@ beforeAll(async () => {
     },
   });
   await testPrisma.$connect();
-
-  // Ensure database schema exists - this will create the tables if they don't exist
-  try {
-    await testPrisma.$queryRaw`CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT,
-      image TEXT,
-      googleId TEXT UNIQUE,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`;
-
-    await testPrisma.$queryRaw`CREATE TABLE IF NOT EXISTS api_keys (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      key TEXT UNIQUE NOT NULL,
-      userId TEXT NOT NULL,
-      active BOOLEAN DEFAULT 1,
-      lastUsedAt DATETIME,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (userId) REFERENCES users (id) ON DELETE CASCADE
-    )`;
-  } catch (error) {
-    // Tables may already exist, that's ok
-    console.log("Database setup complete (tables may already exist)");
-  }
 });
 
 // Global cleanup
