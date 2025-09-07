@@ -8,7 +8,8 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { BackupConfigService } from "../services/backup-config";
 import {
@@ -89,7 +90,7 @@ const updateBackupConfigSchema = z.object({
 /**
  * GET /api/postgres/backup-configs/:databaseId - Get backup configuration for a database
  */
-router.get("/:databaseId", requireAuth, (async (
+router.get("/:databaseId", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -180,7 +181,7 @@ router.get("/:databaseId", requireAuth, (async (
 /**
  * POST /api/postgres/backup-configs - Create backup configuration
  */
-router.post("/", requireAuth, (async (
+router.post("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -330,7 +331,7 @@ router.post("/", requireAuth, (async (
 /**
  * PUT /api/postgres/backup-configs/:id - Update backup configuration
  */
-router.put("/:id", requireAuth, (async (
+router.put("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -473,7 +474,7 @@ router.put("/:id", requireAuth, (async (
 /**
  * DELETE /api/postgres/backup-configs/:id - Delete backup configuration
  */
-router.delete("/:id", requireAuth, (async (
+router.delete("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

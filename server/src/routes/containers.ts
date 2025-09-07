@@ -9,7 +9,8 @@ import DockerService from "../services/docker";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import {
   ContainerQueryParams,
   ContainerListResponse,
@@ -71,7 +72,7 @@ const containerQuerySchema = z.object({
 /**
  * GET /api/containers - List containers with pagination and filtering
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -279,7 +280,7 @@ router.get("/", requireAuth, (async (
 /**
  * GET /api/containers/:id - Get specific container details
  */
-router.get("/:id", requireAuth, (async (
+router.get("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -390,7 +391,7 @@ router.get("/:id", requireAuth, (async (
 /**
  * GET /api/containers/stats/cache - Get cache statistics (for debugging)
  */
-router.get("/stats/cache", requireAuth, (async (
+router.get("/stats/cache", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
 ) => {
@@ -420,7 +421,7 @@ router.get("/stats/cache", requireAuth, (async (
 /**
  * POST /api/containers/cache/flush - Flush container cache (for debugging)
  */
-router.post("/cache/flush", requireAuth, (async (
+router.post("/cache/flush", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
 ) => {

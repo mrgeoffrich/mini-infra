@@ -4,7 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { BackupExecutorService } from "../services/backup-executor";
 import {
   BackupOperationListResponse,
@@ -128,7 +128,7 @@ function mapBackupOperationToInfo(operation: any) {
  * GET /api/postgres/backups/:databaseId
  * List all backup operations for a specific database
  */
-router.get("/backups/:databaseId", requireAuth, async (req, res) => {
+router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { databaseId } = req.params;
@@ -221,7 +221,7 @@ router.get("/backups/:databaseId", requireAuth, async (req, res) => {
  * POST /api/postgres/backups/:databaseId/manual
  * Trigger a manual backup for a specific database
  */
-router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
+router.post("/backups/:databaseId/manual", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { databaseId } = req.params;
@@ -339,7 +339,7 @@ router.post("/backups/:databaseId/manual", requireAuth, async (req, res) => {
  * GET /api/postgres/backups/:backupId/status
  * Get status of a specific backup operation
  */
-router.get("/backups/:backupId/status", requireAuth, async (req, res) => {
+router.get("/backups/:backupId/status", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { backupId } = req.params;
@@ -422,7 +422,7 @@ router.get("/backups/:backupId/status", requireAuth, async (req, res) => {
  * DELETE /api/postgres/backups/:backupId
  * Delete a backup operation and its associated Azure blob
  */
-router.delete("/backups/:backupId", requireAuth, async (req, res) => {
+router.delete("/backups/:backupId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { backupId } = req.params;
@@ -520,7 +520,7 @@ router.delete("/backups/:backupId", requireAuth, async (req, res) => {
  * GET /api/postgres/backups/:backupId/progress
  * Get detailed progress information for a backup operation
  */
-router.get("/backups/:backupId/progress", requireAuth, async (req, res) => {
+router.get("/backups/:backupId/progress", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { backupId } = req.params;

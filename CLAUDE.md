@@ -1,5 +1,36 @@
 # Mini Infra - Claude Code Context
 
+## 🤖 Claude API Access Instructions
+
+**FOR CLAUDE**: You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
+
+### Step 1: Get Your API Key
+Run this command to display your development API key:
+```bash
+cd server && npm run show-dev-key
+```
+
+If you need a new key, use:
+```bash
+cd server && npm run show-dev-key -- --recreate
+```
+
+### Step 2: Use the API Key
+Add one of these headers to your HTTP requests:
+- **Authorization Header**: `Authorization: Bearer <your-api-key>`
+- **x-api-key Header**: `x-api-key: <your-api-key>`
+
+### Step 3: All Endpoints should be Available
+
+### Example Usage
+```bash
+curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/containers
+```
+
+⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
+
+---
+
 ## Project Overview
 
 Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using Traefik, and Cloudflare tunnel monitoring.

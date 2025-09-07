@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { httpLogger } from "../lib/logger-factory";
-import { requireAuth } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { UserPreferencesService } from "../services/user-preferences";
 import type { JWTUser, UserPreferenceInfo, UpdateUserPreferencesRequest } from "@mini-infra/types";
 
@@ -32,7 +32,7 @@ function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
 }
 
 // Apply authentication middleware to all routes
-router.use(requireAuth);
+router.use(requireSessionOrApiKey);
 
 /**
  * GET /api/user/preferences

@@ -8,7 +8,8 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { AzureConfigService } from "../services/azure-config";
 import {
@@ -82,7 +83,7 @@ const testContainerAccessSchema = z.object({
 /**
  * GET /api/settings/azure - Get current Azure configuration
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -172,7 +173,7 @@ router.get("/", requireAuth, (async (
 /**
  * PUT /api/settings/azure - Update Azure configuration
  */
-router.put("/", requireAuth, (async (
+router.put("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -305,7 +306,7 @@ router.put("/", requireAuth, (async (
 /**
  * POST /api/settings/azure/validate - Validate Azure connection
  */
-router.post("/validate", requireAuth, (async (
+router.post("/validate", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -484,7 +485,7 @@ router.post("/validate", requireAuth, (async (
 /**
  * DELETE /api/settings/azure - Remove Azure configuration
  */
-router.delete("/", requireAuth, (async (
+router.delete("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -548,7 +549,7 @@ router.delete("/", requireAuth, (async (
 /**
  * GET /api/settings/azure/containers - List Azure Storage containers
  */
-router.get("/containers", requireAuth, (async (
+router.get("/containers", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -621,7 +622,7 @@ router.get("/containers", requireAuth, (async (
 /**
  * POST /api/settings/azure/test-container - Test access to specific container
  */
-router.post("/test-container", requireAuth, (async (
+router.post("/test-container", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

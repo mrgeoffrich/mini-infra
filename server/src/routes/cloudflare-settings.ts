@@ -8,7 +8,8 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { CloudflareConfigService } from "../services/cloudflare-config";
 import {
@@ -60,7 +61,7 @@ const validateCloudflareConnectionSchema = z.object({
 /**
  * GET /api/settings/cloudflare - Get current Cloudflare configuration
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -117,7 +118,7 @@ router.get("/", requireAuth, (async (
 /**
  * POST /api/settings/cloudflare - Create or update Cloudflare configuration
  */
-router.post("/", requireAuth, (async (
+router.post("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -224,7 +225,7 @@ router.post("/", requireAuth, (async (
 /**
  * PATCH /api/settings/cloudflare - Partially update Cloudflare configuration
  */
-router.patch("/", requireAuth, (async (
+router.patch("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -321,7 +322,7 @@ router.patch("/", requireAuth, (async (
 /**
  * DELETE /api/settings/cloudflare - Remove Cloudflare configuration
  */
-router.delete("/", requireAuth, (async (
+router.delete("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -377,7 +378,7 @@ router.delete("/", requireAuth, (async (
 /**
  * POST /api/settings/cloudflare/test - Test Cloudflare API connectivity
  */
-router.post("/test", requireAuth, (async (
+router.post("/test", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -474,7 +475,7 @@ router.post("/test", requireAuth, (async (
 /**
  * GET /api/cloudflare/tunnels - List all Cloudflare tunnels
  */
-router.get("/tunnels", requireAuth, (async (
+router.get("/tunnels", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -658,7 +659,7 @@ router.get("/tunnels", requireAuth, (async (
 /**
  * GET /api/cloudflare/tunnels/:id - Get specific tunnel details
  */
-router.get("/tunnels/:id", requireAuth, (async (
+router.get("/tunnels/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -836,7 +837,7 @@ router.get("/tunnels/:id", requireAuth, (async (
 /**
  * GET /api/cloudflare/tunnels/:id/config - Get specific tunnel configuration
  */
-router.get("/tunnels/:id/config", requireAuth, (async (
+router.get("/tunnels/:id/config", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -979,7 +980,7 @@ router.get("/tunnels/:id/config", requireAuth, (async (
 /**
  * POST /api/settings/cloudflare/tunnels/:id/hostnames - Add hostname to tunnel
  */
-router.post("/tunnels/:id/hostnames", requireAuth, (async (
+router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -1164,7 +1165,7 @@ router.post("/tunnels/:id/hostnames", requireAuth, (async (
 /**
  * DELETE /api/settings/cloudflare/tunnels/:id/hostnames/:hostname - Remove hostname from tunnel
  */
-router.delete("/tunnels/:id/hostnames/:hostname", requireAuth, (async (
+router.delete("/tunnels/:id/hostnames/:hostname", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

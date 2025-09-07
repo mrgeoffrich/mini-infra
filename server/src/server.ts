@@ -10,6 +10,7 @@ const logger = appLogger();
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
 import { BackupSchedulerService } from "./services/backup-scheduler";
+import { initializeDevApiKey } from "./services/dev-api-key";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
@@ -34,6 +35,37 @@ const initializeServices = async () => {
     backupScheduler = new BackupSchedulerService(prisma);
     BackupSchedulerService.setInstance(backupScheduler);
     await backupScheduler.initialize();
+
+    // Initialize development API key (development mode only)
+    const devApiKeyResult = await initializeDevApiKey();
+    if (devApiKeyResult) {
+      if (devApiKeyResult.isNewKey) {
+        logger.info(
+          {
+            userId: devApiKeyResult.userId,
+            keyId: devApiKeyResult.keyId,
+          },
+          "🔑 Development API key created for Claude",
+        );
+        logger.info(
+          `🔑 Claude API Key: ${devApiKeyResult.apiKey}`,
+        );
+        logger.info(
+          "💡 Use this API key in Authorization header: Bearer <key> or x-api-key header",
+        );
+      } else {
+        logger.info(
+          {
+            userId: devApiKeyResult.userId,
+            keyId: devApiKeyResult.keyId,
+          },
+          "🔑 Development API key already exists for Claude",
+        );
+        logger.info(
+          "💡 Use 'npm run show-dev-key' to display the API key information",
+        );
+      }
+    }
 
     logger.info("All services initialized successfully");
   } catch (error) {

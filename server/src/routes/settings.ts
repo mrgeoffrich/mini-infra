@@ -8,7 +8,8 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import {
@@ -194,7 +195,7 @@ const connectivityQuerySchema = z.object({
 /**
  * GET /api/settings - List system settings with filtering and pagination
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -311,7 +312,7 @@ router.get("/", requireAuth, (async (
 /**
  * POST /api/settings - Create a new system setting
  */
-router.post("/", requireAuth, (async (
+router.post("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -440,7 +441,7 @@ router.post("/", requireAuth, (async (
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
  */
-router.get("/connectivity", requireAuth, (async (
+router.get("/connectivity", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -582,7 +583,7 @@ router.get("/connectivity", requireAuth, (async (
 /**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
-router.post("/validate/:service", requireAuth, (async (
+router.post("/validate/:service", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -771,7 +772,7 @@ router.post("/validate/:service", requireAuth, (async (
 /**
  * GET /api/settings/:id - Get specific setting by ID
  */
-router.get("/:id", requireAuth, (async (
+router.get("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -858,7 +859,7 @@ router.get("/:id", requireAuth, (async (
 /**
  * PUT /api/settings/:id - Update an existing system setting
  */
-router.put("/:id", requireAuth, (async (
+router.put("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -998,7 +999,7 @@ router.put("/:id", requireAuth, (async (
 /**
  * DELETE /api/settings/:id - Delete a system setting
  */
-router.delete("/:id", requireAuth, (async (
+router.delete("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

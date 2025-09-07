@@ -4,7 +4,8 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { ProgressTrackerService } from "../services/progress-tracker";
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 
 const router = Router();
@@ -40,7 +41,7 @@ const GetHistoryQuerySchema = z.object({
  */
 router.get(
   "/backup/:operationId",
-  requireAuth,
+  requireSessionOrApiKey,
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -145,7 +146,7 @@ router.get(
  */
 router.get(
   "/restore/:operationId",
-  requireAuth,
+  requireSessionOrApiKey,
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -248,7 +249,7 @@ router.get(
  * GET /api/postgres/progress/active
  * Get all active operations (pending or running) for the current user
  */
-router.get("/active", requireAuth, async (req: Request, res: Response) => {
+router.get("/active", requireSessionOrApiKey, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -309,7 +310,7 @@ router.get("/active", requireAuth, async (req: Request, res: Response) => {
  * GET /api/postgres/progress/history
  * Get operation history with filtering and pagination
  */
-router.get("/history", requireAuth, async (req: Request, res: Response) => {
+router.get("/history", requireSessionOrApiKey, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -431,7 +432,7 @@ router.get("/history", requireAuth, async (req: Request, res: Response) => {
  * POST /api/postgres/progress/cleanup
  * Manually trigger cleanup of old operations (admin only)
  */
-router.post("/cleanup", requireAuth, async (req: Request, res: Response) => {
+router.post("/cleanup", requireSessionOrApiKey, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;

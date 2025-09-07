@@ -8,7 +8,8 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import { DatabaseConfigService } from "../services/postgres-config";
 import {
@@ -151,7 +152,7 @@ const testConnectionSchema = z.object({
 /**
  * GET /api/postgres/databases - List database configurations with filtering and pagination
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -268,7 +269,7 @@ router.get("/", requireAuth, (async (
 /**
  * GET /api/postgres/databases/:id - Get specific database configuration
  */
-router.get("/:id", requireAuth, (async (
+router.get("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -356,7 +357,7 @@ router.get("/:id", requireAuth, (async (
 /**
  * POST /api/postgres/databases - Create new database configuration
  */
-router.post("/", requireAuth, (async (
+router.post("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -479,7 +480,7 @@ router.post("/", requireAuth, (async (
 /**
  * PUT /api/postgres/databases/:id - Update database configuration
  */
-router.put("/:id", requireAuth, (async (
+router.put("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -627,7 +628,7 @@ router.put("/:id", requireAuth, (async (
 /**
  * DELETE /api/postgres/databases/:id - Delete database configuration
  */
-router.delete("/:id", requireAuth, (async (
+router.delete("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -737,7 +738,7 @@ router.delete("/:id", requireAuth, (async (
 /**
  * POST /api/postgres/databases/:id/test - Test database connection
  */
-router.post("/:id/test", requireAuth, (async (
+router.post("/:id/test", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -849,7 +850,7 @@ router.post("/:id/test", requireAuth, (async (
 /**
  * POST /api/postgres/test-connection - Test connection with provided credentials (without saving)
  */
-router.post("/test-connection", requireAuth, (async (
+router.post("/test-connection", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

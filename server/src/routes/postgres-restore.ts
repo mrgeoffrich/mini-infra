@@ -3,7 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import prisma from "../lib/prisma";
 import { RestoreExecutorService } from "../services/restore-executor";
 import { AzureConfigService } from "../services/azure-config";
@@ -313,7 +313,7 @@ async function listAvailableBackups(
  * POST /api/postgres/restore/:databaseId
  * Initiate restore operation for a specific database
  */
-router.post("/restore/:databaseId", requireAuth, async (req, res) => {
+router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { databaseId } = req.params;
@@ -458,7 +458,7 @@ router.post("/restore/:databaseId", requireAuth, async (req, res) => {
  * GET /api/postgres/restore/:operationId/status
  * Get status of a specific restore operation
  */
-router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
+router.get("/restore/:operationId/status", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { operationId } = req.params;
@@ -540,7 +540,7 @@ router.get("/restore/:operationId/status", requireAuth, async (req, res) => {
  * GET /api/postgres/restore/backups/:containerName/:databaseId
  * Browse available backups in Azure container for a specific database
  */
-router.get("/restore/backups/:containerName/:databaseId", requireAuth, async (req, res) => {
+router.get("/restore/backups/:containerName/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { containerName, databaseId } = req.params;
@@ -628,7 +628,7 @@ router.get("/restore/backups/:containerName/:databaseId", requireAuth, async (re
  * GET /api/postgres/restore/:databaseId/operations
  * List restore operations for a specific database
  */
-router.get("/restore/:databaseId/operations", requireAuth, async (req, res) => {
+router.get("/restore/:databaseId/operations", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { databaseId } = req.params;
@@ -721,7 +721,7 @@ router.get("/restore/:databaseId/operations", requireAuth, async (req, res) => {
  * GET /api/postgres/restore/:operationId/progress
  * Get detailed progress information for a restore operation
  */
-router.get("/restore/:operationId/progress", requireAuth, async (req, res) => {
+router.get("/restore/:operationId/progress", requireSessionOrApiKey, async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { operationId } = req.params;

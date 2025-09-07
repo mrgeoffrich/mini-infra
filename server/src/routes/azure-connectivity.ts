@@ -9,7 +9,8 @@ import NodeCache from "node-cache";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
 import {
   ConnectivityStatusListResponse,
@@ -42,7 +43,7 @@ const connectivityHistoryQuerySchema = z.object({
 /**
  * GET /api/connectivity/azure - Get latest Azure connectivity status
  */
-router.get("/", requireAuth, (async (
+router.get("/", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -159,7 +160,7 @@ router.get("/", requireAuth, (async (
 /**
  * GET /api/connectivity/azure/history - Get Azure connectivity status history with pagination
  */
-router.get("/history", requireAuth, (async (
+router.get("/history", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,
   next: NextFunction,

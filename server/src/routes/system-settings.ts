@@ -8,7 +8,8 @@ import { z } from "zod";
 import { servicesLogger } from "../lib/logger-factory";
 
 const logger = servicesLogger();
-import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import { DockerExecutorService } from "../services/docker-executor";
 import type { DockerRegistryTestOptions, DockerRegistryTestResult } from "../services/docker-executor";
 
@@ -45,7 +46,7 @@ interface TestDockerRegistryResponse {
 /**
  * POST /api/settings/system/test-docker-registry - Test Docker registry connection
  */
-router.post("/test-docker-registry", requireAuth, (async (
+router.post("/test-docker-registry", requireSessionOrApiKey, (async (
   req: TestDockerRegistryRequest,
   res: Response<TestDockerRegistryResponse>,
   next: NextFunction,
