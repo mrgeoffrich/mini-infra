@@ -160,6 +160,158 @@ The application uses Prisma ORM with SQLite for data persistence.
 - **Configuration Service Testing**: Comprehensive unit tests for all settings services with mocked external APIs, validation logic, error handling, timeout scenarios, and database operations
 - **Background Scheduler Testing**: Complete test coverage for connectivity monitoring with circuit breaker patterns, exponential backoff, and parallel execution scenarios
 
+## Timezone and Date Display System
+
+The application implements a comprehensive timezone-aware date and time display system that respects user preferences across the entire application.
+
+### Frontend Date Formatting
+
+#### Core Components
+
+**User Preferences Hook** (`client/src/hooks/use-user-preferences.ts`)
+- **Storage**: User timezone preference stored in database via user preferences API
+- **Caching**: React Query with 5-minute stale time for optimal performance
+- **Cache Invalidation**: Automatic invalidation on preference updates via `useUpdateUserPreferences`
+- **API Endpoints**: 
+  - `GET /api/user/preferences` - Retrieve user preferences including timezone
+  - `PUT /api/user/preferences` - Update user preferences with cache invalidation
+  - `GET /api/user/timezones` - Get list of available timezones for selection
+
+**Formatted Date Hook** (`client/src/hooks/use-formatted-date.ts`)
+- **Primary Hook**: `useFormattedDate()` - Returns timezone-aware formatting functions
+- **Specialized Hooks**: 
+  - `useFormattedDateTime(date)` - Memoized date-time formatting for specific dates
+  - `useFormattedContainerDate(date)` - Optimized for container dashboard displays
+- **Functions Provided**:
+  - `formatDateTime(date, options?)` - Full date and time with user's timezone
+  - `formatDate(date, options?)` - Date only with user's timezone  
+  - `formatTime(date, options?)` - Time only with user's timezone
+  - `formatDateWithPrefix(date, prefix, options?)` - Prefixed date formatting
+  - `formatContainerDate(date, options?)` - Container-specific formatting
+
+**Date Utilities** (`client/src/lib/date-utils.ts`)
+- **Core Functions**: Underlying timezone-aware date formatting using `date-fns-tz`
+- **Options Support**: Configurable display options (showSeconds, custom formats, etc.)
+- **Timezone Handling**: Automatic timezone conversion from UTC to user preference
+
+#### Implementation Patterns
+
+**Component Integration**
+```typescript
+// Import the hook
+import { useFormattedDate } from "@/hooks/use-formatted-date";
+
+// In component function
+const { formatDateTime, formatDate, formatTime } = useFormattedDate();
+
+// Replace direct date-fns usage
+// OLD: format(new Date(date), "MMM d, yyyy HH:mm")
+// NEW: formatDateTime(date)
+
+// For memoized formatting
+const formattedDate = useFormattedDateTime(operation.startedAt);
+```
+
+**Memoization Strategy**
+- **Performance**: Formatted dates are memoized to prevent unnecessary re-renders
+- **Dependencies**: Memoization keys include date value, formatting function, and user's timezone
+- **React.memo**: Compatible with `React.memo` for component-level optimization
+
+#### Updated Components
+
+**PostgreSQL Components**:
+- `components/postgres/database-table.tsx` - Database health check timestamps
+- `components/postgres/operation-history-list.tsx` - Backup/restore operation times  
+- `components/postgres/active-operations-display.tsx` - Real-time operation progress
+- `components/postgres/backup-configuration-modal.tsx` - Backup scheduling and history
+
+**Container Management**:
+- `app/containers/ContainerTable.tsx` - Container creation and status times
+- `app/containers/ContainerDashboard.tsx` - Docker connectivity status
+- `app/dashboard/ContainerSummary.tsx` - Dashboard summary timestamps
+
+**Settings and Connectivity**:
+- `app/settings/SettingsOverview.tsx` - Service connectivity timestamps
+- `app/settings/azure/page.tsx` - Azure service status times
+- `app/settings/cloudflare/page.tsx` - Cloudflare service status times
+- `components/connectivity-status.tsx` - System connectivity displays
+- `components/AzureConnectivityStatus.tsx` - Azure-specific connectivity
+- `components/cloudflare/tunnel-status.tsx` - Cloudflare tunnel monitoring
+
+### Backend Date Handling
+
+#### User Preferences Service
+
+**Service Class** (`server/src/services/user-preferences.ts`)
+- **CRUD Operations**: Complete user preference management with timezone validation
+- **Timezone Validation**: Validates timezone strings against standard IANA timezone database
+- **Default Handling**: Automatic UTC default for users without timezone preference
+- **Database Integration**: Stores timezone preference in UserPreference model
+
+**API Endpoints** (`server/src/routes/user-preferences.ts`)
+- **Authentication**: All endpoints require user authentication via JWT middleware
+- **Validation**: Zod schema validation for preference updates including timezone
+- **Error Handling**: Comprehensive error handling with specific timezone validation messages
+- **Timezone List**: Provides common timezone options for frontend selection
+
+#### Database Schema
+
+**UserPreference Model** (`server/prisma/schema.prisma`)
+```prisma
+model UserPreference {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  timezone           String?  @default("UTC")
+  // ... other preferences
+}
+```
+
+#### Data Storage and Retrieval
+
+**Timezone Storage**:
+- **Format**: IANA timezone identifiers (e.g., "America/New_York", "Europe/London", "UTC")
+- **Validation**: Server-side validation ensures only valid timezone strings are stored
+- **Default Value**: UTC used as fallback when no preference is set
+
+**API Response Format**:
+- **Dates**: All API responses return dates in ISO 8601 format (UTC)
+- **Client Conversion**: Frontend converts UTC timestamps to user's timezone for display
+- **Consistency**: Ensures consistent date handling regardless of server timezone
+
+### User Experience Flow
+
+#### Setting Timezone Preference
+1. **User Navigation**: User navigates to `/user/settings`
+2. **Timezone Selection**: Dropdown populated from `/api/user/timezones` endpoint
+3. **Real-time Preview**: Live preview shows current time in selected timezone
+4. **Preference Update**: `PUT /api/user/preferences` with new timezone
+5. **Cache Invalidation**: React Query automatically invalidates user preferences cache
+6. **Immediate Update**: All date displays across application update without page refresh
+
+#### Cross-Tab Synchronization
+- **BroadcastChannel**: User preference changes broadcast across browser tabs
+- **Real-time Updates**: All open tabs immediately reflect timezone preference changes
+- **Consistent Display**: Ensures consistent date formatting across all user sessions
+
+### Technical Considerations
+
+#### Performance Optimizations
+- **React Query Caching**: User preferences cached with 5-minute stale time
+- **Memoization**: Date formatting results memoized to prevent unnecessary recalculations
+- **Lazy Loading**: Timezone list loaded on-demand when settings page is accessed
+- **Background Updates**: Preference changes don't block user interface
+
+#### Browser Compatibility
+- **date-fns-tz**: Uses industry-standard library for reliable timezone conversion
+- **Fallback Handling**: Graceful degradation when user preferences are unavailable
+- **Loading States**: Proper loading indicators while preferences are being fetched
+
+#### Security and Data Protection
+- **Authentication**: All preference endpoints require user authentication
+- **User Isolation**: Each user's timezone preference isolated via userId
+- **Input Validation**: Server-side validation prevents invalid timezone injection
+- **Logging**: Preference changes logged for audit purposes (timezone not considered sensitive)
+
 ## External Integrations
 
 - **Docker API**: Container management via dockerode library with singleton service pattern
