@@ -133,6 +133,7 @@ export class RestoreExecutorService {
     databaseId: string,
     backupUrl: string,
     userId: string,
+    targetDatabaseName?: string,
   ): Promise<RestoreOperationInfo> {
     if (!this.isInitialized) {
       servicesLogger().debug("RestoreExecutorService not initialized, initializing now");
@@ -179,6 +180,7 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           userId,
+          targetDatabaseName,
         },
         {
           delay: 0, // Execute immediately
@@ -285,7 +287,7 @@ export class RestoreExecutorService {
   private setupQueueProcessors(): void {
     // Process restore jobs
     this.restoreQueue.process("execute-restore", async (job: QueueJob) => {
-      const { restoreOperationId, databaseId, backupUrl, userId } = job.data;
+      const { restoreOperationId, databaseId, backupUrl, userId, targetDatabaseName } = job.data;
 
       servicesLogger().info(
         {
@@ -293,6 +295,7 @@ export class RestoreExecutorService {
           operationId: restoreOperationId,
           databaseId,
           backupUrl,
+          targetDatabaseName,
         },
         "Starting restore job processing",
       );
@@ -303,6 +306,7 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           userId,
+          targetDatabaseName,
         );
       } catch (error) {
         servicesLogger().error(
@@ -358,6 +362,7 @@ export class RestoreExecutorService {
     databaseId: string,
     backupUrl: string,
     userId: string,
+    targetDatabaseName?: string,
   ): Promise<void> {
     let rollbackInitiated = false;
     const executionStartTime = Date.now();
@@ -548,21 +553,29 @@ export class RestoreExecutorService {
         "Retrieving database connection configuration"
       );
       
-      const connectionConfig =
+      const baseConnectionConfig =
         await this.databaseConfigService.getConnectionConfig(
           databaseId,
           userId,
         );
+      
+      // Use target database name if provided, otherwise use the original database name
+      const connectionConfig = {
+        ...baseConnectionConfig,
+        database: targetDatabaseName || baseConnectionConfig.database,
+      };
         
-      servicesLogger().debug(
+      servicesLogger().info(
         {
           operationId,
           databaseHost: connectionConfig.host,
           databasePort: connectionConfig.port,
-          databaseName: connectionConfig.database,
+          originalDatabaseName: baseConnectionConfig.database,
+          targetDatabaseName: connectionConfig.database,
           databaseUser: connectionConfig.username,
+          isCustomDatabaseName: !!targetDatabaseName,
         },
-        "Database connection configuration retrieved"
+        "Database connection configuration retrieved and prepared for restore"
       );
 
       await this.updateRestoreProgress(operationId, {
@@ -582,7 +595,7 @@ export class RestoreExecutorService {
       
       const rollbackStartTime = Date.now();
       const rollbackBackupUrl = await this.createRollbackBackup(
-        connectionConfig,
+        baseConnectionConfig,
         azureConnectionString,
         dockerImage,
         database.database,

@@ -469,6 +469,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
       databaseId,
       validatedData.backupUrl,
       user.id,
+      validatedData.restoreToNewDatabase ? validatedData.newDatabaseName : undefined,
     );
 
     logger.info(
