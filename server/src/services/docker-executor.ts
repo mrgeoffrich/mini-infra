@@ -28,6 +28,23 @@ export interface ContainerProgress {
   errorMessage?: string;
 }
 
+export interface DockerRegistryTestOptions {
+  image: string;
+  registryUsername?: string;
+  registryPassword?: string;
+}
+
+export interface DockerRegistryTestResult {
+  success: boolean;
+  message: string;
+  details: {
+    image: string;
+    authenticated: boolean;
+    pullTimeMs?: number;
+    errorCode?: string;
+  };
+}
+
 /**
  * DockerExecutor service for executing Docker containers for backup and restore operations
  */
@@ -484,5 +501,124 @@ export class DockerExecutorService {
     }
 
     return new Docker(dockerConfig);
+  }
+
+  /**
+   * Test Docker registry connection by attempting to pull an image
+   */
+  public async testDockerRegistryConnection(
+    options: DockerRegistryTestOptions,
+  ): Promise<DockerRegistryTestResult> {
+    const startTime = Date.now();
+    let authenticated = false;
+
+    try {
+      servicesLogger().info(
+        {
+          image: options.image,
+          hasAuth: !!(options.registryUsername && options.registryPassword),
+        },
+        "Testing Docker registry connection",
+      );
+
+      // Prepare authentication if credentials are provided
+      let authconfig: any = {};
+      if (options.registryUsername && options.registryPassword) {
+        authenticated = true;
+        authconfig = {
+          username: options.registryUsername,
+          password: options.registryPassword,
+        };
+      }
+
+      // Attempt to pull the image
+      const stream = await this.docker.pull(options.image, { authconfig });
+      
+      // Wait for the pull to complete
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Docker pull timeout after 2 minutes"));
+        }, 2 * 60 * 1000); // 2 minute timeout
+
+        this.docker.modem.followProgress(stream, (err, result) => {
+          clearTimeout(timeout);
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      const pullTimeMs = Date.now() - startTime;
+
+      servicesLogger().info(
+        {
+          image: options.image,
+          pullTimeMs,
+          authenticated,
+        },
+        "Docker registry connection test successful",
+      );
+
+      return {
+        success: true,
+        message: authenticated 
+          ? "Successfully connected to Docker registry with authentication and verified image access"
+          : "Successfully connected to Docker registry and verified image access",
+        details: {
+          image: options.image,
+          authenticated,
+          pullTimeMs,
+        },
+      };
+    } catch (error) {
+      const pullTimeMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      servicesLogger().error(
+        {
+          error: errorMessage,
+          image: options.image,
+          pullTimeMs,
+          authenticated,
+        },
+        "Docker registry connection test failed",
+      );
+
+      // Determine error type for better user feedback
+      let userMessage = "Failed to connect to Docker registry";
+      let errorCode = "CONNECTION_FAILED";
+
+      if (errorMessage.includes("authentication required") || 
+          errorMessage.includes("unauthorized") ||
+          errorMessage.includes("401")) {
+        userMessage = "Authentication required - please provide valid registry credentials";
+        errorCode = "AUTHENTICATION_REQUIRED";
+      } else if (errorMessage.includes("repository does not exist") ||
+                errorMessage.includes("not found") ||
+                errorMessage.includes("404")) {
+        userMessage = "Docker image not found in registry";
+        errorCode = "IMAGE_NOT_FOUND";
+      } else if (errorMessage.includes("timeout")) {
+        userMessage = "Connection timeout - registry may be unreachable";
+        errorCode = "TIMEOUT";
+      } else if (errorMessage.includes("network") || 
+                errorMessage.includes("connection refused")) {
+        userMessage = "Network error - cannot reach Docker registry";
+        errorCode = "NETWORK_ERROR";
+      }
+
+      return {
+        success: false,
+        message: `${userMessage}: ${errorMessage}`,
+        details: {
+          image: options.image,
+          authenticated,
+          pullTimeMs,
+          errorCode,
+        },
+      };
+    }
   }
 }

@@ -37,9 +37,11 @@ import {
   Eye,
   EyeOff,
   Container,
+  TestTube,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { useTestDockerRegistry } from "@/hooks/use-system-settings";
 
 // System settings schema
 const systemSettingsSchema = z.object({
@@ -48,7 +50,7 @@ const systemSettingsSchema = z.object({
     .string()
     .min(1, "Backup Docker image is required")
     .regex(
-      /^[\w\-\.\/]+(?::\w+[\w\-\.]*)?$/,
+      /^[\w\-./]+(?::\w+[\w\-.]*)?$/,
       "Invalid Docker image format (e.g., postgres:15-alpine, myregistry/postgres:latest)",
     ),
   backupRegistryUsername: z.string().optional(),
@@ -59,7 +61,7 @@ const systemSettingsSchema = z.object({
     .string()
     .min(1, "Restore Docker image is required")
     .regex(
-      /^[\w\-\.\/]+(?::\w+[\w\-\.]*)?$/,
+      /^[\w\-./]+(?::\w+[\w\-.]*)?$/,
       "Invalid Docker image format (e.g., postgres:15-alpine, myregistry/postgres:latest)",
     ),
   restoreRegistryUsername: z.string().optional(),
@@ -79,6 +81,8 @@ export default function SystemSettingsPage() {
   const [showBackupPassword, setShowBackupPassword] = useState(false);
   const [showRestorePassword, setShowRestorePassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [testingBackup, setTestingBackup] = useState(false);
+  const [testingRestore, setTestingRestore] = useState(false);
 
   // Fetch existing system settings for dockerexecutor category
   const {
@@ -87,13 +91,14 @@ export default function SystemSettingsPage() {
     error: settingsError,
     refetch: refetchSettings,
   } = useSystemSettings({
-    filters: { category: "system" as any, isActive: true },
+    filters: { category: "system", isActive: true },
     limit: 50,
   });
 
   // Mutations for saving settings
   const createSetting = useCreateSystemSetting();
   const updateSetting = useUpdateSystemSetting();
+  const testDockerRegistry = useTestDockerRegistry();
 
   // Form setup
   const form = useForm<SystemSettingsFormData>({
@@ -197,7 +202,7 @@ export default function SystemSettingsPage() {
         } else {
           // Create new setting
           return createSetting.mutateAsync({
-            category: "system" as any,
+            category: "system",
             key,
             value,
             isEncrypted,
@@ -216,6 +221,36 @@ export default function SystemSettingsPage() {
       toast.error("Failed to save system settings");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTestDockerRegistry = async (type: "backup" | "restore") => {
+    const isBackup = type === "backup";
+    const setter = isBackup ? setTestingBackup : setTestingRestore;
+    
+    setter(true);
+    try {
+      const formValues = form.getValues();
+      
+      const testData = {
+        type,
+        image: isBackup ? formValues.backupDockerImage : formValues.restoreDockerImage,
+        registryUsername: isBackup ? formValues.backupRegistryUsername : formValues.restoreRegistryUsername,
+        registryPassword: isBackup ? formValues.backupRegistryPassword : formValues.restoreRegistryPassword,
+      };
+
+      const result = await testDockerRegistry.mutateAsync(testData);
+      
+      toast.success(result.message, {
+        description: `Image: ${result.details.image}${result.details.pullTimeMs ? ` (${result.details.pullTimeMs}ms)` : ''}`,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to test Docker registry connection";
+      toast.error("Registry Connection Failed", {
+        description: errorMessage,
+      });
+    } finally {
+      setter(false);
     }
   };
 
@@ -361,6 +396,29 @@ export default function SystemSettingsPage() {
                         </FormItem>
                       )}
                     />
+                    
+                    {/* Test Connection Button */}
+                    <div className="pt-4 border-t">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleTestDockerRegistry("backup")}
+                        disabled={testingBackup || !form.watch("backupDockerImage")}
+                        className="w-full"
+                      >
+                        {testingBackup ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Testing Connection...
+                          </>
+                        ) : (
+                          <>
+                            <TestTube className="h-4 w-4 mr-2" />
+                            Test Connection
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -451,6 +509,29 @@ export default function SystemSettingsPage() {
                         </FormItem>
                       )}
                     />
+                    
+                    {/* Test Connection Button */}
+                    <div className="pt-4 border-t">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleTestDockerRegistry("restore")}
+                        disabled={testingRestore || !form.watch("restoreDockerImage")}
+                        className="w-full"
+                      >
+                        {testingRestore ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Testing Connection...
+                          </>
+                        ) : (
+                          <>
+                            <TestTube className="h-4 w-4 mr-2" />
+                            Test Connection
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
 

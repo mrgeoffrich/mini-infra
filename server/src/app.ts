@@ -102,6 +102,7 @@ import postgresBackupsRoutes from "./routes/postgres-backups";
 import postgresRestoreRoutes from "./routes/postgres-restore";
 import postgresProgressRoutes from "./routes/postgres-progress";
 import userPreferencesRoutes from "./routes/user-preferences";
+import systemSettingsRoutes from "./routes/system-settings";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -111,6 +112,7 @@ app.use("/auth", authRoutes);
 app.use("/api/keys", apiKeyRoutes);
 app.use("/api/containers", containerRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/settings/system", systemSettingsRoutes);
 app.use("/api/settings/azure", azureSettingsRoutes);
 app.use("/api/settings/cloudflare", cloudflareSettingsRoutes);
 app.use("/api/connectivity/azure", azureConnectivityRoutes);
