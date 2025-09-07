@@ -7,13 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Calendar,
-  Download,
-  Pencil,
-  Trash2,
-  Play,
-} from "lucide-react";
+import { Calendar, Download, Pencil, Trash2, Play } from "lucide-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
@@ -53,9 +47,7 @@ export function DatabaseTable({
       <TableBody>
         {databases.map((database) => (
           <TableRow key={database.id}>
-            <TableCell className="font-medium">
-              {database.name}
-            </TableCell>
+            <TableCell className="font-medium">{database.name}</TableCell>
             <TableCell>
               {database.host}:{database.port}
             </TableCell>
@@ -71,9 +63,9 @@ export function DatabaseTable({
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end gap-2">
-                <ManualBackupButton 
-                  database={database} 
-                  manualBackupMutation={manualBackupMutation} 
+                <ManualBackupButton
+                  database={database}
+                  manualBackupMutation={manualBackupMutation}
                 />
                 <Button
                   variant="outline"
@@ -120,27 +112,31 @@ export function DatabaseTable({
 function NextBackupCell({ databaseId }: { databaseId: string }) {
   const { formatDateTime } = useFormattedDate();
   const { data: backupConfigResponse } = usePostgresBackupConfig(databaseId);
-  
+
   const backupConfig = backupConfigResponse?.data;
-  
-  if (!backupConfig || !backupConfig.isEnabled || !backupConfig.nextScheduledAt) {
+
+  if (
+    !backupConfig ||
+    !backupConfig.isEnabled ||
+    !backupConfig.nextScheduledAt
+  ) {
     return <span className="text-muted-foreground">Not scheduled</span>;
   }
-  
+
   return formatDateTime(backupConfig.nextScheduledAt);
 }
 
 // Component for manual backup button
-function ManualBackupButton({ 
-  database, 
-  manualBackupMutation 
-}: { 
+function ManualBackupButton({
+  database,
+  manualBackupMutation,
+}: {
   database: PostgresDatabaseInfo;
   manualBackupMutation: ReturnType<typeof useCreateManualBackup>;
 }) {
   const { data: backupConfigResponse } = usePostgresBackupConfig(database.id);
   const backupConfig = backupConfigResponse?.data;
-  
+
   const handleManualBackup = async () => {
     try {
       await manualBackupMutation.mutateAsync(database.id);
@@ -149,12 +145,12 @@ function ManualBackupButton({
       toast.error("Failed to start manual backup");
     }
   };
-  
+
   // Only show button if backup is configured
   if (!backupConfig) {
     return null;
   }
-  
+
   return (
     <Button
       variant="outline"

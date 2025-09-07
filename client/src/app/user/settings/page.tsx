@@ -94,16 +94,17 @@ export function UserSettingsPage() {
   // Handle form submission
   const onSubmit = async (data: UserSettingsFormData) => {
     setIsSubmitting(true);
-    
+
     try {
       await updatePreferencesMutation.mutateAsync({
         timezone: data.timezone,
       });
-      
+
       toast.success("Settings updated successfully!");
     } catch (error: unknown) {
       console.error("Failed to update settings:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to update settings";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to update settings";
       toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
@@ -125,7 +126,7 @@ export function UserSettingsPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="px-4 lg:px-6 max-w-6xl">
           <Card>
             <CardHeader>
@@ -165,12 +166,13 @@ export function UserSettingsPage() {
             </div>
           </div>
         </div>
-        
+
         <div className="px-4 lg:px-6 max-w-6xl">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to load user settings. {preferencesError?.message || timezonesError?.message}
+              Failed to load user settings.{" "}
+              {preferencesError?.message || timezonesError?.message}
             </AlertDescription>
           </Alert>
         </div>
@@ -209,20 +211,27 @@ export function UserSettingsPage() {
                 <CardTitle>Timezone Settings</CardTitle>
               </div>
               <CardDescription>
-                Set your preferred timezone for displaying dates and times throughout the application
+                Set your preferred timezone for displaying dates and times
+                throughout the application
               </CardDescription>
             </CardHeader>
 
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-6"
+                >
                   <FormField
                     control={form.control}
                     name="timezone"
                     render={({ field }) => (
                       <FormItem className="flex flex-col max-w-[400px]">
                         <FormLabel>Timezone</FormLabel>
-                        <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+                        <Popover
+                          open={timezonePopoverOpen}
+                          onOpenChange={setTimezonePopoverOpen}
+                        >
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
@@ -230,17 +239,23 @@ export function UserSettingsPage() {
                                 role="combobox"
                                 className={cn(
                                   "w-full justify-between",
-                                  !field.value && "text-muted-foreground"
+                                  !field.value && "text-muted-foreground",
                                 )}
                               >
                                 {field.value
-                                  ? timezones?.find((timezone) => timezone.value === field.value)?.label
+                                  ? timezones?.find(
+                                      (timezone) =>
+                                        timezone.value === field.value,
+                                    )?.label
                                   : "Select a timezone"}
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
-                          <PopoverContent className="w-[400px] max-w-[400px] p-0" align="start">
+                          <PopoverContent
+                            className="w-[400px] max-w-[400px] p-0"
+                            align="start"
+                          >
                             <Command>
                               <CommandInput placeholder="Search timezones..." />
                               <CommandList>
@@ -260,7 +275,7 @@ export function UserSettingsPage() {
                                           "mr-2 h-4 w-4",
                                           timezone.value === field.value
                                             ? "opacity-100"
-                                            : "opacity-0"
+                                            : "opacity-0",
                                         )}
                                       />
                                       {timezone.label}
@@ -272,11 +287,11 @@ export function UserSettingsPage() {
                           </PopoverContent>
                         </Popover>
                         <FormDescription>
-                          Current timezone: {currentTimezone} | 
-                          Local time: {new Date().toLocaleString("en-US", { 
+                          Current timezone: {currentTimezone} | Local time:{" "}
+                          {new Date().toLocaleString("en-US", {
                             timeZone: form.watch("timezone") || currentTimezone,
                             dateStyle: "short",
-                            timeStyle: "medium"
+                            timeStyle: "medium",
                           })}
                         </FormDescription>
                         <FormMessage />

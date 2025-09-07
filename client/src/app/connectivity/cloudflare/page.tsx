@@ -481,8 +481,7 @@ export default function CloudflareSettingsPage() {
                       </div>
                     )}
                     <div className="text-xs text-muted-foreground">
-                      Checked:{" "}
-                      {formatDateTime(latestConnectivity.checkedAt)}
+                      Checked: {formatDateTime(latestConnectivity.checkedAt)}
                     </div>
                     {latestConnectivity.errorMessage && (
                       <div className="text-sm text-red-600 mt-2">

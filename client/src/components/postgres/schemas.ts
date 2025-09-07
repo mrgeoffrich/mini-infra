@@ -7,7 +7,7 @@ export const postgresDbSchema = z.object({
     .max(255, "Database name must be less than 255 characters")
     .regex(
       /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, underscores, and hyphens"
+      "Database name can only contain letters, numbers, underscores, and hyphens",
     ),
   host: z
     .string()

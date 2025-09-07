@@ -77,6 +77,9 @@ Mini Infra is a web application designed to manage a single Docker host and its 
   - pg 8.16.3 for PostgreSQL connectivity
 - **Scheduling**: node-cron 4.2.1 with cron-parser 5.3.1
 - **Caching**: node-cache 5.1.2 for in-memory caching
+- **Deployment Infrastructure**:
+  - js-yaml 4.1.0 for YAML configuration parsing
+  - Traefik v3.0 for load balancing and traffic routing
 
 ### Development Tools
 - **Language**: TypeScript 5.8.3 (client) / 5.1.6 (server/lib)
@@ -121,7 +124,7 @@ mini-infra/
 │   │   │   │   ├── azure/    # Azure service status
 │   │   │   │   └── cloudflare/ # Cloudflare service status
 │   │   │   ├── settings/    # System configuration
-│   │   │   │   └── system/  # Docker registry settings
+│   │   │   │   └── system/  # Docker registry and deployment infrastructure settings
 │   │   │   └── user/        # User preferences
 │   │   │       └── settings/ # Personal settings (timezone)
 │   │   ├── components/      # Reusable UI components
@@ -243,11 +246,18 @@ The application implements a comprehensive timezone-aware date and time display 
 ## External Integrations
 
 - **Docker API**: Container management via dockerode library with singleton service pattern
-- **Traefik API**: Load balancer configuration
+- **Traefik API**: Load balancer configuration and traffic routing
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
 - **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
 - **Google OAuth API**: User authentication
+
+### Deployment Infrastructure Integration
+
+- **Docker Network Management**: Automated creation and management of Docker networks for deployment isolation
+- **Traefik Container Deployment**: Automated Traefik load balancer container deployment with configuration
+- **Infrastructure Status Monitoring**: Real-time monitoring of network and Traefik container status
+- **Zero-Downtime Deployment Support**: Infrastructure for blue-green deployment strategies
 
 ## Service Layer Architecture
 
@@ -276,6 +286,9 @@ The backend implements a sophisticated service layer with dependency injection, 
 - **BackupExecutorService** (`server/src/services/backup-executor.ts`): Automated backup execution with progress tracking and Azure Storage integration
 - **RestoreExecutorService** (`server/src/services/restore-executor.ts`): Database restore operations with progress monitoring and validation
 
+#### Deployment Infrastructure Services
+- **DeploymentInfrastructureService** (`server/src/services/deployment-infrastructure.ts`): Docker network and Traefik container management with automated deployment, status monitoring, and cleanup operations
+
 ## Frontend Architecture
 
 ### Application Routing Structure
@@ -296,7 +309,7 @@ The frontend uses React Router v7 with protected route guards and nested routing
   ├─ /azure (Azure service status)
   └─ /cloudflare (Cloudflare service status)
 /settings/* (system configuration)
-  └─ /system (Docker registry configuration)
+  └─ /system (Docker registry and deployment infrastructure configuration)
 /user/settings (personal preferences including timezone)
 ```
 

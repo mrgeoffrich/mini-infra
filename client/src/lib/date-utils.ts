@@ -20,10 +20,10 @@ export interface DateFormatOptions {
  */
 export function formatDateTime(
   date: string | Date | number,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ): string {
   const { timezone, showSeconds = false } = options;
-  const dateObj = typeof date === 'string' ? new Date(date) : new Date(date);
+  const dateObj = typeof date === "string" ? new Date(date) : new Date(date);
 
   // If no timezone specified, use browser's default formatting
   if (!timezone) {
@@ -51,10 +51,10 @@ export function formatDateTime(
  */
 export function formatDate(
   date: string | Date | number,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ): string {
   const { timezone } = options;
-  const dateObj = typeof date === 'string' ? new Date(date) : new Date(date);
+  const dateObj = typeof date === "string" ? new Date(date) : new Date(date);
 
   if (!timezone) {
     return format(dateObj, "MMM d, yyyy");
@@ -76,10 +76,10 @@ export function formatDate(
  */
 export function formatTime(
   date: string | Date | number,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ): string {
   const { timezone, showSeconds = false } = options;
-  const dateObj = typeof date === 'string' ? new Date(date) : new Date(date);
+  const dateObj = typeof date === "string" ? new Date(date) : new Date(date);
   const timeFormat = showSeconds ? "HH:mm:ss" : "HH:mm";
 
   if (!timezone) {
@@ -104,7 +104,7 @@ export function formatTime(
 export function formatDateWithPrefix(
   date: string | Date | number,
   prefix: string,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ): string {
   const formatted = formatDateTime(date, options);
   return `${prefix} ${formatted}`;
@@ -119,10 +119,10 @@ export function formatDateWithPrefix(
  */
 export function formatContainerDate(
   date: string | Date | number,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ): string {
   const { timezone } = options;
-  const dateObj = typeof date === 'string' ? new Date(date) : new Date(date);
+  const dateObj = typeof date === "string" ? new Date(date) : new Date(date);
 
   if (!timezone) {
     return format(dateObj, "MMM d, HH:mm");

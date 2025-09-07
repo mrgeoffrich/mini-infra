@@ -90,7 +90,7 @@
 
 **Goal:** Create traefik configuration to store in SystemSettings.
 
-**Status:** Not Started
+**Status:** ✅ Completed
 
 **Tasks:**
 

@@ -68,22 +68,22 @@ async function createPostgresBackupConfig(
 
   if (!response.ok) {
     let errorMessage = `Failed to create backup configuration: ${response.statusText}`;
-    
+
     try {
       const errorData = await response.json();
       if (errorData.message) {
         errorMessage = errorData.message;
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
-        const validationErrors = errorData.details.map((detail: any) => 
-          `${detail.path?.join('.')}: ${detail.message}`
-        ).join(', ');
+        const validationErrors = errorData.details
+          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
     } catch {
       // If JSON parsing fails, keep the original error message
     }
-    
+
     throw new Error(errorMessage);
   }
 
@@ -113,22 +113,22 @@ async function updatePostgresBackupConfig(
 
   if (!response.ok) {
     let errorMessage = `Failed to update backup configuration: ${response.statusText}`;
-    
+
     try {
       const errorData = await response.json();
       if (errorData.message) {
         errorMessage = errorData.message;
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
-        const validationErrors = errorData.details.map((detail: any) => 
-          `${detail.path?.join('.')}: ${detail.message}`
-        ).join(', ');
+        const validationErrors = errorData.details
+          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
     } catch {
       // If JSON parsing fails, keep the original error message
     }
-    
+
     throw new Error(errorMessage);
   }
 
@@ -156,7 +156,7 @@ async function deletePostgresBackupConfig(
 
   if (!response.ok) {
     let errorMessage = `Failed to delete backup configuration: ${response.statusText}`;
-    
+
     try {
       const errorData = await response.json();
       if (errorData.message) {
@@ -165,7 +165,7 @@ async function deletePostgresBackupConfig(
     } catch {
       // If JSON parsing fails, keep the original error message
     }
-    
+
     throw new Error(errorMessage);
   }
 

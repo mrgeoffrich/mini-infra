@@ -14,22 +14,14 @@ import {
   usePostgresDatabases,
   usePostgresDatabaseFilters,
 } from "@/hooks/use-postgres-databases";
-import {
-  usePostgresBackupConfig,
-} from "@/hooks/use-postgres-backup-configs";
-import {
-  Database,
-  AlertCircle,
-  Plus,
-} from "lucide-react";
+import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
+import { Database, AlertCircle, Plus } from "lucide-react";
 import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import { DatabaseModal } from "@/components/postgres/database-modal";
 import { BackupConfigurationModal } from "@/components/postgres/backup-configuration-modal";
 import { DatabaseTable } from "@/components/postgres/database-table";
 import { DeleteDatabaseDialog } from "@/components/postgres/delete-database-dialog";
-import type {
-  PostgresDatabaseInfo,
-} from "@mini-infra/types";
+import type { PostgresDatabaseInfo } from "@mini-infra/types";
 
 export default function PostgresPage() {
   const navigate = useNavigate();
@@ -45,7 +37,7 @@ export default function PostgresPage() {
 
   // Get backup config for selected database (always call hook, even if database is null)
   const { data: selectedBackupConfigResponse } = usePostgresBackupConfig(
-    selectedBackupDatabase?.id || ""
+    selectedBackupDatabase?.id || "",
   );
 
   const selectedBackupConfig = selectedBackupDatabase
@@ -111,7 +103,6 @@ export default function PostgresPage() {
     setIsDeleteDialogOpen(false);
     setDatabaseToDelete(null);
   };
-
 
   if (error) {
     return (
@@ -217,7 +208,6 @@ export default function PostgresPage() {
           onClose={closeBackupConfigModal}
         />
       )}
-
     </div>
   );
 }

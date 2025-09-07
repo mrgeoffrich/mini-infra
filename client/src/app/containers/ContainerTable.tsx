@@ -182,7 +182,10 @@ const ContainerDateCell = React.memo(
       () => formatDate(createdAt),
       [createdAt, formatDate],
     );
-    const formattedTime = React.useMemo(() => formatTime(createdAt), [createdAt, formatTime]);
+    const formattedTime = React.useMemo(
+      () => formatTime(createdAt),
+      [createdAt, formatTime],
+    );
 
     return (
       <div className="text-sm">

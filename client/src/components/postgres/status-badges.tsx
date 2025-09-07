@@ -15,7 +15,11 @@ import type {
   RestoreOperationStatus,
 } from "@mini-infra/types";
 
-export function HealthStatusBadge({ status }: { status: DatabaseHealthStatus }) {
+export function HealthStatusBadge({
+  status,
+}: {
+  status: DatabaseHealthStatus;
+}) {
   switch (status) {
     case "healthy":
       return (
@@ -42,9 +46,13 @@ export function HealthStatusBadge({ status }: { status: DatabaseHealthStatus }) 
   }
 }
 
-export function BackupStatusDisplay({ database }: { database: PostgresDatabaseInfo }) {
+export function BackupStatusDisplay({
+  database,
+}: {
+  database: PostgresDatabaseInfo;
+}) {
   const { data: backupConfigResponse, isLoading } = usePostgresBackupConfig(
-    database.id
+    database.id,
   );
 
   const backupConfig = backupConfigResponse?.data;

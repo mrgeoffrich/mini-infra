@@ -19,7 +19,7 @@ import {
 export function ContainerSummary() {
   // Get formatted date utilities with user's timezone
   const { formatDateTime, formatContainerDate } = useFormattedDate();
-  
+
   // Check Docker connectivity first
   const { data: connectivityData, isLoading: isConnectivityLoading } =
     useConnectivityStatus({
@@ -86,8 +86,7 @@ export function ContainerSummary() {
                 </div>
                 {latestDockerStatus?.checkedAt && (
                   <div className="text-sm text-muted-foreground mt-1">
-                    Last checked:{" "}
-                    {formatDateTime(latestDockerStatus.checkedAt)}
+                    Last checked: {formatDateTime(latestDockerStatus.checkedAt)}
                   </div>
                 )}
               </div>

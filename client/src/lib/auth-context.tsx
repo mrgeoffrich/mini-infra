@@ -1,5 +1,9 @@
 import { ReactNode, useEffect } from "react";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AuthContextType,
@@ -206,7 +210,9 @@ function AuthProviderInner({ children }: AuthProviderProps) {
             credentials: "include",
           });
           if (!response.ok) {
-            throw new Error(`Failed to fetch user preferences: ${response.statusText}`);
+            throw new Error(
+              `Failed to fetch user preferences: ${response.statusText}`,
+            );
           }
           const result = await response.json();
           if (!result.success) {
@@ -230,7 +236,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       const wasAuthenticated = sessionData.lastLoginTime;
 
       clearSessionData();
-      
+
       // Clear user preferences from cache when logging out
       queryClient.removeQueries({
         queryKey: userPreferencesKeys.all,

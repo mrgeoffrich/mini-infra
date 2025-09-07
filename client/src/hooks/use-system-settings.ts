@@ -53,7 +53,7 @@ async function testDockerRegistryConnection(
     } catch {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     // If we have structured error data, throw it
     throw new Error(errorData.message);
   }
