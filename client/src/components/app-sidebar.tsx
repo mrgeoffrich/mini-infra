@@ -79,6 +79,11 @@ const data = {
         },
       ],
     },
+    {
+      title: "System Settings",
+      url: "/settings/system",
+      icon: IconSettings,
+    },
   ],
   navSecondary: [],
 };

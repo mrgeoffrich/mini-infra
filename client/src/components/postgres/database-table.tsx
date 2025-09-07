@@ -36,7 +36,6 @@ export function DatabaseTable({
   onConfigureBackup,
   onBrowseBackups,
 }: DatabaseTableProps) {
-  const { formatDateTime } = useFormattedDate();
   const manualBackupMutation = useCreateManualBackup();
   return (
     <Table>

@@ -84,6 +84,7 @@ function OperationDetailsRow({
   operation: OperationHistoryItem;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const { formatDateTime } = useFormattedDate();
 
   return (
     <>
@@ -219,7 +220,6 @@ export function OperationHistoryList({
   maxHeight = "600px",
   className,
 }: OperationHistoryListProps) {
-  const { formatDateTime } = useFormattedDate();
   const { filters, updateFilter, resetFilters } = useOperationHistoryFilters();
   const [showFilters, setShowFilters] = useState(false);
 

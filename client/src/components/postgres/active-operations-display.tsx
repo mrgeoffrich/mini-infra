@@ -45,6 +45,7 @@ function OperationProgressCard({
   showDetails = false,
 }: OperationProgressCardProps) {
   const [isExpanded, setIsExpanded] = useState(showDetails);
+  const { formatDateTime, formatTime } = useFormattedDate();
 
   const isActive =
     operation.status === "pending" || operation.status === "running";
@@ -275,7 +276,6 @@ export function ActiveOperationsDisplay({
   onCancelOperation,
   className,
 }: ActiveOperationsDisplayProps) {
-  const { formatDateTime, formatTime } = useFormattedDate();
   const {
     isLoading,
     error,

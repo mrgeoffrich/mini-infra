@@ -168,10 +168,10 @@ export function SettingsOverview() {
       <div className="px-4 lg:px-6 space-y-6">
         {/* Service Configuration Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {(Object.keys(CATEGORY_INFO) as SettingsCategory[]).map(
+          {(Object.keys(CATEGORY_INFO) as (keyof typeof CATEGORY_INFO)[]).map(
             (category) => {
               const info = CATEGORY_INFO[category];
-              const connectivity = latestConnectivity[category];
+              const connectivity = latestConnectivity[category as SettingsCategory];
               const Icon = info.icon;
               const StatusIcon = connectivity
                 ? STATUS_VARIANTS[connectivity.status as ConnectivityStatusType]
@@ -182,8 +182,8 @@ export function SettingsOverview() {
                     ?.color || "text-gray-600"
                 : "text-gray-600";
 
-              // PostgreSQL doesn't have a single connectivity indicator since there can be multiple databases
-              const showConnectivity = category !== "postgres";
+              // All categories in CATEGORY_INFO have connectivity indicators
+              const showConnectivity = true;
 
               return (
                 <Card key={category} className="relative">

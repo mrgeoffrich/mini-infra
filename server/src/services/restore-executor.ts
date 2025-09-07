@@ -394,6 +394,9 @@ export class RestoreExecutorService {
         message: "Starting restore container",
       });
 
+      // Extract blob name from backup URL for restore
+      const blobName = this.extractBlobNameFromUrl(backupUrl);
+
       // Execute restore using Docker
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
@@ -401,6 +404,7 @@ export class RestoreExecutorService {
             image: dockerImage,
             env: {
               POSTGRES_HOST: connectionConfig.host,
+              POSTGRES_PORT: connectionConfig.port.toString(),
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
@@ -408,7 +412,7 @@ export class RestoreExecutorService {
               AZURE_CONTAINER_NAME: this.extractContainerFromUrl(backupUrl),
               RESTORE: "yes",
               DROP_PUBLIC: "yes",
-              BACKUP_FILE_URL: backupUrl,
+              AZURE_BLOB_NAME: blobName,
             },
             timeout: RestoreExecutorService.RESTORE_TIMEOUT_MS,
           },
@@ -913,6 +917,14 @@ export class RestoreExecutorService {
   private extractContainerFromUrl(backupUrl: string): string {
     const { containerName } = this.parseBackupUrl(backupUrl);
     return containerName;
+  }
+
+  /**
+   * Extract blob name from backup URL
+   */
+  private extractBlobNameFromUrl(backupUrl: string): string {
+    const { blobName } = this.parseBackupUrl(backupUrl);
+    return blobName;
   }
 
   /**

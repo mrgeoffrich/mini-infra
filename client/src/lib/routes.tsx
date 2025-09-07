@@ -10,6 +10,7 @@ import { SettingsPage } from "@/app/settings/page";
 import DockerSettingsPage from "@/app/settings/docker/page";
 import CloudflareSettingsPage from "@/app/settings/cloudflare/page";
 import AzureSettingsPage from "@/app/settings/azure/page";
+import SystemSettingsPage from "@/app/settings/system/page";
 import PostgresPage from "@/app/postgres/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
@@ -82,6 +83,10 @@ export const router = createBrowserRouter([
       {
         path: "settings/azure",
         element: <AzureSettingsPage />,
+      },
+      {
+        path: "settings/system",
+        element: <SystemSettingsPage />,
       },
       {
         path: "user/settings",
