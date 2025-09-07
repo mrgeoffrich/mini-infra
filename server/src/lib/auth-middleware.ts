@@ -86,6 +86,8 @@ export function requireAuth(
       "Authentication successful",
     );
 
+    // Store user in res.locals for route handlers to access
+    res.locals.user = user;
     next();
   } catch (error) {
     logger.error(

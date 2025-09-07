@@ -43,7 +43,8 @@ router.get(
   requireAuth,
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
-    const userId = req.user?.id;
+    const user = getAuthenticatedUser(req);
+    const userId = user?.id;
 
     try {
       if (!userId) {
@@ -147,7 +148,8 @@ router.get(
   requireAuth,
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
-    const userId = req.user?.id;
+    const user = getAuthenticatedUser(req);
+    const userId = user?.id;
 
     try {
       if (!userId) {
@@ -248,7 +250,8 @@ router.get(
  */
 router.get("/active", requireAuth, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   try {
     if (!userId) {
@@ -308,7 +311,8 @@ router.get("/active", requireAuth, async (req: Request, res: Response) => {
  */
 router.get("/history", requireAuth, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   try {
     if (!userId) {
@@ -429,7 +433,8 @@ router.get("/history", requireAuth, async (req: Request, res: Response) => {
  */
 router.post("/cleanup", requireAuth, async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   try {
     if (!userId) {

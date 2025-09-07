@@ -157,7 +157,8 @@ router.get("/", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {
@@ -273,7 +274,8 @@ router.get("/:id", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const databaseId = req.params.id;
 
   logger.info(
@@ -360,7 +362,8 @@ router.post("/", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {
@@ -482,7 +485,8 @@ router.put("/:id", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const databaseId = req.params.id;
 
   logger.info(
@@ -629,7 +633,8 @@ router.delete("/:id", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const databaseId = req.params.id;
 
   logger.info(
@@ -738,7 +743,8 @@ router.post("/:id/test", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const databaseId = req.params.id;
 
   logger.info(
@@ -849,7 +855,8 @@ router.post("/test-connection", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {

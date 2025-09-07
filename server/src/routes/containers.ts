@@ -9,7 +9,7 @@ import DockerService from "../services/docker";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireAuth } from "../lib/auth-middleware";
+import { requireAuth, getAuthenticatedUser } from "../lib/auth-middleware";
 import {
   ContainerQueryParams,
   ContainerListResponse,
@@ -77,7 +77,8 @@ router.get("/", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {
@@ -284,7 +285,8 @@ router.get("/:id", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const containerId = req.params.id;
 
   logger.info(
@@ -393,7 +395,8 @@ router.get("/stats/cache", requireAuth, (async (
   res: Response,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.debug(
     {
@@ -422,7 +425,8 @@ router.post("/cache/flush", requireAuth, (async (
   res: Response,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {

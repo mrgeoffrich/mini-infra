@@ -93,7 +93,8 @@ router.get("/:databaseId", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const databaseId = req.params.databaseId;
 
   logger.info(
@@ -183,7 +184,8 @@ router.post("/", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
 
   logger.info(
     {
@@ -332,7 +334,8 @@ router.delete("/:id", requireAuth, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const userId = req.user?.id;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
   const configId = req.params.id;
 
   logger.info(

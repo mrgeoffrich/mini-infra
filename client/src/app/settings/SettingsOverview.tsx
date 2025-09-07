@@ -41,14 +41,6 @@ const CATEGORY_INFO = {
     color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
     path: "/settings/azure",
   },
-  postgres: {
-    name: "PostgreSQL",
-    description: "Database backup and restore configuration",
-    icon: Database,
-    color:
-      "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-    path: "/postgres",
-  },
 } as const;
 
 // Map connectivity status to badge variants
@@ -157,7 +149,7 @@ export function SettingsOverview() {
       }
       return acc;
     },
-    {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>,
+    {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>
   );
 
   return (
@@ -260,7 +252,7 @@ export function SettingsOverview() {
                   </CardContent>
                 </Card>
               );
-            },
+            }
           )}
         </div>
       </div>
