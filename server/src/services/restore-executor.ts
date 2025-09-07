@@ -395,7 +395,9 @@ export class RestoreExecutorService {
         userId,
       );
       if (!database) {
-        throw new Error("Database not found or access denied");
+        throw new Error(
+          `Database '${databaseId}' not found or access denied. Please verify the database exists and you have permission to restore it.`
+        );
       }
 
       servicesLogger().info(
@@ -424,7 +426,7 @@ export class RestoreExecutorService {
         "Starting backup file validation"
       );
       
-      const validationResult = await this.validateBackupFile(backupUrl);
+      const validationResult = await this.validateBackupFile(backupUrl, databaseId);
       if (!validationResult.isValid) {
         servicesLogger().error(
           {
@@ -434,7 +436,9 @@ export class RestoreExecutorService {
           },
           "Backup file validation failed"
         );
-        throw new Error(`Backup validation failed: ${validationResult.error}`);
+        throw new Error(
+          `Failed to validate backup file '${this.extractBlobNameFromUrl(backupUrl)}': ${validationResult.error}`
+        );
       }
 
       servicesLogger().info(
@@ -522,7 +526,9 @@ export class RestoreExecutorService {
           },
           "Azure connection string not configured"
         );
-        throw new Error("Azure connection string not configured");
+        throw new Error(
+          "Azure Storage connection string is not configured. Please configure Azure settings before attempting restore."
+        );
       }
       
       servicesLogger().debug(
@@ -580,6 +586,7 @@ export class RestoreExecutorService {
         azureConnectionString,
         dockerImage,
         database.database,
+        backupUrl,
       );
       
       servicesLogger().info(
@@ -930,6 +937,7 @@ export class RestoreExecutorService {
    */
   private async validateBackupFile(
     backupUrl: string,
+    databaseId?: string,
   ): Promise<BackupValidationResult> {
     try {
       const azureConnectionString =
@@ -951,25 +959,78 @@ export class RestoreExecutorService {
         .getContainerClient(containerName)
         .getBlobClient(blobName);
 
+      servicesLogger().debug(
+        {
+          backupUrl,
+          containerName,
+          blobName,
+          databaseId,
+        },
+        "Starting backup file validation",
+      );
+
       // Check if blob exists and get properties
       const exists = await blobClient.exists();
       if (!exists) {
+        servicesLogger().warn(
+          {
+            backupUrl,
+            containerName,
+            blobName,
+          },
+          "Backup file not found in Azure Storage",
+        );
         return {
           isValid: false,
-          error: "Backup file not found in Azure Storage",
+          error: `Backup file not found in Azure Storage: ${blobName}`,
         };
       }
 
       const properties = await blobClient.getProperties();
 
-      // Basic validation - check file size and last modified
+      // Enhanced validation - check file size
       const sizeBytes = properties.contentLength || 0;
       if (sizeBytes < 100) {
         // Backup files should be at least 100 bytes
         return {
           isValid: false,
-          error: "Backup file appears to be too small or corrupted",
+          error: `Backup file appears to be too small (${sizeBytes} bytes) or corrupted`,
         };
+      }
+
+      // Check for reasonable maximum file size (e.g., 50GB)
+      const maxSizeBytes = 50 * 1024 * 1024 * 1024; // 50GB
+      if (sizeBytes > maxSizeBytes) {
+        servicesLogger().warn(
+          {
+            backupUrl,
+            sizeBytes,
+            maxSizeBytes,
+          },
+          "Warning: Backup file is extremely large",
+        );
+      }
+
+      // Validate backup file belongs to the correct database if databaseId is provided
+      if (databaseId) {
+        const pathParts = blobName.split('/');
+        const backupDatabaseId = pathParts[0]; // Expected format: databaseId/backup_file.dump
+        
+        if (backupDatabaseId !== databaseId) {
+          servicesLogger().warn(
+            {
+              backupUrl,
+              expectedDatabaseId: databaseId,
+              actualDatabaseId: backupDatabaseId,
+              blobName,
+            },
+            "Backup file database ID mismatch",
+          );
+          return {
+            isValid: false,
+            error: `Backup file belongs to database '${backupDatabaseId}' but expected '${databaseId}'`,
+          };
+        }
       }
 
       // Check if file is not too old (configurable threshold)
@@ -989,12 +1050,35 @@ export class RestoreExecutorService {
         );
       }
 
+      // Validate content type if available
+      const expectedContentTypes = [
+        'application/octet-stream',
+        'application/sql',
+        'text/plain',
+        undefined, // Some backups may not have content type set
+      ];
+      
+      if (properties.contentType && !expectedContentTypes.includes(properties.contentType)) {
+        servicesLogger().warn(
+          {
+            backupUrl,
+            contentType: properties.contentType,
+            expectedContentTypes,
+          },
+          "Warning: Unexpected backup file content type",
+        );
+      }
+
       servicesLogger().info(
         {
           backupUrl,
+          containerName,
+          blobName,
           sizeBytes,
+          sizeMB: Math.round(sizeBytes / (1024 * 1024)),
           lastModified: lastModified.toISOString(),
           contentType: properties.contentType,
+          ageInDays: Math.round(ageInDays),
         },
         "Backup file validated successfully",
       );
@@ -1007,13 +1091,18 @@ export class RestoreExecutorService {
           contentType: properties.contentType,
           etag: properties.etag,
           contentEncoding: properties.contentEncoding,
+          containerName,
+          blobName,
+          ageInDays: Math.round(ageInDays),
         },
       };
     } catch (error) {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
           backupUrl,
+          databaseId,
         },
         "Failed to validate backup file",
       );
@@ -1033,6 +1122,7 @@ export class RestoreExecutorService {
     azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
+    backupUrl: string,
   ): Promise<string> {
     const startTime = Date.now();
     try {
@@ -1046,18 +1136,19 @@ export class RestoreExecutorService {
         "Creating pre-restore backup for rollback purposes",
       );
 
-      // Generate unique container name and path for rollback backup
+      // Extract container name from backup URL and generate unique path for rollback backup
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const rollbackContainerName = "rollback-backups";
+      const rollbackContainerName = this.extractContainerFromUrl(backupUrl);
       const rollbackBlobName = `${databaseName}/rollback-${timestamp}.dump`;
       
-      servicesLogger().debug(
+      servicesLogger().info(
         {
           rollbackContainerName,
           rollbackBlobName,
           timestamp,
+          backupUrl,
         },
-        "Generated rollback backup path and container"
+        "Generated rollback backup path and container from backup URL"
       );
 
       const containerEnv = {

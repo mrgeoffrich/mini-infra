@@ -33,7 +33,10 @@ const azureConfigService = new AzureConfigService(prisma);
 
 const CreateRestoreOperationSchema = z.object({
   databaseId: z.string().min(1, "Database ID is required"),
-  backupUrl: z.string().url("Must be a valid URL"),
+  backupUrl: z.string().url("Must be a valid URL").refine(
+    (url) => validateAzureStorageUrl(url),
+    "Backup URL must be a valid Azure Storage blob URL ending with .dump"
+  ),
   confirmRestore: z.boolean().optional(),
   restoreToNewDatabase: z.boolean().optional(),
   newDatabaseName: z.string().min(1, "New database name is required").optional(),
@@ -89,6 +92,29 @@ const PaginationSchema = z.object({
 // ====================
 // Helper Functions
 // ====================
+
+/**
+ * Validate if the URL is a proper Azure Storage blob URL
+ */
+function validateAzureStorageUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    
+    // Check if it's an Azure Storage blob URL
+    const isAzureStorageUrl = parsedUrl.hostname.includes('.blob.core.windows.net');
+    
+    // Check if the path has at least container/blob structure
+    const pathParts = parsedUrl.pathname.substring(1).split('/'); // Remove leading slash
+    const hasValidPath = pathParts.length >= 2 && pathParts[0] && pathParts[1];
+    
+    // Check if it ends with .dump (expected backup file extension)
+    const isDumpFile = parsedUrl.pathname.endsWith('.dump');
+    
+    return isAzureStorageUrl && hasValidPath && isDumpFile;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Parse query parameters for filtering and pagination
@@ -353,6 +379,18 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
       databaseId,
       ...req.body,
     });
+
+    logger.debug(
+      { 
+        requestId, 
+        userId: user?.id, 
+        databaseId,
+        backupUrl: validatedData.backupUrl,
+        restoreToNewDatabase: validatedData.restoreToNewDatabase,
+        newDatabaseName: validatedData.newDatabaseName 
+      },
+      "Backup file selected for restore operation"
+    );
 
     // Verify database exists and user has access
     const database = await prisma.postgresDatabase.findFirst({

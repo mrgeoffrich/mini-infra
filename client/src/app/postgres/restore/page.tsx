@@ -527,13 +527,78 @@ export default function PostgresRestorePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Database Restore</AlertDialogTitle>
             <AlertDialogDescription>
-              Restore from backup:
-              <br />
-              <code className="text-sm bg-muted px-2 py-1 rounded mt-2 inline-block">
-                {selectedBackup?.name}
-              </code>
+              You are about to restore the database from the following backup:
             </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          {/* Backup File Preview */}
+          {selectedBackup && (
+            <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-foreground">Backup File</div>
+                  <code className="text-xs bg-muted px-2 py-1 rounded">
+                    {selectedBackup.name}
+                  </code>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1">
+                  <div className="text-muted-foreground">Created</div>
+                  <div className="font-mono">
+                    {format(new Date(selectedBackup.createdAt), "MMM d, yyyy")}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {format(new Date(selectedBackup.createdAt), "HH:mm:ss")}
+                  </div>
+                </div>
+                
+                <div className="space-y-1">
+                  <div className="text-muted-foreground">File Size</div>
+                  <div className="font-mono">{formatBytes(selectedBackup.sizeBytes)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedBackup.sizeBytes.toLocaleString()} bytes
+                  </div>
+                </div>
+              </div>
+              
+              {/* Age and estimated restore time */}
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <div>
+                  {(() => {
+                    const ageInMs = Date.now() - new Date(selectedBackup.createdAt).getTime();
+                    const ageInDays = Math.floor(ageInMs / (1000 * 60 * 60 * 24));
+                    const ageInHours = Math.floor(ageInMs / (1000 * 60 * 60));
+                    
+                    if (ageInDays > 0) {
+                      return `Created ${ageInDays} day${ageInDays !== 1 ? 's' : ''} ago`;
+                    } else if (ageInHours > 0) {
+                      return `Created ${ageInHours} hour${ageInHours !== 1 ? 's' : ''} ago`;
+                    } else {
+                      return 'Created recently';
+                    }
+                  })()}
+                </div>
+                
+                <div>
+                  {(() => {
+                    // Rough estimate: ~10MB per minute for restore
+                    const sizeInMB = selectedBackup.sizeBytes / (1024 * 1024);
+                    const estimatedMinutes = Math.max(1, Math.round(sizeInMB / 10));
+                    
+                    if (estimatedMinutes < 60) {
+                      return `~${estimatedMinutes} min restore`;
+                    } else {
+                      const hours = Math.floor(estimatedMinutes / 60);
+                      const mins = estimatedMinutes % 60;
+                      return `~${hours}h ${mins}m restore`;
+                    }
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="space-y-4 py-4">
             <div>
