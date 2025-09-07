@@ -15,6 +15,7 @@ const loggerConfigSchema = z.object({
   destination: z.string().optional(),
   prettyPrint: z.boolean().optional(),
   rotation: rotationConfigSchema.optional(),
+  includeCaller: z.boolean().optional(),
 });
 
 const environmentLogConfigSchema = z.object({

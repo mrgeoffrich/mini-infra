@@ -4,6 +4,7 @@
       "level": "debug",
       "destination": "logs/app.log",
       "prettyPrint": true,
+      "includeCaller": true,
       "rotation": {
         "enabled": false
       }
@@ -28,6 +29,7 @@
       "level": "debug",
       "destination": "logs/app-services.log",
       "prettyPrint": false,
+      "includeCaller": true,
       "rotation": {
         "enabled": false
       }
@@ -36,6 +38,7 @@
       "level": "debug",
       "destination": "logs/app-dockerexecutor.log",
       "prettyPrint": false,
+      "includeCaller": true,
       "rotation": {
         "enabled": false
       }

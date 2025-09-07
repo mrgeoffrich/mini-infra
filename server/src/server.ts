@@ -1,6 +1,9 @@
 import app from "./app";
 import appConfig from "./lib/config-new";
-import { appLogger } from "./lib/logger-factory";
+import { appLogger, clearLoggerCache } from "./lib/logger-factory";
+
+// Clear logger cache on startup to ensure new configuration is loaded
+clearLoggerCache();
 
 // Use app logger for server startup
 const logger = appLogger();

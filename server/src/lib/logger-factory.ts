@@ -10,6 +10,55 @@ import {
 // Cache for logger instances
 const loggerCache = new Map<string, pino.Logger>();
 
+// Constants for stack trace parsing
+const STACKTRACE_OFFSET = 2;
+const LINE_OFFSET = 7;
+const { symbols: { asJsonSym } } = pino;
+
+// Function to create a proxy wrapper for adding caller information
+function traceCaller(pinoInstance: pino.Logger): pino.Logger {
+  const get = (target: any, name: string | symbol) => 
+    name === asJsonSym ? asJson : target[name];
+
+  function asJson(this: any, ...args: any[]) {
+    try {
+      args[0] = args[0] || Object.create(null);
+      
+      // Extract caller information from stack trace
+      const stack = Error().stack;
+      if (stack) {
+        const stackLines = stack.split('\n')
+          .filter(s => !s.includes('node_modules/pino') && 
+                       !s.includes('node_modules\\pino') &&
+                       !s.includes('logger-factory') &&
+                       s.includes(' at '));
+        
+        if (stackLines.length > STACKTRACE_OFFSET) {
+          const callerLine = stackLines[STACKTRACE_OFFSET];
+          const match = callerLine.match(/at .* \((.+):(\d+):\d+\)/) || 
+                       callerLine.match(/at (.+):(\d+):\d+/);
+          
+          if (match) {
+            const fullPath = match[1];
+            const lineNumber = match[2];
+            // Make path relative to project root
+            const projectRoot = path.resolve(process.cwd());
+            const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, '/');
+            args[0].caller = `${relativePath}:${lineNumber}`;
+          }
+        }
+      }
+
+      return pinoInstance[asJsonSym].apply(this, args);
+    } catch (error) {
+      // If there's an error in caller tracking, fall back to original logging
+      return pinoInstance[asJsonSym].apply(this, args);
+    }
+  }
+
+  return new Proxy(pinoInstance, { get });
+}
+
 // Base Pino options for all loggers
 function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
   const redactionPaths = getRedactionPaths();
@@ -126,7 +175,12 @@ function createLogger(loggerType: string): pino.Logger {
 
   const config = getLoggerConfig(loggerType as any);
   const options = createBaseLoggerOptions(config);
-  const logger = pino(options);
+  let logger = pino(options);
+
+  // Apply caller information tracking if enabled
+  if (config.includeCaller) {
+    logger = traceCaller(logger);
+  }
 
   loggerCache.set(loggerType, logger);
   return logger;
