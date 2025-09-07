@@ -84,19 +84,34 @@ export class BackupExecutorService {
    */
   public async initialize(): Promise<void> {
     if (this.isInitialized) {
+      servicesLogger().debug("BackupExecutorService already initialized, skipping");
       return;
     }
 
+    const startTime = Date.now();
     try {
+      servicesLogger().info("Initializing BackupExecutorService...");
+      
       // Initialize Docker executor
+      servicesLogger().debug("Initializing Docker executor for backup operations");
       await this.dockerExecutor.initialize();
+      servicesLogger().debug("Docker executor initialized successfully");
 
-      servicesLogger().info("BackupExecutorService initialized successfully");
+      servicesLogger().info(
+        {
+          initializationTimeMs: Date.now() - startTime,
+          queueConcurrency: 2,
+          maxRetries: BackupExecutorService.MAX_RETRIES,
+          timeoutMs: BackupExecutorService.BACKUP_TIMEOUT_MS
+        },
+        "BackupExecutorService initialized successfully"
+      );
       this.isInitialized = true;
     } catch (error) {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          initializationTimeMs: Date.now() - startTime
         },
         "Failed to initialize BackupExecutorService",
       );
@@ -113,10 +128,21 @@ export class BackupExecutorService {
     userId: string,
   ): Promise<BackupOperationInfo> {
     if (!this.isInitialized) {
+      servicesLogger().debug("BackupExecutorService not initialized, initializing now");
       await this.initialize();
     }
 
+    const startTime = Date.now();
     try {
+      servicesLogger().info(
+        {
+          databaseId,
+          operationType,
+          userId,
+        },
+        "Queueing new backup operation"
+      );
+
       // Create backup operation record
       const backupOperation = await this.prisma.backupOperation.create({
         data: {
@@ -133,8 +159,9 @@ export class BackupExecutorService {
           databaseId,
           operationType,
           userId,
+          queueingTimeMs: Date.now() - startTime
         },
-        "Backup operation created and queued",
+        "Backup operation created and queued successfully",
       );
 
       // Add job to queue
@@ -151,6 +178,14 @@ export class BackupExecutorService {
         },
       );
 
+      servicesLogger().debug(
+        {
+          operationId: backupOperation.id,
+          queuePosition: await this.backupQueue.count(),
+        },
+        "Job added to backup queue"
+      );
+
       return this.mapBackupOperationToInfo(backupOperation);
     } catch (error) {
       servicesLogger().error(
@@ -159,6 +194,7 @@ export class BackupExecutorService {
           databaseId,
           operationType,
           userId,
+          queueingTimeMs: Date.now() - startTime
         },
         "Failed to queue backup operation",
       );
@@ -309,7 +345,17 @@ export class BackupExecutorService {
     databaseId: string,
     userId: string,
   ): Promise<void> {
+    const executionStartTime = Date.now();
     try {
+      servicesLogger().info(
+        {
+          operationId,
+          databaseId,
+          userId,
+        },
+        "Starting backup execution"
+      );
+
       // Update status to running
       await this.updateBackupProgress(operationId, {
         status: "running",
@@ -318,6 +364,15 @@ export class BackupExecutorService {
       });
 
       // Get database configuration
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseId,
+          userId,
+        },
+        "Retrieving database configuration"
+      );
+      
       const database = await this.databaseConfigService.getDatabaseById(
         databaseId,
         userId,
@@ -326,15 +381,52 @@ export class BackupExecutorService {
         throw new Error("Database not found or access denied");
       }
 
+      servicesLogger().info(
+        {
+          operationId,
+          databaseId: database.id,
+          databaseName: database.database,
+          host: database.host,
+          port: database.port,
+        },
+        "Database configuration retrieved successfully"
+      );
+
       // Get backup configuration
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseId,
+        },
+        "Retrieving backup configuration"
+      );
+      
       const backupConfig =
         await this.backupConfigService.getBackupConfigByDatabaseId(
           databaseId,
           userId,
         );
       if (!backupConfig) {
+        servicesLogger().error(
+          {
+            operationId,
+            databaseId,
+          },
+          "Backup configuration not found"
+        );
         throw new Error("Backup configuration not found");
       }
+      
+      servicesLogger().info(
+        {
+          operationId,
+          backupConfigId: backupConfig.id,
+          azureContainerName: backupConfig.azureContainerName,
+          backupFormat: backupConfig.backupFormat,
+          compressionLevel: backupConfig.compressionLevel,
+        },
+        "Backup configuration retrieved successfully"
+      );
 
       await this.updateBackupProgress(operationId, {
         status: "running",
@@ -343,7 +435,21 @@ export class BackupExecutorService {
       });
 
       // Get system settings for Docker image
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving Docker image configuration"
+      );
+      
       const dockerImage = await this.getBackupDockerImage();
+      
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving registry credentials configuration"
+      );
 
       // Get registry credentials for Docker image
       const registryCredentials = await this.getBackupRegistryCredentials();
@@ -355,11 +461,30 @@ export class BackupExecutorService {
       });
 
       // Pull Docker image with authentication if credentials are provided
+      servicesLogger().info(
+        {
+          operationId,
+          dockerImage,
+          hasRegistryAuth: !!(registryCredentials.username && registryCredentials.password),
+        },
+        "Starting Docker image pull"
+      );
+      
+      const pullStartTime = Date.now();
       try {
         await this.dockerExecutor.pullImageWithAuth(
           dockerImage,
           registryCredentials.username,
           registryCredentials.password,
+        );
+        
+        servicesLogger().info(
+          {
+            operationId,
+            dockerImage,
+            pullTimeMs: Date.now() - pullStartTime,
+          },
+          "Docker image pulled successfully"
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -368,6 +493,7 @@ export class BackupExecutorService {
             operationId,
             dockerImage,
             error: errorMessage,
+            pullTimeMs: Date.now() - pullStartTime,
           },
           "Failed to pull Docker image for backup",
         );
@@ -375,18 +501,58 @@ export class BackupExecutorService {
       }
 
       // Get Azure connection string
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving Azure connection string"
+      );
+      
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
       if (!azureConnectionString) {
+        servicesLogger().error(
+          {
+            operationId,
+          },
+          "Azure connection string not configured"
+        );
         throw new Error("Azure connection string not configured");
       }
+      
+      servicesLogger().debug(
+        {
+          operationId,
+          hasAzureConnection: !!azureConnectionString,
+        },
+        "Azure connection string retrieved successfully"
+      );
 
       // Get database connection details
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseId,
+        },
+        "Retrieving database connection configuration"
+      );
+      
       const connectionConfig =
         await this.databaseConfigService.getConnectionConfig(
           databaseId,
           userId,
         );
+        
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseHost: connectionConfig.host,
+          databasePort: connectionConfig.port,
+          databaseName: connectionConfig.database,
+          databaseUser: connectionConfig.username,
+        },
+        "Database connection configuration retrieved"
+      );
 
       await this.updateBackupProgress(operationId, {
         status: "running",
@@ -397,8 +563,43 @@ export class BackupExecutorService {
       // Generate blob name with database ID as path and backup ID + timestamp as filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const blobName = `${databaseId}/${operationId}_${timestamp}.dump`;
+      
+      servicesLogger().info(
+        {
+          operationId,
+          azureContainerName: backupConfig.azureContainerName,
+          blobName,
+          backupFormat: backupConfig.backupFormat,
+          compressionLevel: backupConfig.compressionLevel,
+        },
+        "Generated backup file path and configuration"
+      );
 
       // Execute backup using Docker
+      const containerEnv = {
+        POSTGRES_HOST: connectionConfig.host,
+        POSTGRES_PORT: connectionConfig.port.toString(),
+        POSTGRES_USER: connectionConfig.username,
+        POSTGRES_PASSWORD: "[REDACTED]",
+        POSTGRES_DATABASE: connectionConfig.database,
+        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
+        AZURE_CONTAINER_NAME: backupConfig.azureContainerName,
+        AZURE_BLOB_NAME: blobName,
+        BACKUP_FORMAT: backupConfig.backupFormat,
+        COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
+      };
+      
+      servicesLogger().info(
+        {
+          operationId,
+          dockerImage,
+          environment: containerEnv,
+          timeoutMs: BackupExecutorService.BACKUP_TIMEOUT_MS,
+        },
+        "Starting backup container execution"
+      );
+      
+      const containerStartTime = Date.now();
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
           {
@@ -422,20 +623,54 @@ export class BackupExecutorService {
             let progressValue = 40;
             let message = "Executing backup";
 
+            servicesLogger().debug(
+              {
+                operationId,
+                containerStatus: progress.status,
+                errorMessage: progress.errorMessage,
+              },
+              "Container progress update received"
+            );
+
             switch (progress.status) {
               case "starting":
                 progressValue = 40;
                 message = "Starting backup container";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Backup container is starting"
+                );
                 break;
               case "running":
                 progressValue = 60;
                 message = "Creating backup";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Backup container is running - database backup in progress"
+                );
                 break;
               case "completed":
                 progressValue = 80;
                 message = "Backup completed, uploading to Azure";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Backup container completed execution"
+                );
                 break;
               case "failed":
+                servicesLogger().error(
+                  {
+                    operationId,
+                    errorMessage: progress.errorMessage,
+                  },
+                  "Backup container execution failed"
+                );
                 throw new Error(
                   progress.errorMessage || "Container execution failed",
                 );
@@ -449,7 +684,47 @@ export class BackupExecutorService {
           },
         );
 
+      servicesLogger().info(
+        {
+          operationId,
+          exitCode: containerResult.exitCode,
+          containerExecutionTimeMs: Date.now() - containerStartTime,
+          stdoutLength: containerResult.stdout?.length || 0,
+          stderrLength: containerResult.stderr?.length || 0,
+        },
+        "Backup container execution completed"
+      );
+      
+      if (containerResult.stdout) {
+        servicesLogger().debug(
+          {
+            operationId,
+            stdout: containerResult.stdout.substring(0, 1000), // First 1000 chars
+          },
+          "Container stdout output (truncated)"
+        );
+      }
+      
+      if (containerResult.stderr) {
+        servicesLogger().debug(
+          {
+            operationId,
+            stderr: containerResult.stderr.substring(0, 1000), // First 1000 chars
+          },
+          "Container stderr output (truncated)"
+        );
+      }
+
       if (containerResult.exitCode !== 0) {
+        servicesLogger().error(
+          {
+            operationId,
+            exitCode: containerResult.exitCode,
+            stderr: containerResult.stderr,
+            stdout: containerResult.stdout,
+          },
+          "Backup container failed"
+        );
         throw new Error(
           `Backup failed: ${containerResult.stderr || containerResult.stdout}`,
         );
@@ -462,12 +737,40 @@ export class BackupExecutorService {
       });
 
       // Verify backup files in Azure Storage
+      servicesLogger().info(
+        {
+          operationId,
+          azureContainerName: backupConfig.azureContainerName,
+          blobName,
+        },
+        "Starting backup verification in Azure Storage"
+      );
+      
+      const verificationStartTime = Date.now();
       const backupVerification = await this.verifyBackupInAzure(
         backupConfig.azureContainerName,
         blobName,
       );
+      
+      servicesLogger().info(
+        {
+          operationId,
+          success: backupVerification.success,
+          sizeBytes: backupVerification.sizeBytes?.toString(),
+          blobUrl: backupVerification.blobUrl,
+          verificationTimeMs: Date.now() - verificationStartTime,
+        },
+        "Backup verification in Azure Storage completed"
+      );
 
       if (!backupVerification.success) {
+        servicesLogger().error(
+          {
+            operationId,
+            error: backupVerification.error,
+          },
+          "Backup verification in Azure Storage failed"
+        );
         throw new Error(
           backupVerification.error || "Backup verification failed",
         );
@@ -481,6 +784,15 @@ export class BackupExecutorService {
       });
 
       // Update backup operation with file details
+      servicesLogger().debug(
+        {
+          operationId,
+          sizeBytes: backupVerification.sizeBytes?.toString(),
+          blobUrl: backupVerification.blobUrl,
+        },
+        "Updating backup operation with file details"
+      );
+      
       await this.prisma.backupOperation.update({
         where: { id: operationId },
         data: {
@@ -491,26 +803,38 @@ export class BackupExecutorService {
       });
 
       // Update backup configuration with last backup time
+      servicesLogger().debug(
+        {
+          operationId,
+          backupConfigId: backupConfig.id,
+        },
+        "Updating backup configuration with last backup time"
+      );
+      
       await this.backupConfigService.updateLastBackupTime(backupConfig.id);
 
       servicesLogger().info(
         {
           operationId,
           databaseId,
-          sizeBytes: backupVerification.sizeBytes,
+          sizeBytes: backupVerification.sizeBytes?.toString(),
           blobUrl: backupVerification.blobUrl,
+          totalExecutionTimeMs: Date.now() - executionStartTime,
         },
         "Backup operation completed successfully",
       );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      const stack = error instanceof Error ? error.stack : undefined;
 
       servicesLogger().error(
         {
           operationId,
           databaseId,
           error: errorMessage,
+          stack: stack,
+          executionTimeMs: Date.now() - executionStartTime,
         },
         "Backup operation failed",
       );

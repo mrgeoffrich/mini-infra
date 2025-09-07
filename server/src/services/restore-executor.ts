@@ -91,19 +91,34 @@ export class RestoreExecutorService {
    */
   public async initialize(): Promise<void> {
     if (this.isInitialized) {
+      servicesLogger().debug("RestoreExecutorService already initialized, skipping");
       return;
     }
 
+    const startTime = Date.now();
     try {
+      servicesLogger().info("Initializing RestoreExecutorService...");
+      
       // Initialize Docker executor
+      servicesLogger().debug("Initializing Docker executor for restore operations");
       await this.dockerExecutor.initialize();
+      servicesLogger().debug("Docker executor initialized successfully");
 
-      servicesLogger().info("RestoreExecutorService initialized successfully");
+      servicesLogger().info(
+        {
+          initializationTimeMs: Date.now() - startTime,
+          queueConcurrency: 1,
+          maxRetries: RestoreExecutorService.MAX_RETRIES,
+          timeoutMs: RestoreExecutorService.RESTORE_TIMEOUT_MS
+        },
+        "RestoreExecutorService initialized successfully"
+      );
       this.isInitialized = true;
     } catch (error) {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          initializationTimeMs: Date.now() - startTime
         },
         "Failed to initialize RestoreExecutorService",
       );
@@ -120,10 +135,21 @@ export class RestoreExecutorService {
     userId: string,
   ): Promise<RestoreOperationInfo> {
     if (!this.isInitialized) {
+      servicesLogger().debug("RestoreExecutorService not initialized, initializing now");
       await this.initialize();
     }
 
+    const startTime = Date.now();
     try {
+      servicesLogger().info(
+        {
+          databaseId,
+          backupUrl,
+          userId,
+        },
+        "Queueing new restore operation"
+      );
+
       // Create restore operation record
       const restoreOperation = await this.prisma.restoreOperation.create({
         data: {
@@ -140,8 +166,9 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           userId,
+          queueingTimeMs: Date.now() - startTime
         },
-        "Restore operation created and queued",
+        "Restore operation created and queued successfully",
       );
 
       // Add job to queue
@@ -158,6 +185,14 @@ export class RestoreExecutorService {
         },
       );
 
+      servicesLogger().debug(
+        {
+          operationId: restoreOperation.id,
+          queuePosition: await this.restoreQueue.count(),
+        },
+        "Job added to restore queue"
+      );
+
       return this.mapRestoreOperationToInfo(restoreOperation);
     } catch (error) {
       servicesLogger().error(
@@ -166,6 +201,7 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           userId,
+          queueingTimeMs: Date.now() - startTime
         },
         "Failed to queue restore operation",
       );
@@ -324,8 +360,19 @@ export class RestoreExecutorService {
     userId: string,
   ): Promise<void> {
     let rollbackInitiated = false;
+    const executionStartTime = Date.now();
 
     try {
+      servicesLogger().info(
+        {
+          operationId,
+          databaseId,
+          backupUrl,
+          userId,
+        },
+        "Starting restore execution"
+      );
+
       // Update status to running
       await this.updateRestoreProgress(operationId, {
         status: "running",
@@ -334,6 +381,15 @@ export class RestoreExecutorService {
       });
 
       // Get database configuration
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseId,
+          userId,
+        },
+        "Retrieving database configuration"
+      );
+      
       const database = await this.databaseConfigService.getDatabaseById(
         databaseId,
         userId,
@@ -342,6 +398,17 @@ export class RestoreExecutorService {
         throw new Error("Database not found or access denied");
       }
 
+      servicesLogger().info(
+        {
+          operationId,
+          databaseId: database.id,
+          databaseName: database.database,
+          host: database.host,
+          port: database.port,
+        },
+        "Database configuration retrieved successfully"
+      );
+
       await this.updateRestoreProgress(operationId, {
         status: "running",
         progress: 10,
@@ -349,10 +416,36 @@ export class RestoreExecutorService {
       });
 
       // Validate backup file before restore
+      servicesLogger().info(
+        {
+          operationId,
+          backupUrl,
+        },
+        "Starting backup file validation"
+      );
+      
       const validationResult = await this.validateBackupFile(backupUrl);
       if (!validationResult.isValid) {
+        servicesLogger().error(
+          {
+            operationId,
+            backupUrl,
+            validationError: validationResult.error,
+          },
+          "Backup file validation failed"
+        );
         throw new Error(`Backup validation failed: ${validationResult.error}`);
       }
+
+      servicesLogger().info(
+        {
+          operationId,
+          backupUrl,
+          sizeBytes: validationResult.sizeBytes,
+          lastModified: validationResult.lastModified,
+        },
+        "Backup file validation completed successfully"
+      );
 
       await this.updateRestoreProgress(operationId, {
         status: "running",
@@ -361,7 +454,21 @@ export class RestoreExecutorService {
       });
 
       // Get system settings for Docker image
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving Docker image configuration"
+      );
+      
       const dockerImage = await this.getRestoreDockerImage();
+      
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving registry credentials configuration"
+      );
 
       // Get registry credentials for Docker image
       const registryCredentials = await this.getRestoreRegistryCredentials();
@@ -373,25 +480,84 @@ export class RestoreExecutorService {
       });
 
       // Pull Docker image with authentication if credentials are provided
+      servicesLogger().info(
+        {
+          operationId,
+          dockerImage,
+          hasRegistryAuth: !!(registryCredentials.username && registryCredentials.password),
+        },
+        "Starting Docker image pull"
+      );
+      
+      const pullStartTime = Date.now();
       await this.dockerExecutor.pullImageWithAuth(
         dockerImage,
         registryCredentials.username,
         registryCredentials.password,
       );
+      
+      servicesLogger().info(
+        {
+          operationId,
+          dockerImage,
+          pullTimeMs: Date.now() - pullStartTime,
+        },
+        "Docker image pulled successfully"
+      );
 
       // Get Azure connection string
+      servicesLogger().debug(
+        {
+          operationId,
+        },
+        "Retrieving Azure connection string"
+      );
+      
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
       if (!azureConnectionString) {
+        servicesLogger().error(
+          {
+            operationId,
+          },
+          "Azure connection string not configured"
+        );
         throw new Error("Azure connection string not configured");
       }
+      
+      servicesLogger().debug(
+        {
+          operationId,
+          hasAzureConnection: !!azureConnectionString,
+        },
+        "Azure connection string retrieved successfully"
+      );
 
       // Get database connection details
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseId,
+        },
+        "Retrieving database connection configuration"
+      );
+      
       const connectionConfig =
         await this.databaseConfigService.getConnectionConfig(
           databaseId,
           userId,
         );
+        
+      servicesLogger().debug(
+        {
+          operationId,
+          databaseHost: connectionConfig.host,
+          databasePort: connectionConfig.port,
+          databaseName: connectionConfig.database,
+          databaseUser: connectionConfig.username,
+        },
+        "Database connection configuration retrieved"
+      );
 
       await this.updateRestoreProgress(operationId, {
         status: "running",
@@ -400,11 +566,29 @@ export class RestoreExecutorService {
       });
 
       // Create a pre-restore backup for rollback purposes
+      servicesLogger().info(
+        {
+          operationId,
+          databaseName: database.database,
+        },
+        "Creating pre-restore rollback backup"
+      );
+      
+      const rollbackStartTime = Date.now();
       const rollbackBackupUrl = await this.createRollbackBackup(
         connectionConfig,
         azureConnectionString,
         dockerImage,
         database.database,
+      );
+      
+      servicesLogger().info(
+        {
+          operationId,
+          rollbackBackupUrl,
+          rollbackCreationTimeMs: Date.now() - rollbackStartTime,
+        },
+        "Pre-restore rollback backup created successfully"
       );
 
       await this.updateRestoreProgress(operationId, {
@@ -415,8 +599,43 @@ export class RestoreExecutorService {
 
       // Extract blob name from backup URL for restore
       const blobName = this.extractBlobNameFromUrl(backupUrl);
+      const containerName = this.extractContainerFromUrl(backupUrl);
+      
+      servicesLogger().info(
+        {
+          operationId,
+          backupUrl,
+          containerName,
+          blobName,
+        },
+        "Parsed backup URL components for restore"
+      );
 
       // Execute restore using Docker
+      const containerEnv = {
+        POSTGRES_HOST: connectionConfig.host,
+        POSTGRES_PORT: connectionConfig.port.toString(),
+        POSTGRES_USER: connectionConfig.username,
+        POSTGRES_PASSWORD: "[REDACTED]",
+        POSTGRES_DATABASE: connectionConfig.database,
+        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
+        AZURE_CONTAINER_NAME: containerName,
+        RESTORE: "yes",
+        DROP_PUBLIC: "yes",
+        AZURE_BLOB_NAME: blobName,
+      };
+      
+      servicesLogger().info(
+        {
+          operationId,
+          dockerImage,
+          environment: containerEnv,
+          timeoutMs: RestoreExecutorService.RESTORE_TIMEOUT_MS,
+        },
+        "Starting restore container execution"
+      );
+      
+      const containerStartTime = Date.now();
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
           {
@@ -428,7 +647,7 @@ export class RestoreExecutorService {
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
               AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-              AZURE_CONTAINER_NAME: this.extractContainerFromUrl(backupUrl),
+              AZURE_CONTAINER_NAME: containerName,
               RESTORE: "yes",
               DROP_PUBLIC: "yes",
               AZURE_BLOB_NAME: blobName,
@@ -440,20 +659,54 @@ export class RestoreExecutorService {
             let progressValue = 50;
             let message = "Executing restore";
 
+            servicesLogger().debug(
+              {
+                operationId,
+                containerStatus: progress.status,
+                errorMessage: progress.errorMessage,
+              },
+              "Container progress update received"
+            );
+
             switch (progress.status) {
               case "starting":
                 progressValue = 50;
                 message = "Starting restore container";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Restore container is starting"
+                );
                 break;
               case "running":
                 progressValue = 70;
                 message = "Restoring database";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Restore container is running - database restore in progress"
+                );
                 break;
               case "completed":
                 progressValue = 85;
                 message = "Restore completed, verifying database";
+                servicesLogger().info(
+                  {
+                    operationId,
+                  },
+                  "Restore container completed execution"
+                );
                 break;
               case "failed":
+                servicesLogger().error(
+                  {
+                    operationId,
+                    errorMessage: progress.errorMessage,
+                  },
+                  "Restore container execution failed"
+                );
                 throw new Error(
                   progress.errorMessage || "Container execution failed",
                 );
@@ -467,8 +720,50 @@ export class RestoreExecutorService {
           },
         );
 
+      servicesLogger().info(
+        {
+          operationId,
+          exitCode: containerResult.exitCode,
+          containerExecutionTimeMs: Date.now() - containerStartTime,
+          stdoutLength: containerResult.stdout?.length || 0,
+          stderrLength: containerResult.stderr?.length || 0,
+        },
+        "Restore container execution completed"
+      );
+      
+      if (containerResult.stdout) {
+        servicesLogger().debug(
+          {
+            operationId,
+            stdout: containerResult.stdout.substring(0, 1000), // First 1000 chars
+          },
+          "Container stdout output (truncated)"
+        );
+      }
+      
+      if (containerResult.stderr) {
+        servicesLogger().debug(
+          {
+            operationId,
+            stderr: containerResult.stderr.substring(0, 1000), // First 1000 chars
+          },
+          "Container stderr output (truncated)"
+        );
+      }
+
       if (containerResult.exitCode !== 0) {
         rollbackInitiated = true;
+        
+        servicesLogger().error(
+          {
+            operationId,
+            exitCode: containerResult.exitCode,
+            stderr: containerResult.stderr,
+            stdout: containerResult.stdout,
+          },
+          "Restore container failed, initiating rollback"
+        );
+        
         await this.updateRestoreProgress(operationId, {
           status: "running",
           progress: 85,
@@ -476,11 +771,20 @@ export class RestoreExecutorService {
         });
 
         // Execute rollback
+        const rollbackExecutionStartTime = Date.now();
         await this.executeRollback(
           connectionConfig,
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+        );
+        
+        servicesLogger().info(
+          {
+            operationId,
+            rollbackExecutionTimeMs: Date.now() - rollbackExecutionStartTime,
+          },
+          "Rollback execution completed"
         );
 
         throw new Error(
@@ -495,10 +799,40 @@ export class RestoreExecutorService {
       });
 
       // Verify the restored database
+      servicesLogger().info(
+        {
+          operationId,
+          databaseHost: connectionConfig.host,
+          databaseName: connectionConfig.database,
+        },
+        "Starting database verification after restore"
+      );
+      
+      const verificationStartTime = Date.now();
       const verificationResult =
         await this.verifyRestoredDatabase(connectionConfig);
+        
+      servicesLogger().info(
+        {
+          operationId,
+          isValid: verificationResult.isValid,
+          verificationTimeMs: Date.now() - verificationStartTime,
+          error: verificationResult.error,
+        },
+        "Database verification completed"
+      );
+        
       if (!verificationResult.isValid) {
         rollbackInitiated = true;
+        
+        servicesLogger().error(
+          {
+            operationId,
+            verificationError: verificationResult.error,
+          },
+          "Database verification failed, initiating rollback"
+        );
+        
         await this.updateRestoreProgress(operationId, {
           status: "running",
           progress: 90,
@@ -506,11 +840,20 @@ export class RestoreExecutorService {
         });
 
         // Execute rollback
+        const rollbackExecutionStartTime = Date.now();
         await this.executeRollback(
           connectionConfig,
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+        );
+        
+        servicesLogger().info(
+          {
+            operationId,
+            rollbackExecutionTimeMs: Date.now() - rollbackExecutionStartTime,
+          },
+          "Rollback execution completed after verification failure"
         );
 
         throw new Error(
@@ -518,8 +861,14 @@ export class RestoreExecutorService {
         );
       }
 
-      // Clean up rollback backup on success
-      await this.cleanupRollbackBackup(rollbackBackupUrl);
+      // Keep rollback backup for future reference - do not delete
+      servicesLogger().info(
+        {
+          operationId,
+          rollbackBackupUrl,
+        },
+        "Rollback backup preserved for future reference (not deleted)"
+      );
 
       // Update restore operation with success status
       await this.updateRestoreProgress(operationId, {
@@ -544,12 +893,14 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           rollbackInitiated,
+          totalExecutionTimeMs: Date.now() - executionStartTime,
         },
-        "Restore operation completed",
+        "Restore operation completed successfully",
       );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      const stack = error instanceof Error ? error.stack : undefined;
 
       servicesLogger().error(
         {
@@ -557,7 +908,9 @@ export class RestoreExecutorService {
           databaseId,
           backupUrl,
           error: errorMessage,
+          stack: stack,
           rollbackInitiated,
+          executionTimeMs: Date.now() - executionStartTime,
         },
         "Restore operation failed",
       );
@@ -681,9 +1034,15 @@ export class RestoreExecutorService {
     dockerImage: string,
     databaseName: string,
   ): Promise<string> {
+    const startTime = Date.now();
     try {
       servicesLogger().info(
-        { databaseName },
+        { 
+          databaseName,
+          host: connectionConfig.host,
+          port: connectionConfig.port,
+          database: connectionConfig.database,
+        },
         "Creating pre-restore backup for rollback purposes",
       );
 
@@ -691,12 +1050,42 @@ export class RestoreExecutorService {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const rollbackContainerName = "rollback-backups";
       const rollbackPathPrefix = `${databaseName}/rollback-${timestamp}`;
+      
+      servicesLogger().debug(
+        {
+          rollbackContainerName,
+          rollbackPathPrefix,
+          timestamp,
+        },
+        "Generated rollback backup path and container"
+      );
+
+      const containerEnv = {
+        POSTGRES_HOST: connectionConfig.host,
+        POSTGRES_PORT: connectionConfig.port.toString(),
+        POSTGRES_USER: connectionConfig.username,
+        POSTGRES_PASSWORD: "[REDACTED]",
+        POSTGRES_DATABASE: connectionConfig.database,
+        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
+        AZURE_CONTAINER_NAME: rollbackContainerName,
+        BACKUP_PATH_PREFIX: rollbackPathPrefix,
+      };
+      
+      servicesLogger().info(
+        {
+          dockerImage,
+          environment: containerEnv,
+          timeoutMs: 30 * 60 * 1000,
+        },
+        "Starting rollback backup container"
+      );
 
       // Execute backup for rollback purposes
       const containerResult = await this.dockerExecutor.executeContainer({
         image: dockerImage,
         env: {
           POSTGRES_HOST: connectionConfig.host,
+          POSTGRES_PORT: connectionConfig.port.toString(),
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
@@ -706,8 +1095,44 @@ export class RestoreExecutorService {
         },
         timeout: 30 * 60 * 1000, // 30 minutes for rollback backup
       });
+      
+      servicesLogger().info(
+        {
+          exitCode: containerResult.exitCode,
+          stdoutLength: containerResult.stdout?.length || 0,
+          stderrLength: containerResult.stderr?.length || 0,
+          executionTimeMs: Date.now() - startTime,
+        },
+        "Rollback backup container execution completed"
+      );
+      
+      if (containerResult.stdout) {
+        servicesLogger().debug(
+          {
+            stdout: containerResult.stdout.substring(0, 500),
+          },
+          "Rollback backup container stdout (truncated)"
+        );
+      }
+      
+      if (containerResult.stderr) {
+        servicesLogger().debug(
+          {
+            stderr: containerResult.stderr.substring(0, 500),
+          },
+          "Rollback backup container stderr (truncated)"
+        );
+      }
 
       if (containerResult.exitCode !== 0) {
+        servicesLogger().error(
+          {
+            exitCode: containerResult.exitCode,
+            stderr: containerResult.stderr,
+            stdout: containerResult.stdout,
+          },
+          "Rollback backup container failed"
+        );
         throw new Error(
           `Failed to create rollback backup: ${containerResult.stderr}`,
         );
@@ -716,7 +1141,11 @@ export class RestoreExecutorService {
       const rollbackBackupUrl = `https://${this.getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackPathPrefix}`;
 
       servicesLogger().info(
-        { rollbackBackupUrl, databaseName },
+        { 
+          rollbackBackupUrl, 
+          databaseName,
+          creationTimeMs: Date.now() - startTime,
+        },
         "Rollback backup created successfully",
       );
 
@@ -725,7 +1154,9 @@ export class RestoreExecutorService {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
           databaseName,
+          creationTimeMs: Date.now() - startTime,
         },
         "Failed to create rollback backup",
       );
@@ -742,18 +1173,55 @@ export class RestoreExecutorService {
     azureConnectionString: string,
     dockerImage: string,
   ): Promise<void> {
+    const startTime = Date.now();
     try {
       servicesLogger().info(
-        { rollbackBackupUrl },
+        { 
+          rollbackBackupUrl,
+          databaseHost: connectionConfig.host,
+          databaseName: connectionConfig.database,
+        },
         "Executing rollback to pre-restore state",
       );
 
-      const { containerName } = this.parseBackupUrl(rollbackBackupUrl);
+      const { containerName, blobName } = this.parseBackupUrl(rollbackBackupUrl);
+      
+      servicesLogger().debug(
+        {
+          rollbackBackupUrl,
+          containerName,
+          blobName,
+        },
+        "Parsed rollback backup URL components"
+      );
+
+      const containerEnv = {
+        POSTGRES_HOST: connectionConfig.host,
+        POSTGRES_PORT: connectionConfig.port.toString(),
+        POSTGRES_USER: connectionConfig.username,
+        POSTGRES_PASSWORD: "[REDACTED]",
+        POSTGRES_DATABASE: connectionConfig.database,
+        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
+        AZURE_CONTAINER_NAME: containerName,
+        RESTORE: "yes",
+        DROP_PUBLIC: "yes",
+        BACKUP_FILE_URL: rollbackBackupUrl,
+      };
+      
+      servicesLogger().info(
+        {
+          dockerImage,
+          environment: containerEnv,
+          timeoutMs: 60 * 60 * 1000,
+        },
+        "Starting rollback container execution"
+      );
 
       const containerResult = await this.dockerExecutor.executeContainer({
         image: dockerImage,
         env: {
           POSTGRES_HOST: connectionConfig.host,
+          POSTGRES_PORT: connectionConfig.port.toString(),
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
@@ -765,17 +1233,63 @@ export class RestoreExecutorService {
         },
         timeout: 60 * 60 * 1000, // 1 hour for rollback
       });
+      
+      servicesLogger().info(
+        {
+          rollbackBackupUrl,
+          exitCode: containerResult.exitCode,
+          stdoutLength: containerResult.stdout?.length || 0,
+          stderrLength: containerResult.stderr?.length || 0,
+          executionTimeMs: Date.now() - startTime,
+        },
+        "Rollback container execution completed"
+      );
+      
+      if (containerResult.stdout) {
+        servicesLogger().debug(
+          {
+            stdout: containerResult.stdout.substring(0, 500),
+          },
+          "Rollback container stdout (truncated)"
+        );
+      }
+      
+      if (containerResult.stderr) {
+        servicesLogger().debug(
+          {
+            stderr: containerResult.stderr.substring(0, 500),
+          },
+          "Rollback container stderr (truncated)"
+        );
+      }
 
       if (containerResult.exitCode !== 0) {
+        servicesLogger().error(
+          {
+            rollbackBackupUrl,
+            exitCode: containerResult.exitCode,
+            stderr: containerResult.stderr,
+            stdout: containerResult.stdout,
+          },
+          "Rollback container execution failed"
+        );
         throw new Error(`Rollback execution failed: ${containerResult.stderr}`);
       }
 
-      servicesLogger().info({ rollbackBackupUrl }, "Rollback executed successfully");
+      servicesLogger().info(
+        { 
+          rollbackBackupUrl,
+          executionTimeMs: Date.now() - startTime,
+        }, 
+        "Rollback executed successfully"
+      );
     } catch (error) {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
           rollbackBackupUrl,
+          executionTimeMs: Date.now() - startTime,
         },
         "Failed to execute rollback",
       );
@@ -833,11 +1347,24 @@ export class RestoreExecutorService {
   private async cleanupRollbackBackup(
     rollbackBackupUrl: string,
   ): Promise<void> {
+    const startTime = Date.now();
     try {
+      servicesLogger().debug(
+        {
+          rollbackBackupUrl,
+        },
+        "Starting rollback backup cleanup"
+      );
+      
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
       if (!azureConnectionString) {
-        servicesLogger().warn("Azure connection string not available for cleanup");
+        servicesLogger().warn(
+          {
+            rollbackBackupUrl,
+          },
+          "Azure connection string not available for cleanup"
+        );
         return;
       }
 
@@ -847,22 +1374,57 @@ export class RestoreExecutorService {
 
       const { containerName, blobName } =
         this.parseBackupUrl(rollbackBackupUrl);
+        
+      servicesLogger().debug(
+        {
+          rollbackBackupUrl,
+          containerName,
+          blobName,
+        },
+        "Parsed rollback backup URL for cleanup"
+      );
+        
       const blobClient = blobServiceClient
         .getContainerClient(containerName)
         .getBlobClient(blobName);
 
-      await blobClient.deleteIfExists();
-
-      servicesLogger().info(
-        { rollbackBackupUrl },
-        "Rollback backup cleaned up successfully",
+      // Check if blob exists before trying to delete
+      const exists = await blobClient.exists();
+      
+      servicesLogger().debug(
+        {
+          rollbackBackupUrl,
+          exists,
+        },
+        "Checked rollback backup existence"
       );
+      
+      if (exists) {
+        await blobClient.deleteIfExists();
+        
+        servicesLogger().info(
+          { 
+            rollbackBackupUrl,
+            cleanupTimeMs: Date.now() - startTime,
+          },
+          "Rollback backup deleted successfully",
+        );
+      } else {
+        servicesLogger().info(
+          {
+            rollbackBackupUrl,
+          },
+          "Rollback backup does not exist, no cleanup needed"
+        );
+      }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the restore
       servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
           rollbackBackupUrl,
+          cleanupTimeMs: Date.now() - startTime,
         },
         "Failed to clean up rollback backup",
       );
