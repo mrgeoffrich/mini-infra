@@ -23,18 +23,25 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   useUserPreferences,
   useUpdateUserPreferences,
   useTimezones,
 } from "@/hooks/use-user-preferences";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   Save,
@@ -43,6 +50,8 @@ import {
   CheckCircle,
   AlertCircle,
   User,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 
 // Form validation schema
@@ -54,6 +63,7 @@ type UserSettingsFormData = z.infer<typeof UserSettingsSchema>;
 
 export function UserSettingsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
 
   // Query hooks
   const {
@@ -105,26 +115,35 @@ export function UserSettingsPage() {
   // Loading state
   if (preferencesLoading || timezonesLoading) {
     return (
-      <div className="container mx-auto py-6 space-y-6">
-        <div className="flex items-center gap-2 mb-6">
-          <Skeleton className="h-6 w-6" />
-          <Skeleton className="h-8 w-32" />
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-12 w-12" />
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-32" />
+                <Skeleton className="h-4 w-64" />
+              </div>
+            </div>
+          </div>
         </div>
         
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-72" />
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-3 w-64" />
-            </div>
-            <Skeleton className="h-10 w-24" />
-          </CardContent>
-        </Card>
+        <div className="px-4 lg:px-6 max-w-6xl">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-72" />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-3 w-64" />
+              </div>
+              <Skeleton className="h-10 w-24" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -132,20 +151,31 @@ export function UserSettingsPage() {
   // Error state
   if (preferencesError || timezonesError) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="flex items-center gap-2 mb-6">
-          <Link to="/dashboard" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Link>
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-md bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+                <User className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold">User Settings</h1>
+                <p className="text-muted-foreground">
+                  Manage your personal preferences and settings
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
         
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Failed to load user settings. {preferencesError?.message || timezonesError?.message}
-          </AlertDescription>
-        </Alert>
+        <div className="px-4 lg:px-6 max-w-6xl">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load user settings. {preferencesError?.message || timezonesError?.message}
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
@@ -154,116 +184,150 @@ export function UserSettingsPage() {
   const currentTimezone = preferences?.timezone || "UTC";
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-6">
-        <Link 
-          to="/dashboard" 
-          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </Link>
-      </div>
-
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <User className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight">User Settings</h1>
-        </div>
-        <p className="text-muted-foreground">
-          Manage your personal preferences and settings
-        </p>
-      </div>
-
-      {/* Settings Form */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" />
-            <CardTitle>Timezone Settings</CardTitle>
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <User className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">User Settings</h1>
+              <p className="text-muted-foreground">
+                Manage your personal preferences and settings
+              </p>
+            </div>
           </div>
-          <CardDescription>
-            Set your preferred timezone for displaying dates and times throughout the application
-          </CardDescription>
-        </CardHeader>
+        </div>
+      </div>
 
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="timezone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Timezone</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a timezone" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {(timezones || []).map((timezone) => (
-                          <SelectItem key={timezone.value} value={timezone.value}>
-                            {timezone.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      Current timezone: {currentTimezone} | 
-                      Local time: {new Date().toLocaleString("en-US", { 
-                        timeZone: form.watch("timezone") || currentTimezone,
-                        dateStyle: "short",
-                        timeStyle: "medium"
-                      })}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  disabled={!isDirty || isSubmitting}
-                  className="flex items-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
-
-                {isDirty && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => form.reset()}
-                  >
-                    Reset
-                  </Button>
-                )}
+      <div className="px-4 lg:px-6 max-w-6xl">
+        <div className="grid gap-6">
+          {/* Settings Form */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <CardTitle>Timezone Settings</CardTitle>
               </div>
+              <CardDescription>
+                Set your preferred timezone for displaying dates and times throughout the application
+              </CardDescription>
+            </CardHeader>
 
-              {!isDirty && preferences && (
-                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                  <CheckCircle className="h-4 w-4" />
-                  All changes saved
-                </div>
-              )}
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            <CardContent>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="timezone"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col max-w-[400px]">
+                        <FormLabel>Timezone</FormLabel>
+                        <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className={cn(
+                                  "w-full justify-between",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value
+                                  ? timezones?.find((timezone) => timezone.value === field.value)?.label
+                                  : "Select a timezone"}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[400px] max-w-[400px] p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="Search timezones..." />
+                              <CommandList>
+                                <CommandEmpty>No timezone found.</CommandEmpty>
+                                <CommandGroup>
+                                  {(timezones || []).map((timezone) => (
+                                    <CommandItem
+                                      value={timezone.label}
+                                      key={timezone.value}
+                                      onSelect={() => {
+                                        field.onChange(timezone.value);
+                                        setTimezonePopoverOpen(false);
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          "mr-2 h-4 w-4",
+                                          timezone.value === field.value
+                                            ? "opacity-100"
+                                            : "opacity-0"
+                                        )}
+                                      />
+                                      {timezone.label}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        <FormDescription>
+                          Current timezone: {currentTimezone} | 
+                          Local time: {new Date().toLocaleString("en-US", { 
+                            timeZone: form.watch("timezone") || currentTimezone,
+                            dateStyle: "short",
+                            timeStyle: "medium"
+                          })}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      disabled={!isDirty || isSubmitting}
+                      className="flex items-center gap-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          Save Changes
+                        </>
+                      )}
+                    </Button>
+
+                    {isDirty && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => form.reset()}
+                      >
+                        Reset
+                      </Button>
+                    )}
+                  </div>
+
+                  {!isDirty && preferences && (
+                    <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                      <CheckCircle className="h-4 w-4" />
+                      All changes saved
+                    </div>
+                  )}
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
