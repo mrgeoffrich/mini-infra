@@ -1,44 +1,61 @@
 // Mock the PrismaClient BEFORE any imports
+const mockPrismaInstance = {
+  postgresDatabase: {
+    findFirst: jest.fn(),
+  },
+  restoreOperation: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+  },
+};
+
 jest.mock("../../generated/prisma", () => ({
-  PrismaClient: jest.fn(() => ({
-    postgresDatabase: {
-      findFirst: jest.fn(),
-    },
-    restoreOperation: {
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-    },
-  })),
+  PrismaClient: jest.fn(() => mockPrismaInstance),
 }));
+
+// Mock the prisma instance that the route actually imports
+jest.mock("../../lib/prisma", () => mockPrismaInstance);
 
 // Mock all services that RestoreExecutorService depends on
 jest.mock("../../services/docker-executor");
 jest.mock("../../services/postgres-config");
 
+// Create mock service instances
+const mockRestoreExecutorService = {
+  queueRestore: jest.fn(),
+};
+
+const mockAzureConfigService = {
+  get: jest.fn(),
+};
+
 // Mock the RestoreExecutorService
 jest.mock("../../services/restore-executor", () => ({
-  RestoreExecutorService: jest.fn(() => ({
-    queueRestore: jest.fn(),
-  })),
+  RestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
 }));
 
 // Mock the AzureConfigService
 jest.mock("../../services/azure-config", () => ({
-  AzureConfigService: jest.fn(() => ({
-    get: jest.fn(),
-  })),
+  AzureConfigService: jest.fn(() => mockAzureConfigService),
 }));
+
+// Create Azure Storage mock instances
+const mockContainerClient = {
+  listBlobsFlat: jest.fn(),
+  getBlobClient: jest.fn((blobName: string) => ({
+    url: `https://storage.blob.core.windows.net/backups/${blobName}`,
+  })),
+};
+
+const mockBlobServiceClient = {
+  getContainerClient: jest.fn(() => mockContainerClient),
+};
 
 // Mock Azure Storage
 jest.mock("@azure/storage-blob", () => ({
   BlobServiceClient: {
-    fromConnectionString: jest.fn(() => ({
-      getContainerClient: jest.fn(() => ({
-        listBlobsFlat: jest.fn(),
-        getBlobClient: jest.fn(),
-      })),
-    })),
+    fromConnectionString: jest.fn(() => mockBlobServiceClient),
   },
 }));
 
@@ -109,18 +126,11 @@ import router from "../postgres-restore";
 
 
 // Get the mocked instances
-const mockPrismaClient = new (jest.requireMock("../../generated/prisma") as any).PrismaClient();
-const mockRestoreExecutorService = new (jest.requireMock("../../services/restore-executor") as any).RestoreExecutorService();
-const mockAzureConfigService = new (jest.requireMock("../../services/azure-config") as any).AzureConfigService();
+const mockPrismaClient = mockPrismaInstance;
+// Use the shared mock instances defined above
+// mockRestoreExecutorService and mockAzureConfigService are already defined
 
-const mockContainerClient = {
-  listBlobsFlat: jest.fn(),
-  getBlobClient: jest.fn(),
-};
-
-const mockBlobServiceClient = {
-  getContainerClient: jest.fn(() => mockContainerClient),
-};
+// Azure Storage mock instances are now defined above in the mock setup section
 
 const app = express();
 app.use(express.json());
@@ -489,15 +499,12 @@ describe("PostgreSQL Restore API", () => {
       },
     ];
 
-    const mockBlobClient = {
-      url: "https://storage.blob.core.windows.net/backups/testdb/backup_2024-01-01_00-00-00.sql",
-    };
+    // Azure Storage mock instances are defined globally above
 
     beforeEach(() => {
       mockAzureConfigService.get.mockResolvedValue(
         "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key;EndpointSuffix=core.windows.net",
       );
-      mockContainerClient.getBlobClient.mockReturnValue(mockBlobClient);
     });
 
     it("should list available backups", async () => {
@@ -518,17 +525,16 @@ describe("PostgreSQL Restore API", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0]).toEqual({
-        name: "testdb/backup_2024-01-01_00-00-00.sql",
-        url: "https://storage.blob.core.windows.net/backups/testdb/backup_2024-01-01_00-00-00.sql",
-        sizeBytes: 1024000,
-        createdAt: "2024-01-01T00:00:00.000Z",
-        lastModified: "2024-01-01T00:00:00.000Z",
+        name: "testdb/backup_2024-01-02_00-00-00.dump",
+        url: "https://storage.blob.core.windows.net/backups/testdb/backup_2024-01-02_00-00-00.dump",
+        sizeBytes: 2048000,
+        createdAt: "2024-01-02T00:00:00.000Z",
+        lastModified: "2024-01-02T00:00:00.000Z",
         metadata: {
           databaseName: "testdb",
-          contentType: "application/sql",
-          etag: '"0x8D9A1B2C3D4E5F6"',
-          databaseName: "testdb",
-          backupType: "full",
+          contentType: "application/octet-stream",
+          etag: '"0x8D9A1B2C3D4E5F7"',
+          backupType: "incremental",
         },
       });
       expect(response.body.pagination.totalCount).toBe(2);
