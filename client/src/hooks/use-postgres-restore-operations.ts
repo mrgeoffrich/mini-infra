@@ -160,6 +160,7 @@ async function fetchRestoreOperationProgress(
 
 async function fetchAvailableBackups(
   containerName: string,
+  databaseId: string,
   filters: BackupBrowserFilter = {},
   page = 1,
   limit = 20,
@@ -168,7 +169,7 @@ async function fetchAvailableBackups(
   correlationId: string,
 ): Promise<BackupBrowserResponse> {
   const url = new URL(
-    `/api/postgres/restore/backups/${containerName}`,
+    `/api/postgres/restore/backups/${containerName}/${databaseId}`,
     window.location.origin,
   );
 
@@ -403,6 +404,7 @@ export interface UseAvailableBackupsOptions {
 
 export function useAvailableBackups(
   containerName: string,
+  databaseId: string,
   options: UseAvailableBackupsOptions = {},
 ) {
   const {
@@ -422,6 +424,7 @@ export function useAvailableBackups(
     queryKey: [
       "availableBackups",
       containerName,
+      databaseId,
       filters,
       page,
       limit,
@@ -431,6 +434,7 @@ export function useAvailableBackups(
     queryFn: () =>
       fetchAvailableBackups(
         containerName,
+        databaseId,
         filters,
         page,
         limit,
@@ -438,7 +442,7 @@ export function useAvailableBackups(
         sortOrder,
         correlationId,
       ),
-    enabled: enabled && !!containerName,
+    enabled: enabled && !!containerName && !!databaseId,
     refetchInterval,
     retry:
       typeof retry === "function"

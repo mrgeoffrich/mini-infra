@@ -12,6 +12,7 @@ import AzureSettingsPage from "@/app/connectivity/azure/page";
 import { ConnectivityPage } from "@/app/connectivity/page";
 import SystemSettingsPage from "@/app/settings/system/page";
 import PostgresPage from "@/app/postgres/page";
+import PostgresRestorePage from "@/app/postgres/restore/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 
@@ -51,6 +52,10 @@ export const router = createBrowserRouter([
       {
         path: "postgres",
         element: <PostgresPage />,
+      },
+      {
+        path: "postgres/:databaseId/restore",
+        element: <PostgresRestorePage />,
       },
       {
         path: "deployments",

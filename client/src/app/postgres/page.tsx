@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -24,7 +25,6 @@ import {
 import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import { DatabaseModal } from "@/components/postgres/database-modal";
 import { BackupConfigurationModal } from "@/components/postgres/backup-configuration-modal";
-import { RestoreBrowserModal } from "@/components/postgres/restore-browser-modal";
 import { DatabaseTable } from "@/components/postgres/database-table";
 import { DeleteDatabaseDialog } from "@/components/postgres/delete-database-dialog";
 import type {
@@ -32,6 +32,7 @@ import type {
 } from "@mini-infra/types";
 
 export default function PostgresPage() {
+  const navigate = useNavigate();
   const [selectedDatabase, setSelectedDatabase] =
     useState<PostgresDatabaseInfo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,9 +41,6 @@ export default function PostgresPage() {
     useState<PostgresDatabaseInfo | null>(null);
   const [backupConfigModalOpen, setBackupConfigModalOpen] = useState(false);
   const [selectedBackupDatabase, setSelectedBackupDatabase] =
-    useState<PostgresDatabaseInfo | null>(null);
-  const [restoreBrowserModalOpen, setRestoreBrowserModalOpen] = useState(false);
-  const [selectedRestoreDatabase, setSelectedRestoreDatabase] =
     useState<PostgresDatabaseInfo | null>(null);
 
   // Get backup config for selected database (always call hook, even if database is null)
@@ -90,14 +88,8 @@ export default function PostgresPage() {
     setSelectedBackupDatabase(null);
   };
 
-  const openRestoreBrowserModal = (database: PostgresDatabaseInfo) => {
-    setSelectedRestoreDatabase(database);
-    setRestoreBrowserModalOpen(true);
-  };
-
-  const closeRestoreBrowserModal = () => {
-    setRestoreBrowserModalOpen(false);
-    setSelectedRestoreDatabase(null);
+  const navigateToRestorePage = (database: PostgresDatabaseInfo) => {
+    navigate(`/postgres/${database.id}/restore`);
   };
 
   const openEditModal = (database: PostgresDatabaseInfo) => {
@@ -195,7 +187,7 @@ export default function PostgresPage() {
                 onEditDatabase={openEditModal}
                 onDeleteDatabase={openDeleteDialog}
                 onConfigureBackup={openBackupConfigModal}
-                onBrowseBackups={openRestoreBrowserModal}
+                onBrowseBackups={navigateToRestorePage}
               />
             )}
           </CardContent>
@@ -226,13 +218,6 @@ export default function PostgresPage() {
         />
       )}
 
-      {selectedRestoreDatabase && (
-        <RestoreBrowserModal
-          database={selectedRestoreDatabase}
-          isOpen={restoreBrowserModalOpen}
-          onClose={closeRestoreBrowserModal}
-        />
-      )}
     </div>
   );
 }
