@@ -6,10 +6,12 @@ import { appLogger } from "./lib/logger-factory";
 const logger = appLogger();
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
+import { BackupSchedulerService } from "./services/backup-scheduler";
 import prisma from "./lib/prisma";
 
-// Global connectivity scheduler instance
+// Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
+let backupScheduler: BackupSchedulerService | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -24,6 +26,11 @@ const initializeServices = async () => {
       appConfig.connectivity.checkInterval,
     );
     connectivityScheduler.start();
+
+    // Initialize backup scheduler
+    backupScheduler = new BackupSchedulerService(prisma);
+    BackupSchedulerService.setInstance(backupScheduler);
+    await backupScheduler.initialize();
 
     logger.info("All services initialized successfully");
   } catch (error) {
@@ -66,13 +73,18 @@ const startServer = async () => {
 startServer()
   .then((server) => {
     // Graceful shutdown
-    const gracefulShutdown = (signal: string) => {
+    const gracefulShutdown = async (signal: string) => {
       logger.info(`${signal} received, starting graceful shutdown`);
 
-      // Stop connectivity scheduler first
+      // Stop schedulers
       if (connectivityScheduler) {
         connectivityScheduler.stop();
         logger.info("Connectivity scheduler stopped");
+      }
+      
+      if (backupScheduler) {
+        await backupScheduler.shutdown();
+        logger.info("Backup scheduler stopped");
       }
 
       server.close((err) => {

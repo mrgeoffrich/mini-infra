@@ -132,7 +132,7 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should register schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
+      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
 
       expect(mockCron.validate).toHaveBeenCalledWith("0 2 * * *");
       expect(mockCron.schedule).toHaveBeenCalled();
@@ -148,7 +148,7 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should enable schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
+      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
       await backupSchedulerService.enableSchedule("db-123");
 
       expect(mockScheduledTask.start).toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe("BackupSchedulerService - Memory Test", () => {
     });
 
     it("should unregister schedule successfully", async () => {
-      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "user-123");
+      await backupSchedulerService.registerSchedule("db-123", "0 2 * * *", "UTC", "user-123");
       await backupSchedulerService.unregisterSchedule("db-123");
 
       expect(mockScheduledTask.destroy).toHaveBeenCalled();

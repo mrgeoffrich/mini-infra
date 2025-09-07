@@ -1,6 +1,6 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
-import * as cronParser from "cron-parser";
+import cronParser from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
 import { BackupConfigService } from "./backup-config";
 import { BackupExecutorService } from "./backup-executor";
@@ -23,6 +23,7 @@ export interface ScheduledJob {
  * BackupSchedulerService manages cron-based backup scheduling
  */
 export class BackupSchedulerService {
+  private static instance: BackupSchedulerService | null = null;
   private prisma: PrismaClient;
   private backupConfigService: BackupConfigService;
   private backupExecutorService: BackupExecutorService;
@@ -33,6 +34,23 @@ export class BackupSchedulerService {
     this.prisma = prisma;
     this.backupConfigService = new BackupConfigService(prisma);
     this.backupExecutorService = new BackupExecutorService(prisma);
+  }
+
+  /**
+   * Get the singleton instance of BackupSchedulerService
+   */
+  public static getInstance(prisma?: typeof prisma): BackupSchedulerService | null {
+    if (!BackupSchedulerService.instance && prisma) {
+      BackupSchedulerService.instance = new BackupSchedulerService(prisma);
+    }
+    return BackupSchedulerService.instance;
+  }
+
+  /**
+   * Set the singleton instance (used by server initialization)
+   */
+  public static setInstance(instance: BackupSchedulerService): void {
+    BackupSchedulerService.instance = instance;
   }
 
   /**

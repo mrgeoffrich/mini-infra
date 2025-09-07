@@ -1,8 +1,10 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
+import cronParser from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
 import { AzureConfigService } from "./azure-config";
 import { UserPreferencesService } from "./user-preferences";
+import { BackupSchedulerService } from "./backup-scheduler";
 import {
   BackupConfiguration,
   BackupConfigurationInfo,
@@ -89,7 +91,7 @@ export class BackupConfigService {
       // Calculate next scheduled time if schedule is provided and enabled
       const nextScheduledAt =
         config.schedule && (config.isEnabled ?? true)
-          ? this.calculateNextScheduledTime(config.schedule)
+          ? this.calculateNextScheduledTime(config.schedule, timezone)
           : null;
 
       // Create backup configuration
@@ -107,6 +109,35 @@ export class BackupConfigService {
           nextScheduledAt: nextScheduledAt,
         },
       });
+
+      // Register with scheduler if schedule is provided
+      if (config.schedule) {
+        const scheduler = BackupSchedulerService.getInstance();
+        if (scheduler) {
+          try {
+            await scheduler.registerSchedule(
+              databaseId,
+              config.schedule,
+              timezone,
+              userId,
+            );
+            
+            // Enable the schedule if the config is enabled
+            if (config.isEnabled ?? true) {
+              await scheduler.enableSchedule(databaseId);
+            }
+          } catch (scheduleError) {
+            servicesLogger().warn(
+              {
+                configId: createdConfig.id,
+                databaseId: databaseId,
+                scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+              },
+              "Failed to register backup schedule, but configuration was created",
+            );
+          }
+        }
+      }
 
       servicesLogger().info(
         {
@@ -230,14 +261,15 @@ export class BackupConfigService {
         updateData.isEnabled = updates.isEnabled;
       }
 
-      // Recalculate next scheduled time if schedule or enabled status changed
-      if (updates.schedule !== undefined || updates.isEnabled !== undefined) {
+      // Recalculate next scheduled time if schedule, timezone, or enabled status changed
+      if (updates.schedule !== undefined || updates.timezone !== undefined || updates.isEnabled !== undefined) {
         const finalSchedule = updates.schedule ?? existingConfig.schedule;
+        const finalTimezone = updates.timezone ?? existingConfig.timezone;
         const finalEnabled = updates.isEnabled ?? existingConfig.isEnabled;
 
         updateData.nextScheduledAt =
           finalSchedule && finalEnabled
-            ? this.calculateNextScheduledTime(finalSchedule)
+            ? this.calculateNextScheduledTime(finalSchedule, finalTimezone)
             : null;
       }
 
@@ -246,6 +278,45 @@ export class BackupConfigService {
         where: { id: configId },
         data: updateData,
       });
+
+      // Update scheduler if schedule-related fields changed
+      const scheduler = BackupSchedulerService.getInstance();
+      if (scheduler && (updates.schedule !== undefined || updates.timezone !== undefined || updates.isEnabled !== undefined)) {
+        try {
+          const finalSchedule = updates.schedule ?? existingConfig.schedule;
+          const finalTimezone = updates.timezone ?? existingConfig.timezone;
+          const finalEnabled = updates.isEnabled ?? existingConfig.isEnabled;
+
+          if (finalSchedule) {
+            // Re-register the schedule with new parameters
+            await scheduler.registerSchedule(
+              existingConfig.databaseId,
+              finalSchedule,
+              finalTimezone,
+              existingConfig.database.userId,
+            );
+
+            // Enable or disable based on the final enabled state
+            if (finalEnabled) {
+              await scheduler.enableSchedule(existingConfig.databaseId);
+            } else {
+              await scheduler.disableSchedule(existingConfig.databaseId);
+            }
+          } else {
+            // No schedule - unregister if one exists
+            await scheduler.unregisterSchedule(existingConfig.databaseId);
+          }
+        } catch (scheduleError) {
+          servicesLogger().warn(
+            {
+              configId: configId,
+              databaseId: existingConfig.databaseId,
+              scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+            },
+            "Failed to update backup schedule, but configuration was updated",
+          );
+        }
+      }
 
       servicesLogger().info(
         {
@@ -325,6 +396,23 @@ export class BackupConfigService {
         throw new Error("Access denied");
       }
 
+      // Unregister from scheduler before deleting
+      const scheduler = BackupSchedulerService.getInstance();
+      if (scheduler) {
+        try {
+          await scheduler.unregisterSchedule(config.databaseId);
+        } catch (scheduleError) {
+          servicesLogger().warn(
+            {
+              configId: configId,
+              databaseId: config.databaseId,
+              scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+            },
+            "Failed to unregister backup schedule during deletion",
+          );
+        }
+      }
+
       // Delete configuration
       await this.prisma.backupConfiguration.delete({
         where: { id: configId },
@@ -365,24 +453,24 @@ export class BackupConfigService {
   /**
    * Calculate next scheduled backup time
    */
-  calculateNextScheduledTime(cronExpression: string): Date | null {
+  calculateNextScheduledTime(cronExpression: string, timezone: string = "UTC"): Date | null {
     try {
       if (!this.isValidCronExpression(cronExpression)) {
         return null;
       }
 
-      // Simple implementation - next hour
-      const nextTime = new Date();
-      nextTime.setHours(nextTime.getHours() + 1);
-      nextTime.setMinutes(0);
-      nextTime.setSeconds(0);
-      nextTime.setMilliseconds(0);
-
-      return nextTime;
+      // Use cron-parser for accurate next execution time calculation with timezone support
+      const interval = cronParser.parseExpression(cronExpression, {
+        tz: timezone,
+        currentDate: new Date()
+      });
+      
+      return interval.next().toDate();
     } catch (error) {
       servicesLogger().error(
         {
           cronExpression,
+          timezone,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to calculate next scheduled time",
