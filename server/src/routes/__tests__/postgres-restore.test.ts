@@ -105,15 +105,18 @@ jest.mock("../../lib/auth-middleware", () => ({
   },
 }));
 
-// Mock Bull queue
-jest.mock("bull", () => {
-  return jest.fn().mockImplementation(() => ({
-    add: jest.fn(),
-    process: jest.fn(),
-    getJobs: jest.fn(),
-    close: jest.fn(),
-    on: jest.fn(),
-  }));
+// Mock InMemoryQueue
+jest.mock("../../lib/in-memory-queue", () => {
+  return {
+    InMemoryQueue: jest.fn().mockImplementation(() => ({
+      add: jest.fn(),
+      process: jest.fn(),
+      getJobs: jest.fn(),
+      close: jest.fn(),
+      on: jest.fn(),
+      remove: jest.fn(),
+    })),
+  };
 });
 
 import request from "supertest";

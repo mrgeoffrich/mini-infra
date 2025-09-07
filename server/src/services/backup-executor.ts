@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import Bull from "bull";
+import { InMemoryQueue, Job as QueueJob, QueueOptions } from "../lib/in-memory-queue";
 import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { BackupConfigService } from "./backup-config";
@@ -37,12 +37,12 @@ export interface BackupProgressData {
  * BackupExecutorService orchestrates backup operations using Docker containers
  */
 export class BackupExecutorService {
-  private prisma: PrismaClient;
+  private prisma: typeof prisma;
   private dockerExecutor: DockerExecutorService;
   private backupConfigService: BackupConfigService;
   private databaseConfigService: DatabaseConfigService;
   private azureConfigService: AzureConfigService;
-  private backupQueue: Bull.Queue<BackupJobData>;
+  private backupQueue: InMemoryQueue;
   private isInitialized = false;
 
   // Timeout for backup operations (2 hours)
@@ -59,9 +59,9 @@ export class BackupExecutorService {
     this.databaseConfigService = new DatabaseConfigService(prisma);
     this.azureConfigService = new AzureConfigService(prisma);
 
-    // Initialize Bull queue (using in-memory for development, Redis for production)
-    this.backupQueue = new Bull("postgres-backup", {
-      redis: process.env.REDIS_URL || undefined,
+    // Initialize in-memory queue
+    this.backupQueue = new InMemoryQueue("postgres-backup", {
+      concurrency: 2, // Allow 2 concurrent backups
       defaultJobOptions: {
         attempts: BackupExecutorService.MAX_RETRIES,
         backoff: {
@@ -212,11 +212,11 @@ export class BackupExecutorService {
       });
 
       // Try to cancel the job in the queue
-      const jobs = await this.backupQueue.getJobs(["waiting", "active"]);
+      const jobs = await this.backupQueue.getJobs(["pending", "active"]);
       const job = jobs.find((j) => j.data.backupOperationId === operationId);
 
       if (job) {
-        await job.remove();
+        await this.backupQueue.remove(job.id);
         servicesLogger().info({ operationId, jobId: job.id }, "Backup job cancelled");
       }
 
@@ -238,7 +238,7 @@ export class BackupExecutorService {
    */
   private setupQueueProcessors(): void {
     // Process backup jobs
-    this.backupQueue.process("execute-backup", async (job) => {
+    this.backupQueue.process("execute-backup", async (job: QueueJob) => {
       const { backupOperationId, databaseId, userId } = job.data;
 
       servicesLogger().info(
@@ -275,7 +275,7 @@ export class BackupExecutorService {
     });
 
     // Handle job events
-    this.backupQueue.on("completed", (job, result) => {
+    this.backupQueue.on("completed", (job: QueueJob, result: any) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -286,7 +286,7 @@ export class BackupExecutorService {
       );
     });
 
-    this.backupQueue.on("failed", (job, error) => {
+    this.backupQueue.on("failed", (job: QueueJob, error: Error) => {
       servicesLogger().error(
         {
           jobId: job.id,

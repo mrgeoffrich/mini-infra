@@ -6,19 +6,22 @@ import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigService } from "../backup-config";
 import { DatabaseConfigService } from "../postgres-config";
 import { AzureConfigService } from "../azure-config";
-import Bull from "bull";
+import { InMemoryQueue } from "../../lib/in-memory-queue";
 
-// Mock Bull queue
+// Mock InMemoryQueue
 const mockQueue = {
   add: jest.fn(),
   process: jest.fn(),
   getJobs: jest.fn(),
   close: jest.fn(),
   on: jest.fn(),
+  remove: jest.fn(),
 };
 
-jest.mock("bull", () => {
-  return jest.fn().mockImplementation(() => mockQueue);
+jest.mock("../../lib/in-memory-queue", () => {
+  return {
+    InMemoryQueue: jest.fn().mockImplementation(() => mockQueue),
+  };
 });
 
 // Mock all the services
@@ -124,7 +127,7 @@ describe("BackupExecutorService", () => {
   describe("constructor", () => {
     it("should initialize with Prisma client and create queue", () => {
       expect(backupExecutorService).toBeInstanceOf(BackupExecutorService);
-      expect(Bull).toHaveBeenCalledWith(
+      expect(InMemoryQueue).toHaveBeenCalledWith(
         "postgres-backup",
         expect.objectContaining({
           defaultJobOptions: expect.objectContaining({
@@ -390,7 +393,7 @@ describe("BackupExecutorService", () => {
           errorMessage: "Operation cancelled by user",
         },
       });
-      expect(mockJob.remove).toHaveBeenCalled();
+      expect(mockQueue.remove).toHaveBeenCalledWith(mockJob.id);
     });
 
     it("should return false for non-existent operation", async () => {

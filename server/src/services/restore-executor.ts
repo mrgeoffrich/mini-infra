@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import Bull from "bull";
+import { InMemoryQueue, Job as QueueJob, QueueOptions } from "../lib/in-memory-queue";
 import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { DatabaseConfigService } from "./postgres-config";
@@ -46,11 +46,11 @@ export interface BackupValidationResult {
  * RestoreExecutorService handles database restore operations from Azure backups
  */
 export class RestoreExecutorService {
-  private prisma: PrismaClient;
+  private prisma: typeof prisma;
   private dockerExecutor: DockerExecutorService;
   private databaseConfigService: DatabaseConfigService;
   private azureConfigService: AzureConfigService;
-  private restoreQueue: Bull.Queue<RestoreJobData>;
+  private restoreQueue: InMemoryQueue;
   private isInitialized = false;
 
   // Timeout for restore operations (3 hours)
@@ -66,9 +66,9 @@ export class RestoreExecutorService {
     this.databaseConfigService = new DatabaseConfigService(prisma);
     this.azureConfigService = new AzureConfigService(prisma);
 
-    // Initialize Bull queue (using in-memory for development, Redis for production)
-    this.restoreQueue = new Bull("postgres-restore", {
-      redis: process.env.REDIS_URL || undefined,
+    // Initialize in-memory queue
+    this.restoreQueue = new InMemoryQueue("postgres-restore", {
+      concurrency: 1, // Safer to restore one at a time
       defaultJobOptions: {
         attempts: RestoreExecutorService.MAX_RETRIES,
         backoff: {
@@ -219,11 +219,11 @@ export class RestoreExecutorService {
       });
 
       // Try to cancel the job in the queue
-      const jobs = await this.restoreQueue.getJobs(["waiting", "active"]);
+      const jobs = await this.restoreQueue.getJobs(["pending", "active"]);
       const job = jobs.find((j) => j.data.restoreOperationId === operationId);
 
       if (job) {
-        await job.remove();
+        await this.restoreQueue.remove(job.id);
         servicesLogger().info({ operationId, jobId: job.id }, "Restore job cancelled");
       }
 
@@ -245,7 +245,7 @@ export class RestoreExecutorService {
    */
   private setupQueueProcessors(): void {
     // Process restore jobs
-    this.restoreQueue.process("execute-restore", async (job) => {
+    this.restoreQueue.process("execute-restore", async (job: QueueJob) => {
       const { restoreOperationId, databaseId, backupUrl, userId } = job.data;
 
       servicesLogger().info(
@@ -288,7 +288,7 @@ export class RestoreExecutorService {
     });
 
     // Handle job events
-    this.restoreQueue.on("completed", (job, result) => {
+    this.restoreQueue.on("completed", (job: QueueJob, result: any) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -299,7 +299,7 @@ export class RestoreExecutorService {
       );
     });
 
-    this.restoreQueue.on("failed", (job, error) => {
+    this.restoreQueue.on("failed", (job: QueueJob, error: Error) => {
       servicesLogger().error(
         {
           jobId: job.id,
