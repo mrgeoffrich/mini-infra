@@ -6,7 +6,7 @@ const logger = appLogger();
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { getAuthenticatedUser } from "../lib/auth-middleware";
 import prisma from "../lib/prisma";
-import { RestoreExecutorService } from "../services/restore-executor";
+import { getRestoreExecutorService } from "../services/restore-executor-instance";
 import { AzureConfigService } from "../services/azure-config";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
@@ -25,7 +25,6 @@ import {
 const router = Router();
 
 // Initialize services
-const restoreExecutorService = new RestoreExecutorService(prisma);
 const azureConfigService = new AzureConfigService(prisma);
 
 // ====================
@@ -427,6 +426,7 @@ router.post("/restore/:databaseId", requireSessionOrApiKey, async (req, res) => 
     }
 
     // Queue the restore operation
+    const restoreExecutorService = getRestoreExecutorService();
     const restoreOperation = await restoreExecutorService.queueRestore(
       databaseId,
       validatedData.backupUrl,

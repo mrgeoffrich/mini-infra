@@ -10,12 +10,15 @@ const logger = appLogger();
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
 import { BackupSchedulerService } from "./services/backup-scheduler";
+import { RestoreExecutorService } from "./services/restore-executor";
+import { setRestoreExecutorService } from "./services/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
 let backupScheduler: BackupSchedulerService | null = null;
+let restoreExecutorService: RestoreExecutorService | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -35,6 +38,12 @@ const initializeServices = async () => {
     backupScheduler = new BackupSchedulerService(prisma);
     BackupSchedulerService.setInstance(backupScheduler);
     await backupScheduler.initialize();
+
+    // Initialize restore executor service
+    restoreExecutorService = new RestoreExecutorService(prisma);
+    setRestoreExecutorService(restoreExecutorService);
+    await restoreExecutorService.initialize();
+    logger.info("RestoreExecutorService initialized successfully");
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -120,6 +129,11 @@ startServer()
       if (backupScheduler) {
         await backupScheduler.shutdown();
         logger.info("Backup scheduler stopped");
+      }
+
+      if (restoreExecutorService) {
+        await restoreExecutorService.shutdown();
+        logger.info("Restore executor service stopped");
       }
 
       server.close((err) => {
