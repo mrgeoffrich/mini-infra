@@ -223,6 +223,7 @@ export const httpLogger = () => createLogger("http");
 export const prismaLogger = () => createLogger("prisma");
 export const servicesLogger = () => createLogger("services");
 export const dockerExecutorLogger = () => createLogger("dockerexecutor");
+export const deploymentLogger = () => createLogger("deployments");
 
 // Generic logger factory function
 export function getLogger(
