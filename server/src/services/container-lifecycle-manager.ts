@@ -74,7 +74,7 @@ export class ContainerLifecycleManager {
           tag: options.tag || "latest",
           deploymentId: options.deploymentId,
         },
-        "Creating container"
+        "Creating container",
       );
 
       // Build full image name
@@ -85,7 +85,7 @@ export class ContainerLifecycleManager {
         options.config,
         options.traefikConfig,
         options.deploymentId,
-        options.labels
+        options.labels,
       );
 
       // Prepare port bindings
@@ -99,9 +99,10 @@ export class ContainerLifecycleManager {
       const env = this.buildEnvironmentVariables(options.config.environment);
 
       // Prepare network configuration
-      const networkMode = options.config.networks.length > 0 
-        ? options.config.networks[0] 
-        : "bridge";
+      const networkMode =
+        options.config.networks.length > 0
+          ? options.config.networks[0]
+          : "bridge";
 
       // Create container configuration
       const containerConfig = {
@@ -124,7 +125,7 @@ export class ContainerLifecycleManager {
           containerName: options.name,
           config: containerConfig,
         },
-        "Container configuration prepared"
+        "Container configuration prepared",
       );
 
       // Create the container
@@ -138,7 +139,7 @@ export class ContainerLifecycleManager {
           image: fullImage,
           deploymentId: options.deploymentId,
         },
-        "Container created successfully"
+        "Container created successfully",
       );
 
       return container.id;
@@ -151,7 +152,7 @@ export class ContainerLifecycleManager {
           error: error instanceof Error ? error.message : "Unknown error",
           errorStack: error instanceof Error ? error.stack : undefined,
         },
-        "Failed to create container"
+        "Failed to create container",
       );
       throw error;
     }
@@ -170,26 +171,20 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info(
-        { containerId },
-        "Starting container"
-      );
+      servicesLogger().info({ containerId }, "Starting container");
 
       const docker = (this.dockerService as any).docker as Docker;
       const container = docker.getContainer(containerId);
       await container.start();
 
-      servicesLogger().info(
-        { containerId },
-        "Container started successfully"
-      );
+      servicesLogger().info({ containerId }, "Container started successfully");
     } catch (error) {
       servicesLogger().error(
         {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to start container"
+        "Failed to start container",
       );
       throw error;
     }
@@ -198,20 +193,20 @@ export class ContainerLifecycleManager {
   /**
    * Stop a container with graceful shutdown
    */
-  async stopContainer(containerId: string, timeout: number = 30): Promise<void> {
+  async stopContainer(
+    containerId: string,
+    timeout: number = 30,
+  ): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info(
-        { containerId, timeout },
-        "Stopping container"
-      );
+      servicesLogger().info({ containerId, timeout }, "Stopping container");
 
       const docker = (this.dockerService as any).docker as Docker;
       const container = docker.getContainer(containerId);
-      
+
       // Try graceful stop first
       try {
         await container.stop({ t: timeout });
@@ -222,10 +217,7 @@ export class ContainerLifecycleManager {
         }
       }
 
-      servicesLogger().info(
-        { containerId },
-        "Container stopped successfully"
-      );
+      servicesLogger().info({ containerId }, "Container stopped successfully");
     } catch (error) {
       servicesLogger().error(
         {
@@ -233,7 +225,7 @@ export class ContainerLifecycleManager {
           timeout,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to stop container"
+        "Failed to stop container",
       );
       throw error;
     }
@@ -242,29 +234,26 @@ export class ContainerLifecycleManager {
   /**
    * Remove a container (with optional force)
    */
-  async removeContainer(containerId: string, force: boolean = false): Promise<void> {
+  async removeContainer(
+    containerId: string,
+    force: boolean = false,
+  ): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info(
-        { containerId, force },
-        "Removing container"
-      );
+      servicesLogger().info({ containerId, force }, "Removing container");
 
       const docker = (this.dockerService as any).docker as Docker;
       const container = docker.getContainer(containerId);
-      
-      await container.remove({ 
+
+      await container.remove({
         force,
-        v: true // Remove associated volumes
+        v: true, // Remove associated volumes
       });
 
-      servicesLogger().info(
-        { containerId },
-        "Container removed successfully"
-      );
+      servicesLogger().info({ containerId }, "Container removed successfully");
     } catch (error) {
       servicesLogger().error(
         {
@@ -272,7 +261,7 @@ export class ContainerLifecycleManager {
           force,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to remove container"
+        "Failed to remove container",
       );
       throw error;
     }
@@ -281,20 +270,20 @@ export class ContainerLifecycleManager {
   /**
    * Restart a container
    */
-  async restartContainer(containerId: string, timeout: number = 30): Promise<void> {
+  async restartContainer(
+    containerId: string,
+    timeout: number = 30,
+  ): Promise<void> {
     try {
-      servicesLogger().info(
-        { containerId, timeout },
-        "Restarting container"
-      );
+      servicesLogger().info({ containerId, timeout }, "Restarting container");
 
       await this.stopContainer(containerId, timeout);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Brief pause
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Brief pause
       await this.startContainer(containerId);
 
       servicesLogger().info(
         { containerId },
-        "Container restarted successfully"
+        "Container restarted successfully",
       );
     } catch (error) {
       servicesLogger().error(
@@ -303,7 +292,7 @@ export class ContainerLifecycleManager {
           timeout,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to restart container"
+        "Failed to restart container",
       );
       throw error;
     }
@@ -316,7 +305,9 @@ export class ContainerLifecycleManager {
   /**
    * Get detailed status information for a container
    */
-  async getContainerStatus(containerId: string): Promise<ContainerStatusInfo | null> {
+  async getContainerStatus(
+    containerId: string,
+  ): Promise<ContainerStatusInfo | null> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
@@ -324,18 +315,22 @@ export class ContainerLifecycleManager {
 
       const docker = (this.dockerService as any).docker as Docker;
       const container = docker.getContainer(containerId);
-      
+
       try {
         const data = await container.inspect();
-        
+
         return {
           id: data.Id,
           name: data.Name.replace(/^\//, ""),
           status: data.State.Status,
           health: data.State.Health?.Status,
           created: new Date(data.Created),
-          started: data.State.StartedAt ? new Date(data.State.StartedAt) : undefined,
-          finished: data.State.FinishedAt ? new Date(data.State.FinishedAt) : undefined,
+          started: data.State.StartedAt
+            ? new Date(data.State.StartedAt)
+            : undefined,
+          finished: data.State.FinishedAt
+            ? new Date(data.State.FinishedAt)
+            : undefined,
           exitCode: data.State.ExitCode,
           error: data.State.Error || undefined,
         };
@@ -351,7 +346,7 @@ export class ContainerLifecycleManager {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to get container status"
+        "Failed to get container status",
       );
       throw error;
     }
@@ -370,7 +365,7 @@ export class ContainerLifecycleManager {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to check if container is running"
+        "Failed to check if container is running",
       );
       return false;
     }
@@ -383,10 +378,10 @@ export class ContainerLifecycleManager {
     containerId: string,
     targetStatus: string,
     timeoutMs: number = 60000,
-    pollIntervalMs: number = 1000
+    pollIntervalMs: number = 1000,
   ): Promise<boolean> {
     const startTime = Date.now();
-    
+
     servicesLogger().info(
       {
         containerId,
@@ -394,17 +389,17 @@ export class ContainerLifecycleManager {
         timeoutMs,
         pollIntervalMs,
       },
-      "Waiting for container status"
+      "Waiting for container status",
     );
 
     while (Date.now() - startTime < timeoutMs) {
       try {
         const status = await this.getContainerStatus(containerId);
-        
+
         if (!status) {
           servicesLogger().warn(
             { containerId },
-            "Container no longer exists while waiting for status"
+            "Container no longer exists while waiting for status",
           );
           return false;
         }
@@ -417,7 +412,7 @@ export class ContainerLifecycleManager {
               actualStatus: status.status,
               elapsedMs: Date.now() - startTime,
             },
-            "Container reached target status"
+            "Container reached target status",
           );
           return true;
         }
@@ -432,12 +427,12 @@ export class ContainerLifecycleManager {
               exitCode: status.exitCode,
               error: status.error,
             },
-            "Container exited while waiting for running status"
+            "Container exited while waiting for running status",
           );
           return false;
         }
 
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       } catch (error) {
         servicesLogger().error(
           {
@@ -445,7 +440,7 @@ export class ContainerLifecycleManager {
             targetStatus,
             error: error instanceof Error ? error.message : "Unknown error",
           },
-          "Error while waiting for container status"
+          "Error while waiting for container status",
         );
         return false;
       }
@@ -458,9 +453,9 @@ export class ContainerLifecycleManager {
         timeoutMs,
         elapsedMs: Date.now() - startTime,
       },
-      "Timeout waiting for container status"
+      "Timeout waiting for container status",
     );
-    
+
     return false;
   }
 
@@ -471,7 +466,9 @@ export class ContainerLifecycleManager {
   /**
    * Find orphaned containers from failed deployments
    */
-  async findOrphanedContainers(maxAgeHours: number = 24): Promise<OrphanedContainer[]> {
+  async findOrphanedContainers(
+    maxAgeHours: number = 24,
+  ): Promise<OrphanedContainer[]> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
@@ -479,21 +476,21 @@ export class ContainerLifecycleManager {
 
       servicesLogger().info(
         { maxAgeHours },
-        "Searching for orphaned containers"
+        "Searching for orphaned containers",
       );
 
       const docker = (this.dockerService as any).docker as Docker;
       const containers = await docker.listContainers({ all: true });
-      
+
       const cutoffTime = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
       const orphaned: OrphanedContainer[] = [];
 
       for (const container of containers) {
         const created = new Date(container.Created * 1000);
         const labels = container.Labels || {};
-        
+
         // Check if this looks like a deployment container that might be orphaned
-        const isDeploymentContainer = 
+        const isDeploymentContainer =
           labels["mini-infra.deployment.id"] ||
           labels["mini-infra.application"] ||
           container.Names[0]?.includes("deployment-") ||
@@ -505,12 +502,16 @@ export class ContainerLifecycleManager {
         }
 
         let reason = "";
-        
+
         // Check various orphan conditions
         if (container.State === "exited" && created < cutoffTime) {
           reason = "Container exited and is older than maximum age";
-        } else if (container.State === "created" && created < new Date(Date.now() - 30 * 60 * 1000)) {
-          reason = "Container created but never started (older than 30 minutes)";
+        } else if (
+          container.State === "created" &&
+          created < new Date(Date.now() - 30 * 60 * 1000)
+        ) {
+          reason =
+            "Container created but never started (older than 30 minutes)";
         } else if (labels["mini-infra.deployment.cleanup"] === "true") {
           reason = "Container marked for cleanup";
         }
@@ -531,7 +532,7 @@ export class ContainerLifecycleManager {
           orphanedCount: orphaned.length,
           maxAgeHours,
         },
-        "Found orphaned containers"
+        "Found orphaned containers",
       );
 
       return orphaned;
@@ -541,7 +542,7 @@ export class ContainerLifecycleManager {
           maxAgeHours,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to find orphaned containers"
+        "Failed to find orphaned containers",
       );
       throw error;
     }
@@ -550,10 +551,13 @@ export class ContainerLifecycleManager {
   /**
    * Clean up orphaned containers
    */
-  async cleanupOrphanedContainers(maxAgeHours: number = 24, dryRun: boolean = false): Promise<number> {
+  async cleanupOrphanedContainers(
+    maxAgeHours: number = 24,
+    dryRun: boolean = false,
+  ): Promise<number> {
     try {
       const orphaned = await this.findOrphanedContainers(maxAgeHours);
-      
+
       if (orphaned.length === 0) {
         servicesLogger().info("No orphaned containers found to cleanup");
         return 0;
@@ -562,7 +566,7 @@ export class ContainerLifecycleManager {
       if (dryRun) {
         servicesLogger().info(
           { orphanedContainers: orphaned },
-          "Dry run: Would cleanup orphaned containers"
+          "Dry run: Would cleanup orphaned containers",
         );
         return orphaned.length;
       }
@@ -577,7 +581,7 @@ export class ContainerLifecycleManager {
               containerName: container.name,
               reason: container.reason,
             },
-            "Cleaning up orphaned container"
+            "Cleaning up orphaned container",
           );
 
           // Stop if running
@@ -596,7 +600,7 @@ export class ContainerLifecycleManager {
               containerId: container.id,
               containerName: container.name,
             },
-            "Orphaned container cleaned up successfully"
+            "Orphaned container cleaned up successfully",
           );
         } catch (error) {
           servicesLogger().error(
@@ -605,7 +609,7 @@ export class ContainerLifecycleManager {
               containerName: container.name,
               error: error instanceof Error ? error.message : "Unknown error",
             },
-            "Failed to cleanup orphaned container"
+            "Failed to cleanup orphaned container",
           );
         }
       }
@@ -616,7 +620,7 @@ export class ContainerLifecycleManager {
           cleanedCount,
           failedCount: orphaned.length - cleanedCount,
         },
-        "Orphaned container cleanup completed"
+        "Orphaned container cleanup completed",
       );
 
       return cleanedCount;
@@ -627,7 +631,7 @@ export class ContainerLifecycleManager {
           dryRun,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to cleanup orphaned containers"
+        "Failed to cleanup orphaned containers",
       );
       throw error;
     }
@@ -644,7 +648,7 @@ export class ContainerLifecycleManager {
     config: ContainerConfig,
     traefikConfig?: TraefikConfig,
     deploymentId?: string,
-    additionalLabels?: Record<string, string>
+    additionalLabels?: Record<string, string>,
   ): Record<string, string> {
     const labels: Record<string, string> = {
       // Basic mini-infra labels
@@ -662,18 +666,21 @@ export class ContainerLifecycleManager {
     // Add Traefik labels if configuration is provided
     if (traefikConfig) {
       labels["traefik.enable"] = "true";
-      labels[`traefik.http.routers.${traefikConfig.routerName}.rule`] = traefikConfig.rule;
-      labels[`traefik.http.routers.${traefikConfig.routerName}.service`] = traefikConfig.serviceName;
-      
+      labels[`traefik.http.routers.${traefikConfig.routerName}.rule`] =
+        traefikConfig.rule;
+      labels[`traefik.http.routers.${traefikConfig.routerName}.service`] =
+        traefikConfig.serviceName;
+
       // Set service port (use first port from config)
       if (config.ports.length > 0) {
-        labels[`traefik.http.services.${traefikConfig.serviceName}.loadbalancer.server.port`] = 
-          config.ports[0].containerPort.toString();
+        labels[
+          `traefik.http.services.${traefikConfig.serviceName}.loadbalancer.server.port`
+        ] = config.ports[0].containerPort.toString();
       }
 
       // Add middlewares if specified
       if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-        labels[`traefik.http.routers.${traefikConfig.routerName}.middlewares`] = 
+        labels[`traefik.http.routers.${traefikConfig.routerName}.middlewares`] =
           traefikConfig.middlewares.join(",");
       }
 
@@ -694,7 +701,7 @@ export class ContainerLifecycleManager {
 
     for (const port of ports) {
       const key = `${port.containerPort}/${port.protocol || "tcp"}`;
-      
+
       if (port.hostPort) {
         bindings[key] = [{ HostPort: port.hostPort.toString() }];
       } else {
@@ -723,8 +730,9 @@ export class ContainerLifecycleManager {
    * Build Docker volume bindings from deployment volume configuration
    */
   private buildVolumeBindings(volumes: DeploymentVolume[]): string[] {
-    return volumes.map(volume => 
-      `${volume.hostPath}:${volume.containerPath}:${volume.mode || "rw"}`
+    return volumes.map(
+      (volume) =>
+        `${volume.hostPath}:${volume.containerPath}:${volume.mode || "rw"}`,
     );
   }
 
@@ -732,7 +740,7 @@ export class ContainerLifecycleManager {
    * Build environment variables array from deployment configuration
    */
   private buildEnvironmentVariables(envVars: ContainerEnvVar[]): string[] {
-    return envVars.map(envVar => `${envVar.name}=${envVar.value}`);
+    return envVars.map((envVar) => `${envVar.name}=${envVar.value}`);
   }
 
   /**

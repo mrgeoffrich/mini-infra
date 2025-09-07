@@ -91,7 +91,7 @@ export class TraefikIntegrationService {
     traefikConfig: TraefikConfig,
     containerConfig: ContainerConfig,
     deploymentColor: "blue" | "green",
-    isActive: boolean = false
+    isActive: boolean = false,
   ): Record<string, string> {
     try {
       servicesLogger().info(
@@ -102,7 +102,7 @@ export class TraefikIntegrationService {
           routerName: traefikConfig.routerName,
           serviceName: traefikConfig.serviceName,
         },
-        "Generating blue-green Traefik labels"
+        "Generating blue-green Traefik labels",
       );
 
       const labels: Record<string, string> = {};
@@ -115,12 +115,12 @@ export class TraefikIntegrationService {
       // Router configuration
       labels[`traefik.http.routers.${routerName}.rule`] = traefikConfig.rule;
       labels[`traefik.http.routers.${routerName}.service`] = serviceName;
-      
+
       // Set priority based on active status (active gets higher priority)
       const basePriority = 100;
       const activePriority = basePriority + 10;
-      labels[`traefik.http.routers.${routerName}.priority`] = isActive 
-        ? activePriority.toString() 
+      labels[`traefik.http.routers.${routerName}.priority`] = isActive
+        ? activePriority.toString()
         : basePriority.toString();
 
       // TLS configuration
@@ -130,20 +130,22 @@ export class TraefikIntegrationService {
 
       // Middlewares
       if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-        labels[`traefik.http.routers.${routerName}.middlewares`] = 
+        labels[`traefik.http.routers.${routerName}.middlewares`] =
           traefikConfig.middlewares.join(",");
       }
 
       // Service configuration - use the first port from container config
       if (containerConfig.ports.length > 0) {
         const port = containerConfig.ports[0];
-        labels[`traefik.http.services.${serviceName}.loadbalancer.server.port`] = 
-          port.containerPort.toString();
-          
+        labels[
+          `traefik.http.services.${serviceName}.loadbalancer.server.port`
+        ] = port.containerPort.toString();
+
         // Set protocol if specified
         if (port.protocol && port.protocol !== "tcp") {
-          labels[`traefik.http.services.${serviceName}.loadbalancer.server.scheme`] = 
-            port.protocol === "udp" ? "udp" : "http";
+          labels[
+            `traefik.http.services.${serviceName}.loadbalancer.server.scheme`
+          ] = port.protocol === "udp" ? "udp" : "http";
         }
       }
 
@@ -161,7 +163,7 @@ export class TraefikIntegrationService {
           serviceName,
           labelsCount: Object.keys(labels).length,
         },
-        "Blue-green Traefik labels generated successfully"
+        "Blue-green Traefik labels generated successfully",
       );
 
       return labels;
@@ -173,7 +175,7 @@ export class TraefikIntegrationService {
           isActive,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to generate blue-green Traefik labels"
+        "Failed to generate blue-green Traefik labels",
       );
       throw error;
     }
@@ -186,7 +188,7 @@ export class TraefikIntegrationService {
     applicationName: string,
     traefikConfig: TraefikConfig,
     containerConfig: ContainerConfig,
-    activeColor: "blue" | "green"
+    activeColor: "blue" | "green",
   ): BlueGreenTraefikLabels {
     try {
       const blueLabels = this.generateBlueGreenLabels(
@@ -194,7 +196,7 @@ export class TraefikIntegrationService {
         traefikConfig,
         containerConfig,
         "blue",
-        activeColor === "blue"
+        activeColor === "blue",
       );
 
       const greenLabels = this.generateBlueGreenLabels(
@@ -202,7 +204,7 @@ export class TraefikIntegrationService {
         traefikConfig,
         containerConfig,
         "green",
-        activeColor === "green"
+        activeColor === "green",
       );
 
       return {
@@ -216,7 +218,7 @@ export class TraefikIntegrationService {
           activeColor,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to generate complete blue-green labels"
+        "Failed to generate complete blue-green labels",
       );
       throw error;
     }
@@ -232,7 +234,7 @@ export class TraefikIntegrationService {
   async updateContainerLabels(
     containerId: string,
     newLabels: Record<string, string>,
-    mergeWithExisting: boolean = true
+    mergeWithExisting: boolean = true,
   ): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
@@ -245,7 +247,7 @@ export class TraefikIntegrationService {
           labelsCount: Object.keys(newLabels).length,
           mergeWithExisting,
         },
-        "Updating container labels"
+        "Updating container labels",
       );
 
       const docker = (this.dockerService as any).docker as Docker;
@@ -257,37 +259,38 @@ export class TraefikIntegrationService {
         // Get current container info to merge labels
         const containerInfo = await container.inspect();
         const existingLabels = containerInfo.Config.Labels || {};
-        
+
         finalLabels = {
           ...existingLabels,
           ...newLabels,
         };
       }
 
-      // Docker doesn't have a direct "update labels" API, so we need to 
+      // Docker doesn't have a direct "update labels" API, so we need to
       // restart the container with new labels. For now, we'll log this
       // and implement the logic that would be used by the orchestrator
       servicesLogger().info(
         {
           containerId,
-          existingLabelsCount: mergeWithExisting ? Object.keys(finalLabels).length - Object.keys(newLabels).length : 0,
+          existingLabelsCount: mergeWithExisting
+            ? Object.keys(finalLabels).length - Object.keys(newLabels).length
+            : 0,
           newLabelsCount: Object.keys(newLabels).length,
           finalLabelsCount: Object.keys(finalLabels).length,
         },
-        "Container labels prepared for update (requires container recreation)"
+        "Container labels prepared for update (requires container recreation)",
       );
 
       // Note: Actual label updates require container recreation in Docker
       // This method prepares the labels that would be used during recreation
       // The actual recreation is handled by ContainerLifecycleManager
-
     } catch (error) {
       servicesLogger().error(
         {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update container labels"
+        "Failed to update container labels",
       );
       throw error;
     }
@@ -305,7 +308,7 @@ export class TraefikIntegrationService {
           toContainerId: options.toContainerId,
           gradual: options.gradual || false,
         },
-        "Starting traffic switch between containers"
+        "Starting traffic switch between containers",
       );
 
       if (!this.dockerService.isConnected()) {
@@ -313,8 +316,12 @@ export class TraefikIntegrationService {
       }
 
       // Get current status of both containers
-      const fromStatus = await this.getContainerTraefikStatus(options.fromContainerId);
-      const toStatus = await this.getContainerTraefikStatus(options.toContainerId);
+      const fromStatus = await this.getContainerTraefikStatus(
+        options.fromContainerId,
+      );
+      const toStatus = await this.getContainerTraefikStatus(
+        options.toContainerId,
+      );
 
       if (!fromStatus || !toStatus) {
         throw new Error("Unable to get status for one or both containers");
@@ -332,7 +339,7 @@ export class TraefikIntegrationService {
           fromActive: fromStatus.isActive,
           toActive: toStatus.isActive,
         },
-        "Container colors determined for traffic switch"
+        "Container colors determined for traffic switch",
       );
 
       if (options.gradual) {
@@ -349,9 +356,8 @@ export class TraefikIntegrationService {
           fromContainerId: options.fromContainerId,
           toContainerId: options.toContainerId,
         },
-        "Traffic switch completed successfully"
+        "Traffic switch completed successfully",
       );
-
     } catch (error) {
       servicesLogger().error(
         {
@@ -360,7 +366,7 @@ export class TraefikIntegrationService {
           toContainerId: options.toContainerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to switch traffic between containers"
+        "Failed to switch traffic between containers",
       );
       throw error;
     }
@@ -377,7 +383,7 @@ export class TraefikIntegrationService {
     applicationName: string,
     activeContainerId: string,
     inactiveContainerId: string,
-    traefikConfig: TraefikConfig
+    traefikConfig: TraefikConfig,
   ): Promise<void> {
     try {
       servicesLogger().info(
@@ -386,11 +392,13 @@ export class TraefikIntegrationService {
           activeContainerId,
           inactiveContainerId,
         },
-        "Updating routing priorities for blue-green deployment"
+        "Updating routing priorities for blue-green deployment",
       );
 
-      const activeStatus = await this.getContainerTraefikStatus(activeContainerId);
-      const inactiveStatus = await this.getContainerTraefikStatus(inactiveContainerId);
+      const activeStatus =
+        await this.getContainerTraefikStatus(activeContainerId);
+      const inactiveStatus =
+        await this.getContainerTraefikStatus(inactiveContainerId);
 
       if (!activeStatus || !inactiveStatus) {
         throw new Error("Unable to get container status for priority update");
@@ -405,7 +413,7 @@ export class TraefikIntegrationService {
         traefikConfig,
         this.extractContainerConfig(activeStatus),
         activeColor,
-        true // is active
+        true, // is active
       );
 
       const inactiveLabels = this.generateBlueGreenLabels(
@@ -413,7 +421,7 @@ export class TraefikIntegrationService {
         traefikConfig,
         this.extractContainerConfig(inactiveStatus),
         inactiveColor,
-        false // is inactive
+        false, // is inactive
       );
 
       // Update labels (requires container recreation in real implementation)
@@ -428,9 +436,8 @@ export class TraefikIntegrationService {
           activePriority: this.extractPriorityFromLabels(activeLabels),
           inactivePriority: this.extractPriorityFromLabels(inactiveLabels),
         },
-        "Routing priorities updated successfully"
+        "Routing priorities updated successfully",
       );
-
     } catch (error) {
       servicesLogger().error(
         {
@@ -439,7 +446,7 @@ export class TraefikIntegrationService {
           inactiveContainerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update routing priorities"
+        "Failed to update routing priorities",
       );
       throw error;
     }
@@ -451,7 +458,7 @@ export class TraefikIntegrationService {
   calculateRouterPriority(
     baseRule: string,
     isActive: boolean,
-    deploymentPhase: "testing" | "production" | "rollback" = "production"
+    deploymentPhase: "testing" | "production" | "rollback" = "production",
   ): number {
     // Base priority starts at 100
     let priority = 100;
@@ -498,25 +505,28 @@ export class TraefikIntegrationService {
     const warnings: string[] = [];
 
     try {
-      servicesLogger().debug(
-        { config },
-        "Validating Traefik configuration"
-      );
+      servicesLogger().debug({ config }, "Validating Traefik configuration");
 
       // Validate router name
       if (!config.routerName || config.routerName.trim().length === 0) {
         errors.push("Router name is required");
       } else if (!/^[a-zA-Z0-9_-]+$/.test(config.routerName)) {
-        errors.push("Router name can only contain letters, numbers, hyphens, and underscores");
+        errors.push(
+          "Router name can only contain letters, numbers, hyphens, and underscores",
+        );
       } else if (config.routerName.length > 100) {
-        warnings.push("Router name is longer than 100 characters, consider shortening");
+        warnings.push(
+          "Router name is longer than 100 characters, consider shortening",
+        );
       }
 
       // Validate service name
       if (!config.serviceName || config.serviceName.trim().length === 0) {
         errors.push("Service name is required");
       } else if (!/^[a-zA-Z0-9_-]+$/.test(config.serviceName)) {
-        errors.push("Service name can only contain letters, numbers, hyphens, and underscores");
+        errors.push(
+          "Service name can only contain letters, numbers, hyphens, and underscores",
+        );
       }
 
       // Validate routing rule
@@ -539,7 +549,9 @@ export class TraefikIntegrationService {
 
       // Validate TLS configuration
       if (config.tls && !config.rule.includes("Host(")) {
-        warnings.push("TLS is enabled but no Host rule specified - TLS may not work properly");
+        warnings.push(
+          "TLS is enabled but no Host rule specified - TLS may not work properly",
+        );
       }
 
       const result = {
@@ -556,7 +568,7 @@ export class TraefikIntegrationService {
           errorsCount: errors.length,
           warningsCount: warnings.length,
         },
-        "Traefik configuration validation completed"
+        "Traefik configuration validation completed",
       );
 
       return result;
@@ -566,7 +578,7 @@ export class TraefikIntegrationService {
           config,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to validate Traefik configuration"
+        "Failed to validate Traefik configuration",
       );
 
       return {
@@ -602,10 +614,14 @@ export class TraefikIntegrationService {
       /Headers\(`[^`]+`,\s*`[^`]+`\)/, // Headers(`X-Custom`, `value`)
     ];
 
-    const hasValidPattern = commonPatterns.some(pattern => pattern.test(rule));
-    
+    const hasValidPattern = commonPatterns.some((pattern) =>
+      pattern.test(rule),
+    );
+
     if (!hasValidPattern) {
-      warnings.push("Rule doesn't match common Traefik patterns - verify syntax");
+      warnings.push(
+        "Rule doesn't match common Traefik patterns - verify syntax",
+      );
     }
 
     // Check for balanced parentheses and backticks
@@ -646,7 +662,9 @@ export class TraefikIntegrationService {
   /**
    * Discover Traefik-enabled containers for an application
    */
-  async discoverApplicationContainers(applicationName: string): Promise<ContainerTraefikStatus[]> {
+  async discoverApplicationContainers(
+    applicationName: string,
+  ): Promise<ContainerTraefikStatus[]> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
@@ -654,7 +672,7 @@ export class TraefikIntegrationService {
 
       servicesLogger().info(
         { applicationName },
-        "Discovering Traefik-enabled containers for application"
+        "Discovering Traefik-enabled containers for application",
       );
 
       const docker = (this.dockerService as any).docker as Docker;
@@ -664,12 +682,12 @@ export class TraefikIntegrationService {
 
       for (const containerInfo of containers) {
         const labels = containerInfo.Labels || {};
-        
+
         // Check if this container belongs to the application
-        const isApplicationContainer = 
+        const isApplicationContainer =
           labels["mini-infra.traefik.application"] === applicationName ||
           labels["mini-infra.application"] === applicationName ||
-          containerInfo.Names.some(name => name.includes(applicationName));
+          containerInfo.Names.some((name) => name.includes(applicationName));
 
         if (!isApplicationContainer) {
           continue;
@@ -687,7 +705,7 @@ export class TraefikIntegrationService {
           applicationName,
           containersFound: applicationContainers.length,
         },
-        "Application container discovery completed"
+        "Application container discovery completed",
       );
 
       return applicationContainers.sort((a, b) => b.priority - a.priority);
@@ -697,7 +715,7 @@ export class TraefikIntegrationService {
           applicationName,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to discover application containers"
+        "Failed to discover application containers",
       );
       throw error;
     }
@@ -706,12 +724,16 @@ export class TraefikIntegrationService {
   /**
    * Get active container for an application (highest priority)
    */
-  async getActiveContainer(applicationName: string): Promise<ContainerTraefikStatus | null> {
+  async getActiveContainer(
+    applicationName: string,
+  ): Promise<ContainerTraefikStatus | null> {
     try {
-      const containers = await this.discoverApplicationContainers(applicationName);
-      
+      const containers =
+        await this.discoverApplicationContainers(applicationName);
+
       // Find the container marked as active or with highest priority
-      const activeContainer = containers.find(c => c.isActive) || containers[0] || null;
+      const activeContainer =
+        containers.find((c) => c.isActive) || containers[0] || null;
 
       if (activeContainer) {
         servicesLogger().info(
@@ -721,12 +743,12 @@ export class TraefikIntegrationService {
             activeContainerName: activeContainer.containerName,
             priority: activeContainer.priority,
           },
-          "Active container identified"
+          "Active container identified",
         );
       } else {
         servicesLogger().warn(
           { applicationName },
-          "No active container found for application"
+          "No active container found for application",
         );
       }
 
@@ -737,7 +759,7 @@ export class TraefikIntegrationService {
           applicationName,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to get active container"
+        "Failed to get active container",
       );
       throw error;
     }
@@ -746,7 +768,9 @@ export class TraefikIntegrationService {
   /**
    * Get detailed Traefik status for a container
    */
-  async getContainerTraefikStatus(containerId: string): Promise<ContainerTraefikStatus | null> {
+  async getContainerTraefikStatus(
+    containerId: string,
+  ): Promise<ContainerTraefikStatus | null> {
     try {
       if (!this.dockerService.isConnected()) {
         throw new Error("Docker service is not connected");
@@ -777,13 +801,14 @@ export class TraefikIntegrationService {
         // Parse routers and services from labels
         const routers = this.parseRoutersFromLabels(labels);
         const services = this.parseServicesFromLabels(labels);
-        
+
         // Determine if container is active
-        const isActive = labels["mini-infra.traefik.is-active"] === "true" ||
-                         routers.some(r => r.priority > 100);
+        const isActive =
+          labels["mini-infra.traefik.is-active"] === "true" ||
+          routers.some((r) => r.priority > 100);
 
         // Calculate overall priority
-        const priority = Math.max(...routers.map(r => r.priority), 0);
+        const priority = Math.max(...routers.map((r) => r.priority), 0);
 
         return {
           containerId,
@@ -807,7 +832,7 @@ export class TraefikIntegrationService {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to get container Traefik status"
+        "Failed to get container Traefik status",
       );
       return null;
     }
@@ -819,20 +844,28 @@ export class TraefikIntegrationService {
 
   private parseLabelsToServiceLabels(
     labels: Record<string, string>,
-    color: "blue" | "green"
+    color: "blue" | "green",
   ): TraefikServiceLabels {
     const routerPrefix = `traefik.http.routers.`;
     const servicePrefix = `traefik.http.services.`;
-    
+
     // Find router and service names for this color
     let routerName = "";
     let serviceName = "";
-    
+
     for (const key in labels) {
-      if (key.startsWith(routerPrefix) && key.includes(color) && key.endsWith(".rule")) {
+      if (
+        key.startsWith(routerPrefix) &&
+        key.includes(color) &&
+        key.endsWith(".rule")
+      ) {
         routerName = key.split(".")[3]; // Extract router name
       }
-      if (key.startsWith(servicePrefix) && key.includes(color) && key.endsWith(".loadbalancer.server.port")) {
+      if (
+        key.startsWith(servicePrefix) &&
+        key.includes(color) &&
+        key.endsWith(".loadbalancer.server.port")
+      ) {
         serviceName = key.split(".")[3]; // Extract service name
       }
     }
@@ -841,15 +874,25 @@ export class TraefikIntegrationService {
       enable: labels["traefik.enable"] || "false",
       routerRule: labels[`traefik.http.routers.${routerName}.rule`] || "",
       routerService: labels[`traefik.http.routers.${routerName}.service`] || "",
-      routerPriority: labels[`traefik.http.routers.${routerName}.priority`] || "100",
+      routerPriority:
+        labels[`traefik.http.routers.${routerName}.priority`] || "100",
       routerTls: labels[`traefik.http.routers.${routerName}.tls`],
-      routerMiddlewares: labels[`traefik.http.routers.${routerName}.middlewares`],
-      servicePort: labels[`traefik.http.services.${serviceName}.loadbalancer.server.port`] || "",
-      serviceProtocol: labels[`traefik.http.services.${serviceName}.loadbalancer.server.scheme`],
+      routerMiddlewares:
+        labels[`traefik.http.routers.${routerName}.middlewares`],
+      servicePort:
+        labels[
+          `traefik.http.services.${serviceName}.loadbalancer.server.port`
+        ] || "",
+      serviceProtocol:
+        labels[
+          `traefik.http.services.${serviceName}.loadbalancer.server.scheme`
+        ],
     };
   }
 
-  private determineContainerColor(status: ContainerTraefikStatus): "blue" | "green" {
+  private determineContainerColor(
+    status: ContainerTraefikStatus,
+  ): "blue" | "green" {
     const colorLabel = status.labels["mini-infra.traefik.deployment-color"];
     if (colorLabel === "blue" || colorLabel === "green") {
       return colorLabel;
@@ -864,11 +907,20 @@ export class TraefikIntegrationService {
     return "blue";
   }
 
-  private extractContainerConfig(status: ContainerTraefikStatus): ContainerConfig {
+  private extractContainerConfig(
+    status: ContainerTraefikStatus,
+  ): ContainerConfig {
     // This is a simplified extraction - in a real implementation,
     // this would be stored in the deployment configuration
     return {
-      ports: [{ containerPort: parseInt(status.services[0]?.loadBalancer.servers[0]?.url.split(":").pop() || "80") }],
+      ports: [
+        {
+          containerPort: parseInt(
+            status.services[0]?.loadBalancer.servers[0]?.url.split(":").pop() ||
+              "80",
+          ),
+        },
+      ],
       volumes: [],
       environment: [],
       labels: status.labels,
@@ -888,7 +940,7 @@ export class TraefikIntegrationService {
   private async performGradualTrafficSwitch(
     options: TrafficSwitchOptions,
     fromColor: "blue" | "green",
-    toColor: "blue" | "green"
+    toColor: "blue" | "green",
   ): Promise<void> {
     servicesLogger().info(
       {
@@ -896,13 +948,13 @@ export class TraefikIntegrationService {
         fromColor,
         toColor,
       },
-      "Performing gradual traffic switch"
+      "Performing gradual traffic switch",
     );
 
     // Implementation would gradually shift traffic percentages
     // This is a placeholder for the actual implementation
     const steps = [25, 50, 75, 100];
-    
+
     for (const percentage of steps) {
       servicesLogger().info(
         {
@@ -911,12 +963,12 @@ export class TraefikIntegrationService {
           fromColor,
           toColor,
         },
-        `Shifting ${percentage}% traffic to ${toColor} container`
+        `Shifting ${percentage}% traffic to ${toColor} container`,
       );
 
       // In a real implementation, this would update Traefik service weights
       // or use middleware to split traffic
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate delay
 
       // Health check if URL is provided
       if (options.healthCheckUrl) {
@@ -926,7 +978,7 @@ export class TraefikIntegrationService {
             healthCheckUrl: options.healthCheckUrl,
             percentage,
           },
-          "Health check during gradual switch"
+          "Health check during gradual switch",
         );
       }
     }
@@ -935,7 +987,7 @@ export class TraefikIntegrationService {
   private async performImmediateTrafficSwitch(
     options: TrafficSwitchOptions,
     fromColor: "blue" | "green",
-    toColor: "blue" | "green"
+    toColor: "blue" | "green",
   ): Promise<void> {
     servicesLogger().info(
       {
@@ -943,7 +995,7 @@ export class TraefikIntegrationService {
         fromColor,
         toColor,
       },
-      "Performing immediate traffic switch"
+      "Performing immediate traffic switch",
     );
 
     // Update priorities to switch traffic immediately
@@ -951,28 +1003,30 @@ export class TraefikIntegrationService {
       options.applicationName,
       options.toContainerId,
       options.fromContainerId,
-      options.traefikConfig
+      options.traefikConfig,
     );
   }
 
   private calculateRuleComplexity(rule: string): number {
     let complexity = 0;
-    
+
     // Count different rule types
     if (rule.includes("Host(")) complexity += 1;
     if (rule.includes("PathPrefix(")) complexity += 2;
     if (rule.includes("Path(")) complexity += 3;
     if (rule.includes("Method(")) complexity += 1;
     if (rule.includes("Headers(")) complexity += 2;
-    
+
     // Count logical operators
     complexity += (rule.match(/&&/g) || []).length * 2;
     complexity += (rule.match(/\|\|/g) || []).length * 1;
-    
+
     return Math.min(complexity, 20); // Cap at 20
   }
 
-  private parseRoutersFromLabels(labels: Record<string, string>): TraefikRouterInfo[] {
+  private parseRoutersFromLabels(
+    labels: Record<string, string>,
+  ): TraefikRouterInfo[] {
     const routers: Record<string, Partial<TraefikRouterInfo>> = {};
 
     for (const [key, value] of Object.entries(labels)) {
@@ -1007,7 +1061,7 @@ export class TraefikIntegrationService {
       }
     }
 
-    return Object.values(routers).map(router => ({
+    return Object.values(routers).map((router) => ({
       name: router.name || "",
       rule: router.rule || "",
       service: router.service || "",
@@ -1018,7 +1072,9 @@ export class TraefikIntegrationService {
     }));
   }
 
-  private parseServicesFromLabels(labels: Record<string, string>): TraefikServiceInfo[] {
+  private parseServicesFromLabels(
+    labels: Record<string, string>,
+  ): TraefikServiceInfo[] {
     const services: Record<string, Partial<TraefikServiceInfo>> = {};
 
     for (const [key, value] of Object.entries(labels)) {
@@ -1036,14 +1092,14 @@ export class TraefikIntegrationService {
 
           if (key.endsWith(".loadbalancer.server.port")) {
             services[serviceName].loadBalancer!.servers = [
-              { url: `http://container:${value}` }
+              { url: `http://container:${value}` },
             ];
           }
         }
       }
     }
 
-    return Object.values(services).map(service => ({
+    return Object.values(services).map((service) => ({
       name: service.name || "",
       loadBalancer: service.loadBalancer || { servers: [] },
       enabled: service.loadBalancer?.servers.length! > 0,

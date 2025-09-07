@@ -22,9 +22,23 @@ Add one of these headers to your HTTP requests:
 
 ### Step 3: All Endpoints should be Available
 
+#### Deployment API Endpoints
+The application now includes comprehensive deployment API endpoints:
+
+- **GET /api/deployments/configs** - List deployment configurations
+- **POST /api/deployments/configs** - Create deployment configuration
+- **GET /api/deployments/configs/:id** - Get deployment configuration
+- **PUT /api/deployments/configs/:id** - Update deployment configuration
+- **DELETE /api/deployments/configs/:id** - Delete deployment configuration
+- **POST /api/deployments/trigger** - Trigger a new deployment
+- **GET /api/deployments/:id/status** - Get deployment status with progress
+- **POST /api/deployments/:id/rollback** - Rollback a deployment
+- **GET /api/deployments/history** - Get deployment history
+
 ### Example Usage
 ```bash
 curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/containers
+curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/configs
 ```
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.

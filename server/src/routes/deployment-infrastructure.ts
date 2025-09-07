@@ -1,4 +1,9 @@
-import express, { Request, Response, NextFunction, RequestHandler } from "express";
+import express, {
+  Request,
+  Response,
+  NextFunction,
+  RequestHandler,
+} from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
@@ -15,7 +20,9 @@ const infrastructureService = new DeploymentInfrastructureService();
 // Validation schemas
 const deployInfrastructureSchema = z.object({
   networkName: z.string().min(1, "Network name is required"),
-  networkDriver: z.enum(["bridge", "overlay", "host", "none"]).default("bridge"),
+  networkDriver: z
+    .enum(["bridge", "overlay", "host", "none"])
+    .default("bridge"),
   traefikImage: z.string().min(1, "Traefik image is required"),
   webPort: z.number().int().min(1).max(65535),
   dashboardPort: z.number().int().min(1).max(65535),
@@ -49,11 +56,14 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     // Validate request body
     const bodyValidation = deployInfrastructureSchema.safeParse(req.body);
     if (!bodyValidation.success) {
-      logger.warn({
-        requestId,
-        userId,
-        validationErrors: bodyValidation.error.issues,
-      }, "Invalid request body for infrastructure deployment");
+      logger.warn(
+        {
+          requestId,
+          userId,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for infrastructure deployment",
+      );
 
       return res.status(400).json({
         error: "Bad Request",
@@ -70,23 +80,26 @@ router.post("/deploy", requireSessionOrApiKey, (async (
       traefikImage,
       webPort,
       dashboardPort,
-      configYaml
+      configYaml,
     } = bodyValidation.data;
 
     // Ensure the Docker network exists
     const networkResult = await infrastructureService.ensureDeploymentNetwork(
       networkName,
-      networkDriver
+      networkDriver,
     );
 
     if (!networkResult.success) {
-      logger.error({
-        requestId,
-        userId,
-        networkName,
-        networkDriver,
-        error: networkResult.error,
-      }, "Failed to create deployment network");
+      logger.error(
+        {
+          requestId,
+          userId,
+          networkName,
+          networkDriver,
+          error: networkResult.error,
+        },
+        "Failed to create deployment network",
+      );
 
       return res.status(500).json({
         error: "Infrastructure Error",
@@ -106,14 +119,17 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     });
 
     if (!traefikResult.success) {
-      logger.error({
-        requestId,
-        userId,
-        traefikImage,
-        webPort,
-        dashboardPort,
-        error: traefikResult.error,
-      }, "Failed to deploy Traefik container");
+      logger.error(
+        {
+          requestId,
+          userId,
+          traefikImage,
+          webPort,
+          dashboardPort,
+          error: traefikResult.error,
+        },
+        "Failed to deploy Traefik container",
+      );
 
       return res.status(500).json({
         error: "Infrastructure Error",
@@ -123,12 +139,15 @@ router.post("/deploy", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info({
-      requestId,
-      userId,
-      networkId: networkResult.networkId,
-      containerId: traefikResult.containerId,
-    }, "Infrastructure deployed successfully");
+    logger.info(
+      {
+        requestId,
+        userId,
+        networkId: networkResult.networkId,
+        containerId: traefikResult.containerId,
+      },
+      "Infrastructure deployed successfully",
+    );
 
     res.json({
       success: true,
@@ -143,20 +162,22 @@ router.post("/deploy", requireSessionOrApiKey, (async (
           image: traefikImage,
           webPort,
           dashboardPort,
-        }
+        },
       },
       message: "Infrastructure deployed successfully",
       timestamp: new Date().toISOString(),
       requestId,
     });
-
   } catch (error) {
-    logger.error({
-      error,
-      requestId,
-      userId,
-      body: req.body,
-    }, "Failed to deploy infrastructure");
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        body: req.body,
+      },
+      "Failed to deploy infrastructure",
+    );
 
     next(error);
   }
@@ -175,7 +196,10 @@ router.get("/status", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const networkName = req.query.networkName as string;
 
-  logger.info({ requestId, userId, networkName }, "Infrastructure status requested");
+  logger.info(
+    { requestId, userId, networkName },
+    "Infrastructure status requested",
+  );
 
   try {
     if (!networkName) {
@@ -187,14 +211,18 @@ router.get("/status", requireSessionOrApiKey, (async (
       });
     }
 
-    const status = await infrastructureService.getInfrastructureStatus(networkName);
+    const status =
+      await infrastructureService.getInfrastructureStatus(networkName);
 
-    logger.info({
-      requestId,
-      userId,
-      networkName,
-      status,
-    }, "Infrastructure status retrieved");
+    logger.info(
+      {
+        requestId,
+        userId,
+        networkName,
+        status,
+      },
+      "Infrastructure status retrieved",
+    );
 
     res.json({
       success: true,
@@ -203,14 +231,16 @@ router.get("/status", requireSessionOrApiKey, (async (
       timestamp: new Date().toISOString(),
       requestId,
     });
-
   } catch (error) {
-    logger.error({
-      error,
-      requestId,
-      userId,
-      networkName,
-    }, "Failed to get infrastructure status");
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        networkName,
+      },
+      "Failed to get infrastructure status",
+    );
 
     next(error);
   }
@@ -229,7 +259,10 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const networkName = req.body.networkName as string;
 
-  logger.info({ requestId, userId, networkName }, "Infrastructure cleanup requested");
+  logger.info(
+    { requestId, userId, networkName },
+    "Infrastructure cleanup requested",
+  );
 
   try {
     if (!user || !userId) {
@@ -250,15 +283,19 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       });
     }
 
-    const result = await infrastructureService.cleanupInfrastructure(networkName);
+    const result =
+      await infrastructureService.cleanupInfrastructure(networkName);
 
     if (!result.success) {
-      logger.error({
-        requestId,
-        userId,
-        networkName,
-        error: result.error,
-      }, "Failed to cleanup infrastructure");
+      logger.error(
+        {
+          requestId,
+          userId,
+          networkName,
+          error: result.error,
+        },
+        "Failed to cleanup infrastructure",
+      );
 
       return res.status(500).json({
         error: "Infrastructure Error",
@@ -268,11 +305,14 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info({
-      requestId,
-      userId,
-      networkName,
-    }, "Infrastructure cleaned up successfully");
+    logger.info(
+      {
+        requestId,
+        userId,
+        networkName,
+      },
+      "Infrastructure cleaned up successfully",
+    );
 
     res.json({
       success: true,
@@ -280,14 +320,16 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       timestamp: new Date().toISOString(),
       requestId,
     });
-
   } catch (error) {
-    logger.error({
-      error,
-      requestId,
-      userId,
-      networkName,
-    }, "Failed to cleanup infrastructure");
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        networkName,
+      },
+      "Failed to cleanup infrastructure",
+    );
 
     next(error);
   }

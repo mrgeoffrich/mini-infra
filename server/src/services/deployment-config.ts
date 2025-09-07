@@ -3,6 +3,7 @@ import { servicesLogger } from "../lib/logger-factory";
 import { ConfigurationService } from "./configuration-base";
 import NodeCache from "node-cache";
 import { z } from "zod";
+import { SettingsCategory } from "@mini-infra/types";
 import {
   DeploymentConfiguration,
   DeploymentConfigurationInfo,
@@ -112,7 +113,7 @@ export class DeploymentConfigService extends ConfigurationService {
   private cache: NodeCache;
 
   constructor(prismaInstance: typeof prisma, encryptionKey?: string) {
-    super(prismaInstance, "deployments");
+    super(prismaInstance, "deployments" as SettingsCategory);
 
     // Initialize cache with 5 minute TTL for deployment configurations
     this.cache = new NodeCache({

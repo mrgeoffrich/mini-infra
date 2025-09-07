@@ -64,7 +64,14 @@ function serializeConnectivityStatus(
 // Query parameter validation schema for listing settings
 const settingsQuerySchema = z.object({
   category: z
-    .enum(["docker", "cloudflare", "azure", "postgres", "system", "deployments"])
+    .enum([
+      "docker",
+      "cloudflare",
+      "azure",
+      "postgres",
+      "system",
+      "deployments",
+    ])
     .optional(),
   isActive: z
     .string()
@@ -107,7 +114,14 @@ const settingsQuerySchema = z.object({
 
 // Request body validation schemas
 const createSettingSchema = z.object({
-  category: z.enum(["docker", "cloudflare", "azure", "postgres", "system", "deployments"]),
+  category: z.enum([
+    "docker",
+    "cloudflare",
+    "azure",
+    "postgres",
+    "system",
+    "deployments",
+  ]),
   key: z.string().min(1, "Key is required").max(255),
   value: z.string().min(1, "Value is required"),
   isEncrypted: z.boolean().optional().default(false),
@@ -126,7 +140,14 @@ const validateServiceSchema = z.object({
 // Connectivity query parameter validation schema
 const connectivityQuerySchema = z.object({
   service: z
-    .enum(["docker", "cloudflare", "azure", "postgres", "system", "deployments"])
+    .enum([
+      "docker",
+      "cloudflare",
+      "azure",
+      "postgres",
+      "system",
+      "deployments",
+    ])
     .optional(),
   status: z
     .enum(["connected", "failed", "timeout", "unreachable", "error"])
@@ -618,7 +639,14 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
 
     // Validate service parameter
     if (
-      !["docker", "cloudflare", "azure", "postgres", "system", "deployments"].includes(service)
+      ![
+        "docker",
+        "cloudflare",
+        "azure",
+        "postgres",
+        "system",
+        "deployments",
+      ].includes(service)
     ) {
       return res.status(400).json({
         error: "Bad Request",

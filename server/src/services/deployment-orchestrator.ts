@@ -13,6 +13,8 @@ import {
   DeploymentStepStatus,
   TraefikConfig,
   ContainerConfig,
+  HealthCheckConfig,
+  RollbackConfig,
 } from "@mini-infra/types";
 
 // ====================
@@ -26,27 +28,27 @@ export interface DeploymentContext {
   triggerType: DeploymentTriggerType;
   triggeredBy: string | null;
   dockerImage: string;
-  
+
   // Container tracking
   oldContainerId: string | null;
   newContainerId: string | null;
   targetColor: "blue" | "green";
-  
+
   // Progress tracking
   currentStep: string;
   steps: DeploymentStep[];
   startTime: number;
-  
+
   // Health check results
   healthCheckPassed: boolean;
   healthCheckLogs: any[];
-  
+
   // Error handling
   errorMessage: string | null;
   errorDetails: any;
   retryCount: number;
   maxRetries: number;
-  
+
   // Metrics
   deploymentTime: number | null;
   downtime: number;
@@ -79,324 +81,328 @@ export type DeploymentEvent =
 // State Machine Configuration
 // ====================
 
-const deploymentStateMachine = createMachine({
-  types: {} as {
-    context: DeploymentContext;
-    events: DeploymentEvent;
-  },
-  id: "deployment",
-  initial: "idle",
-  context: {
-    deploymentId: "",
-    configurationId: "",
-    config: {} as DeploymentConfig,
-    triggerType: "manual",
-    triggeredBy: null,
-    dockerImage: "",
-    oldContainerId: null,
-    newContainerId: null,
-    targetColor: "blue",
-    currentStep: "",
-    steps: [],
-    startTime: 0,
-    healthCheckPassed: false,
-    healthCheckLogs: [],
-    errorMessage: null,
-    errorDetails: null,
-    retryCount: 0,
-    maxRetries: 3,
-    deploymentTime: null,
-    downtime: 0,
-  } as DeploymentContext,
-  states: {
-    idle: {
-      on: {
-        START_DEPLOYMENT: {
-          target: "preparing",
-          actions: ["initializeDeployment", "logDeploymentStart"],
-        },
-      },
+const deploymentStateMachine = createMachine(
+  {
+    types: {} as {
+      context: DeploymentContext;
+      events: DeploymentEvent;
     },
-    preparing: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "pullDockerImage",
-        onDone: {
-          target: "deploying",
-          actions: ["logImagePulled"],
-        },
-        onError: {
-          target: "failed",
-          actions: ["handleImagePullError"],
-        },
-      },
-    },
-    deploying: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "createAndStartContainer",
-        onDone: {
-          target: "health_checking",
-          actions: ["setNewContainerId", "logContainerCreated"],
-        },
-        onError: {
-          target: "failed",
-          actions: ["handleContainerError"],
-        },
-      },
-    },
-    health_checking: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "performHealthChecks",
-        onDone: {
-          target: "switching_traffic",
-          actions: ["setHealthCheckPassed", "logHealthCheckPassed"],
-        },
-        onError: [
-          {
-            target: "failed",
-            guard: "maxRetriesReached",
-            actions: ["handleHealthCheckError"],
-          },
-          {
-            target: "health_checking",
-            actions: ["incrementRetryCount", "logHealthCheckRetry"],
-          },
-        ],
-      },
-    },
-    switching_traffic: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "switchTrafficToNewContainer",
-        onDone: {
-          target: "cleanup",
-          actions: ["logTrafficSwitched"],
-        },
-        onError: {
-          target: "rolling_back",
-          actions: ["handleTrafficSwitchError"],
-        },
-      },
-    },
-    cleanup: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "cleanupOldContainer",
-        onDone: {
-          target: "completed",
-          actions: ["calculateDeploymentTime", "logDeploymentCompleted"],
-        },
-        onError: {
-          target: "completed",
-          actions: ["logCleanupError", "calculateDeploymentTime"],
-        },
-      },
-    },
-    completed: {
-      type: "final",
-      entry: ["finalizeDeployment", "logFinalState"],
-    },
-    failed: {
-      entry: ["setCurrentStep"],
-      on: {
-        FORCE_ROLLBACK: "rolling_back",
-        RETRY: [
-          {
+    id: "deployment",
+    initial: "idle",
+    context: {
+      deploymentId: "",
+      configurationId: "",
+      config: {} as DeploymentConfig,
+      triggerType: "manual",
+      triggeredBy: null,
+      dockerImage: "",
+      oldContainerId: null,
+      newContainerId: null,
+      targetColor: "blue",
+      currentStep: "",
+      steps: [],
+      startTime: 0,
+      healthCheckPassed: false,
+      healthCheckLogs: [],
+      errorMessage: null,
+      errorDetails: null,
+      retryCount: 0,
+      maxRetries: 3,
+      deploymentTime: null,
+      downtime: 0,
+    } as DeploymentContext,
+    states: {
+      idle: {
+        on: {
+          START_DEPLOYMENT: {
             target: "preparing",
-            guard: "canRetry",
-            actions: ["resetForRetry"],
+            actions: ["initializeDeployment", "logDeploymentStart"],
           },
-        ],
-      },
-    },
-    rolling_back: {
-      entry: ["setCurrentStep"],
-      invoke: {
-        src: "performRollback",
-        onDone: {
-          target: "completed",
-          actions: ["logRollbackCompleted", "calculateDeploymentTime"],
-        },
-        onError: {
-          target: "failed",
-          actions: ["handleRollbackError"],
         },
       },
+      preparing: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "pullDockerImage",
+          onDone: {
+            target: "deploying",
+            actions: ["logImagePulled"],
+          },
+          onError: {
+            target: "failed",
+            actions: ["handleImagePullError"],
+          },
+        },
+      },
+      deploying: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "createAndStartContainer",
+          onDone: {
+            target: "health_checking",
+            actions: ["setNewContainerId", "logContainerCreated"],
+          },
+          onError: {
+            target: "failed",
+            actions: ["handleContainerError"],
+          },
+        },
+      },
+      health_checking: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "performHealthChecks",
+          onDone: {
+            target: "switching_traffic",
+            actions: ["setHealthCheckPassed", "logHealthCheckPassed"],
+          },
+          onError: [
+            {
+              target: "failed",
+              guard: "maxRetriesReached",
+              actions: ["handleHealthCheckError"],
+            },
+            {
+              target: "health_checking",
+              actions: ["incrementRetryCount", "logHealthCheckRetry"],
+            },
+          ],
+        },
+      },
+      switching_traffic: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "switchTrafficToNewContainer",
+          onDone: {
+            target: "cleanup",
+            actions: ["logTrafficSwitched"],
+          },
+          onError: {
+            target: "rolling_back",
+            actions: ["handleTrafficSwitchError"],
+          },
+        },
+      },
+      cleanup: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "cleanupOldContainer",
+          onDone: {
+            target: "completed",
+            actions: ["calculateDeploymentTime", "logDeploymentCompleted"],
+          },
+          onError: {
+            target: "completed",
+            actions: ["logCleanupError", "calculateDeploymentTime"],
+          },
+        },
+      },
+      completed: {
+        type: "final",
+        entry: ["finalizeDeployment", "logFinalState"],
+      },
+      failed: {
+        entry: ["setCurrentStep"],
+        on: {
+          FORCE_ROLLBACK: "rolling_back",
+          RETRY: [
+            {
+              target: "preparing",
+              guard: "canRetry",
+              actions: ["resetForRetry"],
+            },
+          ],
+        },
+      },
+      rolling_back: {
+        entry: ["setCurrentStep"],
+        invoke: {
+          src: "performRollback",
+          onDone: {
+            target: "completed",
+            actions: ["logRollbackCompleted", "calculateDeploymentTime"],
+          },
+          onError: {
+            target: "failed",
+            actions: ["handleRollbackError"],
+          },
+        },
+      },
     },
   },
-}, {
-  actions: {
-    initializeDeployment: assign(({ context }) => ({
-      ...context,
-      startTime: Date.now(),
-      currentStep: "preparing",
-      retryCount: 0,
-      errorMessage: null,
-      errorDetails: null,
-    })),
-    setCurrentStep: assign(({ context }) => ({
-      ...context,
-      currentStep: context.currentStep,
-    })),
-    setNewContainerId: assign(({ context, event }) => ({
-      ...context,
-      newContainerId: (event as any).output?.containerId || null,
-    })),
-    setHealthCheckPassed: assign(({ context }) => ({
-      ...context,
-      healthCheckPassed: true,
-    })),
-    incrementRetryCount: assign(({ context }) => ({
-      ...context,
-      retryCount: context.retryCount + 1,
-    })),
-    resetForRetry: assign(({ context }) => ({
-      ...context,
-      retryCount: 0,
-      errorMessage: null,
-      errorDetails: null,
-    })),
-    handleError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: (event as any).error || "Unknown error",
-      errorDetails: (event as any).data || null,
-    })),
-    handleImagePullError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: `Failed to pull image: ${(event as any).error}`,
-      errorDetails: (event as any).data,
-    })),
-    handleContainerError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: `Failed to create/start container: ${(event as any).error}`,
-      errorDetails: (event as any).data,
-    })),
-    handleHealthCheckError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: `Health check failed: ${(event as any).error}`,
-      errorDetails: (event as any).data,
-    })),
-    handleTrafficSwitchError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: `Failed to switch traffic: ${(event as any).error}`,
-      errorDetails: (event as any).data,
-    })),
-    handleRollbackError: assign(({ context, event }) => ({
-      ...context,
-      errorMessage: `Rollback failed: ${(event as any).error}`,
-      errorDetails: (event as any).data,
-    })),
-    calculateDeploymentTime: assign(({ context }) => ({
-      ...context,
-      deploymentTime: Math.floor((Date.now() - context.startTime) / 1000),
-    })),
-    finalizeDeployment: assign(({ context }) => context),
-    logDeploymentStart: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          applicationName: context.config.applicationName,
-          dockerImage: context.dockerImage,
-          triggerType: context.triggerType,
-        },
-        "Deployment started"
-      );
+  {
+    actions: {
+      initializeDeployment: assign(({ context }) => ({
+        ...context,
+        startTime: Date.now(),
+        currentStep: "preparing",
+        retryCount: 0,
+        errorMessage: null,
+        errorDetails: null,
+      })),
+      setCurrentStep: assign(({ context }) => ({
+        ...context,
+        currentStep: context.currentStep,
+      })),
+      setNewContainerId: assign(({ context, event }) => ({
+        ...context,
+        newContainerId: (event as any).output?.containerId || null,
+      })),
+      setHealthCheckPassed: assign(({ context }) => ({
+        ...context,
+        healthCheckPassed: true,
+      })),
+      incrementRetryCount: assign(({ context }) => ({
+        ...context,
+        retryCount: context.retryCount + 1,
+      })),
+      resetForRetry: assign(({ context }) => ({
+        ...context,
+        retryCount: 0,
+        errorMessage: null,
+        errorDetails: null,
+      })),
+      handleError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: (event as any).error || "Unknown error",
+        errorDetails: (event as any).data || null,
+      })),
+      handleImagePullError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: `Failed to pull image: ${(event as any).error}`,
+        errorDetails: (event as any).data,
+      })),
+      handleContainerError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: `Failed to create/start container: ${(event as any).error}`,
+        errorDetails: (event as any).data,
+      })),
+      handleHealthCheckError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: `Health check failed: ${(event as any).error}`,
+        errorDetails: (event as any).data,
+      })),
+      handleTrafficSwitchError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: `Failed to switch traffic: ${(event as any).error}`,
+        errorDetails: (event as any).data,
+      })),
+      handleRollbackError: assign(({ context, event }) => ({
+        ...context,
+        errorMessage: `Rollback failed: ${(event as any).error}`,
+        errorDetails: (event as any).data,
+      })),
+      calculateDeploymentTime: assign(({ context }) => ({
+        ...context,
+        deploymentTime: Math.floor((Date.now() - context.startTime) / 1000),
+      })),
+      finalizeDeployment: assign(({ context }) => context),
+      logDeploymentStart: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            applicationName: context.config.applicationName,
+            dockerImage: context.dockerImage,
+            triggerType: context.triggerType,
+          },
+          "Deployment started",
+        );
+      },
+      logImagePulled: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            dockerImage: context.dockerImage,
+          },
+          "Docker image pulled successfully",
+        );
+      },
+      logContainerCreated: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            containerId: context.newContainerId,
+          },
+          "Container created and started successfully",
+        );
+      },
+      logHealthCheckPassed: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            containerId: context.newContainerId,
+          },
+          "Health checks passed",
+        );
+      },
+      logHealthCheckRetry: ({ context }) => {
+        deploymentLogger().warn(
+          {
+            deploymentId: context.deploymentId,
+            retryCount: context.retryCount,
+            maxRetries: context.maxRetries,
+          },
+          "Health check failed, retrying",
+        );
+      },
+      logTrafficSwitched: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            newContainerId: context.newContainerId,
+            oldContainerId: context.oldContainerId,
+          },
+          "Traffic switched to new container",
+        );
+      },
+      logCleanupError: ({ context, event }) => {
+        deploymentLogger().warn(
+          {
+            deploymentId: context.deploymentId,
+            oldContainerId: context.oldContainerId,
+            error: (event as any).error,
+          },
+          "Cleanup failed but deployment considered successful",
+        );
+      },
+      logDeploymentCompleted: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            applicationName: context.config.applicationName,
+            deploymentTime: context.deploymentTime,
+            downtime: context.downtime,
+          },
+          "Deployment completed successfully",
+        );
+      },
+      logRollbackCompleted: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            applicationName: context.config.applicationName,
+          },
+          "Rollback completed successfully",
+        );
+      },
+      logFinalState: ({ context }) => {
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            deploymentTime: context.deploymentTime,
+            errorMessage: context.errorMessage,
+          },
+          "Deployment reached final state",
+        );
+      },
     },
-    logImagePulled: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          dockerImage: context.dockerImage,
-        },
-        "Docker image pulled successfully"
-      );
-    },
-    logContainerCreated: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-        },
-        "Container created and started successfully"
-      );
-    },
-    logHealthCheckPassed: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-        },
-        "Health checks passed"
-      );
-    },
-    logHealthCheckRetry: ({ context }) => {
-      deploymentLogger().warn(
-        {
-          deploymentId: context.deploymentId,
-          retryCount: context.retryCount,
-          maxRetries: context.maxRetries,
-        },
-        "Health check failed, retrying"
-      );
-    },
-    logTrafficSwitched: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          newContainerId: context.newContainerId,
-          oldContainerId: context.oldContainerId,
-        },
-        "Traffic switched to new container"
-      );
-    },
-    logCleanupError: ({ context, event }) => {
-      deploymentLogger().warn(
-        {
-          deploymentId: context.deploymentId,
-          oldContainerId: context.oldContainerId,
-          error: (event as any).error,
-        },
-        "Cleanup failed but deployment considered successful"
-      );
-    },
-    logDeploymentCompleted: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          applicationName: context.config.applicationName,
-          deploymentTime: context.deploymentTime,
-          downtime: context.downtime,
-        },
-        "Deployment completed successfully"
-      );
-    },
-    logRollbackCompleted: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          applicationName: context.config.applicationName,
-        },
-        "Rollback completed successfully"
-      );
-    },
-    logFinalState: ({ context }) => {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          deploymentTime: context.deploymentTime,
-          errorMessage: context.errorMessage,
-        },
-        "Deployment reached final state"
-      );
+    guards: {
+      maxRetriesReached: ({ context }) =>
+        context.retryCount >= context.maxRetries,
+      canRetry: ({ context }) => context.retryCount < context.maxRetries,
     },
   },
-  guards: {
-    maxRetriesReached: ({ context }) => context.retryCount >= context.maxRetries,
-    canRetry: ({ context }) => context.retryCount < context.maxRetries,
-  },
-});
+);
 
 // ====================
 // Deployment Orchestrator
@@ -427,7 +433,7 @@ export class DeploymentOrchestrator {
     deploymentId: string,
     config: DeploymentConfig,
     triggerType: DeploymentTriggerType,
-    triggeredBy?: string
+    triggeredBy?: string,
   ): Promise<void> {
     try {
       deploymentLogger().info(
@@ -437,7 +443,7 @@ export class DeploymentOrchestrator {
           dockerImage: config.dockerImage,
           triggerType,
         },
-        "Starting new deployment"
+        "Starting new deployment",
       );
 
       if (this.activeDeployments.has(deploymentId)) {
@@ -471,12 +477,24 @@ export class DeploymentOrchestrator {
       // Create and start state machine
       const deploymentMachine = deploymentStateMachine.provide({
         actors: {
-          pullDockerImage: fromPromise(this.createPullImageService(initialContext)),
-          createAndStartContainer: fromPromise(this.createContainerService(initialContext)),
-          performHealthChecks: fromPromise(this.createHealthCheckService(initialContext)),
-          switchTrafficToNewContainer: fromPromise(this.createTrafficSwitchService(initialContext)),
-          cleanupOldContainer: fromPromise(this.createCleanupService(initialContext)),
-          performRollback: fromPromise(this.createRollbackService(initialContext)),
+          pullDockerImage: fromPromise(
+            this.createPullImageService(initialContext),
+          ),
+          createAndStartContainer: fromPromise(
+            this.createContainerService(initialContext),
+          ),
+          performHealthChecks: fromPromise(
+            this.createHealthCheckService(initialContext),
+          ),
+          switchTrafficToNewContainer: fromPromise(
+            this.createTrafficSwitchService(initialContext),
+          ),
+          cleanupOldContainer: fromPromise(
+            this.createCleanupService(initialContext),
+          ),
+          performRollback: fromPromise(
+            this.createRollbackService(initialContext),
+          ),
         },
       });
 
@@ -497,7 +515,7 @@ export class DeploymentOrchestrator {
           this.activeDeployments.delete(deploymentId);
           deploymentLogger().info(
             { deploymentId },
-            "Deployment actor completed and cleaned up"
+            "Deployment actor completed and cleaned up",
           );
         }
 
@@ -508,10 +526,9 @@ export class DeploymentOrchestrator {
             currentState: state.value,
             context: state.context,
           },
-          "Deployment state transition"
+          "Deployment state transition",
         );
       });
-
     } catch (error) {
       deploymentLogger().error(
         {
@@ -519,7 +536,7 @@ export class DeploymentOrchestrator {
           error: error instanceof Error ? error.message : "Unknown error",
           errorStack: error instanceof Error ? error.stack : undefined,
         },
-        "Failed to start deployment"
+        "Failed to start deployment",
       );
       throw error;
     }
@@ -534,7 +551,7 @@ export class DeploymentOrchestrator {
     context: DeploymentContext | null;
   } {
     const actor = this.activeDeployments.get(deploymentId);
-    
+
     if (!actor) {
       return {
         isActive: false,
@@ -556,15 +573,12 @@ export class DeploymentOrchestrator {
    */
   async forceRollback(deploymentId: string): Promise<void> {
     const actor = this.activeDeployments.get(deploymentId);
-    
+
     if (!actor) {
       throw new Error(`No active deployment found with ID: ${deploymentId}`);
     }
 
-    deploymentLogger().info(
-      { deploymentId },
-      "Forcing deployment rollback"
-    );
+    deploymentLogger().info({ deploymentId }, "Forcing deployment rollback");
 
     actor.send({ type: "FORCE_ROLLBACK" });
   }
@@ -574,19 +588,16 @@ export class DeploymentOrchestrator {
    */
   async stopDeployment(deploymentId: string): Promise<void> {
     const actor = this.activeDeployments.get(deploymentId);
-    
+
     if (!actor) {
       deploymentLogger().warn(
         { deploymentId },
-        "Attempted to stop non-existent deployment"
+        "Attempted to stop non-existent deployment",
       );
       return;
     }
 
-    deploymentLogger().info(
-      { deploymentId },
-      "Stopping deployment"
-    );
+    deploymentLogger().info({ deploymentId }, "Stopping deployment");
 
     actor.stop();
     this.activeDeployments.delete(deploymentId);
@@ -600,14 +611,19 @@ export class DeploymentOrchestrator {
     return async () => {
       try {
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "pull_image", "running", "Pulling Docker image");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "pull_image",
+          "running",
+          "Pulling Docker image",
+        );
 
         deploymentLogger().info(
           {
             deploymentId: context.deploymentId,
             dockerImage: context.dockerImage,
           },
-          "Pulling Docker image"
+          "Pulling Docker image",
         );
 
         // Initialize docker executor if needed
@@ -615,34 +631,45 @@ export class DeploymentOrchestrator {
 
         // Pull the image (this will handle authentication if configured)
         await this.dockerExecutor.pullImageWithAuth(context.dockerImage);
-        
+
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "pull_image", "completed", "Docker image pulled successfully");
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "pull_image",
+          "completed",
+          "Docker image pulled successfully",
+        );
+
         deploymentLogger().info(
           {
             deploymentId: context.deploymentId,
             dockerImage: context.dockerImage,
           },
-          "Docker image pulled successfully"
+          "Docker image pulled successfully",
         );
-        
+
         return { success: true };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Update step as failed
-        await this.updateDeploymentStep(context.deploymentId, "pull_image", "failed", `Failed to pull image: ${errorMessage}`);
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "pull_image",
+          "failed",
+          `Failed to pull image: ${errorMessage}`,
+        );
+
         deploymentLogger().error(
           {
             deploymentId: context.deploymentId,
             dockerImage: context.dockerImage,
             error: errorMessage,
           },
-          "Failed to pull Docker image"
+          "Failed to pull Docker image",
         );
-        
+
         throw error;
       }
     };
@@ -652,7 +679,12 @@ export class DeploymentOrchestrator {
     return async () => {
       try {
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "create_container", "running", "Creating and starting container");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "create_container",
+          "running",
+          "Creating and starting container",
+        );
 
         deploymentLogger().info(
           {
@@ -660,17 +692,20 @@ export class DeploymentOrchestrator {
             applicationName: context.config.applicationName,
             targetColor: context.targetColor,
           },
-          "Creating and starting container"
+          "Creating and starting container",
         );
 
         // Find old container to switch from
-        const oldContainerId = await this.findCurrentContainer(context.config.applicationName, context.targetColor === "blue" ? "green" : "blue");
+        const oldContainerId = await this.findCurrentContainer(
+          context.config.applicationName,
+          context.targetColor === "blue" ? "green" : "blue",
+        );
         if (oldContainerId) {
           context.oldContainerId = oldContainerId;
         }
 
         const containerName = `${context.config.applicationName}-${context.targetColor}`;
-        
+
         // Create container with Traefik labels (disabled initially for blue-green deployment)
         const traefikConfig = {
           ...context.config.traefikConfig,
@@ -699,7 +734,7 @@ export class DeploymentOrchestrator {
         const isRunning = await this.containerManager.waitForContainerStatus(
           containerId,
           "running",
-          30000 // 30 seconds timeout
+          30000, // 30 seconds timeout
         );
 
         if (!isRunning) {
@@ -707,10 +742,19 @@ export class DeploymentOrchestrator {
         }
 
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "create_container", "completed", `Container created and started: ${containerId}`);
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "create_container",
+          "completed",
+          `Container created and started: ${containerId}`,
+        );
 
         // Update deployment with container ID
-        await this.updateDeploymentContainers(context.deploymentId, containerId, context.oldContainerId);
+        await this.updateDeploymentContainers(
+          context.deploymentId,
+          containerId,
+          context.oldContainerId,
+        );
 
         deploymentLogger().info(
           {
@@ -718,16 +762,22 @@ export class DeploymentOrchestrator {
             containerId: containerId,
             oldContainerId: context.oldContainerId,
           },
-          "Container created and started successfully"
+          "Container created and started successfully",
         );
 
         return { containerId };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Update step as failed
-        await this.updateDeploymentStep(context.deploymentId, "create_container", "failed", `Failed to create container: ${errorMessage}`);
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "create_container",
+          "failed",
+          `Failed to create container: ${errorMessage}`,
+        );
+
         throw error;
       }
     };
@@ -741,7 +791,12 @@ export class DeploymentOrchestrator {
         }
 
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "health_check", "running", "Performing health checks");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "health_check",
+          "running",
+          "Performing health checks",
+        );
 
         deploymentLogger().info(
           {
@@ -751,7 +806,7 @@ export class DeploymentOrchestrator {
             retryAttempt: context.retryCount + 1,
             maxRetries: context.maxRetries,
           },
-          "Performing health checks"
+          "Performing health checks",
         );
 
         const result = await this.healthCheckService.performHealthCheck({
@@ -766,10 +821,15 @@ export class DeploymentOrchestrator {
 
         if (!result.success) {
           const errorMessage = `Health check failed: ${result.errorMessage}`;
-          
+
           // Update step as failed (will retry if within limits)
-          await this.updateDeploymentStep(context.deploymentId, "health_check", "failed", `${errorMessage} (attempt ${context.retryCount + 1}/${context.maxRetries})`);
-          
+          await this.updateDeploymentStep(
+            context.deploymentId,
+            "health_check",
+            "failed",
+            `${errorMessage} (attempt ${context.retryCount + 1}/${context.maxRetries})`,
+          );
+
           deploymentLogger().warn(
             {
               deploymentId: context.deploymentId,
@@ -778,18 +838,27 @@ export class DeploymentOrchestrator {
               maxRetries: context.maxRetries,
               healthCheckResult: result,
             },
-            errorMessage
+            errorMessage,
           );
-          
+
           throw new Error(errorMessage);
         }
 
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "health_check", "completed", "Health checks passed successfully");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "health_check",
+          "completed",
+          "Health checks passed successfully",
+        );
 
         // Store health check results in context and database
         context.healthCheckLogs.push(result);
-        await this.updateDeploymentHealthCheck(context.deploymentId, true, result);
+        await this.updateDeploymentHealthCheck(
+          context.deploymentId,
+          true,
+          result,
+        );
 
         deploymentLogger().info(
           {
@@ -797,13 +866,14 @@ export class DeploymentOrchestrator {
             containerId: context.newContainerId,
             healthCheckResult: result,
           },
-          "Health checks passed successfully"
+          "Health checks passed successfully",
         );
 
         return { healthCheckResult: result };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Don't update step status here for failures - let the retry logic handle it
         deploymentLogger().error(
           {
@@ -811,9 +881,9 @@ export class DeploymentOrchestrator {
             containerId: context.newContainerId,
             error: errorMessage,
           },
-          "Health check failed"
+          "Health check failed",
         );
-        
+
         throw error;
       }
     };
@@ -827,7 +897,12 @@ export class DeploymentOrchestrator {
         }
 
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "switch_traffic", "running", "Switching traffic to new container");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "switch_traffic",
+          "running",
+          "Switching traffic to new container",
+        );
 
         deploymentLogger().info(
           {
@@ -836,7 +911,7 @@ export class DeploymentOrchestrator {
             oldContainerId: context.oldContainerId,
             applicationName: context.config.applicationName,
           },
-          "Switching traffic to new container"
+          "Switching traffic to new container",
         );
 
         // Calculate downtime start
@@ -856,9 +931,12 @@ export class DeploymentOrchestrator {
             context.config.applicationName,
             context.config.traefikConfig,
             context.config.containerConfig,
-            context.targetColor
+            context.targetColor,
           );
-          await this.traefikService.updateContainerLabels(context.newContainerId, activeLabels);
+          await this.traefikService.updateContainerLabels(
+            context.newContainerId,
+            activeLabels,
+          );
         }
 
         // Calculate downtime duration
@@ -872,7 +950,12 @@ export class DeploymentOrchestrator {
         }
 
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "switch_traffic", "completed", `Traffic switched successfully. Downtime: ${context.downtime}ms`);
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "switch_traffic",
+          "completed",
+          `Traffic switched successfully. Downtime: ${context.downtime}ms`,
+        );
 
         deploymentLogger().info(
           {
@@ -881,16 +964,22 @@ export class DeploymentOrchestrator {
             oldContainerId: context.oldContainerId,
             downtime: context.downtime,
           },
-          "Traffic switched successfully"
+          "Traffic switched successfully",
         );
 
         return { success: true, downtime: context.downtime };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Update step as failed
-        await this.updateDeploymentStep(context.deploymentId, "switch_traffic", "failed", `Failed to switch traffic: ${errorMessage}`);
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "switch_traffic",
+          "failed",
+          `Failed to switch traffic: ${errorMessage}`,
+        );
+
         deploymentLogger().error(
           {
             deploymentId: context.deploymentId,
@@ -898,9 +987,9 @@ export class DeploymentOrchestrator {
             oldContainerId: context.oldContainerId,
             error: errorMessage,
           },
-          "Failed to switch traffic"
+          "Failed to switch traffic",
         );
-        
+
         throw error;
       }
     };
@@ -910,7 +999,12 @@ export class DeploymentOrchestrator {
     return async () => {
       try {
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "cleanup", "running", "Cleaning up old container");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "cleanup",
+          "running",
+          "Cleaning up old container",
+        );
 
         deploymentLogger().info(
           {
@@ -918,34 +1012,38 @@ export class DeploymentOrchestrator {
             oldContainerId: context.oldContainerId,
             keepOldContainer: context.config.rollbackConfig.keepOldContainer,
           },
-          "Cleaning up old container"
+          "Cleaning up old container",
         );
 
-        if (context.oldContainerId && context.config.rollbackConfig.keepOldContainer === false) {
+        if (
+          context.oldContainerId &&
+          context.config.rollbackConfig.keepOldContainer === false
+        ) {
           try {
             // Stop and remove old container
             await this.containerManager.stopContainer(context.oldContainerId);
             await this.containerManager.removeContainer(context.oldContainerId);
-            
+
             deploymentLogger().info(
               {
                 deploymentId: context.deploymentId,
                 oldContainerId: context.oldContainerId,
               },
-              "Old container cleaned up successfully"
+              "Old container cleaned up successfully",
             );
           } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+
             deploymentLogger().warn(
               {
                 deploymentId: context.deploymentId,
                 oldContainerId: context.oldContainerId,
                 error: errorMessage,
               },
-              "Failed to cleanup old container, but deployment continues"
+              "Failed to cleanup old container, but deployment continues",
             );
-            
+
             // Don't fail deployment on cleanup errors
           }
         } else if (context.oldContainerId) {
@@ -954,28 +1052,39 @@ export class DeploymentOrchestrator {
               deploymentId: context.deploymentId,
               oldContainerId: context.oldContainerId,
             },
-            "Keeping old container for potential rollback"
+            "Keeping old container for potential rollback",
           );
         }
 
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "cleanup", "completed", "Cleanup completed");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "cleanup",
+          "completed",
+          "Cleanup completed",
+        );
 
         return { success: true };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Update step as completed even on error (cleanup failures shouldn't fail deployment)
-        await this.updateDeploymentStep(context.deploymentId, "cleanup", "completed", `Cleanup completed with warnings: ${errorMessage}`);
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "cleanup",
+          "completed",
+          `Cleanup completed with warnings: ${errorMessage}`,
+        );
+
         deploymentLogger().warn(
           {
             deploymentId: context.deploymentId,
             error: errorMessage,
           },
-          "Cleanup completed with warnings"
+          "Cleanup completed with warnings",
         );
-        
+
         return { success: true };
       }
     };
@@ -985,7 +1094,12 @@ export class DeploymentOrchestrator {
     return async () => {
       try {
         // Update deployment step in database
-        await this.updateDeploymentStep(context.deploymentId, "rollback", "running", "Rolling back deployment");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "rollback",
+          "running",
+          "Rolling back deployment",
+        );
 
         deploymentLogger().info(
           {
@@ -993,7 +1107,7 @@ export class DeploymentOrchestrator {
             newContainerId: context.newContainerId,
             oldContainerId: context.oldContainerId,
           },
-          "Performing deployment rollback"
+          "Performing deployment rollback",
         );
 
         // Stop and remove failed container
@@ -1001,24 +1115,25 @@ export class DeploymentOrchestrator {
           try {
             await this.containerManager.stopContainer(context.newContainerId);
             await this.containerManager.removeContainer(context.newContainerId);
-            
+
             deploymentLogger().info(
               {
                 deploymentId: context.deploymentId,
                 newContainerId: context.newContainerId,
               },
-              "Failed container cleaned up during rollback"
+              "Failed container cleaned up during rollback",
             );
           } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+
             deploymentLogger().error(
               {
                 deploymentId: context.deploymentId,
                 newContainerId: context.newContainerId,
                 error: errorMessage,
               },
-              "Failed to cleanup failed container during rollback"
+              "Failed to cleanup failed container during rollback",
             );
           }
         }
@@ -1026,21 +1141,28 @@ export class DeploymentOrchestrator {
         // Restore traffic to old container if it exists
         if (context.oldContainerId) {
           try {
-            const status = await this.containerManager.getContainerStatus(context.oldContainerId);
-            
+            const status = await this.containerManager.getContainerStatus(
+              context.oldContainerId,
+            );
+
             // Start old container if it's not running
             if (status && status.status !== "running") {
-              await this.containerManager.startContainer(context.oldContainerId);
-              
-              // Wait for it to be running
-              const isRunning = await this.containerManager.waitForContainerStatus(
+              await this.containerManager.startContainer(
                 context.oldContainerId,
-                "running",
-                30000
               );
-              
+
+              // Wait for it to be running
+              const isRunning =
+                await this.containerManager.waitForContainerStatus(
+                  context.oldContainerId,
+                  "running",
+                  30000,
+                );
+
               if (!isRunning) {
-                throw new Error("Failed to restart old container during rollback");
+                throw new Error(
+                  "Failed to restart old container during rollback",
+                );
               }
             }
 
@@ -1049,62 +1171,80 @@ export class DeploymentOrchestrator {
               context.config.applicationName,
               context.config.traefikConfig,
               context.config.containerConfig,
-              context.targetColor === "blue" ? "green" : "blue" // Switch back to old color
+              context.targetColor === "blue" ? "green" : "blue", // Switch back to old color
             );
-            await this.traefikService.updateContainerLabels(context.oldContainerId, activeLabels);
+            await this.traefikService.updateContainerLabels(
+              context.oldContainerId,
+              activeLabels,
+            );
 
             // Mark old container as active
-            await this.updateContainerActiveStatus(context.oldContainerId, true);
-            
+            await this.updateContainerActiveStatus(
+              context.oldContainerId,
+              true,
+            );
+
             deploymentLogger().info(
               {
                 deploymentId: context.deploymentId,
                 oldContainerId: context.oldContainerId,
               },
-              "Traffic restored to previous container"
+              "Traffic restored to previous container",
             );
           } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            
+            const errorMessage =
+              error instanceof Error ? error.message : "Unknown error";
+
             deploymentLogger().error(
               {
                 deploymentId: context.deploymentId,
                 oldContainerId: context.oldContainerId,
                 error: errorMessage,
               },
-              "Failed to restore traffic to old container during rollback"
+              "Failed to restore traffic to old container during rollback",
             );
-            
+
             throw error;
           }
         }
 
         // Update step as completed
-        await this.updateDeploymentStep(context.deploymentId, "rollback", "completed", "Rollback completed successfully");
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "rollback",
+          "completed",
+          "Rollback completed successfully",
+        );
 
         deploymentLogger().info(
           {
             deploymentId: context.deploymentId,
             applicationName: context.config.applicationName,
           },
-          "Deployment rollback completed successfully"
+          "Deployment rollback completed successfully",
         );
 
         return { success: true };
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+
         // Update step as failed
-        await this.updateDeploymentStep(context.deploymentId, "rollback", "failed", `Rollback failed: ${errorMessage}`);
-        
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "rollback",
+          "failed",
+          `Rollback failed: ${errorMessage}`,
+        );
+
         deploymentLogger().error(
           {
             deploymentId: context.deploymentId,
             error: errorMessage,
           },
-          "Deployment rollback failed"
+          "Deployment rollback failed",
         );
-        
+
         throw error;
       }
     };
@@ -1145,7 +1285,7 @@ export class DeploymentOrchestrator {
     deploymentId: string,
     stepName: string,
     status: DeploymentStepStatus,
-    output?: string
+    output?: string,
   ): Promise<void> {
     try {
       await prisma.deploymentStep.upsert({
@@ -1155,9 +1295,15 @@ export class DeploymentOrchestrator {
         update: {
           status,
           output,
-          completedAt: status === "completed" || status === "failed" ? new Date() : undefined,
-          duration: status === "completed" || status === "failed" ? 
-            (Date.now() - (await this.getStepStartTime(deploymentId, stepName))) : undefined,
+          completedAt:
+            status === "completed" || status === "failed"
+              ? new Date()
+              : undefined,
+          duration:
+            status === "completed" || status === "failed"
+              ? Date.now() -
+                (await this.getStepStartTime(deploymentId, stepName))
+              : undefined,
         },
         create: {
           id: `${deploymentId}-${stepName}`,
@@ -1166,8 +1312,12 @@ export class DeploymentOrchestrator {
           status,
           output,
           startedAt: new Date(),
-          completedAt: status === "completed" || status === "failed" ? new Date() : undefined,
-          duration: status === "completed" || status === "failed" ? 0 : undefined,
+          completedAt:
+            status === "completed" || status === "failed"
+              ? new Date()
+              : undefined,
+          duration:
+            status === "completed" || status === "failed" ? 0 : undefined,
         },
       });
     } catch (error) {
@@ -1178,7 +1328,7 @@ export class DeploymentOrchestrator {
           status,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update deployment step"
+        "Failed to update deployment step",
       );
     }
   }
@@ -1186,7 +1336,10 @@ export class DeploymentOrchestrator {
   /**
    * Get step start time for duration calculation
    */
-  private async getStepStartTime(deploymentId: string, stepName: string): Promise<number> {
+  private async getStepStartTime(
+    deploymentId: string,
+    stepName: string,
+  ): Promise<number> {
     try {
       const step = await prisma.deploymentStep.findUnique({
         where: {
@@ -1205,7 +1358,7 @@ export class DeploymentOrchestrator {
   private async updateDeploymentContainers(
     deploymentId: string,
     newContainerId: string | null,
-    oldContainerId: string | null
+    oldContainerId: string | null,
   ): Promise<void> {
     try {
       await prisma.deployment.update({
@@ -1223,7 +1376,7 @@ export class DeploymentOrchestrator {
           oldContainerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update deployment containers"
+        "Failed to update deployment containers",
       );
     }
   }
@@ -1234,7 +1387,7 @@ export class DeploymentOrchestrator {
   private async updateDeploymentHealthCheck(
     deploymentId: string,
     passed: boolean,
-    logs: any
+    logs: any,
   ): Promise<void> {
     try {
       await prisma.deployment.update({
@@ -1251,7 +1404,7 @@ export class DeploymentOrchestrator {
           passed,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update deployment health check"
+        "Failed to update deployment health check",
       );
     }
   }
@@ -1259,11 +1412,15 @@ export class DeploymentOrchestrator {
   /**
    * Find current container for an application
    */
-  private async findCurrentContainer(applicationName: string, color: "blue" | "green"): Promise<string | null> {
+  private async findCurrentContainer(
+    applicationName: string,
+    color: "blue" | "green",
+  ): Promise<string | null> {
     try {
       // Use Docker API to find running container with matching labels
-      const containers = await this.containerManager["dockerService"].listContainers();
-      
+      const containers =
+        await this.containerManager["dockerService"].listContainers();
+
       for (const containerInfo of containers) {
         const labels = containerInfo.labels || {};
         if (
@@ -1275,7 +1432,7 @@ export class DeploymentOrchestrator {
           return containerInfo.id;
         }
       }
-      
+
       return null;
     } catch (error) {
       deploymentLogger().warn(
@@ -1284,7 +1441,7 @@ export class DeploymentOrchestrator {
           color,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to find current container"
+        "Failed to find current container",
       );
       return null;
     }
@@ -1293,7 +1450,10 @@ export class DeploymentOrchestrator {
   /**
    * Update container active status via Docker labels
    */
-  private async updateContainerActiveStatus(containerId: string, active: boolean): Promise<void> {
+  private async updateContainerActiveStatus(
+    containerId: string,
+    active: boolean,
+  ): Promise<void> {
     try {
       // This would require updating container labels, which is complex with dockerode
       // For now, we'll log the intent - in a production system this might be handled
@@ -1303,7 +1463,7 @@ export class DeploymentOrchestrator {
           containerId,
           active,
         },
-        "Container active status would be updated"
+        "Container active status would be updated",
       );
     } catch (error) {
       deploymentLogger().warn(
@@ -1312,7 +1472,7 @@ export class DeploymentOrchestrator {
           active,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update container active status"
+        "Failed to update container active status",
       );
     }
   }
@@ -1324,11 +1484,11 @@ export class DeploymentOrchestrator {
     applicationName: string,
     traefikConfig: TraefikConfig,
     containerConfig: ContainerConfig,
-    color: "blue" | "green"
+    color: "blue" | "green",
   ): Record<string, string> {
     const routerName = `${traefikConfig.routerName}-${color}`;
     const serviceName = `${traefikConfig.serviceName}-${color}`;
-    
+
     const labels: Record<string, string> = {
       "traefik.enable": "true",
       [`traefik.http.routers.${routerName}.rule`]: traefikConfig.rule,
@@ -1344,15 +1504,152 @@ export class DeploymentOrchestrator {
 
     // Add middlewares if configured
     if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-      labels[`traefik.http.routers.${routerName}.middlewares`] = traefikConfig.middlewares.join(",");
+      labels[`traefik.http.routers.${routerName}.middlewares`] =
+        traefikConfig.middlewares.join(",");
     }
 
     // Add service port from first container port
     if (containerConfig.ports.length > 0) {
-      labels[`traefik.http.services.${serviceName}.loadbalancer.server.port`] = containerConfig.ports[0].containerPort.toString();
+      labels[`traefik.http.services.${serviceName}.loadbalancer.server.port`] =
+        containerConfig.ports[0].containerPort.toString();
     }
 
     return labels;
+  }
+
+  // ====================
+  // API Interface Methods
+  // ====================
+
+  /**
+   * Trigger a new deployment from API
+   */
+  async triggerDeployment(params: {
+    configurationId: string;
+    triggerType: DeploymentTriggerType;
+    triggeredBy?: string;
+    dockerImage: string;
+    force?: boolean;
+  }): Promise<any> {
+    try {
+      // Get configuration
+      const config = await prisma.deploymentConfiguration.findUnique({
+        where: { id: params.configurationId },
+      });
+
+      if (!config) {
+        throw new Error(
+          `Deployment configuration ${params.configurationId} not found`,
+        );
+      }
+
+      // Create deployment record
+      const deployment = await prisma.deployment.create({
+        data: {
+          configurationId: params.configurationId,
+          triggerType: params.triggerType,
+          triggeredBy: params.triggeredBy || null,
+          dockerImage: params.dockerImage,
+          status: "pending",
+          currentState: "idle",
+          startedAt: new Date(),
+          healthCheckPassed: false,
+          downtime: 0,
+        },
+      });
+
+      // Prepare deployment config
+      const deploymentConfig: DeploymentConfig = {
+        applicationName: config.applicationName,
+        dockerImage: config.dockerImage,
+        dockerTag: params.dockerImage.split(":")[1] || "latest",
+        containerConfig: config.containerConfig as unknown as ContainerConfig,
+        healthCheck: config.healthCheckConfig as unknown as HealthCheckConfig,
+        traefikConfig: config.traefikConfig as unknown as TraefikConfig,
+        rollbackConfig: config.rollbackConfig as unknown as RollbackConfig,
+      };
+
+      // Start deployment asynchronously
+      setImmediate(async () => {
+        try {
+          await this.startDeployment(
+            deployment.id,
+            deploymentConfig,
+            params.triggerType,
+            params.triggeredBy,
+          );
+        } catch (error) {
+          deploymentLogger().error(
+            {
+              deploymentId: deployment.id,
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+            "Deployment failed during execution",
+          );
+
+          // Update deployment status to failed
+          await prisma.deployment.update({
+            where: { id: deployment.id },
+            data: {
+              status: "failed",
+              completedAt: new Date(),
+              errorMessage:
+                error instanceof Error ? error.message : "Unknown error",
+            },
+          });
+        }
+      });
+
+      return deployment;
+    } catch (error) {
+      deploymentLogger().error(
+        {
+          configurationId: params.configurationId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to trigger deployment",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Rollback a deployment from API
+   */
+  async rollbackDeployment(deploymentId: string): Promise<any> {
+    try {
+      const deployment = await prisma.deployment.findUnique({
+        where: { id: deploymentId },
+        include: { configuration: true },
+      });
+
+      if (!deployment) {
+        throw new Error(`Deployment ${deploymentId} not found`);
+      }
+
+      // Update deployment status
+      await prisma.deployment.update({
+        where: { id: deploymentId },
+        data: {
+          status: "rolling_back",
+          currentState: "rolling_back",
+        },
+      });
+
+      // Trigger force rollback
+      await this.forceRollback(deploymentId);
+
+      return deployment;
+    } catch (error) {
+      deploymentLogger().error(
+        {
+          deploymentId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to rollback deployment",
+      );
+      throw error;
+    }
   }
 }
 
