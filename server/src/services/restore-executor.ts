@@ -3,6 +3,7 @@ import { InMemoryQueue, Job as QueueJob, QueueOptions } from "../lib/in-memory-q
 import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { DatabaseConfigService } from "./postgres-config";
+import { PostgresSettingsConfigService } from "./postgres-settings-config";
 import { AzureConfigService } from "./azure-config";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
@@ -49,6 +50,7 @@ export class RestoreExecutorService {
   private prisma: typeof prisma;
   private dockerExecutor: DockerExecutorService;
   private databaseConfigService: DatabaseConfigService;
+  private postgresSettingsConfigService: PostgresSettingsConfigService;
   private azureConfigService: AzureConfigService;
   private restoreQueue: InMemoryQueue;
   private isInitialized = false;
@@ -64,6 +66,7 @@ export class RestoreExecutorService {
     this.prisma = prisma;
     this.dockerExecutor = new DockerExecutorService();
     this.databaseConfigService = new DatabaseConfigService(prisma);
+    this.postgresSettingsConfigService = new PostgresSettingsConfigService(prisma);
     this.azureConfigService = new AzureConfigService(prisma);
 
     // Initialize in-memory queue
@@ -360,6 +363,22 @@ export class RestoreExecutorService {
       // Get system settings for Docker image
       const dockerImage = await this.getRestoreDockerImage();
 
+      // Get registry credentials for Docker image
+      const registryCredentials = await this.getRestoreRegistryCredentials();
+
+      await this.updateRestoreProgress(operationId, {
+        status: "running",
+        progress: 25,
+        message: "Pulling Docker image",
+      });
+
+      // Pull Docker image with authentication if credentials are provided
+      await this.dockerExecutor.pullImageWithAuth(
+        dockerImage,
+        registryCredentials.username,
+        registryCredentials.password,
+      );
+
       // Get Azure connection string
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
@@ -376,7 +395,7 @@ export class RestoreExecutorService {
 
       await this.updateRestoreProgress(operationId, {
         status: "running",
-        progress: 30,
+        progress: 35,
         message: "Starting pre-restore backup for rollback",
       });
 
@@ -855,31 +874,49 @@ export class RestoreExecutorService {
    */
   private async getRestoreDockerImage(): Promise<string> {
     try {
-      // Try to get from system settings first
+      // Try to get restore image from system settings first (category: "system" as used by frontend)
       const setting = await this.prisma.systemSettings.findFirst({
         where: {
-          category: "postgres",
+          category: "system",
           key: "restore_docker_image",
         },
       });
 
       if (setting?.value) {
+        servicesLogger().info(
+          {
+            dockerImage: setting.value,
+          },
+          "Using restore Docker image from system settings",
+        );
         return setting.value;
       }
 
       // Fallback to backup image setting
       const backupSetting = await this.prisma.systemSettings.findFirst({
         where: {
-          category: "postgres",
+          category: "system",
           key: "backup_docker_image",
         },
       });
 
       if (backupSetting?.value) {
+        servicesLogger().info(
+          {
+            dockerImage: backupSetting.value,
+          },
+          "Using backup Docker image from system settings for restore",
+        );
         return backupSetting.value;
       }
 
       // Default fallback
+      servicesLogger().info(
+        {
+          dockerImage: "postgres:15-alpine",
+        },
+        "Using default restore Docker image",
+      );
       return "postgres:15-alpine";
     } catch (error) {
       servicesLogger().warn(
@@ -889,6 +926,57 @@ export class RestoreExecutorService {
         "Failed to get restore Docker image from settings, using default",
       );
       return "postgres:15-alpine";
+    }
+  }
+
+  /**
+   * Get restore registry credentials from system settings
+   */
+  private async getRestoreRegistryCredentials(): Promise<{
+    username?: string;
+    password?: string;
+  }> {
+    try {
+      const [usernameSetting, passwordSetting] = await Promise.all([
+        this.prisma.systemSettings.findFirst({
+          where: {
+            category: "system",
+            key: "restore_registry_username",
+          },
+        }),
+        this.prisma.systemSettings.findFirst({
+          where: {
+            category: "system",
+            key: "restore_registry_password",
+          },
+        }),
+      ]);
+
+      const credentials = {
+        username: usernameSetting?.value || undefined,
+        password: passwordSetting?.value || undefined,
+      };
+
+      servicesLogger().info(
+        {
+          hasUsername: !!credentials.username,
+          hasPassword: !!credentials.password,
+        },
+        "Retrieved restore registry credentials from system settings",
+      );
+
+      return credentials;
+    } catch (error) {
+      servicesLogger().warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get restore registry credentials from system settings",
+      );
+      return {
+        username: undefined,
+        password: undefined,
+      };
     }
   }
 

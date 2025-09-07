@@ -618,7 +618,7 @@ describe("RestoreExecutorService", () => {
       expect(result).toBe("custom-restore:latest");
       expect(mockPrisma.systemSettings.findFirst).toHaveBeenCalledWith({
         where: {
-          category: "postgres",
+          category: "system",
           key: "restore_docker_image",
         },
       });

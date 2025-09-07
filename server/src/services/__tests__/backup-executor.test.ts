@@ -699,7 +699,7 @@ describe("BackupExecutorService", () => {
       expect(result).toBe("custom-postgres:latest");
       expect(mockPrisma.systemSettings.findFirst).toHaveBeenCalledWith({
         where: {
-          category: "postgres",
+          category: "system",
           key: "backup_docker_image",
         },
       });

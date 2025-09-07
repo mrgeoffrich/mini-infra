@@ -519,6 +519,98 @@ export class DockerExecutorService {
   }
 
   /**
+   * Pull Docker image with authentication if credentials are provided
+   * Used by backup/restore operations to ensure images are available locally
+   */
+  public async pullImageWithAuth(
+    image: string,
+    registryUsername?: string,
+    registryPassword?: string,
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    try {
+      servicesLogger().info(
+        {
+          image,
+          hasAuth: !!(registryUsername && registryPassword),
+        },
+        "Pulling Docker image with authentication",
+      );
+
+      // Prepare authentication if credentials are provided
+      let authconfig: any = {};
+      if (registryUsername && registryPassword) {
+        authconfig = {
+          username: registryUsername,
+          password: registryPassword,
+        };
+      }
+
+      // Attempt to pull the image
+      const stream = await this.docker.pull(image, { authconfig });
+      
+      // Wait for the pull to complete
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Docker pull timeout after 2 minutes"));
+        }, 2 * 60 * 1000); // 2 minute timeout
+
+        this.docker.modem.followProgress(stream, (err, result) => {
+          clearTimeout(timeout);
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      const pullTimeMs = Date.now() - startTime;
+
+      servicesLogger().info(
+        {
+          image,
+          pullTimeMs,
+          authenticated: !!(registryUsername && registryPassword),
+        },
+        "Docker image pulled successfully",
+      );
+    } catch (error) {
+      const pullTimeMs = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      servicesLogger().error(
+        {
+          error: errorMessage,
+          image,
+          pullTimeMs,
+          authenticated: !!(registryUsername && registryPassword),
+        },
+        "Failed to pull Docker image",
+      );
+
+      // Enhance error message for better debugging
+      if (errorMessage.includes("authentication required") || 
+          errorMessage.includes("unauthorized") ||
+          errorMessage.includes("401")) {
+        throw new Error(`Authentication required for image '${image}' - please provide valid registry credentials`);
+      } else if (errorMessage.includes("repository does not exist") ||
+                errorMessage.includes("not found") ||
+                errorMessage.includes("404")) {
+        throw new Error(`Docker image '${image}' not found in registry`);
+      } else if (errorMessage.includes("timeout")) {
+        throw new Error(`Timeout pulling image '${image}' - registry may be unreachable`);
+      } else if (errorMessage.includes("network") || 
+                errorMessage.includes("connection refused")) {
+        throw new Error(`Network error pulling image '${image}' - cannot reach Docker registry`);
+      }
+
+      throw new Error(`Failed to pull image '${image}': ${errorMessage}`);
+    }
+  }
+
+  /**
    * Test Docker registry connection by attempting to pull an image
    */
   public async testDockerRegistryConnection(

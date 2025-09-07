@@ -293,6 +293,42 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   }
 
   /**
+   * Get backup Docker registry credentials
+   */
+  async getBackupRegistryCredentials(): Promise<{
+    username?: string;
+    password?: string;
+  }> {
+    const [username, password] = await Promise.all([
+      this.get("backup_registry_username"),
+      this.get("backup_registry_password"),
+    ]);
+
+    return {
+      username: username || undefined,
+      password: password || undefined,
+    };
+  }
+
+  /**
+   * Get restore Docker registry credentials
+   */
+  async getRestoreRegistryCredentials(): Promise<{
+    username?: string;
+    password?: string;
+  }> {
+    const [username, password] = await Promise.all([
+      this.get("restore_registry_username"),
+      this.get("restore_registry_password"),
+    ]);
+
+    return {
+      username: username || undefined,
+      password: password || undefined,
+    };
+  }
+
+  /**
    * Get all PostgreSQL Docker image settings
    */
   async getAllDockerImages(): Promise<{

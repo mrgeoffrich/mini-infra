@@ -4,6 +4,7 @@ import { servicesLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { BackupConfigService } from "./backup-config";
 import { DatabaseConfigService } from "./postgres-config";
+import { PostgresSettingsConfigService } from "./postgres-settings-config";
 import { AzureConfigService } from "./azure-config";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
@@ -41,6 +42,7 @@ export class BackupExecutorService {
   private dockerExecutor: DockerExecutorService;
   private backupConfigService: BackupConfigService;
   private databaseConfigService: DatabaseConfigService;
+  private postgresSettingsConfigService: PostgresSettingsConfigService;
   private azureConfigService: AzureConfigService;
   private backupQueue: InMemoryQueue;
   private isInitialized = false;
@@ -57,6 +59,7 @@ export class BackupExecutorService {
     this.dockerExecutor = new DockerExecutorService();
     this.backupConfigService = new BackupConfigService(prisma);
     this.databaseConfigService = new DatabaseConfigService(prisma);
+    this.postgresSettingsConfigService = new PostgresSettingsConfigService(prisma);
     this.azureConfigService = new AzureConfigService(prisma);
 
     // Initialize in-memory queue
@@ -342,6 +345,35 @@ export class BackupExecutorService {
       // Get system settings for Docker image
       const dockerImage = await this.getBackupDockerImage();
 
+      // Get registry credentials for Docker image
+      const registryCredentials = await this.getBackupRegistryCredentials();
+
+      await this.updateBackupProgress(operationId, {
+        status: "running",
+        progress: 25,
+        message: "Pulling Docker image",
+      });
+
+      // Pull Docker image with authentication if credentials are provided
+      try {
+        await this.dockerExecutor.pullImageWithAuth(
+          dockerImage,
+          registryCredentials.username,
+          registryCredentials.password,
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        servicesLogger().error(
+          {
+            operationId,
+            dockerImage,
+            error: errorMessage,
+          },
+          "Failed to pull Docker image for backup",
+        );
+        throw new Error(`Failed to pull Docker image: ${errorMessage}`);
+      }
+
       // Get Azure connection string
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
@@ -358,7 +390,7 @@ export class BackupExecutorService {
 
       await this.updateBackupProgress(operationId, {
         status: "running",
-        progress: 30,
+        progress: 35,
         message: "Starting backup container",
       });
 
@@ -498,19 +530,31 @@ export class BackupExecutorService {
    */
   private async getBackupDockerImage(): Promise<string> {
     try {
-      // Try to get from system settings first
+      // Get from system settings (category: "system" as used by frontend)
       const setting = await this.prisma.systemSettings.findFirst({
         where: {
-          category: "postgres",
+          category: "system",
           key: "backup_docker_image",
         },
       });
 
       if (setting?.value) {
+        servicesLogger().info(
+          {
+            dockerImage: setting.value,
+          },
+          "Using backup Docker image from system settings",
+        );
         return setting.value;
       }
 
       // Default fallback
+      servicesLogger().info(
+        {
+          dockerImage: "postgres:15-alpine",
+        },
+        "Using default backup Docker image",
+      );
       return "postgres:15-alpine";
     } catch (error) {
       servicesLogger().warn(
@@ -520,6 +564,57 @@ export class BackupExecutorService {
         "Failed to get backup Docker image from settings, using default",
       );
       return "postgres:15-alpine";
+    }
+  }
+
+  /**
+   * Get backup registry credentials from system settings
+   */
+  private async getBackupRegistryCredentials(): Promise<{
+    username?: string;
+    password?: string;
+  }> {
+    try {
+      const [usernameSetting, passwordSetting] = await Promise.all([
+        this.prisma.systemSettings.findFirst({
+          where: {
+            category: "system",
+            key: "backup_registry_username",
+          },
+        }),
+        this.prisma.systemSettings.findFirst({
+          where: {
+            category: "system",
+            key: "backup_registry_password",
+          },
+        }),
+      ]);
+
+      const credentials = {
+        username: usernameSetting?.value || undefined,
+        password: passwordSetting?.value || undefined,
+      };
+
+      servicesLogger().info(
+        {
+          hasUsername: !!credentials.username,
+          hasPassword: !!credentials.password,
+        },
+        "Retrieved backup registry credentials from system settings",
+      );
+
+      return credentials;
+    } catch (error) {
+      servicesLogger().warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get backup registry credentials from system settings",
+      );
+      return {
+        username: undefined,
+        password: undefined,
+      };
     }
   }
 
