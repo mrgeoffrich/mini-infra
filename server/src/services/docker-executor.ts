@@ -220,17 +220,11 @@ export class DockerExecutorService {
         status: "starting",
       });
 
-      const result = await this.executeContainer({
-        ...options,
-        outputHandler: (stream) => {
-          // Report running status on first output
-          progressCallback?.({
-            status: "running",
-            containerId: result.containerId,
-          });
-          options.outputHandler?.(stream);
-        },
-      });
+      const result = await this.executeContainer(options);
+
+      // Note: We can't easily capture the container ID during execution
+      // for the progress callback without modifying executeContainer significantly
+      // The progress callback will receive container ID in the final status
 
       // Report completion status
       const finalStatus = result.exitCode === 0 ? "completed" : "failed";

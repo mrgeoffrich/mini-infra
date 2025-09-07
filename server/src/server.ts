@@ -1,6 +1,6 @@
 import app from "./app";
 import appConfig from "./lib/config-new";
-import { appLogger, clearLoggerCache } from "./lib/logger-factory";
+import { appLogger, clearLoggerCache, serializeError } from "./lib/logger-factory";
 
 // Clear logger cache on startup to ensure new configuration is loaded
 clearLoggerCache();
@@ -117,7 +117,14 @@ startServer()
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
-  logger.fatal({ error: err }, "Uncaught Exception");
+  logger.fatal(
+    {
+      error: serializeError(err),
+      errorType: err?.constructor?.name || "Unknown",
+      pid: process.pid,
+    },
+    "Uncaught Exception - Server shutting down"
+  );
   process.exit(1);
 });
 
@@ -125,10 +132,12 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (reason, promise) => {
   logger.fatal(
     {
-      reason,
+      reason: serializeError(reason),
+      reasonType: reason?.constructor?.name || typeof reason,
       promise: promise.toString(),
+      pid: process.pid,
     },
-    "Unhandled Promise Rejection",
+    "Unhandled Promise Rejection - Server shutting down",
   );
   process.exit(1);
 });

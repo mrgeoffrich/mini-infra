@@ -7,6 +7,28 @@ import {
   type LoggerConfig,
 } from "./logging-config";
 
+// Helper function to properly serialize errors for logging
+export const serializeError = (error: any) => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      code: (error as any).code || undefined,
+      errno: (error as any).errno || undefined,
+      syscall: (error as any).syscall || undefined,
+      // Include any additional enumerable properties
+      ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
+        if (!['name', 'message', 'stack'].includes(key)) {
+          acc[key] = (error as any)[key];
+        }
+        return acc;
+      }, {} as any)
+    };
+  }
+  return error;
+};
+
 // Cache for logger instances
 const loggerCache = new Map<string, pino.Logger>();
 
