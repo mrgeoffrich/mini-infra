@@ -19,6 +19,8 @@ export class DeploymentInfrastructureService {
    * Initialize the deployment infrastructure service
    */
   async initialize(): Promise<void> {
+    // Ensure Docker service is initialized
+    await this.dockerService.initialize();
     await this.dockerExecutor.initialize();
   }
 

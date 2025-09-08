@@ -68,6 +68,7 @@ interface DeploymentFormData {
   healthCheckConfig: HealthCheckConfig;
   traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
+  listeningPort?: number;
 }
 
 export function NewDeploymentConfigPage() {
@@ -125,6 +126,7 @@ export function NewDeploymentConfigPage() {
         maxWaitTime: 300000,
         keepOldContainer: false,
       },
+      listeningPort: undefined,
     },
     mode: "onChange",
   });
@@ -165,6 +167,7 @@ export function NewDeploymentConfigPage() {
           maxWaitTime: deploymentConfig.rollbackConfig?.maxWaitTime || 300000,
           keepOldContainer: deploymentConfig.rollbackConfig?.keepOldContainer || false,
         },
+        listeningPort: deploymentConfig.listeningPort || undefined,
       });
     }
   }, [deploymentConfig, form]);
@@ -212,6 +215,7 @@ export function NewDeploymentConfigPage() {
           healthCheckConfig: data.healthCheckConfig,
           traefikConfig: data.traefikConfig,
           rollbackConfig: data.rollbackConfig,
+          listeningPort: data.listeningPort,
         };
         await updateMutation.mutateAsync({
           id: deploymentConfig.id,
@@ -227,6 +231,7 @@ export function NewDeploymentConfigPage() {
           healthCheckConfig: data.healthCheckConfig,
           traefikConfig: data.traefikConfig,
           rollbackConfig: data.rollbackConfig,
+          listeningPort: data.listeningPort,
         };
         await createMutation.mutateAsync(createData);
         toast.success("Deployment configuration created successfully");
@@ -414,6 +419,33 @@ export function NewDeploymentConfigPage() {
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={form.control}
+                    name="listeningPort"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Listening Port (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="65535"
+                            placeholder="8080"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              field.onChange(value ? Number(value) : undefined);
+                            }}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Specific port your application listens on for health checks. If not specified, the system will use port discovery from your port configuration.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </CardContent>
               </Card>
 
