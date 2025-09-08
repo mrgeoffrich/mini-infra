@@ -233,8 +233,9 @@ const deploymentStateMachine = createMachine(
   },
   {
     actions: {
-      initializeDeployment: assign(({ context }) => ({
+      initializeDeployment: assign(({ context, input }) => ({
         ...context,
+        ...input,
         startTime: Date.now(),
         currentStep: "preparing",
         retryCount: 0,
@@ -496,7 +497,9 @@ export class DeploymentOrchestrator {
           ),
           performHealthChecks: fromPromise(
             async ({ input }: { input: DeploymentContext }) => {
-              return await this.performHealthCheck(input);
+              // Use initialContext if current context is empty
+              const contextToUse = input.deploymentId ? input : initialContext;
+              return await this.performHealthCheck(contextToUse);
             }
           ),
           switchTrafficToNewContainer: fromPromise(
@@ -622,7 +625,19 @@ export class DeploymentOrchestrator {
 
   private async performHealthCheck(context: DeploymentContext) {
     try {
+      deploymentLogger().info(
+        {
+          deploymentId: context.deploymentId,
+          newContainerId: context.newContainerId,
+        },
+        "Starting health check process",
+      );
+
       if (!context.newContainerId) {
+        deploymentLogger().error(
+          { deploymentId: context.deploymentId },
+          "Health check failed: No container ID available",
+        );
         throw new Error("No container ID available for health checks");
       }
 
@@ -643,8 +658,35 @@ export class DeploymentOrchestrator {
       );
 
       // Ensure container is running
+      deploymentLogger().debug(
+        {
+          deploymentId: context.deploymentId,
+          containerId: context.newContainerId,
+        },
+        "Checking container status for health check",
+      );
+      
       const containerInfo = await this.containerManager.getContainerStatus(context.newContainerId);
+      
+      deploymentLogger().debug(
+        {
+          deploymentId: context.deploymentId,
+          containerId: context.newContainerId,
+          containerInfo,
+        },
+        "Container status check result",
+      );
+      
       if (!containerInfo || containerInfo.status !== "running") {
+        deploymentLogger().error(
+          {
+            deploymentId: context.deploymentId,
+            containerId: context.newContainerId,
+            containerStatus: containerInfo?.status,
+            hasContainerInfo: !!containerInfo,
+          },
+          "Health check failed: Container is not running",
+        );
         throw new Error("Container is not running");
       }
 
@@ -652,11 +694,29 @@ export class DeploymentOrchestrator {
       const healthCheckConfig = context.config.healthCheck;
       const containerName = `${context.config.applicationName}-${context.targetColor}`;
       
+      deploymentLogger().debug(
+        {
+          deploymentId: context.deploymentId,
+          healthCheckConfig,
+          containerName,
+          availablePorts: context.config.containerConfig.ports,
+        },
+        "Preparing network health check configuration",
+      );
+      
       // Find the appropriate container port (prioritize port 80, then first available port)
       const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80) ||
                         context.config.containerConfig.ports[0];
       
       if (!portConfig) {
+        deploymentLogger().error(
+          {
+            deploymentId: context.deploymentId,
+            availablePorts: context.config.containerConfig.ports,
+            containerConfigExists: !!context.config.containerConfig,
+          },
+          "Health check failed: No container port configuration found",
+        );
         throw new Error("No container port configuration found for health check");
       }
 
