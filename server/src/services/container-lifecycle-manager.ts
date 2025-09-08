@@ -78,7 +78,10 @@ export class ContainerLifecycleManager {
       );
 
       // Build full image name
-      const fullImage = `${options.image}:${options.tag || "latest"}`;
+      // If image already includes a tag, use it as-is, otherwise add the tag
+      const fullImage = options.image.includes(':') 
+        ? options.image 
+        : `${options.image}:${options.tag || "latest"}`;
 
       // Prepare container labels (merge deployment labels with Traefik labels)
       const labels = this.buildContainerLabels(

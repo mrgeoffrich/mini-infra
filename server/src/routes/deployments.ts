@@ -549,7 +549,9 @@ router.post(
 
       // Determine Docker image with tag
       const dockerImage = tag
-        ? `${config.dockerImage}:${tag}`
+        ? config.dockerImage.includes(':') 
+          ? `${config.dockerImage.split(':')[0]}:${tag}`
+          : `${config.dockerImage}:${tag}`
         : config.dockerImage;
 
       // Trigger deployment

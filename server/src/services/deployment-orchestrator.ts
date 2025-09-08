@@ -481,10 +481,12 @@ export class DeploymentOrchestrator {
             this.createPullImageService(initialContext),
           ),
           createAndStartContainer: fromPromise(
-            this.createContainerService(initialContext),
+            this.createContainerFactory(initialContext),
           ),
           performHealthChecks: fromPromise(
-            this.createHealthCheckService(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.performHealthCheck(input);
+            }
           ),
           switchTrafficToNewContainer: fromPromise(
             this.createTrafficSwitchService(initialContext),
@@ -604,6 +606,98 @@ export class DeploymentOrchestrator {
   }
 
   // ====================
+  // Health Check Service (receives current context)
+  // ====================
+
+  private async performHealthCheck(context: DeploymentContext) {
+    try {
+      if (!context.newContainerId) {
+        throw new Error("No container ID available for health checks");
+      }
+
+      // Update deployment step in database
+      await this.updateDeploymentStep(
+        context.deploymentId,
+        "health_check",
+        "running",
+        "Performing health checks",
+      );
+
+      deploymentLogger().info(
+        {
+          deploymentId: context.deploymentId,
+          containerId: context.newContainerId,
+        },
+        "Performing health checks",
+      );
+
+      // Construct health check URL
+      const containerInfo = await this.containerManager.getContainerStatus(context.newContainerId);
+      if (!containerInfo || containerInfo.status !== "running") {
+        throw new Error("Container is not running");
+      }
+
+      // Get port mapping for health check
+      const healthCheckConfig = context.config.healthCheck;
+      const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80);
+      const healthCheckUrl = portConfig?.hostPort 
+        ? `http://localhost:${portConfig.hostPort}${healthCheckConfig.endpoint}`
+        : `http://localhost${healthCheckConfig.endpoint}`;
+
+      // Perform health check
+      const result = await this.healthCheckService.performHealthCheck({
+        endpoint: healthCheckUrl,
+        method: healthCheckConfig.method,
+        expectedStatuses: healthCheckConfig.expectedStatus,
+        responseBodyPattern: healthCheckConfig.responseValidation,
+        timeout: healthCheckConfig.timeout,
+        retries: healthCheckConfig.retries,
+        retryDelay: healthCheckConfig.interval,
+      });
+
+      // Update step as completed
+      await this.updateDeploymentStep(
+        context.deploymentId,
+        "health_check",
+        "completed",
+        "Health checks passed successfully",
+      );
+
+      // Store health check results in database
+      await this.updateDeploymentHealthCheck(
+        context.deploymentId,
+        true,
+        result,
+      );
+
+      deploymentLogger().info(
+        {
+          deploymentId: context.deploymentId,
+          containerId: context.newContainerId,
+          healthCheckResult: result,
+        },
+        "Health checks passed successfully",
+      );
+
+      return { healthCheckResult: result };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      deploymentLogger().error(
+        {
+          deploymentId: context.deploymentId,
+          containerId: context.newContainerId,
+          error: errorMessage,
+        },
+        "Health check failed",
+      );
+
+      throw new Error(errorMessage);
+    }
+  }
+
+  // ====================
   // Service Factory Methods
   // ====================
 
@@ -675,7 +769,7 @@ export class DeploymentOrchestrator {
     };
   }
 
-  private createContainerService(context: DeploymentContext) {
+  private createContainerFactory(context: DeploymentContext) {
     return async () => {
       try {
         // Update deployment step in database
