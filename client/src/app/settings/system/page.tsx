@@ -46,7 +46,7 @@ import {
   XCircle,
   Clock,
 } from "lucide-react";
-import { toast, toastWithCopy } from "@/lib/toast-utils";
+import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { useTestDockerRegistry } from "@/hooks/use-system-settings";
 import {

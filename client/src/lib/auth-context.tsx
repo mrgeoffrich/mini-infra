@@ -4,7 +4,7 @@ import {
   QueryClientProvider,
   useQueryClient,
 } from "@tanstack/react-query";
-import { toast, toastWithCopy } from "./toast-utils";
+import { toastWithCopy } from "./toast-utils";
 import {
   AuthContextType,
   AuthState,

@@ -89,7 +89,7 @@ export class NetworkHealthCheckService {
         },
       });
 
-      const networkName = networkSetting?.value || "bridge";
+      const networkName = networkSetting?.value || "mini-infra-network";
 
       servicesLogger().debug(
         {
@@ -107,7 +107,7 @@ export class NetworkHealthCheckService {
         },
         "Failed to get Docker network name from settings, using default",
       );
-      return "bridge";
+      return "mini-infra-network";
     }
   }
 

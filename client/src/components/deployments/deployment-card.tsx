@@ -2,7 +2,6 @@ import React, { useMemo, useCallback } from "react";
 import {
   IconPlayerPlay,
   IconEdit,
-  IconHistory,
   IconDotsVertical,
   IconClock,
   IconContainer,

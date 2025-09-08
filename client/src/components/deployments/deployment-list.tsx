@@ -11,7 +11,6 @@ import {
   IconChevronRight,
   IconDotsVertical,
   IconPlayerPlay,
-  IconHistory,
   IconEdit,
   IconPlus,
   IconFilter,
@@ -113,7 +112,6 @@ const DeploymentActions = React.memo(({
   config,
   onTrigger,
   onEdit,
-  onViewHistory,
   onDelete,
   isTriggering,
 }: {

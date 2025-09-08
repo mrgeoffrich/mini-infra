@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
+import prisma from "../lib/prisma";
 import {
   ContainerConfig,
   TraefikConfig,
@@ -54,6 +55,40 @@ export class ContainerLifecycleManager {
     this.dockerService = DockerService.getInstance();
   }
 
+  /**
+   * Get the Docker network name from system settings
+   */
+  private async getDockerNetworkName(): Promise<string> {
+    try {
+      const networkSetting = await prisma.systemSettings.findFirst({
+        where: {
+          category: "system",
+          key: "docker_network_name",
+        },
+      });
+
+      const networkName = networkSetting?.value || "mini-infra-network";
+
+      servicesLogger().debug(
+        {
+          networkName,
+          fromSettings: !!networkSetting?.value,
+        },
+        "Retrieved Docker network name for container deployment",
+      );
+
+      return networkName;
+    } catch (error) {
+      servicesLogger().warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get Docker network name from settings, using default",
+      );
+      return "mini-infra-network";
+    }
+  }
+
   // ====================
   // Container Creation
   // ====================
@@ -102,10 +137,11 @@ export class ContainerLifecycleManager {
       const env = this.buildEnvironmentVariables(options.config.environment);
 
       // Prepare network configuration
+      const defaultNetworkName = await this.getDockerNetworkName();
       const networkMode =
         options.config.networks.length > 0
           ? options.config.networks[0]
-          : "bridge";
+          : defaultNetworkName;
 
       // Create container configuration
       const containerConfig = {

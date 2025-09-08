@@ -50,10 +50,25 @@ import { EnvVarEditor } from "@/components/deployments/env-var-editor";
 import { PortEditor } from "@/components/deployments/port-editor";
 import { VolumeEditor } from "@/components/deployments/volume-editor";
 import type {
-  DeploymentConfigurationInfo,
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
+  ContainerConfig,
+  HealthCheckConfig,
+  TraefikConfig,
+  RollbackConfig,
 } from "@mini-infra/types";
+
+// Form data type that matches our form structure
+interface DeploymentFormData {
+  applicationName: string;
+  dockerImage: string;
+  dockerTag: string;
+  dockerRegistry: string;
+  containerConfig: ContainerConfig;
+  healthCheckConfig: HealthCheckConfig;
+  traefikConfig: TraefikConfig;
+  rollbackConfig: RollbackConfig;
+}
 
 export function NewDeploymentConfigPage() {
   const navigate = useNavigate();
@@ -76,12 +91,12 @@ export function NewDeploymentConfigPage() {
   const createMutation = useCreateDeploymentConfig();
   const updateMutation = useUpdateDeploymentConfig();
 
-  const form = useForm({
+  const form = useForm<DeploymentFormData>({
     defaultValues: {
       applicationName: "",
       dockerImage: "",
       dockerTag: "latest",
-      dockerRegistry: undefined,
+      dockerRegistry: "",
       containerConfig: {
         ports: [],
         volumes: [],
@@ -102,7 +117,7 @@ export function NewDeploymentConfigPage() {
         routerName: "",
         serviceName: "",
         rule: "",
-        middlewares: [],
+        middlewares: undefined,
         tls: false,
       },
       rollbackConfig: {
@@ -121,7 +136,7 @@ export function NewDeploymentConfigPage() {
         applicationName: deploymentConfig.applicationName || "",
         dockerImage: deploymentConfig.dockerImage || "",
         dockerTag: deploymentConfig.dockerImage?.split(":")[1] || "latest",
-        dockerRegistry: deploymentConfig.dockerRegistry || undefined,
+        dockerRegistry: deploymentConfig.dockerRegistry || "",
         containerConfig: {
           ports: deploymentConfig.containerConfig?.ports || [],
           volumes: deploymentConfig.containerConfig?.volumes || [],
@@ -142,7 +157,7 @@ export function NewDeploymentConfigPage() {
           routerName: deploymentConfig.traefikConfig?.routerName || "",
           serviceName: deploymentConfig.traefikConfig?.serviceName || "",
           rule: deploymentConfig.traefikConfig?.rule || "",
-          middlewares: deploymentConfig.traefikConfig?.middlewares || [],
+          middlewares: deploymentConfig.traefikConfig?.middlewares || undefined,
           tls: deploymentConfig.traefikConfig?.tls || false,
         },
         rollbackConfig: {
