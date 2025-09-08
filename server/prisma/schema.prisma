@@ -225,6 +225,7 @@ model DeploymentConfiguration {
   healthCheckConfig Json     // Endpoint, validation rules
   traefikConfig     Json     // Routing rules
   rollbackConfig    Json     // Rollback settings
+  listeningPort     Int?     // Port used for health checks
   isActive          Boolean  @default(true)
   userId            String
   user              User     @relation(fields: [userId], references: [id])

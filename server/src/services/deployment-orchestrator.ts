@@ -327,23 +327,46 @@ export class DeploymentOrchestrator {
         "Preparing network health check configuration",
       );
       
-      // Find the appropriate container port (prioritize port 80, then first available port)
-      const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80) ||
-                        context.config.containerConfig.ports[0];
+      // Determine container port for health check
+      let containerPort: number;
       
-      if (!portConfig) {
-        deploymentLogger().error(
+      if (context.config.listeningPort) {
+        // Use the explicitly configured listening port
+        containerPort = context.config.listeningPort;
+        deploymentLogger().info(
           {
             deploymentId: context.deploymentId,
-            availablePorts: context.config.containerConfig.ports,
-            containerConfigExists: !!context.config.containerConfig,
+            listeningPort: context.config.listeningPort,
           },
-          "Health check failed: No container port configuration found",
+          "Using configured listening port for health check",
         );
-        throw new Error("No container port configuration found for health check");
-      }
+      } else {
+        // Fall back to port discovery (prioritize port 80, then first available port)
+        const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80) ||
+                          context.config.containerConfig.ports[0];
+        
+        if (!portConfig) {
+          deploymentLogger().error(
+            {
+              deploymentId: context.deploymentId,
+              availablePorts: context.config.containerConfig.ports,
+              containerConfigExists: !!context.config.containerConfig,
+            },
+            "Health check failed: No container port configuration found",
+          );
+          throw new Error("No container port configuration found for health check");
+        }
 
-      const containerPort = portConfig.containerPort;
+        containerPort = portConfig.containerPort;
+        deploymentLogger().info(
+          {
+            deploymentId: context.deploymentId,
+            discoveredPort: containerPort,
+            portConfig,
+          },
+          "Using discovered container port for health check",
+        );
+      }
 
       deploymentLogger().debug(
         {

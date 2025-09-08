@@ -90,6 +90,7 @@ export const createDeploymentConfigSchema = z.object({
   healthCheckConfig: healthCheckConfigSchema,
   traefikConfig: traefikConfigSchema,
   rollbackConfig: rollbackConfigSchema,
+  listeningPort: z.number().int().min(1).max(65535).optional(),
 });
 
 export const updateDeploymentConfigSchema = z.object({
@@ -108,6 +109,7 @@ export const updateDeploymentConfigSchema = z.object({
   healthCheckConfig: healthCheckConfigSchema.optional(),
   traefikConfig: traefikConfigSchema.optional(),
   rollbackConfig: rollbackConfigSchema.optional(),
+  listeningPort: z.number().int().min(1).max(65535).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -242,6 +244,7 @@ export class DeploymentConfigService extends ConfigurationService {
           healthCheckConfig: request.healthCheckConfig as any,
           traefikConfig: request.traefikConfig as any,
           rollbackConfig: request.rollbackConfig as any,
+          listeningPort: request.listeningPort,
           isActive: true,
           userId: userId,
         },
@@ -332,6 +335,8 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.traefikConfig = request.traefikConfig;
       if (request.rollbackConfig)
         updateData.rollbackConfig = request.rollbackConfig;
+      if (request.listeningPort !== undefined)
+        updateData.listeningPort = request.listeningPort;
       if (request.isActive !== undefined)
         updateData.isActive = request.isActive;
 
@@ -985,6 +990,7 @@ export class DeploymentConfigService extends ConfigurationService {
       healthCheckConfig: config.healthCheckConfig as HealthCheckConfig,
       traefikConfig: config.traefikConfig as TraefikConfig,
       rollbackConfig: config.rollbackConfig as RollbackConfig,
+      listeningPort: config.listeningPort,
       isActive: config.isActive,
       userId: config.userId,
       createdAt: config.createdAt.toISOString(),

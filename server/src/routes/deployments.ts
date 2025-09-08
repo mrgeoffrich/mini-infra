@@ -97,6 +97,7 @@ const createConfigSchema = z.object({
     maxWaitTime: z.number().int().min(1000),
     keepOldContainer: z.boolean(),
   }),
+  listeningPort: z.number().int().min(1).max(65535).optional(),
 });
 
 const updateConfigSchema = createConfigSchema.partial().extend({

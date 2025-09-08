@@ -79,6 +79,7 @@ export interface DeploymentConfiguration {
   healthCheckConfig: HealthCheckConfig; // JSON field
   traefikConfig: TraefikConfig; // JSON field
   rollbackConfig: RollbackConfig; // JSON field
+  listeningPort: number | null;
   isActive: boolean;
   userId: string;
   createdAt: Date;
@@ -95,6 +96,7 @@ export interface DeploymentConfigurationInfo {
   healthCheckConfig: HealthCheckConfig;
   traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
+  listeningPort: number | null;
   isActive: boolean;
   userId: string;
   createdAt: string;
@@ -201,6 +203,7 @@ export interface CreateDeploymentConfigRequest {
   healthCheckConfig: HealthCheckConfig;
   traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
+  listeningPort?: number;
 }
 
 export interface UpdateDeploymentConfigRequest {
@@ -211,6 +214,7 @@ export interface UpdateDeploymentConfigRequest {
   healthCheckConfig?: HealthCheckConfig;
   traefikConfig?: TraefikConfig;
   rollbackConfig?: RollbackConfig;
+  listeningPort?: number;
   isActive?: boolean;
 }
 
