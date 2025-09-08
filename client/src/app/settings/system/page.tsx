@@ -46,7 +46,7 @@ import {
   XCircle,
   Clock,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast, toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { useTestDockerRegistry } from "@/hooks/use-system-settings";
 import {
@@ -364,13 +364,13 @@ export default function SystemSettingsPage() {
 
       await Promise.all(promises);
 
-      toast.success("System settings saved successfully");
+      toastWithCopy.success("System settings saved successfully");
 
       // Refetch settings to get updated data
       refetchSettings();
     } catch (error) {
       console.error("Failed to save system settings:", error);
-      toast.error("Failed to save system settings");
+      toastWithCopy.error("Failed to save system settings");
     } finally {
       setIsSaving(false);
     }
@@ -399,16 +399,19 @@ export default function SystemSettingsPage() {
 
       const result = await testDockerRegistry.mutateAsync(testData);
 
-      toast.success(result.message, {
-        description: `Image: ${result.details.image}${result.details.pullTimeMs ? ` (${result.details.pullTimeMs}ms)` : ""}`,
+      const successMessage = `${result.message} - Image: ${result.details.image}${result.details.pullTimeMs ? ` (${result.details.pullTimeMs}ms)` : ""}`;
+      toastWithCopy.success(successMessage, {
+        title: "Registry Connection Successful",
+        description: `Image pulled successfully in ${result.details.pullTimeMs || 0}ms`,
       });
     } catch (error) {
       const errorMessage =
         error instanceof Error
           ? error.message
           : "Failed to test Docker registry connection";
-      toast.error("Registry Connection Failed", {
-        description: errorMessage,
+      toastWithCopy.error(errorMessage, {
+        title: "Registry Connection Failed",
+        description: "Copy the error details for troubleshooting",
       });
     } finally {
       setter(false);
@@ -429,8 +432,10 @@ export default function SystemSettingsPage() {
         configYaml: formValues.traefikConfigYaml,
       });
 
-      toast.success("Infrastructure deployed successfully!", {
-        description: `Network: ${result.data.network.name}, Traefik: ${result.data.traefik.image}`,
+      const deploymentMessage = `Infrastructure deployed successfully! Network: ${result.data.network.name}, Traefik: ${result.data.traefik.image}`;
+      toastWithCopy.success(deploymentMessage, {
+        title: "Infrastructure Deployment Complete",
+        description: "Copy deployment details for your records",
       });
 
       // Refresh infrastructure status
@@ -440,8 +445,9 @@ export default function SystemSettingsPage() {
         error instanceof Error
           ? error.message
           : "Failed to deploy infrastructure";
-      toast.error("Infrastructure Deployment Failed", {
-        description: errorMessage,
+      toastWithCopy.error(errorMessage, {
+        title: "Infrastructure Deployment Failed",
+        description: "Copy the error details for troubleshooting",
       });
     } finally {
       setDeployingInfrastructure(false);
@@ -456,7 +462,7 @@ export default function SystemSettingsPage() {
         networkName: formValues.dockerNetworkName,
       });
 
-      toast.success("Infrastructure cleaned up successfully");
+      toastWithCopy.success("Infrastructure cleaned up successfully");
 
       // Refresh infrastructure status
       refetchInfrastructureStatus();
@@ -465,8 +471,9 @@ export default function SystemSettingsPage() {
         error instanceof Error
           ? error.message
           : "Failed to cleanup infrastructure";
-      toast.error("Infrastructure Cleanup Failed", {
-        description: errorMessage,
+      toastWithCopy.error(errorMessage, {
+        title: "Infrastructure Cleanup Failed",
+        description: "Copy the error details for troubleshooting",
       });
     }
   };

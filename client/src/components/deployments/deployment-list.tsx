@@ -431,19 +431,6 @@ export const DeploymentList = React.memo(function DeploymentList({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Deployments</h2>
-          <p className="text-muted-foreground">
-            Manage your application deployment configurations and monitor deployment status.
-          </p>
-        </div>
-        <Button onClick={onCreateConfig}>
-          <IconPlus className="h-4 w-4 mr-2" />
-          New Configuration
-        </Button>
-      </div>
 
       {/* Filters */}
       <DeploymentFilters 

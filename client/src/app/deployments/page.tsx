@@ -7,6 +7,7 @@ import {
 
 import { DeploymentList } from "@/components/deployments/deployment-list";
 import { DeploymentCard } from "@/components/deployments/deployment-card";
+import { DeploymentConfigForm } from "@/components/deployments/deployment-config-form";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments } from "@/hooks/use-deployment-history";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ import { DeploymentConfigurationInfo, DeploymentInfo } from "@mini-infra/types";
 
 export function DeploymentsPage() {
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<DeploymentConfigurationInfo | null>(null);
   const { filters } = useDeploymentConfigFilters();
   
   // Fetch deployment configurations
@@ -58,8 +61,8 @@ export function DeploymentsPage() {
   }, [activeDeploymentsResponse?.data]);
 
   const handleEditConfig = useCallback((config: DeploymentConfigurationInfo) => {
-    // TODO: Implement edit configuration dialog/modal
-    console.log("Edit config:", config);
+    setEditingConfig(config);
+    setIsFormOpen(true);
   }, []);
 
   const handleViewHistory = useCallback((config: DeploymentConfigurationInfo) => {
@@ -68,8 +71,13 @@ export function DeploymentsPage() {
   }, []);
 
   const handleCreateConfig = useCallback(() => {
-    // TODO: Implement create configuration dialog/modal
-    console.log("Create new deployment configuration");
+    setEditingConfig(null);
+    setIsFormOpen(true);
+  }, []);
+
+  const handleCloseForm = useCallback(() => {
+    setIsFormOpen(false);
+    setEditingConfig(null);
   }, []);
 
   if (configsError) {
@@ -164,6 +172,13 @@ export function DeploymentsPage() {
           )}
         </div>
       )}
+
+      {/* Deployment Configuration Form Modal */}
+      <DeploymentConfigForm
+        deploymentConfig={editingConfig}
+        isOpen={isFormOpen}
+        onClose={handleCloseForm}
+      />
     </div>
   );
 }
