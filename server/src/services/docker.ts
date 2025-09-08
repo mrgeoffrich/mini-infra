@@ -559,6 +559,23 @@ class DockerService {
   }
 
   /**
+   * Get the underlying Docker client instance
+   * This should only be used by services that need direct Docker API access
+   * for operations not covered by the high-level methods
+   */
+  public async getDockerInstance(): Promise<Docker> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+    
+    if (!this.docker || typeof this.docker.ping !== "function") {
+      throw new Error("Docker client not initialized");
+    }
+    
+    return this.docker;
+  }
+
+  /**
    * Refresh Docker connection with updated settings
    * This method can be called when Docker settings are updated
    */

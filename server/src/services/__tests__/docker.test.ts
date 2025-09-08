@@ -814,6 +814,60 @@ describe("DockerService", () => {
     });
   });
 
+  describe("getDockerInstance", () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      // Reset singleton instance
+      (DockerService as any).instance = undefined;
+    });
+
+    it("should return the Docker client instance when connected", async () => {
+      mockDocker.ping.mockResolvedValue(true);
+
+      const dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+
+      const dockerInstance = await dockerService.getDockerInstance();
+
+      expect(dockerInstance).toBe(mockDocker);
+    });
+
+    it("should throw error when Docker service is not connected", async () => {
+      const dockerService = DockerService.getInstance();
+      // Don't initialize, so it's not connected
+
+      await expect(dockerService.getDockerInstance()).rejects.toThrow(
+        "Docker service not connected"
+      );
+    });
+
+    it("should throw error when Docker client is not initialized", async () => {
+      const dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+      
+      // Manually set docker to invalid state to test error handling
+      (dockerService as any).docker = null;
+      (dockerService as any).connected = true;
+
+      await expect(dockerService.getDockerInstance()).rejects.toThrow(
+        "Docker client not initialized"
+      );
+    });
+
+    it("should throw error when Docker client ping function is missing", async () => {
+      const dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+      
+      // Manually set docker to object without ping function
+      (dockerService as any).docker = {};
+      (dockerService as any).connected = true;
+
+      await expect(dockerService.getDockerInstance()).rejects.toThrow(
+        "Docker client not initialized"
+      );
+    });
+  });
+
   describe("TCP Configuration", () => {
     beforeEach(() => {
       jest.clearAllMocks();
