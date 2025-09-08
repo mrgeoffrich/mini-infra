@@ -17,7 +17,8 @@ export interface JwtPayload {
 
 // JWT configuration
 const JWT_SECRET =
-  authConfig.session.secret || "default-development-secret-change-in-production";
+  authConfig.session.secret ||
+  "default-development-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h"; // 24 hours
 const JWT_ISSUER = "mini-infra";
 

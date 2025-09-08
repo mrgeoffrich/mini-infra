@@ -151,7 +151,7 @@ export function ConnectivityOverview() {
       }
       return acc;
     },
-    {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>
+    {} as Record<SettingsCategory, (typeof connectivityStatuses)[0]>,
   );
 
   return (
@@ -171,7 +171,8 @@ export function ConnectivityOverview() {
           {(Object.keys(CATEGORY_INFO) as (keyof typeof CATEGORY_INFO)[]).map(
             (category) => {
               const info = CATEGORY_INFO[category];
-              const connectivity = latestConnectivity[category as SettingsCategory];
+              const connectivity =
+                latestConnectivity[category as SettingsCategory];
               const Icon = info.icon;
               const StatusIcon = connectivity
                 ? STATUS_VARIANTS[connectivity.status as ConnectivityStatusType]
@@ -230,9 +231,7 @@ export function ConnectivityOverview() {
                     {showConnectivity && connectivity && (
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Last checked</span>
-                        <span>
-                          {formatDateTime(connectivity.checkedAt)}
-                        </span>
+                        <span>{formatDateTime(connectivity.checkedAt)}</span>
                       </div>
                     )}
 
@@ -254,7 +253,7 @@ export function ConnectivityOverview() {
                   </CardContent>
                 </Card>
               );
-            }
+            },
           )}
         </div>
       </div>

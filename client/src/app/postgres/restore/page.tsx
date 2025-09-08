@@ -5,10 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Card,
   CardContent,
@@ -77,7 +74,9 @@ export default function PostgresRestorePage() {
     useState<BackupBrowserItem | null>(null);
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"browse" | "history">("browse");
-  const [restoreDestination, setRestoreDestination] = useState<"overwrite" | "new">("overwrite");
+  const [restoreDestination, setRestoreDestination] = useState<
+    "overwrite" | "new"
+  >("overwrite");
   const [newDatabaseName, setNewDatabaseName] = useState("");
 
   // Get database info
@@ -88,14 +87,16 @@ export default function PostgresRestorePage() {
   });
 
   const database = databasesResponse?.data?.find(
-    (db) => db.id === databaseId
+    (db) => db.id === databaseId,
   ) as PostgresDatabaseInfo | undefined;
 
   const { filters: backupFilters } = useBackupBrowserFilters();
   const { filters: restoreFilters } = usePostgresRestoreOperationFilters();
 
   // Get backup configuration to determine container name
-  const { data: backupConfigResponse } = usePostgresBackupConfig(databaseId || "");
+  const { data: backupConfigResponse } = usePostgresBackupConfig(
+    databaseId || "",
+  );
   const backupConfig = backupConfigResponse?.data;
   const containerName = backupConfig?.azureContainerName || "postgres-backups";
 
@@ -178,14 +179,15 @@ export default function PostgresRestorePage() {
         backupUrl: selectedBackup.url,
         confirmRestore: true, // Required by backend for confirmation
         restoreToNewDatabase: restoreDestination === "new",
-        newDatabaseName: restoreDestination === "new" ? newDatabaseName : undefined,
+        newDatabaseName:
+          restoreDestination === "new" ? newDatabaseName : undefined,
       };
 
       await createRestoreMutation.mutateAsync(request);
       toast.success(
         restoreDestination === "new"
           ? `Restore operation started for new database: ${targetDatabaseName}`
-          : `Restore operation started for ${targetDatabaseName}`
+          : `Restore operation started for ${targetDatabaseName}`,
       );
       setConfirmRestoreOpen(false);
       setSelectedBackup(null);
@@ -196,7 +198,7 @@ export default function PostgresRestorePage() {
       toast.error(
         `Failed to start restore operation: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };
@@ -368,7 +370,9 @@ export default function PostgresRestorePage() {
                               <TableHead>Backup Name</TableHead>
                               <TableHead>Created</TableHead>
                               <TableHead>Size</TableHead>
-                              <TableHead className="text-right">Actions</TableHead>
+                              <TableHead className="text-right">
+                                Actions
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -380,7 +384,7 @@ export default function PostgresRestorePage() {
                                 <TableCell>
                                   {format(
                                     new Date(backup.createdAt),
-                                    "MMM d, yyyy HH:mm"
+                                    "MMM d, yyyy HH:mm",
                                   )}
                                 </TableCell>
                                 <TableCell>
@@ -424,7 +428,8 @@ export default function PostgresRestorePage() {
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      Failed to load restore operations: {restoreOpsError.message}
+                      Failed to load restore operations:{" "}
+                      {restoreOpsError.message}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -450,8 +455,8 @@ export default function PostgresRestorePage() {
                       No restore operations
                     </h3>
                     <p className="text-muted-foreground">
-                      No restore operations have been performed for this database
-                      yet.
+                      No restore operations have been performed for this
+                      database yet.
                     </p>
                   </div>
                 ) : (
@@ -472,7 +477,7 @@ export default function PostgresRestorePage() {
                             <TableCell>
                               {format(
                                 new Date(operation.startedAt),
-                                "MMM d, yyyy HH:mm"
+                                "MMM d, yyyy HH:mm",
                               )}
                             </TableCell>
                             <TableCell>
@@ -481,7 +486,10 @@ export default function PostgresRestorePage() {
                               />
                             </TableCell>
                             <TableCell className="font-mono text-xs max-w-[300px]">
-                              <div className="truncate" title={operation.backupUrl}>
+                              <div
+                                className="truncate"
+                                title={operation.backupUrl}
+                              >
                                 {operation.backupUrl}
                               </div>
                             </TableCell>
@@ -490,7 +498,7 @@ export default function PostgresRestorePage() {
                                 ? `${Math.round(
                                     (new Date(operation.completedAt).getTime() -
                                       new Date(operation.startedAt).getTime()) /
-                                      1000
+                                      1000,
                                   )}s`
                                 : "-"}
                             </TableCell>
@@ -530,19 +538,21 @@ export default function PostgresRestorePage() {
               You are about to restore the database from the following backup:
             </AlertDialogDescription>
           </AlertDialogHeader>
-          
+
           {/* Backup File Preview */}
           {selectedBackup && (
             <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
               <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <div className="text-sm font-medium text-foreground">Backup File</div>
+                  <div className="text-sm font-medium text-foreground">
+                    Backup File
+                  </div>
                   <code className="text-xs bg-muted px-2 py-1 rounded">
                     {selectedBackup.name}
                   </code>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1">
                   <div className="text-muted-foreground">Created</div>
@@ -553,40 +563,48 @@ export default function PostgresRestorePage() {
                     {format(new Date(selectedBackup.createdAt), "HH:mm:ss")}
                   </div>
                 </div>
-                
+
                 <div className="space-y-1">
                   <div className="text-muted-foreground">File Size</div>
-                  <div className="font-mono">{formatBytes(selectedBackup.sizeBytes)}</div>
+                  <div className="font-mono">
+                    {formatBytes(selectedBackup.sizeBytes)}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {selectedBackup.sizeBytes.toLocaleString()} bytes
                   </div>
                 </div>
               </div>
-              
+
               {/* Age and estimated restore time */}
               <div className="flex justify-between text-xs text-muted-foreground">
                 <div>
                   {(() => {
-                    const ageInMs = Date.now() - new Date(selectedBackup.createdAt).getTime();
-                    const ageInDays = Math.floor(ageInMs / (1000 * 60 * 60 * 24));
+                    const ageInMs =
+                      Date.now() - new Date(selectedBackup.createdAt).getTime();
+                    const ageInDays = Math.floor(
+                      ageInMs / (1000 * 60 * 60 * 24),
+                    );
                     const ageInHours = Math.floor(ageInMs / (1000 * 60 * 60));
-                    
+
                     if (ageInDays > 0) {
-                      return `Created ${ageInDays} day${ageInDays !== 1 ? 's' : ''} ago`;
+                      return `Created ${ageInDays} day${ageInDays !== 1 ? "s" : ""} ago`;
                     } else if (ageInHours > 0) {
-                      return `Created ${ageInHours} hour${ageInHours !== 1 ? 's' : ''} ago`;
+                      return `Created ${ageInHours} hour${ageInHours !== 1 ? "s" : ""} ago`;
                     } else {
-                      return 'Created recently';
+                      return "Created recently";
                     }
                   })()}
                 </div>
-                
+
                 <div>
                   {(() => {
                     // Rough estimate: ~10MB per minute for restore
                     const sizeInMB = selectedBackup.sizeBytes / (1024 * 1024);
-                    const estimatedMinutes = Math.max(1, Math.round(sizeInMB / 10));
-                    
+                    const estimatedMinutes = Math.max(
+                      1,
+                      Math.round(sizeInMB / 10),
+                    );
+
                     if (estimatedMinutes < 60) {
                       return `~${estimatedMinutes} min restore`;
                     } else {
@@ -599,17 +617,25 @@ export default function PostgresRestorePage() {
               </div>
             </div>
           )}
-          
+
           <div className="space-y-4 py-4">
             <div>
-              <Label className="text-base font-medium">Restore Destination</Label>
+              <Label className="text-base font-medium">
+                Restore Destination
+              </Label>
               <RadioGroup
                 value={restoreDestination}
-                onValueChange={(value) => setRestoreDestination(value as "overwrite" | "new")}
+                onValueChange={(value) =>
+                  setRestoreDestination(value as "overwrite" | "new")
+                }
                 className="mt-2"
               >
                 <div className="flex items-start space-x-2">
-                  <RadioGroupItem value="overwrite" id="overwrite" className="mt-0.5" />
+                  <RadioGroupItem
+                    value="overwrite"
+                    id="overwrite"
+                    className="mt-0.5"
+                  />
                   <div className="space-y-1">
                     <Label htmlFor="overwrite" className="font-medium">
                       Overwrite "{database.name}"
@@ -617,7 +643,9 @@ export default function PostgresRestorePage() {
                     <p className="text-sm text-muted-foreground">
                       Replace all data in the existing database.
                       <br />
-                      <strong className="text-red-600">This cannot be undone.</strong>
+                      <strong className="text-red-600">
+                        This cannot be undone.
+                      </strong>
                     </p>
                   </div>
                 </div>
@@ -659,7 +687,11 @@ export default function PostgresRestorePage() {
                 createRestoreMutation.isPending ||
                 (restoreDestination === "new" && !newDatabaseName.trim())
               }
-              className={restoreDestination === "overwrite" ? "bg-red-600 hover:bg-red-700" : ""}
+              className={
+                restoreDestination === "overwrite"
+                  ? "bg-red-600 hover:bg-red-700"
+                  : ""
+              }
             >
               {createRestoreMutation.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -667,9 +699,8 @@ export default function PostgresRestorePage() {
               {createRestoreMutation.isPending
                 ? "Starting Restore..."
                 : restoreDestination === "overwrite"
-                ? "Overwrite Database"
-                : "Create & Restore"
-              }
+                  ? "Overwrite Database"
+                  : "Create & Restore"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

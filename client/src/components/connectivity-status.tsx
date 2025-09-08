@@ -183,6 +183,7 @@ const serviceLabels = {
   azure: "Azure Storage",
   postgres: "PostgreSQL",
   system: "System",
+  deployments: "Deployments",
 } as const;
 
 export function ServiceStatusCard({

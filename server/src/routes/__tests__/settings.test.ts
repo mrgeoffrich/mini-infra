@@ -524,7 +524,6 @@ describe("Settings API Routes", () => {
         },
       });
 
-
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "new-setting-id",
@@ -557,7 +556,6 @@ describe("Settings API Routes", () => {
         .post("/api/settings")
         .send(encryptedRequest)
         .expect(201);
-
     });
 
     it("should return 400 for invalid request body", async () => {
@@ -702,7 +700,6 @@ describe("Settings API Routes", () => {
         },
       });
 
-
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "setting-123",
@@ -746,7 +743,6 @@ describe("Settings API Routes", () => {
           updatedBy: "test-user-id",
         },
       });
-
     });
 
     it("should return 400 for invalid setting ID format", async () => {
@@ -873,7 +869,6 @@ describe("Settings API Routes", () => {
         where: { id: "setting-123" },
       });
 
-
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "setting-123",
@@ -897,7 +892,6 @@ describe("Settings API Routes", () => {
       const response = await request(app)
         .delete("/api/settings/setting-123")
         .expect(200);
-
     });
 
     it("should return 400 for invalid setting ID format", async () => {
@@ -964,7 +958,6 @@ describe("Settings API Routes", () => {
       );
     });
   });
-
 
   describe("POST /api/settings/validate/:service", () => {
     const mockValidationResult: ValidationResult = {
@@ -1034,7 +1027,6 @@ describe("Settings API Routes", () => {
         },
       });
 
-
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           service: "docker",
@@ -1097,7 +1089,6 @@ describe("Settings API Routes", () => {
           lastValidatedAt: expect.any(Date),
         },
       });
-
     });
 
     it("should handle validation with custom settings", async () => {
@@ -1203,7 +1194,6 @@ describe("Settings API Routes", () => {
         }),
       });
 
-
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({
           error: validationError,
@@ -1287,7 +1277,6 @@ describe("Settings API Routes", () => {
       );
     });
   });
-
 
   describe("Request Correlation", () => {
     it("should include request ID in responses and logs", async () => {

@@ -42,6 +42,15 @@
       "rotation": {
         "enabled": false
       }
+    },
+    "deployments": {
+      "level": "debug",
+      "destination": "logs/app-deployments.log",
+      "prettyPrint": false,
+      "includeCaller": true,
+      "rotation": {
+        "enabled": false
+      }
     }
   },
   "production": {
@@ -94,6 +103,16 @@
         "maxFiles": "14d",
         "maxSize": "10m"
       }
+    },
+    "deployments": {
+      "level": "info",
+      "destination": "logs/app-deployments.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
     }
   },
   "test": {
@@ -110,6 +129,9 @@
       "level": "silent"
     },
     "dockerexecutor": {
+      "level": "silent"
+    },
+    "deployments": {
       "level": "silent"
     }
   },

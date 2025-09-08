@@ -15,9 +15,6 @@ class DockerService {
   private dockerConfigService: DockerConfigService;
 
   private constructor() {
-    // Initialize Docker configuration service
-    this.dockerConfigService = new DockerConfigService(prisma);
-
     // Initialize cache with 3-second TTL
     this.cache = new NodeCache({
       stdTTL: Math.floor(dockerConfig.containerCacheTtl / 1000),
@@ -26,6 +23,9 @@ class DockerService {
 
     // Initialize Docker client - this will be done asynchronously in initialize()
     this.docker = {} as Docker; // Placeholder, will be set in initialize()
+    
+    // Initialize Docker configuration service - will be done in initialize()
+    this.dockerConfigService = {} as DockerConfigService; // Placeholder
   }
 
   public static getInstance(): DockerService {
@@ -39,6 +39,9 @@ class DockerService {
     servicesLogger().info("Initializing Docker connection at startup...");
 
     try {
+      // Initialize Docker configuration service first
+      this.dockerConfigService = new DockerConfigService(prisma);
+      
       // Create Docker client based on settings
       await this.createDockerClientFromSettings();
 
@@ -57,12 +60,14 @@ class DockerService {
 
       // Record connection failure in database instead of crashing
       try {
-        await this.dockerConfigService.recordConnectivityStatus(
-          "failed",
-          undefined,
-          error instanceof Error ? error.message : String(error),
-          this.getDockerErrorCode(error),
-        );
+        if (this.dockerConfigService && typeof this.dockerConfigService.recordConnectivityStatus === 'function') {
+          await this.dockerConfigService.recordConnectivityStatus(
+            "failed",
+            undefined,
+            error instanceof Error ? error.message : String(error),
+            this.getDockerErrorCode(error),
+          );
+        }
       } catch (dbError) {
         servicesLogger().error(
           { error: dbError },
@@ -85,6 +90,11 @@ class DockerService {
    */
   private async createDockerClientFromSettings(): Promise<void> {
     try {
+      // Ensure dockerConfigService is initialized
+      if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
+        throw new Error("Docker configuration service not initialized");
+      }
+      
       // Try to get settings from database first
       const dockerHost = await this.dockerConfigService.get("host");
       const apiVersion = await this.dockerConfigService.get("apiVersion");
@@ -140,14 +150,19 @@ class DockerService {
       const responseTimeMs = Date.now() - startTime;
 
       this.connected = true;
-      servicesLogger().info({ responseTimeMs }, "Docker service connected successfully");
+      servicesLogger().info(
+        { responseTimeMs },
+        "Docker service connected successfully",
+      );
 
       // Record successful connection
       try {
-        await this.dockerConfigService.recordConnectivityStatus(
-          "connected",
-          responseTimeMs,
-        );
+        if (this.dockerConfigService && typeof this.dockerConfigService.recordConnectivityStatus === 'function') {
+          await this.dockerConfigService.recordConnectivityStatus(
+            "connected",
+            responseTimeMs,
+          );
+        }
       } catch (dbError) {
         servicesLogger().error(
           { error: dbError },
@@ -174,12 +189,14 @@ class DockerService {
 
       // Record failed connection
       try {
-        await this.dockerConfigService.recordConnectivityStatus(
-          "failed",
-          responseTimeMs,
-          error instanceof Error ? error.message : String(error),
-          this.getDockerErrorCode(error),
-        );
+        if (this.dockerConfigService && typeof this.dockerConfigService.recordConnectivityStatus === 'function') {
+          await this.dockerConfigService.recordConnectivityStatus(
+            "failed",
+            responseTimeMs,
+            error instanceof Error ? error.message : String(error),
+            this.getDockerErrorCode(error),
+          );
+        }
       } catch (dbError) {
         servicesLogger().error(
           { error: dbError },
@@ -201,6 +218,11 @@ class DockerService {
     this.reconnectInterval = setInterval(async () => {
       servicesLogger().info("Attempting to reconnect to Docker...");
       try {
+        // Ensure Docker configuration service is initialized before reconnecting
+        if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
+          this.dockerConfigService = new DockerConfigService(prisma);
+        }
+        
         // Recreate client from current settings before reconnecting
         await this.createDockerClientFromSettings();
         await this.connect(true); // Allow scheduling reconnect in background
@@ -285,7 +307,10 @@ class DockerService {
     // Subscribe to Docker events for cache invalidation
     this.docker.getEvents({}, (err, stream) => {
       if (err) {
-        servicesLogger().error({ error: err }, "Failed to subscribe to Docker events");
+        servicesLogger().error(
+          { error: err },
+          "Failed to subscribe to Docker events",
+        );
         return;
       }
 
@@ -553,17 +578,41 @@ class DockerService {
   }
 
   /**
+   * Get the underlying Docker client instance
+   * This should only be used by services that need direct Docker API access
+   * for operations not covered by the high-level methods
+   */
+  public async getDockerInstance(): Promise<Docker> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+    
+    if (!this.docker || typeof this.docker.ping !== "function") {
+      throw new Error("Docker client not initialized");
+    }
+    
+    return this.docker;
+  }
+
+  /**
    * Refresh Docker connection with updated settings
    * This method can be called when Docker settings are updated
    */
   public async refreshConnection(): Promise<void> {
-    servicesLogger().info("Refreshing Docker connection with updated settings...");
+    servicesLogger().info(
+      "Refreshing Docker connection with updated settings...",
+    );
 
     try {
       // Stop current reconnection attempts
       if (this.reconnectInterval) {
         clearInterval(this.reconnectInterval);
         this.reconnectInterval = null;
+      }
+
+      // Ensure Docker configuration service is initialized
+      if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
+        this.dockerConfigService = new DockerConfigService(prisma);
       }
 
       // Recreate Docker client with updated settings

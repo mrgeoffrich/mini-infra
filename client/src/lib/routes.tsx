@@ -15,6 +15,9 @@ import PostgresPage from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
+import DeploymentsPage from "@/app/deployments/page";
+import NewDeploymentConfigPage from "@/app/deployments/new/page";
+import { ApiKeysPage } from "@/app/api-keys/page";
 
 export const router = createBrowserRouter([
   {
@@ -59,11 +62,19 @@ export const router = createBrowserRouter([
       },
       {
         path: "deployments",
-        element: <div>Deployment Management - Coming Soon</div>,
+        element: <DeploymentsPage />,
+      },
+      {
+        path: "deployments/new",
+        element: <NewDeploymentConfigPage />,
       },
       {
         path: "tunnels",
         element: <TunnelsPage />,
+      },
+      {
+        path: "api-keys",
+        element: <ApiKeysPage />,
       },
       {
         path: "logs",

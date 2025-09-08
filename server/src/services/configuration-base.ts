@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -13,7 +13,7 @@ export abstract class ConfigurationService implements IConfigurationService {
   protected prisma: PrismaClient;
   protected category: SettingsCategory;
 
-  constructor(prisma: typeof prisma, category: SettingsCategory) {
+  constructor(prisma: PrismaClient, category: SettingsCategory) {
     this.prisma = prisma;
     this.category = category;
   }

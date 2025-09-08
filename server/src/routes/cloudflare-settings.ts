@@ -1165,130 +1165,131 @@ router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/settings/cloudflare/tunnels/:id/hostnames/:hostname - Remove hostname from tunnel
  */
-router.delete("/tunnels/:id/hostnames/:hostname", requireSessionOrApiKey, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id || "system";
-  const { id: tunnelId, hostname } = req.params;
-  const { path } = req.query;
-
-  logger.info(
-    {
-      requestId,
-      userId,
-      tunnelId,
-      hostname,
-      path,
-    },
-    "Remove hostname from tunnel requested",
-  );
-
-  try {
-    // URL decode hostname in case it contains special characters
-    const decodedHostname = decodeURIComponent(hostname);
-
-    // Check if API token and account ID are configured
-    const apiToken = await cloudflareConfigService.getApiToken();
-    const accountId = await cloudflareConfigService.getAccountId();
-
-    if (!apiToken) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare API token not configured",
-        details: "Please configure your Cloudflare API token first",
-      });
-    }
-
-    if (!accountId) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare account ID not configured",
-        details: "Please configure your Cloudflare account ID first",
-      });
-    }
-
-    // Remove hostname from tunnel configuration
-    const updatedConfig = await cloudflareConfigService.removeHostname(
-      tunnelId,
-      decodedHostname,
-      path as string | undefined,
-    );
-
-    if (!updatedConfig) {
-      return res.status(500).json({
-        success: false,
-        error: "Failed to update tunnel configuration",
-        details: "Unable to remove hostname from tunnel",
-      });
-    }
+router.delete(
+  "/tunnels/:id/hostnames/:hostname",
+  requireSessionOrApiKey,
+  (async (req: Request, res: Response, next: NextFunction) => {
+    const requestId = req.headers["x-request-id"] as string;
+    const user = getAuthenticatedUser(req);
+    const userId = user?.id || "system";
+    const { id: tunnelId, hostname } = req.params;
+    const { path } = req.query;
 
     logger.info(
       {
         requestId,
         userId,
         tunnelId,
-        hostname: decodedHostname,
-        path,
-        configVersion: updatedConfig.version,
-      },
-      "Hostname removed from tunnel successfully",
-    );
-
-    res.json({
-      success: true,
-      data: {
-        tunnelId,
-        hostname: decodedHostname,
-        path,
-        configVersion: updatedConfig.version,
-      },
-    });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logger.error(
-      {
-        requestId,
-        userId,
-        tunnelId,
         hostname,
-        error: errorMessage,
+        path,
       },
-      "Failed to remove hostname from tunnel",
+      "Remove hostname from tunnel requested",
     );
 
-    // Return appropriate error response based on error type
-    if (errorMessage.includes("not found")) {
-      return res.status(404).json({
-        success: false,
-        error: "Hostname not found",
-        details: errorMessage,
-      });
-    }
+    try {
+      // URL decode hostname in case it contains special characters
+      const decodedHostname = decodeURIComponent(hostname);
 
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        details: "The request to Cloudflare API timed out",
-      });
-    }
+      // Check if API token and account ID are configured
+      const apiToken = await cloudflareConfigService.getApiToken();
+      const accountId = await cloudflareConfigService.getAccountId();
 
-    if (errorMessage.includes("Rate limit")) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        details: "Too many requests to Cloudflare API. Please try again later.",
-      });
-    }
+      if (!apiToken) {
+        return res.status(400).json({
+          success: false,
+          error: "Cloudflare API token not configured",
+          details: "Please configure your Cloudflare API token first",
+        });
+      }
 
-    next(error);
-  }
-}) as RequestHandler);
+      if (!accountId) {
+        return res.status(400).json({
+          success: false,
+          error: "Cloudflare account ID not configured",
+          details: "Please configure your Cloudflare account ID first",
+        });
+      }
+
+      // Remove hostname from tunnel configuration
+      const updatedConfig = await cloudflareConfigService.removeHostname(
+        tunnelId,
+        decodedHostname,
+        path as string | undefined,
+      );
+
+      if (!updatedConfig) {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to update tunnel configuration",
+          details: "Unable to remove hostname from tunnel",
+        });
+      }
+
+      logger.info(
+        {
+          requestId,
+          userId,
+          tunnelId,
+          hostname: decodedHostname,
+          path,
+          configVersion: updatedConfig.version,
+        },
+        "Hostname removed from tunnel successfully",
+      );
+
+      res.json({
+        success: true,
+        data: {
+          tunnelId,
+          hostname: decodedHostname,
+          path,
+          configVersion: updatedConfig.version,
+        },
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      logger.error(
+        {
+          requestId,
+          userId,
+          tunnelId,
+          hostname,
+          error: errorMessage,
+        },
+        "Failed to remove hostname from tunnel",
+      );
+
+      // Return appropriate error response based on error type
+      if (errorMessage.includes("not found")) {
+        return res.status(404).json({
+          success: false,
+          error: "Hostname not found",
+          details: errorMessage,
+        });
+      }
+
+      if (errorMessage.includes("timeout")) {
+        return res.status(504).json({
+          success: false,
+          error: "Request timeout",
+          details: "The request to Cloudflare API timed out",
+        });
+      }
+
+      if (errorMessage.includes("Rate limit")) {
+        return res.status(429).json({
+          success: false,
+          error: "Rate limited",
+          details:
+            "Too many requests to Cloudflare API. Please try again later.",
+        });
+      }
+
+      next(error);
+    }
+  }) as RequestHandler,
+);
 
 export default router;

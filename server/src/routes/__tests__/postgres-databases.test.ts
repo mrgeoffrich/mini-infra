@@ -135,13 +135,13 @@ describe("PostgreSQL Databases API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Reset auth middleware to always pass
     mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
       req.user = { id: "test-user-id", email: "test@example.com" };
       next();
     });
-    
+
     mockGetAuthenticatedUser.mockReturnValue({
       id: "test-user-id",
       email: "test@example.com",
@@ -149,7 +149,6 @@ describe("PostgreSQL Databases API Routes", () => {
   });
 
   describe("GET /api/postgres/databases", () => {
-
     it("should return databases list successfully", async () => {
       mockDatabaseConfigService.listDatabases.mockResolvedValue(mockDatabases);
 
@@ -470,7 +469,9 @@ describe("PostgreSQL Databases API Routes", () => {
   describe("DELETE /api/postgres/databases/:id", () => {
     it("should delete database successfully", async () => {
       // Mock getDatabaseById to return a database first (required by the delete endpoint)
-      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(mockDatabases[0]);
+      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(
+        mockDatabases[0],
+      );
       mockDatabaseConfigService.deleteDatabase.mockResolvedValue(undefined);
 
       const response = await request(app)

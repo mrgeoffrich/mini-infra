@@ -11,7 +11,10 @@ const logger = servicesLogger();
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { getAuthenticatedUser } from "../lib/auth-middleware";
 import { DockerExecutorService } from "../services/docker-executor";
-import type { DockerRegistryTestOptions, DockerRegistryTestResult } from "../services/docker-executor";
+import type {
+  DockerRegistryTestOptions,
+  DockerRegistryTestResult,
+} from "../services/docker-executor";
 
 const router = express.Router();
 
@@ -54,6 +57,18 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
 
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "User not authenticated",
+      details: {
+        image: "unknown",
+        authenticated: false,
+        pullTimeMs: 0,
+      },
+    });
+  }
+
   logger.info(
     {
       requestId,
@@ -87,7 +102,8 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
       });
     }
 
-    const { type, image, registryUsername, registryPassword } = bodyValidation.data;
+    const { type, image, registryUsername, registryPassword } =
+      bodyValidation.data;
 
     logger.info(
       {
@@ -111,7 +127,8 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
       registryPassword,
     };
 
-    const result: DockerRegistryTestResult = await dockerExecutor.testDockerRegistryConnection(testOptions);
+    const result: DockerRegistryTestResult =
+      await dockerExecutor.testDockerRegistryConnection(testOptions);
 
     if (result.success) {
       logger.info(
@@ -161,7 +178,8 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
 
     return res.status(500).json({
       success: false,
-      message: "An unexpected error occurred while testing Docker registry connection",
+      message:
+        "An unexpected error occurred while testing Docker registry connection",
       details: {
         image: req.body.image || "",
         authenticated: false,

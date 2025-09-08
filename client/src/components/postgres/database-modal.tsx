@@ -48,7 +48,11 @@ interface DatabaseModalProps {
   onClose: () => void;
 }
 
-export function DatabaseModal({ database, isOpen, onClose }: DatabaseModalProps) {
+export function DatabaseModal({
+  database,
+  isOpen,
+  onClose,
+}: DatabaseModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const isEditing = !!database;
 
@@ -109,7 +113,7 @@ export function DatabaseModal({ database, isOpen, onClose }: DatabaseModalProps)
       toast.error(
         `Failed to ${isEditing ? "update" : "create"} database: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };
@@ -135,14 +139,14 @@ export function DatabaseModal({ database, isOpen, onClose }: DatabaseModalProps)
         toast.success("Connection test successful!");
       } else {
         toast.error(
-          `Connection test failed: ${result.data.error || result.message}`
+          `Connection test failed: ${result.data.error || result.message}`,
         );
       }
     } catch (error) {
       toast.error(
         `Connection test failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };

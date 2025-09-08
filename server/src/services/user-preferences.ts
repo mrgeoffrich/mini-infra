@@ -1,6 +1,9 @@
 import prisma from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
-import type { UserPreference, UpdateUserPreferencesRequest } from "@mini-infra/types";
+import type {
+  UserPreference,
+  UpdateUserPreferencesRequest,
+} from "@mini-infra/types";
 
 const logger = servicesLogger();
 
@@ -13,7 +16,7 @@ export class UserPreferencesService {
 
     // Try to find existing preferences
     let preferences = await prisma.userPreference.findUnique({
-      where: { userId }
+      where: { userId },
     });
 
     // Create default preferences if none exist
@@ -25,11 +28,14 @@ export class UserPreferencesService {
           timezone: "UTC",
           containerSortField: "name",
           containerSortOrder: "asc",
-        }
+        },
       });
     }
 
-    logger.debug({ userId, preferencesId: preferences.id }, "Retrieved user preferences");
+    logger.debug(
+      { userId, preferencesId: preferences.id },
+      "Retrieved user preferences",
+    );
     return preferences;
   }
 
@@ -38,15 +44,20 @@ export class UserPreferencesService {
    */
   static async updateUserPreferences(
     userId: string,
-    updates: UpdateUserPreferencesRequest
+    updates: UpdateUserPreferencesRequest,
   ): Promise<UserPreference> {
     logger.debug({ userId, updates }, "Updating user preferences");
 
     // Validate timezone if provided
     if (updates.timezone) {
-      const isValidTimezone = UserPreferencesService.validateTimezone(updates.timezone);
+      const isValidTimezone = UserPreferencesService.validateTimezone(
+        updates.timezone,
+      );
       if (!isValidTimezone) {
-        logger.warn({ userId, timezone: updates.timezone }, "Invalid timezone provided");
+        logger.warn(
+          { userId, timezone: updates.timezone },
+          "Invalid timezone provided",
+        );
         throw new Error(`Invalid timezone: ${updates.timezone}`);
       }
     }
@@ -60,10 +71,13 @@ export class UserPreferencesService {
       data: {
         ...updates,
         updatedAt: new Date(),
-      }
+      },
     });
 
-    logger.info({ userId, preferencesId: preferences.id }, "User preferences updated successfully");
+    logger.info(
+      { userId, preferencesId: preferences.id },
+      "User preferences updated successfully",
+    );
     return preferences;
   }
 
@@ -73,7 +87,7 @@ export class UserPreferencesService {
   static validateTimezone(timezone: string): boolean {
     try {
       // Try to create a date formatter with the timezone
-      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone });
       return true;
     } catch (error) {
       return false;
@@ -87,7 +101,7 @@ export class UserPreferencesService {
     return [
       // UTC
       { value: "UTC", label: "UTC (Coordinated Universal Time)" },
-      
+
       // North America
       { value: "America/New_York", label: "Eastern Time (New York)" },
       { value: "America/Detroit", label: "Eastern Time (Detroit)" },
@@ -103,15 +117,18 @@ export class UserPreferencesService {
       { value: "America/Anchorage", label: "Alaska Time (Anchorage)" },
       { value: "Pacific/Honolulu", label: "Hawaii Time (Honolulu)" },
       { value: "America/Adak", label: "Hawaii-Aleutian Time (Adak)" },
-      
+
       // South America
       { value: "America/Sao_Paulo", label: "Brasília Time (São Paulo)" },
-      { value: "America/Argentina/Buenos_Aires", label: "Argentina Time (Buenos Aires)" },
+      {
+        value: "America/Argentina/Buenos_Aires",
+        label: "Argentina Time (Buenos Aires)",
+      },
       { value: "America/Santiago", label: "Chile Time (Santiago)" },
       { value: "America/Lima", label: "Peru Time (Lima)" },
       { value: "America/Bogota", label: "Colombia Time (Bogotá)" },
       { value: "America/Caracas", label: "Venezuela Time (Caracas)" },
-      
+
       // Europe
       { value: "Europe/London", label: "Greenwich Mean Time (London)" },
       { value: "Europe/Dublin", label: "Greenwich Mean Time (Dublin)" },
@@ -128,22 +145,31 @@ export class UserPreferencesService {
       { value: "Europe/Warsaw", label: "Central European Time (Warsaw)" },
       { value: "Europe/Stockholm", label: "Central European Time (Stockholm)" },
       { value: "Europe/Oslo", label: "Central European Time (Oslo)" },
-      { value: "Europe/Copenhagen", label: "Central European Time (Copenhagen)" },
+      {
+        value: "Europe/Copenhagen",
+        label: "Central European Time (Copenhagen)",
+      },
       { value: "Europe/Helsinki", label: "Eastern European Time (Helsinki)" },
       { value: "Europe/Athens", label: "Eastern European Time (Athens)" },
       { value: "Europe/Istanbul", label: "Turkey Time (Istanbul)" },
       { value: "Europe/Moscow", label: "Moscow Standard Time" },
       { value: "Europe/Kiev", label: "Eastern European Time (Kyiv)" },
       { value: "Europe/Bucharest", label: "Eastern European Time (Bucharest)" },
-      
+
       // Africa
       { value: "Africa/Cairo", label: "Eastern European Time (Cairo)" },
       { value: "Africa/Lagos", label: "West Africa Time (Lagos)" },
-      { value: "Africa/Johannesburg", label: "South Africa Standard Time (Johannesburg)" },
-      { value: "Africa/Casablanca", label: "Western European Time (Casablanca)" },
+      {
+        value: "Africa/Johannesburg",
+        label: "South Africa Standard Time (Johannesburg)",
+      },
+      {
+        value: "Africa/Casablanca",
+        label: "Western European Time (Casablanca)",
+      },
       { value: "Africa/Nairobi", label: "East Africa Time (Nairobi)" },
       { value: "Africa/Addis_Ababa", label: "East Africa Time (Addis Ababa)" },
-      
+
       // Asia
       { value: "Asia/Tokyo", label: "Japan Standard Time (Tokyo)" },
       { value: "Asia/Seoul", label: "Korea Standard Time (Seoul)" },
@@ -168,7 +194,7 @@ export class UserPreferencesService {
       { value: "Asia/Baghdad", label: "Arabia Standard Time (Baghdad)" },
       { value: "Asia/Kuwait", label: "Arabia Standard Time (Kuwait)" },
       { value: "Asia/Qatar", label: "Arabia Standard Time (Qatar)" },
-      
+
       // Central Asia
       { value: "Asia/Tashkent", label: "Uzbekistan Time (Tashkent)" },
       { value: "Asia/Almaty", label: "Alma-Ata Time (Almaty)" },
@@ -177,29 +203,44 @@ export class UserPreferencesService {
       { value: "Asia/Krasnoyarsk", label: "Krasnoyarsk Time" },
       { value: "Asia/Irkutsk", label: "Irkutsk Time" },
       { value: "Asia/Vladivostok", label: "Vladivostok Time" },
-      
+
       // Oceania
       { value: "Australia/Sydney", label: "Australian Eastern Time (Sydney)" },
-      { value: "Australia/Melbourne", label: "Australian Eastern Time (Melbourne)" },
-      { value: "Australia/Brisbane", label: "Australian Eastern Time (Brisbane)" },
-      { value: "Australia/Adelaide", label: "Australian Central Time (Adelaide)" },
+      {
+        value: "Australia/Melbourne",
+        label: "Australian Eastern Time (Melbourne)",
+      },
+      {
+        value: "Australia/Brisbane",
+        label: "Australian Eastern Time (Brisbane)",
+      },
+      {
+        value: "Australia/Adelaide",
+        label: "Australian Central Time (Adelaide)",
+      },
       { value: "Australia/Darwin", label: "Australian Central Time (Darwin)" },
       { value: "Australia/Perth", label: "Australian Western Time (Perth)" },
-      { value: "Pacific/Auckland", label: "New Zealand Standard Time (Auckland)" },
+      {
+        value: "Pacific/Auckland",
+        label: "New Zealand Standard Time (Auckland)",
+      },
       { value: "Pacific/Fiji", label: "Fiji Time" },
       { value: "Pacific/Guam", label: "Chamorro Standard Time (Guam)" },
       { value: "Pacific/Tahiti", label: "Tahiti Time" },
-      
+
       // Atlantic
       { value: "Atlantic/Azores", label: "Azores Time" },
-      { value: "Atlantic/Canary", label: "Western European Time (Canary Islands)" },
+      {
+        value: "Atlantic/Canary",
+        label: "Western European Time (Canary Islands)",
+      },
       { value: "Atlantic/Cape_Verde", label: "Cape Verde Time" },
       { value: "Atlantic/Reykjavik", label: "Greenwich Mean Time (Reykjavik)" },
-      
+
       // Indian Ocean
       { value: "Indian/Maldives", label: "Maldives Time" },
       { value: "Indian/Mauritius", label: "Mauritius Time" },
-      
+
       // Antarctica (for research stations)
       { value: "Antarctica/McMurdo", label: "New Zealand Time (McMurdo)" },
     ];

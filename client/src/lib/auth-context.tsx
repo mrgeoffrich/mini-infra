@@ -1,6 +1,10 @@
 import { ReactNode, useEffect } from "react";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { toastWithCopy } from "./toast-utils";
 import {
   AuthContextType,
   AuthState,
@@ -206,7 +210,9 @@ function AuthProviderInner({ children }: AuthProviderProps) {
             credentials: "include",
           });
           if (!response.ok) {
-            throw new Error(`Failed to fetch user preferences: ${response.statusText}`);
+            throw new Error(
+              `Failed to fetch user preferences: ${response.statusText}`,
+            );
           }
           const result = await response.json();
           if (!result.success) {
@@ -220,7 +226,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       // Only broadcast if this is a new login (not just a status refresh)
       if (!wasAlreadyAuthenticated) {
         broadcastAuthEvent("AUTH_LOGIN", { user: authStatus.user });
-        toast.success(
+        toastWithCopy.success(
           `Welcome back, ${authStatus.user.name || authStatus.user.email}!`,
         );
       }
@@ -230,7 +236,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       const wasAuthenticated = sessionData.lastLoginTime;
 
       clearSessionData();
-      
+
       // Clear user preferences from cache when logging out
       queryClient.removeQueries({
         queryKey: userPreferencesKeys.all,
@@ -276,7 +282,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         // Broadcast logout event to other tabs
         broadcastAuthEvent("AUTH_LOGOUT");
         // Show success message
-        toast.success("You have been logged out successfully.");
+        toastWithCopy.success("You have been logged out successfully.");
         // Invalidate the auth status query to clear the user state
         await refetch();
         const redirectUrl = options?.redirectUrl || "/";
@@ -298,7 +304,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         }
         const errorText = await response.text().catch(() => "Unknown error");
         const errorMessage = `Logout failed: ${response.status} ${errorText}`;
-        toast.error(errorMessage);
+        toastWithCopy.error(errorMessage);
         throw new Error(errorMessage);
       }
     } catch (error) {
@@ -315,7 +321,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       if (
         !(error instanceof Error && error.message.includes("Logout failed:"))
       ) {
-        toast.error(errorMessage);
+        toastWithCopy.error(errorMessage);
       }
       throw new Error(errorMessage);
     }

@@ -10,6 +10,8 @@ export interface ContainerExecutionOptions {
   timeout?: number; // in milliseconds
   removeContainer?: boolean;
   outputHandler?: (stream: Readable) => void;
+  cmd?: string[]; // Custom command to run in container
+  networkMode?: string; // Docker network to attach to
 }
 
 export interface ContainerExecutionResult {
@@ -123,13 +125,16 @@ export class DockerExecutorService {
         const chunk = data.toString();
         stdout += chunk;
         // Log container stdout to dedicated dockerexecutor logger with full container context
-        dockerExecutorLogger().debug({
-          containerId,
-          image: options.image,
-          envKeys: Object.keys(options.env),
-          timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
-          stdout: chunk
-        }, "Container stdout");
+        dockerExecutorLogger().debug(
+          {
+            containerId,
+            image: options.image,
+            envKeys: Object.keys(options.env),
+            timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
+            stdout: chunk,
+          },
+          "Container stdout",
+        );
         if (options.outputHandler) {
           options.outputHandler(Readable.from([chunk]));
         }
@@ -139,13 +144,16 @@ export class DockerExecutorService {
         const chunk = data.toString();
         stderr += chunk;
         // Log container stderr to dedicated dockerexecutor logger with full container context
-        dockerExecutorLogger().debug({
-          containerId,
-          image: options.image,
-          envKeys: Object.keys(options.env),
-          timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
-          stderr: chunk
-        }, "Container stderr");
+        dockerExecutorLogger().debug(
+          {
+            containerId,
+            image: options.image,
+            envKeys: Object.keys(options.env),
+            timeout: options.timeout || DockerExecutorService.DEFAULT_TIMEOUT,
+            stderr: chunk,
+          },
+          "Container stderr",
+        );
       });
 
       // Start container
@@ -322,7 +330,7 @@ export class DockerExecutorService {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions = {
+      const containerOptions: any = {
         Image: options.image,
         Env: env,
         AttachStdout: true,
@@ -336,6 +344,16 @@ export class DockerExecutorService {
           CpuShares: 1024, // Standard CPU allocation
         },
       };
+
+      // Add custom command if provided
+      if (options.cmd) {
+        containerOptions.Cmd = options.cmd;
+      }
+
+      // Add network mode if provided
+      if (options.networkMode) {
+        containerOptions.HostConfig.NetworkMode = options.networkMode;
+      }
 
       return await this.docker.createContainer(containerOptions);
     } catch (error) {
@@ -438,7 +456,10 @@ export class DockerExecutorService {
       // Remove container if it exists and is not already being removed
       if (data.State.Status !== "removing") {
         await container.remove({ force: true });
-        servicesLogger().debug({ containerId: container.id }, "Container cleaned up");
+        servicesLogger().debug(
+          { containerId: container.id },
+          "Container cleaned up",
+        );
       }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the operation
@@ -543,12 +564,15 @@ export class DockerExecutorService {
 
       // Attempt to pull the image
       const stream = await this.docker.pull(image, { authconfig });
-      
+
       // Wait for the pull to complete
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Docker pull timeout after 2 minutes"));
-        }, 2 * 60 * 1000); // 2 minute timeout
+        const timeout = setTimeout(
+          () => {
+            reject(new Error("Docker pull timeout after 2 minutes"));
+          },
+          2 * 60 * 1000,
+        ); // 2 minute timeout
 
         this.docker.modem.followProgress(stream, (err, result) => {
           clearTimeout(timeout);
@@ -572,8 +596,9 @@ export class DockerExecutorService {
       );
     } catch (error) {
       const pullTimeMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
       servicesLogger().error(
         {
           error: errorMessage,
@@ -585,19 +610,31 @@ export class DockerExecutorService {
       );
 
       // Enhance error message for better debugging
-      if (errorMessage.includes("authentication required") || 
-          errorMessage.includes("unauthorized") ||
-          errorMessage.includes("401")) {
-        throw new Error(`Authentication required for image '${image}' - please provide valid registry credentials`);
-      } else if (errorMessage.includes("repository does not exist") ||
-                errorMessage.includes("not found") ||
-                errorMessage.includes("404")) {
+      if (
+        errorMessage.includes("authentication required") ||
+        errorMessage.includes("unauthorized") ||
+        errorMessage.includes("401")
+      ) {
+        throw new Error(
+          `Authentication required for image '${image}' - please provide valid registry credentials`,
+        );
+      } else if (
+        errorMessage.includes("repository does not exist") ||
+        errorMessage.includes("not found") ||
+        errorMessage.includes("404")
+      ) {
         throw new Error(`Docker image '${image}' not found in registry`);
       } else if (errorMessage.includes("timeout")) {
-        throw new Error(`Timeout pulling image '${image}' - registry may be unreachable`);
-      } else if (errorMessage.includes("network") || 
-                errorMessage.includes("connection refused")) {
-        throw new Error(`Network error pulling image '${image}' - cannot reach Docker registry`);
+        throw new Error(
+          `Timeout pulling image '${image}' - registry may be unreachable`,
+        );
+      } else if (
+        errorMessage.includes("network") ||
+        errorMessage.includes("connection refused")
+      ) {
+        throw new Error(
+          `Network error pulling image '${image}' - cannot reach Docker registry`,
+        );
       }
 
       throw new Error(`Failed to pull image '${image}': ${errorMessage}`);
@@ -634,12 +671,15 @@ export class DockerExecutorService {
 
       // Attempt to pull the image
       const stream = await this.docker.pull(options.image, { authconfig });
-      
+
       // Wait for the pull to complete
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Docker pull timeout after 2 minutes"));
-        }, 2 * 60 * 1000); // 2 minute timeout
+        const timeout = setTimeout(
+          () => {
+            reject(new Error("Docker pull timeout after 2 minutes"));
+          },
+          2 * 60 * 1000,
+        ); // 2 minute timeout
 
         this.docker.modem.followProgress(stream, (err, result) => {
           clearTimeout(timeout);
@@ -664,7 +704,7 @@ export class DockerExecutorService {
 
       return {
         success: true,
-        message: authenticated 
+        message: authenticated
           ? "Successfully connected to Docker registry with authentication and verified image access"
           : "Successfully connected to Docker registry and verified image access",
         details: {
@@ -675,8 +715,9 @@ export class DockerExecutorService {
       };
     } catch (error) {
       const pullTimeMs = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
       servicesLogger().error(
         {
           error: errorMessage,
@@ -691,21 +732,28 @@ export class DockerExecutorService {
       let userMessage = "Failed to connect to Docker registry";
       let errorCode = "CONNECTION_FAILED";
 
-      if (errorMessage.includes("authentication required") || 
-          errorMessage.includes("unauthorized") ||
-          errorMessage.includes("401")) {
-        userMessage = "Authentication required - please provide valid registry credentials";
+      if (
+        errorMessage.includes("authentication required") ||
+        errorMessage.includes("unauthorized") ||
+        errorMessage.includes("401")
+      ) {
+        userMessage =
+          "Authentication required - please provide valid registry credentials";
         errorCode = "AUTHENTICATION_REQUIRED";
-      } else if (errorMessage.includes("repository does not exist") ||
-                errorMessage.includes("not found") ||
-                errorMessage.includes("404")) {
+      } else if (
+        errorMessage.includes("repository does not exist") ||
+        errorMessage.includes("not found") ||
+        errorMessage.includes("404")
+      ) {
         userMessage = "Docker image not found in registry";
         errorCode = "IMAGE_NOT_FOUND";
       } else if (errorMessage.includes("timeout")) {
         userMessage = "Connection timeout - registry may be unreachable";
         errorCode = "TIMEOUT";
-      } else if (errorMessage.includes("network") || 
-                errorMessage.includes("connection refused")) {
+      } else if (
+        errorMessage.includes("network") ||
+        errorMessage.includes("connection refused")
+      ) {
         userMessage = "Network error - cannot reach Docker registry";
         errorCode = "NETWORK_ERROR";
       }

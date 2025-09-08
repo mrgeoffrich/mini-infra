@@ -15,10 +15,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
       style={
         {
           "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
+          "--normal-text": "#000000", // Force black text
           "--normal-border": "var(--border)",
         } as React.CSSProperties
       }
+      toastOptions={{
+        style: {
+          color: "#000000", // Force black text for all toasts
+        },
+      }}
       {...props}
     />
   );

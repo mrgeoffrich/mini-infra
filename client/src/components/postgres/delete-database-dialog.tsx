@@ -37,7 +37,7 @@ export function DeleteDatabaseDialog({
       toast.error(
         `Failed to delete database: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };
@@ -53,9 +53,7 @@ export function DeleteDatabaseDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>
-            Cancel
-          </AlertDialogCancel>
+          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={confirmDelete}
             disabled={deleteMutation.isPending}

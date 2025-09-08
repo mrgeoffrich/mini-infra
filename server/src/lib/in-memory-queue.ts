@@ -7,7 +7,7 @@ import { randomUUID } from "crypto";
 export interface JobOptions {
   attempts?: number;
   backoff?: {
-    type: 'exponential' | 'fixed';
+    type: "exponential" | "fixed";
     delay: number;
   };
   delay?: number;
@@ -24,7 +24,7 @@ export interface QueueOptions {
   defaultJobOptions?: {
     attempts?: number;
     backoff?: {
-      type: 'exponential' | 'fixed';
+      type: "exponential" | "fixed";
       delay: number;
     };
     removeOnComplete?: number;
@@ -35,7 +35,12 @@ export interface QueueOptions {
 /**
  * Job status enumeration
  */
-export type JobStatus = 'pending' | 'active' | 'completed' | 'failed' | 'stalled';
+export type JobStatus =
+  | "pending"
+  | "active"
+  | "completed"
+  | "failed"
+  | "stalled";
 
 /**
  * Job interface matching Bull's job structure
@@ -86,7 +91,7 @@ export class InMemoryQueue extends EventEmitter {
       defaultJobOptions: {
         attempts: 3,
         backoff: {
-          type: 'exponential',
+          type: "exponential",
           delay: 30000,
         },
         removeOnComplete: 10,
@@ -101,7 +106,7 @@ export class InMemoryQueue extends EventEmitter {
    */
   async add(name: string, data: any, opts: JobOptions = {}): Promise<Job> {
     if (this.isClosed) {
-      throw new Error('Queue is closed');
+      throw new Error("Queue is closed");
     }
 
     // Deep clone the data to prevent mutation
@@ -121,7 +126,7 @@ export class InMemoryQueue extends EventEmitter {
       },
       attempts: 0,
       maxAttempts: opts.attempts ?? this.options.defaultJobOptions!.attempts!,
-      status: 'pending',
+      status: "pending",
       progress: 0,
       createdAt: new Date(),
     };
@@ -137,7 +142,9 @@ export class InMemoryQueue extends EventEmitter {
     } else {
       this.pending.push(job);
       // Sort by priority (higher priority first)
-      this.pending.sort((a, b) => (b.opts.priority || 0) - (a.opts.priority || 0));
+      this.pending.sort(
+        (a, b) => (b.opts.priority || 0) - (a.opts.priority || 0),
+      );
       setImmediate(() => this.processNext());
     }
 
@@ -147,13 +154,17 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Register a processor for jobs
    */
-  process(name: string, concurrencyOrProcessor: number | ProcessorFunction, processor?: ProcessorFunction): void {
-    if (typeof concurrencyOrProcessor === 'function') {
+  process(
+    name: string,
+    concurrencyOrProcessor: number | ProcessorFunction,
+    processor?: ProcessorFunction,
+  ): void {
+    if (typeof concurrencyOrProcessor === "function") {
       this.processors.set(name, concurrencyOrProcessor);
     } else if (processor) {
       this.processors.set(name, processor);
     } else {
-      throw new Error('Processor function is required');
+      throw new Error("Processor function is required");
     }
 
     setImmediate(() => this.processNext());
@@ -165,16 +176,16 @@ export class InMemoryQueue extends EventEmitter {
   async getJobs(states: string[] = []): Promise<Job[]> {
     const allJobs: Job[] = [];
 
-    if (states.length === 0 || states.includes('pending')) {
+    if (states.length === 0 || states.includes("pending")) {
       allJobs.push(...this.pending);
     }
-    if (states.length === 0 || states.includes('active')) {
+    if (states.length === 0 || states.includes("active")) {
       allJobs.push(...Array.from(this.active.values()));
     }
-    if (states.length === 0 || states.includes('completed')) {
+    if (states.length === 0 || states.includes("completed")) {
       allJobs.push(...this.completed);
     }
-    if (states.length === 0 || states.includes('failed')) {
+    if (states.length === 0 || states.includes("failed")) {
       allJobs.push(...this.failed);
     }
 
@@ -186,7 +197,7 @@ export class InMemoryQueue extends EventEmitter {
    */
   async getJob(jobId: string): Promise<Job | undefined> {
     const allJobs = await this.getJobs();
-    return allJobs.find(job => job.id === jobId);
+    return allJobs.find((job) => job.id === jobId);
   }
 
   /**
@@ -194,7 +205,7 @@ export class InMemoryQueue extends EventEmitter {
    */
   async remove(jobId: string): Promise<void> {
     // Remove from pending
-    const pendingIndex = this.pending.findIndex(job => job.id === jobId);
+    const pendingIndex = this.pending.findIndex((job) => job.id === jobId);
     if (pendingIndex !== -1) {
       this.pending.splice(pendingIndex, 1);
       return;
@@ -202,24 +213,24 @@ export class InMemoryQueue extends EventEmitter {
 
     // Cannot remove active jobs
     if (this.active.has(jobId)) {
-      throw new Error('Cannot remove active job');
+      throw new Error("Cannot remove active job");
     }
 
     // Remove from completed
-    const completedIndex = this.completed.findIndex(job => job.id === jobId);
+    const completedIndex = this.completed.findIndex((job) => job.id === jobId);
     if (completedIndex !== -1) {
       this.completed.splice(completedIndex, 1);
       return;
     }
 
     // Remove from failed
-    const failedIndex = this.failed.findIndex(job => job.id === jobId);
+    const failedIndex = this.failed.findIndex((job) => job.id === jobId);
     if (failedIndex !== -1) {
       this.failed.splice(failedIndex, 1);
       return;
     }
 
-    throw new Error('Job not found');
+    throw new Error("Job not found");
   }
 
   /**
@@ -229,7 +240,7 @@ export class InMemoryQueue extends EventEmitter {
     this.isClosed = true;
 
     // Clear all pending timeouts
-    this.processingTimeouts.forEach(timeout => {
+    this.processingTimeouts.forEach((timeout) => {
       clearTimeout(timeout);
     });
     this.processingTimeouts.clear();
@@ -237,9 +248,9 @@ export class InMemoryQueue extends EventEmitter {
     // Wait for active jobs to complete (with timeout)
     const maxWaitTime = 30000; // 30 seconds
     const startTime = Date.now();
-    
-    while (this.active.size > 0 && (Date.now() - startTime) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+
+    while (this.active.size > 0 && Date.now() - startTime < maxWaitTime) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     // Clear all data
@@ -261,19 +272,16 @@ export class InMemoryQueue extends EventEmitter {
     }
 
     const concurrency = this.options.concurrency!;
-    
-    while (
-      this.pending.length > 0 && 
-      this.active.size < concurrency
-    ) {
+
+    while (this.pending.length > 0 && this.active.size < concurrency) {
       const job = this.pending.shift()!;
       this.active.set(job.id, job);
-      
+
       // Process job asynchronously without blocking
       setImmediate(() => {
-        this.executeJob(job).catch(error => {
+        this.executeJob(job).catch((error) => {
           // This shouldn't happen as executeJob handles its own errors
-          console.error('Unexpected error in executeJob:', error);
+          console.error("Unexpected error in executeJob:", error);
         });
       });
     }
@@ -285,14 +293,17 @@ export class InMemoryQueue extends EventEmitter {
   private async executeJob(job: Job): Promise<void> {
     const processor = this.processors.get(job.name);
     if (!processor) {
-      this.moveJobToFailed(job, new Error(`No processor found for job type: ${job.name}`));
+      this.moveJobToFailed(
+        job,
+        new Error(`No processor found for job type: ${job.name}`),
+      );
       return;
     }
 
-    job.status = 'active';
+    job.status = "active";
     job.attempts++;
     job.processedAt = new Date();
-    
+
     try {
       const result = await processor(job);
       this.moveJobToCompleted(job, result);
@@ -311,12 +322,12 @@ export class InMemoryQueue extends EventEmitter {
    * Retry a failed job with backoff
    */
   private async retryJob(job: Job, error: Error): Promise<void> {
-    job.status = 'pending';
+    job.status = "pending";
     job.failedReason = error.message;
     this.active.delete(job.id);
 
     const delay = this.calculateBackoff(job.attempts, job.opts.backoff!);
-    
+
     if (delay > 0) {
       const timeout = setTimeout(() => {
         this.processingTimeouts.delete(timeout);
@@ -334,17 +345,17 @@ export class InMemoryQueue extends EventEmitter {
    * Move job to completed state
    */
   private moveJobToCompleted(job: Job, result: any): void {
-    job.status = 'completed';
+    job.status = "completed";
     job.completedAt = new Date();
     job.returnValue = result;
     job.progress = 100;
 
     this.active.delete(job.id);
     this.completed.push(job);
-    
-    this.maintainHistory('completed');
-    this.emit('completed', job, result);
-    
+
+    this.maintainHistory("completed");
+    this.emit("completed", job, result);
+
     // Continue processing
     setImmediate(() => this.processNext());
   }
@@ -353,16 +364,16 @@ export class InMemoryQueue extends EventEmitter {
    * Move job to failed state
    */
   private moveJobToFailed(job: Job, error: Error): void {
-    job.status = 'failed';
+    job.status = "failed";
     job.failedAt = new Date();
     job.failedReason = error.message;
 
     this.active.delete(job.id);
     this.failed.push(job);
-    
-    this.maintainHistory('failed');
-    this.emit('failed', job, error);
-    
+
+    this.maintainHistory("failed");
+    this.emit("failed", job, error);
+
     // Continue processing
     setImmediate(() => this.processNext());
   }
@@ -370,28 +381,32 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Calculate backoff delay
    */
-  private calculateBackoff(attempt: number, backoff: { type: 'exponential' | 'fixed'; delay: number }): number {
-    if (backoff.type === 'fixed') {
+  private calculateBackoff(
+    attempt: number,
+    backoff: { type: "exponential" | "fixed"; delay: number },
+  ): number {
+    if (backoff.type === "fixed") {
       return backoff.delay;
     }
-    
+
     // Exponential backoff with jitter
     const baseDelay = backoff.delay;
     const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
     const jitter = Math.random() * 0.1 * exponentialDelay; // 10% jitter
-    
+
     return Math.floor(exponentialDelay + jitter);
   }
 
   /**
    * Maintain job history limits
    */
-  private maintainHistory(type: 'completed' | 'failed'): void {
-    const list = type === 'completed' ? this.completed : this.failed;
-    const limit = type === 'completed' 
-      ? this.options.defaultJobOptions!.removeOnComplete!
-      : this.options.defaultJobOptions!.removeOnFail!;
-    
+  private maintainHistory(type: "completed" | "failed"): void {
+    const list = type === "completed" ? this.completed : this.failed;
+    const limit =
+      type === "completed"
+        ? this.options.defaultJobOptions!.removeOnComplete!
+        : this.options.defaultJobOptions!.removeOnFail!;
+
     while (list.length > limit) {
       list.shift();
     }
@@ -402,7 +417,7 @@ export class InMemoryQueue extends EventEmitter {
    */
   updateJobProgress(job: Job, progress: number): void {
     job.progress = Math.max(0, Math.min(100, progress));
-    this.emit('progress', job, progress);
+    this.emit("progress", job, progress);
   }
 
   /**
@@ -420,7 +435,11 @@ export class InMemoryQueue extends EventEmitter {
       active: this.active.size,
       completed: this.completed.length,
       failed: this.failed.length,
-      total: this.pending.length + this.active.size + this.completed.length + this.failed.length,
+      total:
+        this.pending.length +
+        this.active.size +
+        this.completed.length +
+        this.failed.length,
     };
   }
 }

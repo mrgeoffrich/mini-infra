@@ -22,9 +22,23 @@ Add one of these headers to your HTTP requests:
 
 ### Step 3: All Endpoints should be Available
 
+#### Deployment API Endpoints
+The application now includes comprehensive deployment API endpoints:
+
+- **GET /api/deployments/configs** - List deployment configurations
+- **POST /api/deployments/configs** - Create deployment configuration
+- **GET /api/deployments/configs/:id** - Get deployment configuration
+- **PUT /api/deployments/configs/:id** - Update deployment configuration
+- **DELETE /api/deployments/configs/:id** - Delete deployment configuration
+- **POST /api/deployments/trigger** - Trigger a new deployment
+- **GET /api/deployments/:id/status** - Get deployment status with progress
+- **POST /api/deployments/:id/rollback** - Rollback a deployment
+- **GET /api/deployments/history** - Get deployment history
+
 ### Example Usage
 ```bash
 curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/containers
+curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/configs
 ```
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
@@ -77,6 +91,9 @@ Mini Infra is a web application designed to manage a single Docker host and its 
   - pg 8.16.3 for PostgreSQL connectivity
 - **Scheduling**: node-cron 4.2.1 with cron-parser 5.3.1
 - **Caching**: node-cache 5.1.2 for in-memory caching
+- **Deployment Infrastructure**:
+  - js-yaml 4.1.0 for YAML configuration parsing
+  - Traefik v3.0 for load balancing and traffic routing
 
 ### Development Tools
 - **Language**: TypeScript 5.8.3 (client) / 5.1.6 (server/lib)
@@ -121,12 +138,13 @@ mini-infra/
 │   │   │   │   ├── azure/    # Azure service status
 │   │   │   │   └── cloudflare/ # Cloudflare service status
 │   │   │   ├── settings/    # System configuration
-│   │   │   │   └── system/  # Docker registry settings
+│   │   │   │   └── system/  # Docker registry and deployment infrastructure settings
 │   │   │   └── user/        # User preferences
 │   │   │       └── settings/ # Personal settings (timezone)
 │   │   ├── components/      # Reusable UI components
 │   │   │   ├── ui/          # shadcn UI components
 │   │   │   ├── postgres/    # PostgreSQL-specific components
+│   │   │   ├── deployments/ # Zero-downtime deployment components
 │   │   │   └── cloudflare/  # Cloudflare tunnel components
 │   │   ├── hooks/           # Custom React hooks
 │   │   │   ├── use-auth.ts  # Authentication hooks
@@ -134,6 +152,7 @@ mini-infra/
 │   │   │   ├── use-settings.ts   # Settings management hooks
 │   │   │   ├── use-user-preferences.ts # User preference hooks
 │   │   │   ├── use-formatted-date.ts   # Timezone-aware date formatting
+│   │   │   ├── use-deployment-*.ts      # Deployment management hooks
 │   │   │   └── use-*.ts     # Various specialized hooks
 │   │   └── lib/             # Frontend utilities and configuration
 │   │       ├── routes.tsx   # Application routing configuration
@@ -243,11 +262,18 @@ The application implements a comprehensive timezone-aware date and time display 
 ## External Integrations
 
 - **Docker API**: Container management via dockerode library with singleton service pattern
-- **Traefik API**: Load balancer configuration
+- **Traefik API**: Load balancer configuration and traffic routing
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
 - **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
 - **Google OAuth API**: User authentication
+
+### Deployment Infrastructure Integration
+
+- **Docker Network Management**: Automated creation and management of Docker networks for deployment isolation
+- **Traefik Container Deployment**: Automated Traefik load balancer container deployment with configuration
+- **Infrastructure Status Monitoring**: Real-time monitoring of network and Traefik container status
+- **Zero-Downtime Deployment Support**: Infrastructure for blue-green deployment strategies
 
 ## Service Layer Architecture
 
@@ -276,6 +302,11 @@ The backend implements a sophisticated service layer with dependency injection, 
 - **BackupExecutorService** (`server/src/services/backup-executor.ts`): Automated backup execution with progress tracking and Azure Storage integration
 - **RestoreExecutorService** (`server/src/services/restore-executor.ts`): Database restore operations with progress monitoring and validation
 
+#### Deployment Infrastructure Services
+- **DeploymentInfrastructureService** (`server/src/services/deployment-infrastructure.ts`): Docker network and Traefik container management with automated deployment, status monitoring, and cleanup operations
+- **TraefikIntegrationService** (`server/src/services/traefik-integration.ts`): Traefik label generation and traffic routing management for blue-green deployments including priority-based routing, container label management, configuration validation, and service discovery
+- **DeploymentOrchestrator** (`server/src/services/deployment-orchestrator.ts`): XState-powered deployment state machine with comprehensive workflow execution including image pulling, container lifecycle management, health checking, traffic switching, and rollback capabilities. Features database progress tracking and deployment-specific logging to `app-deployments.log`
+
 ## Frontend Architecture
 
 ### Application Routing Structure
@@ -296,7 +327,7 @@ The frontend uses React Router v7 with protected route guards and nested routing
   ├─ /azure (Azure service status)
   └─ /cloudflare (Cloudflare service status)
 /settings/* (system configuration)
-  └─ /system (Docker registry configuration)
+  └─ /system (Docker registry and deployment infrastructure configuration)
 /user/settings (personal preferences including timezone)
 ```
 
@@ -353,3 +384,4 @@ Logs are found in `server/logs/` directory with the following files:
  - `app-services.log` - log from services that run from `server/src/service/*.ts`
  - `app-dockerexecutor.log` - logs from container execution
  - `app-prisma.log` - log from prisma
+ - `app-deployments.log` - logs from deployment orchestrator and deployment operations

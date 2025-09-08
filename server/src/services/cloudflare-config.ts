@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -51,7 +51,7 @@ export class CloudflareConfigService extends ConfigurationService {
   // Request deduplication
   private pendingValidation: PendingRequest | null = null;
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     super(prisma, "cloudflare");
   }
 
@@ -628,12 +628,16 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        servicesLogger().warn("Cannot retrieve tunnel config: API token not configured");
+        servicesLogger().warn(
+          "Cannot retrieve tunnel config: API token not configured",
+        );
         return null;
       }
 
       if (!accountId) {
-        servicesLogger().warn("Cannot retrieve tunnel config: Account ID not configured");
+        servicesLogger().warn(
+          "Cannot retrieve tunnel config: Account ID not configured",
+        );
         return null;
       }
 
@@ -736,12 +740,16 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        servicesLogger().warn("Cannot retrieve tunnel info: API token not configured");
+        servicesLogger().warn(
+          "Cannot retrieve tunnel info: API token not configured",
+        );
         return [];
       }
 
       if (!accountId) {
-        servicesLogger().warn("Cannot retrieve tunnel info: Account ID not configured");
+        servicesLogger().warn(
+          "Cannot retrieve tunnel info: Account ID not configured",
+        );
         return [];
       }
 
@@ -831,12 +839,16 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = await this.getAccountId();
 
       if (!apiToken) {
-        servicesLogger().warn("Cannot update tunnel config: API token not configured");
+        servicesLogger().warn(
+          "Cannot update tunnel config: API token not configured",
+        );
         return null;
       }
 
       if (!accountId) {
-        servicesLogger().warn("Cannot update tunnel config: Account ID not configured");
+        servicesLogger().warn(
+          "Cannot update tunnel config: Account ID not configured",
+        );
         return null;
       }
 

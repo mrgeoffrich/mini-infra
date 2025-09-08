@@ -6,7 +6,7 @@ import {
   formatTime,
   formatDateWithPrefix,
   formatContainerDate,
-  type DateFormatOptions
+  type DateFormatOptions,
 } from "../lib/date-utils";
 
 /**
@@ -14,36 +14,42 @@ import {
  */
 export function useFormattedDate() {
   const { data: preferences } = useUserPreferences();
-  
+
   const timezone = preferences?.timezone;
 
   const formatters = useMemo(() => {
     const baseOptions: DateFormatOptions = { timezone };
-    
+
     return {
       /**
        * Formats a date as a full date and time string with user's timezone
        * @param date - Date to format
        * @param options - Additional formatting options
        */
-      formatDateTime: (date: string | Date | number, options: DateFormatOptions = {}) =>
-        formatDateTime(date, { ...baseOptions, ...options }),
+      formatDateTime: (
+        date: string | Date | number,
+        options: DateFormatOptions = {},
+      ) => formatDateTime(date, { ...baseOptions, ...options }),
 
       /**
        * Formats a date as just the date part with user's timezone
        * @param date - Date to format
        * @param options - Additional formatting options
        */
-      formatDate: (date: string | Date | number, options: DateFormatOptions = {}) =>
-        formatDate(date, { ...baseOptions, ...options }),
+      formatDate: (
+        date: string | Date | number,
+        options: DateFormatOptions = {},
+      ) => formatDate(date, { ...baseOptions, ...options }),
 
       /**
        * Formats a date as just the time part with user's timezone
        * @param date - Date to format
        * @param options - Additional formatting options
        */
-      formatTime: (date: string | Date | number, options: DateFormatOptions = {}) =>
-        formatTime(date, { ...baseOptions, ...options }),
+      formatTime: (
+        date: string | Date | number,
+        options: DateFormatOptions = {},
+      ) => formatTime(date, { ...baseOptions, ...options }),
 
       /**
        * Formats a date with a prefix (e.g., "started") using user's timezone
@@ -54,7 +60,7 @@ export function useFormattedDate() {
       formatDateWithPrefix: (
         date: string | Date | number,
         prefix: string,
-        options: DateFormatOptions = {}
+        options: DateFormatOptions = {},
       ) => formatDateWithPrefix(date, prefix, { ...baseOptions, ...options }),
 
       /**
@@ -62,8 +68,10 @@ export function useFormattedDate() {
        * @param date - Date to format
        * @param options - Additional formatting options
        */
-      formatContainerDate: (date: string | Date | number, options: DateFormatOptions = {}) =>
-        formatContainerDate(date, { ...baseOptions, ...options }),
+      formatContainerDate: (
+        date: string | Date | number,
+        options: DateFormatOptions = {},
+      ) => formatContainerDate(date, { ...baseOptions, ...options }),
 
       /**
        * The user's current timezone setting
@@ -73,7 +81,7 @@ export function useFormattedDate() {
       /**
        * Whether user preferences are still loading
        */
-      isLoading: !preferences && timezone === undefined
+      isLoading: !preferences && timezone === undefined,
     };
   }, [timezone, preferences]);
 
@@ -88,7 +96,7 @@ export function useFormattedDate() {
  */
 export function useFormattedDateTime(
   date: string | Date | number | null | undefined,
-  options: DateFormatOptions = {}
+  options: DateFormatOptions = {},
 ) {
   const { formatDateTime, timezone } = useFormattedDate();
 
@@ -104,7 +112,7 @@ export function useFormattedDateTime(
  * @param date - Date to format
  */
 export function useFormattedContainerDate(
-  date: string | Date | number | null | undefined
+  date: string | Date | number | null | undefined,
 ) {
   const { formatContainerDate, timezone } = useFormattedDate();
 

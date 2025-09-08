@@ -128,9 +128,7 @@ function OperationProgressCard({
 
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center space-x-4">
-              <span>
-                Started: {formatTime(operation.startedAt)}
-              </span>
+              <span>Started: {formatTime(operation.startedAt)}</span>
               {operation.currentStep && (
                 <span>Step: {operation.currentStep}</span>
               )}

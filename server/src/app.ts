@@ -58,7 +58,8 @@ app.use(helmetMiddleware);
 app.use(
   cors({
     origin:
-      appConfig.server.publicUrl || (appConfig.server.nodeEnv === "development" ? true : false),
+      appConfig.server.publicUrl ||
+      (appConfig.server.nodeEnv === "development" ? true : false),
     credentials: true,
     optionsSuccessStatus: 200,
   }),
@@ -103,6 +104,8 @@ import postgresRestoreRoutes from "./routes/postgres-restore";
 import postgresProgressRoutes from "./routes/postgres-progress";
 import userPreferencesRoutes from "./routes/user-preferences";
 import systemSettingsRoutes from "./routes/system-settings";
+import deploymentInfrastructureRoutes from "./routes/deployment-infrastructure";
+import deploymentsRoutes from "./routes/deployments";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -123,6 +126,8 @@ app.use("/api/postgres", postgresBackupsRoutes);
 app.use("/api/postgres", postgresRestoreRoutes);
 app.use("/api/postgres/progress", postgresProgressRoutes);
 app.use("/api/user", userPreferencesRoutes);
+app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
+app.use("/api/deployments", deploymentsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {

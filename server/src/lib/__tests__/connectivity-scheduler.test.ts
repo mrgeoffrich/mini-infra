@@ -13,7 +13,7 @@ jest.mock("../../lib/logger-factory", () => {
     warn: jest.fn(),
     debug: jest.fn(),
   };
-  
+
   return {
     appLogger: jest.fn(() => mockLoggerInstance),
     servicesLogger: jest.fn(() => mockLoggerInstance),
@@ -104,7 +104,11 @@ describe("ConnectivityScheduler", () => {
       }
     });
 
-    scheduler = new ConnectivityScheduler(mockPrisma as unknown as typeof prisma, 5000, fakeDelayFn); // 5 second interval for testing
+    scheduler = new ConnectivityScheduler(
+      mockPrisma as unknown as typeof prisma,
+      5000,
+      fakeDelayFn,
+    ); // 5 second interval for testing
   });
 
   afterEach(() => {
@@ -121,7 +125,9 @@ describe("ConnectivityScheduler", () => {
     });
 
     it("should initialize with default 5-minute interval", () => {
-      const defaultScheduler = new ConnectivityScheduler(mockPrisma as unknown as typeof prisma);
+      const defaultScheduler = new ConnectivityScheduler(
+        mockPrisma as unknown as typeof prisma,
+      );
       expect(defaultScheduler.getCheckInterval()).toBe(5 * 60 * 1000);
     });
 
@@ -412,7 +418,10 @@ describe("ConnectivityScheduler", () => {
         return mockCloudflareService;
       });
 
-      const newScheduler = new ConnectivityScheduler(mockPrisma as unknown as typeof prisma, 5000);
+      const newScheduler = new ConnectivityScheduler(
+        mockPrisma as unknown as typeof prisma,
+        5000,
+      );
 
       // Should still be able to start despite one service failing
       expect(() => newScheduler.start()).not.toThrow();

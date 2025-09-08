@@ -10,7 +10,8 @@ const logger = appLogger();
  * Automatically creates a default user and API key for Claude to use in development mode
  */
 
-const DEV_USER_EMAIL = process.env.CLAUDE_DEV_USER_EMAIL || "claude@development.local";
+const DEV_USER_EMAIL =
+  process.env.CLAUDE_DEV_USER_EMAIL || "claude@development.local";
 const DEV_USER_NAME = "Claude Development";
 const DEV_API_KEY_NAME = "Claude Development Key";
 
@@ -28,7 +29,9 @@ export interface DevApiKeyResult {
 export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
   // Only run in development mode
   if (appConfig.server.nodeEnv !== "development") {
-    logger.debug("Not in development mode, skipping dev API key initialization");
+    logger.debug(
+      "Not in development mode, skipping dev API key initialization",
+    );
     return null;
   }
 
@@ -40,12 +43,12 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
       where: { email: DEV_USER_EMAIL },
       include: {
         apiKeys: {
-          where: { 
+          where: {
             name: DEV_API_KEY_NAME,
-            active: true 
-          }
-        }
-      }
+            active: true,
+          },
+        },
+      },
     });
 
     let isNewKey = false;
@@ -59,45 +62,46 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
           name: DEV_USER_NAME,
         },
         include: {
-          apiKeys: true
-        }
+          apiKeys: true,
+        },
       });
       logger.info(`Development user created with ID: ${devUser.id}`);
     }
 
     // Check if we have an active API key
-    let activeApiKey = devUser.apiKeys.find(key => key.name === DEV_API_KEY_NAME && key.active);
+    let activeApiKey = devUser.apiKeys.find(
+      (key) => key.name === DEV_API_KEY_NAME && key.active,
+    );
 
     // Create API key if none exists
     if (!activeApiKey) {
       logger.info("Creating development API key for Claude");
       const apiKeyResponse = await createApiKey(devUser.id, {
-        name: DEV_API_KEY_NAME
+        name: DEV_API_KEY_NAME,
       });
-      
+
       isNewKey = true;
-      
+
       logger.info(`Development API key created with ID: ${apiKeyResponse.id}`);
-      
+
       return {
         userId: devUser.id,
         apiKey: apiKeyResponse.key,
         keyId: apiKeyResponse.id,
-        isNewKey
+        isNewKey,
       };
     } else {
       logger.info("Development API key already exists, using existing key");
-      
+
       // We can't retrieve the raw key from the database since it's hashed
       // For development, we'll show a message that the key exists
       return {
         userId: devUser.id,
         apiKey: "[EXISTING_KEY_HIDDEN]",
         keyId: activeApiKey.id,
-        isNewKey: false
+        isNewKey: false,
       };
     }
-
   } catch (error) {
     logger.error({ error }, "Failed to initialize development API key");
     throw new Error("Failed to initialize development API key");
@@ -127,12 +131,12 @@ export async function getDevApiKeyInfo(): Promise<{
       where: { email: DEV_USER_EMAIL },
       include: {
         apiKeys: {
-          where: { 
+          where: {
             name: DEV_API_KEY_NAME,
-            active: true 
-          }
-        }
-      }
+            active: true,
+          },
+        },
+      },
     });
 
     if (!devUser || devUser.apiKeys.length === 0) {
@@ -140,7 +144,7 @@ export async function getDevApiKeyInfo(): Promise<{
     }
 
     const apiKey = devUser.apiKeys[0];
-    
+
     return {
       userId: devUser.id,
       keyId: apiKey.id,
@@ -148,9 +152,8 @@ export async function getDevApiKeyInfo(): Promise<{
       userEmail: devUser.email,
       userName: devUser.name || DEV_USER_NAME,
       createdAt: apiKey.createdAt.toISOString(),
-      lastUsedAt: apiKey.lastUsedAt?.toISOString() || null
+      lastUsedAt: apiKey.lastUsedAt?.toISOString() || null,
     };
-
   } catch (error) {
     logger.error({ error }, "Failed to get development API key info");
     return null;
@@ -175,9 +178,9 @@ export async function recreateDevApiKey(): Promise<DevApiKeyResult | null> {
       where: { email: DEV_USER_EMAIL },
       include: {
         apiKeys: {
-          where: { name: DEV_API_KEY_NAME }
-        }
-      }
+          where: { name: DEV_API_KEY_NAME },
+        },
+      },
     });
 
     if (!devUser) {
@@ -187,30 +190,33 @@ export async function recreateDevApiKey(): Promise<DevApiKeyResult | null> {
 
     // Revoke existing keys with the same name
     if (devUser.apiKeys.length > 0) {
-      logger.info(`Revoking ${devUser.apiKeys.length} existing development API key(s)`);
+      logger.info(
+        `Revoking ${devUser.apiKeys.length} existing development API key(s)`,
+      );
       await prisma.apiKey.updateMany({
         where: {
           userId: devUser.id,
-          name: DEV_API_KEY_NAME
+          name: DEV_API_KEY_NAME,
         },
-        data: { active: false }
+        data: { active: false },
       });
     }
 
     // Create new API key
     const apiKeyResponse = await createApiKey(devUser.id, {
-      name: DEV_API_KEY_NAME
+      name: DEV_API_KEY_NAME,
     });
-    
-    logger.info(`New development API key created with ID: ${apiKeyResponse.id}`);
-    
+
+    logger.info(
+      `New development API key created with ID: ${apiKeyResponse.id}`,
+    );
+
     return {
       userId: devUser.id,
       apiKey: apiKeyResponse.key,
       keyId: apiKeyResponse.id,
-      isNewKey: true
+      isNewKey: true,
     };
-
   } catch (error) {
     logger.error({ error }, "Failed to recreate development API key");
     throw error;

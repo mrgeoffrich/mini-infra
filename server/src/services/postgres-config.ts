@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
@@ -20,7 +20,7 @@ export class DatabaseConfigService {
   private prisma: PrismaClient;
   private encryptionKey: string;
 
-  constructor(prisma: typeof prisma, encryptionKey?: string) {
+  constructor(prisma: PrismaClient, encryptionKey?: string) {
     this.prisma = prisma;
     // Use provided encryption key or default from env
     this.encryptionKey =
@@ -447,7 +447,7 @@ export class DatabaseConfigService {
         skip: offset,
       });
 
-      return databases.map((db) => this.toDatabaseInfo(db));
+      return databases.map((db: any) => this.toDatabaseInfo(db));
     } catch (error) {
       servicesLogger().error(
         {

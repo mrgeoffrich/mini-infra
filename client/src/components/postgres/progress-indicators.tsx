@@ -30,7 +30,11 @@ export function ProgressIndicators({
 
   return (
     <div className={className}>
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "active" | "history")} className="w-full">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "active" | "history")}
+        className="w-full"
+      >
         <div className="flex items-center justify-between mb-4">
           <TabsList className="grid w-auto grid-cols-2">
             <TabsTrigger value="active" className="flex items-center space-x-2">

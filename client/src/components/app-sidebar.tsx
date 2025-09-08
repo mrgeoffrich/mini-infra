@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconDatabase,
   IconInnerShadowTop,
+  IconKey,
   IconRocket,
   IconSettings,
 } from "@tabler/icons-react";
@@ -52,6 +53,11 @@ const data = {
       icon: IconCloud,
     },
     {
+      title: "API Keys",
+      url: "/api-keys",
+      icon: IconKey,
+    },
+    {
       title: "Connectivity",
       url: "/connectivity",
       icon: IconSettings,
@@ -82,7 +88,6 @@ const data = {
     },
   ],
 };
-
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (

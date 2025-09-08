@@ -160,7 +160,7 @@ export function BackupConfigurationModal({
       toast.error(
         `Failed to delete backup configuration: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };
@@ -173,7 +173,7 @@ export function BackupConfigurationModal({
       toast.error(
         `Failed to trigger manual backup: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };
@@ -271,7 +271,10 @@ export function BackupConfigurationModal({
               render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Timezone</FormLabel>
-                  <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+                  <Popover
+                    open={timezonePopoverOpen}
+                    onOpenChange={setTimezonePopoverOpen}
+                  >
                     <PopoverTrigger asChild>
                       <FormControl>
                         <Button
@@ -279,17 +282,22 @@ export function BackupConfigurationModal({
                           role="combobox"
                           className={cn(
                             "w-full justify-between",
-                            !field.value && "text-muted-foreground"
+                            !field.value && "text-muted-foreground",
                           )}
                         >
                           {field.value
-                            ? timezones?.find((timezone) => timezone.value === field.value)?.label
+                            ? timezones?.find(
+                                (timezone) => timezone.value === field.value,
+                              )?.label
                             : "Select a timezone"}
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </FormControl>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[400px] max-w-[400px] p-0" align="start">
+                    <PopoverContent
+                      className="w-[400px] max-w-[400px] p-0"
+                      align="start"
+                    >
                       <Command>
                         <CommandInput placeholder="Search timezones..." />
                         <CommandList>
@@ -309,7 +317,7 @@ export function BackupConfigurationModal({
                                     "mr-2 h-4 w-4",
                                     timezone.value === field.value
                                       ? "opacity-100"
-                                      : "opacity-0"
+                                      : "opacity-0",
                                   )}
                                 />
                                 {timezone.label}
@@ -321,12 +329,13 @@ export function BackupConfigurationModal({
                     </PopoverContent>
                   </Popover>
                   <FormDescription>
-                    Timezone for the backup schedule. Current time: {" "}
-                    {form.watch("timezone") && new Date().toLocaleString("en-US", { 
-                      timeZone: form.watch("timezone") || "UTC",
-                      dateStyle: "short",
-                      timeStyle: "medium"
-                    })}
+                    Timezone for the backup schedule. Current time:{" "}
+                    {form.watch("timezone") &&
+                      new Date().toLocaleString("en-US", {
+                        timeZone: form.watch("timezone") || "UTC",
+                        dateStyle: "short",
+                        timeStyle: "medium",
+                      })}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -339,11 +348,18 @@ export function BackupConfigurationModal({
                 <Clock className="w-4 h-4" />
                 <span>
                   Next backup scheduled for:{" "}
-                  {new Date(backupConfig.nextScheduledAt).toLocaleString("en-US", {
-                    timeZone: form.watch("timezone") || backupConfig.timezone || "UTC",
-                    dateStyle: "medium",
-                    timeStyle: "short"
-                  })} ({form.watch("timezone") || backupConfig.timezone || "UTC"})
+                  {new Date(backupConfig.nextScheduledAt).toLocaleString(
+                    "en-US",
+                    {
+                      timeZone:
+                        form.watch("timezone") ||
+                        backupConfig.timezone ||
+                        "UTC",
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    },
+                  )}{" "}
+                  ({form.watch("timezone") || backupConfig.timezone || "UTC"})
                 </span>
               </div>
             )}

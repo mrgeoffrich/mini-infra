@@ -15,7 +15,7 @@ export class BackupConfigService {
   private prisma: PrismaClient;
   private azureConfigService: AzureConfigService;
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.azureConfigService = new AzureConfigService(prisma);
   }
@@ -59,7 +59,8 @@ export class BackupConfigService {
       let timezone = config.timezone;
       if (!timezone) {
         try {
-          const userPreferences = await UserPreferencesService.getUserPreferences(userId);
+          const userPreferences =
+            await UserPreferencesService.getUserPreferences(userId);
           timezone = userPreferences.timezone || "UTC";
         } catch (error) {
           timezone = "UTC"; // fallback to UTC if user preferences fails
@@ -121,7 +122,7 @@ export class BackupConfigService {
               timezone,
               userId,
             );
-            
+
             // Enable the schedule if the config is enabled
             if (config.isEnabled ?? true) {
               await scheduler.enableSchedule(databaseId);
@@ -131,7 +132,10 @@ export class BackupConfigService {
               {
                 configId: createdConfig.id,
                 databaseId: databaseId,
-                scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+                scheduleError:
+                  scheduleError instanceof Error
+                    ? scheduleError.message
+                    : "Unknown error",
               },
               "Failed to register backup schedule, but configuration was created",
             );
@@ -209,7 +213,10 @@ export class BackupConfigService {
       }
 
       // Validate timezone if provided
-      if (updates.timezone && !UserPreferencesService.validateTimezone(updates.timezone)) {
+      if (
+        updates.timezone &&
+        !UserPreferencesService.validateTimezone(updates.timezone)
+      ) {
         throw new Error(`Invalid timezone: ${updates.timezone}`);
       }
 
@@ -262,7 +269,11 @@ export class BackupConfigService {
       }
 
       // Recalculate next scheduled time if schedule, timezone, or enabled status changed
-      if (updates.schedule !== undefined || updates.timezone !== undefined || updates.isEnabled !== undefined) {
+      if (
+        updates.schedule !== undefined ||
+        updates.timezone !== undefined ||
+        updates.isEnabled !== undefined
+      ) {
         const finalSchedule = updates.schedule ?? existingConfig.schedule;
         const finalTimezone = updates.timezone ?? existingConfig.timezone;
         const finalEnabled = updates.isEnabled ?? existingConfig.isEnabled;
@@ -281,7 +292,12 @@ export class BackupConfigService {
 
       // Update scheduler if schedule-related fields changed
       const scheduler = BackupSchedulerService.getInstance();
-      if (scheduler && (updates.schedule !== undefined || updates.timezone !== undefined || updates.isEnabled !== undefined)) {
+      if (
+        scheduler &&
+        (updates.schedule !== undefined ||
+          updates.timezone !== undefined ||
+          updates.isEnabled !== undefined)
+      ) {
         try {
           const finalSchedule = updates.schedule ?? existingConfig.schedule;
           const finalTimezone = updates.timezone ?? existingConfig.timezone;
@@ -311,7 +327,10 @@ export class BackupConfigService {
             {
               configId: configId,
               databaseId: existingConfig.databaseId,
-              scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+              scheduleError:
+                scheduleError instanceof Error
+                  ? scheduleError.message
+                  : "Unknown error",
             },
             "Failed to update backup schedule, but configuration was updated",
           );
@@ -406,7 +425,10 @@ export class BackupConfigService {
             {
               configId: configId,
               databaseId: config.databaseId,
-              scheduleError: scheduleError instanceof Error ? scheduleError.message : "Unknown error",
+              scheduleError:
+                scheduleError instanceof Error
+                  ? scheduleError.message
+                  : "Unknown error",
             },
             "Failed to unregister backup schedule during deletion",
           );
@@ -453,7 +475,10 @@ export class BackupConfigService {
   /**
    * Calculate next scheduled backup time
    */
-  calculateNextScheduledTime(cronExpression: string, timezone: string = "UTC"): Date | null {
+  calculateNextScheduledTime(
+    cronExpression: string,
+    timezone: string = "UTC",
+  ): Date | null {
     try {
       if (!this.isValidCronExpression(cronExpression)) {
         return null;
@@ -462,9 +487,9 @@ export class BackupConfigService {
       // Use cron-parser for accurate next execution time calculation with timezone support
       const interval = CronExpressionParser.parse(cronExpression, {
         tz: timezone,
-        currentDate: new Date()
+        currentDate: new Date(),
       });
-      
+
       return interval.next().toDate();
     } catch (error) {
       servicesLogger().error(

@@ -1,6 +1,10 @@
 import app from "./app";
 import appConfig from "./lib/config-new";
-import { appLogger, clearLoggerCache, serializeError } from "./lib/logger-factory";
+import {
+  appLogger,
+  clearLoggerCache,
+  serializeError,
+} from "./lib/logger-factory";
 
 // Clear logger cache on startup to ensure new configuration is loaded
 clearLoggerCache();
@@ -56,9 +60,7 @@ const initializeServices = async () => {
           },
           "🔑 Development API key created for Claude",
         );
-        logger.info(
-          `🔑 Claude API Key: ${devApiKeyResult.apiKey}`,
-        );
+        logger.info(`🔑 Claude API Key: ${devApiKeyResult.apiKey}`);
         logger.info(
           "💡 Use this API key in Authorization header: Bearer <key> or x-api-key header",
         );
@@ -125,7 +127,7 @@ startServer()
         connectivityScheduler.stop();
         logger.info("Connectivity scheduler stopped");
       }
-      
+
       if (backupScheduler) {
         await backupScheduler.shutdown();
         logger.info("Backup scheduler stopped");
@@ -169,7 +171,7 @@ process.on("uncaughtException", (err) => {
       errorType: err?.constructor?.name || "Unknown",
       pid: process.pid,
     },
-    "Uncaught Exception - Server shutting down"
+    "Uncaught Exception - Server shutting down",
   );
   process.exit(1);
 });
