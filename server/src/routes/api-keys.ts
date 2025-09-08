@@ -9,6 +9,7 @@ import {
   getApiKeyStats,
 } from "../lib/api-key-service";
 import { appLogger } from "../lib/logger-factory";
+import { requireSessionOrApiKey, getCurrentUserId } from "../lib/api-key-middleware";
 
 const logger = appLogger();
 import type { CreateApiKeyRequest } from "@mini-infra/types";
@@ -27,31 +28,14 @@ const createApiKeySchema = z.object({
     ),
 });
 
-/**
- * Middleware to ensure user is authenticated (session required for API key management)
- */
-function requireAuth(req: Request, res: Response, next: () => void) {
-  if (!req.user) {
-    logger.warn(
-      { path: req.path },
-      "API key management attempted without authentication",
-    );
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be logged in to manage API keys",
-    });
-  }
-  next();
-}
-
-// Apply authentication to all routes
-router.use(requireAuth as RequestHandler);
+// Apply authentication to all routes (allows both session and API key auth)
+router.use(requireSessionOrApiKey as RequestHandler);
 
 /**
  * GET /api/keys - Get all API keys for the current user
  */
 router.get("/", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const requestId = req.headers["x-request-id"] as string;
 
   try {
@@ -77,7 +61,7 @@ router.get("/", (async (req: Request, res: Response) => {
  * POST /api/keys - Create a new API key
  */
 router.post("/", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const requestId = req.headers["x-request-id"] as string;
 
   try {
@@ -124,7 +108,7 @@ router.post("/", (async (req: Request, res: Response) => {
  * PATCH /api/keys/:keyId/revoke - Revoke (deactivate) an API key
  */
 router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -161,7 +145,7 @@ router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
  * POST /api/keys/:keyId/rotate - Rotate an API key (create new, deactivate old)
  */
 router.post("/:keyId/rotate", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -200,7 +184,7 @@ router.post("/:keyId/rotate", (async (req: Request, res: Response) => {
  * DELETE /api/keys/:keyId - Permanently delete an API key
  */
 router.delete("/:keyId", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const { keyId } = req.params;
   const requestId = req.headers["x-request-id"] as string;
 
@@ -237,7 +221,7 @@ router.delete("/:keyId", (async (req: Request, res: Response) => {
  * GET /api/keys/stats - Get API key statistics for the current user
  */
 router.get("/stats", (async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  const userId = getCurrentUserId(req)!;
   const requestId = req.headers["x-request-id"] as string;
 
   try {
