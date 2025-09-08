@@ -1,6 +1,8 @@
 import prisma, { PrismaClient } from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 import { ConfigurationService } from "./configuration-base";
+import { ContainerLifecycleManager } from "./container-lifecycle-manager";
+import DockerService from "./docker";
 import NodeCache from "node-cache";
 import { z } from "zod";
 import { SettingsCategory } from "@mini-infra/types";
@@ -111,6 +113,8 @@ export const updateDeploymentConfigSchema = z.object({
 
 export class DeploymentConfigService extends ConfigurationService {
   private cache: NodeCache;
+  private dockerService: DockerService;
+  private containerManager: ContainerLifecycleManager;
 
   constructor(prismaInstance: PrismaClient, encryptionKey?: string) {
     super(prismaInstance, "deployments" as SettingsCategory);
@@ -121,6 +125,10 @@ export class DeploymentConfigService extends ConfigurationService {
       checkperiod: 60, // check for expired keys every 60 seconds
       useClones: false,
     });
+
+    // Initialize Docker service and container manager for cleanup operations
+    this.dockerService = DockerService.getInstance();
+    this.containerManager = new ContainerLifecycleManager();
   }
 
   // ====================
@@ -536,6 +544,40 @@ export class DeploymentConfigService extends ConfigurationService {
         throw new Error("Deployment configuration not found or access denied");
       }
 
+      const logger = servicesLogger();
+      const applicationName = config.applicationName;
+
+      logger.info(
+        {
+          configId: configId,
+          applicationName,
+          userId: userId,
+        },
+        "Starting deployment configuration deletion with container cleanup",
+      );
+
+      // Clean up any running containers for this application before deletion
+      try {
+        await this.cleanupApplicationContainers(applicationName);
+        logger.info(
+          {
+            configId: configId,
+            applicationName,
+          },
+          "Successfully cleaned up application containers",
+        );
+      } catch (cleanupError) {
+        // Log cleanup error but continue with deletion
+        logger.warn(
+          {
+            configId: configId,
+            applicationName,
+            error: cleanupError instanceof Error ? cleanupError.message : "Unknown cleanup error",
+          },
+          "Failed to cleanup containers during deletion - continuing with database deletion",
+        );
+      }
+
       // Delete configuration (cascade will handle related deployments)
       await this.prisma.deploymentConfiguration.delete({
         where: { id: configId },
@@ -544,13 +586,13 @@ export class DeploymentConfigService extends ConfigurationService {
       // Clear cache
       this.clearCache(userId);
 
-      servicesLogger().info(
+      logger.info(
         {
           configId: configId,
-          applicationName: config.applicationName,
+          applicationName,
           userId: userId,
         },
-        "Deployment configuration deleted",
+        "Deployment configuration deleted successfully",
       );
     } catch (error) {
       servicesLogger().error(
@@ -560,6 +602,82 @@ export class DeploymentConfigService extends ConfigurationService {
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to delete deployment configuration",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up all containers for a given application
+   */
+  private async cleanupApplicationContainers(applicationName: string): Promise<void> {
+    const logger = servicesLogger();
+    
+    try {
+      // Find all containers with the application label
+      const containers = await this.dockerService.listContainers();
+      const appContainers = containers.filter((container: any) => {
+        const labels = container.labels || {};
+        return labels["mini-infra.application"] === applicationName;
+      });
+
+      if (appContainers.length === 0) {
+        logger.info(
+          { applicationName },
+          "No containers found for application - skipping cleanup",
+        );
+        return;
+      }
+
+      logger.info(
+        { 
+          applicationName, 
+          containerCount: appContainers.length,
+          containerIds: appContainers.map((c: any) => c.id.slice(0, 12)),
+        },
+        "Found containers to clean up for application",
+      );
+
+      // Stop and remove each container
+      for (const container of appContainers) {
+        const containerId = container.id;
+        const containerName = container.name || containerId;
+        
+        try {
+          logger.info(
+            { applicationName, containerId: containerId.slice(0, 12), containerName },
+            "Stopping and removing container",
+          );
+          
+          // Stop the container with a 30 second timeout
+          await this.containerManager.stopContainer(containerId, 30);
+          
+          // Remove the container (force=true to handle any remaining processes)
+          await this.containerManager.removeContainer(containerId, true);
+          
+          logger.info(
+            { applicationName, containerId: containerId.slice(0, 12), containerName },
+            "Successfully cleaned up container",
+          );
+        } catch (containerError) {
+          logger.warn(
+            { 
+              applicationName, 
+              containerId: containerId.slice(0, 12),
+              containerName,
+              error: containerError instanceof Error ? containerError.message : "Unknown error",
+            },
+            "Failed to cleanup individual container - continuing with others",
+          );
+        }
+      }
+    } catch (error) {
+      logger.error(
+        {
+          applicationName,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to cleanup application containers",
       );
       throw error;
     }

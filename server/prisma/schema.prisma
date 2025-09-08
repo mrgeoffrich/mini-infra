@@ -241,7 +241,7 @@ model DeploymentConfiguration {
 model Deployment {
   id                String   @id @default(cuid())
   configurationId   String
-  configuration     DeploymentConfiguration @relation(fields: [configurationId], references: [id])
+  configuration     DeploymentConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
   triggerType       String   // 'manual', 'webhook', 'scheduled'
   triggeredBy       String?  // User ID or API key ID
   dockerImage       String   // Full image with tag
