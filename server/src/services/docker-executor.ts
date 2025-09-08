@@ -10,6 +10,8 @@ export interface ContainerExecutionOptions {
   timeout?: number; // in milliseconds
   removeContainer?: boolean;
   outputHandler?: (stream: Readable) => void;
+  cmd?: string[]; // Custom command to run in container
+  networkMode?: string; // Docker network to attach to
 }
 
 export interface ContainerExecutionResult {
@@ -328,7 +330,7 @@ export class DockerExecutorService {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions = {
+      const containerOptions: any = {
         Image: options.image,
         Env: env,
         AttachStdout: true,
@@ -342,6 +344,16 @@ export class DockerExecutorService {
           CpuShares: 1024, // Standard CPU allocation
         },
       };
+
+      // Add custom command if provided
+      if (options.cmd) {
+        containerOptions.Cmd = options.cmd;
+      }
+
+      // Add network mode if provided
+      if (options.networkMode) {
+        containerOptions.HostConfig.NetworkMode = options.networkMode;
+      }
 
       return await this.docker.createContainer(containerOptions);
     } catch (error) {

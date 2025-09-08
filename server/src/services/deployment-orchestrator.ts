@@ -3,6 +3,7 @@ import { deploymentLogger } from "../lib/logger-factory";
 import { ContainerLifecycleManager } from "./container-lifecycle-manager";
 import { TraefikIntegrationService } from "./traefik-integration";
 import { HealthCheckService } from "./health-check";
+import { NetworkHealthCheckService } from "./network-health-check";
 import { DockerExecutorService } from "./docker-executor";
 import prisma from "../lib/prisma";
 import {
@@ -412,6 +413,7 @@ export class DeploymentOrchestrator {
   private containerManager: ContainerLifecycleManager;
   private traefikService: TraefikIntegrationService;
   private healthCheckService: HealthCheckService;
+  private networkHealthCheckService: NetworkHealthCheckService;
   private dockerExecutor: DockerExecutorService;
   private activeDeployments: Map<string, any> = new Map();
 
@@ -419,6 +421,7 @@ export class DeploymentOrchestrator {
     this.containerManager = new ContainerLifecycleManager();
     this.traefikService = new TraefikIntegrationService();
     this.healthCheckService = new HealthCheckService();
+    this.networkHealthCheckService = new NetworkHealthCheckService();
     this.dockerExecutor = new DockerExecutorService();
   }
 
@@ -427,6 +430,7 @@ export class DeploymentOrchestrator {
    */
   async initialize(): Promise<void> {
     await this.dockerExecutor.initialize();
+    await this.networkHealthCheckService.initialize();
   }
 
   // ====================
@@ -627,7 +631,7 @@ export class DeploymentOrchestrator {
         context.deploymentId,
         "health_check",
         "running",
-        "Performing health checks",
+        "Performing network-aware health checks",
       );
 
       deploymentLogger().info(
@@ -635,39 +639,55 @@ export class DeploymentOrchestrator {
           deploymentId: context.deploymentId,
           containerId: context.newContainerId,
         },
-        "Performing health checks",
+        "Performing network-aware health checks",
       );
 
-      // Construct health check URL
+      // Ensure container is running
       const containerInfo = await this.containerManager.getContainerStatus(context.newContainerId);
       if (!containerInfo || containerInfo.status !== "running") {
         throw new Error("Container is not running");
       }
 
-      // Get port mapping for health check
+      // Get container name and port for network health check
       const healthCheckConfig = context.config.healthCheck;
-      const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80);
-      const healthCheckUrl = portConfig?.hostPort 
-        ? `http://localhost:${portConfig.hostPort}${healthCheckConfig.endpoint}`
-        : `http://localhost${healthCheckConfig.endpoint}`;
+      const containerName = `${context.config.applicationName}-${context.targetColor}`;
+      
+      // Find the appropriate container port (prioritize port 80, then first available port)
+      const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80) ||
+                        context.config.containerConfig.ports[0];
+      
+      if (!portConfig) {
+        throw new Error("No container port configuration found for health check");
+      }
 
-      // Perform health check
-      const result = await this.healthCheckService.performHealthCheck({
-        endpoint: healthCheckUrl,
-        method: healthCheckConfig.method,
-        expectedStatuses: healthCheckConfig.expectedStatus,
-        responseBodyPattern: healthCheckConfig.responseValidation,
-        timeout: healthCheckConfig.timeout,
-        retries: healthCheckConfig.retries,
-        retryDelay: healthCheckConfig.interval,
-      });
+      const containerPort = portConfig.containerPort;
+
+      deploymentLogger().debug(
+        {
+          deploymentId: context.deploymentId,
+          containerName,
+          containerPort,
+          endpoint: healthCheckConfig.endpoint,
+        },
+        "Performing network health check using curl container",
+      );
+
+      // Convert to network health check configuration
+      const networkConfig = this.networkHealthCheckService.convertHealthCheckConfig(
+        containerName,
+        containerPort,
+        healthCheckConfig,
+      );
+
+      // Perform network health check using curl container
+      const result = await this.networkHealthCheckService.performNetworkHealthCheck(networkConfig);
 
       // Update step as completed
       await this.updateDeploymentStep(
         context.deploymentId,
         "health_check",
         "completed",
-        "Health checks passed successfully",
+        "Network health checks passed successfully",
       );
 
       // Store health check results in database
@@ -681,9 +701,11 @@ export class DeploymentOrchestrator {
         {
           deploymentId: context.deploymentId,
           containerId: context.newContainerId,
+          containerName,
+          containerPort,
           healthCheckResult: result,
         },
-        "Health checks passed successfully",
+        "Network health checks passed successfully",
       );
 
       return { healthCheckResult: result };
@@ -697,7 +719,7 @@ export class DeploymentOrchestrator {
           containerId: context.newContainerId,
           error: errorMessage,
         },
-        "Health check failed",
+        "Network health check failed",
       );
 
       throw new Error(errorMessage);
