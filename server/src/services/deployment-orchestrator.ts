@@ -117,14 +117,15 @@ const deploymentStateMachine = createMachine(
         on: {
           START_DEPLOYMENT: {
             target: "preparing",
-            actions: ["initializeDeployment", "logDeploymentStart"],
+            actions: ["logDeploymentStart"],
           },
         },
       },
       preparing: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "preparing" })),
         invoke: {
           src: "pullDockerImage",
+          input: ({ context }) => context,
           onDone: {
             target: "deploying",
             actions: ["logImagePulled"],
@@ -136,9 +137,10 @@ const deploymentStateMachine = createMachine(
         },
       },
       deploying: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "deploying" })),
         invoke: {
           src: "createAndStartContainer",
+          input: ({ context }) => context,
           onDone: {
             target: "health_checking",
             actions: ["setNewContainerId", "logContainerCreated"],
@@ -150,9 +152,10 @@ const deploymentStateMachine = createMachine(
         },
       },
       health_checking: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "health_checking" })),
         invoke: {
           src: "performHealthChecks",
+          input: ({ context }) => context,
           onDone: {
             target: "switching_traffic",
             actions: ["setHealthCheckPassed", "logHealthCheckPassed"],
@@ -171,9 +174,10 @@ const deploymentStateMachine = createMachine(
         },
       },
       switching_traffic: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "switching_traffic" })),
         invoke: {
           src: "switchTrafficToNewContainer",
+          input: ({ context }) => context,
           onDone: {
             target: "cleanup",
             actions: ["logTrafficSwitched"],
@@ -185,9 +189,10 @@ const deploymentStateMachine = createMachine(
         },
       },
       cleanup: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "cleanup" })),
         invoke: {
           src: "cleanupOldContainer",
+          input: ({ context }) => context,
           onDone: {
             target: "completed",
             actions: ["calculateDeploymentTime", "logDeploymentCompleted"],
@@ -203,7 +208,7 @@ const deploymentStateMachine = createMachine(
         entry: ["finalizeDeployment", "logFinalState"],
       },
       failed: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "failed" })),
         on: {
           FORCE_ROLLBACK: "rolling_back",
           RETRY: [
@@ -216,9 +221,10 @@ const deploymentStateMachine = createMachine(
         },
       },
       rolling_back: {
-        entry: ["setCurrentStep"],
+        entry: assign(() => ({ currentStep: "rolling_back" })),
         invoke: {
           src: "performRollback",
+          input: ({ context }) => context,
           onDone: {
             target: "completed",
             actions: ["logRollbackCompleted", "calculateDeploymentTime"],
@@ -233,72 +239,50 @@ const deploymentStateMachine = createMachine(
   },
   {
     actions: {
-      initializeDeployment: assign(({ context, input }) => ({
-        ...context,
-        ...input,
-        startTime: Date.now(),
-        currentStep: "preparing",
-        retryCount: 0,
-        errorMessage: null,
-        errorDetails: null,
-      })),
-      setCurrentStep: assign(({ context }) => ({
-        ...context,
-        currentStep: context.currentStep,
-      })),
-      setNewContainerId: assign(({ context, event }) => ({
-        ...context,
+      setNewContainerId: assign(({ event }) => ({
         newContainerId: (event as any).output?.containerId || null,
       })),
-      setHealthCheckPassed: assign(({ context }) => ({
-        ...context,
+      setHealthCheckPassed: assign(() => ({
         healthCheckPassed: true,
       })),
       incrementRetryCount: assign(({ context }) => ({
-        ...context,
         retryCount: context.retryCount + 1,
       })),
-      resetForRetry: assign(({ context }) => ({
-        ...context,
+      resetForRetry: assign(() => ({
         retryCount: 0,
         errorMessage: null,
         errorDetails: null,
       })),
-      handleError: assign(({ context, event }) => ({
-        ...context,
+      handleError: assign(({ event }) => ({
         errorMessage: (event as any).error || "Unknown error",
         errorDetails: (event as any).data || null,
       })),
-      handleImagePullError: assign(({ context, event }) => ({
-        ...context,
+      handleImagePullError: assign(({ event }) => ({
         errorMessage: `Failed to pull image: ${(event as any).error}`,
         errorDetails: (event as any).data,
       })),
-      handleContainerError: assign(({ context, event }) => ({
-        ...context,
+      handleContainerError: assign(({ event }) => ({
         errorMessage: `Failed to create/start container: ${(event as any).error}`,
         errorDetails: (event as any).data,
       })),
-      handleHealthCheckError: assign(({ context, event }) => ({
-        ...context,
+      handleHealthCheckError: assign(({ event }) => ({
         errorMessage: `Health check failed: ${(event as any).error}`,
         errorDetails: (event as any).data,
       })),
-      handleTrafficSwitchError: assign(({ context, event }) => ({
-        ...context,
+      handleTrafficSwitchError: assign(({ event }) => ({
         errorMessage: `Failed to switch traffic: ${(event as any).error}`,
         errorDetails: (event as any).data,
       })),
-      handleRollbackError: assign(({ context, event }) => ({
-        ...context,
+      handleRollbackError: assign(({ event }) => ({
         errorMessage: `Rollback failed: ${(event as any).error}`,
         errorDetails: (event as any).data,
       })),
       calculateDeploymentTime: assign(({ context }) => ({
-        ...context,
         deploymentTime: Math.floor((Date.now() - context.startTime) / 1000),
       })),
-      finalizeDeployment: assign(({ context }) => context),
+      finalizeDeployment: () => {
+        // This action is for side effects only, no context update needed
+      },
       logDeploymentStart: ({ context }) => {
         deploymentLogger().info(
           {
@@ -490,26 +474,34 @@ export class DeploymentOrchestrator {
       const deploymentMachine = deploymentStateMachine.provide({
         actors: {
           pullDockerImage: fromPromise(
-            this.createPullImageService(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.pullDockerImage(input);
+            }
           ),
           createAndStartContainer: fromPromise(
-            this.createContainerFactory(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.createAndStartContainer(input);
+            }
           ),
           performHealthChecks: fromPromise(
             async ({ input }: { input: DeploymentContext }) => {
-              // Use initialContext if current context is empty
-              const contextToUse = input.deploymentId ? input : initialContext;
-              return await this.performHealthCheck(contextToUse);
+              return await this.performHealthCheck(input);
             }
           ),
           switchTrafficToNewContainer: fromPromise(
-            this.createTrafficSwitchService(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.switchTrafficToNewContainer(input);
+            }
           ),
           cleanupOldContainer: fromPromise(
-            this.createCleanupService(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.cleanupOldContainer(input);
+            }
           ),
           performRollback: fromPromise(
-            this.createRollbackService(initialContext),
+            async ({ input }: { input: DeploymentContext }) => {
+              return await this.performRollback(input);
+            }
           ),
         },
       });
@@ -790,8 +782,7 @@ export class DeploymentOrchestrator {
   // Service Factory Methods
   // ====================
 
-  private createPullImageService(context: DeploymentContext) {
-    return async () => {
+  private async pullDockerImage(context: DeploymentContext) {
       try {
         // Update deployment step in database
         await this.updateDeploymentStep(
@@ -855,11 +846,9 @@ export class DeploymentOrchestrator {
 
         throw error;
       }
-    };
   }
 
-  private createContainerFactory(context: DeploymentContext) {
-    return async () => {
+  private async createAndStartContainer(context: DeploymentContext) {
       try {
         // Update deployment step in database
         await this.updateDeploymentStep(
@@ -963,11 +952,9 @@ export class DeploymentOrchestrator {
 
         throw error;
       }
-    };
   }
 
-  private createHealthCheckService(context: DeploymentContext) {
-    return async () => {
+  private async performStandardHealthCheck(context: DeploymentContext) {
       try {
         if (!context.newContainerId) {
           throw new Error("No container ID available for health checks");
@@ -1069,11 +1056,9 @@ export class DeploymentOrchestrator {
 
         throw error;
       }
-    };
   }
 
-  private createTrafficSwitchService(context: DeploymentContext) {
-    return async () => {
+  private async switchTrafficToNewContainer(context: DeploymentContext) {
       try {
         if (!context.newContainerId) {
           throw new Error("No new container ID available for traffic switch");
@@ -1175,11 +1160,9 @@ export class DeploymentOrchestrator {
 
         throw error;
       }
-    };
   }
 
-  private createCleanupService(context: DeploymentContext) {
-    return async () => {
+  private async cleanupOldContainer(context: DeploymentContext) {
       try {
         // Update deployment step in database
         await this.updateDeploymentStep(
@@ -1270,11 +1253,9 @@ export class DeploymentOrchestrator {
 
         return { success: true };
       }
-    };
   }
 
-  private createRollbackService(context: DeploymentContext) {
-    return async () => {
+  private async performRollback(context: DeploymentContext) {
       try {
         // Update deployment step in database
         await this.updateDeploymentStep(
@@ -1430,7 +1411,6 @@ export class DeploymentOrchestrator {
 
         throw error;
       }
-    };
   }
 
   // ====================
