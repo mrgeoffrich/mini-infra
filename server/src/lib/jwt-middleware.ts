@@ -57,8 +57,7 @@ export const extractJwtUser = async (
       (req.path.startsWith("/auth") &&
         req.path !== "/auth/status" &&
         req.path !== "/auth/user") ||
-      req.path === "/health" ||
-      req.path.startsWith("/api/keys") // API keys use separate auth
+      req.path === "/health"
     ) {
       return next();
     }
