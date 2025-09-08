@@ -144,6 +144,7 @@ mini-infra/
 │   │   ├── components/      # Reusable UI components
 │   │   │   ├── ui/          # shadcn UI components
 │   │   │   ├── postgres/    # PostgreSQL-specific components
+│   │   │   ├── deployments/ # Zero-downtime deployment components
 │   │   │   └── cloudflare/  # Cloudflare tunnel components
 │   │   ├── hooks/           # Custom React hooks
 │   │   │   ├── use-auth.ts  # Authentication hooks
@@ -151,6 +152,7 @@ mini-infra/
 │   │   │   ├── use-settings.ts   # Settings management hooks
 │   │   │   ├── use-user-preferences.ts # User preference hooks
 │   │   │   ├── use-formatted-date.ts   # Timezone-aware date formatting
+│   │   │   ├── use-deployment-*.ts      # Deployment management hooks
 │   │   │   └── use-*.ts     # Various specialized hooks
 │   │   └── lib/             # Frontend utilities and configuration
 │   │       ├── routes.tsx   # Application routing configuration
