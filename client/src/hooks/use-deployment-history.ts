@@ -243,7 +243,7 @@ export function useLatestDeployments(
       const data = await fetchDeploymentHistory(
         {},
         1,
-        200, // Get enough results to capture latest for each configuration
+        100, // Get enough results to capture latest for each configuration
         "startedAt",
         "desc",
         correlationId,
