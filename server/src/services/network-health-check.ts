@@ -1,4 +1,4 @@
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import prisma from "../lib/prisma";
 import {
@@ -219,7 +219,7 @@ export class NetworkHealthCheckService {
         errorMessage: stderr || (!success ? `Invalid status code: ${statusCode}` : undefined),
       };
     } catch (error) {
-      servicesLogger().error(
+      dockerExecutorLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stdout: stdout.substring(0, 500), // Limit log size
@@ -274,7 +274,7 @@ export class NetworkHealthCheckService {
       const curlCommand = this.buildCurlCommand(config);
       const healthCheckUrl = `http://${config.containerName}:${config.containerPort}${config.endpoint}`;
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           containerName: config.containerName,
           containerPort: config.containerPort,
@@ -298,6 +298,29 @@ export class NetworkHealthCheckService {
       });
 
       const responseTime = Date.now() - startTime;
+      
+      // Log container output to dockerExecutorLogger
+      if (executionResult.stdout) {
+        dockerExecutorLogger().debug(
+          {
+            containerName: config.containerName,
+            curlImage,
+            stdout: executionResult.stdout,
+          },
+          "Network health check container stdout",
+        );
+      }
+      
+      if (executionResult.stderr) {
+        dockerExecutorLogger().debug(
+          {
+            containerName: config.containerName,
+            curlImage,
+            stderr: executionResult.stderr,
+          },
+          "Network health check container stderr",
+        );
+      }
       
       // Parse curl output
       const curlResult = this.parseCurlOutput(executionResult.stdout, executionResult.stderr);
@@ -336,7 +359,7 @@ export class NetworkHealthCheckService {
         healthResult.errorMessage = `Network health check failed validation: ${failedChecks.join(", ")}. ${errorMessage}`.trim();
       }
 
-      servicesLogger().debug(
+      dockerExecutorLogger().debug(
         {
           containerName: config.containerName,
           statusCode,
@@ -353,7 +376,7 @@ export class NetworkHealthCheckService {
       const responseTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      dockerExecutorLogger().error(
         {
           containerName: config.containerName,
           endpoint: config.endpoint,

@@ -4,7 +4,7 @@ import {
   Job as QueueJob,
   QueueOptions,
 } from "../lib/in-memory-queue";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { BackupConfigService } from "./backup-config";
 import { DatabaseConfigService } from "./postgres-config";
@@ -476,7 +476,7 @@ export class BackupExecutorService {
       });
 
       // Pull Docker image with authentication if credentials are provided
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
@@ -495,7 +495,7 @@ export class BackupExecutorService {
           registryCredentials.password,
         );
 
-        servicesLogger().info(
+        dockerExecutorLogger().info(
           {
             operationId,
             dockerImage,
@@ -607,7 +607,7 @@ export class BackupExecutorService {
         COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
       };
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
@@ -654,7 +654,7 @@ export class BackupExecutorService {
               case "starting":
                 progressValue = 40;
                 message = "Starting backup container";
-                servicesLogger().info(
+                dockerExecutorLogger().info(
                   {
                     operationId,
                   },
@@ -664,7 +664,7 @@ export class BackupExecutorService {
               case "running":
                 progressValue = 60;
                 message = "Creating backup";
-                servicesLogger().info(
+                dockerExecutorLogger().info(
                   {
                     operationId,
                   },
@@ -674,7 +674,7 @@ export class BackupExecutorService {
               case "completed":
                 progressValue = 80;
                 message = "Backup completed, uploading to Azure";
-                servicesLogger().info(
+                dockerExecutorLogger().info(
                   {
                     operationId,
                   },
@@ -682,7 +682,7 @@ export class BackupExecutorService {
                 );
                 break;
               case "failed":
-                servicesLogger().error(
+                dockerExecutorLogger().error(
                   {
                     operationId,
                     errorMessage: progress.errorMessage,
@@ -702,7 +702,7 @@ export class BackupExecutorService {
           },
         );
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           exitCode: containerResult.exitCode,
@@ -714,22 +714,22 @@ export class BackupExecutorService {
       );
 
       if (containerResult.stdout) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             operationId,
             stdout: containerResult.stdout.substring(0, 1000), // First 1000 chars
           },
-          "Container stdout output (truncated)",
+          "Backup container stdout output (truncated)",
         );
       }
 
       if (containerResult.stderr) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             operationId,
             stderr: containerResult.stderr.substring(0, 1000), // First 1000 chars
           },
-          "Container stderr output (truncated)",
+          "Backup container stderr output (truncated)",
         );
       }
 

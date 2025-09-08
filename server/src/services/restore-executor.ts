@@ -4,7 +4,7 @@ import {
   Job as QueueJob,
   QueueOptions,
 } from "../lib/in-memory-queue";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
 import { DatabaseConfigService } from "./postgres-config";
 import { PostgresSettingsConfigService } from "./postgres-settings-config";
@@ -513,7 +513,7 @@ export class RestoreExecutorService {
       });
 
       // Pull Docker image with authentication if credentials are provided
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
@@ -531,7 +531,7 @@ export class RestoreExecutorService {
         registryCredentials.password,
       );
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
@@ -671,7 +671,7 @@ export class RestoreExecutorService {
         AZURE_BLOB_NAME: blobName,
       };
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
@@ -766,7 +766,7 @@ export class RestoreExecutorService {
           },
         );
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           operationId,
           exitCode: containerResult.exitCode,
@@ -778,22 +778,22 @@ export class RestoreExecutorService {
       );
 
       if (containerResult.stdout) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             operationId,
             stdout: containerResult.stdout.substring(0, 1000), // First 1000 chars
           },
-          "Container stdout output (truncated)",
+          "Restore container stdout output (truncated)",
         );
       }
 
       if (containerResult.stderr) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             operationId,
             stderr: containerResult.stderr.substring(0, 1000), // First 1000 chars
           },
-          "Container stderr output (truncated)",
+          "Restore container stderr output (truncated)",
         );
       }
 
@@ -1204,7 +1204,7 @@ export class RestoreExecutorService {
         AZURE_BLOB_NAME: rollbackBlobName,
       };
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           dockerImage,
           environment: containerEnv,
@@ -1229,7 +1229,7 @@ export class RestoreExecutorService {
         timeout: 30 * 60 * 1000, // 30 minutes for rollback backup
       });
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           exitCode: containerResult.exitCode,
           stdoutLength: containerResult.stdout?.length || 0,
@@ -1240,7 +1240,7 @@ export class RestoreExecutorService {
       );
 
       if (containerResult.stdout) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             stdout: containerResult.stdout.substring(0, 500),
           },
@@ -1249,7 +1249,7 @@ export class RestoreExecutorService {
       }
 
       if (containerResult.stderr) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             stderr: containerResult.stderr.substring(0, 500),
           },
@@ -1342,7 +1342,7 @@ export class RestoreExecutorService {
         BACKUP_FILE_URL: rollbackBackupUrl,
       };
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           dockerImage,
           environment: containerEnv,
@@ -1368,7 +1368,7 @@ export class RestoreExecutorService {
         timeout: 60 * 60 * 1000, // 1 hour for rollback
       });
 
-      servicesLogger().info(
+      dockerExecutorLogger().info(
         {
           rollbackBackupUrl,
           exitCode: containerResult.exitCode,
@@ -1380,7 +1380,7 @@ export class RestoreExecutorService {
       );
 
       if (containerResult.stdout) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             stdout: containerResult.stdout.substring(0, 500),
           },
@@ -1389,7 +1389,7 @@ export class RestoreExecutorService {
       }
 
       if (containerResult.stderr) {
-        servicesLogger().debug(
+        dockerExecutorLogger().debug(
           {
             stderr: containerResult.stderr.substring(0, 500),
           },
