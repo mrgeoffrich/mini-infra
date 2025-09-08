@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   IConfigurationService,
   IConfigurationServiceFactory,
@@ -22,7 +22,7 @@ export class ConfigurationServiceFactory
     "postgres",
   ];
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
   }
 

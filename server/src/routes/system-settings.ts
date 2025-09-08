@@ -57,6 +57,18 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
 
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "User not authenticated",
+      details: {
+        image: "unknown",
+        authenticated: false,
+        pullTimeMs: 0,
+      },
+    });
+  }
+
   logger.info(
     {
       requestId,

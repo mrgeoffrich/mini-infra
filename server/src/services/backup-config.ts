@@ -15,7 +15,7 @@ export class BackupConfigService {
   private prisma: PrismaClient;
   private azureConfigService: AzureConfigService;
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.azureConfigService = new AzureConfigService(prisma);
   }

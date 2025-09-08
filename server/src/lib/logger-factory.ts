@@ -80,10 +80,10 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
         }
       }
 
-      return pinoInstance[asJsonSym].apply(this, args);
+      return (pinoInstance as any)[asJsonSym].apply(this, args);
     } catch (error) {
       // If there's an error in caller tracking, fall back to original logging
-      return pinoInstance[asJsonSym].apply(this, args);
+      return (pinoInstance as any)[asJsonSym].apply(this, args);
     }
   }
 

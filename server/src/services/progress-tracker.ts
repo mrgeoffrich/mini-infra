@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 import {
   BackupOperationInfo,
@@ -75,7 +75,7 @@ export class ProgressTrackerService extends EventEmitter {
   private static readonly COMPLETED_OPERATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   private static readonly FAILED_OPERATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     super();
     this.prisma = prisma;
   }
@@ -241,10 +241,10 @@ export class ProgressTrackerService extends EventEmitter {
       ]);
 
       return {
-        backupOperations: backupOperations.map((op) =>
+        backupOperations: backupOperations.map((op: any) =>
           this.mapBackupOperationToProgress(op),
         ),
-        restoreOperations: restoreOperations.map((op) =>
+        restoreOperations: restoreOperations.map((op: any) =>
           this.mapRestoreOperationToProgress(op),
         ),
       };
@@ -327,7 +327,7 @@ export class ProgressTrackerService extends EventEmitter {
         });
 
         operations.push(
-          ...backupOperations.map((op) =>
+          ...backupOperations.map((op: any) =>
             this.mapBackupOperationToHistoryItem(op),
           ),
         );
@@ -350,7 +350,7 @@ export class ProgressTrackerService extends EventEmitter {
         });
 
         operations.push(
-          ...restoreOperations.map((op) =>
+          ...restoreOperations.map((op: any) =>
             this.mapRestoreOperationToHistoryItem(op),
           ),
         );

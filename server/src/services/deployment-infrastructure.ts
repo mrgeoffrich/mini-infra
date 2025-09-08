@@ -1,5 +1,6 @@
 import { appLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
+import { DockerExecutorService } from "./docker-executor";
 import prisma from "../lib/prisma";
 import * as yaml from "js-yaml";
 
@@ -7,9 +8,18 @@ const logger = appLogger();
 
 export class DeploymentInfrastructureService {
   private dockerService: DockerService;
+  private dockerExecutor: DockerExecutorService;
 
   constructor() {
     this.dockerService = DockerService.getInstance();
+    this.dockerExecutor = new DockerExecutorService();
+  }
+
+  /**
+   * Initialize the deployment infrastructure service
+   */
+  async initialize(): Promise<void> {
+    await this.dockerExecutor.initialize();
   }
 
   /**
@@ -130,6 +140,28 @@ export class DeploymentInfrastructureService {
         return {
           success: false,
           error: `Failed to create network: ${networkResult.error}`,
+        };
+      }
+
+      // Pull the Traefik image before creating container
+      logger.info(
+        { image: config.image },
+        "Pulling Traefik Docker image",
+      );
+      try {
+        await this.dockerExecutor.pullImageWithAuth(config.image);
+        logger.info(
+          { image: config.image },
+          "Successfully pulled Traefik Docker image",
+        );
+      } catch (pullError) {
+        logger.error(
+          { error: pullError, image: config.image },
+          "Failed to pull Traefik Docker image",
+        );
+        return {
+          success: false,
+          error: `Failed to pull image '${config.image}': ${pullError instanceof Error ? pullError.message : "Unknown pull error"}`,
         };
       }
 

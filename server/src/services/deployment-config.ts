@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 import { ConfigurationService } from "./configuration-base";
 import NodeCache from "node-cache";
@@ -112,7 +112,7 @@ export const updateDeploymentConfigSchema = z.object({
 export class DeploymentConfigService extends ConfigurationService {
   private cache: NodeCache;
 
-  constructor(prismaInstance: typeof prisma, encryptionKey?: string) {
+  constructor(prismaInstance: PrismaClient, encryptionKey?: string) {
     super(prismaInstance, "deployments" as SettingsCategory);
 
     // Initialize cache with 5 minute TTL for deployment configurations
@@ -230,10 +230,10 @@ export class DeploymentConfigService extends ConfigurationService {
           applicationName: request.applicationName,
           dockerImage: request.dockerImage,
           dockerRegistry: request.dockerRegistry,
-          containerConfig: request.containerConfig,
-          healthCheckConfig: request.healthCheckConfig,
-          traefikConfig: request.traefikConfig,
-          rollbackConfig: request.rollbackConfig,
+          containerConfig: request.containerConfig as any,
+          healthCheckConfig: request.healthCheckConfig as any,
+          traefikConfig: request.traefikConfig as any,
+          rollbackConfig: request.rollbackConfig as any,
           isActive: true,
           userId: userId,
         },
@@ -498,7 +498,7 @@ export class DeploymentConfigService extends ConfigurationService {
         skip: offset,
       });
 
-      const result = configs.map((config) => this.toConfigurationInfo(config));
+      const result = configs.map((config: any) => this.toConfigurationInfo(config));
 
       // Cache for 5 minutes
       this.cache.set(cacheKey, result, 300);

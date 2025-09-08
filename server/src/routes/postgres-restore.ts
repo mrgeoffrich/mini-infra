@@ -115,7 +115,7 @@ function validateAzureStorageUrl(url: string): boolean {
 
     // Check if the path has at least container/blob structure
     const pathParts = parsedUrl.pathname.substring(1).split("/"); // Remove leading slash
-    const hasValidPath = pathParts.length >= 2 && pathParts[0] && pathParts[1];
+    const hasValidPath = pathParts.length >= 2 && !!pathParts[0] && !!pathParts[1];
 
     // Check if it ends with .dump (expected backup file extension)
     const isDumpFile = parsedUrl.pathname.endsWith(".dump");

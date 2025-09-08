@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -80,7 +80,7 @@ export class AzureConfigService extends ConfigurationService {
     return azureConfig.apiTimeout;
   }
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     super(prisma, "azure");
   }
 

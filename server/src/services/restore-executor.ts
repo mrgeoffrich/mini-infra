@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   InMemoryQueue,
   Job as QueueJob,
@@ -66,7 +66,7 @@ export class RestoreExecutorService {
   private static readonly MAX_RETRIES = 2;
   private static readonly RETRY_DELAY_MS = 60000; // 60 seconds
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.dockerExecutor = new DockerExecutorService();
     this.databaseConfigService = new DatabaseConfigService(prisma);

@@ -20,6 +20,7 @@
     "devDependencies": {
         "@eslint/js": "^9.34.0",
         "@paralleldrive/cuid2": "^2.2.2",
+        "@types/config": "^3.3.5",
         "@types/cookie-parser": "^1.4.9",
         "@types/cors": "^2.8.13",
         "@types/crypto-js": "^4.2.2",

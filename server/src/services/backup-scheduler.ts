@@ -30,7 +30,7 @@ export class BackupSchedulerService {
   private scheduledJobs: Map<string, ScheduledJob> = new Map();
   private isInitialized = false;
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.backupConfigService = new BackupConfigService(prisma);
     this.backupExecutorService = new BackupExecutorService(prisma);
@@ -40,7 +40,7 @@ export class BackupSchedulerService {
    * Get the singleton instance of BackupSchedulerService
    */
   public static getInstance(
-    prisma?: typeof prisma,
+    prisma?: PrismaClient,
   ): BackupSchedulerService | null {
     if (!BackupSchedulerService.instance && prisma) {
       BackupSchedulerService.instance = new BackupSchedulerService(prisma);

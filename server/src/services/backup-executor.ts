@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import {
   InMemoryQueue,
   Job as QueueJob,
@@ -58,7 +58,7 @@ export class BackupExecutorService {
   private static readonly MAX_RETRIES = 3;
   private static readonly RETRY_DELAY_MS = 30000; // 30 seconds
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.dockerExecutor = new DockerExecutorService();
     this.backupConfigService = new BackupConfigService(prisma);
@@ -193,7 +193,7 @@ export class BackupExecutorService {
       servicesLogger().debug(
         {
           operationId: backupOperation.id,
-          queuePosition: await this.backupQueue.count(),
+          queuePosition: this.backupQueue.getStats().pending,
         },
         "Job added to backup queue",
       );

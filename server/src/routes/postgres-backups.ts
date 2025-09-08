@@ -228,8 +228,16 @@ router.post(
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
-    const userId = user?.id;
     const { databaseId } = req.params;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "User not authenticated",
+      });
+    }
+
+    const userId = user.id;
 
     try {
       logger.info(

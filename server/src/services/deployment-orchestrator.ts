@@ -422,6 +422,13 @@ export class DeploymentOrchestrator {
     this.dockerExecutor = new DockerExecutorService();
   }
 
+  /**
+   * Initialize the deployment orchestrator service
+   */
+  async initialize(): Promise<void> {
+    await this.dockerExecutor.initialize();
+  }
+
   // ====================
   // Deployment Management
   // ====================

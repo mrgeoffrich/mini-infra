@@ -32,6 +32,10 @@ const router = express.Router();
 // Initialize services
 const deploymentConfigService = new DeploymentConfigService(prisma, process.env.ENCRYPTION_KEY);
 const deploymentOrchestrator = new DeploymentOrchestrator();
+// Initialize the deployment orchestrator
+deploymentOrchestrator.initialize().catch(error => {
+  logger.error({ error: error.message }, "Failed to initialize deployment orchestrator");
+});
 
 // ====================
 // Validation Schemas

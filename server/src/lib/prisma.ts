@@ -1,6 +1,9 @@
 import { PrismaClient } from "../generated/prisma";
 import { prismaLogger } from "./logger-factory";
 
+// Re-export PrismaClient type for use by other modules
+export { PrismaClient };
+
 declare global {
   // Prevent multiple instances of Prisma Client in development
   var prisma: PrismaClient | undefined;

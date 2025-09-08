@@ -16,6 +16,10 @@ const router = express.Router();
 
 // Initialize the deployment infrastructure service
 const infrastructureService = new DeploymentInfrastructureService();
+// Ensure the service is properly initialized when the module loads
+infrastructureService.initialize().catch(error => {
+  logger.error({ error: error.message }, "Failed to initialize deployment infrastructure service");
+});
 
 // Validation schemas
 const deployInfrastructureSchema = z.object({

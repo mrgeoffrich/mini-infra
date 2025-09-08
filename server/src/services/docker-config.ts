@@ -7,14 +7,14 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import prisma from "../lib/prisma";
+import prisma, { PrismaClient } from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 
 export class DockerConfigService extends ConfigurationService {
   private docker: Docker | null = null;
   private readonly DEFAULT_TIMEOUT = 5000; // 5 seconds
 
-  constructor(prisma: typeof prisma) {
+  constructor(prisma: PrismaClient) {
     super(prisma, "docker" as SettingsCategory);
   }
 
