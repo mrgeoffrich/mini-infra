@@ -149,13 +149,49 @@ export class DeploymentOrchestrator {
       actor.send({ type: "START_DEPLOYMENT" });
 
       // Handle completion
-      actor.subscribe((state) => {
+      actor.subscribe(async (state) => {
         if (state.status === "done") {
           this.activeDeployments.delete(deploymentId);
-          deploymentLogger().info(
-            { deploymentId },
-            "Deployment actor completed and cleaned up",
-          );
+          
+          // Update deployment status in database based on final state
+          try {
+            const finalStatus = state.value === "completed" ? "completed" : "failed";
+            const hasError = state.context.errorMessage !== null;
+            
+            await prisma.deployment.update({
+              where: { id: deploymentId },
+              data: {
+                status: finalStatus,
+                currentState: state.value as string,
+                completedAt: new Date(),
+                healthCheckPassed: state.context.healthCheckPassed,
+                deploymentTime: state.context.deploymentTime,
+                downtime: state.context.downtime,
+                errorMessage: state.context.errorMessage,
+                errorDetails: state.context.errorDetails,
+              },
+            });
+
+            deploymentLogger().info(
+              { 
+                deploymentId,
+                finalStatus,
+                finalState: state.value,
+                deploymentTime: state.context.deploymentTime,
+                downtime: state.context.downtime,
+                hasError,
+              },
+              "Deployment actor completed and database updated",
+            );
+          } catch (error) {
+            deploymentLogger().error(
+              {
+                deploymentId,
+                error: error instanceof Error ? error.message : "Unknown error",
+              },
+              "Failed to update deployment status in database",
+            );
+          }
         }
 
         // Log state changes
@@ -387,6 +423,41 @@ export class DeploymentOrchestrator {
 
       // Perform network health check using curl container
       const result = await this.networkHealthCheckService.performNetworkHealthCheck(networkConfig);
+
+      // Check if health check actually passed
+      if (!result.success) {
+        // Log the failure details
+        deploymentLogger().error(
+          {
+            deploymentId: context.deploymentId,
+            containerId: context.newContainerId,
+            containerName,
+            containerPort,
+            healthCheckResult: result,
+            validationDetails: result.validationDetails,
+            errorMessage: result.errorMessage,
+          },
+          "Network health check failed validation",
+        );
+
+        // Update step as failed
+        await this.updateDeploymentStep(
+          context.deploymentId,
+          "health_check",
+          "failed",
+          result.errorMessage || "Network health check failed",
+        );
+
+        // Store health check results as failed
+        await this.updateDeploymentHealthCheck(
+          context.deploymentId,
+          false,
+          result,
+        );
+
+        // Throw error to trigger retry or rollback
+        throw new Error(result.errorMessage || "Network health check failed");
+      }
 
       // Update step as completed
       await this.updateDeploymentStep(
@@ -1384,6 +1455,7 @@ export class DeploymentOrchestrator {
         healthCheck: config.healthCheckConfig as unknown as HealthCheckConfig,
         traefikConfig: config.traefikConfig as unknown as TraefikConfig,
         rollbackConfig: config.rollbackConfig as unknown as RollbackConfig,
+        listeningPort: config.listeningPort,
       };
 
       // Start deployment asynchronously

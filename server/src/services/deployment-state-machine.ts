@@ -205,21 +205,8 @@ export const deploymentStateMachine = createMachine(
         entry: ["logStateEntry", "finalizeDeployment", "logFinalState"],
       },
       failed: {
-        entry: ["logStateEntry", assign(() => ({ currentStep: "failed" })), "logContextAfterAssign"],
-        exit: ["logStateExit"],
-        on: {
-          FORCE_ROLLBACK: {
-            target: "rolling_back",
-            actions: ["logTransition"],
-          },
-          RETRY: [
-            {
-              target: "preparing",
-              guard: "canRetry",
-              actions: ["resetForRetry", "logTransition"],
-            },
-          ],
-        },
+        type: "final",
+        entry: ["logStateEntry", assign(() => ({ currentStep: "failed" })), "finalizeDeployment", "logFinalState"],
       },
       rolling_back: {
         entry: ["logStateEntry", assign(() => ({ currentStep: "rolling_back" })), "logContextAfterAssign"],
