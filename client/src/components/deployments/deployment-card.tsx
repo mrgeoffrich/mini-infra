@@ -30,7 +30,7 @@ interface DeploymentCardProps {
   config: DeploymentConfigurationInfo;
   latestDeployment?: DeploymentInfo;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
-  onViewHistory?: (config: DeploymentConfigurationInfo) => void;
+  onDelete?: (config: DeploymentConfigurationInfo) => void;
 }
 
 // Status icon component
@@ -98,7 +98,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
   config,
   latestDeployment,
   onEdit,
-  onViewHistory,
+  onDelete,
 }: DeploymentCardProps) {
   const { formatDateTime, formatDate } = useFormattedDate();
   const triggerMutation = useDeploymentTrigger();
@@ -116,9 +116,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
     onEdit?.(config);
   }, [config, onEdit]);
 
-  const handleViewHistory = useCallback(() => {
-    onViewHistory?.(config);
-  }, [config, onViewHistory]);
+  const handleDelete = useCallback(() => {
+    onDelete?.(config);
+  }, [config, onDelete]);
 
   // Calculate deployment statistics
   const deploymentStats = useMemo(() => {
@@ -177,12 +177,8 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                 <IconEdit className="h-4 w-4 mr-2" />
                 Edit Configuration
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleViewHistory}>
-                <IconHistory className="h-4 w-4 mr-2" />
-                View History
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -250,10 +246,6 @@ export const DeploymentCard = React.memo(function DeploymentCard({
               <IconPlayerPlay className="h-4 w-4 mr-2" />
             )}
             {isDeploymentActive ? "Deploying..." : "Deploy"}
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={handleViewHistory}>
-            <IconHistory className="h-4 w-4" />
           </Button>
         </div>
         

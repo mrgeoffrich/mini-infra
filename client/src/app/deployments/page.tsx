@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   IconLayoutGrid,
   IconList,
@@ -7,7 +8,6 @@ import {
 
 import { DeploymentList } from "@/components/deployments/deployment-list";
 import { DeploymentCard } from "@/components/deployments/deployment-card";
-import { DeploymentConfigForm } from "@/components/deployments/deployment-config-form";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments } from "@/hooks/use-deployment-history";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DeploymentConfigurationInfo, DeploymentInfo } from "@mini-infra/types";
 
 export function DeploymentsPage() {
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingConfig, setEditingConfig] = useState<DeploymentConfigurationInfo | null>(null);
   const { filters } = useDeploymentConfigFilters();
   
   // Fetch deployment configurations
@@ -61,24 +60,17 @@ export function DeploymentsPage() {
   }, [activeDeploymentsResponse?.data]);
 
   const handleEditConfig = useCallback((config: DeploymentConfigurationInfo) => {
-    setEditingConfig(config);
-    setIsFormOpen(true);
-  }, []);
+    navigate(`/deployments/new?edit=${config.id}`);
+  }, [navigate]);
 
-  const handleViewHistory = useCallback((config: DeploymentConfigurationInfo) => {
-    // TODO: Navigate to deployment history page for this config
-    console.log("View history for:", config);
+  const handleDeleteConfig = useCallback((config: DeploymentConfigurationInfo) => {
+    // TODO: Implement delete functionality with confirmation
+    console.log("Delete config:", config);
   }, []);
 
   const handleCreateConfig = useCallback(() => {
-    setEditingConfig(null);
-    setIsFormOpen(true);
-  }, []);
-
-  const handleCloseForm = useCallback(() => {
-    setIsFormOpen(false);
-    setEditingConfig(null);
-  }, []);
+    navigate("/deployments/new");
+  }, [navigate]);
 
   if (configsError) {
     return (
@@ -131,7 +123,7 @@ export function DeploymentsPage() {
       {viewMode === "list" ? (
         <DeploymentList
           onEditConfig={handleEditConfig}
-          onViewHistory={handleViewHistory}
+          onDeleteConfig={handleDeleteConfig}
           onCreateConfig={handleCreateConfig}
         />
       ) : (
@@ -151,7 +143,7 @@ export function DeploymentsPage() {
                   config={config}
                   latestDeployment={latestDeploymentsByConfig.get(config.id)}
                   onEdit={handleEditConfig}
-                  onViewHistory={handleViewHistory}
+                  onDelete={handleDeleteConfig}
                 />
               ))}
             </div>
@@ -172,13 +164,6 @@ export function DeploymentsPage() {
           )}
         </div>
       )}
-
-      {/* Deployment Configuration Form Modal */}
-      <DeploymentConfigForm
-        deploymentConfig={editingConfig}
-        isOpen={isFormOpen}
-        onClose={handleCloseForm}
-      />
     </div>
   );
 }

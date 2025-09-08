@@ -55,7 +55,7 @@ import type { DeploymentConfigFiltersState } from "@/hooks/use-deployment-config
 
 interface DeploymentListProps {
   onEditConfig?: (config: DeploymentConfigurationInfo) => void;
-  onViewHistory?: (config: DeploymentConfigurationInfo) => void;
+  onDeleteConfig?: (config: DeploymentConfigurationInfo) => void;
   onCreateConfig?: () => void;
 }
 
@@ -114,12 +114,13 @@ const DeploymentActions = React.memo(({
   onTrigger,
   onEdit,
   onViewHistory,
+  onDelete,
   isTriggering,
 }: {
   config: DeploymentConfigurationInfo;
   onTrigger: (applicationName: string) => void;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
-  onViewHistory?: (config: DeploymentConfigurationInfo) => void;
+  onDelete?: (config: DeploymentConfigurationInfo) => void;
   isTriggering: boolean;
 }) => {
   const handleTrigger = useCallback(() => {
@@ -130,9 +131,9 @@ const DeploymentActions = React.memo(({
     onEdit?.(config);
   }, [config, onEdit]);
 
-  const handleViewHistory = useCallback(() => {
-    onViewHistory?.(config);
-  }, [config, onViewHistory]);
+  const handleDelete = useCallback(() => {
+    onDelete?.(config);
+  }, [config, onDelete]);
 
   return (
     <div className="flex items-center gap-2">
@@ -159,12 +160,8 @@ const DeploymentActions = React.memo(({
             <IconEdit className="h-3 w-3 mr-2" />
             Edit Configuration
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleViewHistory}>
-            <IconHistory className="h-3 w-3 mr-2" />
-            View History
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive">
+          <DropdownMenuItem onClick={handleDelete} className="text-destructive">
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -252,7 +249,7 @@ DeploymentFilters.displayName = "DeploymentFilters";
 
 export const DeploymentList = React.memo(function DeploymentList({
   onEditConfig,
-  onViewHistory,
+  onDeleteConfig,
   onCreateConfig,
 }: DeploymentListProps) {
   const { filters, updateFilter, resetFilters } = useDeploymentConfigFilters();
@@ -377,14 +374,14 @@ export const DeploymentList = React.memo(function DeploymentList({
               config={config}
               onTrigger={handleTriggerDeployment}
               onEdit={onEditConfig}
-              onViewHistory={onViewHistory}
+              onDelete={onDeleteConfig}
               isTriggering={triggerMutation.isPending}
             />
           );
         },
       },
     ],
-    [handleSort, latestDeploymentsByConfig, handleTriggerDeployment, onEditConfig, onViewHistory, triggerMutation.isPending]
+    [handleSort, latestDeploymentsByConfig, handleTriggerDeployment, onEditConfig, onDeleteConfig, triggerMutation.isPending]
   );
 
   const table = useReactTable({
