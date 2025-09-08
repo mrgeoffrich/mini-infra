@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconDatabase,
   IconInnerShadowTop,
+  IconKey,
   IconRocket,
   IconSettings,
 } from "@tabler/icons-react";
@@ -50,6 +51,11 @@ const data = {
       title: "Cloudflare Tunnels",
       url: "/tunnels",
       icon: IconCloud,
+    },
+    {
+      title: "API Keys",
+      url: "/api-keys",
+      icon: IconKey,
     },
     {
       title: "Connectivity",

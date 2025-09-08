@@ -17,6 +17,7 @@ import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/page";
+import { ApiKeysPage } from "@/app/api-keys/page";
 
 export const router = createBrowserRouter([
   {
@@ -70,6 +71,10 @@ export const router = createBrowserRouter([
       {
         path: "tunnels",
         element: <TunnelsPage />,
+      },
+      {
+        path: "api-keys",
+        element: <ApiKeysPage />,
       },
       {
         path: "logs",

@@ -10,7 +10,7 @@ import { DeploymentList } from "@/components/deployments/deployment-list";
 import { DeploymentCard } from "@/components/deployments/deployment-card";
 import { DeleteDeploymentConfigDialog } from "@/components/deployments/delete-deployment-config-dialog";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
-import { useActiveDeployments } from "@/hooks/use-deployment-history";
+import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,19 +48,35 @@ export function DeploymentsPage() {
     refetchInterval: 5000,
   });
 
+  // Fetch latest deployments for all configurations (including completed ones)
+  const {
+    data: latestDeploymentsResponse,
+  } = useLatestDeployments({
+    refetchInterval: 15000,
+  });
+
   const configs = configsResponse?.data || [];
 
   // Create a map of latest deployments by configuration
+  // Combine active deployments (for real-time updates) with latest deployments (for completed status)
   const latestDeploymentsByConfig = useMemo(() => {
     const map = new Map<string, DeploymentInfo>();
+    
+    // First add all latest deployments (including completed/failed ones)
+    (latestDeploymentsResponse?.data || []).forEach((deployment) => {
+      map.set(deployment.configurationId, deployment);
+    });
+    
+    // Then overlay active deployments for real-time updates
     (activeDeploymentsResponse?.data || []).forEach((deployment) => {
       const existing = map.get(deployment.configurationId);
       if (!existing || new Date(deployment.startedAt) > new Date(existing.startedAt)) {
         map.set(deployment.configurationId, deployment);
       }
     });
+    
     return map;
-  }, [activeDeploymentsResponse?.data]);
+  }, [activeDeploymentsResponse?.data, latestDeploymentsResponse?.data]);
 
   const handleEditConfig = useCallback((config: DeploymentConfigurationInfo) => {
     navigate(`/deployments/new?edit=${config.id}`);

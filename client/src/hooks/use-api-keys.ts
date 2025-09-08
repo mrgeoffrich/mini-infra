@@ -36,8 +36,8 @@ async function createApiKey(request: CreateApiKeyRequest): Promise<ApiKey> {
 }
 
 async function revokeApiKey(keyId: string): Promise<void> {
-  const response = await fetch(`/api/keys/${keyId}`, {
-    method: "DELETE",
+  const response = await fetch(`/api/keys/${keyId}/revoke`, {
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -47,6 +47,57 @@ async function revokeApiKey(keyId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to revoke API key: ${response.statusText}`);
   }
+}
+
+async function rotateApiKey(keyId: string): Promise<ApiKey> {
+  const response = await fetch(`/api/keys/${keyId}/rotate`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to rotate API key: ${response.statusText}`);
+  }
+
+  const data: ApiKeyResponse = await response.json();
+  return data.data;
+}
+
+async function deleteApiKey(keyId: string): Promise<void> {
+  const response = await fetch(`/api/keys/${keyId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete API key: ${response.statusText}`);
+  }
+}
+
+async function fetchApiKeyStats(): Promise<{
+  total: number;
+  active: number;
+  revoked: number;
+}> {
+  const response = await fetch(`/api/keys/stats`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch API key stats: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.data;
 }
 
 export function useApiKeys() {
@@ -64,6 +115,7 @@ export function useCreateApiKey() {
     mutationFn: createApiKey,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["apiKeys"] });
+      queryClient.invalidateQueries({ queryKey: ["apiKeyStats"] });
     },
   });
 }
@@ -75,6 +127,38 @@ export function useRevokeApiKey() {
     mutationFn: revokeApiKey,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["apiKeys"] });
+      queryClient.invalidateQueries({ queryKey: ["apiKeyStats"] });
     },
+  });
+}
+
+export function useRotateApiKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: rotateApiKey,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["apiKeys"] });
+    },
+  });
+}
+
+export function useDeleteApiKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteApiKey,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["apiKeys"] });
+      queryClient.invalidateQueries({ queryKey: ["apiKeyStats"] });
+    },
+  });
+}
+
+export function useApiKeyStats() {
+  return useQuery({
+    queryKey: ["apiKeyStats"],
+    queryFn: fetchApiKeyStats,
+    retry: 1,
   });
 }

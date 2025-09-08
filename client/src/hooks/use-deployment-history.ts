@@ -224,6 +224,60 @@ export function useActiveDeployments(
   });
 }
 
+/**
+ * Hook for fetching the latest deployment for each configuration
+ * This includes all deployments (active, completed, failed) to show the most recent status
+ */
+export function useLatestDeployments(
+  options: Omit<UseDeploymentHistoryOptions, 'filters'> = {},
+) {
+  // For latest deployments, we want moderate refresh rate
+  const { refetchInterval = 15000, ...restOptions } = options;
+
+  return useQuery({
+    queryKey: ["latestDeployments"],
+    queryFn: async () => {
+      const correlationId = generateCorrelationId();
+      
+      // Fetch recent deployments (more than we need to ensure we get latest for each config)
+      const data = await fetchDeploymentHistory(
+        {},
+        1,
+        200, // Get enough results to capture latest for each configuration
+        "startedAt",
+        "desc",
+        correlationId,
+      );
+
+      // Create map of latest deployment per configuration
+      const latestByConfig = new Map<string, DeploymentInfo>();
+      
+      data.data.forEach(deployment => {
+        const configId = deployment.configurationId;
+        const existing = latestByConfig.get(configId);
+        
+        if (!existing || new Date(deployment.startedAt) > new Date(existing.startedAt)) {
+          latestByConfig.set(configId, deployment);
+        }
+      });
+
+      return {
+        success: true,
+        data: Array.from(latestByConfig.values()),
+        pagination: data.pagination,
+      };
+    },
+    enabled: restOptions.enabled !== false,
+    refetchInterval,
+    retry: restOptions.retry ?? 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 10000, // Data is fresh for 10 seconds
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
 // ====================
 // Deployment History Filter Hook
 // ====================

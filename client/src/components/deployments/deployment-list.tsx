@@ -19,7 +19,7 @@ import {
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
-import { useActiveDeployments } from "@/hooks/use-deployment-history";
+import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
 import { useDeploymentTrigger } from "@/hooks/use-deployment-trigger";
 import {
   Table,
@@ -276,19 +276,34 @@ export const DeploymentList = React.memo(function DeploymentList({
     refetchInterval: 5000, // Real-time updates for active deployments
   });
 
+  const {
+    data: latestDeploymentsResponse,
+  } = useLatestDeployments({
+    refetchInterval: 15000, // Regular updates for latest deployment status
+  });
+
   const configs = configsResponse?.data || [];
 
   // Create a map of latest deployments by configuration
+  // Combine active deployments (for real-time updates) with latest deployments (for completed status)
   const latestDeploymentsByConfig = useMemo(() => {
     const map = new Map<string, DeploymentInfo>();
+    
+    // First add all latest deployments (including completed/failed ones)
+    (latestDeploymentsResponse?.data || []).forEach((deployment) => {
+      map.set(deployment.configurationId, deployment);
+    });
+    
+    // Then overlay active deployments for real-time updates
     (activeDeploymentsResponse?.data || []).forEach((deployment) => {
       const existing = map.get(deployment.configurationId);
       if (!existing || new Date(deployment.startedAt) > new Date(existing.startedAt)) {
         map.set(deployment.configurationId, deployment);
       }
     });
+    
     return map;
-  }, [activeDeploymentsResponse?.data]);
+  }, [activeDeploymentsResponse?.data, latestDeploymentsResponse?.data]);
 
   const handleSort = useCallback((field: keyof DeploymentConfigurationInfo) => {
     const newOrder = filters.sortBy === field && filters.sortOrder === "asc" ? "desc" : "asc";
