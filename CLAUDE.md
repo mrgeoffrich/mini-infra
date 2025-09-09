@@ -1,5 +1,9 @@
 # Mini Infra - Claude Code Context
 
+## Docker Compose
+
+NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
+
 ## 🤖 Claude API Access Instructions
 
 **FOR CLAUDE**: You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:

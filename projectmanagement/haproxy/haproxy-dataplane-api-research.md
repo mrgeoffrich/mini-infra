@@ -32,23 +32,46 @@ program api
 
 #### Standalone Execution
 ```bash
+# Using configuration file (recommended)
+./dataplaneapi -f /etc/haproxy/dataplaneapi.yml
+
+# Or using command-line arguments
 ./dataplaneapi \
+  --host 0.0.0.0 \
   --port 5555 \
-  -b /usr/sbin/haproxy \
-  -c /etc/haproxy/haproxy.cfg \
-  -d 5 \
-  -r "service haproxy reload" \
-  -s "service haproxy restart" \
-  -u dataplaneapi \
-  -t /tmp/haproxy
+  --haproxy-bin /usr/sbin/haproxy \
+  --config-file /etc/haproxy/haproxy.cfg \
+  --reload-delay 5 \
+  --reload-cmd "systemctl reload haproxy" \
+  --restart-cmd "systemctl restart haproxy" \
+  --userlist controller \
+  --transaction-dir /tmp/haproxy
 ```
 
 ### Authentication Configuration
 
+#### Option 1: Simple User Authentication (dataplaneapi.yml)
+```yaml
+dataplaneapi:
+  user:
+    - name: admin
+      password: mypassword
+      insecure: true  # For plain text password
+```
+
+#### Option 2: HAProxy Userlist Authentication
 Add userlist to HAProxy configuration:
 ```
 userlist controller
     user admin insecure-password mypassword
+```
+
+Then reference in dataplaneapi.yml:
+```yaml
+dataplaneapi:
+  userlist:
+    userlist: controller
+    userlist_file: /etc/haproxy/haproxy.cfg
 ```
 
 ## API Documentation

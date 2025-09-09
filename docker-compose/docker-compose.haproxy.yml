@@ -1,0 +1,63 @@
+services:
+  haproxy-init:
+    image: haproxytech/haproxy-alpine:3.2
+    container_name: haproxy-init
+    volumes:
+      - ./haproxy/dataplaneapi.yml:/tmp/dataplaneapi.yml:ro
+      - haproxy_config:/usr/local/etc/haproxy/
+    command: sh -c "cp /tmp/dataplaneapi.yml /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml"
+    
+  haproxy:
+    image: haproxytech/haproxy-alpine:3.2
+    container_name: haproxy
+    restart: unless-stopped
+    depends_on:
+      haproxy-init:
+        condition: service_completed_successfully
+    ports:
+      - "8111:80" # HTTP traffic (mapped to 8111 on host)
+      - "8443:443" # HTTPS traffic
+      - "8404:8404" # HAProxy stats page
+      - "5555:5555" # Data Plane API
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:rw
+      - haproxy_config:/usr/local/etc/haproxy/
+      - ./haproxy/certs:/etc/ssl/certs:rw # SSL certificates directory
+    networks:
+      - haproxy_network
+    environment:
+      - HAPROXY_DATACENTER=docker
+      - HAPROXY_MWORKER=1 # Enable master-worker mode
+      - DATAPLANEAPI_USERLIST_FILE=/usr/local/etc/haproxy/haproxy.cfg
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8404/stats",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  haproxy_data:
+    name: haproxy_data
+  haproxy_run:
+    name: haproxy_run
+  haproxy_config:
+    name: haproxy_config
+
+networks:
+  haproxy_network:
+    driver: bridge
+    name: haproxy_network
