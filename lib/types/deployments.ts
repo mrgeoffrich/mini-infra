@@ -67,6 +67,7 @@ export interface DeploymentConfig {
   healthCheck: HealthCheckConfig;
   traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
+  listeningPort?: number | null;
 }
 
 // Database deployment configuration (matches Prisma model)
