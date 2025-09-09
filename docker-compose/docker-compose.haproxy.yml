@@ -4,9 +4,10 @@ services:
     container_name: haproxy-init
     volumes:
       - ./haproxy/dataplaneapi.yml:/tmp/dataplaneapi.yml:ro
+      - ./haproxy/haproxy.cfg:/tmp/haproxy.cfg:ro
       - haproxy_config:/usr/local/etc/haproxy/
-    command: sh -c "cp /tmp/dataplaneapi.yml /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml"
-    
+    command: sh -c "cp /tmp/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg && cp /tmp/dataplaneapi.yml /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/haproxy.cfg"
+
   haproxy:
     image: haproxytech/haproxy-alpine:3.2
     container_name: haproxy
@@ -20,7 +21,6 @@ services:
       - "8404:8404" # HAProxy stats page
       - "5555:5555" # Data Plane API
     volumes:
-      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:rw
       - haproxy_config:/usr/local/etc/haproxy/
       - ./haproxy/certs:/etc/ssl/certs:rw # SSL certificates directory
     networks:

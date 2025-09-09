@@ -5,11 +5,13 @@ dataplaneapi:
   host: 0.0.0.0
   port: 5555
 
-  # Use HAProxy userlist for authentication instead of inline users
-  userlist_file: /usr/local/etc/haproxy/haproxy.cfg
-
   # Show system info
   show_system_info: true
+
+  user:
+    - name: admin
+      password: adminpwd
+      insecure: true
 
   # Security settings
   scheme:
@@ -25,8 +27,6 @@ haproxy:
   haproxy_bin: /usr/local/sbin/haproxy
   master_worker_mode: true
   master_runtime: /var/run/haproxy/master.sock
-  # Use the admin socket from HAProxy config
-  admin_socket_path: /var/run/haproxy.sock
   reload:
     reload_delay: 5
     service_name: haproxy
