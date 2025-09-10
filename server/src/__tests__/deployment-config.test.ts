@@ -14,6 +14,18 @@ jest.mock("../lib/logger-factory.ts", () => ({
     warn: jest.fn(),
     debug: jest.fn(),
   })),
+  prismaLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  appLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
   __esModule: true,
   default: jest.fn(() => ({
     info: jest.fn(),
@@ -419,15 +431,23 @@ describe("DeploymentConfigService", () => {
   describe("List Deployment Configurations", () => {
     beforeEach(async () => {
       // Create multiple configurations
+      const configs = [];
       for (let i = 1; i <= 3; i++) {
         const request = {
           ...createValidDeploymentConfig(),
           applicationName: `test-app-${i}`,
           dockerImage: i === 2 ? "redis:latest" : "nginx:latest",
-          isActive: i !== 3,
         };
-        await deploymentConfigService.createDeploymentConfig(request, testUserId);
+        const config = await deploymentConfigService.createDeploymentConfig(request, testUserId);
+        configs.push(config);
       }
+      
+      // Make the third configuration inactive (test-app-3)
+      await deploymentConfigService.updateDeploymentConfig(
+        configs[2].id,
+        { isActive: false },
+        testUserId
+      );
     });
 
     it("should list all deployment configurations for user", async () => {

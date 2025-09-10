@@ -4,12 +4,9 @@ This guide describes advanced mocking patterns used in the health-check.test.ts 
 
 ## Table of Contents
 
-1. [External Library Mocking](#external-library-mocking)
-2. [Helper Functions for Mock Creation](#helper-functions-for-mock-creation)
-3. [Time and Date Mocking](#time-and-date-mocking)
-4. [Private Method Mocking](#private-method-mocking)
-5. [Test Setup and Cleanup](#test-setup-and-cleanup)
-6. [Advanced Mock Control](#advanced-mock-control)
+## Running Tests
+
+To run a server tests for a single file: `cd server && npm test -- --testPathPatterns="docker-executor.test.ts"`
 
 ## External Library Mocking
 

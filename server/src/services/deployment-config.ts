@@ -480,16 +480,32 @@ export class DeploymentConfigService extends ConfigurationService {
 
       if (filter) {
         if (filter.applicationName) {
-          where.applicationName = {
-            contains: filter.applicationName,
-            mode: "insensitive",
-          };
+          // Use case-insensitive filtering for both SQLite and PostgreSQL
+          if (process.env.DATABASE_URL?.includes('postgresql')) {
+            where.applicationName = {
+              contains: filter.applicationName,
+              mode: "insensitive",
+            };
+          } else {
+            // SQLite doesn't support mode parameter, but LIKE is case-insensitive by default
+            where.applicationName = {
+              contains: filter.applicationName,
+            };
+          }
         }
         if (filter.dockerImage) {
-          where.dockerImage = {
-            contains: filter.dockerImage,
-            mode: "insensitive",
-          };
+          // Use case-insensitive filtering for both SQLite and PostgreSQL
+          if (process.env.DATABASE_URL?.includes('postgresql')) {
+            where.dockerImage = {
+              contains: filter.dockerImage,
+              mode: "insensitive",
+            };
+          } else {
+            // SQLite doesn't support mode parameter, but LIKE is case-insensitive by default
+            where.dockerImage = {
+              contains: filter.dockerImage,
+            };
+          }
         }
         if (filter.isActive !== undefined) {
           where.isActive = filter.isActive;
