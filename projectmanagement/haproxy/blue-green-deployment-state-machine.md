@@ -43,16 +43,10 @@ stateDiagram-v2
     
     WAITING_GREEN_READY --> WAITING_GREEN_READY: Containers Starting
     WAITING_GREEN_READY --> INITIALIZING_GREEN_LB: Containers Running
-    WAITING_GREEN_READY --> FAILED: Startup Timeout
+    WAITING_GREEN_READY --> ROLLBACK_REMOVING_GREEN_APP: Startup Timeout
     
-    INITIALIZING_GREEN_LB --> REGISTERING_GREEN_SERVERS: Green Backend Created
-    INITIALIZING_GREEN_LB --> ROLLBACK_APP: LB Config Error
-    
-    REGISTERING_GREEN_SERVERS --> VALIDATING_GREEN: Servers Registered
-    REGISTERING_GREEN_SERVERS --> ROLLBACK_APP: Registration Error
-    
-    VALIDATING_GREEN --> HEALTH_CHECK_WAIT: Validation Pass
-    VALIDATING_GREEN --> ROLLBACK_APP: Validation Error
+    INITIALIZING_GREEN_LB --> HEALTH_CHECK_WAIT: Green Backend and Server Created
+    INITIALIZING_GREEN_LB --> ROLLBACK_STOPPING_GREEN_APP: LB Config Error
     
     HEALTH_CHECK_WAIT --> HEALTH_CHECK_WAIT: Services Not Ready
     HEALTH_CHECK_WAIT --> OPENING_TRAFFIC: All Services Healthy
@@ -74,27 +68,24 @@ stateDiagram-v2
     DECOMMISSIONING_BLUE_LB --> STOPPING_BLUE_APP: Blue Backend Removed
     
     STOPPING_BLUE_APP --> REMOVING_BLUE_APP: Blue Services Stopped
-    STOPPING_BLUE_APP --> MONITORING: Stop Failed (Non-Critical)
+    STOPPING_BLUE_APP --> FAILED: Stop Failed (Non-Critical)
     
-    REMOVING_BLUE_APP --> MONITORING: Blue Resources Released
-    REMOVING_BLUE_APP --> MONITORING: Removal Failed (Non-Critical)
+    REMOVING_BLUE_APP --> COMPLETED: Blue Resources Released
+    REMOVING_BLUE_APP --> FAILED: Removal Failed (Non-Critical)
     
-    MONITORING --> COMPLETED: Stability Confirmed
-    MONITORING --> ROLLBACK_APP: Post-Deploy Issues
+    ROLLBACK_APP --> ROLLBACK_CLOSING_GREEN_TRAFFIC: Initiate Rollback
     
-    ROLLBACK_APP --> CLOSING_GREEN_TRAFFIC: Initiate Rollback
+    ROLLBACK_CLOSING_GREEN_TRAFFIC --> ROLLBACK_RESTORING_BLUE_LB: Green Traffic Disabled
+    ROLLBACK_CLOSING_GREEN_TRAFFIC --> FAILED: Cannot Disable Green
     
-    CLOSING_GREEN_TRAFFIC --> RESTORING_BLUE_LB: Green Traffic Disabled
-    CLOSING_GREEN_TRAFFIC --> FAILED: Cannot Disable Green
+    ROLLBACK_RESTORING_BLUE_LB --> ROLLBACK_STOPPING_GREEN_APP: Blue Traffic Restored
+    ROLLBACK_RESTORING_BLUE_LB --> FAILED: Cannot Restore Blue
     
-    RESTORING_BLUE_LB --> STOPPING_GREEN_APP: Blue Traffic Restored
-    RESTORING_BLUE_LB --> FAILED: Cannot Restore Blue
+    ROLLBACK_STOPPING_GREEN_APP --> ROLLBACK_REMOVING_GREEN_APP: Green Services Stopped
+    ROLLBACK_STOPPING_GREEN_APP --> CLEANUP: Stop Failed (Continue)
     
-    STOPPING_GREEN_APP --> REMOVING_GREEN_APP: Green Services Stopped
-    STOPPING_GREEN_APP --> CLEANUP: Stop Failed (Continue)
-    
-    REMOVING_GREEN_APP --> CLEANUP: Green Resources Released
-    REMOVING_GREEN_APP --> CLEANUP: Removal Failed (Continue)
+    ROLLBACK_REMOVING_GREEN_APP --> CLEANUP: Green Resources Released
+    ROLLBACK_REMOVING_GREEN_APP --> CLEANUP: Removal Failed (Continue)
     
     CLEANUP --> IDLE: Cleanup Complete
     
@@ -195,50 +186,28 @@ stateDiagram-v2
 - **Entry Conditions**: Blue environment exists and deployment initiated
 - **Exit Triggers**: Containers deployed or deployment failure
 - **Actions**: 
-  - Pull latest application image
-  - Start green containers with environment config
-  - Allocate required resources (CPU, memory, storage)
-  - Configure networking between containers
-  - Set environment variables and secrets
+  - Ask Docker Executor to deploy container
 
 #### WAITING_GREEN_READY
 - **Description**: Waiting for green application containers to be ready
 - **Entry Conditions**: Green containers deployed
 - **Exit Triggers**: Containers running or timeout
 - **Actions**:
-  - Monitor container startup status
-  - Check application initialization logs
-  - Verify resource allocation
-  - Wait for application bootstrap completion
+  - Monitor container startup status using docker executor response
 
 #### INITIALIZING_GREEN_LB
-- **Description**: Preparing HAProxy configuration for green backend
+- **Description**: Preparing HAProxy configuration for green backend and registering the green servers
 - **Entry Conditions**: Green application containers running
-- **Exit Triggers**: Green backend ready or initialization failure
+- **Exit Triggers**: Green backend ready and server ready or initialization failure
 - **Actions**: 
   - Create green backend in HAProxy
   - Configure load balancing algorithm
   - Set up health check endpoints
   - Prepare server registration
-
-#### REGISTERING_GREEN_SERVERS
-- **Description**: Registering green application servers with HAProxy
-- **Entry Conditions**: Green backend created
-- **Exit Triggers**: All servers registered or error
-- **Actions**:
   - Discover green container IP addresses
   - Register each container as a server
   - Configure server-specific parameters
   - Set initial weights
-
-#### VALIDATING_GREEN
-- **Description**: Adding and configuring servers in green backend
-- **Entry Conditions**: Green backend successfully created
-- **Exit Triggers**: All servers added or validation failure
-- **Actions**:
-  - Add application servers to green backend
-  - Configure server parameters
-  - Validate configuration syntax
 
 #### HEALTH_CHECK_WAIT
 - **Description**: Waiting for green servers to become healthy
@@ -247,7 +216,6 @@ stateDiagram-v2
 - **Actions**:
   - Poll server health status
   - Monitor application readiness probes
-  - Track health check history
 
 #### OPENING_TRAFFIC
 - **Description**: Enabling traffic to green environment alongside blue
@@ -255,8 +223,8 @@ stateDiagram-v2
 - **Exit Triggers**: Traffic successfully opened or failure
 - **Actions**:
   - Enable green backend in HAProxy
-  - Set initial server weights
-  - Both blue and green now receive traffic
+  - Set taraffic weights to prefer GREEN
+  - Both blue and green now receive traffic but GREEN is the preference
 
 #### VALIDATING_TRAFFIC
 - **Description**: Monitoring green environment with live traffic
@@ -264,7 +232,6 @@ stateDiagram-v2
 - **Exit Triggers**: Validation passed, failed, or timeout
 - **Actions**:
   - Monitor green error rates
-  - Compare green vs blue performance
   - Track request distribution
   - Validate green is receiving and processing traffic
 
@@ -302,31 +269,14 @@ stateDiagram-v2
 - **Entry Conditions**: Blue backend removed from HAProxy
 - **Exit Triggers**: Blue containers stopped or timeout
 - **Actions**:
-  - Send graceful shutdown signal to containers
-  - Wait for application cleanup procedures
-  - Force stop if graceful shutdown exceeds timeout
-  - Log final container states
+  - Send graceful shutdown signal to containers via docker executor
 
 #### REMOVING_BLUE_APP
 - **Description**: Removing blue application resources
 - **Entry Conditions**: Blue containers stopped
 - **Exit Triggers**: Resources released
 - **Actions**:
-  - Remove blue containers
-  - Release allocated resources (CPU, memory, storage)
-  - Clean up container networks
-  - Remove volumes if not persistent
-  - Archive logs for audit
-
-#### MONITORING
-- **Description**: Post-deployment monitoring period
-- **Entry Conditions**: Blue backend decommissioned
-- **Exit Triggers**: Monitoring period complete or issues detected
-- **Actions**:
-  - Extended health monitoring
-  - Performance metric validation
-  - Error rate tracking
-  - User experience monitoring
+  - Remove blue containers via docker executor
 
 #### ROLLBACK_APP
 - **Description**: Initiating rollback of green deployment
