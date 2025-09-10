@@ -151,17 +151,7 @@ mini-infra/
 │   │   │   ├── deployments/ # Zero-downtime deployment components
 │   │   │   └── cloudflare/  # Cloudflare tunnel components
 │   │   ├── hooks/           # Custom React hooks
-│   │   │   ├── use-auth.ts  # Authentication hooks
-│   │   │   ├── use-containers.ts # Docker container hooks
-│   │   │   ├── use-settings.ts   # Settings management hooks
-│   │   │   ├── use-user-preferences.ts # User preference hooks
-│   │   │   ├── use-formatted-date.ts   # Timezone-aware date formatting
-│   │   │   ├── use-deployment-*.ts      # Deployment management hooks
-│   │   │   └── use-*.ts     # Various specialized hooks
 │   │   └── lib/             # Frontend utilities and configuration
-│   │       ├── routes.tsx   # Application routing configuration
-│   │       ├── date-utils.ts # Date formatting utilities
-│   │       └── utils.ts     # General utilities
 │   ├── public/              # Static assets
 │   ├── dist/                # Build output (→ ../server/public)
 │   ├── package.json         # Frontend dependencies
@@ -169,33 +159,26 @@ mini-infra/
 │   └── tailwind.config.js   # Tailwind CSS configuration
 ├── server/                  # Express.js 5 + Prisma backend
 │   ├── src/
-│   │   ├── app.ts          # Express app configuration
-│   │   ├── server.ts       # Server entry point
-│   │   ├── routes/         # API endpoints
-│   │   ├── services/       # Business logic layer
-│   │   ├── lib/            # Core utilities and middleware
-│   │   └── __tests__/      # Test files
+│   │   ├── app.ts           # Express app configuration
+│   │   ├── server.ts        # Server entry point
+│   │   ├── routes/          # API endpoints
+│   │   ├── services/        # Business logic layer
+│   │   ├── services/haproxy # Business logic layer for haproxy
+│   │   ├── lib/             # Core utilities and middleware
+│   │   └── __tests__/       # Test files
 │   ├── prisma/
-│   │   ├── schema.prisma   # Database schema definition
-│   │   └── dev.db          # SQLite database file
+│   │   ├── schema.prisma    # Database schema definition
+│   │   └── dev.db           # SQLite development database file
 │   ├── config/
-│   │   └── logging.json    # Logging configuration
-│   ├── logs/               # Log files (excluded from git)
-│   ├── public/             # Static files served by Express
-│   ├── dist/               # Backend build output
-│   ├── package.json        # Backend dependencies
-│   ├── .env                # Environment variables (not in git)
-│   └── .env.example        # Environment template
-├── lib/                    # Shared TypeScript types (@mini-infra/types)
-│   ├── types/             # TypeScript type definitions
-│   │   ├── auth.ts        # Authentication types
-│   │   ├── containers.ts  # Docker container types
-│   │   ├── settings.ts    # Configuration types
-│   │   ├── azure.ts       # Azure Storage types
-│   │   ├── cloudflare.ts  # Cloudflare API types
-│   │   ├── postgres.ts    # PostgreSQL operation types
-│   │   ├── api.ts         # API response types
-│   │   └── index.ts       # Utility types
+│   │   └── logging.json     # Logging configuration
+│   ├── logs/                # Log files (excluded from git)
+│   ├── public/              # Static files served by Express
+│   ├── dist/                # Backend build output
+│   ├── package.json         # Backend dependencies
+│   ├── .env                 # Environment variables (not in git)
+│   └── .env.example         # Environment template
+├── lib/                   # Shared TypeScript types (@mini-infra/types)
+│   ├── types/             # TypeScript type definitions shared between client and server
 │   ├── dist/              # Compiled JavaScript and declarations
 │   ├── package.json       # Shared types package configuration
 │   └── tsconfig.json      # TypeScript configuration
@@ -293,51 +276,14 @@ The backend implements a sophisticated service layer with dependency injection, 
 - **DockerConfig** (`server/src/services/docker-config.ts`): Docker host and API configuration management with connection testing and singleton pattern
 - **AzureConfig** (`server/src/services/azure-config.ts`): Azure Storage configuration with connection string validation, container access testing, and retry logic with caching
 - **CloudflareConfig** (`server/src/services/cloudflare-config.ts`): Cloudflare API configuration with circuit breaker pattern (opens after 5 failures, 5-minute cooldown), request deduplication, and comprehensive error handling
-
-### Business Logic Services
-
-#### Docker Integration
-- **DockerService** (`server/src/services/docker.ts`): Singleton Docker API integration with database-driven configuration and automatic reconnection
-- **DockerExecutorService** (`server/src/services/docker-executor.ts`): Docker operations including image pulling, registry authentication testing, and container management with comprehensive error handling
-
-#### PostgreSQL Database Management
 - **PostgresConfigService** (`server/src/services/postgres-config.ts`): PostgreSQL database configuration management with connection string encryption/decryption, connection testing with timeout protection, and user-scoped database management
-- **BackupConfigService** (`server/src/services/backup-config.ts`): Backup configuration management with cron expression validation, Azure container validation, and automated scheduling calculations
-- **BackupExecutorService** (`server/src/services/backup-executor.ts`): Automated backup execution with progress tracking and Azure Storage integration
-- **RestoreExecutorService** (`server/src/services/restore-executor.ts`): Database restore operations with progress monitoring and validation
-
-#### Deployment Infrastructure Services
-- **DeploymentInfrastructureService** (`server/src/services/deployment-infrastructure.ts`): Docker network and Traefik container management with automated deployment, status monitoring, and cleanup operations
-- **TraefikIntegrationService** (`server/src/services/traefik-integration.ts`): Traefik label generation and traffic routing management for blue-green deployments including priority-based routing, container label management, configuration validation, and service discovery
-- **DeploymentOrchestrator** (`server/src/services/deployment-orchestrator.ts`): XState-powered deployment state machine with comprehensive workflow execution including image pulling, container lifecycle management, health checking, traffic switching, and rollback capabilities. Features database progress tracking and deployment-specific logging to `app-deployments.log`
 
 ## Frontend Architecture
 
 ### Application Routing Structure
 
-The frontend uses React Router v7 with protected route guards and nested routing. All routes except `/login` require authentication.
+The frontend uses React Router v7 with protected route guards and nested routing. All routes except `/login` require authentication via api key or google login.
 
-#### Current Route Implementation (`client/src/lib/routes.tsx`)
-```
-/ → /dashboard (redirect)
-/login (public route - Google OAuth)
-/dashboard (main application dashboard)
-/containers (Docker container management)
-/postgres (PostgreSQL database management)
-/tunnels (Cloudflare tunnel monitoring)
-/connectivity/* (service health monitoring)
-  ├─ /overview (connectivity dashboard)
-  ├─ /docker (Docker service status)
-  ├─ /azure (Azure service status)
-  └─ /cloudflare (Cloudflare service status)
-/settings/* (system configuration)
-  └─ /system (Docker registry and deployment infrastructure configuration)
-/user/settings (personal preferences including timezone)
-```
-
-## Environment Variables
-
-Create a `.env` file in the `server/` directory using the provided `.env.example` template
 ## Key Commands
 
 ### Root Project (npm workspaces)

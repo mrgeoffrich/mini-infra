@@ -235,7 +235,7 @@ export class HealthCheckService {
       // Simple expression evaluation (restricted for security)
       // Only allow basic comparison operations
       const safeExpression = expression.replace(
-        /[^a-zA-Z0-9\s\.\[\]\(\)===!==><>=<=\+\-\*\/\%&\|]/g,
+        /[^a-zA-Z0-9\s\.\[\]\(\)===!==><>=<=\+\-\*\/\%&\|'"]/g,
         "",
       );
 
@@ -313,6 +313,7 @@ export class HealthCheckService {
         result.errorMessage = `Health check failed validation: ${failedChecks.join(", ")}`;
       }
 
+
       servicesLogger().debug(
         {
           endpoint: config.endpoint,
@@ -328,23 +329,34 @@ export class HealthCheckService {
       return result;
     } catch (error) {
       const responseTime = Date.now() - startTime;
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      let errorMessage = "Unknown error";
+      let statusCode: number | undefined = undefined;
 
-      let specificError = errorMessage;
+
       if (axios.isAxiosError(error)) {
-        if (error.code === "ECONNREFUSED") {
-          specificError = "Connection refused - service may be down";
-        } else if (
-          error.code === "ETIMEDOUT" ||
-          error.message.includes("timeout")
-        ) {
-          specificError = `Request timeout after ${config.timeout || HealthCheckService.DEFAULT_TIMEOUT}ms`;
-        } else if (error.code === "ENOTFOUND") {
-          specificError = "DNS resolution failed - hostname not found";
-        } else if (error.code === "ECONNRESET") {
-          specificError = "Connection reset by server";
+        // Handle axios errors with response (e.g., 4xx, 5xx status codes)
+        if (error.response) {
+          statusCode = error.response.status;
+          errorMessage = `Health check failed validation: statusCode`;
+        } else {
+          // Handle network/connection errors
+          if (error.code === "ECONNREFUSED") {
+            errorMessage = "Connection refused - service may be down";
+          } else if (
+            error.code === "ETIMEDOUT" ||
+            error.message.includes("timeout")
+          ) {
+            errorMessage = `Request timeout after ${config.timeout || HealthCheckService.DEFAULT_TIMEOUT}ms`;
+          } else if (error.code === "ENOTFOUND") {
+            errorMessage = "DNS resolution failed - hostname not found";
+          } else if (error.code === "ECONNRESET") {
+            errorMessage = "Connection reset by server";
+          } else {
+            errorMessage = error.message || "Network error";
+          }
         }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
 
       servicesLogger().debug(
@@ -354,14 +366,16 @@ export class HealthCheckService {
           error: errorMessage,
           errorCode: (error as any)?.code,
           responseTime,
+          statusCode,
         },
         "Health check request failed",
       );
 
       return {
         success: false,
+        statusCode,
         responseTime,
-        errorMessage: specificError,
+        errorMessage,
       };
     }
   }
@@ -423,6 +437,7 @@ export class HealthCheckService {
       const result = await this.performSingleCheck(config);
       lastResult = result;
 
+
       if (result.success) {
         this.recordCircuitBreakerSuccess(endpoint);
         servicesLogger().info(
@@ -434,6 +449,22 @@ export class HealthCheckService {
             statusCode: result.statusCode,
           },
           "Health check succeeded",
+        );
+        return result;
+      }
+
+      // If we got a statusCode, it means we received a valid HTTP response
+      // Don't retry for validation failures, only retry for network errors
+      if (result.statusCode !== undefined) {
+        this.recordCircuitBreakerFailure(endpoint);
+        servicesLogger().info(
+          {
+            endpoint,
+            attempt: attempt + 1,
+            statusCode: result.statusCode,
+            error: result.errorMessage,
+          },
+          "Health check failed validation, not retrying",
         );
         return result;
       }
@@ -452,6 +483,7 @@ export class HealthCheckService {
 
     // All attempts failed
     this.recordCircuitBreakerFailure(endpoint);
+
 
     servicesLogger().warn(
       {
@@ -474,7 +506,7 @@ export class HealthCheckService {
       method: "GET",
       expectedStatuses: [200],
       timeout: 5000, // Shorter timeout for basic checks
-      retries: 1,
+      retries: 0, // No retries for basic checks to get immediate feedback
     });
   }
 

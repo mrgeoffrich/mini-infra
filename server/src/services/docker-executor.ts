@@ -12,6 +12,10 @@ export interface ContainerExecutionOptions {
   outputHandler?: (stream: Readable) => void;
   cmd?: string[]; // Custom command to run in container
   networkMode?: string; // Docker network to attach to
+  // Compose-style grouping options
+  projectName?: string; // Docker Compose project name
+  serviceName?: string; // Docker Compose service name
+  labels?: Record<string, string>; // Additional custom labels
 }
 
 export interface ContainerExecutionResult {
@@ -338,6 +342,8 @@ export class DockerExecutorService {
         Tty: false,
         // Auto-remove container after execution if removeContainer is not false
         AutoRemove: options.removeContainer !== false,
+        // Add compose-style labels if grouping options are provided
+        Labels: this.generateContainerLabels(options),
         // Set resource limits for safety
         HostConfig: {
           Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
@@ -769,5 +775,425 @@ export class DockerExecutorService {
         },
       };
     }
+  }
+
+  /**
+   * Generate Docker Compose-style labels for container grouping
+   */
+  public generateContainerLabels(options: ContainerExecutionOptions): Record<string, string> {
+    const labels: Record<string, string> = {
+      // Always add mini-infra managed label
+      'mini-infra.managed': 'true',
+    };
+
+    // Add compose-style labels if project/service names are provided
+    if (options.projectName) {
+      labels['com.docker.compose.project'] = options.projectName;
+      labels['mini-infra.project'] = options.projectName;
+      
+      // Generate a simple config hash based on project name and timestamp
+      labels['com.docker.compose.config-hash'] = this.generateConfigHash(options.projectName);
+      labels['com.docker.compose.container-number'] = '1';
+      labels['com.docker.compose.oneoff'] = 'False';
+      labels['com.docker.compose.version'] = '2.32.4'; // Current compose version
+    }
+
+    if (options.serviceName) {
+      labels['com.docker.compose.service'] = options.serviceName;
+      labels['mini-infra.service'] = options.serviceName;
+    }
+
+    // Add any additional custom labels
+    if (options.labels) {
+      Object.assign(labels, options.labels);
+    }
+
+    return labels;
+  }
+
+  /**
+   * Generate a hash for the configuration (simplified version)
+   */
+  private generateConfigHash(projectName: string): string {
+    const configString = `${projectName}-${Date.now()}`;
+    return Buffer.from(configString).toString('base64').substring(0, 12);
+  }
+
+  /**
+   * Find all containers belonging to a compose project
+   */
+  public async getProjectContainers(projectName: string): Promise<Docker.ContainerInfo[]> {
+    try {
+      const containers = await this.docker.listContainers({ all: true });
+      
+      return containers.filter(container => 
+        container.Labels && 
+        container.Labels['com.docker.compose.project'] === projectName
+      );
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          projectName,
+        },
+        "Failed to get project containers",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Find containers by service name within a project
+   */
+  public async getServiceContainers(projectName: string, serviceName: string): Promise<Docker.ContainerInfo[]> {
+    try {
+      const containers = await this.docker.listContainers({ all: true });
+      
+      return containers.filter(container => 
+        container.Labels && 
+        container.Labels['com.docker.compose.project'] === projectName &&
+        container.Labels['com.docker.compose.service'] === serviceName
+      );
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          projectName,
+          serviceName,
+        },
+        "Failed to get service containers",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Find all containers managed by mini-infra
+   */
+  public async getManagedContainers(): Promise<Docker.ContainerInfo[]> {
+    try {
+      const containers = await this.docker.listContainers({ all: true });
+      
+      return containers.filter(container => 
+        container.Labels && 
+        container.Labels['mini-infra.managed'] === 'true'
+      );
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get managed containers",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Stop all containers in a compose project
+   */
+  public async stopProject(projectName: string): Promise<void> {
+    const log = servicesLogger().child({ operation: 'stop-project', project: projectName });
+    
+    try {
+      const containers = await this.getProjectContainers(projectName);
+      
+      for (const containerInfo of containers) {
+        try {
+          const container = this.docker.getContainer(containerInfo.Id);
+          const info = await container.inspect();
+          
+          if (info.State.Running) {
+            await container.stop();
+            log.info({ container: containerInfo.Names[0] }, 'Stopped container');
+          }
+        } catch (error) {
+          log.error({ error, container: containerInfo.Names[0] }, 'Failed to stop container');
+        }
+      }
+    } catch (error) {
+      log.error({ error }, 'Failed to stop project');
+      throw error;
+    }
+  }
+
+  /**
+   * Remove all containers in a compose project
+   */
+  public async removeProject(projectName: string): Promise<void> {
+    const log = servicesLogger().child({ operation: 'remove-project', project: projectName });
+    
+    try {
+      const containers = await this.getProjectContainers(projectName);
+      
+      for (const containerInfo of containers) {
+        try {
+          const container = this.docker.getContainer(containerInfo.Id);
+          const info = await container.inspect();
+          
+          if (info.State.Running) {
+            await container.stop();
+          }
+          
+          await container.remove();
+          log.info({ container: containerInfo.Names[0] }, 'Removed container');
+        } catch (error) {
+          log.error({ error, container: containerInfo.Names[0] }, 'Failed to remove container');
+        }
+      }
+    } catch (error) {
+      log.error({ error }, 'Failed to remove project');
+      throw error;
+    }
+  }
+
+  /**
+   * Create a Docker network with compose-style labels
+   */
+  public async createNetwork(
+    networkName: string,
+    projectName?: string,
+    options?: { driver?: string; labels?: Record<string, string> }
+  ): Promise<void> {
+    try {
+      const networks = await this.docker.listNetworks();
+      const existingNetwork = networks.find(net => net.Name === networkName);
+      
+      if (!existingNetwork) {
+        const labels: Record<string, string> = {
+          'mini-infra.managed': 'true',
+        };
+
+        if (projectName) {
+          labels['com.docker.compose.project'] = projectName;
+          labels['com.docker.compose.network'] = networkName;
+          labels['mini-infra.project'] = projectName;
+        }
+
+        if (options?.labels) {
+          Object.assign(labels, options.labels);
+        }
+
+        await this.docker.createNetwork({
+          Name: networkName,
+          Driver: options?.driver || 'bridge',
+          Labels: labels
+        });
+        
+        servicesLogger().info({ network: networkName, project: projectName }, 'Created network');
+      } else {
+        servicesLogger().info({ network: networkName }, 'Network already exists');
+      }
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          network: networkName,
+          project: projectName,
+        },
+        "Failed to create network",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a Docker volume with compose-style labels
+   */
+  public async createVolume(
+    volumeName: string,
+    projectName?: string,
+    options?: { labels?: Record<string, string> }
+  ): Promise<void> {
+    try {
+      const existingVolumes = await this.docker.listVolumes();
+      const volumeExists = existingVolumes.Volumes?.some(vol => vol.Name === volumeName);
+      
+      if (!volumeExists) {
+        const labels: Record<string, string> = {
+          'mini-infra.managed': 'true',
+        };
+
+        if (projectName) {
+          labels['com.docker.compose.project'] = projectName;
+          labels['com.docker.compose.volume'] = volumeName;
+          labels['mini-infra.project'] = projectName;
+        }
+
+        if (options?.labels) {
+          Object.assign(labels, options.labels);
+        }
+
+        await this.docker.createVolume({ 
+          Name: volumeName,
+          Labels: labels
+        });
+        
+        servicesLogger().info({ volume: volumeName, project: projectName }, 'Created volume');
+      } else {
+        servicesLogger().info({ volume: volumeName }, 'Volume already exists');
+      }
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          volume: volumeName,
+          project: projectName,
+        },
+        "Failed to create volume",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a long-running container with compose-style labels
+   * Unlike executeContainer, this creates but doesn't auto-remove the container
+   */
+  public async createLongRunningContainer(
+    options: ContainerExecutionOptions & {
+      name?: string;
+      ports?: Record<string, { HostPort: string }[]>;
+      volumes?: string[];
+      mounts?: Array<{
+        Target: string;
+        Source: string;
+        Type: 'volume' | 'bind';
+        ReadOnly?: boolean;
+      }>;
+      networks?: string[];
+      restartPolicy?: 'no' | 'on-failure' | 'unless-stopped' | 'always';
+      healthcheck?: {
+        Test: string[];
+        Interval?: number;
+        Timeout?: number;
+        Retries?: number;
+        StartPeriod?: number;
+      };
+      logConfig?: {
+        Type: string;
+        Config: Record<string, string>;
+      };
+    }
+  ): Promise<Container> {
+    try {
+      servicesLogger().info(
+        {
+          image: options.image,
+          name: options.name,
+          projectName: options.projectName,
+          serviceName: options.serviceName,
+        },
+        "Creating long-running container"
+      );
+
+      // Convert environment variables to Docker format
+      const env = Object.entries(options.env).map(
+        ([key, value]) => `${key}=${value}`,
+      );
+
+      const containerOptions: any = {
+        Image: options.image,
+        name: options.name,
+        Env: env,
+        Labels: this.generateContainerLabels(options),
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: false,
+        HostConfig: {
+          Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
+          CpuShares: 1024, // Standard CPU allocation
+        },
+      };
+
+      // Add custom command if provided
+      if (options.cmd) {
+        containerOptions.Cmd = options.cmd;
+      }
+
+      // Add network mode if provided
+      if (options.networkMode) {
+        containerOptions.HostConfig.NetworkMode = options.networkMode;
+      }
+
+      // Add port bindings
+      if (options.ports) {
+        containerOptions.HostConfig.PortBindings = options.ports;
+      }
+
+      // Add bind mounts
+      if (options.volumes) {
+        containerOptions.HostConfig.Binds = options.volumes;
+      }
+
+      // Add volume mounts
+      if (options.mounts) {
+        containerOptions.HostConfig.Mounts = options.mounts;
+      }
+
+      // Add restart policy
+      if (options.restartPolicy) {
+        containerOptions.HostConfig.RestartPolicy = {
+          Name: options.restartPolicy
+        };
+      }
+
+      // Add logging configuration
+      if (options.logConfig) {
+        containerOptions.HostConfig.LogConfig = options.logConfig;
+      }
+
+      // Add health check
+      if (options.healthcheck) {
+        containerOptions.Healthcheck = {
+          Test: options.healthcheck.Test,
+          Interval: options.healthcheck.Interval || 30000000000, // 30s in nanoseconds
+          Timeout: options.healthcheck.Timeout || 5000000000,   // 5s in nanoseconds
+          Retries: options.healthcheck.Retries || 3,
+          StartPeriod: options.healthcheck.StartPeriod || 10000000000 // 10s in nanoseconds
+        };
+      }
+
+      // Set up networking
+      if (options.networks && options.networks.length > 0) {
+        containerOptions.NetworkingConfig = {
+          EndpointsConfig: {}
+        };
+        for (const network of options.networks) {
+          containerOptions.NetworkingConfig.EndpointsConfig[network] = {};
+        }
+      }
+
+      const container = await this.docker.createContainer(containerOptions);
+
+      servicesLogger().info(
+        {
+          containerId: container.id,
+          name: options.name,
+          projectName: options.projectName,
+          serviceName: options.serviceName,
+        },
+        "Long-running container created successfully"
+      );
+
+      return container;
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          image: options.image,
+          name: options.name,
+        },
+        "Failed to create long-running container"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get the Docker client instance for advanced operations
+   */
+  public getDockerClient(): Docker {
+    return this.docker;
   }
 }
