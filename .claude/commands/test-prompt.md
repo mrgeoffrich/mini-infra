@@ -1,1 +1,0 @@
-Can you take the @CLAUDE.md file and turn it into a shakespearean play and write it to a new markdown file.

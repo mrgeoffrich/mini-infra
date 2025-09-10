@@ -1,0 +1,1 @@
+Run $ARUGUMENT and keep in mind @claude-guidance\tests.md then fix the tests
