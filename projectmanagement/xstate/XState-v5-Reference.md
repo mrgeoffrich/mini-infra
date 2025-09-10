@@ -58,8 +58,11 @@ toggleActor.subscribe((state) => console.log(state.value, state.context));
 toggleActor.start();
 // => logs 'inactive', { count: 0 }
 
-toggleActor.send({ type: 'TOGGLE' });
-// => logs 'active', { count: 1 }
+toggleActor.send({ type: 'toggle' });
+// logs 'active'
+
+toggleActor.send({ type: 'toggle' });
+// logs 'inactive'
 ```
 
 ### Traffic Light Example
