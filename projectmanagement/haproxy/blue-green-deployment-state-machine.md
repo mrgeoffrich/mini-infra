@@ -50,44 +50,46 @@ stateDiagram-v2
     
     HEALTH_CHECK_WAIT --> HEALTH_CHECK_WAIT: Services Not Ready
     HEALTH_CHECK_WAIT --> OPENING_TRAFFIC: All Services Healthy
-    HEALTH_CHECK_WAIT --> ROLLBACK_APP: Health Check Timeout
+    HEALTH_CHECK_WAIT --> ROLLBACK_REMOVE_GREEN_HAPROXY_CONFIG: Health Check Timeout
     
     OPENING_TRAFFIC --> VALIDATING_TRAFFIC: Traffic Enabled to Green
-    OPENING_TRAFFIC --> ROLLBACK_APP: Failed to Open Traffic
+    OPENING_TRAFFIC --> ROLLBACK_DISABLE_GREEN_TRAFFIC: Failed to Open Traffic
     
     VALIDATING_TRAFFIC --> VALIDATING_TRAFFIC: Monitoring Traffic
     VALIDATING_TRAFFIC --> DRAINING_BLUE: Traffic Validated
-    VALIDATING_TRAFFIC --> ROLLBACK_APP: Validation Failed
+    VALIDATING_TRAFFIC --> ROLLBACK_RESTORE_BLUE_TRAFFIC: Validation Failed
     
     DRAINING_BLUE --> WAITING_FOR_DRAIN: Drain Initiated
     
     WAITING_FOR_DRAIN --> WAITING_FOR_DRAIN: Connections Active
     WAITING_FOR_DRAIN --> DECOMMISSIONING_BLUE_LB: Connections Drained
-    WAITING_FOR_DRAIN --> ROLLBACK_APP: Drain Timeout or Issues
+    WAITING_FOR_DRAIN --> ROLLBACK_RESTORE_BLUE_TRAFFIC: Drain Timeout or Issues
     
-    DECOMMISSIONING_BLUE_LB --> STOPPING_BLUE_APP: Blue Backend Removed
+    DECOMMISSIONING_BLUE_LB --> STOPPING_BLUE_APP: Blue Backend Removed And Server removed from haproxy
+    DECOMMISSIONING_BLUE_LB --> FAILED: Unable to remove blue backend and server (Non-Critical)
     
     STOPPING_BLUE_APP --> REMOVING_BLUE_APP: Blue Services Stopped
     STOPPING_BLUE_APP --> FAILED: Stop Failed (Non-Critical)
     
     REMOVING_BLUE_APP --> COMPLETED: Blue Resources Released
     REMOVING_BLUE_APP --> FAILED: Removal Failed (Non-Critical)
+      
+    ROLLBACK_RESTORE_BLUE_TRAFFIC --> ROLLBACK_DISABLE_GREEN_TRAFFIC: Blue traffic re-enabled
+    ROLLBACK_RESTORE_BLUE_TRAFFIC --> FAILED: Cannot Disable Green
     
-    ROLLBACK_APP --> ROLLBACK_CLOSING_GREEN_TRAFFIC: Initiate Rollback
+    ROLLBACK_DISABLE_GREEN_TRAFFIC --> ROLLBACK_STOPPING_GREEN_APP: Blue Traffic Restored
+    ROLLBACK_DISABLE_GREEN_TRAFFIC --> FAILED: Cannot Restore Blue
     
-    ROLLBACK_CLOSING_GREEN_TRAFFIC --> ROLLBACK_RESTORING_BLUE_LB: Green Traffic Disabled
-    ROLLBACK_CLOSING_GREEN_TRAFFIC --> FAILED: Cannot Disable Green
-    
-    ROLLBACK_RESTORING_BLUE_LB --> ROLLBACK_STOPPING_GREEN_APP: Blue Traffic Restored
-    ROLLBACK_RESTORING_BLUE_LB --> FAILED: Cannot Restore Blue
-    
+    ROLLBACK_REMOVE_GREEN_HAPROXY_CONFIG --> ROLLBACK_STOPPING_GREEN_APP: Config removed
+    ROLLBACK_REMOVE_GREEN_HAPROXY_CONFIG --> FAILED: Can not rollback green config
+
     ROLLBACK_STOPPING_GREEN_APP --> ROLLBACK_REMOVING_GREEN_APP: Green Services Stopped
-    ROLLBACK_STOPPING_GREEN_APP --> CLEANUP: Stop Failed (Continue)
+    ROLLBACK_STOPPING_GREEN_APP --> FAILED: Stop Failed (Continue)
     
-    ROLLBACK_REMOVING_GREEN_APP --> CLEANUP: Green Resources Released
-    ROLLBACK_REMOVING_GREEN_APP --> CLEANUP: Removal Failed (Continue)
+    ROLLBACK_REMOVING_GREEN_APP --> ROLLBACK_COMPLETE: Green Resources Released
+    ROLLBACK_REMOVING_GREEN_APP --> FAILED: Removal Failed (Continue)
     
-    CLEANUP --> IDLE: Cleanup Complete
+    ROLLBACK_COMPLETE --> IDLE: Rollback Complete
     
     COMPLETED --> IDLE: Reset for Next Deploy
     
@@ -111,16 +113,8 @@ stateDiagram-v2
     WAITING_APP_READY --> INITIALIZING_FIRST_LB: Containers Running
     WAITING_APP_READY --> FAILED: Startup Timeout
     
-    INITIALIZING_FIRST_LB --> CREATING_BACKEND: Initialize HAProxy
+    INITIALIZING_FIRST_LB --> INITIAL_HEALTH_CHECK: Initialize HAProxy and create backend
     INITIALIZING_FIRST_LB --> FAILED: Initialization Error
-    
-    CREATING_BACKEND --> REGISTERING_SERVERS: Backend Created
-    CREATING_BACKEND --> FAILED: Backend Creation Error
-    
-    REGISTERING_SERVERS --> CONFIGURING_HEALTH: Servers Registered
-    REGISTERING_SERVERS --> FAILED: Server Registration Error
-    
-    CONFIGURING_HEALTH --> INITIAL_HEALTH_CHECK: Health Checks Configured
     
     INITIAL_HEALTH_CHECK --> INITIAL_HEALTH_CHECK: Servers Not Ready
     INITIAL_HEALTH_CHECK --> ENABLING_TRAFFIC: All Servers Healthy
