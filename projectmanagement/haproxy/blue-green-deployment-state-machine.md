@@ -272,37 +272,29 @@ stateDiagram-v2
 - **Actions**:
   - Remove blue containers via docker executor
 
-#### ROLLBACK_APP
-- **Description**: Initiating rollback of green deployment
-- **Entry Conditions**: Issues detected during deployment or validation
-- **Exit Triggers**: Rollback process initiated
+#### ROLLBACK_RESTORE_BLUE_TRAFFIC
+- **Description**: Restoring traffic to the blue application in the event of a rollback
+- **Entry Conditions**: Issues detected during draining of traffic or validating green traffic
+- **Exit Triggers**: Traffic to blue is re-enabled
 - **Actions**:
-  - Capture failure metrics and logs
-  - Log rollback reason and context
-  - Determine rollback strategy based on current state
-  - Prepare rollback sequence
+  - All traffic back to blue
 
-#### CLOSING_GREEN_TRAFFIC
+#### ROLLBACK_DISABLE_GREEN_TRAFFIC
 - **Description**: Disabling traffic to green environment
 - **Entry Conditions**: Rollback initiated
 - **Exit Triggers**: Green traffic disabled
 - **Actions**:
-  - Disable green backend in HAProxy
   - Stop routing to green servers
-  - Ensure blue can handle full load
-  - Update traffic routing rules
-
-#### RESTORING_BLUE_LB
-- **Description**: Re-enabling blue backend in HAProxy
-- **Entry Conditions**: Green traffic closed
-- **Exit Triggers**: Blue load balancer configuration restored
+  
+#### ROLLBACK_REMOVE_GREEN_HAPROXY_CONFIG
+- **Description**: Remove green haproxy server and backends
+- **Entry Conditions**: Green traffic has been disabled on a rollback
+- **Exit Triggers**: Server and backend removed for Green 
 - **Actions**:
-  - Remove drain mode from blue servers
-  - Restore original blue weights
-  - Re-enable blue backend
-  - Verify blue health status
+  - Remove green backend from haproxy
+  - Remove green server from haproxy
 
-#### STOPPING_GREEN_APP
+#### ROLLBACK_STOPPING_GREEN_APP
 - **Description**: Stopping failed green application containers
 - **Entry Conditions**: Blue restored or rollback in progress
 - **Exit Triggers**: Green containers stopped
@@ -312,7 +304,7 @@ stateDiagram-v2
   - Force termination if needed
   - Capture final logs
 
-#### REMOVING_GREEN_APP
+#### ROLLBACK_REMOVING_GREEN_APP
 - **Description**: Cleaning up green application resources
 - **Entry Conditions**: Green containers stopped
 - **Exit Triggers**: Green resources released
