@@ -33,10 +33,7 @@ For updates, traffic is opened to green alongside blue, validated, then blue is 
 stateDiagram-v2
     [*] --> IDLE: System Ready
     
-    IDLE --> DETECTING_MODE: Start Deployment
-    
-    DETECTING_MODE --> DEPLOYING_GREEN_APP: Blue Environment Exists
-    DETECTING_MODE --> INITIALIZING_FIRST: No Blue Environment
+    IDLE --> DEPLOYING_GREEN_APP: Start Deployment
     
     DEPLOYING_GREEN_APP --> WAITING_GREEN_READY: Deploy Green Containers
     DEPLOYING_GREEN_APP --> FAILED: Deployment Error
@@ -102,9 +99,7 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> IDLE: System Ready
     
-    IDLE --> DETECTING_MODE: Start Deployment
-    
-    DETECTING_MODE --> DEPLOYING_INITIAL_APP: No Blue Environment
+    IDLE --> DEPLOYING_INITIAL_APP: Start Deployment
     
     DEPLOYING_INITIAL_APP --> WAITING_APP_READY: Deploy Application Containers
     DEPLOYING_INITIAL_APP --> FAILED: Deployment Error
