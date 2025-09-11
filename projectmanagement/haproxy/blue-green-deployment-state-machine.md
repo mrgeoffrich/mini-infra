@@ -93,7 +93,7 @@ stateDiagram-v2
     FAILED --> IDLE: Manual Intervention
 ```
 
-### Initial Deployment Flow (First Time)
+### Sascha 
 
 ```mermaid
 stateDiagram-v2
