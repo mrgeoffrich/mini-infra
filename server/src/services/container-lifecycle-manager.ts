@@ -1,7 +1,6 @@
 import Docker from "dockerode";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
-import { DockerExecutorService } from "./docker-executor";
 import prisma from "../lib/prisma";
 import {
   ContainerConfig,
@@ -51,17 +50,49 @@ export interface OrphanedContainer {
 
 export class ContainerLifecycleManager {
   private dockerService: DockerService;
-  private dockerExecutorService: DockerExecutorService;
 
   constructor() {
     this.dockerService = DockerService.getInstance();
-    this.dockerExecutorService = new DockerExecutorService();
   }
 
 
   // ====================
   // Container Creation
   // ====================
+
+  /**
+   * Get the Docker network name from system settings
+   */
+  public async getDockerNetworkName(): Promise<string> {
+    try {
+      const networkSetting = await prisma.systemSettings.findFirst({
+        where: {
+          category: "system",
+          key: "docker_network_name",
+        },
+      });
+
+      const networkName = networkSetting?.value || "mini-infra-network";
+
+      servicesLogger().debug(
+        {
+          networkName,
+          fromSettings: !!networkSetting?.value,
+        },
+        "Retrieved Docker network name for container operations",
+      );
+
+      return networkName;
+    } catch (error) {
+      servicesLogger().warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get Docker network name from settings, using default",
+      );
+      return "mini-infra-network";
+    }
+  }
 
   /**
    * Create a new container with proper Traefik labels and deployment configuration
@@ -107,7 +138,7 @@ export class ContainerLifecycleManager {
       const env = this.buildEnvironmentVariables(options.config.environment);
 
       // Prepare network configuration
-      const defaultNetworkName = await this.dockerExecutorService.getDockerNetworkName();
+      const defaultNetworkName = await this.getDockerNetworkName();
       const networkMode =
         options.config.networks.length > 0
           ? options.config.networks[0]
