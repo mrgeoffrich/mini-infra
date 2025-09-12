@@ -95,6 +95,40 @@ export class DockerExecutorService {
   }
 
   /**
+   * Get the Docker network name from system settings
+   */
+  public async getDockerNetworkName(): Promise<string> {
+    try {
+      const networkSetting = await prisma.systemSettings.findFirst({
+        where: {
+          category: "system",
+          key: "docker_network_name",
+        },
+      });
+
+      const networkName = networkSetting?.value || "mini-infra-network";
+
+      servicesLogger().debug(
+        {
+          networkName,
+          fromSettings: !!networkSetting?.value,
+        },
+        "Retrieved Docker network name for container operations",
+      );
+
+      return networkName;
+    } catch (error) {
+      servicesLogger().warn(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to get Docker network name from settings, using default",
+      );
+      return "mini-infra-network";
+    }
+  }
+
+  /**
    * Execute a container with the specified configuration
    */
   public async executeContainer(

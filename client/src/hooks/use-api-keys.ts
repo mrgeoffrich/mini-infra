@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiKey, CreateApiKeyRequest, ApiKeyResponse } from "../lib/auth-types";
+import { CreateApiKeyResponse } from "@mini-infra/types";
 
 async function fetchApiKeys(): Promise<ApiKey[]> {
   const response = await fetch(`/api/keys`, {
@@ -17,7 +18,7 @@ async function fetchApiKeys(): Promise<ApiKey[]> {
   return data.data || [];
 }
 
-async function createApiKey(request: CreateApiKeyRequest): Promise<ApiKey> {
+async function createApiKey(request: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
   const response = await fetch(`/api/keys`, {
     method: "POST",
     credentials: "include",
@@ -32,7 +33,7 @@ async function createApiKey(request: CreateApiKeyRequest): Promise<ApiKey> {
   }
 
   const data: ApiKeyResponse = await response.json();
-  return data.data;
+  return data.data as CreateApiKeyResponse;
 }
 
 async function revokeApiKey(keyId: string): Promise<void> {
@@ -49,7 +50,7 @@ async function revokeApiKey(keyId: string): Promise<void> {
   }
 }
 
-async function rotateApiKey(keyId: string): Promise<ApiKey> {
+async function rotateApiKey(keyId: string): Promise<CreateApiKeyResponse> {
   const response = await fetch(`/api/keys/${keyId}/rotate`, {
     method: "POST",
     credentials: "include",
@@ -63,7 +64,7 @@ async function rotateApiKey(keyId: string): Promise<ApiKey> {
   }
 
   const data: ApiKeyResponse = await response.json();
-  return data.data;
+  return data.data as CreateApiKeyResponse;
 }
 
 async function deleteApiKey(keyId: string): Promise<void> {

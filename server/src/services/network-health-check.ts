@@ -77,39 +77,6 @@ export class NetworkHealthCheckService {
     await this.dockerExecutor.initialize();
   }
 
-  /**
-   * Get Docker network name from system settings
-   */
-  private async getDockerNetworkName(): Promise<string> {
-    try {
-      const networkSetting = await prisma.systemSettings.findFirst({
-        where: {
-          category: "system",
-          key: "docker_network_name",
-        },
-      });
-
-      const networkName = networkSetting?.value || "mini-infra-network";
-
-      servicesLogger().debug(
-        {
-          networkName,
-          fromSettings: !!networkSetting?.value,
-        },
-        "Retrieved Docker network name for health checks",
-      );
-
-      return networkName;
-    } catch (error) {
-      servicesLogger().warn(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to get Docker network name from settings, using default",
-      );
-      return "mini-infra-network";
-    }
-  }
 
   /**
    * Get curl image from system settings or use default
@@ -269,7 +236,7 @@ export class NetworkHealthCheckService {
     const startTime = Date.now();
 
     try {
-      const dockerNetworkName = await this.getDockerNetworkName();
+      const dockerNetworkName = await this.dockerExecutor.getDockerNetworkName();
       const curlImage = config.curlImage || await this.getCurlImage();
       const curlCommand = this.buildCurlCommand(config);
       const healthCheckUrl = `http://${config.containerName}:${config.containerPort}${config.endpoint}`;
