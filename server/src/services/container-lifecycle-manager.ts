@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
+import ContainerLabelManager from "./container-label-manager";
 import prisma from "../lib/prisma";
 import {
   ContainerConfig,
@@ -50,9 +51,11 @@ export interface OrphanedContainer {
 
 export class ContainerLifecycleManager {
   private dockerService: DockerService;
+  private labelManager: ContainerLabelManager;
 
   constructor() {
     this.dockerService = DockerService.getInstance();
+    this.labelManager = new ContainerLabelManager();
   }
 
 
@@ -119,13 +122,19 @@ export class ContainerLifecycleManager {
         ? options.image 
         : `${options.image}:${options.tag || "latest"}`;
 
-      // Prepare container labels (merge deployment labels with Traefik labels)
-      const labels = this.buildContainerLabels(
-        options.config,
-        options.traefikConfig,
-        options.deploymentId,
-        options.labels,
-      );
+      // Generate deployment labels using the centralized label manager
+      const labels = this.labelManager.generateDeploymentLabels({
+        applicationName: options.config.labels?.["mini-infra.application"] || options.name.split("-")[0],
+        deploymentId: options.deploymentId,
+        deploymentColor: this.extractDeploymentColor(options.name),
+        projectName: options.config.labels?.["com.docker.compose.project"],
+        serviceName: options.config.labels?.["com.docker.compose.service"] || options.name,
+        containerPurpose: "deployment",
+        isActive: true,
+        traefikConfig: options.traefikConfig,
+        containerConfig: options.config,
+        customLabels: options.labels,
+      });
 
       // Prepare port bindings
       const portBindings = this.buildPortBindings(options.config.ports);
@@ -529,31 +538,41 @@ export class ContainerLifecycleManager {
         const created = new Date(container.Created * 1000);
         const labels = container.Labels || {};
 
-        // Check if this looks like a deployment container that might be orphaned
-        const isDeploymentContainer =
-          labels["mini-infra.deployment.id"] ||
-          labels["mini-infra.application"] ||
+        // Use the label manager to parse container metadata
+        const parsed = this.labelManager.parseContainerLabels(labels);
+
+        // Only check mini-infra managed containers
+        if (!parsed.isMiniInfraManaged) {
+          continue;
+        }
+
+        // Check if this is a deployment or temporary container
+        const isRelevantContainer = 
+          parsed.containerPurpose === "deployment" ||
+          parsed.isTemporary ||
+          parsed.deploymentId ||
           container.Names[0]?.includes("deployment-") ||
           container.Names[0]?.includes("-blue") ||
           container.Names[0]?.includes("-green");
 
-        if (!isDeploymentContainer) {
+        if (!isRelevantContainer) {
           continue;
         }
 
+        // Check if container should be cleaned up using the label manager
+        const cleanupCheck = this.labelManager.shouldCleanupContainer(labels, maxAgeHours);
+        
         let reason = "";
 
-        // Check various orphan conditions
-        if (container.State === "exited" && created < cutoffTime) {
+        if (cleanupCheck.shouldCleanup) {
+          reason = cleanupCheck.reason!;
+        } else if (container.State === "exited" && created < cutoffTime) {
           reason = "Container exited and is older than maximum age";
         } else if (
           container.State === "created" &&
           created < new Date(Date.now() - 30 * 60 * 1000)
         ) {
-          reason =
-            "Container created but never started (older than 30 minutes)";
-        } else if (labels["mini-infra.deployment.cleanup"] === "true") {
-          reason = "Container marked for cleanup";
+          reason = "Container created but never started (older than 30 minutes)";
         }
 
         if (reason) {
@@ -682,55 +701,13 @@ export class ContainerLifecycleManager {
   // ====================
 
   /**
-   * Build container labels including Traefik configuration
+   * Extract deployment color (blue/green) from container name
    */
-  private buildContainerLabels(
-    config: ContainerConfig,
-    traefikConfig?: TraefikConfig,
-    deploymentId?: string,
-    additionalLabels?: Record<string, string>,
-  ): Record<string, string> {
-    const labels: Record<string, string> = {
-      // Basic mini-infra labels
-      "mini-infra.managed": "true",
-      "mini-infra.created": new Date().toISOString(),
-      ...config.labels,
-      ...additionalLabels,
-    };
-
-    // Add deployment-specific labels
-    if (deploymentId) {
-      labels["mini-infra.deployment.id"] = deploymentId;
-    }
-
-    // Add Traefik labels if configuration is provided
-    if (traefikConfig) {
-      labels["traefik.enable"] = "true";
-      labels[`traefik.http.routers.${traefikConfig.routerName}.rule`] =
-        traefikConfig.rule;
-      labels[`traefik.http.routers.${traefikConfig.routerName}.service`] =
-        traefikConfig.serviceName;
-
-      // Set service port (use first port from config)
-      if (config.ports.length > 0) {
-        labels[
-          `traefik.http.services.${traefikConfig.serviceName}.loadbalancer.server.port`
-        ] = config.ports[0].containerPort.toString();
-      }
-
-      // Add middlewares if specified
-      if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-        labels[`traefik.http.routers.${traefikConfig.routerName}.middlewares`] =
-          traefikConfig.middlewares.join(",");
-      }
-
-      // Add TLS configuration if enabled
-      if (traefikConfig.tls) {
-        labels[`traefik.http.routers.${traefikConfig.routerName}.tls`] = "true";
-      }
-    }
-
-    return labels;
+  private extractDeploymentColor(containerName: string): "blue" | "green" | undefined {
+    const name = containerName.toLowerCase();
+    if (name.includes("-blue")) return "blue";
+    if (name.includes("-green")) return "green";
+    return undefined;
   }
 
   /**

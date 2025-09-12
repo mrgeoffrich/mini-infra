@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
+import ContainerLabelManager from "./container-label-manager";
 import {
   TraefikConfig,
   ContainerConfig,
@@ -74,9 +75,11 @@ export interface TrafficSwitchOptions {
 
 export class TraefikIntegrationService {
   private dockerService: DockerService;
+  private labelManager: ContainerLabelManager;
 
   constructor() {
     this.dockerService = DockerService.getInstance();
+    this.labelManager = new ContainerLabelManager();
   }
 
   // ====================
@@ -102,68 +105,29 @@ export class TraefikIntegrationService {
           routerName: traefikConfig.routerName,
           serviceName: traefikConfig.serviceName,
         },
-        "Generating blue-green Traefik labels",
+        "Generating blue-green Traefik labels using centralized label manager",
       );
 
-      const labels: Record<string, string> = {};
-      const routerName = `${traefikConfig.routerName}-${deploymentColor}`;
-      const serviceName = `${traefikConfig.serviceName}-${deploymentColor}`;
-
-      // Enable Traefik for this container
-      labels["traefik.enable"] = "true";
-
-      // Router configuration
-      labels[`traefik.http.routers.${routerName}.rule`] = traefikConfig.rule;
-      labels[`traefik.http.routers.${routerName}.service`] = serviceName;
-
-      // Set priority based on active status (active gets higher priority)
-      const basePriority = 100;
-      const activePriority = basePriority + 10;
-      labels[`traefik.http.routers.${routerName}.priority`] = isActive
-        ? activePriority.toString()
-        : basePriority.toString();
-
-      // TLS configuration
-      if (traefikConfig.tls) {
-        labels[`traefik.http.routers.${routerName}.tls`] = "true";
-      }
-
-      // Middlewares
-      if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-        labels[`traefik.http.routers.${routerName}.middlewares`] =
-          traefikConfig.middlewares.join(",");
-      }
-
-      // Service configuration - use the first port from container config
-      if (containerConfig.ports.length > 0) {
-        const port = containerConfig.ports[0];
-        labels[
-          `traefik.http.services.${serviceName}.loadbalancer.server.port`
-        ] = port.containerPort.toString();
-
-        // Set protocol if specified
-        if (port.protocol && port.protocol !== "tcp") {
-          labels[
-            `traefik.http.services.${serviceName}.loadbalancer.server.scheme`
-          ] = port.protocol === "udp" ? "udp" : "http";
-        }
-      }
-
-      // Add deployment-specific labels
-      labels["mini-infra.traefik.application"] = applicationName;
-      labels["mini-infra.traefik.deployment-color"] = deploymentColor;
-      labels["mini-infra.traefik.is-active"] = isActive.toString();
-      labels["mini-infra.traefik.generated-at"] = new Date().toISOString();
+      // Use the centralized label manager to generate Traefik labels
+      const labels = this.labelManager.generateTraefikLabels({
+        applicationName,
+        deploymentColor,
+        isActive,
+        containerPurpose: "deployment",
+        traefikConfig,
+        containerConfig,
+        managed: true,
+      });
 
       servicesLogger().info(
         {
           applicationName,
           deploymentColor,
-          routerName,
-          serviceName,
+          routerName: `${traefikConfig.routerName}-${deploymentColor}`,
+          serviceName: `${traefikConfig.serviceName}-${deploymentColor}`,
           labelsCount: Object.keys(labels).length,
         },
-        "Blue-green Traefik labels generated successfully",
+        "Blue-green Traefik labels generated successfully using label manager",
       );
 
       return labels;
@@ -225,76 +189,8 @@ export class TraefikIntegrationService {
   }
 
   // ====================
-  // Container Label Management
+  // Traffic Switching
   // ====================
-
-  /**
-   * Update container labels for traffic switching
-   */
-  async updateContainerLabels(
-    containerId: string,
-    newLabels: Record<string, string>,
-    mergeWithExisting: boolean = true,
-  ): Promise<void> {
-    try {
-      if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
-      }
-
-      servicesLogger().info(
-        {
-          containerId,
-          labelsCount: Object.keys(newLabels).length,
-          mergeWithExisting,
-        },
-        "Updating container labels",
-      );
-
-      const docker = (this.dockerService as any).docker as Docker;
-      const container = docker.getContainer(containerId);
-
-      let finalLabels = newLabels;
-
-      if (mergeWithExisting) {
-        // Get current container info to merge labels
-        const containerInfo = await container.inspect();
-        const existingLabels = containerInfo.Config.Labels || {};
-
-        finalLabels = {
-          ...existingLabels,
-          ...newLabels,
-        };
-      }
-
-      // Docker doesn't have a direct "update labels" API, so we need to
-      // restart the container with new labels. For now, we'll log this
-      // and implement the logic that would be used by the orchestrator
-      servicesLogger().info(
-        {
-          containerId,
-          existingLabelsCount: mergeWithExisting
-            ? Object.keys(finalLabels).length - Object.keys(newLabels).length
-            : 0,
-          newLabelsCount: Object.keys(newLabels).length,
-          finalLabelsCount: Object.keys(finalLabels).length,
-        },
-        "Container labels prepared for update (requires container recreation)",
-      );
-
-      // Note: Actual label updates require container recreation in Docker
-      // This method prepares the labels that would be used during recreation
-      // The actual recreation is handled by ContainerLifecycleManager
-    } catch (error) {
-      servicesLogger().error(
-        {
-          containerId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to update container labels",
-      );
-      throw error;
-    }
-  }
 
   /**
    * Switch traffic between blue and green containers
@@ -377,14 +273,19 @@ export class TraefikIntegrationService {
   // ====================
 
   /**
-   * Update routing priorities for blue-green deployment
+   * Generate routing priority labels for blue-green deployment
+   * Note: This prepares labels for container recreation since Docker labels
+   * cannot be modified after container creation.
    */
-  async updateRoutingPriorities(
+  async generateRoutingPriorityLabels(
     applicationName: string,
     activeContainerId: string,
     inactiveContainerId: string,
     traefikConfig: TraefikConfig,
-  ): Promise<void> {
+  ): Promise<{
+    activeLabels: Record<string, string>;
+    inactiveLabels: Record<string, string>;
+  }> {
     try {
       servicesLogger().info(
         {
@@ -407,7 +308,12 @@ export class TraefikIntegrationService {
       const activeColor = this.determineContainerColor(activeStatus);
       const inactiveColor = this.determineContainerColor(inactiveStatus);
 
-      // Generate labels with updated priorities
+      // Note: Priority updates require container recreation since Docker labels
+      // cannot be modified after container creation. The actual container
+      // recreation with updated labels should be handled by the deployment
+      // orchestrator using ContainerLifecycleManager.
+
+      // Generate labels that would be used for container recreation
       const activeLabels = this.generateBlueGreenLabels(
         applicationName,
         traefikConfig,
@@ -424,10 +330,6 @@ export class TraefikIntegrationService {
         false, // is inactive
       );
 
-      // Update labels (requires container recreation in real implementation)
-      await this.updateContainerLabels(activeContainerId, activeLabels);
-      await this.updateContainerLabels(inactiveContainerId, inactiveLabels);
-
       servicesLogger().info(
         {
           applicationName,
@@ -436,8 +338,13 @@ export class TraefikIntegrationService {
           activePriority: this.extractPriorityFromLabels(activeLabels),
           inactivePriority: this.extractPriorityFromLabels(inactiveLabels),
         },
-        "Routing priorities updated successfully",
+        "Routing priority labels generated successfully",
       );
+
+      return {
+        activeLabels,
+        inactiveLabels,
+      };
     } catch (error) {
       servicesLogger().error(
         {
@@ -446,7 +353,7 @@ export class TraefikIntegrationService {
           inactiveContainerId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to update routing priorities",
+        "Failed to generate routing priority labels",
       );
       throw error;
     }
@@ -683,10 +590,13 @@ export class TraefikIntegrationService {
       for (const containerInfo of containers) {
         const labels = containerInfo.Labels || {};
 
+        // Use the label manager to parse container metadata
+        const parsed = this.labelManager.parseContainerLabels(labels);
+
         // Check if this container belongs to the application
         const isApplicationContainer =
+          parsed.applicationName === applicationName ||
           labels["mini-infra.traefik.application"] === applicationName ||
-          labels["mini-infra.application"] === applicationName ||
           containerInfo.Names.some((name) => name.includes(applicationName));
 
         if (!isApplicationContainer) {
@@ -802,8 +712,10 @@ export class TraefikIntegrationService {
         const routers = this.parseRoutersFromLabels(labels);
         const services = this.parseServicesFromLabels(labels);
 
-        // Determine if container is active
+        // Use the label manager to determine if container is active
+        const parsed = this.labelManager.parseContainerLabels(labels);
         const isActive =
+          parsed.isActive ||
           labels["mini-infra.traefik.is-active"] === "true" ||
           routers.some((r) => r.priority > 100);
 
@@ -881,11 +793,11 @@ export class TraefikIntegrationService {
         labels[`traefik.http.routers.${routerName}.middlewares`],
       servicePort:
         labels[
-          `traefik.http.services.${serviceName}.loadbalancer.server.port`
+        `traefik.http.services.${serviceName}.loadbalancer.server.port`
         ] || "",
       serviceProtocol:
         labels[
-          `traefik.http.services.${serviceName}.loadbalancer.server.scheme`
+        `traefik.http.services.${serviceName}.loadbalancer.server.scheme`
         ],
     };
   }
@@ -893,6 +805,14 @@ export class TraefikIntegrationService {
   private determineContainerColor(
     status: ContainerTraefikStatus,
   ): "blue" | "green" {
+    // Use the label manager to parse container metadata
+    const parsed = this.labelManager.parseContainerLabels(status.labels);
+
+    if (parsed.deploymentColor) {
+      return parsed.deploymentColor;
+    }
+
+    // Fallback: check legacy labels
     const colorLabel = status.labels["mini-infra.traefik.deployment-color"];
     if (colorLabel === "blue" || colorLabel === "green") {
       return colorLabel;
@@ -917,7 +837,7 @@ export class TraefikIntegrationService {
         {
           containerPort: parseInt(
             status.services[0]?.loadBalancer.servers[0]?.url.split(":").pop() ||
-              "80",
+            "80",
           ),
         },
       ],
@@ -998,12 +918,25 @@ export class TraefikIntegrationService {
       "Performing immediate traffic switch",
     );
 
-    // Update priorities to switch traffic immediately
-    await this.updateRoutingPriorities(
+    // Note: Immediate traffic switching requires container recreation with
+    // updated priority labels. This is typically handled by the deployment
+    // orchestrator which can recreate containers with new labels.
+
+    const priorityLabels = await this.generateRoutingPriorityLabels(
       options.applicationName,
       options.toContainerId,
       options.fromContainerId,
       options.traefikConfig,
+    );
+
+    servicesLogger().info(
+      {
+        applicationName: options.applicationName,
+        fromContainerId: options.fromContainerId,
+        toContainerId: options.toContainerId,
+        message: "Immediate traffic switch requires container recreation with new priority labels",
+      },
+      "Traffic switch labels prepared for container recreation",
     );
   }
 

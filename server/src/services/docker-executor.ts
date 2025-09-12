@@ -2,6 +2,7 @@ import Docker, { Container } from "dockerode";
 import { Readable, Writable } from "stream";
 import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
+import ContainerLabelManager from "./container-label-manager";
 import prisma from "../lib/prisma";
 
 export interface ContainerExecutionOptions {
@@ -57,10 +58,12 @@ export interface DockerRegistryTestResult {
 export class DockerExecutorService {
   private docker: Docker;
   private dockerConfigService: DockerConfigService;
+  private labelManager: ContainerLabelManager;
   private static readonly DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
   constructor() {
     this.dockerConfigService = new DockerConfigService(prisma);
+    this.labelManager = new ContainerLabelManager();
     // Initialize Docker client - will be set up asynchronously
     this.docker = {} as Docker;
   }
@@ -376,8 +379,18 @@ export class DockerExecutorService {
         Tty: false,
         // Auto-remove container after execution if removeContainer is not false
         AutoRemove: options.removeContainer !== false,
-        // Add compose-style labels if grouping options are provided
-        Labels: this.generateContainerLabels(options),
+        // Add labels using the centralized label manager
+        Labels: this.labelManager.generateTaskExecutionLabels({
+          projectName: options.projectName,
+          serviceName: options.serviceName,
+          containerPurpose: "task",
+          isTemporary: options.removeContainer !== false,
+          taskType: this.inferTaskType(options),
+          taskId: this.generateTaskId(options),
+          outputCapture: !!options.outputHandler,
+          timeout: options.timeout,
+          customLabels: options.labels,
+        }),
         // Set resource limits for safety
         HostConfig: {
           Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
@@ -812,45 +825,44 @@ export class DockerExecutorService {
   }
 
   /**
-   * Generate Docker Compose-style labels for container grouping
+   * Infer the task type from container execution options
    */
-  public generateContainerLabels(options: ContainerExecutionOptions): Record<string, string> {
-    const labels: Record<string, string> = {
-      // Always add mini-infra managed label
-      'mini-infra.managed': 'true',
-    };
-
-    // Add compose-style labels if project/service names are provided
-    if (options.projectName) {
-      labels['com.docker.compose.project'] = options.projectName;
-      labels['mini-infra.project'] = options.projectName;
-      
-      // Generate a simple config hash based on project name and timestamp
-      labels['com.docker.compose.config-hash'] = this.generateConfigHash(options.projectName);
-      labels['com.docker.compose.container-number'] = '1';
-      labels['com.docker.compose.oneoff'] = 'False';
-      labels['com.docker.compose.version'] = '2.32.4'; // Current compose version
+  private inferTaskType(options: ContainerExecutionOptions): string {
+    if (options.image.includes("postgres") || options.image.includes("pg_")) {
+      if (options.cmd?.some(cmd => cmd.includes("pg_dump"))) {
+        return "postgres-backup";
+      } else if (options.cmd?.some(cmd => cmd.includes("pg_restore") || cmd.includes("psql"))) {
+        return "postgres-restore";
+      }
+      return "postgres-task";
     }
 
-    if (options.serviceName) {
-      labels['com.docker.compose.service'] = options.serviceName;
-      labels['mini-infra.service'] = options.serviceName;
+    if (options.image.includes("mongo")) {
+      return "mongodb-task";
     }
 
-    // Add any additional custom labels
-    if (options.labels) {
-      Object.assign(labels, options.labels);
+    if (options.image.includes("redis")) {
+      return "redis-task";
     }
 
-    return labels;
+    if (options.serviceName?.includes("backup") || options.cmd?.some(cmd => cmd.includes("backup"))) {
+      return "backup";
+    }
+
+    if (options.serviceName?.includes("restore") || options.cmd?.some(cmd => cmd.includes("restore"))) {
+      return "restore";
+    }
+
+    return "utility";
   }
 
   /**
-   * Generate a hash for the configuration (simplified version)
+   * Generate a unique task ID for tracking
    */
-  private generateConfigHash(projectName: string): string {
-    const configString = `${projectName}-${Date.now()}`;
-    return Buffer.from(configString).toString('base64').substring(0, 12);
+  private generateTaskId(options: ContainerExecutionOptions): string {
+    const timestamp = Date.now();
+    const imageShort = options.image.split("/").pop()?.split(":")[0] || "unknown";
+    return `${imageShort}-${timestamp}`;
   }
 
   /**
@@ -1130,7 +1142,15 @@ export class DockerExecutorService {
         Image: options.image,
         name: options.name,
         Env: env,
-        Labels: this.generateContainerLabels(options),
+        Labels: this.labelManager.generateTaskExecutionLabels({
+          projectName: options.projectName,
+          serviceName: options.serviceName,
+          containerPurpose: "utility",
+          isTemporary: false, // Long-running containers are not temporary
+          taskType: "long-running-service",
+          taskId: options.name || this.generateTaskId(options),
+          customLabels: options.labels,
+        }),
         AttachStdout: true,
         AttachStderr: true,
         Tty: false,
