@@ -1,4 +1,42 @@
 import { assign, setup } from 'xstate';
+import { DeployGreenApplicationContainers } from './actions/deploy-green-application-containers';
+import { MonitorGreenContainerStartup } from './actions/monitor-green-container-startup';
+import { InitializeGreenLB } from './actions/initialize-green-lb';
+import { PerformGreenHealthChecks } from './actions/perform-green-health-checks';
+import { OpenTrafficToGreen } from './actions/open-traffic-to-green';
+import { ValidateGreenTraffic } from './actions/validate-green-traffic';
+import { InitiateBlueDrain } from './actions/initiate-blue-drain';
+import { RemoveBlueFromLB } from './actions/remove-blue-from-lb';
+import { StopBlueApplication } from './actions/stop-blue-application';
+import { RemoveBlueApplication } from './actions/remove-blue-application';
+import { RestoreBlueTraffic } from './actions/restore-blue-traffic';
+import { DisableGreenTraffic } from './actions/disable-green-traffic';
+import { RemoveGreenHAProxyConfig } from './actions/remove-green-haproxy-config';
+import { StopGreenApplication } from './actions/stop-green-application';
+import { RemoveGreenApplication } from './actions/remove-green-application';
+import { LogDeploymentSuccess } from './actions/log-deployment-success';
+import { AlertOperationsTeam } from './actions/alert-operations-team';
+import { CleanupTempResources } from './actions/cleanup-temp-resources';
+
+// Create instances of action classes
+const deployGreenApplicationContainers = new DeployGreenApplicationContainers();
+const monitorGreenContainerStartup = new MonitorGreenContainerStartup();
+const initializeGreenLB = new InitializeGreenLB();
+const performGreenHealthChecks = new PerformGreenHealthChecks();
+const openTrafficToGreen = new OpenTrafficToGreen();
+const validateGreenTraffic = new ValidateGreenTraffic();
+const initiateBlueDrain = new InitiateBlueDrain();
+const removeBlueFromLB = new RemoveBlueFromLB();
+const stopBlueApplication = new StopBlueApplication();
+const removeBlueApplication = new RemoveBlueApplication();
+const restoreBlueTraffic = new RestoreBlueTraffic();
+const disableGreenTraffic = new DisableGreenTraffic();
+const removeGreenHAProxyConfig = new RemoveGreenHAProxyConfig();
+const stopGreenApplication = new StopGreenApplication();
+const removeGreenApplication = new RemoveGreenApplication();
+const logDeploymentSuccess = new LogDeploymentSuccess();
+const alertOperationsTeam = new AlertOperationsTeam();
+const cleanupTempResources = new CleanupTempResources();
 
 // Types for context and events
 interface BlueGreenDeploymentContext {
@@ -80,34 +118,34 @@ export const blueGreenDeploymentMachine = setup({
     actions: {
         // Green deployment actions
         deployGreenApplicationContainers: () => {
-            console.log('Action: Deploying green application containers...');
+            deployGreenApplicationContainers.execute();
         },
         
         monitorGreenContainerStartup: () => {
-            console.log('Action: Monitoring green container startup...');
+            monitorGreenContainerStartup.execute();
         },
 
         // Load balancer configuration actions
         initializeGreenLB: () => {
-            console.log('Action: Creating green backend and registering servers in HAProxy...');
+            initializeGreenLB.execute();
         },
 
         performGreenHealthChecks: () => {
-            console.log('Action: Performing health checks on green servers...');
+            performGreenHealthChecks.execute();
         },
 
         // Traffic management actions
         openTrafficToGreen: () => {
-            console.log('Action: Opening traffic to green backend alongside blue...');
+            openTrafficToGreen.execute();
         },
 
         validateGreenTraffic: () => {
-            console.log('Action: Validating green traffic patterns and error rates...');
+            validateGreenTraffic.execute();
         },
 
         // Blue draining actions
         initiateBlueDrain: () => {
-            console.log('Action: Setting blue servers to drain mode...');
+            initiateBlueDrain.execute();
         },
 
         monitorBlueDrain: assign({
@@ -116,36 +154,36 @@ export const blueGreenDeploymentMachine = setup({
 
         // Blue decommission actions
         removeBlueFromLB: () => {
-            console.log('Action: Removing blue backend and servers from HAProxy...');
+            removeBlueFromLB.execute();
         },
 
         stopBlueApplication: () => {
-            console.log('Action: Stopping blue application containers...');
+            stopBlueApplication.execute();
         },
 
         removeBlueApplication: () => {
-            console.log('Action: Removing blue application containers and resources...');
+            removeBlueApplication.execute();
         },
 
         // Rollback actions
         restoreBlueTraffic: () => {
-            console.log('Action: Restoring all traffic to blue backend...');
+            restoreBlueTraffic.execute();
         },
 
         disableGreenTraffic: () => {
-            console.log('Action: Disabling traffic to green backend...');
+            disableGreenTraffic.execute();
         },
 
         removeGreenHAProxyConfig: () => {
-            console.log('Action: Removing green backend and servers from HAProxy...');
+            removeGreenHAProxyConfig.execute();
         },
 
         stopGreenApplication: () => {
-            console.log('Action: Stopping green application containers...');
+            stopGreenApplication.execute();
         },
 
         removeGreenApplication: () => {
-            console.log('Action: Removing green application containers and resources...');
+            removeGreenApplication.execute();
         },
 
         // Monitoring and completion actions
@@ -154,15 +192,15 @@ export const blueGreenDeploymentMachine = setup({
         }),
 
         logDeploymentSuccess: () => {
-            console.log('Action: Logging deployment success and updating history...');
+            logDeploymentSuccess.execute();
         },
 
         alertOperationsTeam: () => {
-            console.log('Action: Alerting operations team of failure...');
+            alertOperationsTeam.execute();
         },
 
         cleanupTempResources: () => {
-            console.log('Action: Cleaning up temporary resources...');
+            cleanupTempResources.execute();
         },
 
         // Context management actions

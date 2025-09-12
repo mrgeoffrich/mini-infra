@@ -25,6 +25,7 @@ const environmentLogConfigSchema = z.object({
   services: loggerConfigSchema,
   dockerexecutor: loggerConfigSchema,
   deployments: loggerConfigSchema,
+  loadbalancer: loggerConfigSchema,
 });
 
 const loggingConfigSchema = z.object({
@@ -65,6 +66,7 @@ export function loadLoggingConfig(): LoggingConfig {
         services: { level: "debug" },
         dockerexecutor: { level: "debug" },
         deployments: { level: "debug" },
+        loadbalancer: { level: "debug" },
       },
       production: {
         app: { level: "info" },
@@ -73,6 +75,7 @@ export function loadLoggingConfig(): LoggingConfig {
         services: { level: "info" },
         dockerexecutor: { level: "info" },
         deployments: { level: "info" },
+        loadbalancer: { level: "info" },
       },
       test: {
         app: { level: "silent" },
@@ -81,6 +84,7 @@ export function loadLoggingConfig(): LoggingConfig {
         services: { level: "silent" },
         dockerexecutor: { level: "silent" },
         deployments: { level: "silent" },
+        loadbalancer: { level: "silent" },
       },
       redactionPaths: [
         "password",

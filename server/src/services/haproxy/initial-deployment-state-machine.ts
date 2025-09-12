@@ -1,4 +1,24 @@
 import { assign, setup } from 'xstate';
+import { DeployApplicationContainers } from './actions/deploy-application-containers';
+import { MonitorContainerStartup } from './actions/monitor-container-startup';
+import { InitializeHAProxy } from './actions/initialize-haproxy';
+import { PerformHealthChecks } from './actions/perform-health-checks';
+import { EnableTraffic } from './actions/enable-traffic';
+import { ValidateTraffic } from './actions/validate-traffic';
+import { LogDeploymentSuccess } from './actions/log-deployment-success';
+import { AlertOperationsTeam } from './actions/alert-operations-team';
+import { CleanupTempResources } from './actions/cleanup-temp-resources';
+
+// Create instances of action classes
+const deployApplicationContainers = new DeployApplicationContainers();
+const monitorContainerStartup = new MonitorContainerStartup();
+const initializeHAProxy = new InitializeHAProxy();
+const performHealthChecks = new PerformHealthChecks();
+const enableTraffic = new EnableTraffic();
+const validateTraffic = new ValidateTraffic();
+const logDeploymentSuccess = new LogDeploymentSuccess();
+const alertOperationsTeam = new AlertOperationsTeam();
+const cleanupTempResources = new CleanupTempResources();
 
 // Types for context and events
 interface InitialDeploymentContext {
@@ -40,34 +60,34 @@ export const initialDeploymentMachine = setup({
     },
     actions: {
         deployApplicationContainers: () => {
-            console.log('Action: Deploying application containers...');
+            deployApplicationContainers.execute();
         },
         monitorContainerStartup: () => {
-            console.log('Action: Monitoring container startup...');
+            monitorContainerStartup.execute();
         },
         initializeHAProxy: () => {
-            console.log('Action: Initializing HAProxy and creating backend...');
+            initializeHAProxy.execute();
         },
         performHealthChecks: () => {
-            console.log('Action: Performing health checks on servers...');
+            performHealthChecks.execute();
         },
         enableTraffic: () => {
-            console.log('Action: Enabling traffic to backend...');
+            enableTraffic.execute();
         },
         validateTraffic: () => {
-            console.log('Action: Validating traffic patterns...');
+            validateTraffic.execute();
         },
         startExtendedMonitoring: assign({
             monitoringStartTime: () => Date.now()
         }),
         logDeploymentSuccess: () => {
-            console.log('Action: Logging deployment success...');
+            logDeploymentSuccess.execute();
         },
         alertOperationsTeam: () => {
-            console.log('Action: Alerting operations team of failure...');
+            alertOperationsTeam.execute();
         },
         cleanupTempResources: () => {
-            console.log('Action: Cleaning up temporary resources...');
+            cleanupTempResources.execute();
         },
         preserveErrorContext: assign({
             error: ({ event }) => {

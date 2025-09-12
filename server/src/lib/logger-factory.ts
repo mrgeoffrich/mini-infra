@@ -224,6 +224,7 @@ export const prismaLogger = () => createLogger("prisma");
 export const servicesLogger = () => createLogger("services");
 export const dockerExecutorLogger = () => createLogger("dockerexecutor");
 export const deploymentLogger = () => createLogger("deployments");
+export const loadbalancerLogger = () => createLogger("loadbalancer");
 
 // Generic logger factory function
 export function getLogger(
@@ -233,7 +234,8 @@ export function getLogger(
     | "prisma"
     | "services"
     | "dockerexecutor"
-    | "deployments",
+    | "deployments"
+    | "loadbalancer",
 ): pino.Logger {
   return createLogger(loggerType);
 }
@@ -251,7 +253,8 @@ export function createChildLogger(
     | "prisma"
     | "services"
     | "dockerexecutor"
-    | "deployments",
+    | "deployments"
+    | "loadbalancer",
   context: Record<string, unknown>,
 ): pino.Logger {
   const parentLogger = getLogger(loggerType);
