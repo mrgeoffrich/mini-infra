@@ -5,12 +5,18 @@ export class HAProxyService {
   private dockerExecutor: DockerExecutorService;
   private readonly projectName: string;
   private readonly composeFile: string;
+  private readonly networkName: string;
   private readonly logger = servicesLogger();
 
-  constructor(projectName: string = 'haproxy', composeFile: string = 'docker-compose.haproxy.yml') {
+  constructor(
+    projectName: string = 'haproxy',
+    composeFile: string = 'docker-compose.haproxy.yml',
+    networkName?: string
+  ) {
     this.dockerExecutor = new DockerExecutorService();
     this.projectName = projectName;
     this.composeFile = composeFile;
+    this.networkName = networkName || 'haproxy_network';
   }
 
   /**
@@ -22,8 +28,11 @@ export class HAProxyService {
 
   async deployHAProxy(): Promise<void> {
     try {
-      // Create network first
-      await this.createNetwork();
+      // Check if network exists, create if it doesn't
+      const networkExists = await this.networkExists();
+      if (!networkExists) {
+        await this.createNetwork();
+      }
 
       // Create named volumes
       await this.createVolumes();
@@ -44,8 +53,19 @@ export class HAProxyService {
     }
   }
 
+  private async networkExists(): Promise<boolean> {
+    try {
+      const docker = this.dockerExecutor.getDockerClient();
+      const networks = await docker.listNetworks();
+      return networks.some(network => network.Name === this.networkName);
+    } catch (error) {
+      this.logger.error({ error, networkName: this.networkName }, 'Failed to check if network exists');
+      return false;
+    }
+  }
+
   private async createNetwork(): Promise<void> {
-    await this.dockerExecutor.createNetwork('haproxy_network', this.projectName, {
+    await this.dockerExecutor.createNetwork(this.networkName, this.projectName, {
       driver: 'bridge'
     });
   }
@@ -153,7 +173,7 @@ export class HAProxyService {
           Type: 'volume'
         }
       ],
-      networks: ['haproxy_network'],
+      networks: [this.networkName],
       restartPolicy: 'unless-stopped',
       healthcheck: {
         Test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:8404/stats'],
@@ -180,11 +200,9 @@ export class HAProxyService {
       // Stop and remove all containers in the project
       await this.dockerExecutor.removeProject(this.projectName);
 
-      // Optionally remove network and volumes
-      // await this.removeNetwork('haproxy_network');
-      // await this.removeVolumes(['haproxy_data', 'haproxy_run', 'haproxy_config']);
+      // Intentionally do NOT remove network and volumes
 
-      this.logger.info('HAProxy cleanup completed');
+      this.logger.info('HAProxy cleanup completed - network and volumes retained');
     } catch (error) {
       this.logger.error({ error }, 'Failed to cleanup HAProxy');
       throw error;
