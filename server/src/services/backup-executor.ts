@@ -16,7 +16,7 @@ import {
   BackupOperationType,
   BackupOperationStatus,
 } from "@mini-infra/types";
-import type { BackupOperation } from "../generated/prisma";
+import type { BackupOperation } from "@prisma/client";
 
 /**
  * Job data structure for backup operations

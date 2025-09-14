@@ -14,7 +14,7 @@ import {
   RestoreOperationInfo,
   RestoreOperationStatus,
 } from "@mini-infra/types";
-import type { RestoreOperation } from "../generated/prisma";
+import type { RestoreOperation } from "@prisma/client";
 
 /**
  * Job data structure for restore operations

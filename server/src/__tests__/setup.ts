@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { jest } from "@jest/globals";
 import { createId } from "@paralleldrive/cuid2";
 import { execSync } from "child_process";
