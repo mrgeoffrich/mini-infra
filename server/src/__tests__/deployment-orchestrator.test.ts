@@ -5,7 +5,6 @@ import {
   DeploymentEvent,
 } from "../services/deployment-orchestrator";
 import { ContainerLifecycleManager } from "../services/container-lifecycle-manager";
-import { TraefikIntegrationService } from "../services/traefik-integration";
 import { HealthCheckService } from "../services/health-check";
 import { DockerExecutorService } from "../services/docker-executor";
 import { testPrisma, createTestUser } from "./setup";
@@ -344,6 +343,7 @@ describe("DeploymentOrchestrator", () => {
     });
 
     it("should handle traffic switching failure and rollback", async () => {
+      // Note: TraefikIntegrationService is now stubbed, but we still test the orchestrator's behavior
       mockTraefikService.switchTraffic.mockRejectedValue(
         new Error("Failed to switch traffic")
       );
@@ -448,6 +448,7 @@ describe("DeploymentOrchestrator", () => {
     });
 
     it("should restore traffic to old container during rollback", async () => {
+      // Note: TraefikIntegrationService is now stubbed, but we still test the orchestrator's behavior
       // Mock existing old container
       mockContainerManager.dockerService.listContainers.mockResolvedValue([
         {
