@@ -4,7 +4,7 @@
     "version": "0.1.0",
     "scripts": {
         "dev": "npx prisma db push && tsx watch src/server.ts",
-        "build": "npx prisma generate && tsc",
+        "build": "npx prisma generate && tsc && mkdir -p dist/server/src/generated && cp -r src/generated/prisma dist/server/src/generated/",
         "start": "node dist/server.js",
         "test": "npm run test:cleanup && cross-env NODE_ENV=test DATABASE_URL=file:./test.db jest",
         "test:watch": "cross-env NODE_ENV=test jest --watch",

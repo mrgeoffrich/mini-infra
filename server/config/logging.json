@@ -51,6 +51,15 @@
       "rotation": {
         "enabled": false
       }
+    },
+    "loadbalancer": {
+      "level": "debug",
+      "destination": "logs/app-loadbalancer.log",
+      "prettyPrint": false,
+      "includeCaller": true,
+      "rotation": {
+        "enabled": false
+      }
     }
   },
   "production": {
@@ -113,6 +122,16 @@
         "maxFiles": "14d",
         "maxSize": "10m"
       }
+    },
+    "loadbalancer": {
+      "level": "info",
+      "destination": "logs/app-loadbalancer.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
     }
   },
   "test": {
@@ -132,6 +151,9 @@
       "level": "silent"
     },
     "deployments": {
+      "level": "silent"
+    },
+    "loadbalancer": {
       "level": "silent"
     }
   },
