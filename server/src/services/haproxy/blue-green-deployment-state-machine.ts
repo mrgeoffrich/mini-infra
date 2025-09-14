@@ -1,7 +1,7 @@
 import { assign, setup } from 'xstate';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
-import { InitializeGreenLB } from './actions/initialize-green-lb';
+import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
 import { OpenTraffic } from './actions/open-traffic';
 import { ValidateTraffic } from './actions/validate-traffic';
@@ -18,7 +18,7 @@ import { CleanupTempResources } from './actions/cleanup-temp-resources';
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
-const initializeGreenLB = new InitializeGreenLB();
+const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
 const openTraffic = new OpenTraffic();
 const validateTraffic = new ValidateTraffic();
@@ -122,7 +122,7 @@ export const blueGreenDeploymentMachine = setup({
 
         // Load balancer configuration actions
         initializeGreenLB: () => {
-            initializeGreenLB.execute();
+            addContainerToLB.execute();
         },
 
         performGreenHealthChecks: () => {

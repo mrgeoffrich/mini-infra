@@ -2,8 +2,8 @@ import { loadbalancerLogger } from '../../../lib/logger-factory';
 
 const logger = loadbalancerLogger();
 
-export class RestoreTraffic {
+export class AddContainerToLB {
     execute(): void {
-        logger.info('Action: Restoring all traffic to blue backend...');
+        logger.info('Action: Adding container backend and servers to HAProxy...');
     }
 }

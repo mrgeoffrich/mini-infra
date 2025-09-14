@@ -1,7 +1,7 @@
 import { assign, setup } from 'xstate';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
-import { InitializeHAProxy } from './actions/initialize-haproxy';
+import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
 import { EnableTraffic } from './actions/enable-traffic';
 import { ValidateTraffic } from './actions/validate-traffic';
@@ -12,7 +12,7 @@ import { CleanupTempResources } from './actions/cleanup-temp-resources';
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
-const initializeHAProxy = new InitializeHAProxy();
+const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
 const enableTraffic = new EnableTraffic();
 const validateTraffic = new ValidateTraffic();
@@ -66,7 +66,7 @@ export const initialDeploymentMachine = setup({
             monitorContainerStartup.execute();
         },
         initializeHAProxy: () => {
-            initializeHAProxy.execute();
+            addContainerToLB.execute();
         },
         performHealthChecks: () => {
             performHealthChecks.execute();
