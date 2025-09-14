@@ -3,7 +3,6 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
-import { OpenTraffic } from './actions/open-traffic';
 import { ValidateTraffic } from './actions/validate-traffic';
 import { InitiateDrain } from './actions/initiate-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
@@ -14,13 +13,13 @@ import { RemoveHAProxyConfig } from './actions/remove-haproxy-config';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { EnableTraffic } from './actions/enable-traffic';
 
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
-const openTraffic = new OpenTraffic();
 const validateTraffic = new ValidateTraffic();
 const initiateDrain = new InitiateDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
@@ -31,6 +30,7 @@ const removeHAProxyConfig = new RemoveHAProxyConfig();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
+const enableTraffic = new EnableTraffic();
 
 // Types for context and events
 // Note in a blue green deployment Blue is the old container set, Green is the new container set
@@ -131,8 +131,7 @@ export const blueGreenDeploymentMachine = setup({
 
         // Traffic management actions
         openTrafficToGreen: () => {
-            +
-                openTraffic.execute();
+            enableTraffic.execute();
         },
 
         validateGreenTraffic: () => {
@@ -163,7 +162,7 @@ export const blueGreenDeploymentMachine = setup({
 
         // Rollback actions
         restoreBlueTraffic: () => {
-            openTraffic.execute(); // Open traffic back to the blue container
+            enableTraffic.execute(); // Open traffic back to the blue container
         },
 
         disableGreenTraffic: () => {
