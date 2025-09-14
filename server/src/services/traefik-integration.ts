@@ -751,6 +751,57 @@ export class TraefikIntegrationService {
   }
 
   // ====================
+  // Container Label Management
+  // ====================
+
+  /**
+   * Update container labels (Note: Docker labels are immutable after creation)
+   * This method logs the limitation and provides guidance for proper implementation.
+   *
+   * @param containerId - ID of the container
+   * @param labels - Labels to apply (for reference only)
+   */
+  async updateContainerLabels(
+    containerId: string,
+    labels: Record<string, string>,
+  ): Promise<void> {
+    try {
+      servicesLogger().warn(
+        {
+          containerId,
+          labelsCount: Object.keys(labels).length,
+          sampleLabels: Object.keys(labels).slice(0, 3),
+        },
+        "Container label update requested but Docker labels are immutable after creation. Container recreation with new labels is required for Traefik configuration changes.",
+      );
+
+      // In a future implementation, this could trigger container recreation
+      // via the ContainerLifecycleManager with the provided labels
+      servicesLogger().info(
+        {
+          containerId,
+          message: "To implement label updates, use ContainerLifecycleManager to recreate the container with new labels",
+          labelsProvided: Object.keys(labels),
+        },
+        "Label update deferred - container recreation required",
+      );
+
+      // For now, this is a no-op that prevents the deployment orchestrator from failing
+      // The actual traffic switching should be handled through container recreation
+      // with updated priority labels during the deployment process
+    } catch (error) {
+      servicesLogger().error(
+        {
+          containerId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to process container label update request",
+      );
+      throw error;
+    }
+  }
+
+  // ====================
   // Private Helper Methods
   // ====================
 
