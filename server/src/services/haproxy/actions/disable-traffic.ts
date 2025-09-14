@@ -2,8 +2,8 @@ import { loadbalancerLogger } from '../../../lib/logger-factory';
 
 const logger = loadbalancerLogger();
 
-export class DeployGreenApplicationContainers {
+export class DisableTraffic {
     execute(): void {
-        logger.info('Action: Deploying green application containers...');
+        logger.info('Action: Disabling traffic to backend...');
     }
 }

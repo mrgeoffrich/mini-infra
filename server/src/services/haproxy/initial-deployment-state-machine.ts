@@ -305,30 +305,3 @@ export const initialDeploymentMachine = setup({
         }
     }
 });
-
-// Example usage
-import { createActor } from 'xstate';
-
-const deploymentActor = createActor(initialDeploymentMachine);
-
-// Subscribe to state changes
-deploymentActor.subscribe((state) => {
-    console.log(`Current state: ${state.value}`);
-    console.log('Context:', state.context);
-});
-
-// Start the actor
-deploymentActor.start();
-
-// Trigger deployment
-deploymentActor.send({ type: 'START_DEPLOYMENT' });
-
-// Simulate successful container deployment
-setTimeout(() => {
-    deploymentActor.send({
-        type: 'DEPLOYMENT_SUCCESS',
-        containerId: 'container-123'
-    });
-}, 1000);
-
-// Continue simulation...

@@ -52,8 +52,41 @@ export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
 // ====================
 
 /**
- * Centralized container labeling service that provides consistent labeling
- * across all container creation scenarios in the application.
+ * ContainerLabelManager - Centralized container labeling and metadata management
+ * 
+ * This service provides a unified, consistent labeling scheme for all Docker containers
+ * created by the mini-infra application, ensuring proper identification, categorization,
+ * and lifecycle management across different container types and purposes.
+ * 
+ * Key characteristics:
+ * - Standardized label schema across all container types
+ * - Purpose-specific label generators for different use cases
+ * - Docker Compose-style compatibility for project grouping
+ * - Traefik integration labels for routing and load balancing
+ * - Container metadata parsing and analysis utilities
+ * - Cleanup decision logic based on container labels
+ * - Label validation following Docker conventions
+ * 
+ * Primary use cases:
+ * - Generating deployment container labels with Traefik configuration
+ * - Creating task execution labels for backup/restore operations
+ * - Adding consistent base labels to all mini-infra managed containers
+ * - Parsing container metadata from existing labels
+ * - Determining container cleanup eligibility
+ * - Validating label key formats and conventions
+ * 
+ * Label categories managed:
+ * - Core mini-infra identification (managed, created, version)
+ * - Application context (app name, deployment ID, color)
+ * - Container purpose (deployment, task, backup, restore, utility)
+ * - Docker Compose compatibility (project, service, config hash)
+ * - Traefik routing configuration (routers, services, priorities)
+ * - Lifecycle metadata (active status, temporary flag, cleanup markers)
+ * 
+ * Do NOT use for:
+ * - Runtime container modification (Docker labels are immutable after creation)
+ * - Storing large amounts of data (labels have size limitations)
+ * - Sensitive information (labels are visible in container metadata)
  */
 export class ContainerLabelManager {
   private static readonly MINI_INFRA_PREFIX = "mini-infra";

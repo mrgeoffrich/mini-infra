@@ -2,8 +2,8 @@ import { loadbalancerLogger } from '../../../lib/logger-factory';
 
 const logger = loadbalancerLogger();
 
-export class DisableGreenTraffic {
+export class RemoveContainerFromLB {
     execute(): void {
-        logger.info('Action: Disabling traffic to green backend...');
+        logger.info('Action: Removing container backend and servers from HAProxy...');
     }
 }

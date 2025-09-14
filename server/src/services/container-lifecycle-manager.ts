@@ -49,6 +49,34 @@ export interface OrphanedContainer {
 // Container Lifecycle Manager
 // ====================
 
+/**
+ * ContainerLifecycleManager - Manages long-running application containers
+ * 
+ * This service handles the complete lifecycle of persistent application containers,
+ * particularly those used for web services, APIs, and zero-downtime deployments.
+ * 
+ * Key characteristics:
+ * - Creates containers intended to run continuously
+ * - Integrates with Traefik for load balancing and routing
+ * - Supports blue-green deployment patterns
+ * - Manages container networks, volumes, and port bindings
+ * - Provides comprehensive status monitoring and health checks
+ * - Handles orphaned container cleanup and maintenance
+ * 
+ * Primary use cases:
+ * - Web application deployments
+ * - API service containers
+ * - Zero-downtime blue-green deployments
+ * - Long-running background services
+ * - Containerized microservices
+ * - Load-balanced application instances
+ * 
+ * Do NOT use for:
+ * - Short-lived task execution (use DockerExecutorService instead)
+ * - Database backup/restore operations
+ * - One-time utility scripts
+ * - Containers that should auto-remove after completion
+ */
 export class ContainerLifecycleManager {
   private dockerService: DockerService;
   private labelManager: ContainerLabelManager;

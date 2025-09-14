@@ -53,7 +53,30 @@ export interface DockerRegistryTestResult {
 }
 
 /**
- * DockerExecutor service for executing Docker containers for backup and restore operations
+ * DockerExecutorService - Executes short-lived, task-specific Docker containers
+ * 
+ * This service is designed for running ephemeral containers that perform specific tasks
+ * and then terminate, such as database operations, file processing, or utility scripts.
+ * 
+ * Key characteristics:
+ * - Creates temporary containers that auto-remove after execution
+ * - Captures and streams container output (stdout/stderr)  
+ * - Handles timeouts and resource limits for safety
+ * - Supports Docker registry authentication for image pulling
+ * - Uses centralized labeling for container identification and cleanup
+ * 
+ * Primary use cases:
+ * - Database backup/restore operations (pg_dump, pg_restore)
+ * - File processing tasks
+ * - Image registry connectivity testing
+ * - One-time utility scripts
+ * - Background job execution
+ * 
+ * Do NOT use for:
+ * - Long-running application containers (use ContainerLifecycleManager instead)
+ * - Web services or APIs
+ * - Containers that need persistent networking or volumes
+ * - Blue-green deployment containers
  */
 export class DockerExecutorService {
   private docker: Docker;

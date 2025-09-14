@@ -2,8 +2,8 @@ import { loadbalancerLogger } from '../../../lib/logger-factory';
 
 const logger = loadbalancerLogger();
 
-export class RemoveBlueApplication {
+export class RestoreTraffic {
     execute(): void {
-        logger.info('Action: Removing blue application containers and resources...');
+        logger.info('Action: Restoring all traffic to blue backend...');
     }
 }

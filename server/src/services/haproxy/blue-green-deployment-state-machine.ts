@@ -1,47 +1,40 @@
 import { assign, setup } from 'xstate';
-import { DeployGreenApplicationContainers } from './actions/deploy-green-application-containers';
-import { MonitorGreenContainerStartup } from './actions/monitor-green-container-startup';
+import { DeployApplicationContainers } from './actions/deploy-application-containers';
+import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { InitializeGreenLB } from './actions/initialize-green-lb';
-import { PerformGreenHealthChecks } from './actions/perform-green-health-checks';
-import { OpenTrafficToGreen } from './actions/open-traffic-to-green';
-import { ValidateGreenTraffic } from './actions/validate-green-traffic';
-import { InitiateBlueDrain } from './actions/initiate-blue-drain';
-import { RemoveBlueFromLB } from './actions/remove-blue-from-lb';
-import { StopBlueApplication } from './actions/stop-blue-application';
-import { RemoveBlueApplication } from './actions/remove-blue-application';
-import { RestoreBlueTraffic } from './actions/restore-blue-traffic';
-import { DisableGreenTraffic } from './actions/disable-green-traffic';
-import { RemoveGreenHAProxyConfig } from './actions/remove-green-haproxy-config';
-import { StopGreenApplication } from './actions/stop-green-application';
-import { RemoveGreenApplication } from './actions/remove-green-application';
+import { PerformHealthChecks } from './actions/perform-health-checks';
+import { OpenTraffic } from './actions/open-traffic';
+import { ValidateTraffic } from './actions/validate-traffic';
+import { InitiateDrain } from './actions/initiate-drain';
+import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
+import { StopApplication } from './actions/stop-application';
+import { RemoveApplication } from './actions/remove-application';
+import { DisableTraffic } from './actions/disable-traffic';
+import { RemoveHAProxyConfig } from './actions/remove-haproxy-config';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
 
 // Create instances of action classes
-const deployGreenApplicationContainers = new DeployGreenApplicationContainers();
-const monitorGreenContainerStartup = new MonitorGreenContainerStartup();
+const deployApplicationContainers = new DeployApplicationContainers();
+const monitorContainerStartup = new MonitorContainerStartup();
 const initializeGreenLB = new InitializeGreenLB();
-const performGreenHealthChecks = new PerformGreenHealthChecks();
-const openTrafficToGreen = new OpenTrafficToGreen();
-const validateGreenTraffic = new ValidateGreenTraffic();
-const initiateBlueDrain = new InitiateBlueDrain();
-const removeBlueFromLB = new RemoveBlueFromLB();
-const stopBlueApplication = new StopBlueApplication();
-const removeBlueApplication = new RemoveBlueApplication();
-const restoreBlueTraffic = new RestoreBlueTraffic();
-const disableGreenTraffic = new DisableGreenTraffic();
-const removeGreenHAProxyConfig = new RemoveGreenHAProxyConfig();
-const stopGreenApplication = new StopGreenApplication();
-const removeGreenApplication = new RemoveGreenApplication();
+const performHealthChecks = new PerformHealthChecks();
+const openTraffic = new OpenTraffic();
+const validateTraffic = new ValidateTraffic();
+const initiateDrain = new InitiateDrain();
+const removeContainerFromLB = new RemoveContainerFromLB();
+const stopApplication = new StopApplication();
+const removeApplication = new RemoveApplication();
+const disableTraffic = new DisableTraffic();
+const removeHAProxyConfig = new RemoveHAProxyConfig();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
 
 // Types for context and events
+// Note in a blue green deployment Blue is the old container set, Green is the new container set
 interface BlueGreenDeploymentContext {
-    greenContainerId?: string;
-    blueContainerId?: string;
     blueHealthy: boolean;
     greenHealthy: boolean;
     greenBackendConfigured: boolean;
@@ -55,38 +48,40 @@ interface BlueGreenDeploymentContext {
     error?: string;
     retryCount: number;
     activeConnections: number;
+    oldContainerId?: string;
+    newContainerId?: string;
 }
 
 type BlueGreenDeploymentEvent =
     // Deployment initiation
     | { type: 'START_DEPLOYMENT' }
-    
+
     // Green deployment events
     | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
     | { type: 'CONTAINERS_RUNNING' }
     | { type: 'STARTUP_TIMEOUT' }
-    
+
     // Load balancer configuration events
     | { type: 'LB_CONFIGURED' }
     | { type: 'LB_CONFIG_ERROR'; error: string }
-    
+
     // Health check events
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT' }
-    
+
     // Traffic management events
     | { type: 'TRAFFIC_OPENED' }
     | { type: 'TRAFFIC_OPEN_FAILED'; error: string }
     | { type: 'TRAFFIC_VALIDATED' }
     | { type: 'VALIDATION_FAILED'; error: string }
-    
+
     // Blue draining events
     | { type: 'DRAIN_INITIATED' }
     | { type: 'DRAIN_COMPLETE' }
     | { type: 'DRAIN_TIMEOUT' }
     | { type: 'DRAIN_ISSUES'; error: string }
-    
+
     // Blue decommission events
     | { type: 'BLUE_LB_REMOVED' }
     | { type: 'BLUE_LB_REMOVAL_ERROR'; error: string }
@@ -94,7 +89,7 @@ type BlueGreenDeploymentEvent =
     | { type: 'BLUE_APP_STOP_ERROR'; error: string }
     | { type: 'BLUE_APP_REMOVED' }
     | { type: 'BLUE_APP_REMOVAL_ERROR'; error: string }
-    
+
     // Rollback events
     | { type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' }
     | { type: 'ROLLBACK_GREEN_TRAFFIC_DISABLED' }
@@ -103,7 +98,7 @@ type BlueGreenDeploymentEvent =
     | { type: 'ROLLBACK_GREEN_APP_REMOVED' }
     | { type: 'ROLLBACK_COMPLETE' }
     | { type: 'ROLLBACK_ERROR'; error: string }
-    
+
     // Completion events
     | { type: 'DEPLOYMENT_COMPLETE' }
     | { type: 'RESET' }
@@ -118,11 +113,11 @@ export const blueGreenDeploymentMachine = setup({
     actions: {
         // Green deployment actions
         deployGreenApplicationContainers: () => {
-            deployGreenApplicationContainers.execute();
+            deployApplicationContainers.execute();
         },
-        
+
         monitorGreenContainerStartup: () => {
-            monitorGreenContainerStartup.execute();
+            monitorContainerStartup.execute();
         },
 
         // Load balancer configuration actions
@@ -131,21 +126,22 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         performGreenHealthChecks: () => {
-            performGreenHealthChecks.execute();
+            performHealthChecks.execute();
         },
 
         // Traffic management actions
         openTrafficToGreen: () => {
-            openTrafficToGreen.execute();
+            +
+                openTraffic.execute();
         },
 
         validateGreenTraffic: () => {
-            validateGreenTraffic.execute();
+            validateTraffic.execute();
         },
 
         // Blue draining actions
         initiateBlueDrain: () => {
-            initiateBlueDrain.execute();
+            initiateDrain.execute();
         },
 
         monitorBlueDrain: assign({
@@ -154,36 +150,36 @@ export const blueGreenDeploymentMachine = setup({
 
         // Blue decommission actions
         removeBlueFromLB: () => {
-            removeBlueFromLB.execute();
+            removeContainerFromLB.execute();
         },
 
         stopBlueApplication: () => {
-            stopBlueApplication.execute();
+            stopApplication.execute();
         },
 
         removeBlueApplication: () => {
-            removeBlueApplication.execute();
+            removeApplication.execute();
         },
 
         // Rollback actions
         restoreBlueTraffic: () => {
-            restoreBlueTraffic.execute();
+            openTraffic.execute(); // Open traffic back to the blue container
         },
 
         disableGreenTraffic: () => {
-            disableGreenTraffic.execute();
+            disableTraffic.execute();
         },
 
         removeGreenHAProxyConfig: () => {
-            removeGreenHAProxyConfig.execute();
+            removeHAProxyConfig.execute();
         },
 
         stopGreenApplication: () => {
-            stopGreenApplication.execute();
+            stopApplication.execute();
         },
 
         removeGreenApplication: () => {
-            removeGreenApplication.execute();
+            removeApplication.execute();
         },
 
         // Monitoring and completion actions
@@ -218,8 +214,6 @@ export const blueGreenDeploymentMachine = setup({
         }),
 
         resetState: assign(() => ({
-            greenContainerId: undefined,
-            blueContainerId: undefined,
             blueHealthy: false,
             greenHealthy: false,
             greenBackendConfigured: false,
@@ -232,7 +226,9 @@ export const blueGreenDeploymentMachine = setup({
             monitoringStartTime: undefined,
             error: undefined,
             retryCount: 0,
-            activeConnections: 0
+            activeConnections: 0,
+            newContainerId: undefined,
+            oldContainerId: undefined,
         }))
     },
     guards: {
@@ -281,7 +277,9 @@ export const blueGreenDeploymentMachine = setup({
         blueDrained: false,
         validationErrors: 0,
         retryCount: 0,
-        activeConnections: 0
+        activeConnections: 0,
+        oldContainerId: undefined,
+        newContainerId: undefined,
     },
 
     states: {
@@ -302,7 +300,7 @@ export const blueGreenDeploymentMachine = setup({
                 DEPLOYMENT_SUCCESS: {
                     target: 'waitingGreenReady',
                     actions: assign({
-                        greenContainerId: ({ event }) => {
+                        newContainerId: ({ event }) => {
                             if (event.type === 'DEPLOYMENT_SUCCESS') {
                                 return event.containerId;
                             }
@@ -430,9 +428,9 @@ export const blueGreenDeploymentMachine = setup({
             on: {
                 DRAIN_COMPLETE: {
                     target: 'decommissioningBlueLB',
-                    actions: assign({ 
+                    actions: assign({
                         blueDrained: true,
-                        activeConnections: 0 
+                        activeConnections: 0
                     })
                 },
                 DRAIN_TIMEOUT: {
@@ -600,78 +598,3 @@ export const blueGreenDeploymentMachine = setup({
         }
     }
 });
-
-// Example usage
-import { createActor } from 'xstate';
-
-const blueGreenDeploymentActor = createActor(blueGreenDeploymentMachine);
-
-// Subscribe to state changes
-blueGreenDeploymentActor.subscribe((state) => {
-    console.log(`Current state: ${state.value}`);
-    console.log('Context:', state.context);
-});
-
-// Start the actor
-blueGreenDeploymentActor.start();
-
-// Example deployment flow simulation
-export function simulateBlueGreenDeployment() {
-    // Trigger deployment
-    blueGreenDeploymentActor.send({ type: 'START_DEPLOYMENT' });
-
-    // Simulate successful green container deployment
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({
-            type: 'DEPLOYMENT_SUCCESS',
-            containerId: 'green-container-123'
-        });
-    }, 1000);
-
-    // Simulate containers becoming ready
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'CONTAINERS_RUNNING' });
-    }, 3000);
-
-    // Simulate load balancer configuration success
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'LB_CONFIGURED' });
-    }, 5000);
-
-    // Simulate health checks passing
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'SERVERS_HEALTHY' });
-    }, 7000);
-
-    // Simulate traffic opening successfully
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'TRAFFIC_OPENED' });
-    }, 9000);
-
-    // Simulate traffic validation passing
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'TRAFFIC_VALIDATED' });
-    }, 12000);
-
-    // Continue with drain simulation...
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'DRAIN_INITIATED' });
-    }, 15000);
-
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'DRAIN_COMPLETE' });
-    }, 18000);
-
-    // Complete the flow...
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'BLUE_LB_REMOVED' });
-    }, 20000);
-
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'BLUE_APP_STOPPED' });
-    }, 22000);
-
-    setTimeout(() => {
-        blueGreenDeploymentActor.send({ type: 'BLUE_APP_REMOVED' });
-    }, 24000);
-}
