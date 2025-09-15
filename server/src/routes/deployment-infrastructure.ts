@@ -8,18 +8,13 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../lib/api-key-middleware";
 import { getAuthenticatedUser } from "../lib/auth-middleware";
-import { DeploymentInfrastructureService } from "../services/deployment-infrastructure";
+import { HAProxyService } from "../services/haproxy/haproxy-service";
 import prisma from "../lib/prisma";
 
 const logger = appLogger();
 const router = express.Router();
 
-// Initialize the deployment infrastructure service
-const infrastructureService = new DeploymentInfrastructureService();
-// Ensure the service is properly initialized when the module loads
-infrastructureService.initialize().catch(error => {
-  logger.error({ error: error.message }, "Failed to initialize deployment infrastructure service");
-});
+// Initialize the HAProxy service - no global instance needed since we'll create per-request
 
 // Validation schemas
 const deployInfrastructureSchema = z.object({
@@ -27,14 +22,10 @@ const deployInfrastructureSchema = z.object({
   networkDriver: z
     .enum(["bridge", "overlay", "host", "none"])
     .default("bridge"),
-  traefikImage: z.string().min(1, "Traefik image is required"),
-  webPort: z.number().int().min(1).max(65535),
-  dashboardPort: z.number().int().min(1).max(65535),
-  configYaml: z.string().min(1, "Configuration YAML is required"),
 });
 
 /**
- * POST /api/deployment-infrastructure/deploy - Deploy Docker network and Traefik
+ * POST /api/deployment-infrastructure/deploy - Deploy Docker network and HAProxy
  */
 router.post("/deploy", requireSessionOrApiKey, (async (
   req: Request,
@@ -81,97 +72,68 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     const {
       networkName,
       networkDriver,
-      traefikImage,
-      webPort,
-      dashboardPort,
-      configYaml,
     } = bodyValidation.data;
 
-    // Ensure the Docker network exists
-    const networkResult = await infrastructureService.ensureDeploymentNetwork(
-      networkName,
-      networkDriver,
-    );
+    // Deploy HAProxy using the HAProxy service directly
+    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    
+    try {
+      await haproxyService.initialize();
+      await haproxyService.deployHAProxy();
 
-    if (!networkResult.success) {
+      // Get the deployed containers to return container ID
+      const containers = await haproxyService.getServiceContainers('haproxy');
+      const mainContainer = containers.find(container => 
+        container.Names.some(name => name.includes('haproxy') && !name.includes('init'))
+      );
+
+      const containerId = mainContainer?.Id || 'unknown';
+
+      logger.info(
+        {
+          requestId,
+          userId,
+          networkName,
+          containerId,
+        },
+        "Infrastructure deployed successfully",
+      );
+
+      res.json({
+        success: true,
+        data: {
+          network: {
+            id: networkName, // HAProxy service manages the network
+            name: networkName,
+            driver: networkDriver,
+          },
+          haproxy: {
+            id: containerId,
+            networkName: networkName,
+          },
+        },
+        message: "Infrastructure deployed successfully",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    } catch (error) {
       logger.error(
         {
           requestId,
           userId,
           networkName,
-          networkDriver,
-          error: networkResult.error,
+          error: error,
         },
-        "Failed to create deployment network",
+        "Failed to deploy HAProxy infrastructure",
       );
 
       return res.status(500).json({
         error: "Infrastructure Error",
-        message: `Failed to create network: ${networkResult.error}`,
+        message: `Failed to deploy HAProxy: ${error instanceof Error ? error.message : "Unknown error"}`,
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
-
-    // Deploy Traefik container
-    const traefikResult = await infrastructureService.ensureTraefikContainer({
-      image: traefikImage,
-      webPort,
-      dashboardPort,
-      configYaml,
-      networkName,
-    });
-
-    if (!traefikResult.success) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          traefikImage,
-          webPort,
-          dashboardPort,
-          error: traefikResult.error,
-        },
-        "Failed to deploy Traefik container",
-      );
-
-      return res.status(500).json({
-        error: "Infrastructure Error",
-        message: `Failed to deploy Traefik: ${traefikResult.error}`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        networkId: networkResult.networkId,
-        containerId: traefikResult.containerId,
-      },
-      "Infrastructure deployed successfully",
-    );
-
-    res.json({
-      success: true,
-      data: {
-        network: {
-          id: networkResult.networkId,
-          name: networkName,
-          driver: networkDriver,
-        },
-        traefik: {
-          id: traefikResult.containerId,
-          image: traefikImage,
-          webPort,
-          dashboardPort,
-        },
-      },
-      message: "Infrastructure deployed successfully",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
   } catch (error) {
     logger.error(
       {
@@ -215,26 +177,70 @@ router.get("/status", requireSessionOrApiKey, (async (
       });
     }
 
-    const status =
-      await infrastructureService.getInfrastructureStatus(networkName);
+    // Get infrastructure status using HAProxy service
+    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    
+    try {
+      await haproxyService.initialize();
+      
+      // Check network exists by attempting to list containers (HAProxy service manages network)
+      const containers = await haproxyService.getServiceContainers('haproxy');
+      
+      const networkStatus = {
+        exists: true, // If we can query containers, network exists
+        id: networkName,
+      };
+      
+      const haproxyStatus = containers.length > 0 
+        ? {
+            exists: true,
+            running: containers[0].State === "running",
+            id: containers[0].Id,
+          }
+        : { exists: false, running: false };
 
-    logger.info(
-      {
+      const status = { networkStatus, haproxyStatus };
+
+      logger.info(
+        {
+          requestId,
+          userId,
+          networkName,
+          status,
+        },
+        "Infrastructure status retrieved",
+      );
+
+      res.json({
+        success: true,
+        data: status,
+        message: "Infrastructure status retrieved",
+        timestamp: new Date().toISOString(),
         requestId,
-        userId,
-        networkName,
-        status,
-      },
-      "Infrastructure status retrieved",
-    );
+      });
+    } catch (error) {
+      logger.error(
+        {
+          requestId,
+          userId,
+          networkName,
+          error,
+        },
+        "Failed to get infrastructure status",
+      );
 
-    res.json({
-      success: true,
-      data: status,
-      message: "Infrastructure status retrieved",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
+      // Return default status on error
+      res.json({
+        success: true,
+        data: {
+          networkStatus: { exists: false, error: error instanceof Error ? error.message : "Unknown error" },
+          haproxyStatus: { exists: false, running: false, error: error instanceof Error ? error.message : "Unknown error" },
+        },
+        message: "Infrastructure status retrieved (with errors)",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
   } catch (error) {
     logger.error(
       {
@@ -287,43 +293,46 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       });
     }
 
-    const result =
-      await infrastructureService.cleanupInfrastructure(networkName);
+    // Clean up infrastructure using HAProxy service
+    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    
+    try {
+      await haproxyService.initialize();
+      await haproxyService.removeHAProxy();
 
-    if (!result.success) {
+      logger.info(
+        {
+          requestId,
+          userId,
+          networkName,
+        },
+        "Infrastructure cleaned up successfully",
+      );
+
+      res.json({
+        success: true,
+        message: "Infrastructure cleaned up successfully",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    } catch (error) {
       logger.error(
         {
           requestId,
           userId,
           networkName,
-          error: result.error,
+          error,
         },
         "Failed to cleanup infrastructure",
       );
 
       return res.status(500).json({
         error: "Infrastructure Error",
-        message: `Failed to cleanup infrastructure: ${result.error}`,
+        message: `Failed to cleanup infrastructure: ${error instanceof Error ? error.message : "Unknown error"}`,
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
-
-    logger.info(
-      {
-        requestId,
-        userId,
-        networkName,
-      },
-      "Infrastructure cleaned up successfully",
-    );
-
-    res.json({
-      success: true,
-      message: "Infrastructure cleaned up successfully",
-      timestamp: new Date().toISOString(),
-      requestId,
-    });
   } catch (error) {
     logger.error(
       {

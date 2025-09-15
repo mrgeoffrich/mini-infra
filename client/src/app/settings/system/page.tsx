@@ -88,30 +88,6 @@ const systemSettingsSchema = z.object({
       "Invalid network name format (alphanumeric, underscores, dots, and hyphens)",
     ),
   dockerNetworkDriver: z.enum(["bridge", "overlay", "host", "none"]),
-
-  // Traefik container settings
-  traefikDockerImage: z
-    .string()
-    .min(1, "Traefik Docker image is required")
-    .regex(
-      /^[\w\-./]+(?::\w+[\w\-.]*)?$/,
-      "Invalid Docker image format (e.g., traefik:v3.0, myregistry/traefik:latest)",
-    ),
-  traefikWebPort: z
-    .string()
-    .regex(/^\d+$/, "Port must be a number")
-    .refine((val) => {
-      const num = parseInt(val);
-      return num >= 1 && num <= 65535;
-    }, "Port must be between 1 and 65535"),
-  traefikDashboardPort: z
-    .string()
-    .regex(/^\d+$/, "Port must be a number")
-    .refine((val) => {
-      const num = parseInt(val);
-      return num >= 1 && num <= 65535;
-    }, "Port must be between 1 and 65535"),
-  traefikConfigYaml: z.string().min(1, "Traefik configuration is required"),
 });
 
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
@@ -119,34 +95,7 @@ type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 // Default Docker images and settings
 const DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
 const DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
-const DEFAULT_NETWORK_NAME = "mini-infra-network";
-const DEFAULT_TRAEFIK_IMAGE = "traefik:v3.0";
-const DEFAULT_TRAEFIK_WEB_PORT = "80";
-const DEFAULT_TRAEFIK_DASHBOARD_PORT = "8080";
-const DEFAULT_TRAEFIK_CONFIG = `# Traefik Configuration
-api:
-  dashboard: true
-  debug: true
-
-entryPoints:
-  web:
-    address: ":80"
-  websecure:
-    address: ":443"
-
-providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false
-    network: "mini-infra-network"
-
-certificatesResolvers:
-  letsencrypt:
-    acme:
-      email: admin@example.com
-      storage: acme.json
-      httpChallenge:
-        entryPoint: web`;
+const DEFAULT_NETWORK_NAME = "haproxy_network";
 
 export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -187,10 +136,6 @@ export default function SystemSettingsPage() {
       restoreRegistryPassword: "",
       dockerNetworkName: DEFAULT_NETWORK_NAME,
       dockerNetworkDriver: "bridge",
-      traefikDockerImage: DEFAULT_TRAEFIK_IMAGE,
-      traefikWebPort: DEFAULT_TRAEFIK_WEB_PORT,
-      traefikDashboardPort: DEFAULT_TRAEFIK_DASHBOARD_PORT,
-      traefikConfigYaml: DEFAULT_TRAEFIK_CONFIG,
     },
     mode: "onChange",
   });
@@ -254,23 +199,6 @@ export default function SystemSettingsPage() {
           | "host"
           | "none") || "bridge",
       );
-      form.setValue(
-        "traefikDockerImage",
-        settingsMap.traefik_docker_image?.value || DEFAULT_TRAEFIK_IMAGE,
-      );
-      form.setValue(
-        "traefikWebPort",
-        settingsMap.traefik_web_port?.value || DEFAULT_TRAEFIK_WEB_PORT,
-      );
-      form.setValue(
-        "traefikDashboardPort",
-        settingsMap.traefik_dashboard_port?.value ||
-          DEFAULT_TRAEFIK_DASHBOARD_PORT,
-      );
-      form.setValue(
-        "traefikConfigYaml",
-        settingsMap.traefik_config_yaml?.value || DEFAULT_TRAEFIK_CONFIG,
-      );
     }
   }, [settingsData, form]);
 
@@ -316,26 +244,6 @@ export default function SystemSettingsPage() {
         {
           key: "docker_network_driver",
           value: data.dockerNetworkDriver,
-          isEncrypted: false,
-        },
-        {
-          key: "traefik_docker_image",
-          value: data.traefikDockerImage,
-          isEncrypted: false,
-        },
-        {
-          key: "traefik_web_port",
-          value: data.traefikWebPort,
-          isEncrypted: false,
-        },
-        {
-          key: "traefik_dashboard_port",
-          value: data.traefikDashboardPort,
-          isEncrypted: false,
-        },
-        {
-          key: "traefik_config_yaml",
-          value: data.traefikConfigYaml,
           isEncrypted: false,
         },
       ];
@@ -426,13 +334,9 @@ export default function SystemSettingsPage() {
       const result = await deployInfrastructure.mutateAsync({
         networkName: formValues.dockerNetworkName,
         networkDriver: formValues.dockerNetworkDriver,
-        traefikImage: formValues.traefikDockerImage,
-        webPort: parseInt(formValues.traefikWebPort),
-        dashboardPort: parseInt(formValues.traefikDashboardPort),
-        configYaml: formValues.traefikConfigYaml,
       });
 
-      const deploymentMessage = `Infrastructure deployed successfully! Network: ${result.data.network.name}, Traefik: ${result.data.traefik.image}`;
+      const deploymentMessage = `Infrastructure deployed successfully! Network: ${result.data.network.name}, HAProxy: ${result.data.haproxy.id}`;
       toastWithCopy.success(deploymentMessage, {
         title: "Infrastructure Deployment Complete",
         description: "Copy deployment details for your records",
@@ -510,7 +414,7 @@ export default function SystemSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">System Settings</h1>
             <p className="text-muted-foreground">
-              Configure system-wide settings for backup and restore operations
+              Configure system-wide settings for backup, restore, and HAProxy load balancer operations
             </p>
           </div>
         </div>
@@ -521,7 +425,7 @@ export default function SystemSettingsPage() {
           {/* Description */}
           <div className="space-y-2">
             <p className="text-muted-foreground">
-              These settings control Docker containers, networks, and Traefik
+              These settings control Docker containers, networks, and HAProxy
               load balancer for deployment operations.
             </p>
           </div>
@@ -831,107 +735,6 @@ export default function SystemSettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Traefik Container Settings */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Route className="h-5 w-5" />
-                      <span>Traefik Load Balancer Settings</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Configure the Traefik container for zero-downtime
-                      deployments
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="traefikDockerImage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Traefik Docker Image</FormLabel>
-                          <FormControl>
-                            <Input placeholder="traefik:v3.0" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Docker image for Traefik load balancer (e.g.,
-                            traefik:v3.0, traefik:latest)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="traefikWebPort"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Web Port</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                placeholder="80"
-                                min="1"
-                                max="65535"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              HTTP port for web traffic
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="traefikDashboardPort"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Dashboard Port</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                placeholder="8080"
-                                min="1"
-                                max="65535"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Port for Traefik dashboard
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="traefikConfigYaml"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Traefik Configuration (YAML)</FormLabel>
-                          <FormControl>
-                            <textarea
-                              {...field}
-                              className="w-full h-64 px-3 py-2 text-sm bg-background border border-input rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono"
-                              placeholder="Enter Traefik configuration in YAML format..."
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Complete Traefik configuration in YAML format
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                </Card>
 
                 {/* Infrastructure Status and Management */}
                 <Card>
@@ -941,7 +744,7 @@ export default function SystemSettingsPage() {
                       <span>Infrastructure Management</span>
                     </CardTitle>
                     <CardDescription>
-                      Deploy and manage the Docker network and Traefik container
+                      Deploy and manage the Docker network and HAProxy container
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
@@ -981,17 +784,16 @@ export default function SystemSettingsPage() {
                           <Route className="h-5 w-5 text-purple-500" />
                           <div>
                             <h4 className="font-medium">
-                              Traefik Load Balancer
+                              HAProxy Load Balancer
                             </h4>
                             <p className="text-sm text-muted-foreground">
-                              Ports: {form.watch("traefikWebPort")}:
-                              {form.watch("traefikDashboardPort")}
+                              Ports: 8111:8443 (Web:HTTPS), 8404 (Stats), 5555 (Data Plane API)
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          {infrastructureStatus?.data.traefikStatus.exists ? (
-                            infrastructureStatus.data.traefikStatus.running ? (
+                          {infrastructureStatus?.data.haproxyStatus.exists ? (
+                            infrastructureStatus.data.haproxyStatus.running ? (
                               <>
                                 <CheckCircle className="h-5 w-5 text-green-500" />
                                 <span className="text-sm text-green-600">
@@ -1049,7 +851,7 @@ export default function SystemSettingsPage() {
                         disabled={
                           cleanupInfrastructure.isPending ||
                           (!infrastructureStatus?.data.networkStatus.exists &&
-                            !infrastructureStatus?.data.traefikStatus.exists)
+                            !infrastructureStatus?.data.haproxyStatus.exists)
                         }
                       >
                         {cleanupInfrastructure.isPending ? (
@@ -1080,12 +882,14 @@ export default function SystemSettingsPage() {
                           exist
                         </li>
                         <li>
-                          • Traefik dashboard will be available at
-                          http://localhost:{form.watch("traefikDashboardPort")}
+                          • HAProxy stats dashboard will be available at
+                          http://localhost:8404/stats
                         </li>
                         <li>
-                          • Web traffic will be routed through port{" "}
-                          {form.watch("traefikWebPort")}
+                          • Web traffic will be routed through ports 8111 (HTTP) and 8443 (HTTPS)
+                        </li>
+                        <li>
+                          • Data Plane API will be available on port 5555
                         </li>
                       </ul>
                     </div>

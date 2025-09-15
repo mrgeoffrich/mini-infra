@@ -4,10 +4,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 interface DeployInfrastructureRequest {
   networkName: string;
   networkDriver: "bridge" | "overlay" | "host" | "none";
-  traefikImage: string;
-  webPort: number;
-  dashboardPort: number;
-  configYaml: string;
 }
 
 interface DeployInfrastructureResponse {
@@ -18,11 +14,9 @@ interface DeployInfrastructureResponse {
       name: string;
       driver: string;
     };
-    traefik: {
+    haproxy: {
       id: string;
-      image: string;
-      webPort: number;
-      dashboardPort: number;
+      networkName: string;
     };
   };
   message: string;
@@ -34,7 +28,7 @@ interface InfrastructureStatusResponse {
   success: boolean;
   data: {
     networkStatus: { exists: boolean; id?: string; error?: string };
-    traefikStatus: {
+    haproxyStatus: {
       exists: boolean;
       running: boolean;
       id?: string;
