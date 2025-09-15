@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { prismaLogger } from "./logger-factory";
 
 // Re-export PrismaClient type for use by other modules
@@ -19,23 +19,23 @@ const prisma =
       process.env.NODE_ENV === "test"
         ? []
         : [
-            {
-              emit: "event",
-              level: "query",
-            },
-            {
-              emit: "event",
-              level: "info",
-            },
-            {
-              emit: "event",
-              level: "warn",
-            },
-            {
-              emit: "event",
-              level: "error",
-            },
-          ],
+          {
+            emit: "event",
+            level: "query",
+          },
+          {
+            emit: "event",
+            level: "info",
+          },
+          {
+            emit: "event",
+            level: "warn",
+          },
+          {
+            emit: "event",
+            level: "error",
+          },
+        ],
   } as any);
 
 // Set up Prisma event listeners to route logs to dedicated logger
