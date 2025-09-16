@@ -1,30 +1,164 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
 import * as path from 'path';
+import {
+  IApplicationService,
+  ServiceStatus,
+  ServiceHealth,
+  ServiceMetadata,
+  ServiceStatusInfo,
+  StartupResult,
+  HealthStatus,
+  NetworkRequirement,
+  VolumeRequirement,
+  PortRequirement
+} from '../interfaces/application-service';
 
-export class HAProxyService {
+export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
   private readonly projectName: string;
-  private readonly composeFile: string;
-  private readonly networkName: string;
   private readonly logger = servicesLogger();
+  private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
+  private startedAt?: Date;
+  private stoppedAt?: Date;
+  private lastError?: { message: string; timestamp: Date; details?: Record<string, any> };
+  private availableNetworks: NetworkRequirement[] = [];
+  private availableVolumes: VolumeRequirement[] = [];
+
+  readonly metadata: ServiceMetadata = {
+    name: 'haproxy',
+    version: '3.2.0',
+    description: 'HAProxy load balancer with DataPlane API',
+    dependencies: ['docker'], // Depends on docker service being available
+    tags: ['load-balancer', 'haproxy', 'infrastructure'],
+    requiredNetworks: [
+      {
+        name: 'haproxy_network',
+        driver: 'bridge'
+      }
+    ],
+    requiredVolumes: [
+      {
+        name: 'haproxy_data'
+      },
+      {
+        name: 'haproxy_run'
+      },
+      {
+        name: 'haproxy_config'
+      }
+    ],
+    exposedPorts: [
+      {
+        name: 'http',
+        containerPort: 80,
+        hostPort: 8111,
+        protocol: 'tcp',
+        description: 'HTTP traffic'
+      },
+      {
+        name: 'https',
+        containerPort: 443,
+        hostPort: 8443,
+        protocol: 'tcp',
+        description: 'HTTPS traffic'
+      },
+      {
+        name: 'stats',
+        containerPort: 8404,
+        hostPort: 8404,
+        protocol: 'tcp',
+        description: 'HAProxy statistics and monitoring'
+      },
+      {
+        name: 'dataplane-api',
+        containerPort: 5555,
+        hostPort: 5555,
+        protocol: 'tcp',
+        description: 'HAProxy DataPlane API'
+      }
+    ]
+  };
 
   constructor(
-    projectName: string = 'haproxy',
-    composeFile: string = 'docker-compose.haproxy.yml',
-    networkName?: string
+    projectName: string = 'haproxy'
   ) {
     this.dockerExecutor = new DockerExecutorService();
     this.projectName = projectName;
-    this.composeFile = composeFile;
-    this.networkName = networkName || 'haproxy_network';
   }
 
   /**
    * Initialize the HAProxy service
    */
-  async initialize(): Promise<void> {
-    await this.dockerExecutor.initialize();
+  async initialize(networks?: NetworkRequirement[], volumes?: VolumeRequirement[]): Promise<void> {
+    this.currentStatus = ServiceStatus.INITIALIZING;
+    try {
+      // Store the provided networks and volumes
+      this.availableNetworks = networks || [];
+      this.availableVolumes = volumes || [];
+
+      await this.dockerExecutor.initialize();
+      this.currentStatus = ServiceStatus.INITIALIZED;
+      this.logger.info({
+        networksCount: this.availableNetworks.length,
+        volumesCount: this.availableVolumes.length
+      }, 'HAProxy service initialized with provided resources');
+    } catch (error) {
+      this.currentStatus = ServiceStatus.FAILED;
+      this.lastError = {
+        message: error instanceof Error ? error.message : 'Failed to initialize',
+        timestamp: new Date(),
+        details: { phase: 'initialization' }
+      };
+      throw error;
+    }
+  }
+
+  /**
+   * Start the HAProxy service (implements IApplicationService)
+   */
+  async start(): Promise<StartupResult> {
+    const startTime = Date.now();
+    this.currentStatus = ServiceStatus.STARTING;
+
+    try {
+      await this.deployHAProxy();
+
+      this.currentStatus = ServiceStatus.RUNNING;
+      this.startedAt = new Date();
+      this.stoppedAt = undefined;
+
+      const duration = Date.now() - startTime;
+      const result: StartupResult = {
+        success: true,
+        message: 'HAProxy service started successfully',
+        duration,
+        details: {
+          projectName: this.projectName,
+          networks: this.availableNetworks.map(n => n.name),
+          volumes: this.availableVolumes.map(v => v.name)
+        }
+      };
+
+      this.logger.info({ duration }, 'HAProxy service started successfully');
+      return result;
+    } catch (error) {
+      this.currentStatus = ServiceStatus.FAILED;
+      this.lastError = {
+        message: error instanceof Error ? error.message : 'Failed to start',
+        timestamp: new Date(),
+        details: { phase: 'startup' }
+      };
+
+      const result: StartupResult = {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to start HAProxy service',
+        duration: Date.now() - startTime
+      };
+
+      this.logger.error({ error, duration: result.duration }, 'HAProxy service failed to start');
+      return result;
+    }
   }
 
   async deployHAProxy(): Promise<void> {
@@ -58,25 +192,51 @@ export class HAProxyService {
     try {
       const docker = this.dockerExecutor.getDockerClient();
       const networks = await docker.listNetworks();
-      return networks.some(network => network.Name === this.networkName);
+
+      // Check if all required networks exist
+      for (const networkReq of this.availableNetworks) {
+        const exists = networks.some(network => network.Name === networkReq.name);
+        if (!exists) {
+          this.logger.warn({ networkName: networkReq.name }, 'Required network does not exist');
+          return false;
+        }
+      }
+      return true;
     } catch (error) {
-      this.logger.error({ error, networkName: this.networkName }, 'Failed to check if network exists');
+      this.logger.error({ error }, 'Failed to check if networks exist');
       return false;
     }
   }
 
   private async createNetwork(): Promise<void> {
-    await this.dockerExecutor.createNetwork(this.networkName, this.projectName, {
-      driver: 'bridge'
-    });
+    const docker = this.dockerExecutor.getDockerClient();
+    const existingNetworks = await docker.listNetworks();
+
+    // Create each required network only if it doesn't exist
+    for (const networkReq of this.availableNetworks) {
+      const exists = existingNetworks.some(network => network.Name === networkReq.name);
+
+      if (!exists) {
+        this.logger.info({ networkName: networkReq.name }, 'Creating network');
+        await this.dockerExecutor.createNetwork(networkReq.name, this.projectName, {
+          driver: networkReq.driver || 'bridge',
+          ...networkReq.options
+        });
+      } else {
+        this.logger.debug({ networkName: networkReq.name }, 'Network already exists, skipping creation');
+      }
+    }
   }
 
   private async createVolumes(): Promise<void> {
-    const volumes = ['haproxy_data', 'haproxy_run', 'haproxy_config'];
-
-    for (const volumeName of volumes) {
-      await this.dockerExecutor.createVolume(volumeName, this.projectName);
+    // Use the stored volume requirements instead of hardcoded list
+    for (const volumeReq of this.availableVolumes) {
+      await this.dockerExecutor.createVolume(volumeReq.name, this.projectName);
     }
+  }
+
+  private getVolumeByName(name: string): VolumeRequirement | undefined {
+    return this.availableVolumes.find(vol => vol.name === name);
   }
 
   private async deployInitContainer(): Promise<void> {
@@ -101,7 +261,7 @@ export class HAProxyService {
       mounts: [
         {
           Target: '/usr/local/etc/haproxy/',
-          Source: 'haproxy_config',
+          Source: this.getVolumeByName('haproxy_config')?.name || 'haproxy_config',
           Type: 'volume'
         }
       ]
@@ -170,11 +330,11 @@ export class HAProxyService {
       mounts: [
         {
           Target: '/usr/local/etc/haproxy/',
-          Source: 'haproxy_config',
+          Source: this.getVolumeByName('haproxy_config')?.name || 'haproxy_config',
           Type: 'volume'
         }
       ],
-      networks: [this.networkName],
+      networks: this.availableNetworks.map(net => net.name),
       restartPolicy: 'unless-stopped',
       healthcheck: {
         Test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:8404/stats'],
@@ -194,6 +354,28 @@ export class HAProxyService {
 
     await container.start();
     this.logger.info('Started haproxy container');
+  }
+
+  /**
+   * Stop the HAProxy service (implements IApplicationService)
+   */
+  async stopAndCleanup(): Promise<void> {
+    this.currentStatus = ServiceStatus.STOPPING;
+    try {
+      await this.removeHAProxy();
+      this.currentStatus = ServiceStatus.STOPPED;
+      this.stoppedAt = new Date();
+      this.logger.info('HAProxy service stopped successfully');
+    } catch (error) {
+      this.currentStatus = ServiceStatus.FAILED;
+      this.lastError = {
+        message: error instanceof Error ? error.message : 'Failed to stop',
+        timestamp: new Date(),
+        details: { phase: 'shutdown' }
+      };
+      this.logger.error({ error }, 'HAProxy service failed to stop');
+      throw error;
+    }
   }
 
   async removeHAProxy(): Promise<void> {
@@ -237,5 +419,102 @@ export class HAProxyService {
    */
   async removeProject(): Promise<void> {
     await this.dockerExecutor.removeProject(this.projectName);
+  }
+
+  /**
+   * Get current service status (implements IApplicationService)
+   */
+  async getStatus(): Promise<ServiceStatusInfo> {
+    const health = await this.healthCheck();
+
+    return {
+      status: this.currentStatus,
+      health,
+      startedAt: this.startedAt,
+      stoppedAt: this.stoppedAt,
+      metadata: this.metadata,
+      lastError: this.lastError
+    };
+  }
+
+  /**
+   * Perform health check (implements IApplicationService)
+   */
+  async healthCheck(): Promise<ServiceHealth> {
+    try {
+      // Check if containers are running
+      const containers = await this.getProjectContainers();
+      const runningContainers = containers.filter(c => c.State === 'running');
+
+      if (runningContainers.length === 0) {
+        return {
+          status: HealthStatus.UNHEALTHY,
+          message: 'No HAProxy containers are running',
+          lastChecked: new Date(),
+          details: { totalContainers: containers.length, runningContainers: 0 }
+        };
+      }
+
+      // Check if main haproxy container is healthy
+      const haproxyContainers = containers.filter(c =>
+        c.Names?.some(name => name.includes('haproxy')) &&
+        !c.Names?.some(name => name.includes('init'))
+      );
+
+      if (haproxyContainers.length === 0) {
+        return {
+          status: HealthStatus.UNHEALTHY,
+          message: 'Main HAProxy container not found',
+          lastChecked: new Date(),
+          details: { containers: containers.map(c => c.Names) }
+        };
+      }
+
+      const mainContainer = haproxyContainers[0];
+      if (mainContainer.State !== 'running') {
+        return {
+          status: HealthStatus.UNHEALTHY,
+          message: `Main HAProxy container is ${mainContainer.State}`,
+          lastChecked: new Date(),
+          details: { containerState: mainContainer.State }
+        };
+      }
+
+      return {
+        status: HealthStatus.HEALTHY,
+        message: 'HAProxy service is healthy',
+        lastChecked: new Date(),
+        details: {
+          runningContainers: runningContainers.length,
+          totalContainers: containers.length,
+          mainContainerState: mainContainer.State
+        }
+      };
+    } catch (error) {
+      return {
+        status: HealthStatus.UNKNOWN,
+        message: error instanceof Error ? error.message : 'Health check failed',
+        lastChecked: new Date(),
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+    }
+  }
+
+  /**
+   * Check if service is ready to start (implements IApplicationService)
+   */
+  async isReadyToStart(): Promise<boolean> {
+    try {
+      // Check if docker executor is available
+      await this.dockerExecutor.initialize();
+
+      // Check if we're in a state that allows starting
+      return this.currentStatus === ServiceStatus.INITIALIZED ||
+        this.currentStatus === ServiceStatus.STOPPED ||
+        this.currentStatus === ServiceStatus.FAILED;
+    } catch (error) {
+      this.logger.warn({ error }, 'HAProxy service readiness check failed');
+      return false;
+    }
   }
 }
