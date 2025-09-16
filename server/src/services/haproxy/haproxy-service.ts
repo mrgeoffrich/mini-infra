@@ -1,5 +1,6 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
+import * as path from 'path';
 
 export class HAProxyService {
   private dockerExecutor: DockerExecutorService;
@@ -94,8 +95,8 @@ export class HAProxyService {
         'cp /tmp/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg && cp /tmp/dataplaneapi.yml /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/haproxy.cfg'
       ],
       volumes: [
-        `${process.cwd()}/docker-compose/haproxy/dataplaneapi.yml:/tmp/dataplaneapi.yml:ro`,
-        `${process.cwd()}/docker-compose/haproxy/haproxy.cfg:/tmp/haproxy.cfg:ro`
+        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'dataplaneapi.yml')}:/tmp/dataplaneapi.yml:ro`,
+        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'haproxy.cfg')}:/tmp/haproxy.cfg:ro`
       ],
       mounts: [
         {
@@ -164,7 +165,7 @@ export class HAProxyService {
         '5555/tcp': [{ HostPort: '5555' }]
       },
       volumes: [
-        `${process.cwd()}/docker-compose/haproxy/certs:/etc/ssl/certs:rw`
+        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'certs')}:/etc/ssl/certs:rw`
       ],
       mounts: [
         {
