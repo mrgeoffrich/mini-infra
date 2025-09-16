@@ -109,6 +109,7 @@ class DockerService {
           "Using Docker host from database settings",
         );
       } else {
+        servicesLogger().warn("Docker host not configured in database settings - Docker functionality will be unavailable");
         throw new Error("Docker host not configured in database settings");
       }
 

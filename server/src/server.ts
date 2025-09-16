@@ -112,6 +112,20 @@ const startServer = async () => {
     }
   });
 
+  // Handle server errors (e.g., port already in use)
+  server.on('error', (error: any) => {
+    logger.fatal(
+      {
+        error: serializeError(error),
+        port: appConfig.server.port,
+        errorCode: error.code,
+        errorType: error?.constructor?.name || "Unknown",
+      },
+      `Failed to start server on port ${appConfig.server.port}`,
+    );
+    process.exit(1);
+  });
+
   return server;
 };
 

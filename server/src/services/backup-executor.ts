@@ -104,8 +104,18 @@ export class BackupExecutorService {
       servicesLogger().debug(
         "Initializing Docker executor for backup operations",
       );
-      await this.dockerExecutor.initialize();
-      servicesLogger().debug("Docker executor initialized successfully");
+      try {
+        await this.dockerExecutor.initialize();
+        servicesLogger().debug("Docker executor initialized successfully");
+      } catch (dockerError) {
+        servicesLogger().warn(
+          {
+            error: dockerError instanceof Error ? dockerError.message : "Unknown error",
+          },
+          "Failed to initialize Docker executor - backup operations will be unavailable until Docker is configured",
+        );
+        // Continue initialization without Docker - backup operations will fail gracefully when attempted
+      }
 
       servicesLogger().info(
         {

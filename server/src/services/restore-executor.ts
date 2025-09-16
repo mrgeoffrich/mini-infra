@@ -111,8 +111,18 @@ export class RestoreExecutorService {
       servicesLogger().debug(
         "Initializing Docker executor for restore operations",
       );
-      await this.dockerExecutor.initialize();
-      servicesLogger().debug("Docker executor initialized successfully");
+      try {
+        await this.dockerExecutor.initialize();
+        servicesLogger().debug("Docker executor initialized successfully");
+      } catch (dockerError) {
+        servicesLogger().warn(
+          {
+            error: dockerError instanceof Error ? dockerError.message : "Unknown error",
+          },
+          "Failed to initialize Docker executor - restore operations will be unavailable until Docker is configured",
+        );
+        // Continue initialization without Docker - restore operations will fail gracefully when attempted
+      }
 
       servicesLogger().info(
         {

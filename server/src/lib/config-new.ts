@@ -154,7 +154,32 @@ let validatedConfig: Config;
 try {
   validatedConfig = configSchema.parse(appConfig);
 } catch (error) {
-  console.error("❌ Invalid configuration:", error);
+  // Use console.error since logger isn't available yet
+  console.error("❌ FATAL: Invalid configuration detected during startup");
+  console.error("Configuration validation error:", error);
+  console.error("Please check your environment variables and configuration files");
+  
+  // Also try to write to a basic log file if possible
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const logDir = path.join(process.cwd(), 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const errorLogPath = path.join(logDir, 'startup-errors.log');
+    const errorDetails = {
+      timestamp: new Date().toISOString(),
+      error: 'Configuration validation failed',
+      details: error instanceof Error ? error.message : String(error),
+      config: appConfig
+    };
+    fs.appendFileSync(errorLogPath, JSON.stringify(errorDetails) + '\n');
+    console.error(`Error details also written to: ${errorLogPath}`);
+  } catch (writeError) {
+    console.error("Could not write error to log file:", writeError);
+  }
+  
   process.exit(1);
 }
 
