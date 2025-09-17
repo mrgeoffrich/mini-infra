@@ -49,11 +49,16 @@ describe('ApplicationServiceFactory', () => {
 
     // Create mock service registry
     mockServiceRegistry = {
-      getServiceDefinition: jest.fn().mockReturnValue({
-        serviceType: 'haproxy',
-        implementation: MockHAProxyService,
-        metadata: mockService.metadata,
-        description: 'HAProxy load balancer'
+      getServiceDefinition: jest.fn().mockImplementation((serviceType: string) => {
+        if (serviceType === 'haproxy') {
+          return {
+            serviceType: 'haproxy',
+            implementation: MockHAProxyService,
+            metadata: mockService.metadata,
+            description: 'HAProxy load balancer'
+          };
+        }
+        return undefined; // Return undefined for unknown service types
       }),
       validateServiceConfiguration: jest.fn().mockReturnValue(true),
       getAvailableServiceTypes: jest.fn().mockReturnValue(['haproxy'])

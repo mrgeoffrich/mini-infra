@@ -28,8 +28,9 @@ jest.mock("../services/deployment-orchestrator", () => {
   };
 });
 
-// Get reference to the mocked orchestrator
+// Get reference to the mocked orchestrator and service
 const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
+const { __mockDeploymentConfigService: mockDeploymentConfigService } = require("../services/deployment-config");
 
 // Mock the deployment config service
 jest.mock("../services/deployment-config", () => {
@@ -43,6 +44,7 @@ jest.mock("../services/deployment-config", () => {
   };
   return {
     DeploymentConfigService: jest.fn().mockImplementation(() => mockService),
+    __mockDeploymentConfigService: mockService, // Export for test use
   };
 });
 
@@ -63,11 +65,68 @@ jest.mock("../lib/logger-factory.ts", () => ({
   })),
 }));
 
-// Mock prisma (using testPrisma)
-jest.mock("../lib/prisma", () => testPrisma);
+// Mock prisma with full model methods
+jest.mock("../lib/prisma", () => ({
+  deploymentConfiguration: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  deployment: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  deploymentStep: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  default: {
+    deploymentConfiguration: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    deployment: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    deploymentStep: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+  },
+}));
 
 // Mock middleware functions
-jest.mock("../lib/api-key-middleware", () => ({
+jest.mock("../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     if (req.headers["x-api-key"] && req.headers["x-api-key"].startsWith("test-key")) {
       req.user = { id: req.headers["x-user-id"] || "test-user-id" };
@@ -79,9 +138,6 @@ jest.mock("../lib/api-key-middleware", () => ({
     }
     return res.status(401).json({ success: false, message: "Authentication required" });
   },
-}));
-
-jest.mock("../lib/auth-middleware", () => ({
   getAuthenticatedUser: (req: any) => req.user,
 }));
 
@@ -89,10 +145,12 @@ describe("Deployment API Integration Tests", () => {
   let app: express.Application;
   let testUserId: string;
   let apiKey: string;
-  let mockDeploymentConfigService: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // Set environment variable for encryption key
+    process.env.ENCRYPTION_KEY = "test-encryption-key-12345678901234567890123456";
 
     // Clean database
     await testPrisma.deployment.deleteMany();
@@ -107,10 +165,6 @@ describe("Deployment API Integration Tests", () => {
     const key = await createTestApiKey(testUserId, "Test API Key");
     apiKey = `test-key-${key.id}`;
 
-    // Get mocked service instance
-    const { DeploymentConfigService } = require("../services/deployment-config");
-    mockDeploymentConfigService = new DeploymentConfigService();
-
     // Setup Express app with routes
     app = express();
     app.use(express.json());
@@ -123,6 +177,7 @@ describe("Deployment API Integration Tests", () => {
       status: "pending",
       startedAt: new Date(),
     });
+
   });
 
   afterEach(async () => {
@@ -195,13 +250,13 @@ describe("Deployment API Integration Tests", () => {
         const mockConfigs = [
           {
             id: "config-1",
+            ...createValidDeploymentConfigRequest(),
             applicationName: "test-app-1",
             dockerImage: "nginx:latest",
             isActive: true,
             userId: testUserId,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            ...createValidDeploymentConfigRequest(),
           },
         ];
 
