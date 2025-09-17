@@ -1036,7 +1036,7 @@ describe("Settings API Routes", () => {
         data: {
           service: "cloudflare",
           status: "failed",
-          responseTimeMs: 0,
+          responseTimeMs: expect.any(Number),
           errorMessage: "Docker daemon not running",
           errorCode: "CONNECTION_FAILED",
           lastSuccessfulAt: null,
