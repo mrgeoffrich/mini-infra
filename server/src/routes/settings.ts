@@ -33,6 +33,40 @@ import {
 
 const router = express.Router();
 
+// Utility function to handle Promise race with proper timeout cleanup
+function createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+  });
+
+  // Add cleanup method to the promise
+  (timeoutPromise as any).cleanup = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  return timeoutPromise;
+}
+
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string,
+): Promise<T> {
+  const timeoutPromise = createTimeoutPromise<T>(timeoutMs, errorMessage);
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    (timeoutPromise as any).cleanup();
+    return result;
+  } catch (error) {
+    (timeoutPromise as any).cleanup();
+    throw error;
+  }
+}
+
 // Create configuration service factory
 const configFactory = new ConfigurationServiceFactory(prisma);
 
@@ -686,12 +720,11 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
 
     // Perform validation with timeout protection
     const startTime = Date.now();
-    const validationResult = (await Promise.race([
+    const validationResult = (await raceWithTimeout(
       configService.validate(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Validation timeout")), 30000),
-      ),
-    ])) as any;
+      30000,
+      "Validation timeout",
+    )) as any;
 
     const responseTime = Date.now() - startTime;
 
