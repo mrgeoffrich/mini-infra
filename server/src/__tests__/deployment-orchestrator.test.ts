@@ -100,11 +100,13 @@ describe("DeploymentOrchestrator", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
 
-    // Clean database
-    await testPrisma.deployment.deleteMany();
-    await testPrisma.deploymentStep.deleteMany();
-    await testPrisma.deploymentConfiguration.deleteMany();
-    await testPrisma.user.deleteMany();
+    // Clean database efficiently with a single transaction
+    await testPrisma.$transaction([
+      testPrisma.deploymentStep.deleteMany(),
+      testPrisma.deployment.deleteMany(),
+      testPrisma.deploymentConfiguration.deleteMany(),
+      testPrisma.user.deleteMany(),
+    ]);
 
     // Create test user
     const user = await createTestUser();
@@ -166,11 +168,13 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.stopDeployment(deploymentId);
     }
 
-    // Clean database
-    await testPrisma.deployment.deleteMany();
-    await testPrisma.deploymentStep.deleteMany();
-    await testPrisma.deploymentConfiguration.deleteMany();
-    await testPrisma.user.deleteMany();
+    // Clean database efficiently with a single transaction
+    await testPrisma.$transaction([
+      testPrisma.deploymentStep.deleteMany(),
+      testPrisma.deployment.deleteMany(),
+      testPrisma.deploymentConfiguration.deleteMany(),
+      testPrisma.user.deleteMany(),
+    ]);
   });
 
   // Helper function to create valid deployment config
@@ -308,20 +312,10 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to complete the flow through health checking
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Debug: Check what mocks have been called
-      console.log("pullImageWithAuth calls:", mockDockerExecutor.pullImageWithAuth.mock.calls.length);
-      console.log("createContainer calls:", mockContainerManager.createContainer.mock.calls.length);
-      console.log("startContainer calls:", mockContainerManager.startContainer.mock.calls.length);
-      console.log("waitForContainerStatus calls:", mockContainerManager.waitForContainerStatus.mock.calls.length);
-      console.log("getContainerStatus calls:", mockContainerManager.getContainerStatus.mock.calls.length);
-      console.log("performHealthCheck calls:", mockHealthCheckService.performHealthCheck.mock.calls.length);
-      console.log("performNetworkHealthCheck calls:", mockNetworkHealthCheckService.performNetworkHealthCheck.mock.calls.length);
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Check deployment status
       const status = orchestrator.getDeploymentStatus(deployment.id);
-      console.log("Deployment status:", status);
 
       // Verify mocks were called for successful flow up to health checking
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalledWith("nginx:latest");
@@ -354,7 +348,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for state machine to process
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
       // Container creation should not be attempted after image pull failure
@@ -372,7 +366,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for state machine to process
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
       expect(mockContainerManager.createContainer).toHaveBeenCalled();
@@ -430,7 +424,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to process including retries
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // The health check should be called at least once and potentially retry
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalledTimes(1);
@@ -474,7 +468,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for all retry attempts
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should be called at least once and fail completely
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalled();
@@ -553,7 +547,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to process through health checking to traffic switching
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Verify the health check succeeded and basic deployment flow worked
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalled();
@@ -643,7 +637,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment flow to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Verify basic deployment flow worked
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -687,7 +681,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       // Verify the deployment started
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -756,7 +750,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment to start and get to health checking (failing)
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       // Verify deployment is still active
       expect(orchestrator.isDeploymentActive(deployment.id)).toBe(true);
@@ -809,7 +803,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment to process
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       // Verify basic deployment operations happened
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -1006,7 +1000,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for some steps to be processed
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       // Check if steps were created in database
       const steps = await testPrisma.deploymentStep.findMany({
@@ -1037,7 +1031,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for container creation
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       const updatedDeployment = await testPrisma.deployment.findUnique({
         where: { id: deployment.id },
@@ -1064,7 +1058,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for health check
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, 20));
 
       const updatedDeployment = await testPrisma.deployment.findUnique({
         where: { id: deployment.id },
@@ -1087,7 +1081,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for error to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(mockLogger.error).toHaveBeenCalled();
     });
@@ -1127,7 +1121,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for execution
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       // Verify deployment was started (it may complete and become inactive)
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -1152,7 +1146,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for container creation
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 15));
 
       expect(mockContainerManager.createContainer).toHaveBeenCalledWith(
         expect.objectContaining({
