@@ -4,8 +4,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { ProgressTrackerService } from "../services/progress-tracker";
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 
 const router = Router();

@@ -4,8 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { BackupExecutorService } from "../services/backup-executor";
 import {
   BackupOperationListResponse,

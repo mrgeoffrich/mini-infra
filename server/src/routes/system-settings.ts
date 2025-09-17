@@ -8,8 +8,7 @@ import { z } from "zod";
 import { servicesLogger } from "../lib/logger-factory";
 
 const logger = servicesLogger();
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { DockerExecutorService } from "../services/docker-executor";
 import type {
   DockerRegistryTestOptions,

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { httpLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { requireSessionOrApiKey } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
 import type {
   JWTUser,

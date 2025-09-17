@@ -1,3 +1,19 @@
+/**
+ * Authentication Middleware Implementation
+ *
+ * This file contains the core implementation of all authentication and authorization
+ * middleware functions for the Mini Infra application. It provides:
+ *
+ * - JWT and API key authentication middleware
+ * - Authorization and ownership validation
+ * - Standardized error responses
+ * - Middleware composition utilities
+ * - Authentication utility functions
+ *
+ * This is the implementation file - routes should import from '../middleware/auth'
+ * which provides a clean re-export interface to this functionality.
+ */
+
 import { Request, Response, NextFunction } from "express";
 import { appLogger } from "./logger-factory";
 
