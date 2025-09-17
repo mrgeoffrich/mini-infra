@@ -49,19 +49,21 @@ jest.mock("../../lib/logger-factory", () => ({
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
+const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
+  // Set up authenticated user context for tests
+  req.apiKey = {
+    userId: "test-user-id",
+    id: "test-key-id",
+    user: { id: "test-user-id", email: "test@example.com" }
+  };
+  res.locals = {
+    requestId: "test-request-id",
+  };
+  next();
+});
+
 jest.mock("../../lib/api-key-middleware", () => ({
-  requireSessionOrApiKey: (req: any, res: any, next: any) => {
-    // Set up authenticated user context for tests
-    req.apiKey = {
-      userId: "test-user-id",
-      id: "test-key-id",
-      user: { id: "test-user-id", email: "test@example.com" }
-    };
-    res.locals = {
-      requestId: "test-request-id",
-    };
-    next();
-  },
+  requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
 }));
@@ -146,6 +148,20 @@ describe("PostgreSQL Databases API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Reset the auth middleware mock to its default successful behavior
+    mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
+      // Set up authenticated user context for tests
+      req.apiKey = {
+        userId: "test-user-id",
+        id: "test-key-id",
+        user: { id: "test-user-id", email: "test@example.com" }
+      };
+      res.locals = {
+        requestId: "test-request-id",
+      };
+      next();
+    });
   });
 
   describe("GET /api/postgres/databases", () => {
@@ -238,7 +254,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should require authentication", async () => {
-      mockRequireAuth.mockImplementationOnce(
+      mockRequireSessionOrApiKey.mockImplementationOnce(
         (req: any, res: any, next: any) => {
           res.status(401).json({ error: "Unauthorized" });
         },
@@ -685,7 +701,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
   describe("authentication", () => {
     it("should require authentication for all endpoints", async () => {
-      mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
+      mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
         res.status(401).json({ error: "Unauthorized" });
       });
 

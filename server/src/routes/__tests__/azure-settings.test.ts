@@ -132,8 +132,15 @@ describe("Azure Settings API Routes", () => {
     jest.clearAllMocks();
 
     // Reset auth mocks to successful state
-    mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
-      req.user = { id: "test-user-id", email: "test@example.com" };
+    mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
+      req.apiKey = {
+        userId: "test-user-id",
+        id: "test-key-id",
+        user: { id: "test-user-id", email: "test@example.com" }
+      };
+      res.locals = {
+        requestId: "test-request-id",
+      };
       next();
     });
 
@@ -147,7 +154,7 @@ describe("Azure Settings API Routes", () => {
   describe("Authentication Requirements", () => {
     beforeEach(() => {
       // Mock auth failure
-      mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
+      mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
         res.status(401).json({ error: "Unauthorized" });
       });
       mockGetAuthenticatedUser.mockReturnValue(null);
@@ -218,8 +225,15 @@ describe("Azure Settings API Routes", () => {
   describe("GET /api/settings/azure", () => {
     beforeEach(() => {
       // Reset to authenticated state
-      mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
-        req.user = { id: "test-user-id", email: "test@example.com" };
+      mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
+        req.apiKey = {
+          userId: "test-user-id",
+          id: "test-key-id",
+          user: { id: "test-user-id", email: "test@example.com" }
+        };
+        res.locals = {
+          requestId: "test-request-id",
+        };
         next();
       });
 

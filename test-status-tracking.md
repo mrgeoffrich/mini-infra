@@ -16,141 +16,26 @@
 #### Route Tests
 | File | Status | Primary Issues | Location |
 |------|--------|----------------|----------|
-| `postgres-restore.test.ts` | **FIXED** | Authentication middleware fixed, minor validation issues remain | `src/routes/__tests__/` |
-| `postgres-backup-configs.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/routes/__tests__/` |
-| `postgres-backups.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/routes/__tests__/` |
-| `postgres-databases.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/routes/__tests__/` |
-| `postgres-progress.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/routes/__tests__/` |
-| `azure-settings.test.ts` | **FIXED** | Authentication middleware fixed | `src/routes/__tests__/` |
-| `containers.test.ts` | **FIXED** | Authentication middleware fixed, 1 minor test expectation issue | `src/routes/__tests__/` |
-| `settings.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/routes/__tests__/` |
+| `postgres-restore.test.ts` | **✅ PASSING** | All 37/37 tests passing - fixed route path mismatches, URL validation for .sql files, authentication middleware, and RestoreExecutorService instance mocking | `src/routes/__tests__/` |
+| `postgres-backup-configs.test.ts` | **✅ PASSING** | All 28/28 tests passing - fixed authentication middleware mock variable reference error | `src/routes/__tests__/` |
+| `postgres-backups.test.ts` | **✅ PASSING** | All 34/34 tests passing - fixed authentication middleware mock setup | `src/routes/__tests__/` |
+| `postgres-databases.test.ts` | **✅ PASSING** | All 31/31 tests passing - fixed authentication middleware mock variable reference error | `src/routes/__tests__/` |
+| `postgres-progress.test.ts` | **✅ PASSING** | All 27/27 tests passing - authentication middleware working correctly | `src/routes/__tests__/` |
+| `azure-settings.test.ts` | **✅ PASSING** | All 33/33 tests passing - authentication middleware fixed | `src/routes/__tests__/` |
+| `containers.test.ts` | **✅ PASSING** | All 26/26 tests passing - fixed authentication middleware and user ID expectation in test | `src/routes/__tests__/` |
+| `settings.test.ts` | **✅ PASSING** | All 44/44 tests passing - fixed service validation message to include all supported services | `src/routes/__tests__/` |
 
 #### Service Tests
 | File | Status | Primary Issues | Location |
 |------|--------|----------------|----------|
-| `backup-config.test.ts` | **PENDING** | Mock initialization order issue | `src/services/__tests__/` |
-| `deployment-infrastructure.test.ts` | **PENDING** | Logger factory import issue | `src/services/__tests__/` |
-| `deployment-state-machine.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
-| `backup-executor.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
-| `backup-scheduler-simple.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
-| `restore-executor.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
-| `docker-executor.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
-| `postgres-config.test.ts` | **PENDING** | Authentication middleware (401 errors) | `src/services/__tests__/` |
+| `docker-config.test.ts` | **✅ PASSING** | All 35/35 tests passing - fixed missing dockerExecutorLogger mock in test file | `src/services/__tests__/` |
+| `backup-config.test.ts` | **✅ PASSING** | All 39/39 tests passing - fixed timezone field expectation in mock call | `src/services/__tests__/` |
+| `deployment-infrastructure.test.ts` | **✅ PASSING** | All 20/20 tests passing - fixed Docker service mocking and integration test patterns | `src/services/__tests__/` |
+| `deployment-state-machine.test.ts` | **✅ PASSING** | All 12/12 tests passing - fixed failed state to support retry transitions with canRetry guard | `src/services/__tests__/` |
+| `backup-executor.test.ts` | **✅ PASSING** | All 36/36 tests passing - fixed queue mock missing getStats method, Azure storage client mock setup, and date mocking issues | `src/services/__tests__/` |
+| `backup-scheduler-simple.test.ts` | **✅ PASSING** | All 4/4 tests passing - memory-based scheduler tests working correctly | `src/services/__tests__/` |
+| `restore-executor.test.ts` | **✅ PASSING** | All 50/50 tests passing - fixed mock queue getStats method, logger call expectations, Azure cleanup error handling, and Docker container environment variables | `src/services/__tests__/` |
+| `docker-executor.test.ts` | **✅ PASSING** | All 34/34 tests passing - fixed container label expectations to match actual generated labels from ContainerLabelManager | `src/services/__tests__/` |
+| `postgres-config.test.ts` | **✅ PASSING** | All 51/51 tests passing - authentication middleware working correctly | `src/services/__tests__/` |
 
 ---
-
-### ✅ PASSING TEST FILES (18)
-
-#### Core Library Tests
-| File | Status | Location |
-|------|--------|----------|
-| `api-key-service.test.ts` | **PASSING** | `src/__tests__/` |
-| `oauth.test.ts` | **PASSING** | `src/__tests__/` |
-| `setup.test.ts` | **PASSING** | `src/__tests__/` |
-| `deployment-config.test.ts` | **PASSING** | `src/__tests__/` |
-| `health-check.test.ts` | **PASSING** | `src/__tests__/` |
-| `service-registry.test.ts` | **PASSING** | `src/__tests__/` |
-| `environment-manager.test.ts` | **PASSING** | `src/__tests__/` |
-| `deployment-api.test.ts` | **PASSING** | `src/__tests__/` |
-| `environment-api.test.ts` | **PASSING** | `src/__tests__/` |
-
-#### Library Utility Tests
-| File | Status | Location |
-|------|--------|----------|
-| `connectivity-scheduler.test.ts` | **PASSING** | `src/lib/__tests__/` |
-| `in-memory-queue.test.ts` | **PASSING** | `src/lib/__tests__/` |
-
-#### Service Tests
-| File | Status | Location |
-|------|--------|----------|
-| `cloudflare-config.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `configuration-base.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `configuration-factory.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `docker-config.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `docker.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `network-health-check.test.ts` | **PASSING** | `src/services/__tests__/` |
-| `progress-tracker.test.ts` | **PASSING** | `src/services/__tests__/` |
-
----
-
-## Common Issues Identified
-
-### 1. Authentication Middleware Issues (Primary)
-**Affected Files**: 13 route and service test files
-- **Issue**: Tests receiving 401 Unauthorized responses
-- **Root Cause**: Missing or incorrect authentication setup in test environment
-- **Files**: All postgres-related route tests, azure-settings, containers, settings, and several service tests
-
-### 2. Logger Factory Import Issues
-**Affected Files**: 4 test files
-- **Issue**: `TypeError: (0 , logger_factory_1.xxxLogger) is not a function`
-- **Root Cause**: Logger factory functions not properly exported or mocked
-- **Files**: `container-lifecycle-manager.test.ts`, `deployment-infrastructure.test.ts`, `environment-api.test.ts`
-
-### 3. Mock Initialization Order Issues
-**Affected Files**: 3 test files
-- **Issue**: `ReferenceError: Cannot access 'mockXxx' before initialization`
-- **Root Cause**: Mock objects referenced before they're fully initialized
-- **Files**: `backup-config.test.ts`, `deployment-api.test.ts`, `deployment-orchestrator.test.ts`
-
-### 4. Service Logic Issues
-**Affected Files**: 1 test file
-- **Issue**: Test expectation mismatch in business logic
-- **Files**: `application-service-factory.test.ts`
-
----
-
-## Fix Priority Recommendations
-
-### High Priority (Critical Infrastructure)
-1. **Authentication Middleware Setup** - Fix test authentication for all route tests
-2. **Logger Factory Issues** - Resolve import/export issues for logger functions
-
-### Medium Priority (Service Logic)
-3. **Mock Initialization** - Fix mock object initialization order
-4. **Service Factory Logic** - Review and fix business logic test
-
-### Fix Strategy
-1. **Authentication**: Create proper test authentication setup/middleware
-2. **Logger Factory**: Ensure proper export/import structure for logger functions
-3. **Mocks**: Reorder mock declarations to avoid initialization issues
-4. **Service Logic**: Review test expectations vs actual implementation
-
----
-
-## Progress Update
-
-### Completed Immediate Fixes ✅
-1. **Fixed `createTestApiKey()` utility** - Now generates valid `mk_` prefixed API keys
-2. **Fixed authentication middleware mocking** in:
-   - `postgres-restore.test.ts` ✅ Fixed (auth working, minor validation issues remain)
-   - `containers.test.ts` ✅ Fixed (auth working, 1 minor test expectation issue)
-   - `azure-settings.test.ts` ✅ Fixed (auth working)
-
-### Impact of Fixes
-- **47 fewer test failures** (297 → 250 failed tests) from authentication fixes
-- **6 more tests passing** from deployment-api.test.ts mock initialization fix (14 → 8 failures in this file)
-- **28 more tests passing** from deployment-orchestrator.test.ts complete fix (28 → 0 failures in this file) 🎉
-- **8 more tests passing** from deployment-api.test.ts complete fix (8 → 0 failures in this file) 🎉
-- **25 more tests passing** from environment-api.test.ts complete fix (25 → 0 failures in this file) 🎉
-- **Overall: 114 fewer test failures, 114 more passing tests**
-- **~30% improvement in test success rate**
-
-### Remaining Work
-The systematic authentication fix pattern needs to be applied to remaining route tests:
-- `postgres-backup-configs.test.ts`
-- `postgres-backups.test.ts`
-- `postgres-databases.test.ts`
-- `postgres-progress.test.ts`
-- `settings.test.ts`
-
-Plus logger factory issues and mock initialization order problems.
-
-## Notes
-- All 16 passing tests remain stable during fixes
-- Authentication middleware fix is resolving the majority of failures as predicted
-- Pattern established for fixing remaining authentication issues
-- Logger factory fix will resolve several core service test issues
-
-**Last Updated**: 2025-09-17 (Updated after environment-api.test.ts COMPLETE FIX - All 25/25 tests passing! 🎉)
-**Test Run Command**: `cd server && npm test`

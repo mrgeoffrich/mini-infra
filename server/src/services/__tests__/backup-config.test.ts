@@ -158,6 +158,7 @@ describe("BackupConfigService", () => {
         data: {
           databaseId: "db-123",
           schedule: validConfig.schedule,
+          timezone: "UTC",
           azureContainerName: validConfig.azureContainerName,
           azurePathPrefix: validConfig.azurePathPrefix,
           retentionDays: validConfig.retentionDays,

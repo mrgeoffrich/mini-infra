@@ -269,9 +269,12 @@ describe("DockerExecutorService", () => {
         AttachStderr: true,
         Tty: false,
         AutoRemove: true,
-        Labels: {
+        Labels: expect.objectContaining({
           "mini-infra.managed": "true",
-        },
+          "mini-infra.version": "1.0",
+          "mini-infra.purpose": "task",
+          "mini-infra.temporary": "true",
+        }),
         HostConfig: {
           Memory: 2 * 1024 * 1024 * 1024,
           CpuShares: 1024,

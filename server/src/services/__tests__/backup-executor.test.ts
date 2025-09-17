@@ -16,6 +16,13 @@ const mockQueue = {
   close: jest.fn(),
   on: jest.fn(),
   remove: jest.fn(),
+  getStats: jest.fn().mockReturnValue({
+    pending: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    total: 0,
+  }),
 };
 
 jest.mock("../../lib/in-memory-queue", () => {
@@ -55,8 +62,14 @@ const mockBlobServiceClient = {
   getContainerClient: jest.fn(),
 };
 
+const mockBlobClient = {
+  getProperties: jest.fn(),
+  url: "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
+};
+
 const mockContainerClient = {
   listBlobsFlat: jest.fn(),
+  getBlobClient: jest.fn(() => mockBlobClient),
 };
 
 jest.mock("@azure/storage-blob", () => ({
@@ -151,6 +164,12 @@ describe("BackupExecutorService", () => {
 
       expect(mockDockerExecutor.initialize).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
+        {
+          initializationTimeMs: expect.any(Number),
+          queueConcurrency: 2,
+          maxRetries: 3,
+          timeoutMs: 7200000,
+        },
         "BackupExecutorService initialized successfully",
       );
     });
@@ -160,16 +179,15 @@ describe("BackupExecutorService", () => {
         .fn()
         .mockRejectedValue(new Error("Docker initialization failed"));
 
-      await expect(backupExecutorService.initialize()).rejects.toThrow(
-        "Docker initialization failed",
-      );
+      await backupExecutorService.initialize();
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         {
           error: "Docker initialization failed",
         },
-        "Failed to initialize BackupExecutorService",
+        "Failed to initialize Docker executor - backup operations will be unavailable until Docker is configured",
       );
+
     });
 
     it("should not reinitialize if already initialized", async () => {
@@ -279,6 +297,7 @@ describe("BackupExecutorService", () => {
           databaseId: "db-123",
           operationType: "manual",
           userId: "user-123",
+          queueingTimeMs: expect.any(Number),
         },
         "Failed to queue backup operation",
       );
@@ -578,49 +597,13 @@ describe("BackupExecutorService", () => {
     });
 
     it("should verify backup files exist", async () => {
-      const mockBlobs = [
-        {
-          name: "db-backups/testdb/backup-2023-01-01.sql",
-          properties: {
-            createdOn: new Date("2023-01-01T02:00:00Z"),
-            contentLength: 1000000,
-          },
-        },
-      ];
-
-      // Create another async iterator for the verification test
-      const verifyMockAsyncIterator = {
-        [Symbol.asyncIterator]() {
-          let index = 0;
-          return {
-            async next() {
-              if (index < mockBlobs.length) {
-                return { value: mockBlobs[index++], done: false };
-              }
-              return { done: true };
-            },
-          };
-        },
-      };
-
-      mockContainerClient.listBlobsFlat = jest
-        .fn()
-        .mockReturnValue(verifyMockAsyncIterator);
-
-      // Mock the Date constructor to return a fixed date
-      const RealDate = Date;
-      const fixedDate = new Date("2023-01-01T12:00:00Z");
-      jest.spyOn(global, "Date").mockImplementation((dateString?: any) => {
-        if (dateString) {
-          return new RealDate(dateString);
-        }
-        return fixedDate;
-      }) as any;
+      mockBlobClient.getProperties = jest.fn().mockResolvedValue({
+        contentLength: 1000000,
+      });
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
-        "db-backups",
-        "testdb",
+        "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(true);
@@ -628,34 +611,18 @@ describe("BackupExecutorService", () => {
       expect(result.blobUrl).toBe(
         "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
       );
-
-      jest.restoreAllMocks();
     });
 
     it("should return error when no backup files found", async () => {
-      // Create empty async iterator
-      const emptyAsyncIterator = {
-        [Symbol.asyncIterator]() {
-          return {
-            async next() {
-              return { done: true };
-            },
-          };
-        },
-      };
-
-      mockContainerClient.listBlobsFlat = jest
-        .fn()
-        .mockReturnValue(emptyAsyncIterator);
+      mockBlobClient.getProperties = jest.fn().mockRejectedValue(new Error("Blob not found"));
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
-        "db-backups",
-        "testdb",
+        "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("No backup files found");
+      expect(result.error).toContain("Backup file not found");
     });
 
     it("should handle Azure connection string not configured", async () => {
@@ -672,14 +639,13 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle Azure storage errors", async () => {
-      mockContainerClient.listBlobsFlat = jest.fn().mockImplementation(() => {
+      mockBlobServiceClient.getContainerClient = jest.fn().mockImplementation(() => {
         throw new Error("Azure storage error");
       });
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
-        "db-backups",
-        "testdb",
+        "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(false);
@@ -783,6 +749,16 @@ describe("BackupExecutorService", () => {
     it("should set completedAt when status is completed", async () => {
       mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
 
+      // Mock Date constructor
+      const RealDate = Date;
+      const fixedDate = new Date("2023-01-01T12:00:00.000Z");
+      jest.spyOn(global, "Date").mockImplementation((dateString?: any) => {
+        if (dateString) {
+          return new RealDate(dateString);
+        }
+        return fixedDate;
+      }) as any;
+
       await (backupExecutorService as any).updateBackupProgress(
         "operation-123",
         {
@@ -797,9 +773,11 @@ describe("BackupExecutorService", () => {
           status: "completed",
           progress: 100,
           errorMessage: undefined,
-          completedAt: expect.any(Date),
+          completedAt: fixedDate,
         },
       });
+
+      jest.restoreAllMocks();
     });
 
     it("should handle update errors gracefully", async () => {

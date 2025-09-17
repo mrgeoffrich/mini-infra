@@ -101,8 +101,8 @@ jest.mock("../../lib/logger-factory", () => ({
   })),
 }));
 
-// Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-jest.mock("../../lib/api-key-middleware", () => ({
+// Mock the centralized auth middleware
+jest.mock("../../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -111,16 +111,13 @@ jest.mock("../../lib/api-key-middleware", () => ({
       user: { id: "test-user-id", email: "test@example.com" }
     };
     res.locals = {
+      user: { id: "test-user-id", email: "test@example.com" },
       requestId: "test-request-id",
     };
     next();
   },
+  getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
   getCurrentUserId: (req: any) => "test-user-id",
-  getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
-}));
-
-// Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     res.locals = {
       user: { id: "test-user-id" },
@@ -128,7 +125,6 @@ jest.mock("../../lib/auth-middleware", () => ({
     };
     next();
   },
-  getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
 }));
 
 const app = express();

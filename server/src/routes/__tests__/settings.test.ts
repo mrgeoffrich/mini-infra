@@ -1085,7 +1085,7 @@ describe("Settings API Routes", () => {
       expect(response.body).toMatchObject({
         error: "Bad Request",
         message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres",
+          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres, system, deployments",
       });
     });
 

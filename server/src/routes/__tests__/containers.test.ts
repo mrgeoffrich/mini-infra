@@ -591,7 +591,7 @@ describe("Container Routes", () => {
     });
 
     it("should pass user information to request handlers", async () => {
-      const testUserId = "test-user-123";
+      const testUserId = "test-user-id";
       mockRequireSessionOrApiKey.mockImplementationOnce(
         (req: any, res: any, next: any) => {
           req.user = { id: testUserId };

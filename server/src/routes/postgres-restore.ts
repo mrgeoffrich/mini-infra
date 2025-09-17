@@ -38,7 +38,7 @@ const CreateRestoreOperationSchema = z
       .url("Must be a valid URL")
       .refine(
         (url) => validateAzureStorageUrl(url),
-        "Backup URL must be a valid Azure Storage blob URL ending with .dump",
+        "Backup URL must be a valid Azure Storage blob URL ending with .dump or .sql",
       ),
     confirmRestore: z.boolean().optional(),
     restoreToNewDatabase: z.boolean().optional(),
@@ -116,10 +116,10 @@ function validateAzureStorageUrl(url: string): boolean {
     const pathParts = parsedUrl.pathname.substring(1).split("/"); // Remove leading slash
     const hasValidPath = pathParts.length >= 2 && !!pathParts[0] && !!pathParts[1];
 
-    // Check if it ends with .dump (expected backup file extension)
-    const isDumpFile = parsedUrl.pathname.endsWith(".dump");
+    // Check if it ends with .dump or .sql (expected backup file extensions)
+    const isBackupFile = parsedUrl.pathname.endsWith(".dump") || parsedUrl.pathname.endsWith(".sql");
 
-    return isAzureStorageUrl && hasValidPath && isDumpFile;
+    return isAzureStorageUrl && hasValidPath && isBackupFile;
   } catch {
     return false;
   }
@@ -223,6 +223,134 @@ function extractBackupIdFromBlobName(blobName: string): string {
     return filename.replace(/\.dump$/, "");
   } catch {
     return "unknown";
+  }
+}
+
+/**
+ * List available backups from Azure Storage for all databases in a container
+ */
+async function listAvailableBackupsInContainer(
+  containerName: string,
+  filter: BackupBrowserFilter,
+  sort: BackupBrowserSortOptions,
+  pagination: { page: number; limit: number },
+): Promise<{ items: BackupBrowserItem[]; totalCount: number }> {
+  try {
+    const azureConnectionString =
+      await azureConfigService.get("connection_string");
+    if (!azureConnectionString) {
+      throw new Error("Azure connection string not configured");
+    }
+
+    const blobServiceClient = BlobServiceClient.fromConnectionString(
+      azureConnectionString,
+    );
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+
+    const blobs: BackupBrowserItem[] = [];
+
+    // List all blobs in container
+    for await (const blob of containerClient.listBlobsFlat({
+      includeMetadata: true,
+    })) {
+      // Skip if not a backup file (should be .dump or .sql files based on our naming convention)
+      if (!blob.name.endsWith(".dump") && !blob.name.endsWith(".sql")) {
+        continue;
+      }
+
+      const blobClient = containerClient.getBlobClient(blob.name);
+      const blobUrl = blobClient.url;
+
+      // Extract database ID from blob path
+      const pathParts = blob.name.split("/");
+      const databaseId = pathParts.length > 1 ? pathParts[0] : "unknown";
+
+      const item: BackupBrowserItem = {
+        name: blob.name,
+        url: blobUrl,
+        sizeBytes: blob.properties.contentLength || 0,
+        createdAt:
+          blob.properties.createdOn?.toISOString() || new Date().toISOString(),
+        lastModified:
+          blob.properties.lastModified?.toISOString() ||
+          new Date().toISOString(),
+        metadata: {
+          databaseName: databaseId,
+          contentType: blob.properties.contentType,
+          etag: blob.properties.etag,
+          ...blob.metadata,
+        },
+      };
+
+      // Apply filters
+      if (
+        filter.createdAfter &&
+        new Date(item.createdAt) < new Date(filter.createdAfter)
+      ) {
+        continue;
+      }
+      if (
+        filter.createdBefore &&
+        new Date(item.createdAt) > new Date(filter.createdBefore)
+      ) {
+        continue;
+      }
+      if (filter.sizeMin && item.sizeBytes < filter.sizeMin) {
+        continue;
+      }
+      if (filter.sizeMax && item.sizeBytes > filter.sizeMax) {
+        continue;
+      }
+
+      blobs.push(item);
+    }
+
+    // Sort results
+    blobs.sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (sort.field) {
+        case "createdAt":
+          aVal = new Date(a.createdAt).getTime();
+          bVal = new Date(b.createdAt).getTime();
+          break;
+        case "sizeBytes":
+          aVal = a.sizeBytes;
+          bVal = b.sizeBytes;
+          break;
+        case "name":
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        default:
+          aVal = new Date(a.createdAt).getTime();
+          bVal = new Date(b.createdAt).getTime();
+      }
+
+      if (sort.order === "asc") {
+        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      } else {
+        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+      }
+    });
+
+    // Apply pagination
+    const totalCount = blobs.length;
+    const startIndex = (pagination.page - 1) * pagination.limit;
+    const endIndex = startIndex + pagination.limit;
+    const paginatedItems = blobs.slice(startIndex, endIndex);
+
+    return { items: paginatedItems, totalCount };
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        containerName,
+      },
+      "Failed to list available backups",
+    );
+    throw error;
   }
 }
 
@@ -661,16 +789,16 @@ router.get(
 );
 
 /**
- * GET /api/postgres/restore/backups/:containerName/:databaseId
- * Browse available backups in Azure container for a specific database
+ * GET /api/postgres/restore/backups/:containerName
+ * Browse available backups in Azure container
  */
 router.get(
-  "/restore/backups/:containerName/:databaseId",
+  "/restore/backups/:containerName",
   requireSessionOrApiKey,
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { containerName, databaseId } = req.params;
+    const { containerName } = req.params;
 
     if (!user?.id) {
       return res.status(401).json({
@@ -684,39 +812,16 @@ router.get(
 
     try {
       logger.info(
-        { requestId, userId: user?.id, containerName, databaseId },
-        "Browsing available backups for database",
+        { requestId, userId: user?.id, containerName },
+        "Browsing available backups in container",
       );
-
-      // Verify database exists and user has access
-      const database = await prisma.postgresDatabase.findFirst({
-        where: {
-          id: databaseId,
-          userId: user?.id,
-        },
-      });
-
-      if (!database) {
-        logger.warn(
-          { requestId, userId: user?.id, databaseId },
-          "Database not found or access denied",
-        );
-        return res.status(404).json({
-          success: false,
-          error: "Database not found",
-          message: "Database not found or you don't have access to it",
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
 
       // Parse query parameters
       const { pagination, filter, sort } = parseBackupBrowserQuery(req.query);
 
-      // List available backups from Azure Storage for this database
-      const { items, totalCount } = await listAvailableBackups(
+      // List available backups from Azure Storage for all databases
+      const { items, totalCount } = await listAvailableBackupsInContainer(
         containerName,
-        databaseId,
         filter,
         sort,
         pagination,
@@ -751,7 +856,6 @@ router.get(
           requestId,
           userId: user?.id,
           containerName,
-          databaseId,
           error: errorMessage,
         },
         "Failed to browse available backups",

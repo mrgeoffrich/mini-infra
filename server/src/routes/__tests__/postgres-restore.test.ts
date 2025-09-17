@@ -35,6 +35,12 @@ jest.mock("../../services/restore-executor", () => ({
   RestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
 }));
 
+// Mock the restore executor instance functions
+jest.mock("../../services/restore-executor-instance", () => ({
+  getRestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
+  setRestoreExecutorService: jest.fn(),
+}));
+
 // Mock the AzureConfigService
 jest.mock("../../services/azure-config", () => ({
   AzureConfigService: jest.fn(() => mockAzureConfigService),
@@ -200,6 +206,7 @@ describe("PostgreSQL Restore API", () => {
         "test-db-id",
         "https://storage.blob.core.windows.net/backups/backup.sql",
         "test-user-id",
+        undefined,
       );
     });
 
