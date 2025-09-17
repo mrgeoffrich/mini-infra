@@ -10,26 +10,28 @@ jest.mock("node-cron", () => ({
   validate: jest.fn(),
 }));
 
-// Create a persistent mock logger instance
-const mockLoggerInstance = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
+// Mock logger factory - create the mock instance inline
+jest.mock("../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  };
 
-// Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLoggerInstance),
-  servicesLogger: jest.fn(() => mockLoggerInstance),
-  httpLogger: jest.fn(() => mockLoggerInstance),
-  prismaLogger: jest.fn(() => mockLoggerInstance),
-  __esModule: true,
-  default: jest.fn(() => mockLoggerInstance),
-}));
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Get reference to the mocked logger
-const mockLogger = mockLoggerInstance;
+const { servicesLogger } = require("../../lib/logger-factory");
+const mockLogger = servicesLogger();
 
 // Get reference to the mocked cron
 const mockCron = require("node-cron");

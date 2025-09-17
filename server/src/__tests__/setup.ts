@@ -86,11 +86,13 @@ export const createTestApiKey = async (
   name: string = "Test API Key",
 ) => {
   const keyId = createId();
+  // Generate a valid mk_ prefixed API key for testing
+  const testKey = `mk_${keyId.padEnd(64, '0')}`; // Pad to 64 chars to match real key format
   const apiKey = await testPrisma.apiKey.create({
     data: {
       id: keyId,
       name: name,
-      key: `test-key-${keyId}`,
+      key: testKey,
       userId: userId,
       active: true,
     },

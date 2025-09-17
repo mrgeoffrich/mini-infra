@@ -1,7 +1,40 @@
 import request from 'supertest';
-import app from '../app';
 import { PrismaClient } from '@prisma/client';
 import { ServiceStatus, ApplicationServiceHealthStatus } from '@mini-infra/types';
+
+// Mock logger factory first (before other imports)
+jest.mock('../lib/logger-factory', () => {
+  const mockLoggerInstance = {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    child: jest.fn(() => mockLoggerInstance), // Required for pino-http
+    level: 'info',
+    levels: {
+      values: {
+        fatal: 60,
+        error: 50,
+        warn: 40,
+        info: 30,
+        debug: 20,
+        trace: 10,
+      },
+    },
+    silent: jest.fn(),
+    fatal: jest.fn(),
+    trace: jest.fn(),
+  };
+
+  return {
+    appLogger: jest.fn(() => mockLoggerInstance),
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
 
 // Mock dependencies
 jest.mock('../services/environment-manager');
@@ -48,6 +81,9 @@ jest.doMock('../services/service-registry', () => ({
     getInstance: () => mockServiceRegistry
   }
 }));
+
+// Import app after mocks are set up
+import app from '../app';
 
 describe('Environment API', () => {
   const mockEnvironment = {

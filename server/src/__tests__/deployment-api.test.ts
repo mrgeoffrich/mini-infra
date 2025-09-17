@@ -14,15 +14,22 @@ import {
 } from "@mini-infra/types";
 
 // Mock the deployment orchestrator
-const mockOrchestrator = {
-  triggerDeployment: jest.fn(),
-  rollbackDeployment: jest.fn(),
-  getDeploymentStatus: jest.fn(),
-};
+jest.mock("../services/deployment-orchestrator", () => {
+  const mockOrchestrator = {
+    triggerDeployment: jest.fn(),
+    rollbackDeployment: jest.fn(),
+    getDeploymentStatus: jest.fn(),
+    initialize: jest.fn().mockResolvedValue(undefined),
+  };
 
-jest.mock("../services/deployment-orchestrator", () => ({
-  DeploymentOrchestrator: jest.fn().mockImplementation(() => mockOrchestrator),
-}));
+  return {
+    DeploymentOrchestrator: jest.fn().mockImplementation(() => mockOrchestrator),
+    __mockOrchestrator: mockOrchestrator, // Export for test use
+  };
+});
+
+// Get reference to the mocked orchestrator
+const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
 
 // Mock the deployment config service
 jest.mock("../services/deployment-config", () => {

@@ -40,21 +40,38 @@ jest.mock("../services/docker", () => ({
 }));
 
 // Mock logger factory
-jest.mock("../lib/logger-factory.ts", () => ({
-  servicesLogger: jest.fn(() => ({
+jest.mock("../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+
+  return {
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    appLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
+
+// Mock prisma module
+jest.mock("../lib/prisma", () => {
+  const mockPrisma = {
+    deployment: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  };
+  return {
+    __esModule: true,
+    default: mockPrisma,
+  };
+});
 
 describe("ContainerLifecycleManager", () => {
   let containerManager: ContainerLifecycleManager;

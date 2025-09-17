@@ -74,10 +74,13 @@ jest.mock("../lib/logger-factory.ts", () => ({
   default: jest.fn(() => mockLogger),
 }));
 
-// Mock prisma (using testPrisma) - needs to be after imports
+// Mock prisma (use lazy evaluation to avoid initialization order issues)
 jest.mock("../lib/prisma", () => ({
   __esModule: true,
-  default: testPrisma,
+  get default() {
+    const { testPrisma } = require("./setup");
+    return testPrisma;
+  },
 }));
 
 describe("DeploymentOrchestrator", () => {
