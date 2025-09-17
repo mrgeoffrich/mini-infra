@@ -17,6 +17,12 @@ jest.mock("../../lib/logger-factory", () => ({
     warn: jest.fn(),
     error: jest.fn(),
   }),
+  dockerExecutorLogger: () => ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  }),
 }));
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
@@ -24,7 +30,8 @@ const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 // Mock Docker Executor
 const mockDockerExecutor = {
   initialize: jest.fn(),
-  executeContainerWithProgress: jest.fn(),
+  executeContainer: jest.fn(),
+  getDockerNetworkName: jest.fn(),
 } as unknown as DockerExecutorService;
 
 // Mock the constructor
@@ -45,45 +52,6 @@ describe("NetworkHealthCheckService", () => {
     });
   });
 
-  describe("getDockerNetworkName", () => {
-    it("should return network name from system settings", async () => {
-      mockPrisma.systemSettings.findFirst.mockResolvedValue({
-        id: "1",
-        category: "system",
-        key: "docker_network_name",
-        value: "my-custom-network",
-        userId: "user1",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      const result = await (networkHealthCheckService as any).getDockerNetworkName();
-
-      expect(result).toBe("my-custom-network");
-      expect(mockPrisma.systemSettings.findFirst).toHaveBeenCalledWith({
-        where: {
-          category: "system",
-          key: "docker_network_name",
-        },
-      });
-    });
-
-    it("should return 'bridge' as default when no setting found", async () => {
-      mockPrisma.systemSettings.findFirst.mockResolvedValue(null);
-
-      const result = await (networkHealthCheckService as any).getDockerNetworkName();
-
-      expect(result).toBe("bridge");
-    });
-
-    it("should return 'bridge' as fallback on error", async () => {
-      mockPrisma.systemSettings.findFirst.mockRejectedValue(new Error("Database error"));
-
-      const result = await (networkHealthCheckService as any).getDockerNetworkName();
-
-      expect(result).toBe("bridge");
-    });
-  });
 
   describe("getCurlImage", () => {
     it("should return curl image from system settings", async () => {
@@ -281,27 +249,19 @@ TIME_TOTAL:0.123456`;
     };
 
     beforeEach(() => {
-      mockPrisma.systemSettings.findFirst
-        .mockResolvedValueOnce({
-          id: "1",
-          category: "system",
-          key: "docker_network_name",
-          value: "test-network",
-          userId: "user1",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .mockResolvedValueOnce({
-          id: "2",
-          category: "system",
-          key: "curl_image",
-          value: "curlimages/curl:latest",
-          userId: "user1",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      
-      (mockDockerExecutor.executeContainerWithProgress as jest.Mock).mockResolvedValue(mockExecutionResult);
+      // Mock curl image setting
+      mockPrisma.systemSettings.findFirst.mockResolvedValue({
+        id: "2",
+        category: "system",
+        key: "curl_image",
+        value: "curlimages/curl:latest",
+        userId: "user1",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      (mockDockerExecutor.executeContainer as jest.Mock).mockResolvedValue(mockExecutionResult);
+      (mockDockerExecutor.getDockerNetworkName as jest.Mock).mockResolvedValue("test-network");
     });
 
     it("should perform successful network health check", async () => {
@@ -350,9 +310,6 @@ TIME_TOTAL:0.123456`;
     });
 
     it("should validate response status codes", async () => {
-      // Mock the system settings calls to prevent database operations
-      mockPrisma.systemSettings.findFirst.mockResolvedValue(null);
-
       const config = {
         containerName: "test-app",
         containerPort: 8080,
@@ -370,9 +327,6 @@ TIME_TOTAL:0.123456`;
     }, 10000);
 
     it("should validate response body pattern", async () => {
-      // Mock the system settings calls to prevent database operations
-      mockPrisma.systemSettings.findFirst.mockResolvedValue(null);
-
       const config = {
         containerName: "test-app",
         containerPort: 8080,
