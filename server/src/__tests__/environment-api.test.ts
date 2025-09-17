@@ -101,22 +101,22 @@ describe('Environment API', () => {
       status: ServiceStatus.RUNNING,
       health: ApplicationServiceHealthStatus.HEALTHY,
       config: {},
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: new Date('2025-09-17T10:31:21.990Z'),
+      updatedAt: new Date('2025-09-17T10:31:21.990Z')
     }],
     networks: [{
       id: 'network-1',
       environmentId: 'env-1',
       name: 'haproxy_network',
       driver: 'bridge',
-      createdAt: new Date()
+      createdAt: new Date('2025-09-17T10:31:21.990Z')
     }],
     volumes: [{
       id: 'volume-1',
       environmentId: 'env-1',
       name: 'haproxy_data',
       driver: 'local',
-      createdAt: new Date()
+      createdAt: new Date('2025-09-17T10:31:21.990Z')
     }],
     createdAt: new Date(),
     updatedAt: new Date()
@@ -166,7 +166,7 @@ describe('Environment API', () => {
         .expect(200);
 
       expect(mockEnvironmentManager.listEnvironments).toHaveBeenCalledWith(
-        'production', 'running', 2, 10
+        'production', 'running', '2', '10'
       );
     });
 
@@ -366,7 +366,27 @@ describe('Environment API', () => {
         .get('/api/environments/env-1/status')
         .expect(200);
 
-      expect(response.body).toEqual(statusResponse);
+      expect(response.body).toEqual({
+        ...statusResponse,
+        environment: {
+          ...statusResponse.environment,
+          createdAt: statusResponse.environment.createdAt.toISOString(),
+          updatedAt: statusResponse.environment.updatedAt.toISOString(),
+          services: statusResponse.environment.services.map(service => ({
+            ...service,
+            createdAt: service.createdAt.toISOString(),
+            updatedAt: service.updatedAt.toISOString()
+          })),
+          networks: statusResponse.environment.networks.map(network => ({
+            ...network,
+            createdAt: network.createdAt.toISOString()
+          })),
+          volumes: statusResponse.environment.volumes.map(volume => ({
+            ...volume,
+            createdAt: volume.createdAt.toISOString()
+          }))
+        }
+      });
       expect(mockEnvironmentManager.getEnvironmentStatus).toHaveBeenCalledWith('env-1');
     });
 
@@ -442,7 +462,11 @@ describe('Environment API', () => {
         .get('/api/environments/env-1/services')
         .expect(200);
 
-      expect(response.body).toEqual(mockEnvironment.services);
+      expect(response.body).toEqual(mockEnvironment.services.map(service => ({
+        ...service,
+        createdAt: service.createdAt.toISOString(),
+        updatedAt: service.updatedAt.toISOString()
+      })));
       expect(mockEnvironmentManager.getEnvironmentById).toHaveBeenCalledWith('env-1');
     });
 

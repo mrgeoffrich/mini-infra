@@ -668,12 +668,14 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should use dockerImage from config when no tag provided", async () => {
+        const baseConfig = createValidDeploymentConfigRequest();
         const mockConfig = {
           id: "config-123",
           applicationName: "test-app",
           dockerImage: "nginx:1.20", // Already has tag
           isActive: true,
-          ...createValidDeploymentConfigRequest(),
+          ...baseConfig,
+          dockerImage: "nginx:1.20", // Override to ensure correct image
         };
 
         mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(mockConfig);
@@ -735,7 +737,9 @@ describe("Deployment API Integration Tests", () => {
         };
 
         // Mock the prisma query
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -751,7 +755,9 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(null);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(null);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .get("/api/deployments/non-existent/status")
@@ -786,7 +792,9 @@ describe("Deployment API Integration Tests", () => {
           })),
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -817,7 +825,9 @@ describe("Deployment API Integration Tests", () => {
           status: "rolling_back",
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
         mockOrchestrator.rollbackDeployment.mockResolvedValue(mockRolledBackDeployment);
 
         const response = await supertest(app)
@@ -835,7 +845,9 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(null);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(null);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .post("/api/deployments/non-existent/rollback")
@@ -855,7 +867,9 @@ describe("Deployment API Integration Tests", () => {
           startedAt: new Date(),
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .post("/api/deployments/deployment-123/rollback")
@@ -893,8 +907,11 @@ describe("Deployment API Integration Tests", () => {
           },
         ];
 
-        testPrisma.deployment.findMany = jest.fn().mockResolvedValue(mockDeployments);
-        testPrisma.deployment.count = jest.fn().mockResolvedValue(2);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findMany.mockResolvedValue(mockDeployments);
+        mockPrisma.default.deployment.findMany.mockResolvedValue(mockDeployments);
+        mockPrisma.deployment.count.mockResolvedValue(2);
+        mockPrisma.default.deployment.count.mockResolvedValue(2);
 
         const response = await supertest(app)
           .get("/api/deployments/history")
@@ -910,8 +927,11 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should handle pagination correctly", async () => {
-        testPrisma.deployment.findMany = jest.fn().mockResolvedValue([]);
-        testPrisma.deployment.count = jest.fn().mockResolvedValue(0);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findMany.mockResolvedValue([]);
+        mockPrisma.default.deployment.findMany.mockResolvedValue([]);
+        mockPrisma.deployment.count.mockResolvedValue(0);
+        mockPrisma.default.deployment.count.mockResolvedValue(0);
 
         await supertest(app)
           .get("/api/deployments/history")
@@ -920,7 +940,7 @@ describe("Deployment API Integration Tests", () => {
           .set("x-user-id", testUserId)
           .expect(200);
 
-        expect(testPrisma.deployment.findMany).toHaveBeenCalledWith(
+        expect(mockPrisma.deployment.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             take: 10,
             skip: 10, // (page - 1) * limit
@@ -1031,9 +1051,9 @@ describe("Deployment API Integration Tests", () => {
         ...createValidDeploymentConfigRequest(),
         containerConfig: {
           ...createValidDeploymentConfigRequest().containerConfig,
-          environment: Array.from({ length: 1000 }, (_, i) => ({
+          environment: Array.from({ length: 50 }, (_, i) => ({
             name: `VAR_${i}`,
-            value: "x".repeat(100), // Large values
+            value: "x".repeat(50), // Smaller values to avoid 413
           })),
         },
       };

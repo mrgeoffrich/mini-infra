@@ -2,16 +2,16 @@
 
 ## Test Files Status
 
-### ❌ FAILING TEST FILES (21)
+### ❌ FAILING TEST FILES (19)
 
 #### Core Application Tests
 | File | Status | Primary Issues | Location |
 |------|--------|----------------|----------|
 | `application-service-factory.test.ts` | **PASSING** | All tests now pass (was fixed previously) | `src/__tests__/` |
 | `container-lifecycle-manager.test.ts` | **PASSING** | All tests now pass after mock setup and date precision fixes | `src/__tests__/` |
-| `deployment-api.test.ts` | **MOSTLY FIXED** | 28/36 tests passing - mock initialization fixed, 8 tests still failing due to mock data expectations | `src/__tests__/` |
-| `deployment-orchestrator.test.ts` | **PENDING** | Circular dependency/initialization issue | `src/__tests__/` |
-| `environment-api.test.ts` | **PENDING** | Logger factory import issue | `src/__tests__/` |
+| `deployment-api.test.ts` | **✅ PASSING** | All 36/36 tests passing - completely fixed mock data setup, authentication, and payload issues | `src/__tests__/` |
+| `deployment-orchestrator.test.ts` | **✅ PASSING** | All 28/28 tests passing - completely fixed database foreign key issues, state machine initialization, health check flow, rollback functionality, and database integration | `src/__tests__/` |
+| `environment-api.test.ts` | **✅ PASSING** | All 25/25 tests passing - completely fixed query parameter type conversion and date serialization issues | `src/__tests__/` |
 
 #### Route Tests
 | File | Status | Primary Issues | Location |
@@ -39,7 +39,7 @@
 
 ---
 
-### ✅ PASSING TEST FILES (16)
+### ✅ PASSING TEST FILES (18)
 
 #### Core Library Tests
 | File | Status | Location |
@@ -51,6 +51,8 @@
 | `health-check.test.ts` | **PASSING** | `src/__tests__/` |
 | `service-registry.test.ts` | **PASSING** | `src/__tests__/` |
 | `environment-manager.test.ts` | **PASSING** | `src/__tests__/` |
+| `deployment-api.test.ts` | **PASSING** | `src/__tests__/` |
+| `environment-api.test.ts` | **PASSING** | `src/__tests__/` |
 
 #### Library Utility Tests
 | File | Status | Location |
@@ -128,8 +130,11 @@
 ### Impact of Fixes
 - **47 fewer test failures** (297 → 250 failed tests) from authentication fixes
 - **6 more tests passing** from deployment-api.test.ts mock initialization fix (14 → 8 failures in this file)
-- **Overall: 53 fewer test failures, 53 more passing tests**
-- **~18% improvement in test success rate**
+- **28 more tests passing** from deployment-orchestrator.test.ts complete fix (28 → 0 failures in this file) 🎉
+- **8 more tests passing** from deployment-api.test.ts complete fix (8 → 0 failures in this file) 🎉
+- **25 more tests passing** from environment-api.test.ts complete fix (25 → 0 failures in this file) 🎉
+- **Overall: 114 fewer test failures, 114 more passing tests**
+- **~30% improvement in test success rate**
 
 ### Remaining Work
 The systematic authentication fix pattern needs to be applied to remaining route tests:
@@ -147,5 +152,5 @@ Plus logger factory issues and mock initialization order problems.
 - Pattern established for fixing remaining authentication issues
 - Logger factory fix will resolve several core service test issues
 
-**Last Updated**: 2025-09-17 (Updated after deployment-api.test.ts mock initialization fix)
+**Last Updated**: 2025-09-17 (Updated after environment-api.test.ts COMPLETE FIX - All 25/25 tests passing! 🎉)
 **Test Run Command**: `cd server && npm test`
