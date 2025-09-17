@@ -23,6 +23,12 @@ export * from "./postgres";
 // Deployment types
 export * from "./deployments";
 
+// Service types
+export * from "./services";
+
+// Environment types
+export * from "./environments";
+
 // API response types
 export * from "./api";
 

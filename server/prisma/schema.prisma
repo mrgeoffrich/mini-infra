@@ -285,7 +285,84 @@ model DeploymentStep {
   duration        Int?     // Milliseconds
   output          String?  // Step output/logs
   errorMessage    String?
-  
+
   @@index([deploymentId])
   @@map("deployment_steps")
+}
+
+// Environment Management Models
+
+// Environment model - Core entity for managing service collections
+model Environment {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  type        String   // 'production', 'nonproduction'
+  status      String   @default("uninitialized") // Maps to ServiceStatus enum
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  services    EnvironmentService[]
+  networks    EnvironmentNetwork[]
+  volumes     EnvironmentVolume[]
+
+  @@index([type])
+  @@index([status])
+  @@map("environments")
+}
+
+// EnvironmentService - Tracks services within an environment
+model EnvironmentService {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  serviceName   String   // e.g., 'haproxy', 'redis', 'rabbitmq'
+  serviceType   String   // Class name implementing IApplicationService
+  status        String   @default("uninitialized") // ServiceStatus
+  health        String   @default("unknown") // HealthStatus
+  config        Json     // Service-specific configuration
+  startedAt     DateTime?
+  stoppedAt     DateTime?
+  lastError     Json?    // Error details
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([environmentId, serviceName])
+  @@index([environmentId])
+  @@index([status])
+  @@map("environment_services")
+}
+
+// EnvironmentNetwork - Tracks Docker networks for environments
+model EnvironmentNetwork {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  name          String
+  driver        String   @default("bridge")
+  options       Json?    // Network options
+  dockerId      String?  // Docker network ID when created
+  createdAt     DateTime @default(now())
+
+  @@unique([environmentId, name])
+  @@index([environmentId])
+  @@map("environment_networks")
+}
+
+// EnvironmentVolume - Tracks Docker volumes for environments
+model EnvironmentVolume {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  name          String
+  driver        String   @default("local")
+  options       Json?    // Volume options
+  dockerId      String?  // Docker volume ID when created
+  createdAt     DateTime @default(now())
+
+  @@unique([environmentId, name])
+  @@index([environmentId])
+  @@map("environment_volumes")
 }

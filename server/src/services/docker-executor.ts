@@ -1268,6 +1268,44 @@ export class DockerExecutorService {
   }
 
   /**
+   * Check if a Docker network exists
+   */
+  public async networkExists(networkName: string): Promise<boolean> {
+    try {
+      const networks = await this.docker.listNetworks();
+      return networks.some(network => network.Name === networkName);
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          networkName,
+        },
+        "Failed to check if network exists"
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Check if a Docker volume exists
+   */
+  public async volumeExists(volumeName: string): Promise<boolean> {
+    try {
+      const volumes = await this.docker.listVolumes();
+      return volumes.Volumes?.some(volume => volume.Name === volumeName) || false;
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          volumeName,
+        },
+        "Failed to check if volume exists"
+      );
+      return false;
+    }
+  }
+
+  /**
    * Get the Docker client instance for advanced operations
    */
   public getDockerClient(): Docker {
