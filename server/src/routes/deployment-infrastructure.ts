@@ -6,8 +6,7 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import prisma from "../lib/prisma";
 
@@ -75,7 +74,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     } = bodyValidation.data;
 
     // Deploy HAProxy using the HAProxy service directly
-    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    const haproxyService = new HAProxyService('haproxy');
     
     try {
       await haproxyService.initialize();
@@ -178,7 +177,7 @@ router.get("/status", requireSessionOrApiKey, (async (
     }
 
     // Get infrastructure status using HAProxy service
-    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    const haproxyService = new HAProxyService('haproxy');
     
     try {
       await haproxyService.initialize();
@@ -294,7 +293,7 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
     }
 
     // Clean up infrastructure using HAProxy service
-    const haproxyService = new HAProxyService('haproxy', 'docker-compose.haproxy.yml', networkName);
+    const haproxyService = new HAProxyService('haproxy');
     
     try {
       await haproxyService.initialize();

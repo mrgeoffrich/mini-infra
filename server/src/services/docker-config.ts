@@ -217,15 +217,22 @@ export class DockerConfigService extends ConfigurationService {
       const docker = this.createDockerClient(testHost, testApiVersion);
 
       // Test basic connectivity
-      await Promise.race([
-        docker.ping(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Connection timeout")),
-            this.DEFAULT_TIMEOUT,
-          ),
-        ),
-      ]);
+      let timeoutId: NodeJS.Timeout;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error("Connection timeout")),
+          this.DEFAULT_TIMEOUT,
+        );
+      });
+
+      try {
+        await Promise.race([
+          docker.ping(),
+          timeoutPromise,
+        ]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const responseTimeMs = Date.now() - startTime;
 

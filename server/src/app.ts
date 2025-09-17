@@ -106,6 +106,7 @@ import userPreferencesRoutes from "./routes/user-preferences";
 import systemSettingsRoutes from "./routes/system-settings";
 import deploymentInfrastructureRoutes from "./routes/deployment-infrastructure";
 import deploymentsRoutes from "./routes/deployments";
+import environmentsRoutes from "./routes/environments";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -128,6 +129,7 @@ app.use("/api/postgres/progress", postgresProgressRoutes);
 app.use("/api/user", userPreferencesRoutes);
 app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
 app.use("/api/deployments", deploymentsRoutes);
+app.use("/api/environments", environmentsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {

@@ -29,6 +29,9 @@ jest.mock("../../lib/logger-factory", () => ({
   servicesLogger: jest.fn(() => mockLoggerFunctions),
   httpLogger: jest.fn(() => mockLoggerFunctions),
   prismaLogger: jest.fn(() => mockLoggerFunctions),
+  dockerExecutorLogger: jest.fn(() => mockLoggerFunctions),
+  deploymentLogger: jest.fn(() => mockLoggerFunctions),
+  loadbalancerLogger: jest.fn(() => mockLoggerFunctions),
   __esModule: true,
   default: jest.fn(() => mockLoggerFunctions),
 }));

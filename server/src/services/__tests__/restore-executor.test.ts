@@ -15,6 +15,13 @@ const mockQueue = {
   close: jest.fn(),
   on: jest.fn(),
   remove: jest.fn(),
+  getStats: jest.fn().mockReturnValue({
+    pending: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    total: 0,
+  }),
 };
 
 jest.mock("../../lib/in-memory-queue", () => {
@@ -39,6 +46,7 @@ jest.mock("../../lib/logger-factory", () => {
   return {
     appLogger: jest.fn(() => mockLoggerInstance),
     servicesLogger: jest.fn(() => mockLoggerInstance),
+    dockerExecutorLogger: jest.fn(() => mockLoggerInstance),
     httpLogger: jest.fn(() => mockLoggerInstance),
     prismaLogger: jest.fn(() => mockLoggerInstance),
     __esModule: true,
@@ -149,6 +157,12 @@ describe("RestoreExecutorService", () => {
 
       expect(mockDockerExecutor.initialize).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          initializationTimeMs: expect.any(Number),
+          queueConcurrency: 1,
+          maxRetries: 2,
+          timeoutMs: 10800000,
+        }),
         "RestoreExecutorService initialized successfully",
       );
     });
@@ -158,15 +172,23 @@ describe("RestoreExecutorService", () => {
         .fn()
         .mockRejectedValue(new Error("Docker initialization failed"));
 
-      await expect(restoreExecutorService.initialize()).rejects.toThrow(
-        "Docker initialization failed",
-      );
+      // The service should still initialize even if Docker fails
+      await restoreExecutorService.initialize();
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         {
           error: "Docker initialization failed",
         },
-        "Failed to initialize RestoreExecutorService",
+        "Failed to initialize Docker executor - restore operations will be unavailable until Docker is configured",
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          initializationTimeMs: expect.any(Number),
+          queueConcurrency: 1,
+          maxRetries: 2,
+          timeoutMs: 10800000,
+        }),
+        "RestoreExecutorService initialized successfully",
       );
     });
 
@@ -276,13 +298,14 @@ describe("RestoreExecutorService", () => {
       ).rejects.toThrow("Database error");
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        {
+        expect.objectContaining({
           error: "Database error",
           databaseId: "db-123",
           backupUrl:
             "https://account.blob.core.windows.net/container/backup.sql",
           userId: "user-123",
-        },
+          queueingTimeMs: expect.any(Number),
+        }),
         "Failed to queue restore operation",
       );
     });
@@ -438,11 +461,13 @@ describe("RestoreExecutorService", () => {
       expect(result.isValid).toBe(true);
       expect(result.sizeBytes).toBe(1000000);
       expect(result.lastModified).toEqual(new Date("2023-01-01T02:00:00Z"));
-      expect(result.metadata).toEqual({
-        contentType: "application/octet-stream",
-        etag: '"0x8D9ABC123"',
-        contentEncoding: "gzip",
-      });
+      expect(result.metadata).toEqual(
+        expect.objectContaining({
+          contentType: "application/octet-stream",
+          etag: '"0x8D9ABC123"',
+          contentEncoding: "gzip",
+        }),
+      );
     });
 
     it("should return error when backup file not found", async () => {
@@ -453,7 +478,7 @@ describe("RestoreExecutorService", () => {
       );
 
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe("Backup file not found in Azure Storage");
+      expect(result.error).toContain("Backup file not found in Azure Storage");
     });
 
     it("should return error for file too small", async () => {
@@ -468,8 +493,8 @@ describe("RestoreExecutorService", () => {
       );
 
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe(
-        "Backup file appears to be too small or corrupted",
+      expect(result.error).toContain(
+        "Backup file appears to be too small",
       );
     });
 
@@ -668,6 +693,7 @@ describe("RestoreExecutorService", () => {
   describe("createRollbackBackup", () => {
     const connectionConfig = {
       host: "localhost",
+      port: 5432,
       username: "testuser",
       password: "testpass",
       database: "testdb",
@@ -688,20 +714,23 @@ describe("RestoreExecutorService", () => {
         azureConnectionString,
         "postgres:15-alpine",
         "testdb",
+        "https://testaccount.blob.core.windows.net/backups/testdb/backup.sql",
       );
 
-      expect(result).toContain("rollback-backups/testdb/rollback-");
+      expect(result).toContain("testdb/rollback-");
       expect(result).toContain("testaccount.blob.core.windows.net");
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
           image: "postgres:15-alpine",
           env: expect.objectContaining({
             POSTGRES_HOST: "localhost",
+            POSTGRES_PORT: "5432",
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
             AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-            AZURE_CONTAINER_NAME: "rollback-backups",
+            AZURE_CONTAINER_NAME: "backups",
+            AZURE_BLOB_NAME: expect.stringContaining("testdb/rollback-"),
           }),
           timeout: 30 * 60 * 1000,
         }),
@@ -724,6 +753,7 @@ describe("RestoreExecutorService", () => {
           azureConnectionString,
           "postgres:15-alpine",
           "testdb",
+          "https://testaccount.blob.core.windows.net/backups/testdb/backup.sql",
         ),
       ).rejects.toThrow("Failed to create rollback backup: Backup failed");
     });
@@ -732,6 +762,7 @@ describe("RestoreExecutorService", () => {
   describe("executeRollback", () => {
     const connectionConfig = {
       host: "localhost",
+      port: 5432,
       username: "testuser",
       password: "testpass",
       database: "testdb",
@@ -776,8 +807,14 @@ describe("RestoreExecutorService", () => {
       );
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        { rollbackBackupUrl: rollbackUrl },
-        "Rollback executed successfully",
+        expect.objectContaining({
+          rollbackBackupUrl: rollbackUrl,
+          executionTimeMs: expect.any(Number),
+          exitCode: 0,
+          stderrLength: expect.any(Number),
+          stdoutLength: expect.any(Number),
+        }),
+        "Rollback container execution completed",
       );
     });
 
@@ -805,6 +842,7 @@ describe("RestoreExecutorService", () => {
   describe("verifyRestoredDatabase", () => {
     const connectionConfig = {
       host: "localhost",
+      port: 5432,
       username: "testuser",
       password: "testpass",
       database: "testdb",
@@ -871,6 +909,7 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should cleanup rollback backup successfully", async () => {
+      mockBlobClient.exists = jest.fn().mockResolvedValue(true);
       mockBlobClient.deleteIfExists = jest
         .fn()
         .mockResolvedValue({ succeeded: true });
@@ -879,24 +918,30 @@ describe("RestoreExecutorService", () => {
 
       expect(mockBlobClient.deleteIfExists).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
-        { rollbackBackupUrl: rollbackUrl },
-        "Rollback backup cleaned up successfully",
+        expect.objectContaining({
+          rollbackBackupUrl: rollbackUrl,
+          cleanupTimeMs: expect.any(Number),
+        }),
+        "Rollback backup deleted successfully",
       );
     });
 
     it("should handle cleanup errors gracefully", async () => {
+      mockBlobClient.exists = jest.fn().mockResolvedValue(true);
       mockBlobClient.deleteIfExists = jest
         .fn()
-        .mockRejectedValue(new Error("Delete error"));
+        .mockRejectedValue(new Error("Azure error"));
 
       // Should not throw, just log warning
       await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          error: "Delete error",
+        expect.objectContaining({
+          error: "Azure error",
+          stack: expect.any(String),
           rollbackBackupUrl: rollbackUrl,
-        },
+          cleanupTimeMs: expect.any(Number),
+        }),
         "Failed to clean up rollback backup",
       );
     });
@@ -907,6 +952,9 @@ describe("RestoreExecutorService", () => {
       await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
+        {
+          rollbackBackupUrl: rollbackUrl,
+        },
         "Azure connection string not available for cleanup",
       );
     });

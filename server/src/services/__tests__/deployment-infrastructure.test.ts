@@ -24,9 +24,24 @@ const mockNetwork = {
 
 // Create a mock DockerService class
 class MockDockerService {
-  static getInstance = jest.fn().mockReturnValue(new MockDockerService());
-  getDockerInstance = jest.fn().mockResolvedValue(mockDockerInstance);
+  static getInstance = jest.fn();
+  getDockerInstance = jest.fn();
+  initialize = jest.fn();
+
+  constructor() {
+    this.getDockerInstance = jest.fn().mockResolvedValue(mockDockerInstance);
+  }
 }
+
+// Create a singleton instance
+const mockDockerServiceInstance = new MockDockerService();
+MockDockerService.getInstance.mockReturnValue(mockDockerServiceInstance);
+
+// Mock DockerExecutorService
+const mockDockerExecutorService = {
+  initialize: jest.fn(),
+  pullImageWithAuth: jest.fn().mockResolvedValue(undefined),
+};
 
 // Mock logger first
 const mockLogger = {
@@ -39,12 +54,37 @@ const mockLogger = {
 jest.mock("../../lib/logger-factory", () => ({
   appLogger: jest.fn(() => mockLogger),
   servicesLogger: jest.fn(() => mockLogger),
+  prismaLogger: jest.fn(() => mockLogger),
+  httpLogger: jest.fn(() => mockLogger),
+  __esModule: true,
+  default: jest.fn(() => mockLogger),
 }));
+
+// Mock prisma module
+jest.mock("../../lib/prisma", () => {
+  const mockPrisma = {
+    deployment: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  };
+  return {
+    __esModule: true,
+    default: mockPrisma,
+  };
+});
 
 jest.mock("../docker", () => {
   return {
     __esModule: true,
     default: MockDockerService,
+  };
+});
+
+jest.mock("../docker-executor", () => {
+  return {
+    DockerExecutorService: jest.fn().mockImplementation(() => mockDockerExecutorService),
   };
 });
 
@@ -61,6 +101,8 @@ describe("DeploymentInfrastructureService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset the docker service instance mock
+    mockDockerServiceInstance.getDockerInstance.mockResolvedValue(mockDockerInstance);
     deploymentService = new DeploymentInfrastructureService();
   });
 
@@ -122,9 +164,7 @@ describe("DeploymentInfrastructureService", () => {
     });
 
     it("should handle errors when accessing Docker service", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
-      mockServiceInstance.getDockerInstance.mockRejectedValue(
+      mockDockerServiceInstance.getDockerInstance.mockRejectedValue(
         new Error("Docker service not available")
       );
 
@@ -205,9 +245,7 @@ describe("DeploymentInfrastructureService", () => {
     });
 
     it("should handle error when getDockerInstance fails", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
-      mockServiceInstance.getDockerInstance.mockRejectedValue(
+      mockDockerServiceInstance.getDockerInstance.mockRejectedValue(
         new Error("Docker service not connected")
       );
 
@@ -321,9 +359,7 @@ describe("DeploymentInfrastructureService", () => {
     });
 
     it("should handle Docker service connection failure", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
-      mockServiceInstance.getDockerInstance.mockRejectedValue(
+      mockDockerServiceInstance.getDockerInstance.mockRejectedValue(
         new Error("Docker service not connected")
       );
 
@@ -386,9 +422,7 @@ describe("DeploymentInfrastructureService", () => {
     });
 
     it("should handle Docker service connection failure during cleanup", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
-      mockServiceInstance.getDockerInstance.mockRejectedValue(
+      mockDockerServiceInstance.getDockerInstance.mockRejectedValue(
         new Error("Docker service not connected")
       );
 
@@ -403,22 +437,18 @@ describe("DeploymentInfrastructureService", () => {
 
   describe("integration with DockerService.getDockerInstance", () => {
     it("should use getDockerInstance method for all Docker operations", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
       mockDockerInstance.listNetworks.mockResolvedValue([]);
       mockDockerInstance.createNetwork.mockResolvedValue({ id: "network-123" });
 
       await deploymentService.ensureDeploymentNetwork("test-network");
 
-      expect(mockServiceInstance.getDockerInstance).toHaveBeenCalled();
+      expect(mockDockerServiceInstance.getDockerInstance).toHaveBeenCalled();
       expect(mockDockerInstance.listNetworks).toHaveBeenCalled();
     });
 
     it("should propagate getDockerInstance errors correctly", async () => {
-      const mockServiceInstance = new MockDockerService();
-      MockDockerService.getInstance.mockReturnValue(mockServiceInstance);
       const dockerError = new Error("this.dockerService.getDockerInstance is not a function");
-      mockServiceInstance.getDockerInstance.mockRejectedValue(dockerError);
+      mockDockerServiceInstance.getDockerInstance.mockRejectedValue(dockerError);
 
       const result = await deploymentService.ensureDeploymentNetwork("test-network");
 

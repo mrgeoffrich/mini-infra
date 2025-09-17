@@ -341,6 +341,39 @@ class DockerService {
     });
   }
 
+  private createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promise<T> {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+    });
+
+    // Add cleanup method to the promise
+    (timeoutPromise as any).cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    return timeoutPromise;
+  }
+
+  private async raceWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    errorMessage: string,
+  ): Promise<T> {
+    const timeoutPromise = this.createTimeoutPromise<T>(timeoutMs, errorMessage);
+
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      (timeoutPromise as any).cleanup();
+      return result;
+    } catch (error) {
+      (timeoutPromise as any).cleanup();
+      throw error;
+    }
+  }
+
   public async listContainers(all = true): Promise<DockerContainerInfo[]> {
     if (!this.connected) {
       throw new Error("Docker service not connected");
@@ -355,12 +388,11 @@ class DockerService {
     }
 
     try {
-      const containers = await Promise.race([
+      const containers = await this.raceWithTimeout(
         this.docker.listContainers({ all }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Docker API timeout")), 5000),
-        ),
-      ]);
+        5000,
+        "Docker API timeout",
+      );
 
       const containerInfos = await Promise.all(
         containers.map((container) => this.transformContainerData(container)),
@@ -392,12 +424,11 @@ class DockerService {
 
     try {
       const container = this.docker.getContainer(id);
-      const data = await Promise.race([
+      const data = await this.raceWithTimeout(
         container.inspect(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Docker API timeout")), 5000),
-        ),
-      ]);
+        5000,
+        "Docker API timeout",
+      );
 
       const containerInfo = this.transformDetailedContainerData(data);
       this.cache.set(cacheKey, containerInfo);

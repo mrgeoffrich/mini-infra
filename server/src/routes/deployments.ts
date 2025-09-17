@@ -6,8 +6,7 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { servicesLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { DeploymentConfigService } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
 import prisma from "../lib/prisma";

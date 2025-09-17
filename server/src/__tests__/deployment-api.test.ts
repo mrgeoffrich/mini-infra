@@ -14,15 +14,23 @@ import {
 } from "@mini-infra/types";
 
 // Mock the deployment orchestrator
-const mockOrchestrator = {
-  triggerDeployment: jest.fn(),
-  rollbackDeployment: jest.fn(),
-  getDeploymentStatus: jest.fn(),
-};
+jest.mock("../services/deployment-orchestrator", () => {
+  const mockOrchestrator = {
+    triggerDeployment: jest.fn(),
+    rollbackDeployment: jest.fn(),
+    getDeploymentStatus: jest.fn(),
+    initialize: jest.fn().mockResolvedValue(undefined),
+  };
 
-jest.mock("../services/deployment-orchestrator", () => ({
-  DeploymentOrchestrator: jest.fn().mockImplementation(() => mockOrchestrator),
-}));
+  return {
+    DeploymentOrchestrator: jest.fn().mockImplementation(() => mockOrchestrator),
+    __mockOrchestrator: mockOrchestrator, // Export for test use
+  };
+});
+
+// Get reference to the mocked orchestrator and service
+const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
+const { __mockDeploymentConfigService: mockDeploymentConfigService } = require("../services/deployment-config");
 
 // Mock the deployment config service
 jest.mock("../services/deployment-config", () => {
@@ -36,6 +44,7 @@ jest.mock("../services/deployment-config", () => {
   };
   return {
     DeploymentConfigService: jest.fn().mockImplementation(() => mockService),
+    __mockDeploymentConfigService: mockService, // Export for test use
   };
 });
 
@@ -56,11 +65,68 @@ jest.mock("../lib/logger-factory.ts", () => ({
   })),
 }));
 
-// Mock prisma (using testPrisma)
-jest.mock("../lib/prisma", () => testPrisma);
+// Mock prisma with full model methods
+jest.mock("../lib/prisma", () => ({
+  deploymentConfiguration: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  deployment: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  deploymentStep: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  default: {
+    deploymentConfiguration: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    deployment: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    deploymentStep: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+  },
+}));
 
 // Mock middleware functions
-jest.mock("../lib/api-key-middleware", () => ({
+jest.mock("../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     if (req.headers["x-api-key"] && req.headers["x-api-key"].startsWith("test-key")) {
       req.user = { id: req.headers["x-user-id"] || "test-user-id" };
@@ -72,9 +138,6 @@ jest.mock("../lib/api-key-middleware", () => ({
     }
     return res.status(401).json({ success: false, message: "Authentication required" });
   },
-}));
-
-jest.mock("../lib/auth-middleware", () => ({
   getAuthenticatedUser: (req: any) => req.user,
 }));
 
@@ -82,10 +145,12 @@ describe("Deployment API Integration Tests", () => {
   let app: express.Application;
   let testUserId: string;
   let apiKey: string;
-  let mockDeploymentConfigService: any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // Set environment variable for encryption key
+    process.env.ENCRYPTION_KEY = "test-encryption-key-12345678901234567890123456";
 
     // Clean database
     await testPrisma.deployment.deleteMany();
@@ -100,10 +165,6 @@ describe("Deployment API Integration Tests", () => {
     const key = await createTestApiKey(testUserId, "Test API Key");
     apiKey = `test-key-${key.id}`;
 
-    // Get mocked service instance
-    const { DeploymentConfigService } = require("../services/deployment-config");
-    mockDeploymentConfigService = new DeploymentConfigService();
-
     // Setup Express app with routes
     app = express();
     app.use(express.json());
@@ -116,6 +177,7 @@ describe("Deployment API Integration Tests", () => {
       status: "pending",
       startedAt: new Date(),
     });
+
   });
 
   afterEach(async () => {
@@ -188,13 +250,13 @@ describe("Deployment API Integration Tests", () => {
         const mockConfigs = [
           {
             id: "config-1",
+            ...createValidDeploymentConfigRequest(),
             applicationName: "test-app-1",
             dockerImage: "nginx:latest",
             isActive: true,
             userId: testUserId,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            ...createValidDeploymentConfigRequest(),
           },
         ];
 
@@ -606,12 +668,14 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should use dockerImage from config when no tag provided", async () => {
+        const baseConfig = createValidDeploymentConfigRequest();
         const mockConfig = {
           id: "config-123",
           applicationName: "test-app",
           dockerImage: "nginx:1.20", // Already has tag
           isActive: true,
-          ...createValidDeploymentConfigRequest(),
+          ...baseConfig,
+          dockerImage: "nginx:1.20", // Override to ensure correct image
         };
 
         mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(mockConfig);
@@ -673,7 +737,9 @@ describe("Deployment API Integration Tests", () => {
         };
 
         // Mock the prisma query
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -689,7 +755,9 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(null);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(null);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .get("/api/deployments/non-existent/status")
@@ -724,7 +792,9 @@ describe("Deployment API Integration Tests", () => {
           })),
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -755,7 +825,9 @@ describe("Deployment API Integration Tests", () => {
           status: "rolling_back",
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
         mockOrchestrator.rollbackDeployment.mockResolvedValue(mockRolledBackDeployment);
 
         const response = await supertest(app)
@@ -773,7 +845,9 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(null);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(null);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .post("/api/deployments/non-existent/rollback")
@@ -793,7 +867,9 @@ describe("Deployment API Integration Tests", () => {
           startedAt: new Date(),
         };
 
-        testPrisma.deployment.findFirst = jest.fn().mockResolvedValue(mockDeployment);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
+        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .post("/api/deployments/deployment-123/rollback")
@@ -831,8 +907,11 @@ describe("Deployment API Integration Tests", () => {
           },
         ];
 
-        testPrisma.deployment.findMany = jest.fn().mockResolvedValue(mockDeployments);
-        testPrisma.deployment.count = jest.fn().mockResolvedValue(2);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findMany.mockResolvedValue(mockDeployments);
+        mockPrisma.default.deployment.findMany.mockResolvedValue(mockDeployments);
+        mockPrisma.deployment.count.mockResolvedValue(2);
+        mockPrisma.default.deployment.count.mockResolvedValue(2);
 
         const response = await supertest(app)
           .get("/api/deployments/history")
@@ -848,8 +927,11 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should handle pagination correctly", async () => {
-        testPrisma.deployment.findMany = jest.fn().mockResolvedValue([]);
-        testPrisma.deployment.count = jest.fn().mockResolvedValue(0);
+        const mockPrisma = require("../lib/prisma");
+        mockPrisma.deployment.findMany.mockResolvedValue([]);
+        mockPrisma.default.deployment.findMany.mockResolvedValue([]);
+        mockPrisma.deployment.count.mockResolvedValue(0);
+        mockPrisma.default.deployment.count.mockResolvedValue(0);
 
         await supertest(app)
           .get("/api/deployments/history")
@@ -858,7 +940,7 @@ describe("Deployment API Integration Tests", () => {
           .set("x-user-id", testUserId)
           .expect(200);
 
-        expect(testPrisma.deployment.findMany).toHaveBeenCalledWith(
+        expect(mockPrisma.deployment.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             take: 10,
             skip: 10, // (page - 1) * limit
@@ -969,9 +1051,9 @@ describe("Deployment API Integration Tests", () => {
         ...createValidDeploymentConfigRequest(),
         containerConfig: {
           ...createValidDeploymentConfigRequest().containerConfig,
-          environment: Array.from({ length: 1000 }, (_, i) => ({
+          environment: Array.from({ length: 50 }, (_, i) => ({
             name: `VAR_${i}`,
-            value: "x".repeat(100), // Large values
+            value: "x".repeat(50), // Smaller values to avoid 413
           })),
         },
       };

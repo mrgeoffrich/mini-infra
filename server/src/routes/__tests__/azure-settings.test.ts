@@ -44,19 +44,33 @@ jest.mock("../../lib/logger-factory", () => ({
   default: jest.fn(() => mockLogger),
 }));
 
-// Mock auth middleware
-const mockRequireAuth = jest.fn((req: any, res: any, next: any) => {
-  req.user = { id: "test-user-id", email: "test@example.com" };
+// Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
+const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
+  // Set up authenticated user context for tests
+  req.apiKey = {
+    userId: "test-user-id",
+    id: "test-key-id",
+    user: { id: "test-user-id", email: "test@example.com" }
+  };
+  res.locals = {
+    requestId: "test-request-id",
+  };
   next();
 });
+
+jest.mock("../../lib/api-key-middleware", () => ({
+  requireSessionOrApiKey: mockRequireSessionOrApiKey,
+  getCurrentUserId: (req: any) => "test-user-id",
+  getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
+}));
 
 const mockGetAuthenticatedUser = jest.fn(() => ({
   id: "test-user-id",
   email: "test@example.com",
 }));
 
+// Mock auth middleware functions
 jest.mock("../../lib/auth-middleware", () => ({
-  requireAuth: mockRequireAuth,
   getAuthenticatedUser: mockGetAuthenticatedUser,
 }));
 
@@ -118,8 +132,15 @@ describe("Azure Settings API Routes", () => {
     jest.clearAllMocks();
 
     // Reset auth mocks to successful state
-    mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
-      req.user = { id: "test-user-id", email: "test@example.com" };
+    mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
+      req.apiKey = {
+        userId: "test-user-id",
+        id: "test-key-id",
+        user: { id: "test-user-id", email: "test@example.com" }
+      };
+      res.locals = {
+        requestId: "test-request-id",
+      };
       next();
     });
 
@@ -133,7 +154,7 @@ describe("Azure Settings API Routes", () => {
   describe("Authentication Requirements", () => {
     beforeEach(() => {
       // Mock auth failure
-      mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
+      mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
         res.status(401).json({ error: "Unauthorized" });
       });
       mockGetAuthenticatedUser.mockReturnValue(null);
@@ -204,8 +225,15 @@ describe("Azure Settings API Routes", () => {
   describe("GET /api/settings/azure", () => {
     beforeEach(() => {
       // Reset to authenticated state
-      mockRequireAuth.mockImplementation((req: any, res: any, next: any) => {
-        req.user = { id: "test-user-id", email: "test@example.com" };
+      mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
+        req.apiKey = {
+          userId: "test-user-id",
+          id: "test-key-id",
+          user: { id: "test-user-id", email: "test@example.com" }
+        };
+        res.locals = {
+          requestId: "test-request-id",
+        };
         next();
       });
 

@@ -84,14 +84,29 @@ jest.mock("../../lib/logger-factory", () => ({
   default: jest.fn(() => mockLogger),
 }));
 
-// Mock auth middleware
-const mockRequireAuth = jest.fn((req: any, res: any, next: any) => {
-  req.user = { id: "test-user-id" };
+// Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
+const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
+  // Set up authenticated user context for tests
+  req.apiKey = {
+    userId: "test-user-id",
+    id: "test-key-id",
+    user: { id: "test-user-id", email: "test@example.com" }
+  };
+  res.locals = {
+    requestId: "test-request-id",
+  };
   next();
 });
 
+jest.mock("../../lib/api-key-middleware", () => ({
+  requireSessionOrApiKey: mockRequireSessionOrApiKey,
+  getCurrentUserId: (req: any) => "test-user-id",
+  getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
+}));
+
+// Mock auth middleware functions
 jest.mock("../../lib/auth-middleware", () => ({
-  requireAuth: mockRequireAuth,
+  getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
 }));
 
 import containerRoutes from "../containers";
@@ -564,7 +579,7 @@ describe("Container Routes", () => {
   describe("Authentication", () => {
     it("should require authentication for all endpoints", async () => {
       // Mock auth middleware to reject
-      mockRequireAuth.mockImplementationOnce(
+      mockRequireSessionOrApiKey.mockImplementationOnce(
         (req: any, res: any, next: any) => {
           res.status(401).json({ error: "Unauthorized" });
         },
@@ -572,12 +587,12 @@ describe("Container Routes", () => {
 
       await request(app).get("/api/containers").expect(401);
 
-      expect(mockRequireAuth).toHaveBeenCalled();
+      expect(mockRequireSessionOrApiKey).toHaveBeenCalled();
     });
 
     it("should pass user information to request handlers", async () => {
-      const testUserId = "test-user-123";
-      mockRequireAuth.mockImplementationOnce(
+      const testUserId = "test-user-id";
+      mockRequireSessionOrApiKey.mockImplementationOnce(
         (req: any, res: any, next: any) => {
           req.user = { id: testUserId };
           next();

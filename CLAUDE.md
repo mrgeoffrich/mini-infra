@@ -323,6 +323,114 @@ The frontend uses React Router v7 with protected route guards and nested routing
 - `npx prisma generate` - Generate Prisma client
 - `npx prisma migrate dev` - Create and apply new migration
 
+## API Route Development Guide
+
+### Creating New Routes
+
+When creating new API routes in `server/src/routes/`, follow this pattern:
+
+#### 1. Basic Route Structure
+```typescript
+import express, { Request, Response, NextFunction, RequestHandler } from "express";
+import { z } from "zod";
+import { appLogger } from "../lib/logger-factory";
+
+// Import authentication middleware from the centralized interface
+import {
+  requireSessionOrApiKey,    // Requires JWT session OR API key
+  getAuthenticatedUser,      // Get current user info
+  requireAuth,               // Requires JWT session only
+  getCurrentUserId           // Get current user ID
+} from "../middleware/auth";
+
+import prisma from "../lib/prisma";
+
+const logger = appLogger();
+const router = express.Router();
+
+// Your route handlers here...
+
+export default router;
+```
+
+#### 2. Authentication Middleware Options
+
+**ALWAYS import authentication middleware from `../middleware/auth`** - never import directly from lib files.
+
+Available authentication middleware:
+- **`requireSessionOrApiKey`** - Accepts either JWT session or API key (most common)
+- **`requireAuth`** - Requires JWT session only (browser users)
+- **`requireAuthorization`** - Advanced authorization checks
+- **`requireOwnership(paramName)`** - Ensures user owns the resource
+
+#### 3. Route Handler Pattern
+```typescript
+// GET endpoint with authentication
+router.get('/', requireSessionOrApiKey, async (req, res) => {
+  const user = getAuthenticatedUser(req);
+  const userId = getCurrentUserId(req);
+
+  try {
+    // Your business logic here
+    const result = await someService.getData(userId);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error({ error, userId }, "Error in route handler");
+    res.status(500).json({
+      success: false,
+      error: "Internal server error"
+    });
+  }
+});
+```
+
+#### 4. Validation with Zod
+```typescript
+const createSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional()
+});
+
+router.post('/', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const validatedData = createSchema.parse(req.body);
+    // Use validatedData...
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: "Validation failed",
+      details: error.errors
+    });
+  }
+});
+```
+
+### Authentication Import Rules
+
+❌ **DON'T** import auth functions directly from lib:
+```typescript
+// WRONG - Don't do this
+import { requireSessionOrApiKey } from "../lib/api-key-middleware";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
+```
+
+✅ **DO** import all auth functions from the centralized middleware:
+```typescript
+// CORRECT - Always use this
+import {
+  requireSessionOrApiKey,
+  getAuthenticatedUser,
+  requireAuth,
+  getCurrentUserId
+} from "../middleware/auth";
+```
+
+This ensures consistent authentication patterns and maintainable code across all routes.
+
 ## Logging Architecture
 
 The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.

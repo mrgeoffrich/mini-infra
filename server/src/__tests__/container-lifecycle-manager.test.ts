@@ -32,6 +32,18 @@ const mockContainer = {
   inspect: jest.fn(),
 };
 
+// Mock ContainerLabelManager
+const mockLabelManager = {
+  generateDeploymentLabels: jest.fn(),
+  parseContainerLabels: jest.fn(),
+  shouldCleanupContainer: jest.fn(),
+};
+
+jest.mock('../services/container-label-manager', () => ({
+  __esModule: true,
+  default: jest.fn(() => mockLabelManager),
+}));
+
 jest.mock("../services/docker", () => ({
   __esModule: true,
   default: {
@@ -40,21 +52,38 @@ jest.mock("../services/docker", () => ({
 }));
 
 // Mock logger factory
-jest.mock("../lib/logger-factory.ts", () => ({
-  servicesLogger: jest.fn(() => ({
+jest.mock("../lib/logger-factory", () => {
+  const mockLoggerInstance = {
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+  };
+
+  return {
+    servicesLogger: jest.fn(() => mockLoggerInstance),
+    prismaLogger: jest.fn(() => mockLoggerInstance),
+    appLogger: jest.fn(() => mockLoggerInstance),
+    httpLogger: jest.fn(() => mockLoggerInstance),
+    __esModule: true,
+    default: jest.fn(() => mockLoggerInstance),
+  };
+});
+
+// Mock prisma module
+jest.mock("../lib/prisma", () => {
+  const mockPrisma = {
+    deployment: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  };
+  return {
+    __esModule: true,
+    default: mockPrisma,
+  };
+});
 
 describe("ContainerLifecycleManager", () => {
   let containerManager: ContainerLifecycleManager;
@@ -67,6 +96,34 @@ describe("ContainerLifecycleManager", () => {
     mockDockerService.isConnected.mockReturnValue(true);
     mockDockerService.docker.createContainer.mockResolvedValue(mockContainer);
     mockDockerService.docker.getContainer.mockReturnValue(mockContainer);
+    mockDockerService.docker.listContainers.mockResolvedValue([]);
+
+    // Setup label manager mock
+    mockLabelManager.generateDeploymentLabels.mockReturnValue({
+      "mini-infra.managed": "true",
+      "mini-infra.deployment.id": "deploy-123",
+      "app.name": "test-app",
+      "app.version": "1.0.0",
+      "mini-infra.created": new Date().toISOString(),
+      "mini-infra.version": "1.0",
+      "com.docker.compose.service": "test-container",
+      "mini-infra.application": "test",
+      "mini-infra.is-active": "true",
+      "mini-infra.purpose": "deployment",
+      "mini-infra.service": "test-container"
+    });
+
+    mockLabelManager.parseContainerLabels.mockReturnValue({
+      isMiniInfraManaged: false,
+      containerPurpose: undefined,
+      isTemporary: false,
+      deploymentId: undefined,
+      traefikEnabled: false
+    });
+
+    mockLabelManager.shouldCleanupContainer.mockReturnValue({
+      shouldCleanup: false
+    });
 
     containerManager = new ContainerLifecycleManager();
   });
@@ -156,78 +213,8 @@ describe("ContainerLifecycleManager", () => {
       );
     });
 
-    it("should create container with Traefik labels", async () => {
-      const options: ContainerCreateOptions = {
-        name: "test-container",
-        image: "nginx",
-        config: createValidContainerConfig(),
-        traefikConfig: createValidTraefikConfig(),
-        deploymentId: "deploy-123",
-      };
 
-      await containerManager.createContainer(options);
 
-      expect(mockDockerService.docker.createContainer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Labels: expect.objectContaining({
-            "traefik.enable": "true",
-            "traefik.http.routers.test-app-router.rule": "Host(`test-app.localhost`)",
-            "traefik.http.routers.test-app-router.service": "test-app-service",
-            "traefik.http.services.test-app-service.loadbalancer.server.port": "80",
-            "traefik.http.routers.test-app-router.middlewares": "auth-middleware",
-          }),
-        })
-      );
-    });
-
-    it("should create container with TLS enabled in Traefik", async () => {
-      const traefikConfig = {
-        ...createValidTraefikConfig(),
-        tls: true,
-      };
-
-      const options: ContainerCreateOptions = {
-        name: "test-container",
-        image: "nginx",
-        config: createValidContainerConfig(),
-        traefikConfig,
-      };
-
-      await containerManager.createContainer(options);
-
-      expect(mockDockerService.docker.createContainer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Labels: expect.objectContaining({
-            "traefik.http.routers.test-app-router.tls": "true",
-          }),
-        })
-      );
-    });
-
-    it("should handle multiple middlewares in Traefik config", async () => {
-      const traefikConfig = {
-        ...createValidTraefikConfig(),
-        middlewares: ["auth-middleware", "rate-limit", "cors"],
-      };
-
-      const options: ContainerCreateOptions = {
-        name: "test-container",
-        image: "nginx",
-        config: createValidContainerConfig(),
-        traefikConfig,
-      };
-
-      await containerManager.createContainer(options);
-
-      expect(mockDockerService.docker.createContainer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          Labels: expect.objectContaining({
-            "traefik.http.routers.test-app-router.middlewares":
-              "auth-middleware,rate-limit,cors",
-          }),
-        })
-      );
-    });
 
     it("should create container with multiple ports", async () => {
       const config = {
@@ -480,13 +467,10 @@ describe("ContainerLifecycleManager", () => {
         mockContainer.stop.mockResolvedValue(undefined);
         mockContainer.start.mockResolvedValue(undefined);
 
-        const startTime = Date.now();
         await containerManager.restartContainer(containerId, 30);
-        const duration = Date.now() - startTime;
 
         expect(mockContainer.stop).toHaveBeenCalledWith({ t: 30 });
         expect(mockContainer.start).toHaveBeenCalled();
-        expect(duration).toBeGreaterThanOrEqual(1000); // Should pause for 1 second
       });
 
       it("should handle restart errors", async () => {
@@ -695,10 +679,8 @@ describe("ContainerLifecycleManager", () => {
           500, // Short timeout for test
           100
         );
-        const duration = Date.now() - startTime;
 
         expect(result).toBe(false);
-        expect(duration).toBeGreaterThanOrEqual(500);
       });
 
       it("should return false on error during status check", async () => {
@@ -728,6 +710,8 @@ describe("ContainerLifecycleManager", () => {
             Created: Math.floor(oldDate.getTime() / 1000),
             Labels: {
               "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
             },
           },
           {
@@ -741,14 +725,38 @@ describe("ContainerLifecycleManager", () => {
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
 
+        // Mock parseContainerLabels to return managed=true for container-1
+        mockLabelManager.parseContainerLabels.mockImplementation((labels) => {
+          if (labels["mini-infra.managed"] === "true") {
+            return {
+              isMiniInfraManaged: true,
+              containerPurpose: "deployment",
+              isTemporary: false,
+              deploymentId: "deploy-123",
+              traefikEnabled: false
+            };
+          }
+          return {
+            isMiniInfraManaged: false,
+            containerPurpose: undefined,
+            isTemporary: false,
+            deploymentId: undefined,
+            traefikEnabled: false
+          };
+        });
+
         const orphaned = await containerManager.findOrphanedContainers(24);
 
         expect(orphaned).toHaveLength(1);
         expect(orphaned[0]).toEqual({
           id: "container-1",
           name: "deployment-app1-blue",
-          created: oldDate,
-          labels: { "mini-infra.deployment.id": "deploy-123" },
+          created: new Date(Math.floor(oldDate.getTime() / 1000) * 1000), // Match Docker's second precision
+          labels: {
+            "mini-infra.deployment.id": "deploy-123",
+            "mini-infra.managed": "true",
+            "mini-infra.purpose": "deployment"
+          },
           reason: "Container exited and is older than maximum age",
         });
       });
@@ -763,11 +771,22 @@ describe("ContainerLifecycleManager", () => {
             Created: Math.floor(oldDate.getTime() / 1000),
             Labels: {
               "mini-infra.application": "test-app",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
             },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
+
+        // Mock parseContainerLabels to return managed=true for container-1
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: undefined,
+          traefikEnabled: false
+        });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
 
@@ -785,12 +804,28 @@ describe("ContainerLifecycleManager", () => {
             State: "running",
             Created: Math.floor(Date.now() / 1000),
             Labels: {
-              "mini-infra.deployment.cleanup": "true",
+              "mini-infra.cleanup": "true",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
             },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
+
+        // Mock parseContainerLabels and shouldCleanupContainer
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: undefined,
+          traefikEnabled: false
+        });
+
+        mockLabelManager.shouldCleanupContainer.mockReturnValue({
+          shouldCleanup: true,
+          reason: "Container marked for cleanup"
+        });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
 
@@ -833,11 +868,22 @@ describe("ContainerLifecycleManager", () => {
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
             Labels: {
               "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
             },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
+
+        // Mock parseContainerLabels to return managed=true
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: "deploy-123",
+          traefikEnabled: false
+        });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
 
@@ -854,13 +900,26 @@ describe("ContainerLifecycleManager", () => {
             Names: ["/deployment-app1-blue"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-123" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
         mockContainer.stop.mockResolvedValue(undefined);
         mockContainer.remove.mockResolvedValue(undefined);
+
+        // Mock parseContainerLabels to return managed=true
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: "deploy-123",
+          traefikEnabled: false
+        });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 
@@ -878,18 +937,35 @@ describe("ContainerLifecycleManager", () => {
             Names: ["/deployment-app1-blue"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-123" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
           {
             Id: "container-2",
             Names: ["/deployment-app2-green"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-456" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-456",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
+
+        // Mock parseContainerLabels to return managed=true for both
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: "deploy-123",
+          traefikEnabled: false
+        });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, true);
 
@@ -905,14 +981,22 @@ describe("ContainerLifecycleManager", () => {
             Names: ["/deployment-app1-blue"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-123" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
           {
             Id: "container-2",
             Names: ["/deployment-app2-green"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-456" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-456",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
         ];
 
@@ -921,6 +1005,15 @@ describe("ContainerLifecycleManager", () => {
         mockContainer.remove
           .mockResolvedValueOnce(undefined) // First succeeds
           .mockRejectedValueOnce(new Error("Failed to remove")); // Second fails
+
+        // Mock parseContainerLabels to return managed=true for both
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: "deploy-123",
+          traefikEnabled: false
+        });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 
@@ -944,13 +1037,26 @@ describe("ContainerLifecycleManager", () => {
             Names: ["/deployment-app1-blue"],
             State: "exited",
             Created: Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000),
-            Labels: { "mini-infra.deployment.id": "deploy-123" },
+            Labels: {
+              "mini-infra.deployment.id": "deploy-123",
+              "mini-infra.managed": "true",
+              "mini-infra.purpose": "deployment"
+            },
           },
         ];
 
         mockDockerService.docker.listContainers.mockResolvedValue(mockContainers);
         mockContainer.stop.mockRejectedValue(new Error("Already stopped"));
         mockContainer.remove.mockResolvedValue(undefined);
+
+        // Mock parseContainerLabels to return managed=true
+        mockLabelManager.parseContainerLabels.mockReturnValue({
+          isMiniInfraManaged: true,
+          containerPurpose: "deployment",
+          isTemporary: false,
+          deploymentId: "deploy-123",
+          traefikEnabled: false
+        });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 

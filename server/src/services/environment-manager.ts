@@ -1,0 +1,810 @@
+import { PrismaClient } from '@prisma/client';
+import {
+  Environment,
+  EnvironmentType,
+  CreateEnvironmentRequest,
+  UpdateEnvironmentRequest,
+  ServiceConfiguration,
+  EnvironmentOperationResult,
+  ServiceOperationResult,
+  EnvironmentStatusResponse
+} from '@mini-infra/types';
+import {
+  ServiceStatus,
+  NetworkRequirement,
+  VolumeRequirement
+} from './interfaces/application-service';
+import { ApplicationServiceHealthStatus } from '@mini-infra/types';
+import { ServiceRegistry } from './service-registry';
+import { ApplicationServiceFactory } from './application-service-factory';
+import { DockerExecutorService } from './docker-executor';
+import { servicesLogger } from '../lib/logger-factory';
+
+export class EnvironmentManager {
+  private static instance: EnvironmentManager;
+  private readonly logger = servicesLogger();
+  private readonly serviceRegistry: ServiceRegistry;
+  private readonly serviceFactory: ApplicationServiceFactory;
+  private readonly dockerExecutor: DockerExecutorService;
+
+  constructor(private readonly prisma: PrismaClient) {
+    this.serviceRegistry = ServiceRegistry.getInstance();
+    this.serviceFactory = ApplicationServiceFactory.getInstance();
+    this.dockerExecutor = new DockerExecutorService();
+  }
+
+  public static getInstance(prisma: PrismaClient): EnvironmentManager {
+    if (!EnvironmentManager.instance) {
+      EnvironmentManager.instance = new EnvironmentManager(prisma);
+    }
+    return EnvironmentManager.instance;
+  }
+
+  public async createEnvironment(request: CreateEnvironmentRequest): Promise<Environment> {
+    this.logger.info({ request }, 'Creating new environment');
+
+    try {
+      // Validate service configurations
+      if (request.services) {
+        for (const serviceConfig of request.services) {
+          if (!this.serviceRegistry.isServiceTypeAvailable(serviceConfig.serviceType)) {
+            throw new Error(`Unknown service type: ${serviceConfig.serviceType}`);
+          }
+        }
+      }
+
+      // Create environment record
+      const environmentData = await this.prisma.environment.create({
+        data: {
+          name: request.name,
+          description: request.description,
+          type: request.type,
+          status: ServiceStatus.UNINITIALIZED,
+          isActive: false
+        },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
+
+      // If services are provided, create them
+      if (request.services && request.services.length > 0) {
+        await this.addServicesToEnvironment(environmentData.id, request.services);
+      }
+
+      // Fetch the complete environment with relations
+      const environment = await this.getEnvironmentById(environmentData.id);
+      if (!environment) {
+        throw new Error('Failed to retrieve created environment');
+      }
+
+      this.logger.info({
+        environmentId: environment.id,
+        environmentName: environment.name,
+        serviceCount: environment.services.length
+      }, 'Environment created successfully');
+
+      return environment;
+
+    } catch (error) {
+      this.logger.error({ error, request }, 'Failed to create environment');
+      throw error;
+    }
+  }
+
+  public async getEnvironmentById(id: string): Promise<Environment | null> {
+    try {
+      const environment = await this.prisma.environment.findUnique({
+        where: { id },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
+
+      if (!environment) {
+        return null;
+      }
+
+      return this.mapPrismaToEnvironment(environment);
+
+    } catch (error) {
+      this.logger.error({ error, environmentId: id }, 'Failed to get environment by ID');
+      throw error;
+    }
+  }
+
+  public async getEnvironmentByName(name: string): Promise<Environment | null> {
+    try {
+      const environment = await this.prisma.environment.findUnique({
+        where: { name },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
+
+      if (!environment) {
+        return null;
+      }
+
+      return this.mapPrismaToEnvironment(environment);
+
+    } catch (error) {
+      this.logger.error({ error, environmentName: name }, 'Failed to get environment by name');
+      throw error;
+    }
+  }
+
+  public async listEnvironments(
+    type?: EnvironmentType,
+    status?: ServiceStatus,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{ environments: Environment[]; total: number }> {
+    try {
+      const where: any = {};
+      if (type) where.type = type;
+      if (status) where.status = status;
+
+      const [environments, total] = await Promise.all([
+        this.prisma.environment.findMany({
+          where,
+          include: {
+            services: true,
+            networks: true,
+            volumes: true
+          },
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: 'desc' }
+        }),
+        this.prisma.environment.count({ where })
+      ]);
+
+      return {
+        environments: environments.map(env => this.mapPrismaToEnvironment(env)),
+        total
+      };
+
+    } catch (error) {
+      this.logger.error({ error, type, status, page, limit }, 'Failed to list environments');
+      throw error;
+    }
+  }
+
+  public async updateEnvironment(id: string, request: UpdateEnvironmentRequest): Promise<Environment | null> {
+    try {
+      const environment = await this.prisma.environment.update({
+        where: { id },
+        data: {
+          name: request.name,
+          description: request.description,
+          type: request.type,
+          isActive: request.isActive
+        },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
+
+      this.logger.info({ environmentId: id, request }, 'Environment updated successfully');
+      return this.mapPrismaToEnvironment(environment);
+
+    } catch (error) {
+      this.logger.error({ error, environmentId: id, request }, 'Failed to update environment');
+      throw error;
+    }
+  }
+
+  public async deleteEnvironment(id: string): Promise<boolean> {
+    try {
+      // Check if environment is running
+      const environment = await this.getEnvironmentById(id);
+      if (!environment) {
+        return false;
+      }
+
+      if (environment.status === ServiceStatus.RUNNING) {
+        throw new Error('Cannot delete a running environment. Stop it first.');
+      }
+
+      // Delete environment (cascade will handle related records)
+      await this.prisma.environment.delete({
+        where: { id }
+      });
+
+      this.logger.info({ environmentId: id }, 'Environment deleted successfully');
+      return true;
+
+    } catch (error) {
+      this.logger.error({ error, environmentId: id }, 'Failed to delete environment');
+      throw error;
+    }
+  }
+
+  public async startEnvironment(id: string): Promise<EnvironmentOperationResult> {
+    const startTime = Date.now();
+
+    try {
+      const environment = await this.getEnvironmentById(id);
+      if (!environment) {
+        return {
+          success: false,
+          message: 'Environment not found'
+        };
+      }
+
+      if (environment.status === ServiceStatus.RUNNING) {
+        return {
+          success: true,
+          message: 'Environment is already running'
+        };
+      }
+
+      this.logger.info({ environmentId: id }, 'Starting environment');
+
+      // Update status to starting
+      await this.updateEnvironmentStatus(id, ServiceStatus.STARTING);
+
+      try {
+        // Initialize Docker executor
+        await this.dockerExecutor.initialize();
+
+        // Create networks and volumes first
+        await this.provisionInfrastructure(environment);
+
+        // Start services in dependency order
+        await this.startAllServices(environment);
+
+        // Update status to running
+        await this.updateEnvironmentStatus(id, ServiceStatus.RUNNING);
+        await this.markEnvironmentActive(id, true);
+
+        const duration = Date.now() - startTime;
+
+        this.logger.info({
+          environmentId: id,
+          duration
+        }, 'Environment started successfully');
+
+        return {
+          success: true,
+          message: 'Environment started successfully',
+          duration
+        };
+
+      } catch (error) {
+        // Update status to failed
+        await this.updateEnvironmentStatus(id, ServiceStatus.FAILED);
+
+        throw error;
+      }
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      this.logger.error({
+        error,
+        environmentId: id,
+        duration
+      }, 'Failed to start environment');
+
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        duration,
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+    }
+  }
+
+  public async stopEnvironment(id: string): Promise<EnvironmentOperationResult> {
+    const startTime = Date.now();
+
+    try {
+      const environment = await this.getEnvironmentById(id);
+      if (!environment) {
+        return {
+          success: false,
+          message: 'Environment not found'
+        };
+      }
+
+      if (environment.status === ServiceStatus.STOPPED) {
+        return {
+          success: true,
+          message: 'Environment is already stopped'
+        };
+      }
+
+      this.logger.info({ environmentId: id }, 'Stopping environment');
+
+      // Update status to stopping
+      await this.updateEnvironmentStatus(id, ServiceStatus.STOPPING);
+
+      try {
+        // Stop services in reverse dependency order
+        await this.stopAllServices(environment);
+
+        // Update status to stopped
+        await this.updateEnvironmentStatus(id, ServiceStatus.STOPPED);
+        await this.markEnvironmentActive(id, false);
+
+        const duration = Date.now() - startTime;
+
+        this.logger.info({
+          environmentId: id,
+          duration
+        }, 'Environment stopped successfully');
+
+        return {
+          success: true,
+          message: 'Environment stopped successfully',
+          duration
+        };
+
+      } catch (error) {
+        // Update status to failed
+        await this.updateEnvironmentStatus(id, ServiceStatus.FAILED);
+
+        throw error;
+      }
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      this.logger.error({
+        error,
+        environmentId: id,
+        duration
+      }, 'Failed to stop environment');
+
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        duration,
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      };
+    }
+  }
+
+  public async getEnvironmentStatus(id: string): Promise<EnvironmentStatusResponse | null> {
+    try {
+      const environment = await this.getEnvironmentById(id);
+      if (!environment) {
+        return null;
+      }
+
+      // Check service health
+      const servicesHealth = [];
+      for (const service of environment.services) {
+        const serviceInstance = this.serviceFactory.getService(service.serviceName);
+        let healthDetails = undefined;
+
+        if (serviceInstance) {
+          try {
+            const statusInfo = await serviceInstance.getStatus();
+            healthDetails = statusInfo.health.details;
+          } catch (error) {
+            this.logger.warn({
+              error,
+              serviceName: service.serviceName
+            }, 'Failed to get service health');
+          }
+        }
+
+        servicesHealth.push({
+          serviceName: service.serviceName,
+          status: service.status as ServiceStatus,
+          health: service.health as ApplicationServiceHealthStatus,
+          healthDetails
+        });
+      }
+
+      // Check network status
+      const networksStatus = [];
+      for (const network of environment.networks) {
+        try {
+          const exists = await this.dockerExecutor.networkExists(network.name);
+          networksStatus.push({
+            name: network.name,
+            exists,
+            dockerId: network.dockerId || undefined
+          });
+        } catch (error) {
+          networksStatus.push({
+            name: network.name,
+            exists: false
+          });
+        }
+      }
+
+      // Check volume status
+      const volumesStatus = [];
+      for (const volume of environment.volumes) {
+        try {
+          const exists = await this.dockerExecutor.volumeExists(volume.name);
+          volumesStatus.push({
+            name: volume.name,
+            exists,
+            dockerId: volume.dockerId || undefined
+          });
+        } catch (error) {
+          volumesStatus.push({
+            name: volume.name,
+            exists: false
+          });
+        }
+      }
+
+      return {
+        environment,
+        servicesHealth,
+        networksStatus,
+        volumesStatus
+      };
+
+    } catch (error) {
+      this.logger.error({ error, environmentId: id }, 'Failed to get environment status');
+      throw error;
+    }
+  }
+
+  public async addServicesToEnvironment(environmentId: string, services: ServiceConfiguration[]): Promise<void> {
+    try {
+      for (const serviceConfig of services) {
+        await this.addServiceToEnvironment(environmentId, serviceConfig);
+      }
+    } catch (error) {
+      this.logger.error({
+        error,
+        environmentId,
+        services
+      }, 'Failed to add services to environment');
+      throw error;
+    }
+  }
+
+  public async addServiceToEnvironment(environmentId: string, serviceConfig: ServiceConfiguration): Promise<void> {
+    try {
+      // Validate service type
+      if (!this.serviceRegistry.isServiceTypeAvailable(serviceConfig.serviceType)) {
+        throw new Error(`Unknown service type: ${serviceConfig.serviceType}`);
+      }
+
+      // Get service metadata to determine requirements
+      const metadata = this.serviceRegistry.getServiceMetadata(serviceConfig.serviceType);
+      if (!metadata) {
+        throw new Error(`No metadata found for service type: ${serviceConfig.serviceType}`);
+      }
+
+      // Create networks for this service
+      for (const networkReq of metadata.requiredNetworks) {
+        await this.prisma.environmentNetwork.upsert({
+          where: {
+            environmentId_name: {
+              environmentId,
+              name: networkReq.name
+            }
+          },
+          create: {
+            environmentId,
+            name: networkReq.name,
+            driver: networkReq.driver || 'bridge',
+            options: networkReq.options || {}
+          },
+          update: {} // No update needed if exists
+        });
+      }
+
+      // Create volumes for this service
+      for (const volumeReq of metadata.requiredVolumes) {
+        await this.prisma.environmentVolume.upsert({
+          where: {
+            environmentId_name: {
+              environmentId,
+              name: volumeReq.name
+            }
+          },
+          create: {
+            environmentId,
+            name: volumeReq.name,
+            driver: volumeReq.driver || 'local',
+            options: volumeReq.options || {}
+          },
+          update: {} // No update needed if exists
+        });
+      }
+
+      // Create service record
+      await this.prisma.environmentService.create({
+        data: {
+          environmentId,
+          serviceName: serviceConfig.serviceName,
+          serviceType: serviceConfig.serviceType,
+          status: ServiceStatus.UNINITIALIZED,
+          health: ApplicationServiceHealthStatus.UNKNOWN,
+          config: serviceConfig.config || {}
+        }
+      });
+
+      this.logger.info({
+        environmentId,
+        serviceName: serviceConfig.serviceName,
+        serviceType: serviceConfig.serviceType
+      }, 'Service added to environment');
+
+    } catch (error) {
+      this.logger.error({
+        error,
+        environmentId,
+        serviceConfig
+      }, 'Failed to add service to environment');
+      throw error;
+    }
+  }
+
+  private async provisionInfrastructure(environment: Environment): Promise<void> {
+    // Create networks
+    for (const network of environment.networks) {
+      try {
+        const exists = await this.dockerExecutor.networkExists(network.name);
+        if (!exists) {
+          await this.dockerExecutor.createNetwork(
+            network.name,
+            environment.name,
+            {
+              driver: network.driver,
+              ...network.options
+            }
+          );
+
+          this.logger.info({
+            environmentId: environment.id,
+            networkName: network.name
+          }, 'Network created for environment');
+        }
+      } catch (error) {
+        this.logger.error({
+          error,
+          environmentId: environment.id,
+          networkName: network.name
+        }, 'Failed to create network');
+        throw error;
+      }
+    }
+
+    // Create volumes
+    for (const volume of environment.volumes) {
+      try {
+        const exists = await this.dockerExecutor.volumeExists(volume.name);
+        if (!exists) {
+          await this.dockerExecutor.createVolume(
+            volume.name,
+            environment.name
+          );
+
+          this.logger.info({
+            environmentId: environment.id,
+            volumeName: volume.name
+          }, 'Volume created for environment');
+        }
+      } catch (error) {
+        this.logger.error({
+          error,
+          environmentId: environment.id,
+          volumeName: volume.name
+        }, 'Failed to create volume');
+        throw error;
+      }
+    }
+  }
+
+  private async startAllServices(environment: Environment): Promise<void> {
+    const serviceTypes = environment.services.map(s => s.serviceType);
+    const startOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes);
+
+    for (const serviceType of startOrder) {
+      const envService = environment.services.find(s => s.serviceType === serviceType);
+      if (!envService) continue;
+
+      await this.startEnvironmentService(environment, envService);
+    }
+  }
+
+  private async stopAllServices(environment: Environment): Promise<void> {
+    const serviceTypes = environment.services.map(s => s.serviceType);
+    const stopOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes).reverse();
+
+    for (const serviceType of stopOrder) {
+      const envService = environment.services.find(s => s.serviceType === serviceType);
+      if (!envService) continue;
+
+      await this.stopEnvironmentService(envService);
+    }
+  }
+
+  private async startEnvironmentService(environment: Environment, envService: any): Promise<void> {
+    try {
+      // Create service instance
+      const result = await this.serviceFactory.createService({
+        serviceName: envService.serviceName,
+        serviceType: envService.serviceType,
+        config: envService.config,
+        projectName: environment.name
+      });
+
+      if (!result.success || !result.service) {
+        throw new Error(result.message || 'Failed to create service instance');
+      }
+
+      // Get networks and volumes for this service
+      const networks = environment.networks.map(n => ({
+        name: n.name,
+        driver: n.driver,
+        options: n.options
+      }));
+
+      const volumes = environment.volumes.map(v => ({
+        name: v.name,
+        driver: v.driver,
+        options: v.options
+      }));
+
+      // Initialize service
+      await result.service.initialize(networks, volumes);
+
+      // Start service
+      const startResult = await result.service.start();
+
+      if (!startResult.success) {
+        throw new Error(startResult.message || 'Service failed to start');
+      }
+
+      // Update service status
+      await this.updateServiceStatus(
+        envService.id,
+        ServiceStatus.RUNNING,
+        ApplicationServiceHealthStatus.HEALTHY
+      );
+
+      this.logger.info({
+        environmentId: environment.id,
+        serviceName: envService.serviceName,
+        duration: startResult.duration
+      }, 'Environment service started successfully');
+
+    } catch (error) {
+      await this.updateServiceStatus(
+        envService.id,
+        ServiceStatus.FAILED,
+        ApplicationServiceHealthStatus.UNHEALTHY
+      );
+
+      this.logger.error({
+        error,
+        environmentId: environment.id,
+        serviceName: envService.serviceName
+      }, 'Failed to start environment service');
+
+      throw error;
+    }
+  }
+
+  private async stopEnvironmentService(envService: any): Promise<void> {
+    try {
+      await this.serviceFactory.stopService(envService.serviceName);
+
+      // Update service status
+      await this.updateServiceStatus(
+        envService.id,
+        ServiceStatus.STOPPED,
+        ApplicationServiceHealthStatus.UNKNOWN
+      );
+
+      this.logger.info({
+        serviceName: envService.serviceName
+      }, 'Environment service stopped successfully');
+
+    } catch (error) {
+      await this.updateServiceStatus(
+        envService.id,
+        ServiceStatus.FAILED,
+        ApplicationServiceHealthStatus.UNHEALTHY
+      );
+
+      this.logger.error({
+        error,
+        serviceName: envService.serviceName
+      }, 'Failed to stop environment service');
+
+      throw error;
+    }
+  }
+
+  private async updateEnvironmentStatus(id: string, status: ServiceStatus): Promise<void> {
+    await this.prisma.environment.update({
+      where: { id },
+      data: { status }
+    });
+  }
+
+  private async markEnvironmentActive(id: string, isActive: boolean): Promise<void> {
+    await this.prisma.environment.update({
+      where: { id },
+      data: { isActive }
+    });
+  }
+
+  private async updateServiceStatus(
+    serviceId: string,
+    status: ServiceStatus,
+    health: ApplicationServiceHealthStatus
+  ): Promise<void> {
+    const updateData: any = { status, health };
+
+    if (status === ServiceStatus.RUNNING) {
+      updateData.startedAt = new Date();
+      updateData.stoppedAt = null;
+    } else if (status === ServiceStatus.STOPPED) {
+      updateData.stoppedAt = new Date();
+    }
+
+    await this.prisma.environmentService.update({
+      where: { id: serviceId },
+      data: updateData
+    });
+  }
+
+  private mapPrismaToEnvironment(prismaEnv: any): Environment {
+    return {
+      id: prismaEnv.id,
+      name: prismaEnv.name,
+      description: prismaEnv.description,
+      type: prismaEnv.type as EnvironmentType,
+      status: prismaEnv.status as ServiceStatus,
+      isActive: prismaEnv.isActive,
+      services: prismaEnv.services.map((s: any) => ({
+        id: s.id,
+        environmentId: s.environmentId,
+        serviceName: s.serviceName,
+        serviceType: s.serviceType,
+        status: s.status as ServiceStatus,
+        health: s.health as ApplicationServiceHealthStatus,
+        config: s.config,
+        startedAt: s.startedAt,
+        stoppedAt: s.stoppedAt,
+        lastError: s.lastError,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt
+      })),
+      networks: prismaEnv.networks.map((n: any) => ({
+        id: n.id,
+        environmentId: n.environmentId,
+        name: n.name,
+        driver: n.driver,
+        options: n.options,
+        dockerId: n.dockerId,
+        createdAt: n.createdAt
+      })),
+      volumes: prismaEnv.volumes.map((v: any) => ({
+        id: v.id,
+        environmentId: v.environmentId,
+        name: v.name,
+        driver: v.driver,
+        options: v.options,
+        dockerId: v.dockerId,
+        createdAt: v.createdAt
+      })),
+      createdAt: prismaEnv.createdAt,
+      updatedAt: prismaEnv.updatedAt
+    };
+  }
+}

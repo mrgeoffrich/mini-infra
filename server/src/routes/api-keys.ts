@@ -9,7 +9,7 @@ import {
   getApiKeyStats,
 } from "../lib/api-key-service";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../lib/api-key-middleware";
+import { requireSessionOrApiKey, getCurrentUserId } from "../middleware/auth";
 
 const logger = appLogger();
 import type { CreateApiKeyRequest } from "@mini-infra/types";

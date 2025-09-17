@@ -101,8 +101,23 @@ jest.mock("../../lib/logger-factory", () => ({
   })),
 }));
 
-// Mock auth middleware
-jest.mock("../../lib/auth-middleware", () => ({
+// Mock the centralized auth middleware
+jest.mock("../../middleware/auth", () => ({
+  requireSessionOrApiKey: (req: any, res: any, next: any) => {
+    // Set up authenticated user context for tests
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      user: { id: "test-user-id", email: "test@example.com" },
+      requestId: "test-request-id",
+    };
+    next();
+  },
+  getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
+  getCurrentUserId: (req: any) => "test-user-id",
   requireAuth: (req: any, res: any, next: any) => {
     res.locals = {
       user: { id: "test-user-id" },
