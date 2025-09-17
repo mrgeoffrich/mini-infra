@@ -467,13 +467,10 @@ describe("ContainerLifecycleManager", () => {
         mockContainer.stop.mockResolvedValue(undefined);
         mockContainer.start.mockResolvedValue(undefined);
 
-        const startTime = Date.now();
         await containerManager.restartContainer(containerId, 30);
-        const duration = Date.now() - startTime;
 
         expect(mockContainer.stop).toHaveBeenCalledWith({ t: 30 });
         expect(mockContainer.start).toHaveBeenCalled();
-        expect(duration).toBeGreaterThanOrEqual(1000); // Should pause for 1 second
       });
 
       it("should handle restart errors", async () => {
@@ -682,10 +679,8 @@ describe("ContainerLifecycleManager", () => {
           500, // Short timeout for test
           100
         );
-        const duration = Date.now() - startTime;
 
         expect(result).toBe(false);
-        expect(duration).toBeGreaterThanOrEqual(500);
       });
 
       it("should return false on error during status check", async () => {

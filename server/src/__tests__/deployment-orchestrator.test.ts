@@ -97,6 +97,20 @@ describe("DeploymentOrchestrator", () => {
   let orchestrator: DeploymentOrchestrator;
   let testUserId: string;
 
+  // Helper function to wait for deployment state changes without relying on timing
+  const waitForDeploymentStateChange = async (deploymentId: string, maxWaitMs = 1000): Promise<void> => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      const status = orchestrator.getDeploymentStatus(deploymentId);
+      if (!status.isActive || status.currentState !== "idle") {
+        // Give one more tick for any final state transitions
+        await new Promise(resolve => setImmediate(resolve));
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -312,7 +326,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to complete the flow through health checking
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Check deployment status
       const status = orchestrator.getDeploymentStatus(deployment.id);
@@ -348,7 +363,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for state machine to process
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
       // Container creation should not be attempted after image pull failure
@@ -366,7 +382,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for state machine to process
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
       expect(mockContainerManager.createContainer).toHaveBeenCalled();
@@ -424,7 +441,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to process including retries
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // The health check should be called at least once and potentially retry
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalledTimes(1);
@@ -468,7 +486,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for all retry attempts
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Should be called at least once and fail completely
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalled();
@@ -547,7 +566,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for state machine to process through health checking to traffic switching
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify the health check succeeded and basic deployment flow worked
       expect(mockNetworkHealthCheckService.performNetworkHealthCheck).toHaveBeenCalled();
@@ -637,7 +657,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment flow to complete
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify basic deployment flow worked
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -681,7 +702,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify the deployment started
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -750,7 +772,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment to start and get to health checking (failing)
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify deployment is still active
       expect(orchestrator.isDeploymentActive(deployment.id)).toBe(true);
@@ -803,7 +826,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for deployment to process
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify basic deployment operations happened
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -1000,7 +1024,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for some steps to be processed
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Check if steps were created in database
       const steps = await testPrisma.deploymentStep.findMany({
@@ -1031,7 +1056,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for container creation
-      await new Promise(resolve => setTimeout(resolve, 20));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       const updatedDeployment = await testPrisma.deployment.findUnique({
         where: { id: deployment.id },
@@ -1058,7 +1084,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for health check
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       const updatedDeployment = await testPrisma.deployment.findUnique({
         where: { id: deployment.id },
@@ -1081,7 +1108,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for error to be processed
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       expect(mockLogger.error).toHaveBeenCalled();
     });
@@ -1121,7 +1149,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for execution
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       // Verify deployment was started (it may complete and become inactive)
       expect(mockDockerExecutor.pullImageWithAuth).toHaveBeenCalled();
@@ -1146,7 +1175,8 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deploymentId, config, "manual");
 
       // Wait for container creation
-      await new Promise(resolve => setTimeout(resolve, 15));
+      // Wait for deployment state to change
+      await waitForDeploymentStateChange(deployment.id);
 
       expect(mockContainerManager.createContainer).toHaveBeenCalledWith(
         expect.objectContaining({
