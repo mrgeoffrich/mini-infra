@@ -3,7 +3,7 @@ import { z } from "zod";
 import dotenv from "dotenv";
 
 // Load environment variables from .env file
-dotenv.config();
+dotenv.config({ quiet: process.env.NODE_ENV === "test" });
 
 // Define the configuration schema for validation
 const configSchema = z.object({
@@ -158,7 +158,7 @@ try {
   console.error("❌ FATAL: Invalid configuration detected during startup");
   console.error("Configuration validation error:", error);
   console.error("Please check your environment variables and configuration files");
-  
+
   // Also try to write to a basic log file if possible
   try {
     const fs = require('fs');
@@ -179,7 +179,7 @@ try {
   } catch (writeError) {
     console.error("Could not write error to log file:", writeError);
   }
-  
+
   process.exit(1);
 }
 
