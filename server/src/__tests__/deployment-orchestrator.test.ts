@@ -1058,7 +1058,7 @@ describe("DeploymentOrchestrator", () => {
       await orchestrator.startDeployment(deployment.id, config, "manual");
 
       // Wait for health check
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       const updatedDeployment = await testPrisma.deployment.findUnique({
         where: { id: deployment.id },
