@@ -283,6 +283,7 @@ The backend implements a sophisticated service layer with dependency injection, 
 - `npm test` - Run Jest test suite
 - `npm run test:watch` - Run tests in watch mode
 - `npm run test:coverage` - Run tests with coverage report
+- `npx jest <filename>` - Run a single test file (e.g., `npx jest src/__tests__/environment-manager.test.ts`)
 - `npm run lint` - Run ESLint on TypeScript files
 - `npm run lint:fix` - Run ESLint with auto-fix
 - `npm run format` - Format code with Prettier
