@@ -193,6 +193,7 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Scripts**: `build:lib` → `build:client` / `build:server`
 - **Watch Mode**: All three services run in parallel during development
 - **Type Safety**: Ensures consistent type definitions across full-stack
+- **Testing**: The shared types package must be built (`cd lib && npm run build`) before running tests, otherwise type imports will fail
 
 ## Timezone and Date Display System
 
