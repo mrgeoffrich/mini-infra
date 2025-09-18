@@ -11,11 +11,6 @@ NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker com
 ### Step 1: Get Your API Key
 Run this command to display your development API key:
 ```bash
-cd server && npm run show-dev-key
-```
-
-If you need a new key, use:
-```bash
 cd server && npm run show-dev-key -- --recreate
 ```
 
@@ -113,8 +108,8 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ## Development Environment Notes
 
-- **Platform**: Windows with Git Bash
-- **Path Handling**: Use Unix-style paths when using the Bash tool (convert C:\path to /c/path). Otherwise use windows path style.
+- **Platform Detection**: If Claude is unsure about the platform, run `uname -s 2>/dev/null || echo "Windows"` to detect the operating system reliably
+- **Path Handling**: Use Unix-style paths when using the Bash tool (convert C:\path to /c/path) if you running git bash on windows. Otherwise use windows path style if you are using powershell on Windows.
 - **Shell**: Git Bash expects forward slashes and Unix-style drive references
 
 ## Core Features
@@ -233,7 +228,6 @@ The application implements a comprehensive timezone-aware date and time display 
 - **Options Support**: Configurable display options (showSeconds, custom formats, etc.)
 - **Timezone Handling**: Automatic timezone conversion from UTC to user preference
 
-
 #### Data Storage and Retrieval
 
 **Timezone Storage**:
@@ -264,25 +258,7 @@ The application implements a comprehensive timezone-aware date and time display 
 
 ## Service Layer Architecture
 
-The backend implements a sophisticated service layer with dependency injection, configuration management, and comprehensive external API integration.
-
-### Configuration Services Framework
-
-#### Base Architecture
-- **ConfigurationBase** (`server/src/services/configuration-base.ts`): Abstract base class providing common functionality for all configuration services including validation, caching, and error handling
-- **ConfigurationFactory** (`server/src/services/configuration-factory.ts`): Service factory with dependency injection pattern for creating and managing configuration service instances
-
-#### External Service Configurations
-- **DockerConfig** (`server/src/services/docker-config.ts`): Docker host and API configuration management with connection testing and singleton pattern
-- **AzureConfig** (`server/src/services/azure-config.ts`): Azure Storage configuration with connection string validation, container access testing, and retry logic with caching
-- **CloudflareConfig** (`server/src/services/cloudflare-config.ts`): Cloudflare API configuration with circuit breaker pattern (opens after 5 failures, 5-minute cooldown), request deduplication, and comprehensive error handling
-- **PostgresConfigService** (`server/src/services/postgres-config.ts`): PostgreSQL database configuration management with connection string encryption/decryption, connection testing with timeout protection, and user-scoped database management
-
-## Frontend Architecture
-
-### Application Routing Structure
-
-The frontend uses React Router v7 with protected route guards and nested routing. All routes except `/login` require authentication via api key or google login.
+The backend implements a sophisticated service layer with dependency injection, configuration management, and comprehensive external API integration in `server/src/services`
 
 ## Key Commands
 
@@ -334,15 +310,7 @@ When creating new API routes in `server/src/routes/`, follow this pattern:
 import express, { Request, Response, NextFunction, RequestHandler } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-
-// Import authentication middleware from the centralized interface
-import {
-  requireSessionOrApiKey,    // Requires JWT session OR API key
-  getAuthenticatedUser,      // Get current user info
-  requireAuth,               // Requires JWT session only
-  getCurrentUserId           // Get current user ID
-} from "../middleware/auth";
-
+import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 
 const logger = appLogger();
@@ -443,3 +411,87 @@ Logs are found in `server/logs/` directory with the following files:
  - `app-dockerexecutor.log` - logs from container execution
  - `app-prisma.log` - log from prisma
  - `app-deployments.log` - logs from deployment orchestrator and deployment operations
+
+## SQLite Database Access
+
+The development database can be queried directly using the sqlite3 binary. The database file is located at `server/prisma/dev.db`.
+
+### SQLite3 Binary Download Instructions
+
+#### Windows
+1. Go to https://sqlite.org/download.html
+2. Under "Precompiled Binaries for Windows", download:
+   - `sqlite-tools-win32-x86-*.zip` (for 32-bit) or
+   - `sqlite-tools-win64-x64-*.zip` (for 64-bit)
+3. Extract the zip file
+4. Copy `sqlite3.exe` to the `server/` directory
+
+#### Linux
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install sqlite3
+```
+
+**CentOS/RHEL/Fedora:**
+```bash
+sudo yum install sqlite3  # CentOS/RHEL 7
+sudo dnf install sqlite3  # Fedora/RHEL 8+
+```
+
+#### macOS
+**With Homebrew (recommended):**
+```bash
+brew install sqlite3
+```
+
+**With MacPorts:**
+```bash
+sudo port install sqlite3
+```
+
+## Running Queries against the database
+
+### Single Query Mode on Windows (PowerShell)
+```powershell
+cd server
+"SELECT * FROM users;" | .\sqlite3.exe prisma/dev.db
+```
+
+### Query with Headers and Formatting on Windows (PowerShell)
+```powershell
+cd server
+@"
+.headers on
+.mode column
+SELECT * FROM users;
+"@ | .\sqlite3.exe prisma/dev.db
+```
+
+### File-based Queries on Windows (PowerShell)
+Create a SQL file and run:
+```powershell
+cd server
+Get-Content your_queries.sql | .\sqlite3.exe prisma/dev.db
+```
+
+### Single Query Mode on Linux
+```bash
+cd server
+echo "SELECT * FROM users;" | sqlite3 prisma/dev.db
+```
+
+### Query with Headers and Formatting on Linux
+```bash
+cd server
+printf ".headers on\n.mode column\nSELECT * FROM users;\n" | sqlite3 prisma/dev.db
+```
+
+### File-based Queries on Linux
+Create a SQL file and run:
+```bash
+cd server
+sqlite3 prisma/dev.db < your_queries.sql
+```
+
+**Note**: The sqlite3.exe binary is not checked into source control but should be downloaded and placed in the server directory for database access.
