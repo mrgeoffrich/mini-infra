@@ -17,6 +17,8 @@ import {
 export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
   private readonly projectName: string;
+  private readonly initContainerName: string;
+  private readonly mainContainerName: string;
   private readonly logger = servicesLogger();
   private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
   private startedAt?: Date;
@@ -85,6 +87,8 @@ export class HAProxyService implements IApplicationService {
   ) {
     this.dockerExecutor = new DockerExecutorService();
     this.projectName = projectName;
+    this.initContainerName = `${this.projectName}-haproxy-init`;
+    this.mainContainerName = `${this.projectName}-haproxy`;
   }
 
   /**
@@ -245,7 +249,7 @@ export class HAProxyService implements IApplicationService {
 
     const container = await this.dockerExecutor.createLongRunningContainer({
       image: 'haproxytech/haproxy-alpine:3.2',
-      name: 'haproxy-init',
+      name: this.initContainerName,
       projectName: this.projectName,
       serviceName: 'haproxy-init',
       env: {},
@@ -273,7 +277,7 @@ export class HAProxyService implements IApplicationService {
 
   private async waitForInitCompletion(): Promise<void> {
     const docker = this.dockerExecutor.getDockerClient();
-    const container = docker.getContainer('haproxy-init');
+    const container = docker.getContainer(this.initContainerName);
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -310,7 +314,7 @@ export class HAProxyService implements IApplicationService {
 
     const container = await this.dockerExecutor.createLongRunningContainer({
       image: 'haproxytech/haproxy-alpine:3.2',
-      name: 'haproxy',
+      name: this.mainContainerName,
       projectName: this.projectName,
       serviceName: 'haproxy',
       env: {
@@ -457,8 +461,7 @@ export class HAProxyService implements IApplicationService {
 
       // Check if main haproxy container is healthy
       const haproxyContainers = containers.filter(c =>
-        c.Names?.some(name => name.includes('haproxy')) &&
-        !c.Names?.some(name => name.includes('init'))
+        c.Names?.some(name => name.includes(this.mainContainerName))
       );
 
       if (haproxyContainers.length === 0) {
