@@ -93,7 +93,6 @@ export function NetworkEditDialog({
   const onSubmit = async (data: UpdateNetworkFormData) => {
     try {
       const request: UpdateNetworkRequest = {
-        name: data.name,
         driver: data.driver,
       };
 

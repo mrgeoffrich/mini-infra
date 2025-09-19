@@ -169,13 +169,6 @@ export function NewDeploymentConfigPage() {
           retries: deploymentConfig.healthCheckConfig?.retries || 3,
           interval: deploymentConfig.healthCheckConfig?.interval || 30000,
         },
-        haproxyConfig: {
-          backendName: deploymentConfig.haproxyConfig?.backendName || "",
-          frontendName: deploymentConfig.haproxyConfig?.frontendName || "",
-          hostRule: deploymentConfig.haproxyConfig?.hostRule || "",
-          pathRule: deploymentConfig.haproxyConfig?.pathRule || "",
-          ssl: deploymentConfig.haproxyConfig?.ssl || false,
-        },
         rollbackConfig: {
           enabled: deploymentConfig.rollbackConfig?.enabled ?? true,
           maxWaitTime: deploymentConfig.rollbackConfig?.maxWaitTime || 300000,
@@ -227,7 +220,6 @@ export function NewDeploymentConfigPage() {
           dockerRegistry: data.dockerRegistry,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
-          haproxyConfig: data.haproxyConfig,
           rollbackConfig: data.rollbackConfig,
           listeningPort: data.listeningPort,
         };
@@ -244,7 +236,6 @@ export function NewDeploymentConfigPage() {
           environmentId: data.environmentId,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
-          haproxyConfig: data.haproxyConfig,
           rollbackConfig: data.rollbackConfig,
           listeningPort: data.listeningPort,
         };

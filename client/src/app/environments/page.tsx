@@ -1,11 +1,4 @@
 import { EnvironmentList } from "@/components/environments";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Server } from "lucide-react";
 
 export function EnvironmentsPage() {

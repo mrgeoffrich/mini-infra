@@ -4,7 +4,7 @@ const logger = loadbalancerLogger();
 
 export class PerformHealthChecks {
     execute(context?: any): void {
-        logger.info('Action: Performing health checks on servers...', {
+        logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
             containerId: context?.containerId?.slice(0, 12) || context?.newContainerId?.slice(0, 12),
@@ -12,6 +12,6 @@ export class PerformHealthChecks {
             environmentName: context?.environmentName,
             haproxyNetworkName: context?.haproxyNetworkName,
             haproxyContainerId: context?.haproxyContainerId?.slice(0, 12),
-        });
+        }, 'Action: Performing health checks on servers...');
     }
 }

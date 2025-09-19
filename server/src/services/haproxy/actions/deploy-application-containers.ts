@@ -4,7 +4,7 @@ const logger = loadbalancerLogger();
 
 export class DeployApplicationContainers {
     execute(context?: any): void {
-        logger.info('Action: Deploying application containers...', {
+        logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
             dockerImage: context?.dockerImage,
@@ -12,6 +12,6 @@ export class DeployApplicationContainers {
             environmentName: context?.environmentName,
             haproxyNetworkName: context?.haproxyNetworkName,
             haproxyContainerId: context?.haproxyContainerId?.slice(0, 12),
-        });
+        }, 'Action: Deploying application containers...');
     }
 }

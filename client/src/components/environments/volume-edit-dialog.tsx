@@ -92,7 +92,6 @@ export function VolumeEditDialog({
   const onSubmit = async (data: UpdateVolumeFormData) => {
     try {
       const request: UpdateVolumeRequest = {
-        name: data.name,
         driver: data.driver,
       };
 

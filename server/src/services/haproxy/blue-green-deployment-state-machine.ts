@@ -286,7 +286,7 @@ export const blueGreenDeploymentMachine = setup({
 }).createMachine({
     id: 'blueGreenDeployment',
     initial: 'idle',
-    context: ({ input }) => input || {
+    context: {
         // Deployment identifiers
         deploymentId: "",
         configurationId: "",

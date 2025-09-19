@@ -200,7 +200,9 @@ export class EnvironmentValidationService {
     errorCode?: string;
   }> {
     try {
-      const containerInfo = await this.dockerService.inspectContainer(haproxyContainerId);
+      const docker = await this.dockerService.getDockerInstance();
+      const container = docker.getContainer(haproxyContainerId);
+      const containerInfo = await container.inspect();
 
       if (!containerInfo || !containerInfo.NetworkSettings || !containerInfo.NetworkSettings.Networks) {
         return {

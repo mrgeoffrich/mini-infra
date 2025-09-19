@@ -148,7 +148,7 @@ export const initialDeploymentMachine = setup({
 }).createMachine({
     id: 'initialDeployment',
     initial: 'idle',
-    context: ({ input }) => input || {
+    context: {
         // Deployment identifiers
         deploymentId: "",
         configurationId: "",

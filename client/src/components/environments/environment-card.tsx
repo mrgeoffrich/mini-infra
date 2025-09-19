@@ -34,9 +34,9 @@ interface EnvironmentCardProps {
 
 export function EnvironmentCard({
   environment,
-  onEdit,
-  onDelete,
-  onAddService,
+  onEdit: _onEdit,
+  onDelete: _onDelete,
+  onAddService: _onAddService,
   className,
 }: EnvironmentCardProps) {
   const { formatDateTime } = useFormattedDate();
