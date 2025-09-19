@@ -34,6 +34,7 @@ import {
   useUpdateDeploymentConfig,
   useDeploymentConfig,
 } from "@/hooks/use-deployment-configs";
+import { useEnvironments } from "@/hooks/use-environments";
 import {
   AlertCircle,
   Loader2,
@@ -64,6 +65,7 @@ interface DeploymentFormData {
   dockerImage: string;
   dockerTag: string;
   dockerRegistry: string;
+  environmentId: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
   traefikConfig: TraefikConfig;
@@ -89,6 +91,16 @@ export function NewDeploymentConfigPage() {
 
   const deploymentConfig = deploymentConfigResponse?.data;
 
+  // Fetch environments for selection
+  const {
+    data: environmentsResponse,
+    isLoading: isLoadingEnvironments,
+  } = useEnvironments({
+    filters: { limit: 100 }, // Get all environments
+  });
+
+  const environments = environmentsResponse?.environments || [];
+
   const createMutation = useCreateDeploymentConfig();
   const updateMutation = useUpdateDeploymentConfig();
 
@@ -98,6 +110,7 @@ export function NewDeploymentConfigPage() {
       dockerImage: "",
       dockerTag: "latest",
       dockerRegistry: "",
+      environmentId: "",
       containerConfig: {
         ports: [],
         volumes: [],
@@ -139,6 +152,7 @@ export function NewDeploymentConfigPage() {
         dockerImage: deploymentConfig.dockerImage || "",
         dockerTag: deploymentConfig.dockerImage?.split(":")[1] || "latest",
         dockerRegistry: deploymentConfig.dockerRegistry || "",
+        environmentId: deploymentConfig.environmentId || "",
         containerConfig: {
           ports: deploymentConfig.containerConfig?.ports || [],
           volumes: deploymentConfig.containerConfig?.volumes || [],
@@ -227,6 +241,7 @@ export function NewDeploymentConfigPage() {
           applicationName: data.applicationName,
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
+          environmentId: data.environmentId,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           traefikConfig: data.traefikConfig,
@@ -383,6 +398,46 @@ export function NewDeploymentConfigPage() {
                       )}
                     />
                   </div>
+
+                  {/* Environment Selection */}
+                  <FormField
+                    control={form.control}
+                    name="environmentId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Environment</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={isEditing || isLoadingEnvironments}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={
+                                isLoadingEnvironments
+                                  ? "Loading environments..."
+                                  : "Select an environment"
+                              } />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {environments
+                                .filter(env => env.isActive)
+                                .map((environment) => (
+                                <SelectItem key={environment.id} value={environment.id}>
+                                  {environment.name} ({environment.type})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormDescription>
+                          Select the environment where this application will be deployed.
+                          {isEditing ? " (Cannot be changed after creation)" : ""}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
                   <div className="grid grid-cols-3 gap-4">
                     <div className="col-span-2">

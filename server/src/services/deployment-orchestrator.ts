@@ -1340,9 +1340,12 @@ export class DeploymentOrchestrator {
     force?: boolean;
   }): Promise<any> {
     try {
-      // Get configuration
+      // Get configuration with environment information
       const config = await prisma.deploymentConfiguration.findUnique({
         where: { id: params.configurationId },
+        include: {
+          environment: true,
+        },
       });
 
       if (!config) {
@@ -1365,6 +1368,19 @@ export class DeploymentOrchestrator {
           downtime: 0,
         },
       });
+
+      deploymentLogger().info(
+        {
+          deploymentId: deployment.id,
+          configId: params.configurationId,
+          applicationName: config.applicationName,
+          dockerImage: params.dockerImage,
+          triggerType: params.triggerType,
+          environmentId: config.environmentId,
+          environmentName: config.environment?.name,
+        },
+        "Deployment triggered in environment",
+      );
 
       // Prepare deployment config
       const deploymentConfig: DeploymentConfig = {

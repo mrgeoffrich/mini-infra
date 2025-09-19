@@ -11,6 +11,7 @@ import { DeploymentCard } from "@/components/deployments/deployment-card";
 import { DeleteDeploymentConfigDialog } from "@/components/deployments/delete-deployment-config-dialog";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
+import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -55,7 +56,24 @@ export function DeploymentsPage() {
     refetchInterval: 15000,
   });
 
+  // Fetch environments for displaying environment names
+  const {
+    data: environmentsResponse,
+  } = useEnvironments({
+    filters: { limit: 100 },
+  });
+
   const configs = configsResponse?.data || [];
+  const environments = environmentsResponse?.environments || [];
+
+  // Create a map of environments by ID
+  const environmentsById = useMemo(() => {
+    const map = new Map();
+    environments.forEach(env => {
+      map.set(env.id, env);
+    });
+    return map;
+  }, [environments]);
 
   // Create a map of latest deployments by configuration
   // Combine active deployments (for real-time updates) with latest deployments (for completed status)
@@ -166,6 +184,7 @@ export function DeploymentsPage() {
                   key={config.id}
                   config={config}
                   latestDeployment={latestDeploymentsByConfig.get(config.id)}
+                  environment={environmentsById.get(config.environmentId)}
                   onEdit={handleEditConfig}
                   onDelete={handleDeleteConfig}
                 />

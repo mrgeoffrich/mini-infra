@@ -21,6 +21,7 @@ import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
 import { useDeploymentTrigger } from "@/hooks/use-deployment-trigger";
+import { useEnvironments } from "@/hooks/use-environments";
 import {
   Table,
   TableBody,
@@ -282,7 +283,24 @@ export const DeploymentList = React.memo(function DeploymentList({
     refetchInterval: 15000, // Regular updates for latest deployment status
   });
 
+  // Fetch environments for displaying environment names
+  const {
+    data: environmentsResponse,
+  } = useEnvironments({
+    filters: { limit: 100 },
+  });
+
   const configs = configsResponse?.data || [];
+  const environments = environmentsResponse?.environments || [];
+
+  // Create a map of environments by ID
+  const environmentsById = useMemo(() => {
+    const map = new Map();
+    environments.forEach(env => {
+      map.set(env.id, env);
+    });
+    return map;
+  }, [environments]);
 
   // Create a map of latest deployments by configuration
   // Combine active deployments (for real-time updates) with latest deployments (for completed status)
@@ -341,6 +359,26 @@ export const DeploymentList = React.memo(function DeploymentList({
         ),
       },
       {
+        accessorKey: "environmentId",
+        header: "Environment",
+        cell: ({ row }) => {
+          const environmentId = row.getValue("environmentId") as string;
+          const environment = environmentsById.get(environmentId);
+          return (
+            <div className="flex items-center gap-2">
+              <Badge variant={environment?.type === 'production' ? 'destructive' : 'secondary'}>
+                {environment?.name || 'Unknown'}
+              </Badge>
+              {environment && (
+                <span className="text-xs text-muted-foreground">
+                  ({environment.type})
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: "dockerImage",
         header: () => (
           <Button
@@ -394,7 +432,7 @@ export const DeploymentList = React.memo(function DeploymentList({
         },
       },
     ],
-    [handleSort, latestDeploymentsByConfig, handleTriggerDeployment, onEditConfig, onDeleteConfig, triggerMutation.isPending]
+    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, onEditConfig, onDeleteConfig, triggerMutation.isPending]
   );
 
   const table = useReactTable({

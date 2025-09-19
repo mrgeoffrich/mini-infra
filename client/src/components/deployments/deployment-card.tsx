@@ -23,11 +23,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { DeploymentConfigurationInfo, DeploymentInfo, DeploymentStatus } from "@mini-infra/types";
+import { DeploymentConfigurationInfo, DeploymentInfo, DeploymentStatus, Environment } from "@mini-infra/types";
 
 interface DeploymentCardProps {
   config: DeploymentConfigurationInfo;
   latestDeployment?: DeploymentInfo;
+  environment?: Environment;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
   onDelete?: (config: DeploymentConfigurationInfo) => void;
 }
@@ -96,6 +97,7 @@ DeploymentStatusBadge.displayName = "DeploymentStatusBadge";
 export const DeploymentCard = React.memo(function DeploymentCard({
   config,
   latestDeployment,
+  environment,
   onEdit,
   onDelete,
 }: DeploymentCardProps) {
@@ -162,6 +164,14 @@ export const DeploymentCard = React.memo(function DeploymentCard({
             <p className="text-sm text-muted-foreground font-mono">
               {config.dockerImage}
             </p>
+            {environment && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-muted-foreground">Environment:</span>
+                <Badge variant={environment.type === 'production' ? 'destructive' : 'secondary'} className="text-xs">
+                  {environment.name}
+                </Badge>
+              </div>
+            )}
           </div>
           
           <DropdownMenu>

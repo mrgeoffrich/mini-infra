@@ -82,6 +82,7 @@ export const createDeploymentConfigSchema = z.object({
   healthCheckConfig: healthCheckConfigSchema,
   rollbackConfig: rollbackConfigSchema,
   listeningPort: z.number().int().min(1).max(65535).optional(),
+  environmentId: z.string().min(1, "Environment ID is required"),
 });
 
 export const updateDeploymentConfigSchema = z.object({
@@ -210,17 +211,37 @@ export class DeploymentConfigService extends ConfigurationService {
       // Validate input
       this.validateDeploymentConfigRequest(request);
 
-      // Check for duplicate application name for this user
+      // Validate environment exists and user has access (environments are not user-scoped)
+      const environment = await this.prisma.environment.findUnique({
+        where: {
+          id: request.environmentId,
+        },
+      });
+
+      if (!environment) {
+        throw new Error(
+          `Environment with ID '${request.environmentId}' not found`,
+        );
+      }
+
+      if (!environment.isActive) {
+        throw new Error(
+          `Environment '${environment.name}' is not active`,
+        );
+      }
+
+      // Check for duplicate application name for this user in this environment
       const existing = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           applicationName: request.applicationName,
+          environmentId: request.environmentId,
           userId: userId,
         },
       });
 
       if (existing) {
         throw new Error(
-          `Deployment configuration for application '${request.applicationName}' already exists`,
+          `Deployment configuration for application '${request.applicationName}' already exists in environment '${environment.name}'`,
         );
       }
 
@@ -234,6 +255,7 @@ export class DeploymentConfigService extends ConfigurationService {
           healthCheckConfig: request.healthCheckConfig as any,
           rollbackConfig: request.rollbackConfig as any,
           listeningPort: request.listeningPort,
+          environmentId: request.environmentId,
           isActive: true,
           userId: userId,
         },
@@ -496,6 +518,9 @@ export class DeploymentConfigService extends ConfigurationService {
         }
         if (filter.isActive !== undefined) {
           where.isActive = filter.isActive;
+        }
+        if (filter.environmentId) {
+          where.environmentId = filter.environmentId;
         }
       }
 
@@ -967,6 +992,7 @@ export class DeploymentConfigService extends ConfigurationService {
       rollbackConfig: config.rollbackConfig as RollbackConfig,
       listeningPort: config.listeningPort,
       isActive: config.isActive,
+      environmentId: config.environmentId,
       userId: config.userId,
       createdAt: config.createdAt.toISOString(),
       updatedAt: config.updatedAt.toISOString(),

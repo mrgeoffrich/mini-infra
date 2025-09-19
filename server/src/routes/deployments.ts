@@ -90,6 +90,7 @@ const createConfigSchema = z.object({
     keepOldContainer: z.boolean(),
   }),
   listeningPort: z.number().int().min(1).max(65535).optional(),
+  environmentId: z.string().min(1, "Environment ID is required"),
 });
 
 const updateConfigSchema = createConfigSchema.partial().extend({
@@ -135,6 +136,7 @@ const deploymentQuerySchema = z.object({
     }),
   applicationName: z.string().optional(),
   dockerImage: z.string().optional(),
+  environmentId: z.string().optional(),
   isActive: z
     .string()
     .optional()
@@ -200,13 +202,14 @@ router.get(
         });
       }
 
-      const { page, limit, applicationName, dockerImage, isActive } =
+      const { page, limit, applicationName, dockerImage, environmentId, isActive } =
         queryResult.data;
 
       // Build filter
       const filter: DeploymentConfigFilter = {};
       if (applicationName) filter.applicationName = applicationName;
       if (dockerImage) filter.dockerImage = dockerImage;
+      if (environmentId) filter.environmentId = environmentId;
       if (isActive !== undefined) filter.isActive = isActive;
 
       // Calculate pagination
@@ -231,6 +234,7 @@ router.get(
           ...(dockerImage && {
             dockerImage: { contains: dockerImage },
           }),
+          ...(environmentId && { environmentId }),
           ...(isActive !== undefined && { isActive }),
         },
       });

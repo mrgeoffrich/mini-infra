@@ -72,6 +72,7 @@ export interface DeploymentConfiguration {
   rollbackConfig: RollbackConfig; // JSON field
   listeningPort: number | null;
   isActive: boolean;
+  environmentId: string; // Required environment assignment (immutable)
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +89,7 @@ export interface DeploymentConfigurationInfo {
   rollbackConfig: RollbackConfig;
   listeningPort: number | null;
   isActive: boolean;
+  environmentId: string; // Required environment assignment (immutable)
   userId: string;
   createdAt: string;
   updatedAt: string;
@@ -193,6 +195,7 @@ export interface CreateDeploymentConfigRequest {
   healthCheckConfig: HealthCheckConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number;
+  environmentId: string; // Required environment assignment
 }
 
 export interface UpdateDeploymentConfigRequest {
@@ -273,6 +276,7 @@ export interface DeploymentConfigFilter {
   applicationName?: string;
   dockerImage?: string;
   isActive?: boolean;
+  environmentId?: string;
   userId?: string;
 }
 

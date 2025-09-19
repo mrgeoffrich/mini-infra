@@ -225,14 +225,17 @@ model DeploymentConfiguration {
   rollbackConfig    Json     // Rollback settings
   listeningPort     Int?     // Port used for health checks
   isActive          Boolean  @default(true)
+  environmentId     String   // Required environment assignment (immutable)
+  environment       Environment @relation(fields: [environmentId], references: [id])
   userId            String
   user              User     @relation(fields: [userId], references: [id])
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  
+
   deployments       Deployment[]
-  
+
   @@index([userId])
+  @@index([environmentId])
   @@map("deployment_configurations")
 }
 
@@ -306,6 +309,7 @@ model Environment {
   services    EnvironmentService[]
   networks    EnvironmentNetwork[]
   volumes     EnvironmentVolume[]
+  deploymentConfigurations DeploymentConfiguration[]
 
   @@index([type])
   @@index([status])
