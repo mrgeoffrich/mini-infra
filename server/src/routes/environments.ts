@@ -7,12 +7,12 @@ import {
   UpdateEnvironmentServiceRequest,
   ListEnvironmentsRequest,
   EnvironmentType,
-  ServiceConfiguration
+  ServiceConfiguration,
+  ServiceStatus
 } from '@mini-infra/types';
-import { ServiceStatus } from '../services/interfaces/application-service';
 import { EnvironmentManager } from '../services/environment-manager';
 import { ServiceRegistry } from '../services/service-registry';
-import { requireAuth } from '../middleware/auth';
+import { requireSessionOrApiKey } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { servicesLogger } from '../lib/logger-factory';
 
@@ -60,9 +60,11 @@ const listEnvironmentsSchema = z.object({
 });
 
 // GET /api/environments - List all environments
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireSessionOrApiKey, async (req, res) => {
   try {
-    const { type, status, page = 1, limit = 20 } = req.query as ListEnvironmentsRequest;
+    // Validate query parameters
+    const validatedQuery = listEnvironmentsSchema.parse(req.query);
+    const { type, status, page = 1, limit = 20 } = validatedQuery;
 
     const result = await environmentManager.listEnvironments(
       type,
@@ -84,6 +86,14 @@ router.get('/', requireAuth, async (req, res) => {
     });
 
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Invalid query parameters',
+        message: 'Validation failed',
+        details: error.errors
+      });
+    }
+
     logger.error({ error }, 'Failed to list environments');
     res.status(500).json({
       error: 'Internal server error',
@@ -93,7 +103,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST /api/environments - Create new environment
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
 
@@ -138,7 +148,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // GET /api/environments/:id - Get environment details
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -163,7 +173,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // PUT /api/environments/:id - Update environment
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const request: UpdateEnvironmentRequest = req.body;
@@ -202,7 +212,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/environments/:id - Delete environment
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -237,7 +247,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // GET /api/environments/:id/status - Get environment status with health checks
-router.get('/:id/status', requireAuth, async (req, res) => {
+router.get('/:id/status', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -262,7 +272,7 @@ router.get('/:id/status', requireAuth, async (req, res) => {
 });
 
 // POST /api/environments/:id/start - Start environment
-router.post('/:id/start', requireAuth, async (req, res) => {
+router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -293,7 +303,7 @@ router.post('/:id/start', requireAuth, async (req, res) => {
 });
 
 // POST /api/environments/:id/stop - Stop environment
-router.post('/:id/stop', requireAuth, async (req, res) => {
+router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -324,7 +334,7 @@ router.post('/:id/stop', requireAuth, async (req, res) => {
 });
 
 // GET /api/environments/:id/services - List services in environment
-router.get('/:id/services', requireAuth, async (req, res) => {
+router.get('/:id/services', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -349,7 +359,7 @@ router.get('/:id/services', requireAuth, async (req, res) => {
 });
 
 // POST /api/environments/:id/services - Add service to environment
-router.post('/:id/services', requireAuth, async (req, res) => {
+router.post('/:id/services', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const request: AddServiceToEnvironmentRequest = req.body;
@@ -398,7 +408,7 @@ router.post('/:id/services', requireAuth, async (req, res) => {
 });
 
 // GET /api/services/available - List available service types
-router.get('/services/available', requireAuth, async (req, res) => {
+router.get('/services/available', requireSessionOrApiKey, async (req, res) => {
   try {
     const services = serviceRegistry.getAllServiceMetadata();
 
@@ -414,7 +424,7 @@ router.get('/services/available', requireAuth, async (req, res) => {
 });
 
 // GET /api/services/available/:serviceType - Get service type metadata
-router.get('/services/available/:serviceType', requireAuth, async (req, res) => {
+router.get('/services/available/:serviceType', requireSessionOrApiKey, async (req, res) => {
   try {
     const { serviceType } = req.params;
 

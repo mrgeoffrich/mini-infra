@@ -164,4 +164,6 @@ export interface ListEnvironmentsResponse {
   page: number;
   limit: number;
   totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }

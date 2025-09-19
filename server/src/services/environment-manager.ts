@@ -7,14 +7,14 @@ import {
   ServiceConfiguration,
   EnvironmentOperationResult,
   ServiceOperationResult,
-  EnvironmentStatusResponse
+  EnvironmentStatusResponse,
+  ServiceStatus,
+  ApplicationServiceHealthStatus
 } from '@mini-infra/types';
 import {
-  ServiceStatus,
   NetworkRequirement,
   VolumeRequirement
 } from './interfaces/application-service';
-import { ApplicationServiceHealthStatus } from '@mini-infra/types';
 import { ServiceRegistry } from './service-registry';
 import { ApplicationServiceFactory } from './application-service-factory';
 import { DockerExecutorService } from './docker-executor';
@@ -59,7 +59,7 @@ export class EnvironmentManager {
           name: request.name,
           description: request.description,
           type: request.type,
-          status: ServiceStatus.UNINITIALIZED,
+          status: 'uninitialized',
           isActive: false
         },
         include: {
@@ -529,7 +529,7 @@ export class EnvironmentManager {
           environmentId,
           serviceName: serviceConfig.serviceName,
           serviceType: serviceConfig.serviceType,
-          status: ServiceStatus.UNINITIALIZED,
+          status: 'uninitialized',
           health: ApplicationServiceHealthStatus.UNKNOWN,
           config: serviceConfig.config || {}
         }

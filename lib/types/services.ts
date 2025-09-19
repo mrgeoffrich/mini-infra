@@ -1,21 +1,37 @@
 // Re-export the service types from the application service interface
-export enum ServiceStatus {
-  UNINITIALIZED = 'uninitialized',
-  INITIALIZING = 'initializing',
-  INITIALIZED = 'initialized',
-  STARTING = 'starting',
-  RUNNING = 'running',
-  STOPPING = 'stopping',
-  STOPPED = 'stopped',
-  FAILED = 'failed',
-  DEGRADED = 'degraded'
-}
+export type ServiceStatus =
+  | 'uninitialized'
+  | 'initializing'
+  | 'initialized'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'failed'
+  | 'degraded';
 
-export enum ApplicationServiceHealthStatus {
-  HEALTHY = 'healthy',
-  UNHEALTHY = 'unhealthy',
-  UNKNOWN = 'unknown'
-}
+export const ServiceStatusValues = {
+  UNINITIALIZED: 'uninitialized' as const,
+  INITIALIZING: 'initializing' as const,
+  INITIALIZED: 'initialized' as const,
+  STARTING: 'starting' as const,
+  RUNNING: 'running' as const,
+  STOPPING: 'stopping' as const,
+  STOPPED: 'stopped' as const,
+  FAILED: 'failed' as const,
+  DEGRADED: 'degraded' as const,
+};
+
+export type ApplicationServiceHealthStatus =
+  | 'healthy'
+  | 'unhealthy'
+  | 'unknown';
+
+export const ApplicationServiceHealthStatusValues = {
+  HEALTHY: 'healthy' as const,
+  UNHEALTHY: 'unhealthy' as const,
+  UNKNOWN: 'unknown' as const,
+};
 
 export interface ServiceHealth {
   status: ApplicationServiceHealthStatus;
