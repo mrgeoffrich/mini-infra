@@ -414,6 +414,7 @@ export class DockerExecutorService {
           timeout: options.timeout,
           customLabels: options.labels,
         }),
+        HostConfig: {},
       };
 
       // Add custom command if provided
@@ -1174,6 +1175,7 @@ export class DockerExecutorService {
         AttachStdout: true,
         AttachStderr: true,
         Tty: false,
+        HostConfig: {},
       };
 
       // Add custom command if provided
