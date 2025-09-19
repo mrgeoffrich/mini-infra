@@ -77,7 +77,7 @@ export function EnvironmentDetailPage() {
   }
 
   const isRunning = environment?.status === "running";
-  const canStart = environment?.status === "stopped" || environment?.status === "failed";
+  const canStart = environment?.status === "stopped" || environment?.status === "failed" || environment?.status === "uninitialized";
   const canStop = environment?.status === "running" || environment?.status === "degraded";
 
   const handleStart = async () => {

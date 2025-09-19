@@ -191,7 +191,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
 
       {/* Content */}
       {isLoading ? (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i}>
               <CardContent className="p-6">
@@ -235,7 +235,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
         </Card>
       ) : (
         <>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2">
             {environments.map((environment) => (
               <EnvironmentCard
                 key={environment.id}

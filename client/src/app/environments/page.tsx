@@ -30,44 +30,6 @@ export function EnvironmentsPage() {
         <div className="space-y-6">
           <EnvironmentList />
 
-          {/* Help Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>About Environments</CardTitle>
-              <CardDescription>
-                Learn how to effectively manage your service environments
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-4 text-sm">
-                <div>
-                  <strong>Environment Types:</strong> Production environments have additional
-                  safety measures and confirmation steps for critical operations like
-                  deletion and stopping services.
-                </div>
-                <div>
-                  <strong>Services:</strong> Each environment can contain multiple services
-                  that work together. Services are managed as a group within the environment.
-                  Click on an environment card to view and manage its services.
-                </div>
-                <div>
-                  <strong>Networks & Volumes:</strong> Each environment has its own Docker
-                  networks and volumes. You can manage these from the individual environment
-                  page by clicking on an environment.
-                </div>
-                <div>
-                  <strong>Lifecycle Management:</strong> Start and stop entire environments
-                  to control all services at once. Individual service health is monitored
-                  and displayed.
-                </div>
-                <div>
-                  <strong>Resource Isolation:</strong> Each environment maintains its own
-                  isolated set of resources, preventing conflicts between different
-                  service deployments.
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
