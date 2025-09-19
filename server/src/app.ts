@@ -107,6 +107,8 @@ import systemSettingsRoutes from "./routes/system-settings";
 import deploymentInfrastructureRoutes from "./routes/deployment-infrastructure";
 import deploymentsRoutes from "./routes/deployments";
 import environmentsRoutes from "./routes/environments";
+import environmentNetworksRoutes from "./routes/environment-networks";
+import environmentVolumesRoutes from "./routes/environment-volumes";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -130,6 +132,8 @@ app.use("/api/user", userPreferencesRoutes);
 app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
 app.use("/api/deployments", deploymentsRoutes);
 app.use("/api/environments", environmentsRoutes);
+app.use("/api/environments/:id/networks", environmentNetworksRoutes);
+app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {

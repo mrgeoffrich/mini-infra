@@ -59,6 +59,7 @@ const listEnvironmentsSchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional()
 });
 
+
 // GET /api/environments - List all environments
 router.get('/', requireSessionOrApiKey, async (req, res) => {
   try {

@@ -44,6 +44,8 @@ interface EnvironmentCardProps {
   onEdit?: (environment: Environment) => void;
   onDelete?: (environment: Environment) => void;
   onAddService?: (environment: Environment) => void;
+  onSelect?: (environment: Environment) => void;
+  isSelected?: boolean;
   className?: string;
 }
 
@@ -52,6 +54,8 @@ export function EnvironmentCard({
   onEdit,
   onDelete,
   onAddService,
+  onSelect,
+  isSelected = false,
   className,
 }: EnvironmentCardProps) {
   const { formatDateTime } = useFormattedDate();
@@ -104,7 +108,14 @@ export function EnvironmentCard({
   const totalServices = environment.services.length;
 
   return (
-    <Card className={cn("transition-shadow hover:shadow-md", className)}>
+    <Card
+      className={cn(
+        "transition-all hover:shadow-md cursor-pointer",
+        isSelected && "ring-2 ring-primary bg-accent/50",
+        className
+      )}
+      onClick={() => onSelect?.(environment)}
+    >
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">

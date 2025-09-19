@@ -167,3 +167,37 @@ export interface ListEnvironmentsResponse {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
 }
+
+// Network management types
+export interface CreateNetworkRequest {
+  name: string;
+  driver?: string;
+  options?: Record<string, any>;
+}
+
+export interface UpdateNetworkRequest {
+  name?: string;
+  driver?: string;
+  options?: Record<string, any>;
+}
+
+export interface NetworksResponse {
+  networks: EnvironmentNetwork[];
+}
+
+// Volume management types
+export interface CreateVolumeRequest {
+  name: string;
+  driver?: string;
+  options?: Record<string, any>;
+}
+
+export interface UpdateVolumeRequest {
+  name?: string;
+  driver?: string;
+  options?: Record<string, any>;
+}
+
+export interface VolumesResponse {
+  volumes: EnvironmentVolume[];
+}
