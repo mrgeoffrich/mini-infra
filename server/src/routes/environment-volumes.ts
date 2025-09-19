@@ -96,7 +96,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       return res.status(400).json({
         error: 'Invalid request data',
         message: 'Validation failed',
-        details: error.errors
+        details: error.issues
       });
     }
 
@@ -152,7 +152,7 @@ router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
       return res.status(400).json({
         error: 'Invalid request data',
         message: 'Validation failed',
-        details: error.errors
+        details: error.issues
       });
     }
 

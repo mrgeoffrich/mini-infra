@@ -8,7 +8,9 @@ import {
   EnvironmentOperationResult,
   ServiceOperationResult,
   EnvironmentStatusResponse,
+  ServiceStatus,
   ServiceStatusValues,
+  ApplicationServiceHealthStatus,
   ApplicationServiceHealthStatusValues
 } from '@mini-infra/types';
 import {
@@ -716,8 +718,7 @@ export class EnvironmentManager {
         throw new Error(`Environment not found: ${envService.environmentId}`);
       }
 
-      const prefixedServiceName = `${environment.name}-${envService.serviceName}`;
-      await this.serviceFactory.stopService(prefixedServiceName);
+      await this.serviceFactory.stopService(envService.serviceName);
 
       // Update service status
       await this.updateServiceStatus(

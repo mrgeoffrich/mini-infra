@@ -8,6 +8,7 @@ import {
   ListEnvironmentsRequest,
   EnvironmentType,
   ServiceConfiguration,
+  ServiceStatus,
   ServiceStatusValues
 } from '@mini-infra/types';
 import { EnvironmentManager } from '../services/environment-manager';
@@ -69,7 +70,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 
     const result = await environmentManager.listEnvironments(
       type,
-      status as ServiceStatusValues | undefined,
+      status as ServiceStatus | undefined,
       page,
       limit
     );
@@ -91,7 +92,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
       return res.status(400).json({
         error: 'Invalid query parameters',
         message: 'Validation failed',
-        details: error.errors
+        details: error.issues
       });
     }
 

@@ -217,7 +217,7 @@ export class DockerConfigService extends ConfigurationService {
       const docker = this.createDockerClient(testHost, testApiVersion);
 
       // Test basic connectivity
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error("Connection timeout")),
@@ -231,7 +231,9 @@ export class DockerConfigService extends ConfigurationService {
           timeoutPromise,
         ]);
       } finally {
-        clearTimeout(timeoutId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
 
       const responseTimeMs = Date.now() - startTime;
