@@ -35,6 +35,19 @@ const enableTraffic = new EnableTraffic();
 // Types for context and events
 // Note in a blue green deployment Blue is the old container set, Green is the new container set
 interface BlueGreenDeploymentContext {
+    // Deployment identifiers
+    deploymentId: string;
+    configurationId: string;
+    applicationName: string;
+    dockerImage: string;
+
+    // Environment context
+    environmentId: string;
+    environmentName: string;
+    haproxyContainerId: string;
+    haproxyNetworkName: string;
+
+    // Container state
     blueHealthy: boolean;
     greenHealthy: boolean;
     greenBackendConfigured: boolean;
@@ -50,6 +63,11 @@ interface BlueGreenDeploymentContext {
     activeConnections: number;
     oldContainerId?: string;
     newContainerId?: string;
+
+    // Deployment metadata
+    triggerType: string;
+    triggeredBy?: string;
+    startTime: number;
 }
 
 type BlueGreenDeploymentEvent =
@@ -112,26 +130,26 @@ export const blueGreenDeploymentMachine = setup({
     },
     actions: {
         // Green deployment actions
-        deployGreenApplicationContainers: () => {
-            deployApplicationContainers.execute();
+        deployGreenApplicationContainers: ({ context }) => {
+            deployApplicationContainers.execute(context);
         },
 
-        monitorGreenContainerStartup: () => {
-            monitorContainerStartup.execute();
+        monitorGreenContainerStartup: ({ context }) => {
+            monitorContainerStartup.execute(context);
         },
 
         // Load balancer configuration actions
-        initializeGreenLB: () => {
-            addContainerToLB.execute();
+        initializeGreenLB: ({ context }) => {
+            addContainerToLB.execute(context);
         },
 
-        performGreenHealthChecks: () => {
-            performHealthChecks.execute();
+        performGreenHealthChecks: ({ context }) => {
+            performHealthChecks.execute(context);
         },
 
         // Traffic management actions
-        openTrafficToGreen: () => {
-            enableTraffic.execute();
+        openTrafficToGreen: ({ context }) => {
+            enableTraffic.execute(context);
         },
 
         validateGreenTraffic: () => {
@@ -213,6 +231,8 @@ export const blueGreenDeploymentMachine = setup({
         }),
 
         resetState: assign(() => ({
+            // Keep deployment identifiers and environment context
+            // Only reset deployment state
             blueHealthy: false,
             greenHealthy: false,
             greenBackendConfigured: false,
@@ -266,7 +286,20 @@ export const blueGreenDeploymentMachine = setup({
 }).createMachine({
     id: 'blueGreenDeployment',
     initial: 'idle',
-    context: {
+    context: ({ input }) => input || {
+        // Deployment identifiers
+        deploymentId: "",
+        configurationId: "",
+        applicationName: "",
+        dockerImage: "",
+
+        // Environment context
+        environmentId: "",
+        environmentName: "",
+        haproxyContainerId: "",
+        haproxyNetworkName: "",
+
+        // Container state
         blueHealthy: false,
         greenHealthy: false,
         greenBackendConfigured: false,
@@ -279,6 +312,11 @@ export const blueGreenDeploymentMachine = setup({
         activeConnections: 0,
         oldContainerId: undefined,
         newContainerId: undefined,
+
+        // Deployment metadata
+        triggerType: "manual",
+        triggeredBy: undefined,
+        startTime: Date.now(),
     },
 
     states: {

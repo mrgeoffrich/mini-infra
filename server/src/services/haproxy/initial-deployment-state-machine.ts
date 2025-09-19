@@ -22,6 +22,19 @@ const cleanupTempResources = new CleanupTempResources();
 
 // Types for context and events
 interface InitialDeploymentContext {
+    // Deployment identifiers
+    deploymentId: string;
+    configurationId: string;
+    applicationName: string;
+    dockerImage: string;
+
+    // Environment context
+    environmentId: string;
+    environmentName: string;
+    haproxyContainerId: string;
+    haproxyNetworkName: string;
+
+    // Container state
     containerId?: string;
     applicationReady: boolean;
     haproxyConfigured: boolean;
@@ -31,6 +44,11 @@ interface InitialDeploymentContext {
     monitoringStartTime?: number;
     error?: string;
     retryCount: number;
+
+    // Deployment metadata
+    triggerType: string;
+    triggeredBy?: string;
+    startTime: number;
 }
 
 type InitialDeploymentEvent =
@@ -59,20 +77,20 @@ export const initialDeploymentMachine = setup({
         events: {} as InitialDeploymentEvent
     },
     actions: {
-        deployApplicationContainers: () => {
-            deployApplicationContainers.execute();
+        deployApplicationContainers: ({ context }) => {
+            deployApplicationContainers.execute(context);
         },
-        monitorContainerStartup: () => {
-            monitorContainerStartup.execute();
+        monitorContainerStartup: ({ context }) => {
+            monitorContainerStartup.execute(context);
         },
-        initializeHAProxy: () => {
-            addContainerToLB.execute();
+        initializeHAProxy: ({ context }) => {
+            addContainerToLB.execute(context);
         },
-        performHealthChecks: () => {
-            performHealthChecks.execute();
+        performHealthChecks: ({ context }) => {
+            performHealthChecks.execute(context);
         },
-        enableTraffic: () => {
-            enableTraffic.execute();
+        enableTraffic: ({ context }) => {
+            enableTraffic.execute(context);
         },
         validateTraffic: () => {
             validateTraffic.execute();
@@ -98,6 +116,8 @@ export const initialDeploymentMachine = setup({
             }
         }),
         resetState: assign(() => ({
+            // Keep deployment identifiers and environment context
+            // Only reset deployment state
             containerId: undefined,
             applicationReady: false,
             haproxyConfigured: false,
@@ -128,13 +148,31 @@ export const initialDeploymentMachine = setup({
 }).createMachine({
     id: 'initialDeployment',
     initial: 'idle',
-    context: {
+    context: ({ input }) => input || {
+        // Deployment identifiers
+        deploymentId: "",
+        configurationId: "",
+        applicationName: "",
+        dockerImage: "",
+
+        // Environment context
+        environmentId: "",
+        environmentName: "",
+        haproxyContainerId: "",
+        haproxyNetworkName: "",
+
+        // Container state
         applicationReady: false,
         haproxyConfigured: false,
         healthChecksPassed: false,
         trafficEnabled: false,
         validationErrors: 0,
-        retryCount: 0
+        retryCount: 0,
+
+        // Deployment metadata
+        triggerType: "manual",
+        triggeredBy: undefined,
+        startTime: Date.now(),
     },
 
     states: {

@@ -1,10 +1,13 @@
 import { createActor, fromPromise } from "xstate";
 import { deploymentLogger } from "../lib/logger-factory";
-import { deploymentStateMachine, DeploymentContext, DeploymentEvent } from "./deployment-state-machine";
+import { blueGreenDeploymentMachine } from "./haproxy/blue-green-deployment-state-machine";
+import { initialDeploymentMachine } from "./haproxy/initial-deployment-state-machine";
+import { EnvironmentValidationService, HAProxyEnvironmentContext } from "./environment-validation";
 import { ContainerLifecycleManager } from "./container-lifecycle-manager";
 import { HealthCheckService } from "./health-check";
 import { NetworkHealthCheckService } from "./network-health-check";
 import { DockerExecutorService } from "./docker-executor";
+import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import {
   DeploymentConfig,
@@ -17,24 +20,54 @@ import {
   RollbackConfig,
 } from "@mini-infra/types";
 
-// State machine types and configuration imported from ./deployment-state-machine.ts
+// ====================
+// Deployment Types
+// ====================
+
+export type DeploymentStrategy = "initial" | "blue-green";
+
+export interface HAProxyDeploymentContext {
+  // Deployment identifiers
+  deploymentId: string;
+  configurationId: string;
+  applicationName: string;
+  dockerImage: string;
+
+  // Environment context
+  environmentId: string;
+  environmentName: string;
+  haproxyContainerId: string;
+  haproxyNetworkName: string;
+
+  // Deployment metadata
+  triggerType: DeploymentTriggerType;
+  triggeredBy?: string;
+  startTime: number;
+
+  // Configuration
+  config: DeploymentConfig;
+}
 
 // ====================
 // Deployment Orchestrator
 // ====================
 
 export class DeploymentOrchestrator {
+  private environmentValidationService: EnvironmentValidationService;
   private containerManager: ContainerLifecycleManager;
   private healthCheckService: HealthCheckService;
   private networkHealthCheckService: NetworkHealthCheckService;
   private dockerExecutor: DockerExecutorService;
+  private dockerService: DockerService;
   private activeDeployments: Map<string, any> = new Map();
 
   constructor() {
+    this.environmentValidationService = new EnvironmentValidationService();
     this.containerManager = new ContainerLifecycleManager();
     this.healthCheckService = new HealthCheckService();
     this.networkHealthCheckService = new NetworkHealthCheckService();
     this.dockerExecutor = new DockerExecutorService();
+    this.dockerService = DockerService.getInstance();
   }
 
   /**
@@ -43,6 +76,73 @@ export class DeploymentOrchestrator {
   async initialize(): Promise<void> {
     await this.dockerExecutor.initialize();
     await this.networkHealthCheckService.initialize();
+    await this.dockerService.initialize();
+  }
+
+  // ====================
+  // Deployment Strategy Detection
+  // ====================
+
+  /**
+   * Determine deployment strategy based on existing containers
+   */
+  async determineDeploymentStrategy(
+    applicationName: string,
+    environmentContext: HAProxyEnvironmentContext
+  ): Promise<DeploymentStrategy> {
+    try {
+      deploymentLogger().debug(
+        {
+          applicationName,
+          environmentId: environmentContext.environmentId,
+          environmentName: environmentContext.environmentName,
+        },
+        "Determining deployment strategy"
+      );
+
+      // Check for existing containers with this application name
+      const containers = await this.dockerService.listContainers();
+      const existingContainers = containers.filter((container: any) => {
+        const labels = container.labels || {};
+        return (
+          labels["mini-infra.application"] === applicationName &&
+          labels["mini-infra.environment"] === environmentContext.environmentId &&
+          container.status === "running"
+        );
+      });
+
+      const strategy: DeploymentStrategy = existingContainers.length > 0 ? "blue-green" : "initial";
+
+      deploymentLogger().info(
+        {
+          applicationName,
+          environmentId: environmentContext.environmentId,
+          environmentName: environmentContext.environmentName,
+          existingContainerCount: existingContainers.length,
+          existingContainers: existingContainers.map((c: any) => ({
+            id: c.id.slice(0, 12),
+            name: c.name,
+            status: c.status,
+          })),
+          selectedStrategy: strategy,
+        },
+        "Deployment strategy determined"
+      );
+
+      return strategy;
+    } catch (error) {
+      deploymentLogger().error(
+        {
+          applicationName,
+          environmentId: environmentContext.environmentId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to determine deployment strategy, defaulting to initial"
+      );
+
+      // Default to initial deployment if we can't determine
+      return "initial";
+    }
   }
 
   // ====================
@@ -50,7 +150,7 @@ export class DeploymentOrchestrator {
   // ====================
 
   /**
-   * Start a new deployment
+   * Start a new deployment with environment validation and strategy selection
    */
   async startDeployment(
     deploymentId: string,
@@ -66,140 +166,64 @@ export class DeploymentOrchestrator {
           dockerImage: config.dockerImage,
           triggerType,
         },
-        "Starting new deployment",
+        "Starting new HAProxy-based deployment",
       );
 
       if (this.activeDeployments.has(deploymentId)) {
         throw new Error(`Deployment ${deploymentId} is already active`);
       }
 
-      // Create deployment context
-      const initialContext: DeploymentContext = {
-        deploymentId,
-        configurationId: "", // Will be set by caller
-        config,
-        triggerType,
-        triggeredBy: triggeredBy || null,
-        dockerImage: `${config.dockerImage}:${config.dockerTag}`,
-        oldContainerId: null,
-        newContainerId: null,
-        targetColor: this.determineTargetColor(config.applicationName),
-        currentStep: "idle",
-        steps: [],
-        startTime: Date.now(),
-        healthCheckPassed: false,
-        healthCheckLogs: [],
-        errorMessage: null,
-        errorDetails: null,
-        retryCount: 0,
-        maxRetries: 3,
-        deploymentTime: null,
-        downtime: 0,
-      };
-
-      // Create and start state machine
-      const deploymentMachine = deploymentStateMachine.provide({
-        actors: {
-          pullDockerImage: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.pullDockerImage(input);
-            }
-          ),
-          createAndStartContainer: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.createAndStartContainer(input);
-            }
-          ),
-          performHealthChecks: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.performHealthCheck(input);
-            }
-          ),
-          switchTrafficToNewContainer: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.switchTrafficToNewContainer(input);
-            }
-          ),
-          cleanupOldContainer: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.cleanupOldContainer(input);
-            }
-          ),
-          performRollback: fromPromise(
-            async ({ input }: { input: DeploymentContext }) => {
-              return await this.performRollback(input);
-            }
-          ),
+      // Get environment context from deployment configuration
+      const deploymentRecord = await prisma.deployment.findUnique({
+        where: { id: deploymentId },
+        include: {
+          configuration: {
+            include: {
+              environment: true,
+            },
+          },
         },
       });
 
-      const actor = createActor(deploymentMachine, {
-        input: initialContext,
-      });
+      if (!deploymentRecord || !deploymentRecord.configuration.environment) {
+        throw new Error(`Unable to find deployment configuration with environment information`);
+      }
 
-      // Store active deployment
-      this.activeDeployments.set(deploymentId, actor);
+      const environmentId = deploymentRecord.configuration.environmentId;
 
-      // Start the actor and trigger deployment
-      actor.start();
-      actor.send({ type: "START_DEPLOYMENT" });
+      // Validate environment and get HAProxy context
+      const environmentContext = await this.environmentValidationService.getHAProxyEnvironmentContext(environmentId);
+      if (!environmentContext) {
+        const validation = await this.environmentValidationService.validateEnvironmentForDeployment(environmentId);
+        throw new Error(validation.errorMessage || "Environment validation failed");
+      }
 
-      // Handle completion
-      actor.subscribe(async (state) => {
-        if (state.status === "done") {
-          this.activeDeployments.delete(deploymentId);
-          
-          // Update deployment status in database based on final state
-          try {
-            const finalStatus = state.value === "completed" ? "completed" : "failed";
-            const hasError = state.context.errorMessage !== null;
-            
-            await prisma.deployment.update({
-              where: { id: deploymentId },
-              data: {
-                status: finalStatus,
-                currentState: state.value as string,
-                completedAt: new Date(),
-                healthCheckPassed: state.context.healthCheckPassed,
-                deploymentTime: state.context.deploymentTime,
-                downtime: state.context.downtime,
-                errorMessage: state.context.errorMessage,
-                errorDetails: state.context.errorDetails,
-              },
-            });
+      // Determine deployment strategy
+      const strategy = await this.determineDeploymentStrategy(config.applicationName, environmentContext);
 
-            deploymentLogger().info(
-              { 
-                deploymentId,
-                finalStatus,
-                finalState: state.value,
-                deploymentTime: state.context.deploymentTime,
-                downtime: state.context.downtime,
-                hasError,
-              },
-              "Deployment actor completed and database updated",
-            );
-          } catch (error) {
-            deploymentLogger().error(
-              {
-                deploymentId,
-                error: error instanceof Error ? error.message : "Unknown error",
-              },
-              "Failed to update deployment status in database",
-            );
-          }
-        }
+      // Create base deployment context
+      const baseContext: HAProxyDeploymentContext = {
+        deploymentId,
+        configurationId: deploymentRecord.configurationId,
+        applicationName: config.applicationName,
+        dockerImage: `${config.dockerImage}:${config.dockerTag}`,
+        environmentId: environmentContext.environmentId,
+        environmentName: environmentContext.environmentName,
+        haproxyContainerId: environmentContext.haproxyContainerId,
+        haproxyNetworkName: environmentContext.haproxyNetworkName,
+        triggerType,
+        triggeredBy,
+        startTime: Date.now(),
+        config,
+      };
 
-        // Log state changes
-        deploymentLogger().debug(
-          {
-            deploymentId,
-            currentState: state.value,
-            context: state.context,
-          },
-          "Deployment state transition",
-        );
-      });
+      // Start appropriate state machine based on strategy
+      if (strategy === "initial") {
+        await this.startInitialDeployment(baseContext);
+      } else {
+        await this.startBlueGreenDeployment(baseContext);
+      }
+
     } catch (error) {
       deploymentLogger().error(
         {
@@ -214,12 +238,178 @@ export class DeploymentOrchestrator {
   }
 
   /**
+   * Start initial deployment using initial deployment state machine
+   */
+  private async startInitialDeployment(baseContext: HAProxyDeploymentContext): Promise<void> {
+    const deploymentId = baseContext.deploymentId;
+
+    deploymentLogger().info(
+      {
+        deploymentId,
+        applicationName: baseContext.applicationName,
+        environmentName: baseContext.environmentName,
+        strategy: "initial",
+      },
+      "Starting initial deployment with HAProxy state machine"
+    );
+
+    // Create initial deployment context
+    const initialContext = {
+      ...baseContext,
+      // Initial deployment specific fields
+      containerId: undefined,
+      applicationReady: false,
+      haproxyConfigured: false,
+      healthChecksPassed: false,
+      trafficEnabled: false,
+      validationErrors: 0,
+      monitoringStartTime: undefined,
+      error: undefined,
+      retryCount: 0,
+    };
+
+    // Create state machine with service implementations
+    const deploymentMachine = initialDeploymentMachine.provide({
+      // Add service implementations here when HAProxy actions are implemented
+      // For now, the action stubs will handle logging
+    });
+
+    const actor = createActor(deploymentMachine, {
+      input: initialContext,
+    });
+
+    // Store and start deployment
+    this.activeDeployments.set(deploymentId, actor);
+    this.setupActorSubscription(actor, deploymentId, "initial");
+
+    actor.start();
+    actor.send({ type: "START_DEPLOYMENT" });
+  }
+
+  /**
+   * Start blue-green deployment using blue-green state machine
+   */
+  private async startBlueGreenDeployment(baseContext: HAProxyDeploymentContext): Promise<void> {
+    const deploymentId = baseContext.deploymentId;
+
+    deploymentLogger().info(
+      {
+        deploymentId,
+        applicationName: baseContext.applicationName,
+        environmentName: baseContext.environmentName,
+        strategy: "blue-green",
+      },
+      "Starting blue-green deployment with HAProxy state machine"
+    );
+
+    // Create blue-green deployment context
+    const blueGreenContext = {
+      ...baseContext,
+      // Blue-green deployment specific fields
+      blueHealthy: false,
+      greenHealthy: false,
+      greenBackendConfigured: false,
+      trafficOpenedToGreen: false,
+      trafficValidated: false,
+      blueDraining: false,
+      blueDrained: false,
+      validationErrors: 0,
+      drainStartTime: undefined,
+      monitoringStartTime: undefined,
+      error: undefined,
+      retryCount: 0,
+      activeConnections: 0,
+      oldContainerId: undefined,
+      newContainerId: undefined,
+    };
+
+    // Create state machine with service implementations
+    const deploymentMachine = blueGreenDeploymentMachine.provide({
+      // Add service implementations here when HAProxy actions are implemented
+      // For now, the action stubs will handle logging
+    });
+
+    const actor = createActor(deploymentMachine, {
+      input: blueGreenContext,
+    });
+
+    // Store and start deployment
+    this.activeDeployments.set(deploymentId, actor);
+    this.setupActorSubscription(actor, deploymentId, "blue-green");
+
+    actor.start();
+    actor.send({ type: "START_DEPLOYMENT" });
+  }
+
+  /**
+   * Setup actor subscription for state machine monitoring
+   */
+  private setupActorSubscription(actor: any, deploymentId: string, strategy: DeploymentStrategy): void {
+    actor.subscribe(async (state: any) => {
+      if (state.status === "done") {
+        this.activeDeployments.delete(deploymentId);
+
+        // Update deployment status in database based on final state
+        try {
+          const finalStatus = state.value === "completed" ? "completed" : "failed";
+          const hasError = state.context.error !== undefined && state.context.error !== null;
+
+          await prisma.deployment.update({
+            where: { id: deploymentId },
+            data: {
+              status: finalStatus,
+              currentState: state.value as string,
+              completedAt: new Date(),
+              errorMessage: state.context.error || null,
+              deploymentTime: state.context.startTime ?
+                (Date.now() - state.context.startTime) / 1000 : null,
+            },
+          });
+
+          deploymentLogger().info(
+            {
+              deploymentId,
+              finalStatus,
+              finalState: state.value,
+              strategy,
+              hasError,
+              environmentName: state.context.environmentName,
+            },
+            "HAProxy deployment actor completed and database updated",
+          );
+        } catch (error) {
+          deploymentLogger().error(
+            {
+              deploymentId,
+              strategy,
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+            "Failed to update deployment status in database",
+          );
+        }
+      }
+
+      // Log state changes
+      deploymentLogger().debug(
+        {
+          deploymentId,
+          strategy,
+          currentState: state.value,
+          environmentName: state.context.environmentName,
+          applicationName: state.context.applicationName,
+        },
+        "HAProxy deployment state transition",
+      );
+    });
+  }
+
+  /**
    * Get deployment status
    */
   getDeploymentStatus(deploymentId: string): {
     isActive: boolean;
     currentState: string | null;
-    context: DeploymentContext | null;
+    context: any | null;
   } {
     const actor = this.activeDeployments.get(deploymentId);
 
@@ -240,7 +430,7 @@ export class DeploymentOrchestrator {
   }
 
   /**
-   * Force rollback of an active deployment
+   * Force rollback of an active deployment (not applicable to state machine approach)
    */
   async forceRollback(deploymentId: string): Promise<void> {
     const actor = this.activeDeployments.get(deploymentId);
@@ -249,9 +439,13 @@ export class DeploymentOrchestrator {
       throw new Error(`No active deployment found with ID: ${deploymentId}`);
     }
 
-    deploymentLogger().info({ deploymentId }, "Forcing deployment rollback");
+    deploymentLogger().warn(
+      { deploymentId },
+      "Force rollback not supported with HAProxy state machines - deployments will handle failures automatically"
+    );
 
-    actor.send({ type: "FORCE_ROLLBACK" });
+    // HAProxy state machines handle rollback automatically through their error states
+    // We don't force external rollbacks
   }
 
   /**
@@ -268,843 +462,10 @@ export class DeploymentOrchestrator {
       return;
     }
 
-    deploymentLogger().info({ deploymentId }, "Stopping deployment");
+    deploymentLogger().info({ deploymentId }, "Stopping HAProxy deployment");
 
     actor.stop();
     this.activeDeployments.delete(deploymentId);
-  }
-
-  // ====================
-  // Health Check Service (receives current context)
-  // ====================
-
-  private async performHealthCheck(context: DeploymentContext) {
-    try {
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          newContainerId: context.newContainerId,
-        },
-        "Starting health check process",
-      );
-
-      if (!context.newContainerId) {
-        deploymentLogger().error(
-          { deploymentId: context.deploymentId },
-          "Health check failed: No container ID available",
-        );
-        throw new Error("No container ID available for health checks");
-      }
-
-      // Update deployment step in database
-      await this.updateDeploymentStep(
-        context.deploymentId,
-        "health_check",
-        "running",
-        "Performing network-aware health checks",
-      );
-
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-        },
-        "Performing network-aware health checks",
-      );
-
-      // Ensure container is running
-      deploymentLogger().debug(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-        },
-        "Checking container status for health check",
-      );
-      
-      const containerInfo = await this.containerManager.getContainerStatus(context.newContainerId);
-      
-      deploymentLogger().debug(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-          containerInfo,
-        },
-        "Container status check result",
-      );
-      
-      if (!containerInfo || containerInfo.status !== "running") {
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            containerId: context.newContainerId,
-            containerStatus: containerInfo?.status,
-            hasContainerInfo: !!containerInfo,
-          },
-          "Health check failed: Container is not running",
-        );
-        throw new Error("Container is not running");
-      }
-
-      // Get container name and port for network health check
-      const healthCheckConfig = context.config.healthCheck;
-      const containerName = `${context.config.applicationName}-${context.targetColor}`;
-      
-      deploymentLogger().debug(
-        {
-          deploymentId: context.deploymentId,
-          healthCheckConfig,
-          containerName,
-          availablePorts: context.config.containerConfig.ports,
-        },
-        "Preparing network health check configuration",
-      );
-      
-      // Determine container port for health check
-      let containerPort: number;
-      
-      if (context.config.listeningPort) {
-        // Use the explicitly configured listening port
-        containerPort = context.config.listeningPort;
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            listeningPort: context.config.listeningPort,
-          },
-          "Using configured listening port for health check",
-        );
-      } else {
-        // Fall back to port discovery (prioritize port 80, then first available port)
-        const portConfig = context.config.containerConfig.ports.find(p => p.containerPort === 80) ||
-                          context.config.containerConfig.ports[0];
-        
-        if (!portConfig) {
-          deploymentLogger().error(
-            {
-              deploymentId: context.deploymentId,
-              availablePorts: context.config.containerConfig.ports,
-              containerConfigExists: !!context.config.containerConfig,
-            },
-            "Health check failed: No container port configuration found",
-          );
-          throw new Error("No container port configuration found for health check");
-        }
-
-        containerPort = portConfig.containerPort;
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            discoveredPort: containerPort,
-            portConfig,
-          },
-          "Using discovered container port for health check",
-        );
-      }
-
-      deploymentLogger().debug(
-        {
-          deploymentId: context.deploymentId,
-          containerName,
-          containerPort,
-          endpoint: healthCheckConfig.endpoint,
-        },
-        "Performing network health check using curl container",
-      );
-
-      // Convert to network health check configuration
-      const networkConfig = this.networkHealthCheckService.convertHealthCheckConfig(
-        containerName,
-        containerPort,
-        healthCheckConfig,
-      );
-
-      // Perform network health check using curl container
-      const result = await this.networkHealthCheckService.performNetworkHealthCheck(networkConfig);
-
-      // Check if health check actually passed
-      if (!result.success) {
-        // Log the failure details
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            containerId: context.newContainerId,
-            containerName,
-            containerPort,
-            healthCheckResult: result,
-            validationDetails: result.validationDetails,
-            errorMessage: result.errorMessage,
-          },
-          "Network health check failed validation",
-        );
-
-        // Update step as failed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "health_check",
-          "failed",
-          result.errorMessage || "Network health check failed",
-        );
-
-        // Store health check results as failed
-        await this.updateDeploymentHealthCheck(
-          context.deploymentId,
-          false,
-          result,
-        );
-
-        // Throw error to trigger retry or rollback
-        throw new Error(result.errorMessage || "Network health check failed");
-      }
-
-      // Update step as completed
-      await this.updateDeploymentStep(
-        context.deploymentId,
-        "health_check",
-        "completed",
-        "Network health checks passed successfully",
-      );
-
-      // Store health check results in database
-      await this.updateDeploymentHealthCheck(
-        context.deploymentId,
-        true,
-        result,
-      );
-
-      deploymentLogger().info(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-          containerName,
-          containerPort,
-          healthCheckResult: result,
-        },
-        "Network health checks passed successfully",
-      );
-
-      return { healthCheckResult: result };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
-      deploymentLogger().error(
-        {
-          deploymentId: context.deploymentId,
-          containerId: context.newContainerId,
-          error: errorMessage,
-        },
-        "Network health check failed",
-      );
-
-      throw new Error(errorMessage);
-    }
-  }
-
-  // ====================
-  // Service Factory Methods
-  // ====================
-
-  private async pullDockerImage(context: DeploymentContext) {
-      try {
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "pull_image",
-          "running",
-          "Pulling Docker image",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            dockerImage: context.dockerImage,
-          },
-          "Pulling Docker image",
-        );
-
-        // Initialize docker executor if needed
-        await this.dockerExecutor.initialize();
-
-        // Pull the image (this will handle authentication if configured)
-        await this.dockerExecutor.pullImageWithAuth(context.dockerImage);
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "pull_image",
-          "completed",
-          "Docker image pulled successfully",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            dockerImage: context.dockerImage,
-          },
-          "Docker image pulled successfully",
-        );
-
-        return { success: true };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Update step as failed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "pull_image",
-          "failed",
-          `Failed to pull image: ${errorMessage}`,
-        );
-
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            dockerImage: context.dockerImage,
-            error: errorMessage,
-          },
-          "Failed to pull Docker image",
-        );
-
-        throw error;
-      }
-  }
-
-  private async createAndStartContainer(context: DeploymentContext) {
-      try {
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "create_container",
-          "running",
-          "Creating and starting container",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            applicationName: context.config.applicationName,
-            targetColor: context.targetColor,
-          },
-          "Creating and starting container",
-        );
-
-        // Find old container to switch from
-        const oldContainerId = await this.findCurrentContainer(
-          context.config.applicationName,
-          context.targetColor === "blue" ? "green" : "blue",
-        );
-        if (oldContainerId) {
-          context.oldContainerId = oldContainerId;
-        }
-
-        const containerName = `${context.config.applicationName}-${context.targetColor}`;
-
-        const containerId = await this.containerManager.createContainer({
-          name: containerName,
-          image: context.config.dockerImage,
-          tag: context.config.dockerTag,
-          config: context.config.containerConfig,
-          deploymentId: context.deploymentId,
-          labels: {
-            "mini-infra.application": context.config.applicationName,
-            "mini-infra.deployment.color": context.targetColor,
-            "mini-infra.deployment.active": "false", // Will be set to true after health checks
-          },
-        });
-
-        // Start the container
-        await this.containerManager.startContainer(containerId);
-
-        // Wait for container to be running
-        const isRunning = await this.containerManager.waitForContainerStatus(
-          containerId,
-          "running",
-          30000, // 30 seconds timeout
-        );
-
-        if (!isRunning) {
-          throw new Error("Container failed to reach running state");
-        }
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "create_container",
-          "completed",
-          `Container created and started: ${containerId}`,
-        );
-
-        // Update deployment with container ID
-        await this.updateDeploymentContainers(
-          context.deploymentId,
-          containerId,
-          context.oldContainerId,
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            containerId: containerId,
-            oldContainerId: context.oldContainerId,
-          },
-          "Container created and started successfully",
-        );
-
-        return { containerId };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Update step as failed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "create_container",
-          "failed",
-          `Failed to create container: ${errorMessage}`,
-        );
-
-        throw error;
-      }
-  }
-
-  private async performStandardHealthCheck(context: DeploymentContext) {
-      try {
-        if (!context.newContainerId) {
-          throw new Error("No container ID available for health checks");
-        }
-
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "health_check",
-          "running",
-          "Performing health checks",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            containerId: context.newContainerId,
-            endpoint: context.config.healthCheck.endpoint,
-            retryAttempt: context.retryCount + 1,
-            maxRetries: context.maxRetries,
-          },
-          "Performing health checks",
-        );
-
-        const result = await this.healthCheckService.performHealthCheck({
-          endpoint: context.config.healthCheck.endpoint,
-          method: context.config.healthCheck.method,
-          expectedStatuses: context.config.healthCheck.expectedStatus,
-          timeout: context.config.healthCheck.timeout,
-          retries: context.config.healthCheck.retries,
-          retryDelay: context.config.healthCheck.interval,
-          responseBodyPattern: context.config.healthCheck.responseValidation,
-        });
-
-        if (!result.success) {
-          const errorMessage = `Health check failed: ${result.errorMessage}`;
-
-          // Update step as failed (will retry if within limits)
-          await this.updateDeploymentStep(
-            context.deploymentId,
-            "health_check",
-            "failed",
-            `${errorMessage} (attempt ${context.retryCount + 1}/${context.maxRetries})`,
-          );
-
-          deploymentLogger().warn(
-            {
-              deploymentId: context.deploymentId,
-              containerId: context.newContainerId,
-              retryAttempt: context.retryCount + 1,
-              maxRetries: context.maxRetries,
-              healthCheckResult: result,
-            },
-            errorMessage,
-          );
-
-          throw new Error(errorMessage);
-        }
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "health_check",
-          "completed",
-          "Health checks passed successfully",
-        );
-
-        // Store health check results in context and database
-        context.healthCheckLogs.push(result);
-        await this.updateDeploymentHealthCheck(
-          context.deploymentId,
-          true,
-          result,
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            containerId: context.newContainerId,
-            healthCheckResult: result,
-          },
-          "Health checks passed successfully",
-        );
-
-        return { healthCheckResult: result };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Don't update step status here for failures - let the retry logic handle it
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            containerId: context.newContainerId,
-            error: errorMessage,
-          },
-          "Health check failed",
-        );
-
-        throw error;
-      }
-  }
-
-  private async switchTrafficToNewContainer(context: DeploymentContext) {
-      try {
-        if (!context.newContainerId) {
-          throw new Error("No new container ID available for traffic switch");
-        }
-
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "switch_traffic",
-          "running",
-          "Switching traffic to new container",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            newContainerId: context.newContainerId,
-            oldContainerId: context.oldContainerId,
-            applicationName: context.config.applicationName,
-          },
-          "Switching traffic to new container",
-        );
-
-        // Calculate downtime (minimal for stub implementation)
-        const downtimeStart = Date.now();
-
-        // Traffic switching logic removed - containers are managed directly
-        // In a real implementation, this would integrate with a load balancer
-
-        const downtimeEnd = Date.now();
-        context.downtime = downtimeEnd - downtimeStart;
-
-        // Mark container as active
-        await this.updateContainerActiveStatus(context.newContainerId, true);
-        if (context.oldContainerId) {
-          await this.updateContainerActiveStatus(context.oldContainerId, false);
-        }
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "switch_traffic",
-          "completed",
-          `Traffic switched successfully. Downtime: ${context.downtime}ms`,
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            newContainerId: context.newContainerId,
-            oldContainerId: context.oldContainerId,
-            downtime: context.downtime,
-          },
-          "Traffic switched successfully",
-        );
-
-        return { success: true, downtime: context.downtime };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Update step as failed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "switch_traffic",
-          "failed",
-          `Failed to switch traffic: ${errorMessage}`,
-        );
-
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            newContainerId: context.newContainerId,
-            oldContainerId: context.oldContainerId,
-            error: errorMessage,
-          },
-          "Failed to switch traffic",
-        );
-
-        throw error;
-      }
-  }
-
-  private async cleanupOldContainer(context: DeploymentContext) {
-      try {
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "cleanup",
-          "running",
-          "Cleaning up old container",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            oldContainerId: context.oldContainerId,
-            keepOldContainer: context.config.rollbackConfig.keepOldContainer,
-          },
-          "Cleaning up old container",
-        );
-
-        if (
-          context.oldContainerId &&
-          context.config.rollbackConfig.keepOldContainer === false
-        ) {
-          try {
-            // Stop and remove old container
-            await this.containerManager.stopContainer(context.oldContainerId);
-            await this.containerManager.removeContainer(context.oldContainerId);
-
-            deploymentLogger().info(
-              {
-                deploymentId: context.deploymentId,
-                oldContainerId: context.oldContainerId,
-              },
-              "Old container cleaned up successfully",
-            );
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : "Unknown error";
-
-            deploymentLogger().warn(
-              {
-                deploymentId: context.deploymentId,
-                oldContainerId: context.oldContainerId,
-                error: errorMessage,
-              },
-              "Failed to cleanup old container, but deployment continues",
-            );
-
-            // Don't fail deployment on cleanup errors
-          }
-        } else if (context.oldContainerId) {
-          deploymentLogger().info(
-            {
-              deploymentId: context.deploymentId,
-              oldContainerId: context.oldContainerId,
-            },
-            "Keeping old container for potential rollback",
-          );
-        }
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "cleanup",
-          "completed",
-          "Cleanup completed",
-        );
-
-        return { success: true };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Update step as completed even on error (cleanup failures shouldn't fail deployment)
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "cleanup",
-          "completed",
-          `Cleanup completed with warnings: ${errorMessage}`,
-        );
-
-        deploymentLogger().warn(
-          {
-            deploymentId: context.deploymentId,
-            error: errorMessage,
-          },
-          "Cleanup completed with warnings",
-        );
-
-        return { success: true };
-      }
-  }
-
-  private async performRollback(context: DeploymentContext) {
-      try {
-        // Update deployment step in database
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "rollback",
-          "running",
-          "Rolling back deployment",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            newContainerId: context.newContainerId,
-            oldContainerId: context.oldContainerId,
-          },
-          "Performing deployment rollback",
-        );
-
-        // Stop and remove failed container
-        if (context.newContainerId) {
-          try {
-            await this.containerManager.stopContainer(context.newContainerId);
-            await this.containerManager.removeContainer(context.newContainerId);
-
-            deploymentLogger().info(
-              {
-                deploymentId: context.deploymentId,
-                newContainerId: context.newContainerId,
-              },
-              "Failed container cleaned up during rollback",
-            );
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : "Unknown error";
-
-            deploymentLogger().error(
-              {
-                deploymentId: context.deploymentId,
-                newContainerId: context.newContainerId,
-                error: errorMessage,
-              },
-              "Failed to cleanup failed container during rollback",
-            );
-          }
-        }
-
-        // Restore traffic to old container if it exists
-        if (context.oldContainerId) {
-          try {
-            const status = await this.containerManager.getContainerStatus(
-              context.oldContainerId,
-            );
-
-            // Start old container if it's not running
-            if (status && status.status !== "running") {
-              await this.containerManager.startContainer(
-                context.oldContainerId,
-              );
-
-              // Wait for it to be running
-              const isRunning =
-                await this.containerManager.waitForContainerStatus(
-                  context.oldContainerId,
-                  "running",
-                  30000,
-                );
-
-              if (!isRunning) {
-                throw new Error(
-                  "Failed to restart old container during rollback",
-                );
-              }
-            }
-
-            // Traffic restoration logic removed - containers are managed directly
-            // In a real implementation, this would restore traffic through a load balancer
-
-            // Mark old container as active
-            await this.updateContainerActiveStatus(
-              context.oldContainerId,
-              true,
-            );
-
-            deploymentLogger().info(
-              {
-                deploymentId: context.deploymentId,
-                oldContainerId: context.oldContainerId,
-              },
-              "Traffic restored to previous container",
-            );
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : "Unknown error";
-
-            deploymentLogger().error(
-              {
-                deploymentId: context.deploymentId,
-                oldContainerId: context.oldContainerId,
-                error: errorMessage,
-              },
-              "Failed to restore traffic to old container during rollback",
-            );
-
-            throw error;
-          }
-        }
-
-        // Update step as completed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "rollback",
-          "completed",
-          "Rollback completed successfully",
-        );
-
-        deploymentLogger().info(
-          {
-            deploymentId: context.deploymentId,
-            applicationName: context.config.applicationName,
-          },
-          "Deployment rollback completed successfully",
-        );
-
-        return { success: true };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-
-        // Update step as failed
-        await this.updateDeploymentStep(
-          context.deploymentId,
-          "rollback",
-          "failed",
-          `Rollback failed: ${errorMessage}`,
-        );
-
-        deploymentLogger().error(
-          {
-            deploymentId: context.deploymentId,
-            error: errorMessage,
-          },
-          "Deployment rollback failed",
-        );
-
-        throw error;
-      }
-  }
-
-  // ====================
-  // Helper Methods
-  // ====================
-
-  private determineTargetColor(applicationName: string): "blue" | "green" {
-    // In a real implementation, this would check existing containers
-    // and determine the opposite color
-    return Math.random() > 0.5 ? "blue" : "green";
   }
 
   /**
@@ -1122,215 +483,11 @@ export class DeploymentOrchestrator {
   }
 
   // ====================
-  // Database Helper Methods
-  // ====================
-
-  /**
-   * Update deployment step in database
-   */
-  private async updateDeploymentStep(
-    deploymentId: string,
-    stepName: string,
-    status: DeploymentStepStatus,
-    output?: string,
-  ): Promise<void> {
-    try {
-      await prisma.deploymentStep.upsert({
-        where: {
-          id: `${deploymentId}-${stepName}`, // Use a composite ID for unique constraint
-        },
-        update: {
-          status,
-          output,
-          completedAt:
-            status === "completed" || status === "failed"
-              ? new Date()
-              : undefined,
-          duration:
-            status === "completed" || status === "failed"
-              ? Date.now() -
-                (await this.getStepStartTime(deploymentId, stepName))
-              : undefined,
-        },
-        create: {
-          id: `${deploymentId}-${stepName}`,
-          deploymentId,
-          stepName,
-          status,
-          output,
-          startedAt: new Date(),
-          completedAt:
-            status === "completed" || status === "failed"
-              ? new Date()
-              : undefined,
-          duration:
-            status === "completed" || status === "failed" ? 0 : undefined,
-        },
-      });
-    } catch (error) {
-      deploymentLogger().error(
-        {
-          deploymentId,
-          stepName,
-          status,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to update deployment step",
-      );
-    }
-  }
-
-  /**
-   * Get step start time for duration calculation
-   */
-  private async getStepStartTime(
-    deploymentId: string,
-    stepName: string,
-  ): Promise<number> {
-    try {
-      const step = await prisma.deploymentStep.findUnique({
-        where: {
-          id: `${deploymentId}-${stepName}`,
-        },
-      });
-      return step?.startedAt.getTime() || Date.now();
-    } catch (error) {
-      return Date.now();
-    }
-  }
-
-  /**
-   * Update deployment with container IDs
-   */
-  private async updateDeploymentContainers(
-    deploymentId: string,
-    newContainerId: string | null,
-    oldContainerId: string | null,
-  ): Promise<void> {
-    try {
-      await prisma.deployment.update({
-        where: { id: deploymentId },
-        data: {
-          newContainerId,
-          oldContainerId,
-        },
-      });
-    } catch (error) {
-      deploymentLogger().error(
-        {
-          deploymentId,
-          newContainerId,
-          oldContainerId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to update deployment containers",
-      );
-    }
-  }
-
-  /**
-   * Update deployment health check results
-   */
-  private async updateDeploymentHealthCheck(
-    deploymentId: string,
-    passed: boolean,
-    logs: any,
-  ): Promise<void> {
-    try {
-      await prisma.deployment.update({
-        where: { id: deploymentId },
-        data: {
-          healthCheckPassed: passed,
-          healthCheckLogs: logs,
-        },
-      });
-    } catch (error) {
-      deploymentLogger().error(
-        {
-          deploymentId,
-          passed,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to update deployment health check",
-      );
-    }
-  }
-
-  /**
-   * Find current container for an application
-   */
-  private async findCurrentContainer(
-    applicationName: string,
-    color: "blue" | "green",
-  ): Promise<string | null> {
-    try {
-      // Use Docker API to find running container with matching labels
-      const containers =
-        await this.containerManager["dockerService"].listContainers();
-
-      for (const containerInfo of containers) {
-        const labels = containerInfo.labels || {};
-        if (
-          labels["mini-infra.application"] === applicationName &&
-          labels["mini-infra.deployment.color"] === color &&
-          labels["mini-infra.deployment.active"] === "true" &&
-          containerInfo.status === "running"
-        ) {
-          return containerInfo.id;
-        }
-      }
-
-      return null;
-    } catch (error) {
-      deploymentLogger().warn(
-        {
-          applicationName,
-          color,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to find current container",
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Update container active status via Docker labels
-   */
-  private async updateContainerActiveStatus(
-    containerId: string,
-    active: boolean,
-  ): Promise<void> {
-    try {
-      // This would require updating container labels, which is complex with dockerode
-      // For now, we'll log the intent - in a production system this might be handled
-      // by restarting containers with updated labels
-      deploymentLogger().debug(
-        {
-          containerId,
-          active,
-        },
-        "Container active status would be updated",
-      );
-    } catch (error) {
-      deploymentLogger().warn(
-        {
-          containerId,
-          active,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to update container active status",
-      );
-    }
-  }
-
-
-  // ====================
   // API Interface Methods
   // ====================
 
   /**
-   * Trigger a new deployment from API
+   * Trigger a new deployment from API with environment validation
    */
   async triggerDeployment(params: {
     configurationId: string;
@@ -1352,6 +509,15 @@ export class DeploymentOrchestrator {
         throw new Error(
           `Deployment configuration ${params.configurationId} not found`,
         );
+      }
+
+      // Validate environment before creating deployment
+      const environmentValidation = await this.environmentValidationService.validateEnvironmentForDeployment(
+        config.environmentId
+      );
+
+      if (!environmentValidation.isValid) {
+        throw new Error(environmentValidation.errorMessage || "Environment validation failed");
       }
 
       // Create deployment record
@@ -1379,7 +545,7 @@ export class DeploymentOrchestrator {
           environmentId: config.environmentId,
           environmentName: config.environment?.name,
         },
-        "Deployment triggered in environment",
+        "HAProxy deployment triggered in validated environment",
       );
 
       // Prepare deployment config
@@ -1408,7 +574,7 @@ export class DeploymentOrchestrator {
               deploymentId: deployment.id,
               error: error instanceof Error ? error.message : "Unknown error",
             },
-            "Deployment failed during execution",
+            "HAProxy deployment failed during execution",
           );
 
           // Update deployment status to failed
@@ -1431,49 +597,31 @@ export class DeploymentOrchestrator {
           configurationId: params.configurationId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to trigger deployment",
+        "Failed to trigger HAProxy deployment",
       );
       throw error;
     }
   }
 
   /**
-   * Rollback a deployment from API
+   * Rollback a deployment from API (not supported with state machines)
    */
   async rollbackDeployment(deploymentId: string): Promise<any> {
-    try {
-      const deployment = await prisma.deployment.findUnique({
-        where: { id: deploymentId },
-        include: { configuration: true },
-      });
+    const deployment = await prisma.deployment.findUnique({
+      where: { id: deploymentId },
+      include: { configuration: true },
+    });
 
-      if (!deployment) {
-        throw new Error(`Deployment ${deploymentId} not found`);
-      }
-
-      // Update deployment status
-      await prisma.deployment.update({
-        where: { id: deploymentId },
-        data: {
-          status: "rolling_back",
-          currentState: "rolling_back",
-        },
-      });
-
-      // Trigger force rollback
-      await this.forceRollback(deploymentId);
-
-      return deployment;
-    } catch (error) {
-      deploymentLogger().error(
-        {
-          deploymentId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to rollback deployment",
-      );
-      throw error;
+    if (!deployment) {
+      throw new Error(`Deployment ${deploymentId} not found`);
     }
+
+    deploymentLogger().warn(
+      { deploymentId },
+      "Manual rollback not supported with HAProxy state machines - deployments handle rollback automatically"
+    );
+
+    return deployment;
   }
 }
 
