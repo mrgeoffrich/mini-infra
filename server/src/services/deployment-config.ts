@@ -205,7 +205,6 @@ export class DeploymentConfigService extends ConfigurationService {
    */
   async createDeploymentConfig(
     request: CreateDeploymentConfigRequest,
-    userId: string,
   ): Promise<DeploymentConfigurationInfo> {
     try {
       // Validate input
@@ -230,12 +229,11 @@ export class DeploymentConfigService extends ConfigurationService {
         );
       }
 
-      // Check for duplicate application name for this user in this environment
+      // Check for duplicate application name in this environment
       const existing = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           applicationName: request.applicationName,
           environmentId: request.environmentId,
-          userId: userId,
         },
       });
 
@@ -257,18 +255,16 @@ export class DeploymentConfigService extends ConfigurationService {
           listeningPort: request.listeningPort,
           environmentId: request.environmentId,
           isActive: true,
-          userId: userId,
         },
       });
 
       // Clear cache since we added a new configuration
-      this.clearCache(userId);
+      this.clearCache();
 
       servicesLogger().info(
         {
           configId: created.id,
           applicationName: created.applicationName,
-          userId: userId,
         },
         "Deployment configuration created",
       );
@@ -278,7 +274,6 @@ export class DeploymentConfigService extends ConfigurationService {
       servicesLogger().error(
         {
           applicationName: request.applicationName,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to create deployment configuration",
@@ -293,19 +288,17 @@ export class DeploymentConfigService extends ConfigurationService {
   async updateDeploymentConfig(
     configId: string,
     request: UpdateDeploymentConfigRequest,
-    userId: string,
   ): Promise<DeploymentConfigurationInfo> {
     try {
-      // Get existing configuration and verify ownership
+      // Get existing configuration
       const existing = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           id: configId,
-          userId: userId,
         },
       });
 
       if (!existing) {
-        throw new Error("Deployment configuration not found or access denied");
+        throw new Error("Deployment configuration not found");
       }
 
       // Check for duplicate application name if name is being changed
@@ -316,7 +309,6 @@ export class DeploymentConfigService extends ConfigurationService {
         const duplicate = await this.prisma.deploymentConfiguration.findFirst({
           where: {
             applicationName: request.applicationName,
-            userId: userId,
             id: { not: configId },
           },
         });
@@ -356,13 +348,12 @@ export class DeploymentConfigService extends ConfigurationService {
       });
 
       // Clear cache
-      this.clearCache(userId);
+      this.clearCache();
 
       servicesLogger().info(
         {
           configId: updated.id,
           applicationName: updated.applicationName,
-          userId: userId,
         },
         "Deployment configuration updated",
       );
@@ -372,7 +363,6 @@ export class DeploymentConfigService extends ConfigurationService {
       servicesLogger().error(
         {
           configId: configId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to update deployment configuration",
@@ -386,10 +376,9 @@ export class DeploymentConfigService extends ConfigurationService {
    */
   async getDeploymentConfig(
     configId: string,
-    userId: string,
   ): Promise<DeploymentConfigurationInfo | null> {
     try {
-      const cacheKey = `config:${configId}:${userId}`;
+      const cacheKey = `config:${configId}`;
       const cached = this.cache.get<DeploymentConfigurationInfo>(cacheKey);
 
       if (cached) {
@@ -399,7 +388,6 @@ export class DeploymentConfigService extends ConfigurationService {
       const config = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           id: configId,
-          userId: userId,
         },
       });
 
@@ -414,7 +402,6 @@ export class DeploymentConfigService extends ConfigurationService {
       servicesLogger().error(
         {
           configId: configId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to get deployment configuration",
@@ -428,10 +415,9 @@ export class DeploymentConfigService extends ConfigurationService {
    */
   async getDeploymentConfigByName(
     applicationName: string,
-    userId: string,
   ): Promise<DeploymentConfigurationInfo | null> {
     try {
-      const cacheKey = `config:name:${applicationName}:${userId}`;
+      const cacheKey = `config:name:${applicationName}`;
       const cached = this.cache.get<DeploymentConfigurationInfo>(cacheKey);
 
       if (cached) {
@@ -441,7 +427,6 @@ export class DeploymentConfigService extends ConfigurationService {
       const config = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           applicationName: applicationName,
-          userId: userId,
         },
       });
 
@@ -456,7 +441,6 @@ export class DeploymentConfigService extends ConfigurationService {
       servicesLogger().error(
         {
           applicationName: applicationName,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to get deployment configuration by name",
@@ -466,10 +450,9 @@ export class DeploymentConfigService extends ConfigurationService {
   }
 
   /**
-   * List deployment configurations for a user
+   * List deployment configurations
    */
   async listDeploymentConfigs(
-    userId: string,
     filter?: DeploymentConfigFilter,
     sort?: DeploymentConfigSortOptions,
     limit?: number,
@@ -477,7 +460,7 @@ export class DeploymentConfigService extends ConfigurationService {
   ): Promise<DeploymentConfigurationInfo[]> {
     try {
       // Build cache key
-      const cacheKey = `list:${userId}:${JSON.stringify({ filter, sort, limit, offset })}`;
+      const cacheKey = `list:${JSON.stringify({ filter, sort, limit, offset })}`;
       const cached = this.cache.get<DeploymentConfigurationInfo[]>(cacheKey);
 
       if (cached) {
@@ -485,7 +468,7 @@ export class DeploymentConfigService extends ConfigurationService {
       }
 
       // Build where clause
-      const where: any = { userId: userId };
+      const where: any = {};
 
       if (filter) {
         if (filter.applicationName) {
@@ -548,7 +531,6 @@ export class DeploymentConfigService extends ConfigurationService {
     } catch (error) {
       servicesLogger().error(
         {
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to list deployment configurations",
@@ -562,19 +544,17 @@ export class DeploymentConfigService extends ConfigurationService {
    */
   async deleteDeploymentConfig(
     configId: string,
-    userId: string,
   ): Promise<void> {
     try {
-      // Verify ownership and existence
+      // Verify existence
       const config = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           id: configId,
-          userId: userId,
         },
       });
 
       if (!config) {
-        throw new Error("Deployment configuration not found or access denied");
+        throw new Error("Deployment configuration not found");
       }
 
       const logger = servicesLogger();
@@ -584,7 +564,6 @@ export class DeploymentConfigService extends ConfigurationService {
         {
           configId: configId,
           applicationName,
-          userId: userId,
         },
         "Starting deployment configuration deletion with container cleanup",
       );
@@ -617,13 +596,12 @@ export class DeploymentConfigService extends ConfigurationService {
       });
 
       // Clear cache
-      this.clearCache(userId);
+      this.clearCache();
 
       logger.info(
         {
           configId: configId,
           applicationName,
-          userId: userId,
         },
         "Deployment configuration deleted successfully",
       );
@@ -631,7 +609,6 @@ export class DeploymentConfigService extends ConfigurationService {
       servicesLogger().error(
         {
           configId: configId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to delete deployment configuration",
@@ -722,9 +699,8 @@ export class DeploymentConfigService extends ConfigurationService {
   async setConfigurationActive(
     configId: string,
     isActive: boolean,
-    userId: string,
   ): Promise<DeploymentConfigurationInfo> {
-    return this.updateDeploymentConfig(configId, { isActive }, userId);
+    return this.updateDeploymentConfig(configId, { isActive });
   }
 
   // ====================
@@ -993,18 +969,12 @@ export class DeploymentConfigService extends ConfigurationService {
       listeningPort: config.listeningPort,
       isActive: config.isActive,
       environmentId: config.environmentId,
-      userId: config.userId,
       createdAt: config.createdAt.toISOString(),
       updatedAt: config.updatedAt.toISOString(),
     };
   }
 
-  private clearCache(userId: string): void {
-    const keys = this.cache.keys();
-    keys.forEach((key) => {
-      if (key.includes(userId)) {
-        this.cache.del(key);
-      }
-    });
+  private clearCache(): void {
+    this.cache.flushAll();
   }
 }

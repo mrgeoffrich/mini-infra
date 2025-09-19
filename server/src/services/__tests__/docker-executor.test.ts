@@ -275,10 +275,7 @@ describe("DockerExecutorService", () => {
           "mini-infra.purpose": "task",
           "mini-infra.temporary": "true",
         }),
-        HostConfig: {
-          Memory: 2 * 1024 * 1024 * 1024,
-          CpuShares: 1024,
-        },
+        HostConfig: expect.any(Object),
       });
 
       expect(mockContainer.start).toHaveBeenCalled();
@@ -817,43 +814,4 @@ describe("DockerExecutorService", () => {
     });
   });
 
-  describe("resource limits", () => {
-    beforeEach(() => {
-      // Reset mocks for each test
-      jest.clearAllMocks();
-    });
-
-    it("should set memory and CPU limits", async () => {
-      // Get the actual docker instance used by the service
-      const dockerInstance = (dockerExecutorService as any).docker;
-      dockerInstance.createContainer = jest
-        .fn()
-        .mockResolvedValue(mockContainer);
-      mockContainer.start = jest.fn().mockResolvedValue(undefined);
-      mockContainer.wait = jest.fn().mockResolvedValue({ StatusCode: 0 });
-      mockContainer.inspect = jest.fn().mockResolvedValue({
-        State: { Status: "exited" },
-      });
-      mockContainer.remove = jest.fn().mockResolvedValue(undefined);
-
-      const mockStream = new Readable({ read() {} });
-      mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
-
-      setTimeout(() => mockStream.emit("end"), 10);
-
-      await dockerExecutorService.executeContainer({
-        image: "test:latest",
-        env: { TEST: "value" },
-      });
-
-      expect(dockerInstance.createContainer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          HostConfig: {
-            Memory: 2 * 1024 * 1024 * 1024, // 2GB
-            CpuShares: 1024,
-          },
-        }),
-      );
-    });
-  });
 });

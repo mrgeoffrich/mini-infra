@@ -82,7 +82,6 @@ export interface DeploymentConfiguration {
   listeningPort: number | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
-  userId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -99,7 +98,6 @@ export interface DeploymentConfigurationInfo {
   listeningPort: number | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
-  userId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -286,7 +284,6 @@ export interface DeploymentConfigFilter {
   dockerImage?: string;
   isActive?: boolean;
   environmentId?: string;
-  userId?: string;
 }
 
 export interface DeploymentFilter {

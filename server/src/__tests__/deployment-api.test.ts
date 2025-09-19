@@ -144,6 +144,7 @@ jest.mock("../middleware/auth", () => ({
 describe("Deployment API Integration Tests", () => {
   let app: express.Application;
   let testUserId: string;
+  let testEnvironmentId: string;
   let apiKey: string;
 
   beforeEach(async () => {
@@ -156,6 +157,7 @@ describe("Deployment API Integration Tests", () => {
     await testPrisma.deployment.deleteMany();
     await testPrisma.deploymentStep.deleteMany();
     await testPrisma.deploymentConfiguration.deleteMany();
+    await testPrisma.environment.deleteMany();
     await testPrisma.apiKey.deleteMany();
     await testPrisma.user.deleteMany();
 
@@ -164,6 +166,18 @@ describe("Deployment API Integration Tests", () => {
     testUserId = user.id;
     const key = await createTestApiKey(testUserId, "Test API Key");
     apiKey = `test-key-${key.id}`;
+
+    // Create test environment
+    const environment = await testPrisma.environment.create({
+      data: {
+        name: "test-env",
+        description: "Test environment",
+        type: "nonproduction",
+        status: "initialized",
+        isActive: true,
+      },
+    });
+    testEnvironmentId = environment.id;
 
     // Setup Express app with routes
     app = express();
@@ -185,6 +199,7 @@ describe("Deployment API Integration Tests", () => {
     await testPrisma.deployment.deleteMany();
     await testPrisma.deploymentStep.deleteMany();
     await testPrisma.deploymentConfiguration.deleteMany();
+    await testPrisma.environment.deleteMany();
     await testPrisma.apiKey.deleteMany();
     await testPrisma.user.deleteMany();
   });
@@ -235,6 +250,7 @@ describe("Deployment API Integration Tests", () => {
       maxWaitTime: 30000,
       keepOldContainer: false,
     },
+    environmentId: testEnvironmentId,
   });
 
   describe("Deployment Configuration Routes", () => {
@@ -247,7 +263,7 @@ describe("Deployment API Integration Tests", () => {
             applicationName: "test-app-1",
             dockerImage: "nginx:latest",
             isActive: true,
-            userId: testUserId,
+            environmentId: testEnvironmentId,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           },
@@ -284,7 +300,6 @@ describe("Deployment API Integration Tests", () => {
           .expect(200);
 
         expect(mockDeploymentConfigService.listDeploymentConfigs).toHaveBeenCalledWith(
-          testUserId,
           { applicationName: "test-app", isActive: true },
           { field: "createdAt", order: "desc" },
           10,
@@ -315,7 +330,7 @@ describe("Deployment API Integration Tests", () => {
           id: "config-123",
           ...configRequest,
           isActive: true,
-          userId: testUserId,
+          environmentId: testEnvironmentId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -335,8 +350,7 @@ describe("Deployment API Integration Tests", () => {
         expect(body.message).toContain("created successfully");
 
         expect(mockDeploymentConfigService.createDeploymentConfig).toHaveBeenCalledWith(
-          configRequest,
-          testUserId
+          configRequest
         );
       });
 
@@ -419,7 +433,7 @@ describe("Deployment API Integration Tests", () => {
           id: "config-123",
           ...createValidDeploymentConfigRequest(),
           isActive: true,
-          userId: testUserId,
+          environmentId: testEnvironmentId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -437,8 +451,7 @@ describe("Deployment API Integration Tests", () => {
         expect(body.data.id).toBe("config-123");
 
         expect(mockDeploymentConfigService.getDeploymentConfig).toHaveBeenCalledWith(
-          "config-123",
-          testUserId
+          "config-123"
         );
       });
 
@@ -467,7 +480,7 @@ describe("Deployment API Integration Tests", () => {
           id: "config-123",
           ...createValidDeploymentConfigRequest(),
           ...updateData,
-          userId: testUserId,
+          environmentId: testEnvironmentId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -489,8 +502,7 @@ describe("Deployment API Integration Tests", () => {
 
         expect(mockDeploymentConfigService.updateDeploymentConfig).toHaveBeenCalledWith(
           "config-123",
-          updateData,
-          testUserId
+          updateData
         );
       });
 
@@ -538,8 +550,7 @@ describe("Deployment API Integration Tests", () => {
         expect(response.body.message).toContain("deleted successfully");
 
         expect(mockDeploymentConfigService.deleteDeploymentConfig).toHaveBeenCalledWith(
-          "config-123",
-          testUserId
+          "config-123"
         );
       });
 
@@ -806,7 +817,7 @@ describe("Deployment API Integration Tests", () => {
           status: "completed",
           configurationId: "config-123",
           configuration: {
-            userId: testUserId,
+            environmentId: testEnvironmentId,
             applicationName: "test-app",
           },
           startedAt: new Date(),
@@ -990,26 +1001,6 @@ describe("Deployment API Integration Tests", () => {
         .expect(200);
     });
 
-    it("should isolate data by user", async () => {
-      // Test that users only see their own configurations
-      const otherUserId = "other-user-id";
-      
-      mockDeploymentConfigService.listDeploymentConfigs.mockResolvedValue([]);
-
-      await supertest(app)
-        .get("/api/deployments/configs")
-        .set("x-api-key", apiKey)
-        .set("x-user-id", otherUserId) // Different user
-        .expect(200);
-
-      expect(mockDeploymentConfigService.listDeploymentConfigs).toHaveBeenCalledWith(
-        otherUserId, // Should use the user ID from the request
-        expect.any(Object),
-        expect.any(Object),
-        expect.any(Number),
-        expect.any(Number)
-      );
-    });
   });
 
   describe("Error Handling", () => {
@@ -1056,7 +1047,7 @@ describe("Deployment API Integration Tests", () => {
         id: "config-123",
         ...largePayload,
         isActive: true,
-        userId: testUserId,
+        environmentId: testEnvironmentId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

@@ -174,7 +174,7 @@ function serializeDeployment(deployment: any): DeploymentInfo {
 
 /**
  * GET /api/deployments/configs
- * List deployment configurations for authenticated user
+ * List deployment configurations (system-wide)
  */
 router.get(
   "/configs",
@@ -217,7 +217,6 @@ router.get(
 
       // Get configurations
       const configs = await deploymentConfigService.listDeploymentConfigs(
-        user.id,
         filter,
         { field: "createdAt", order: "desc" },
         limit,
@@ -227,7 +226,6 @@ router.get(
       // Get total count for pagination
       const totalCount = await prisma.deploymentConfiguration.count({
         where: {
-          userId: user.id,
           ...(applicationName && {
             applicationName: { contains: applicationName },
           }),
@@ -302,7 +300,6 @@ router.post(
       // Create configuration
       const config = await deploymentConfigService.createDeploymentConfig(
         configData,
-        user.id,
       );
 
       const response: DeploymentConfigResponse = {
@@ -351,7 +348,6 @@ router.get(
 
       const config = await deploymentConfigService.getDeploymentConfig(
         id,
-        user.id,
       );
 
       if (!config) {
@@ -414,7 +410,6 @@ router.put(
       const config = await deploymentConfigService.updateDeploymentConfig(
         id,
         updateData,
-        user.id,
       );
 
       const response: DeploymentConfigResponse = {
@@ -468,7 +463,7 @@ router.delete(
 
       const { id } = req.params;
 
-      await deploymentConfigService.deleteDeploymentConfig(id, user.id);
+      await deploymentConfigService.deleteDeploymentConfig(id);
 
       res.json({
         success: true,
@@ -531,7 +526,6 @@ router.post(
       // Get deployment configuration
       const config = await deploymentConfigService.getDeploymentConfigByName(
         applicationName,
-        user.id,
       );
 
       if (!config) {
@@ -604,9 +598,6 @@ router.get(
       const deployment = await prisma.deployment.findFirst({
         where: {
           id,
-          configuration: {
-            userId: user.id,
-          },
         },
         include: {
           deploymentSteps: {
@@ -687,13 +678,10 @@ router.post(
 
       const { id } = req.params;
 
-      // Verify deployment exists and belongs to user
+      // Verify deployment exists
       const deployment = await prisma.deployment.findFirst({
         where: {
           id,
-          configuration: {
-            userId: user.id,
-          },
         },
         include: {
           configuration: true,
@@ -775,11 +763,6 @@ router.get(
 
       // Get deployments with configuration info
       const deployments = await prisma.deployment.findMany({
-        where: {
-          configuration: {
-            userId: user.id,
-          },
-        },
         include: {
           configuration: {
             select: {
@@ -794,13 +777,7 @@ router.get(
       });
 
       // Get total count
-      const totalCount = await prisma.deployment.count({
-        where: {
-          configuration: {
-            userId: user.id,
-          },
-        },
-      });
+      const totalCount = await prisma.deployment.count();
 
       // Serialize deployments
       const serializedDeployments = deployments.map((deployment) => ({

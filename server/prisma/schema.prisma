@@ -19,12 +19,11 @@ model User {
   googleId      String?   @unique
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  
+
   // Relations
   apiKeys       ApiKey[]
   userPreference UserPreference?
   postgresDatabases PostgresDatabase[]
-  deploymentConfigurations DeploymentConfiguration[]
 
   @@map("users")
 }
@@ -227,14 +226,11 @@ model DeploymentConfiguration {
   isActive          Boolean  @default(true)
   environmentId     String   // Required environment assignment (immutable)
   environment       Environment @relation(fields: [environmentId], references: [id])
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   deployments       Deployment[]
 
-  @@index([userId])
   @@index([environmentId])
   @@map("deployment_configurations")
 }

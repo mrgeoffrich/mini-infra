@@ -37,7 +37,7 @@ jest.mock("../lib/logger-factory.ts", () => ({
 
 describe("DeploymentConfigService", () => {
   let deploymentConfigService: DeploymentConfigService;
-  let testUserId: string;
+  let testEnvironmentId: string;
 
   beforeEach(async () => {
     // Clean up database
@@ -45,11 +45,20 @@ describe("DeploymentConfigService", () => {
     await testPrisma.deploymentStep.deleteMany();
     await testPrisma.deploymentConfiguration.deleteMany();
     await testPrisma.connectivityStatus.deleteMany();
+    await testPrisma.environment.deleteMany();
     await testPrisma.user.deleteMany();
 
-    // Create test user
-    const user = await createTestUser();
-    testUserId = user.id;
+    // Create test environment
+    const environment = await testPrisma.environment.create({
+      data: {
+        name: "test-env",
+        description: "Test environment",
+        type: "nonproduction",
+        status: "initialized",
+        isActive: true,
+      },
+    });
+    testEnvironmentId = environment.id;
 
     // Create service instance
     deploymentConfigService = new DeploymentConfigService(testPrisma);
@@ -61,6 +70,7 @@ describe("DeploymentConfigService", () => {
     await testPrisma.deploymentStep.deleteMany();
     await testPrisma.deploymentConfiguration.deleteMany();
     await testPrisma.connectivityStatus.deleteMany();
+    await testPrisma.environment.deleteMany();
     await testPrisma.user.deleteMany();
   });
 
@@ -110,6 +120,7 @@ describe("DeploymentConfigService", () => {
       maxWaitTime: 30000,
       keepOldContainer: false,
     },
+    environmentId: testEnvironmentId,
   });
 
   describe("Service Validation", () => {
@@ -135,12 +146,11 @@ describe("DeploymentConfigService", () => {
   describe("Create Deployment Configuration", () => {
     it("should create deployment configuration successfully", async () => {
       const request = createValidDeploymentConfig();
-      
+
       const result = await deploymentConfigService.createDeploymentConfig(
-        request,
-        testUserId
+        request
       );
-      
+
       expect(result).toMatchObject({
         applicationName: request.applicationName,
         dockerImage: request.dockerImage,
@@ -149,60 +159,36 @@ describe("DeploymentConfigService", () => {
         healthCheckConfig: request.healthCheckConfig,
         rollbackConfig: request.rollbackConfig,
         isActive: true,
-        userId: testUserId,
+        environmentId: testEnvironmentId,
       });
       expect(result.id).toBeTruthy();
       expect(result.createdAt).toBeTruthy();
       expect(result.updatedAt).toBeTruthy();
     });
 
-    it("should prevent duplicate application names for same user", async () => {
+    it("should prevent duplicate application names", async () => {
       const request = createValidDeploymentConfig();
-      
+
       // Create first configuration
-      await deploymentConfigService.createDeploymentConfig(request, testUserId);
-      
+      await deploymentConfigService.createDeploymentConfig(request);
+
       // Try to create duplicate - should fail
       await expect(
-        deploymentConfigService.createDeploymentConfig(request, testUserId)
+        deploymentConfigService.createDeploymentConfig(request)
       ).rejects.toThrow(
         "Deployment configuration for application 'test-app' already exists"
       );
     });
 
-    it("should allow same application name for different users", async () => {
-      const user2 = await createTestUser();
-      const request1 = createValidDeploymentConfig();
-      const request2 = {
-        ...createValidDeploymentConfig(),
-        applicationName: "test-app-2", // Different app name to avoid constraint
-      };
-      
-      // Create for first user
-      const config1 = await deploymentConfigService.createDeploymentConfig(
-        request1,
-        testUserId
-      );
-      
-      // Create for second user - should succeed
-      const config2 = await deploymentConfigService.createDeploymentConfig(
-        request2,
-        user2.id
-      );
-      
-      expect(config1.userId).not.toBe(config2.userId);
-      expect(config1.userId).toBe(testUserId);
-      expect(config2.userId).toBe(user2.id);
-    });
 
     it("should validate required fields", async () => {
       const invalidRequest = {
         ...createValidDeploymentConfig(),
         applicationName: "",
       };
-      
+
       await expect(
-        deploymentConfigService.createDeploymentConfig(invalidRequest, testUserId)
+        deploymentConfigService.createDeploymentConfig(invalidRequest)
       ).rejects.toThrow("Validation failed");
     });
 
@@ -213,7 +199,7 @@ describe("DeploymentConfigService", () => {
       };
       
       await expect(
-        deploymentConfigService.createDeploymentConfig(invalidRequest, testUserId)
+        deploymentConfigService.createDeploymentConfig(invalidRequest)
       ).rejects.toThrow("Validation failed");
     });
 
@@ -233,7 +219,7 @@ describe("DeploymentConfigService", () => {
       };
       
       await expect(
-        deploymentConfigService.createDeploymentConfig(invalidRequest, testUserId)
+        deploymentConfigService.createDeploymentConfig(invalidRequest)
       ).rejects.toThrow("Validation failed");
     });
 
@@ -247,7 +233,7 @@ describe("DeploymentConfigService", () => {
       };
       
       await expect(
-        deploymentConfigService.createDeploymentConfig(invalidRequest, testUserId)
+        deploymentConfigService.createDeploymentConfig(invalidRequest)
       ).rejects.toThrow("Validation failed");
     });
   });
@@ -258,16 +244,14 @@ describe("DeploymentConfigService", () => {
     beforeEach(async () => {
       const request = createValidDeploymentConfig();
       const config = await deploymentConfigService.createDeploymentConfig(
-        request,
-        testUserId
+        request
       );
       configId = config.id;
     });
 
     it("should get deployment configuration by ID", async () => {
       const result = await deploymentConfigService.getDeploymentConfig(
-        configId,
-        testUserId
+        configId
       );
       
       expect(result).toBeTruthy();
@@ -277,28 +261,16 @@ describe("DeploymentConfigService", () => {
 
     it("should return null for non-existent configuration", async () => {
       const result = await deploymentConfigService.getDeploymentConfig(
-        "non-existent-id",
-        testUserId
+        "non-existent-id"
       );
       
       expect(result).toBeNull();
     });
 
-    it("should return null for configuration owned by different user", async () => {
-      const user2 = await createTestUser();
-      
-      const result = await deploymentConfigService.getDeploymentConfig(
-        configId,
-        user2.id
-      );
-      
-      expect(result).toBeNull();
-    });
 
     it("should get deployment configuration by name", async () => {
       const result = await deploymentConfigService.getDeploymentConfigByName(
-        "test-app",
-        testUserId
+        "test-app"
       );
       
       expect(result).toBeTruthy();
@@ -308,14 +280,12 @@ describe("DeploymentConfigService", () => {
     it("should use cache for repeated requests", async () => {
       // First request
       const result1 = await deploymentConfigService.getDeploymentConfig(
-        configId,
-        testUserId
+        configId
       );
       
       // Second request should use cache
       const result2 = await deploymentConfigService.getDeploymentConfig(
-        configId,
-        testUserId
+        configId
       );
       
       expect(result1).toEqual(result2);
@@ -328,8 +298,7 @@ describe("DeploymentConfigService", () => {
     beforeEach(async () => {
       const request = createValidDeploymentConfig();
       const config = await deploymentConfigService.createDeploymentConfig(
-        request,
-        testUserId
+        request
       );
       configId = config.id;
     });
@@ -342,8 +311,7 @@ describe("DeploymentConfigService", () => {
       
       const result = await deploymentConfigService.updateDeploymentConfig(
         configId,
-        updateRequest,
-        testUserId
+        updateRequest
       );
       
       expect(result.dockerImage).toBe("nginx:1.21");
@@ -358,8 +326,7 @@ describe("DeploymentConfigService", () => {
         applicationName: "test-app-2",
       };
       await deploymentConfigService.createDeploymentConfig(
-        secondRequest,
-        testUserId
+        secondRequest
       );
       
       // Try to update first config to use second config's name
@@ -370,29 +337,13 @@ describe("DeploymentConfigService", () => {
       await expect(
         deploymentConfigService.updateDeploymentConfig(
           configId,
-          updateRequest,
-          testUserId
+          updateRequest
         )
       ).rejects.toThrow(
         "Deployment configuration for application 'test-app-2' already exists"
       );
     });
 
-    it("should not allow updating configuration owned by different user", async () => {
-      const user2 = await createTestUser();
-      
-      const updateRequest: UpdateDeploymentConfigRequest = {
-        dockerImage: "nginx:1.21",
-      };
-      
-      await expect(
-        deploymentConfigService.updateDeploymentConfig(
-          configId,
-          updateRequest,
-          user2.id
-        )
-      ).rejects.toThrow("Deployment configuration not found or access denied");
-    });
 
     it("should update container configuration", async () => {
       const updateRequest: UpdateDeploymentConfigRequest = {
@@ -410,8 +361,7 @@ describe("DeploymentConfigService", () => {
       
       const result = await deploymentConfigService.updateDeploymentConfig(
         configId,
-        updateRequest,
-        testUserId
+        updateRequest
       );
       
       expect(result.containerConfig.ports[0].containerPort).toBe(3000);
@@ -428,20 +378,19 @@ describe("DeploymentConfigService", () => {
           applicationName: `test-app-${i}`,
           dockerImage: i === 2 ? "redis:latest" : "nginx:latest",
         };
-        const config = await deploymentConfigService.createDeploymentConfig(request, testUserId);
+        const config = await deploymentConfigService.createDeploymentConfig(request);
         configs.push(config);
       }
       
       // Make the third configuration inactive (test-app-3)
       await deploymentConfigService.updateDeploymentConfig(
         configs[2].id,
-        { isActive: false },
-        testUserId
+        { isActive: false }
       );
     });
 
-    it("should list all deployment configurations for user", async () => {
-      const result = await deploymentConfigService.listDeploymentConfigs(testUserId);
+    it("should list all deployment configurations", async () => {
+      const result = await deploymentConfigService.listDeploymentConfigs();
       
       expect(result).toHaveLength(3);
       expect(result[0].applicationName).toBe("test-app-3"); // Most recent first
@@ -449,7 +398,6 @@ describe("DeploymentConfigService", () => {
 
     it("should filter by application name", async () => {
       const result = await deploymentConfigService.listDeploymentConfigs(
-        testUserId,
         { applicationName: "test-app-2" }
       );
       
@@ -459,7 +407,6 @@ describe("DeploymentConfigService", () => {
 
     it("should filter by docker image", async () => {
       const result = await deploymentConfigService.listDeploymentConfigs(
-        testUserId,
         { dockerImage: "redis" }
       );
       
@@ -469,7 +416,6 @@ describe("DeploymentConfigService", () => {
 
     it("should filter by active status", async () => {
       const result = await deploymentConfigService.listDeploymentConfigs(
-        testUserId,
         { isActive: true }
       );
       
@@ -479,7 +425,6 @@ describe("DeploymentConfigService", () => {
 
     it("should sort by different fields", async () => {
       const result = await deploymentConfigService.listDeploymentConfigs(
-        testUserId,
         undefined,
         { field: "applicationName", order: "asc" }
       );
@@ -491,7 +436,6 @@ describe("DeploymentConfigService", () => {
 
     it("should support pagination", async () => {
       const result = await deploymentConfigService.listDeploymentConfigs(
-        testUserId,
         undefined,
         undefined,
         2, // limit
@@ -503,10 +447,10 @@ describe("DeploymentConfigService", () => {
 
     it("should use cache for repeated requests", async () => {
       // First request
-      const result1 = await deploymentConfigService.listDeploymentConfigs(testUserId);
+      const result1 = await deploymentConfigService.listDeploymentConfigs();
       
       // Second request should use cache
-      const result2 = await deploymentConfigService.listDeploymentConfigs(testUserId);
+      const result2 = await deploymentConfigService.listDeploymentConfigs();
       
       expect(result1).toEqual(result2);
     });
@@ -518,35 +462,26 @@ describe("DeploymentConfigService", () => {
     beforeEach(async () => {
       const request = createValidDeploymentConfig();
       const config = await deploymentConfigService.createDeploymentConfig(
-        request,
-        testUserId
+        request
       );
       configId = config.id;
     });
 
     it("should delete deployment configuration successfully", async () => {
-      await deploymentConfigService.deleteDeploymentConfig(configId, testUserId);
+      await deploymentConfigService.deleteDeploymentConfig(configId);
       
       // Verify deletion
       const result = await deploymentConfigService.getDeploymentConfig(
-        configId,
-        testUserId
+        configId
       );
       expect(result).toBeNull();
     });
 
-    it("should not allow deleting configuration owned by different user", async () => {
-      const user2 = await createTestUser();
-      
-      await expect(
-        deploymentConfigService.deleteDeploymentConfig(configId, user2.id)
-      ).rejects.toThrow("Deployment configuration not found or access denied");
-    });
 
     it("should throw error for non-existent configuration", async () => {
       await expect(
-        deploymentConfigService.deleteDeploymentConfig("non-existent-id", testUserId)
-      ).rejects.toThrow("Deployment configuration not found or access denied");
+        deploymentConfigService.deleteDeploymentConfig("non-existent-id")
+      ).rejects.toThrow("Deployment configuration not found");
     });
   });
 
@@ -556,21 +491,19 @@ describe("DeploymentConfigService", () => {
     beforeEach(async () => {
       const request = createValidDeploymentConfig();
       const config = await deploymentConfigService.createDeploymentConfig(
-        request,
-        testUserId
+        request
       );
       configId = config.id;
     });
 
     it("should activate deployment configuration", async () => {
       // First deactivate
-      await deploymentConfigService.setConfigurationActive(configId, false, testUserId);
+      await deploymentConfigService.setConfigurationActive(configId, false);
       
       // Then activate
       const result = await deploymentConfigService.setConfigurationActive(
         configId,
-        true,
-        testUserId
+        true
       );
       
       expect(result.isActive).toBe(true);
@@ -579,8 +512,7 @@ describe("DeploymentConfigService", () => {
     it("should deactivate deployment configuration", async () => {
       const result = await deploymentConfigService.setConfigurationActive(
         configId,
-        false,
-        testUserId
+        false
       );
       
       expect(result.isActive).toBe(false);
