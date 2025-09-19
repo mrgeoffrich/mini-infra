@@ -21,7 +21,6 @@ const createNetworkSchema = z.object({
 });
 
 const updateNetworkSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).optional(),
   driver: z.string().min(1).optional(),
   options: z.record(z.string(), z.any()).optional()
 });
@@ -64,8 +63,11 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
+    // Create environment-prefixed network name
+    const prefixedNetworkName = `${environment.name}-${validatedData.name}`;
+
     // Check if network name already exists in this environment
-    const existingNetwork = environment.networks.find(n => n.name === validatedData.name);
+    const existingNetwork = environment.networks.find(n => n.name === prefixedNetworkName);
     if (existingNetwork) {
       return res.status(409).json({
         error: 'Network name already exists',
@@ -76,7 +78,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
     const network = await prisma.environmentNetwork.create({
       data: {
         environmentId: id,
-        name: validatedData.name,
+        name: prefixedNetworkName,
         driver: validatedData.driver,
         options: validatedData.options || {}
       }
@@ -129,21 +131,9 @@ router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    // Check if new name conflicts with existing networks (if name is being changed)
-    if (validatedData.name && validatedData.name !== existingNetwork.name) {
-      const nameConflict = environment.networks.find(n => n.name === validatedData.name && n.id !== networkId);
-      if (nameConflict) {
-        return res.status(409).json({
-          error: 'Network name already exists',
-          message: 'A network with this name already exists in the environment'
-        });
-      }
-    }
-
     const network = await prisma.environmentNetwork.update({
       where: { id: networkId },
       data: {
-        name: validatedData.name,
         driver: validatedData.driver,
         options: validatedData.options
       }
@@ -206,7 +196,7 @@ router.delete('/:networkId', requireSessionOrApiKey, async (req, res) => {
     const servicesUsingNetwork = [];
     for (const service of environment.services) {
       const serviceMetadata = serviceRegistry.getServiceMetadata(service.serviceType);
-      if (serviceMetadata?.requiredNetworks.some(n => n.name === existingNetwork.name)) {
+      if (serviceMetadata?.requiredNetworks.some(n => `${environment.name}-${n.name}` === existingNetwork.name)) {
         servicesUsingNetwork.push(service.serviceName);
       }
     }

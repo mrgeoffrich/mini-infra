@@ -21,7 +21,6 @@ const createVolumeSchema = z.object({
 });
 
 const updateVolumeSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).optional(),
   driver: z.string().min(1).optional(),
   options: z.record(z.string(), z.any()).optional()
 });
@@ -64,8 +63,11 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
+    // Create environment-prefixed volume name
+    const prefixedVolumeName = `${environment.name}-${validatedData.name}`;
+
     // Check if volume name already exists in this environment
-    const existingVolume = environment.volumes.find(v => v.name === validatedData.name);
+    const existingVolume = environment.volumes.find(v => v.name === prefixedVolumeName);
     if (existingVolume) {
       return res.status(409).json({
         error: 'Volume name already exists',
@@ -76,7 +78,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
     const volume = await prisma.environmentVolume.create({
       data: {
         environmentId: id,
-        name: validatedData.name,
+        name: prefixedVolumeName,
         driver: validatedData.driver,
         options: validatedData.options || {}
       }
@@ -129,21 +131,9 @@ router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    // Check if new name conflicts with existing volumes (if name is being changed)
-    if (validatedData.name && validatedData.name !== existingVolume.name) {
-      const nameConflict = environment.volumes.find(v => v.name === validatedData.name && v.id !== volumeId);
-      if (nameConflict) {
-        return res.status(409).json({
-          error: 'Volume name already exists',
-          message: 'A volume with this name already exists in the environment'
-        });
-      }
-    }
-
     const volume = await prisma.environmentVolume.update({
       where: { id: volumeId },
       data: {
-        name: validatedData.name,
         driver: validatedData.driver,
         options: validatedData.options
       }
@@ -206,7 +196,7 @@ router.delete('/:volumeId', requireSessionOrApiKey, async (req, res) => {
     const servicesUsingVolume = [];
     for (const service of environment.services) {
       const serviceMetadata = serviceRegistry.getServiceMetadata(service.serviceType);
-      if (serviceMetadata?.requiredVolumes.some(v => v.name === existingVolume.name)) {
+      if (serviceMetadata?.requiredVolumes.some(v => `${environment.name}-${v.name}` === existingVolume.name)) {
         servicesUsingVolume.push(service.serviceName);
       }
     }

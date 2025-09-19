@@ -1018,6 +1018,7 @@ export class DockerExecutorService {
 
   /**
    * Create a Docker network with compose-style labels
+   * Note: networkName should already be prefixed with environment name
    */
   public async createNetwork(
     networkName: string,
@@ -1027,7 +1028,7 @@ export class DockerExecutorService {
     try {
       const networks = await this.docker.listNetworks();
       const existingNetwork = networks.find(net => net.Name === networkName);
-      
+
       if (!existingNetwork) {
         const labels: Record<string, string> = {
           'mini-infra.managed': 'true',
@@ -1048,7 +1049,7 @@ export class DockerExecutorService {
           Driver: options?.driver || 'bridge',
           Labels: labels
         });
-        
+
         servicesLogger().info({ network: networkName, project: projectName }, 'Created network');
       } else {
         servicesLogger().info({ network: networkName }, 'Network already exists');
@@ -1068,6 +1069,7 @@ export class DockerExecutorService {
 
   /**
    * Create a Docker volume with compose-style labels
+   * Note: volumeName should already be prefixed with environment name
    */
   public async createVolume(
     volumeName: string,
@@ -1077,7 +1079,7 @@ export class DockerExecutorService {
     try {
       const existingVolumes = await this.docker.listVolumes();
       const volumeExists = existingVolumes.Volumes?.some(vol => vol.Name === volumeName);
-      
+
       if (!volumeExists) {
         const labels: Record<string, string> = {
           'mini-infra.managed': 'true',
@@ -1093,11 +1095,11 @@ export class DockerExecutorService {
           Object.assign(labels, options.labels);
         }
 
-        await this.docker.createVolume({ 
+        await this.docker.createVolume({
           Name: volumeName,
           Labels: labels
         });
-        
+
         servicesLogger().info({ volume: volumeName, project: projectName }, 'Created volume');
       } else {
         servicesLogger().info({ volume: volumeName }, 'Volume already exists');

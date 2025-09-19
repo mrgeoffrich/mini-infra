@@ -64,7 +64,6 @@ export interface CreateEnvironmentRequest {
 }
 
 export interface UpdateEnvironmentRequest {
-  name?: string;
   description?: string;
   type?: EnvironmentType;
   isActive?: boolean;
@@ -176,7 +175,6 @@ export interface CreateNetworkRequest {
 }
 
 export interface UpdateNetworkRequest {
-  name?: string;
   driver?: string;
   options?: Record<string, any>;
 }
@@ -193,7 +191,6 @@ export interface CreateVolumeRequest {
 }
 
 export interface UpdateVolumeRequest {
-  name?: string;
   driver?: string;
   options?: Record<string, any>;
 }

@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Plus, X, Server } from "lucide-react";
+import { Loader2, Plus, X, Server, Info } from "lucide-react";
 
 const createEnvironmentSchema = z.object({
   name: z
@@ -155,6 +155,19 @@ export function EnvironmentCreateDialog({
         <div className="max-h-[60vh] overflow-y-auto pr-4">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Info Box */}
+              <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-blue-800 font-medium">
+                    Important: Environment names are permanent
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Once created, environment names cannot be changed to ensure consistency of Docker resources (containers, networks, volumes).
+                  </p>
+                </div>
+              </div>
+
               {/* Basic Information */}
               <div className="space-y-4">
                 <FormField
@@ -171,7 +184,8 @@ export function EnvironmentCreateDialog({
                         />
                       </FormControl>
                       <FormDescription>
-                        Use letters, numbers, underscores, and hyphens only
+                        Use letters, numbers, underscores, and hyphens only.
+                        <strong className="text-warning"> Environment names cannot be changed after creation.</strong>
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

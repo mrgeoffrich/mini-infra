@@ -36,15 +36,6 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 const updateEnvironmentSchema = z.object({
-  name: z
-    .string()
-    .min(1, "Name is required")
-    .max(100, "Name must be less than 100 characters")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Name must contain only letters, numbers, underscores, and hyphens",
-    )
-    .optional(),
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const).optional(),
   isActive: z.boolean().optional(),
@@ -70,7 +61,6 @@ export function EnvironmentEditDialog({
   const form = useForm<UpdateEnvironmentFormData>({
     resolver: zodResolver(updateEnvironmentSchema),
     defaultValues: {
-      name: environment.name,
       description: environment.description || "",
       type: environment.type,
       isActive: environment.isActive,
@@ -82,9 +72,6 @@ export function EnvironmentEditDialog({
       // Only include fields that have changed
       const changes: UpdateEnvironmentRequest = {};
 
-      if (data.name && data.name !== environment.name) {
-        changes.name = data.name;
-      }
       if (data.description !== environment.description) {
         changes.description = data.description;
       }
@@ -122,7 +109,6 @@ export function EnvironmentEditDialog({
   React.useEffect(() => {
     if (open) {
       form.reset({
-        name: environment.name,
         description: environment.description || "",
         type: environment.type,
         isActive: environment.isActive,
@@ -142,26 +128,15 @@ export function EnvironmentEditDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Environment Name</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="my-environment"
-                      {...field}
-                      disabled={updateMutation.isPending}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Use letters, numbers, underscores, and hyphens only
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="p-4 bg-muted rounded-md">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium">Environment Name:</span>
+                <code className="text-xs bg-background px-2 py-1 rounded">{environment.name}</code>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Environment names cannot be changed after creation to maintain resource consistency.
+              </p>
+            </div>
 
             <FormField
               control={form.control}

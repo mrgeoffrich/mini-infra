@@ -182,7 +182,6 @@ export class EnvironmentManager {
       const environment = await this.prisma.environment.update({
         where: { id },
         data: {
-          name: request.name,
           description: request.description,
           type: request.type,
           isActive: request.isActive
@@ -485,18 +484,27 @@ export class EnvironmentManager {
         throw new Error(`No metadata found for service type: ${serviceConfig.serviceType}`);
       }
 
-      // Create networks for this service
+      // Get environment for prefixing
+      const environment = await this.prisma.environment.findUnique({
+        where: { id: environmentId }
+      });
+      if (!environment) {
+        throw new Error(`Environment not found: ${environmentId}`);
+      }
+
+      // Create networks for this service with environment prefix
       for (const networkReq of metadata.requiredNetworks) {
+        const prefixedNetworkName = `${environment.name}-${networkReq.name}`;
         await this.prisma.environmentNetwork.upsert({
           where: {
             environmentId_name: {
               environmentId,
-              name: networkReq.name
+              name: prefixedNetworkName
             }
           },
           create: {
             environmentId,
-            name: networkReq.name,
+            name: prefixedNetworkName,
             driver: networkReq.driver || 'bridge',
             options: networkReq.options || {}
           },
@@ -504,18 +512,19 @@ export class EnvironmentManager {
         });
       }
 
-      // Create volumes for this service
+      // Create volumes for this service with environment prefix
       for (const volumeReq of metadata.requiredVolumes) {
+        const prefixedVolumeName = `${environment.name}-${volumeReq.name}`;
         await this.prisma.environmentVolume.upsert({
           where: {
             environmentId_name: {
               environmentId,
-              name: volumeReq.name
+              name: prefixedVolumeName
             }
           },
           create: {
             environmentId,
-            name: volumeReq.name,
+            name: prefixedVolumeName,
             driver: volumeReq.driver || 'local',
             options: volumeReq.options || {}
           },
@@ -633,9 +642,10 @@ export class EnvironmentManager {
 
   private async startEnvironmentService(environment: Environment, envService: any): Promise<void> {
     try {
-      // Create service instance
+      // Create service instance with environment-prefixed service name
+      const prefixedServiceName = `${environment.name}-${envService.serviceName}`;
       const result = await this.serviceFactory.createService({
-        serviceName: envService.serviceName,
+        serviceName: prefixedServiceName,
         serviceType: envService.serviceType,
         config: envService.config,
         projectName: environment.name
@@ -700,7 +710,14 @@ export class EnvironmentManager {
 
   private async stopEnvironmentService(envService: any): Promise<void> {
     try {
-      await this.serviceFactory.stopService(envService.serviceName);
+      // Get environment to construct prefixed service name
+      const environment = await this.getEnvironmentById(envService.environmentId);
+      if (!environment) {
+        throw new Error(`Environment not found: ${envService.environmentId}`);
+      }
+
+      const prefixedServiceName = `${environment.name}-${envService.serviceName}`;
+      await this.serviceFactory.stopService(prefixedServiceName);
 
       // Update service status
       await this.updateServiceStatus(
