@@ -38,22 +38,10 @@ import {
   EyeOff,
   Container,
   TestTube,
-  Network,
-  Route,
-  Play,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Clock,
 } from "lucide-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { useTestDockerRegistry } from "@/hooks/use-system-settings";
-import {
-  useDeployInfrastructure,
-  useInfrastructureStatus,
-  useCleanupInfrastructure,
-} from "@/hooks/use-deployment-infrastructure";
 
 // System settings schema
 const systemSettingsSchema = z.object({
@@ -78,16 +66,6 @@ const systemSettingsSchema = z.object({
     ),
   restoreRegistryUsername: z.string().optional(),
   restoreRegistryPassword: z.string().optional(),
-
-  // Docker Network settings
-  dockerNetworkName: z
-    .string()
-    .min(1, "Docker network name is required")
-    .regex(
-      /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/,
-      "Invalid network name format (alphanumeric, underscores, dots, and hyphens)",
-    ),
-  dockerNetworkDriver: z.enum(["bridge", "overlay", "host", "none"]),
 });
 
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
@@ -95,7 +73,6 @@ type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 // Default Docker images and settings
 const DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
 const DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
-const DEFAULT_NETWORK_NAME = "haproxy_network";
 
 export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -106,7 +83,6 @@ export default function SystemSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [testingBackup, setTestingBackup] = useState(false);
   const [testingRestore, setTestingRestore] = useState(false);
-  const [deployingInfrastructure, setDeployingInfrastructure] = useState(false);
 
   // Fetch existing system settings for dockerexecutor category
   const {
@@ -134,21 +110,10 @@ export default function SystemSettingsPage() {
       restoreDockerImage: DEFAULT_RESTORE_IMAGE,
       restoreRegistryUsername: "",
       restoreRegistryPassword: "",
-      dockerNetworkName: DEFAULT_NETWORK_NAME,
-      dockerNetworkDriver: "bridge",
     },
     mode: "onChange",
   });
 
-  // Infrastructure deployment hooks
-  const deployInfrastructure = useDeployInfrastructure();
-  const cleanupInfrastructure = useCleanupInfrastructure();
-
-  // Get current network name for status monitoring
-  const currentNetworkName =
-    form.watch("dockerNetworkName") || DEFAULT_NETWORK_NAME;
-  const { data: infrastructureStatus, refetch: refetchInfrastructureStatus } =
-    useInfrastructureStatus(currentNetworkName, !!currentNetworkName);
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -187,18 +152,6 @@ export default function SystemSettingsPage() {
         "restoreRegistryPassword",
         settingsMap.restore_registry_password?.value || "",
       );
-      form.setValue(
-        "dockerNetworkName",
-        settingsMap.docker_network_name?.value || DEFAULT_NETWORK_NAME,
-      );
-      form.setValue(
-        "dockerNetworkDriver",
-        (settingsMap.docker_network_driver?.value as
-          | "bridge"
-          | "overlay"
-          | "host"
-          | "none") || "bridge",
-      );
     }
   }, [settingsData, form]);
 
@@ -235,16 +188,6 @@ export default function SystemSettingsPage() {
           key: "restore_registry_password",
           value: data.restoreRegistryPassword || "",
           isEncrypted: true,
-        },
-        {
-          key: "docker_network_name",
-          value: data.dockerNetworkName,
-          isEncrypted: false,
-        },
-        {
-          key: "docker_network_driver",
-          value: data.dockerNetworkDriver,
-          isEncrypted: false,
         },
       ];
 
@@ -326,61 +269,6 @@ export default function SystemSettingsPage() {
     }
   };
 
-  const handleDeployInfrastructure = async () => {
-    setDeployingInfrastructure(true);
-    try {
-      const formValues = form.getValues();
-
-      const result = await deployInfrastructure.mutateAsync({
-        networkName: formValues.dockerNetworkName,
-        networkDriver: formValues.dockerNetworkDriver,
-      });
-
-      const deploymentMessage = `Infrastructure deployed successfully! Network: ${result.data.network.name}, HAProxy: ${result.data.haproxy.id}`;
-      toastWithCopy.success(deploymentMessage, {
-        title: "Infrastructure Deployment Complete",
-        description: "Copy deployment details for your records",
-      });
-
-      // Refresh infrastructure status
-      refetchInfrastructureStatus();
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Failed to deploy infrastructure";
-      toastWithCopy.error(errorMessage, {
-        title: "Infrastructure Deployment Failed",
-        description: "Copy the error details for troubleshooting",
-      });
-    } finally {
-      setDeployingInfrastructure(false);
-    }
-  };
-
-  const handleCleanupInfrastructure = async () => {
-    try {
-      const formValues = form.getValues();
-
-      await cleanupInfrastructure.mutateAsync({
-        networkName: formValues.dockerNetworkName,
-      });
-
-      toastWithCopy.success("Infrastructure cleaned up successfully");
-
-      // Refresh infrastructure status
-      refetchInfrastructureStatus();
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Failed to cleanup infrastructure";
-      toastWithCopy.error(errorMessage, {
-        title: "Infrastructure Cleanup Failed",
-        description: "Copy the error details for troubleshooting",
-      });
-    }
-  };
 
   if (settingsError) {
     return (
@@ -675,226 +563,8 @@ export default function SystemSettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Docker Network Settings */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Network className="h-5 w-5" />
-                      <span>Docker Network Settings</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Configure the Docker network used for deployment
-                      containers
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="dockerNetworkName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Network Name</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="mini-infra-network"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Name of the Docker network for deployment containers
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="dockerNetworkDriver"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Network Driver</FormLabel>
-                          <FormControl>
-                            <select
-                              {...field}
-                              className="w-full h-10 px-3 py-2 text-sm bg-background border border-input rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            >
-                              <option value="bridge">Bridge</option>
-                              <option value="overlay">Overlay</option>
-                              <option value="host">Host</option>
-                              <option value="none">None</option>
-                            </select>
-                          </FormControl>
-                          <FormDescription>
-                            Docker network driver type
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                </Card>
 
 
-                {/* Infrastructure Status and Management */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Settings className="h-5 w-5" />
-                      <span>Infrastructure Management</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Deploy and manage the Docker network and HAProxy container
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {/* Infrastructure Status */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Network className="h-5 w-5 text-blue-500" />
-                          <div>
-                            <h4 className="font-medium">Docker Network</h4>
-                            <p className="text-sm text-muted-foreground">
-                              {currentNetworkName}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {infrastructureStatus?.data.networkStatus.exists ? (
-                            <>
-                              <CheckCircle className="h-5 w-5 text-green-500" />
-                              <span className="text-sm text-green-600">
-                                Active
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="h-5 w-5 text-red-500" />
-                              <span className="text-sm text-red-600">
-                                Not Found
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Route className="h-5 w-5 text-purple-500" />
-                          <div>
-                            <h4 className="font-medium">
-                              HAProxy Load Balancer
-                            </h4>
-                            <p className="text-sm text-muted-foreground">
-                              Ports: 8111:8443 (Web:HTTPS), 8404 (Stats), 5555 (Data Plane API)
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {infrastructureStatus?.data.haproxyStatus.exists ? (
-                            infrastructureStatus.data.haproxyStatus.running ? (
-                              <>
-                                <CheckCircle className="h-5 w-5 text-green-500" />
-                                <span className="text-sm text-green-600">
-                                  Running
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="h-5 w-5 text-yellow-500" />
-                                <span className="text-sm text-yellow-600">
-                                  Stopped
-                                </span>
-                              </>
-                            )
-                          ) : (
-                            <>
-                              <XCircle className="h-5 w-5 text-red-500" />
-                              <span className="text-sm text-red-600">
-                                Not Found
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Infrastructure Actions */}
-                    <div className="flex space-x-3 pt-4 border-t">
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={handleDeployInfrastructure}
-                        disabled={
-                          deployingInfrastructure || !form.formState.isValid
-                        }
-                        className="flex-1"
-                      >
-                        {deployingInfrastructure ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Deploying...
-                          </>
-                        ) : (
-                          <>
-                            <Play className="h-4 w-4 mr-2" />
-                            Deploy Infrastructure
-                          </>
-                        )}
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={handleCleanupInfrastructure}
-                        disabled={
-                          cleanupInfrastructure.isPending ||
-                          (!infrastructureStatus?.data.networkStatus.exists &&
-                            !infrastructureStatus?.data.haproxyStatus.exists)
-                        }
-                      >
-                        {cleanupInfrastructure.isPending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Cleaning...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Cleanup
-                          </>
-                        )}
-                      </Button>
-                    </div>
-
-                    {/* Help Text */}
-                    <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-                      <p className="font-medium mb-1">
-                        Deployment Information:
-                      </p>
-                      <ul className="space-y-1 text-xs">
-                        <li>
-                          • Save settings first, then deploy infrastructure
-                        </li>
-                        <li>
-                          • Network will be created automatically if it doesn't
-                          exist
-                        </li>
-                        <li>
-                          • HAProxy stats dashboard will be available at
-                          http://localhost:8404/stats
-                        </li>
-                        <li>
-                          • Web traffic will be routed through ports 8111 (HTTP) and 8443 (HTTPS)
-                        </li>
-                        <li>
-                          • Data Plane API will be available on port 5555
-                        </li>
-                      </ul>
-                    </div>
-                  </CardContent>
-                </Card>
 
                 {/* Actions */}
                 <div className="flex justify-end space-x-2">
