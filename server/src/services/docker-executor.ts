@@ -414,11 +414,6 @@ export class DockerExecutorService {
           timeout: options.timeout,
           customLabels: options.labels,
         }),
-        // Set resource limits for safety
-        HostConfig: {
-          Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
-          CpuShares: 1024, // Standard CPU allocation
-        },
       };
 
       // Add custom command if provided
@@ -459,8 +454,8 @@ export class DockerExecutorService {
       });
 
       // Demultiplex Docker stream
-      const stdout = new Readable({ read() {} });
-      const stderr = new Readable({ read() {} });
+      const stdout = new Readable({ read() { } });
+      const stderr = new Readable({ read() { } });
 
       // Docker multiplexes stdout and stderr in a single stream
       // Each chunk has an 8-byte header: [stream_type, 0, 0, 0, size_bytes...]
@@ -894,9 +889,9 @@ export class DockerExecutorService {
   public async getProjectContainers(projectName: string): Promise<Docker.ContainerInfo[]> {
     try {
       const containers = await this.docker.listContainers({ all: true });
-      
-      return containers.filter(container => 
-        container.Labels && 
+
+      return containers.filter(container =>
+        container.Labels &&
         container.Labels['com.docker.compose.project'] === projectName
       );
     } catch (error) {
@@ -917,9 +912,9 @@ export class DockerExecutorService {
   public async getServiceContainers(projectName: string, serviceName: string): Promise<Docker.ContainerInfo[]> {
     try {
       const containers = await this.docker.listContainers({ all: true });
-      
-      return containers.filter(container => 
-        container.Labels && 
+
+      return containers.filter(container =>
+        container.Labels &&
         container.Labels['com.docker.compose.project'] === projectName &&
         container.Labels['com.docker.compose.service'] === serviceName
       );
@@ -942,9 +937,9 @@ export class DockerExecutorService {
   public async getManagedContainers(): Promise<Docker.ContainerInfo[]> {
     try {
       const containers = await this.docker.listContainers({ all: true });
-      
-      return containers.filter(container => 
-        container.Labels && 
+
+      return containers.filter(container =>
+        container.Labels &&
         container.Labels['mini-infra.managed'] === 'true'
       );
     } catch (error) {
@@ -963,15 +958,15 @@ export class DockerExecutorService {
    */
   public async stopProject(projectName: string): Promise<void> {
     const log = servicesLogger().child({ operation: 'stop-project', project: projectName });
-    
+
     try {
       const containers = await this.getProjectContainers(projectName);
-      
+
       for (const containerInfo of containers) {
         try {
           const container = this.docker.getContainer(containerInfo.Id);
           const info = await container.inspect();
-          
+
           if (info.State.Running) {
             await container.stop();
             log.info({ container: containerInfo.Names[0] }, 'Stopped container');
@@ -991,19 +986,19 @@ export class DockerExecutorService {
    */
   public async removeProject(projectName: string): Promise<void> {
     const log = servicesLogger().child({ operation: 'remove-project', project: projectName });
-    
+
     try {
       const containers = await this.getProjectContainers(projectName);
-      
+
       for (const containerInfo of containers) {
         try {
           const container = this.docker.getContainer(containerInfo.Id);
           const info = await container.inspect();
-          
+
           if (info.State.Running) {
             await container.stop();
           }
-          
+
           await container.remove();
           log.info({ container: containerInfo.Names[0] }, 'Removed container');
         } catch (error) {
@@ -1179,10 +1174,6 @@ export class DockerExecutorService {
         AttachStdout: true,
         AttachStderr: true,
         Tty: false,
-        HostConfig: {
-          Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
-          CpuShares: 1024, // Standard CPU allocation
-        },
       };
 
       // Add custom command if provided
