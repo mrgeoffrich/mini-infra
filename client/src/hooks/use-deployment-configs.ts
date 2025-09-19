@@ -37,7 +37,6 @@ async function fetchDeploymentConfigs(
   if (filters.applicationName) url.searchParams.set("applicationName", filters.applicationName);
   if (filters.dockerImage) url.searchParams.set("dockerImage", filters.dockerImage);
   if (filters.isActive !== undefined) url.searchParams.set("isActive", filters.isActive.toString());
-  if (filters.userId) url.searchParams.set("userId", filters.userId);
 
   const response = await fetch(url.toString(), {
     credentials: "include",
