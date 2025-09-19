@@ -441,7 +441,12 @@ router.get('/services/available/:serviceType', requireSessionOrApiKey, async (re
     res.json({
       serviceType: definition.serviceType,
       description: definition.description,
-      metadata: definition.metadata
+      version: definition.metadata.version,
+      requiredNetworks: definition.metadata.requiredNetworks,
+      requiredVolumes: definition.metadata.requiredVolumes,
+      exposedPorts: definition.metadata.exposedPorts,
+      dependencies: definition.metadata.dependencies,
+      tags: definition.metadata.tags
     });
 
   } catch (error) {

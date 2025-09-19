@@ -9,7 +9,8 @@ import {
   ServiceOperationResult,
   EnvironmentStatusResponse,
   ServiceStatus,
-  ApplicationServiceHealthStatus
+  ApplicationServiceHealthStatus,
+  ApplicationServiceHealthStatusValues
 } from '@mini-infra/types';
 import {
   NetworkRequirement,
@@ -530,7 +531,7 @@ export class EnvironmentManager {
           serviceName: serviceConfig.serviceName,
           serviceType: serviceConfig.serviceType,
           status: 'uninitialized',
-          health: ApplicationServiceHealthStatus.UNKNOWN,
+          health: ApplicationServiceHealthStatusValues.UNKNOWN,
           config: serviceConfig.config || {}
         }
       });

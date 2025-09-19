@@ -100,6 +100,9 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
       paths: redactionPaths,
       censor: "[REDACTED]",
     },
+    serializers: {
+      error: serializeError,
+    },
   };
 
   // Configure transport targets (file and/or console)

@@ -117,7 +117,7 @@ export function ServiceAddDialog({
 
   const handleServiceTypeChange = (serviceType: string) => {
     setSelectedServiceType(serviceType);
-    form.setValue("serviceType", serviceType);
+    form.setValue("serviceType", serviceType, { shouldValidate: true });
 
     // Auto-generate service name
     if (serviceType) {
@@ -130,7 +130,7 @@ export function ServiceAddDialog({
         counter++;
       }
 
-      form.setValue("serviceName", serviceName);
+      form.setValue("serviceName", serviceName, { shouldValidate: true });
     }
   };
 
@@ -226,8 +226,8 @@ export function ServiceAddDialog({
                   <CardContent className="space-y-4">
                     {/* Version and Tags */}
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline">v{serviceMetadata.version}</Badge>
-                      {serviceMetadata.tags.map((tag) => (
+                      <Badge variant="outline">v{serviceMetadata.version || '0.0.0'}</Badge>
+                      {serviceMetadata.tags?.map((tag) => (
                         <Badge key={tag} variant="secondary" className="text-xs">
                           {tag}
                         </Badge>
@@ -237,14 +237,14 @@ export function ServiceAddDialog({
                     {/* Requirements */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                       {/* Networks */}
-                      {serviceMetadata.requiredNetworks.length > 0 && (
+                      {serviceMetadata.requiredNetworks?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
                             <Network className="h-3.5 w-3.5" />
                             Networks
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
-                            {serviceMetadata.requiredNetworks.map((network, i) => (
+                            {serviceMetadata.requiredNetworks?.map((network, i) => (
                               <li key={i}>• {network.name}</li>
                             ))}
                           </ul>
@@ -252,14 +252,14 @@ export function ServiceAddDialog({
                       )}
 
                       {/* Volumes */}
-                      {serviceMetadata.requiredVolumes.length > 0 && (
+                      {serviceMetadata.requiredVolumes?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
                             <HardDrive className="h-3.5 w-3.5" />
                             Volumes
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
-                            {serviceMetadata.requiredVolumes.map((volume, i) => (
+                            {serviceMetadata.requiredVolumes?.map((volume, i) => (
                               <li key={i}>• {volume.name}</li>
                             ))}
                           </ul>
@@ -267,14 +267,14 @@ export function ServiceAddDialog({
                       )}
 
                       {/* Exposed Ports */}
-                      {serviceMetadata.exposedPorts.length > 0 && (
+                      {serviceMetadata.exposedPorts?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
                             <Globe className="h-3.5 w-3.5" />
                             Ports
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
-                            {serviceMetadata.exposedPorts.map((port, i) => (
+                            {serviceMetadata.exposedPorts?.map((port, i) => (
                               <li key={i}>
                                 • {port.containerPort}:{port.hostPort}
                                 {port.name && ` (${port.name})`}
@@ -286,11 +286,11 @@ export function ServiceAddDialog({
                     </div>
 
                     {/* Dependencies */}
-                    {serviceMetadata.dependencies.length > 0 && (
+                    {serviceMetadata.dependencies?.length > 0 && (
                       <div>
                         <div className="font-medium mb-2">Dependencies</div>
                         <div className="flex gap-2 flex-wrap">
-                          {serviceMetadata.dependencies.map((dep) => (
+                          {serviceMetadata.dependencies?.map((dep) => (
                             <Badge key={dep} variant="outline" className="text-xs">
                               {dep}
                             </Badge>
