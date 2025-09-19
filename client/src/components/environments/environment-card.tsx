@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Environment, EnvironmentType } from "@mini-infra/types";
 
 const ApplicationServiceHealthStatusValues = {
@@ -7,7 +7,6 @@ const ApplicationServiceHealthStatusValues = {
   UNKNOWN: 'unknown' as const,
 };
 import { useFormattedDate } from "@/hooks/use-formatted-date";
-import { useStartEnvironment, useStopEnvironment } from "@/hooks/use-environments";
 import {
   Card,
   CardContent,
@@ -16,36 +15,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { EnvironmentStatus, ServiceHealth } from "./environment-status";
 import { cn } from "@/lib/utils";
 import {
-  MoreHorizontal,
-  Play,
-  Square,
-  Settings,
-  Trash2,
   Network,
   HardDrive,
   Server,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
 
 interface EnvironmentCardProps {
   environment: Environment;
   onEdit?: (environment: Environment) => void;
   onDelete?: (environment: Environment) => void;
   onAddService?: (environment: Environment) => void;
-  onSelect?: (environment: Environment) => void;
-  isSelected?: boolean;
   className?: string;
 }
 
@@ -54,47 +37,9 @@ export function EnvironmentCard({
   onEdit,
   onDelete,
   onAddService,
-  onSelect,
-  isSelected = false,
   className,
 }: EnvironmentCardProps) {
   const { formatDateTime } = useFormattedDate();
-  const [isOperating, setIsOperating] = useState(false);
-
-  const startMutation = useStartEnvironment();
-  const stopMutation = useStopEnvironment();
-
-  const isRunning = environment.status === "running";
-  const canStart = environment.status === "stopped" || environment.status === "failed";
-  const canStop = environment.status === "running" || environment.status === "degraded";
-
-  const handleStart = async () => {
-    setIsOperating(true);
-    try {
-      await startMutation.mutateAsync(environment.id);
-      toast.success(`Environment "${environment.name}" started successfully`);
-    } catch (error) {
-      toast.error(
-        `Failed to start environment: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsOperating(false);
-    }
-  };
-
-  const handleStop = async () => {
-    setIsOperating(true);
-    try {
-      await stopMutation.mutateAsync(environment.id);
-      toast.success(`Environment "${environment.name}" stopped successfully`);
-    } catch (error) {
-      toast.error(
-        `Failed to stop environment: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsOperating(false);
-    }
-  };
 
   const getTypeColor = (type: EnvironmentType) => {
     return type === "production"
@@ -108,14 +53,13 @@ export function EnvironmentCard({
   const totalServices = environment.services.length;
 
   return (
-    <Card
-      className={cn(
-        "transition-all hover:shadow-md cursor-pointer",
-        isSelected && "ring-2 ring-primary bg-accent/50",
-        className
-      )}
-      onClick={() => onSelect?.(environment)}
-    >
+    <Link to={`/environments/${environment.id}`} className="block">
+      <Card
+        className={cn(
+          "transition-all hover:shadow-md cursor-pointer",
+          className
+        )}
+      >
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -135,71 +79,7 @@ export function EnvironmentCard({
             </CardDescription>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <EnvironmentStatus status={environment.status} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">Open menu</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {canStart && (
-                <DropdownMenuItem
-                  onClick={handleStart}
-                  disabled={isOperating}
-                  className="flex items-center gap-2"
-                >
-                  <Play className="h-4 w-4" />
-                  Start Environment
-                </DropdownMenuItem>
-              )}
-              {canStop && (
-                <DropdownMenuItem
-                  onClick={handleStop}
-                  disabled={isOperating}
-                  className="flex items-center gap-2"
-                >
-                  <Square className="h-4 w-4" />
-                  Stop Environment
-                </DropdownMenuItem>
-              )}
-              {(canStart || canStop) && <DropdownMenuSeparator />}
-              {onAddService && (
-                <DropdownMenuItem
-                  onClick={() => onAddService(environment)}
-                  className="flex items-center gap-2"
-                >
-                  <Server className="h-4 w-4" />
-                  Add Service
-                </DropdownMenuItem>
-              )}
-              {onEdit && (
-                <DropdownMenuItem
-                  onClick={() => onEdit(environment)}
-                  className="flex items-center gap-2"
-                >
-                  <Settings className="h-4 w-4" />
-                  Edit Environment
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => onDelete(environment)}
-                    className="flex items-center gap-2 text-red-600 focus:text-red-600"
-                    disabled={isRunning}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Delete Environment
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <EnvironmentStatus status={environment.status} />
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -283,6 +163,7 @@ export function EnvironmentCard({
           )}
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </Link>
   );
 }

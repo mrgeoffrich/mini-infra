@@ -19,6 +19,7 @@ import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { EnvironmentsPage } from "@/app/environments/page";
+import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
 
 export const router = createBrowserRouter([
   {
@@ -80,6 +81,10 @@ export const router = createBrowserRouter([
       {
         path: "environments",
         element: <EnvironmentsPage />,
+      },
+      {
+        path: "environments/:id",
+        element: <EnvironmentDetailPage />,
       },
       {
         path: "logs",

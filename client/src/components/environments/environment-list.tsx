@@ -24,16 +24,14 @@ import { Plus, RefreshCw, Server, AlertCircle } from "lucide-react";
 
 interface EnvironmentListProps {
   className?: string;
-  onEnvironmentSelect?: (environmentId: string | null) => void;
 }
 
-export function EnvironmentList({ className, onEnvironmentSelect }: EnvironmentListProps) {
+export function EnvironmentList({ className }: EnvironmentListProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [serviceAddDialogOpen, setServiceAddDialogOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
-  const [selectedEnvironmentForTabs, setSelectedEnvironmentForTabs] = useState<Environment | null>(null);
 
   const { filters, updateFilter, resetFilters } = useEnvironmentFilters();
 
@@ -69,16 +67,6 @@ export function EnvironmentList({ className, onEnvironmentSelect }: EnvironmentL
     setServiceAddDialogOpen(true);
   };
 
-  const handleSelectForTabs = (environment: Environment) => {
-    if (selectedEnvironmentForTabs?.id === environment.id) {
-      // Deselect if clicking the same environment
-      setSelectedEnvironmentForTabs(null);
-      onEnvironmentSelect?.(null);
-    } else {
-      setSelectedEnvironmentForTabs(environment);
-      onEnvironmentSelect?.(environment.id);
-    }
-  };
 
   const handleRefresh = () => {
     refetch();
@@ -255,8 +243,6 @@ export function EnvironmentList({ className, onEnvironmentSelect }: EnvironmentL
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onAddService={handleAddService}
-                onSelect={handleSelectForTabs}
-                isSelected={selectedEnvironmentForTabs?.id === environment.id}
               />
             ))}
           </div>
