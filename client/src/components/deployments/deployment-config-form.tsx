@@ -105,12 +105,12 @@ export function DeploymentConfigForm({
         retries: deploymentConfig?.healthCheckConfig?.retries || 3,
         interval: deploymentConfig?.healthCheckConfig?.interval || 30000,
       },
-      traefikConfig: {
-        routerName: deploymentConfig?.traefikConfig?.routerName || "",
-        serviceName: deploymentConfig?.traefikConfig?.serviceName || "",
-        rule: deploymentConfig?.traefikConfig?.rule || "",
-        middlewares: deploymentConfig?.traefikConfig?.middlewares || [],
-        tls: deploymentConfig?.traefikConfig?.tls || false,
+      haproxyConfig: {
+        backendName: deploymentConfig?.haproxyConfig?.backendName || "",
+        frontendName: deploymentConfig?.haproxyConfig?.frontendName || "",
+        hostRule: deploymentConfig?.haproxyConfig?.hostRule || "",
+        pathRule: deploymentConfig?.haproxyConfig?.pathRule || "",
+        ssl: deploymentConfig?.haproxyConfig?.ssl || false,
       },
       rollbackConfig: {
         enabled: deploymentConfig?.rollbackConfig?.enabled ?? true,
@@ -123,30 +123,30 @@ export function DeploymentConfigForm({
     mode: "onChange",
   });
 
-  // Auto-generate router and service names from application name
+  // Auto-generate backend and frontend names from application name
   const watchedAppName = form.watch("applicationName");
   useEffect(() => {
     if (watchedAppName && !isEditing) {
       const sanitized = watchedAppName
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, "-");
-      form.setValue("traefikConfig.routerName", `${sanitized}-router`);
-      form.setValue("traefikConfig.serviceName", `${sanitized}-service`);
+      form.setValue("haproxyConfig.backendName", `${sanitized}-backend`);
+      form.setValue("haproxyConfig.frontendName", `${sanitized}-frontend`);
     }
   }, [watchedAppName, form, isEditing]);
 
-  // Auto-generate rule from application name
-  const watchedRouterName = form.watch("traefikConfig.routerName");
+  // Auto-generate host rule from application name
+  const watchedBackendName = form.watch("haproxyConfig.backendName");
   useEffect(() => {
     if (
-      watchedRouterName &&
+      watchedBackendName &&
       !isEditing &&
-      !form.getValues("traefikConfig.rule")
+      !form.getValues("haproxyConfig.hostRule")
     ) {
-      const appName = watchedRouterName.replace("-router", "");
-      form.setValue("traefikConfig.rule", `Host(\`${appName}.localhost\`)`);
+      const appName = watchedBackendName.replace("-backend", "");
+      form.setValue("haproxyConfig.hostRule", `${appName}.localhost`);
     }
-  }, [watchedRouterName, form, isEditing]);
+  }, [watchedBackendName, form, isEditing]);
 
   const onSubmit = async (data: any) => {
     setSubmitError(null);
@@ -164,7 +164,7 @@ export function DeploymentConfigForm({
           dockerRegistry: data.dockerRegistry,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
-          traefikConfig: data.traefikConfig,
+          haproxyConfig: data.haproxyConfig,
           rollbackConfig: data.rollbackConfig,
           listeningPort: data.listeningPort,
         };
@@ -180,7 +180,7 @@ export function DeploymentConfigForm({
           dockerRegistry: data.dockerRegistry,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
-          traefikConfig: data.traefikConfig,
+          haproxyConfig: data.haproxyConfig,
           rollbackConfig: data.rollbackConfig,
           listeningPort: data.listeningPort,
         };
@@ -216,7 +216,7 @@ export function DeploymentConfigForm({
           </DialogTitle>
           <DialogDescription>
             Configure deployment settings for your application including Docker,
-            health checks, Traefik routing, and rollback options.
+            health checks, HAProxy routing, and rollback options.
           </DialogDescription>
         </DialogHeader>
 
@@ -254,11 +254,11 @@ export function DeploymentConfigForm({
                     Health Check
                   </TabsTrigger>
                   <TabsTrigger
-                    value="traefik"
+                    value="haproxy"
                     className="flex items-center gap-2"
                   >
                     <Globe className="w-4 h-4" />
-                    Traefik
+                    HAProxy
                   </TabsTrigger>
                   <TabsTrigger
                     value="rollback"
@@ -563,28 +563,28 @@ export function DeploymentConfigForm({
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="traefik" className="space-y-6 m-0">
+                  <TabsContent value="haproxy" className="space-y-6 m-0">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                           <Globe className="w-5 h-5 text-purple-500" />
-                          Traefik Configuration
+                          HAProxy Configuration
                         </CardTitle>
                         <CardDescription>
-                          Configure Traefik routing and load balancing
+                          Configure HAProxy routing and load balancing
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <FormField
                             control={form.control}
-                            name="traefikConfig.routerName"
+                            name="haproxyConfig.backendName"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Router Name</FormLabel>
+                                <FormLabel>Backend Name</FormLabel>
                                 <FormControl>
                                   <Input
-                                    placeholder="my-app-router"
+                                    placeholder="my-app-backend"
                                     {...field}
                                     onChange={(e) => {
                                       const value = e.target.value
@@ -595,7 +595,7 @@ export function DeploymentConfigForm({
                                   />
                                 </FormControl>
                                 <FormDescription>
-                                  Unique Traefik router name
+                                  Unique HAProxy backend name
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>
@@ -604,13 +604,13 @@ export function DeploymentConfigForm({
 
                           <FormField
                             control={form.control}
-                            name="traefikConfig.serviceName"
+                            name="haproxyConfig.frontendName"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Service Name</FormLabel>
+                                <FormLabel>Frontend Name</FormLabel>
                                 <FormControl>
                                   <Input
-                                    placeholder="my-app-service"
+                                    placeholder="my-app-frontend"
                                     {...field}
                                     onChange={(e) => {
                                       const value = e.target.value
@@ -621,7 +621,49 @@ export function DeploymentConfigForm({
                                   />
                                 </FormControl>
                                 <FormDescription>
-                                  Unique Traefik service name
+                                  Unique HAProxy frontend name
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="haproxyConfig.hostRule"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Host Rule</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder="my-app.localhost"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Host pattern for routing (e.g., api.example.com)
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="haproxyConfig.pathRule"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Path Rule (Optional)</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    placeholder="/api"
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Path prefix for routing (optional)
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>
@@ -631,36 +673,15 @@ export function DeploymentConfigForm({
 
                         <FormField
                           control={form.control}
-                          name="traefikConfig.rule"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Routing Rule</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Host(`my-app.localhost`)"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormDescription>
-                                Traefik routing rule (e.g., Host(`domain.com`),
-                                PathPrefix(`/api`))
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="traefikConfig.tls"
+                          name="haproxyConfig.ssl"
                           render={({ field }) => (
                             <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                               <div className="space-y-0.5">
                                 <FormLabel className="text-base">
-                                  Enable TLS
+                                  Enable SSL
                                 </FormLabel>
                                 <FormDescription>
-                                  Enable TLS/SSL for this service
+                                  Enable SSL/TLS for this service
                                 </FormDescription>
                               </div>
                               <FormControl>

@@ -46,7 +46,7 @@ curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/config
 
 ## Project Overview
 
-Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using Traefik, and Cloudflare tunnel monitoring.
+Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using HAProxy, and Cloudflare tunnel monitoring.
 
 ## Technology Stack
 
@@ -92,7 +92,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Caching**: node-cache 5.1.2 for in-memory caching
 - **Deployment Infrastructure**:
   - js-yaml 4.1.0 for YAML configuration parsing
-  - Traefik v3.0 for load balancing and traffic routing
+  - HAProxy v3.2 for load balancing and traffic routing
 
 ### Development Tools
 - **Language**: TypeScript 5.8.3 (client) / 5.1.6 (server/lib)
@@ -244,7 +244,7 @@ The application implements a comprehensive timezone-aware date and time display 
 ## External Integrations
 
 - **Docker API**: Container management via dockerode library with singleton service pattern
-- **Traefik API**: Load balancer configuration and traffic routing
+- **HAProxy DataPlane API**: Load balancer configuration and traffic routing
 - **Cloudflare API**: Tunnel monitoring (read-only)
 - **Azure Storage API**: Backup/restore operations
 - **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
@@ -253,8 +253,8 @@ The application implements a comprehensive timezone-aware date and time display 
 ### Deployment Infrastructure Integration
 
 - **Docker Network Management**: Automated creation and management of Docker networks for deployment isolation
-- **Traefik Container Deployment**: Automated Traefik load balancer container deployment with configuration
-- **Infrastructure Status Monitoring**: Real-time monitoring of network and Traefik container status
+- **HAProxy Container Deployment**: Automated HAProxy load balancer container deployment with configuration
+- **Infrastructure Status Monitoring**: Real-time monitoring of network and HAProxy container status
 - **Zero-Downtime Deployment Support**: Infrastructure for blue-green deployment strategies
 
 ## Service Layer Architecture

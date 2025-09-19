@@ -44,7 +44,7 @@ interface CleanupInfrastructureRequest {
   networkName: string;
 }
 
-// Hook to deploy infrastructure (network + Traefik)
+// Hook to deploy infrastructure (network + HAProxy)
 export function useDeployInfrastructure() {
   return useMutation<
     DeployInfrastructureResponse,

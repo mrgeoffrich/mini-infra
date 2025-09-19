@@ -42,6 +42,15 @@ export interface HealthCheckConfig {
   interval: number; // milliseconds
 }
 
+// HAProxy configuration
+export interface HAProxyConfig {
+  backendName: string;
+  frontendName: string;
+  hostRule: string;
+  pathRule?: string;
+  ssl: boolean;
+}
+
 
 // Rollback configuration
 export interface RollbackConfig {

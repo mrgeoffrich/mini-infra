@@ -92,30 +92,30 @@ export const healthCheckConfigSchema = z.object({
     .default(30000),
 });
 
-// Traefik configuration schema
-export const traefikConfigSchema = z.object({
-  routerName: z
+// HAProxy configuration schema
+export const haproxyConfigSchema = z.object({
+  backendName: z
     .string()
-    .min(1, "Router name is required")
-    .max(255, "Router name must be less than 255 characters")
+    .min(1, "Backend name is required")
+    .max(255, "Backend name must be less than 255 characters")
     .regex(
       /^[a-z0-9-]+$/,
-      "Router name can only contain lowercase letters, numbers, and hyphens",
+      "Backend name can only contain lowercase letters, numbers, and hyphens",
     ),
-  serviceName: z
+  frontendName: z
     .string()
-    .min(1, "Service name is required")
-    .max(255, "Service name must be less than 255 characters")
+    .min(1, "Frontend name is required")
+    .max(255, "Frontend name must be less than 255 characters")
     .regex(
       /^[a-z0-9-]+$/,
-      "Service name can only contain lowercase letters, numbers, and hyphens",
+      "Frontend name can only contain lowercase letters, numbers, and hyphens",
     ),
-  rule: z
+  hostRule: z
     .string()
-    .min(1, "Traefik rule is required")
+    .min(1, "Host rule is required")
     .max(500, "Rule must be less than 500 characters"),
-  middlewares: z.array(z.string()).default([]),
-  tls: z.boolean().default(false),
+  pathRule: z.string().optional(),
+  ssl: z.boolean().default(false),
 });
 
 // Rollback configuration schema
@@ -150,7 +150,7 @@ export const deploymentConfigSchema = z.object({
     .optional(),
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
-  traefikConfig: traefikConfigSchema,
+  haproxyConfig: haproxyConfigSchema,
   rollbackConfig: rollbackConfigSchema,
 });
 
@@ -160,6 +160,6 @@ export type DeploymentVolumeFormData = z.infer<typeof deploymentVolumeSchema>;
 export type ContainerEnvVarFormData = z.infer<typeof containerEnvVarSchema>;
 export type ContainerConfigFormData = z.infer<typeof containerConfigSchema>;
 export type HealthCheckConfigFormData = z.infer<typeof healthCheckConfigSchema>;
-export type TraefikConfigFormData = z.infer<typeof traefikConfigSchema>;
+export type HAProxyConfigFormData = z.infer<typeof haproxyConfigSchema>;
 export type RollbackConfigFormData = z.infer<typeof rollbackConfigSchema>;
 export type DeploymentConfigFormData = z.infer<typeof deploymentConfigSchema>;
