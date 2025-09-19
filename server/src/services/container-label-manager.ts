@@ -9,21 +9,21 @@ export interface BaseContainerLabelOptions {
   // Core mini-infra labels
   managed?: boolean;
   createdAt?: Date;
-  
+
   // Application/deployment context
   applicationName?: string;
   deploymentId?: string;
   deploymentColor?: "blue" | "green";
-  
+
   // Docker Compose-style project grouping
   projectName?: string;
   serviceName?: string;
-  
+
   // Container purpose and lifecycle
   containerPurpose?: "deployment" | "task" | "backup" | "restore" | "utility";
   isActive?: boolean;
   isTemporary?: boolean;
-  
+
   // Custom labels
   customLabels?: Record<string, string>;
 }
@@ -82,11 +82,11 @@ export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
 export class ContainerLabelManager {
   private static readonly MINI_INFRA_PREFIX = "mini-infra";
   private static readonly COMPOSE_PREFIX = "com.docker.compose";
-  
+
   // ====================
   // Core Label Generation
   // ====================
-  
+
   /**
    * Generate base labels that should be present on all mini-infra managed containers
    */
@@ -149,13 +149,17 @@ export class ContainerLabelManager {
     if (projectName) {
       labels[`${ContainerLabelManager.COMPOSE_PREFIX}.project`] = projectName;
       labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.project`] = projectName;
-      
+
       // Generate config hash for compose compatibility
       const configHash = this.generateConfigHash(projectName);
       labels[`${ContainerLabelManager.COMPOSE_PREFIX}.config-hash`] = configHash;
       labels[`${ContainerLabelManager.COMPOSE_PREFIX}.container-number`] = (additionalOptions?.containerNumber || 1).toString();
       labels[`${ContainerLabelManager.COMPOSE_PREFIX}.oneoff`] = (additionalOptions?.oneoff || false).toString();
       labels[`${ContainerLabelManager.COMPOSE_PREFIX}.version`] = additionalOptions?.version || "2.32.4";
+      labels[`${ContainerLabelManager.COMPOSE_PREFIX}.depends_on`] = "";
+      labels[`${ContainerLabelManager.COMPOSE_PREFIX}.image`] = `${projectName}_${serviceName}:latest`;
+      labels[`${ContainerLabelManager.COMPOSE_PREFIX}.project.config_files`] = `config_${projectName}`;
+      labels[`${ContainerLabelManager.COMPOSE_PREFIX}.project.working_dir`] = `workingdir_${projectName}`;
     }
 
     if (serviceName) {
@@ -249,7 +253,7 @@ export class ContainerLabelManager {
       const composeLabels = this.generateComposeLabels(
         options.projectName,
         options.serviceName,
-        { oneoff: true } // Task containers are typically one-off
+        { oneoff: options.isTemporary } // Task containers are typically one-off
       );
       Object.assign(labels, composeLabels);
 
@@ -314,7 +318,7 @@ export class ContainerLabelManager {
     createdAt?: Date;
   } {
     const prefix = ContainerLabelManager.MINI_INFRA_PREFIX;
-    
+
     return {
       isMiniInfraManaged: labels[`${prefix}.managed`] === "true",
       applicationName: labels[`${prefix}.application`],
@@ -352,9 +356,9 @@ export class ContainerLabelManager {
     if (parsed.isTemporary && parsed.createdAt) {
       const ageHours = (Date.now() - parsed.createdAt.getTime()) / (1000 * 60 * 60);
       if (ageHours > maxAgeHours) {
-        return { 
-          shouldCleanup: true, 
-          reason: `Temporary container older than ${maxAgeHours} hours` 
+        return {
+          shouldCleanup: true,
+          reason: `Temporary container older than ${maxAgeHours} hours`
         };
       }
     }
@@ -380,7 +384,7 @@ export class ContainerLabelManager {
    */
   mergeLabels(...labelSets: Record<string, string>[]): Record<string, string> {
     const merged: Record<string, string> = {};
-    
+
     for (const labelSet of labelSets) {
       Object.assign(merged, labelSet);
     }
@@ -396,7 +400,7 @@ export class ContainerLabelManager {
     errors: string[];
   } {
     const errors: string[] = [];
-    
+
     for (const key of Object.keys(labels)) {
       // Check key format (RFC 1123 subdomain)
       if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9.-]*[a-z0-9])?)*$/.test(key)) {
