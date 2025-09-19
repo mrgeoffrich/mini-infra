@@ -24,7 +24,7 @@ jest.mock("../../lib/prisma", () => ({
 }));
 
 // Mock the PrismaClient for type exports
-jest.mock("../../generated/prisma", () => {
+jest.mock("@prisma/client", () => {
   const mockClient = {
     postgresDatabase: {
       findFirst: jest.fn(),

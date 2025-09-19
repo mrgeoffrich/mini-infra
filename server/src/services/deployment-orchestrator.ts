@@ -2,7 +2,6 @@ import { createActor, fromPromise } from "xstate";
 import { deploymentLogger } from "../lib/logger-factory";
 import { deploymentStateMachine, DeploymentContext, DeploymentEvent } from "./deployment-state-machine";
 import { ContainerLifecycleManager } from "./container-lifecycle-manager";
-import { TraefikIntegrationService } from "./traefik-integration";
 import { HealthCheckService } from "./health-check";
 import { NetworkHealthCheckService } from "./network-health-check";
 import { DockerExecutorService } from "./docker-executor";
@@ -13,7 +12,6 @@ import {
   DeploymentTriggerType,
   DeploymentStep,
   DeploymentStepStatus,
-  TraefikConfig,
   ContainerConfig,
   HealthCheckConfig,
   RollbackConfig,
@@ -27,7 +25,6 @@ import {
 
 export class DeploymentOrchestrator {
   private containerManager: ContainerLifecycleManager;
-  private traefikService: TraefikIntegrationService;
   private healthCheckService: HealthCheckService;
   private networkHealthCheckService: NetworkHealthCheckService;
   private dockerExecutor: DockerExecutorService;
@@ -35,7 +32,6 @@ export class DeploymentOrchestrator {
 
   constructor() {
     this.containerManager = new ContainerLifecycleManager();
-    this.traefikService = new TraefikIntegrationService();
     this.healthCheckService = new HealthCheckService();
     this.networkHealthCheckService = new NetworkHealthCheckService();
     this.dockerExecutor = new DockerExecutorService();
@@ -603,19 +599,11 @@ export class DeploymentOrchestrator {
 
         const containerName = `${context.config.applicationName}-${context.targetColor}`;
 
-        // Create container with Traefik labels (disabled initially for blue-green deployment)
-        const traefikConfig = {
-          ...context.config.traefikConfig,
-          routerName: `${context.config.traefikConfig.routerName}-${context.targetColor}`,
-          serviceName: `${context.config.traefikConfig.serviceName}-${context.targetColor}`,
-        };
-
         const containerId = await this.containerManager.createContainer({
           name: containerName,
           image: context.config.dockerImage,
           tag: context.config.dockerTag,
           config: context.config.containerConfig,
-          traefikConfig: traefikConfig,
           deploymentId: context.deploymentId,
           labels: {
             "mini-infra.application": context.config.applicationName,
@@ -807,32 +795,12 @@ export class DeploymentOrchestrator {
           "Switching traffic to new container",
         );
 
-        // Calculate downtime start
+        // Calculate downtime (minimal for stub implementation)
         const downtimeStart = Date.now();
 
-        // Switch traffic using Traefik integration
-        if (context.oldContainerId) {
-          await this.traefikService.switchTraffic({
-            applicationName: context.config.applicationName,
-            fromContainerId: context.oldContainerId,
-            toContainerId: context.newContainerId,
-            traefikConfig: context.config.traefikConfig,
-          });
-        } else {
-          // First deployment - just enable traffic to new container by updating labels
-          const activeLabels = this.generateActiveTraefikLabels(
-            context.config.applicationName,
-            context.config.traefikConfig,
-            context.config.containerConfig,
-            context.targetColor,
-          );
-          await this.traefikService.updateContainerLabels(
-            context.newContainerId,
-            activeLabels,
-          );
-        }
+        // Traffic switching logic removed - containers are managed directly
+        // In a real implementation, this would integrate with a load balancer
 
-        // Calculate downtime duration
         const downtimeEnd = Date.now();
         context.downtime = downtimeEnd - downtimeStart;
 
@@ -1055,17 +1023,8 @@ export class DeploymentOrchestrator {
               }
             }
 
-            // Restore traffic to old container by updating labels
-            const activeLabels = this.generateActiveTraefikLabels(
-              context.config.applicationName,
-              context.config.traefikConfig,
-              context.config.containerConfig,
-              context.targetColor === "blue" ? "green" : "blue", // Switch back to old color
-            );
-            await this.traefikService.updateContainerLabels(
-              context.oldContainerId,
-              activeLabels,
-            );
+            // Traffic restoration logic removed - containers are managed directly
+            // In a real implementation, this would restore traffic through a load balancer
 
             // Mark old container as active
             await this.updateContainerActiveStatus(
@@ -1365,45 +1324,6 @@ export class DeploymentOrchestrator {
     }
   }
 
-  /**
-   * Generate active Traefik labels for enabling traffic
-   */
-  private generateActiveTraefikLabels(
-    applicationName: string,
-    traefikConfig: TraefikConfig,
-    containerConfig: ContainerConfig,
-    color: "blue" | "green",
-  ): Record<string, string> {
-    const routerName = `${traefikConfig.routerName}-${color}`;
-    const serviceName = `${traefikConfig.serviceName}-${color}`;
-
-    const labels: Record<string, string> = {
-      "traefik.enable": "true",
-      [`traefik.http.routers.${routerName}.rule`]: traefikConfig.rule,
-      [`traefik.http.routers.${routerName}.service`]: serviceName,
-      [`traefik.http.routers.${routerName}.priority`]: "110", // High priority for active container
-      "mini-infra.deployment.active": "true",
-    };
-
-    // Add TLS if configured
-    if (traefikConfig.tls) {
-      labels[`traefik.http.routers.${routerName}.tls`] = "true";
-    }
-
-    // Add middlewares if configured
-    if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-      labels[`traefik.http.routers.${routerName}.middlewares`] =
-        traefikConfig.middlewares.join(",");
-    }
-
-    // Add service port from first container port
-    if (containerConfig.ports.length > 0) {
-      labels[`traefik.http.services.${serviceName}.loadbalancer.server.port`] =
-        containerConfig.ports[0].containerPort.toString();
-    }
-
-    return labels;
-  }
 
   // ====================
   // API Interface Methods
@@ -1453,7 +1373,6 @@ export class DeploymentOrchestrator {
         dockerTag: params.dockerImage.split(":")[1] || "latest",
         containerConfig: config.containerConfig as unknown as ContainerConfig,
         healthCheck: config.healthCheckConfig as unknown as HealthCheckConfig,
-        traefikConfig: config.traefikConfig as unknown as TraefikConfig,
         rollbackConfig: config.rollbackConfig as unknown as RollbackConfig,
         listeningPort: config.listeningPort,
       };

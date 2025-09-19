@@ -1,7 +1,8 @@
 import { ApplicationServiceFactory } from '../services/application-service-factory';
 import { ServiceRegistry } from '../services/service-registry';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
-import { IApplicationService, ServiceStatus } from '../services/interfaces/application-service';
+import { IApplicationService } from '../services/interfaces/application-service';
+import { ServiceStatusValues } from '@mini-infra/types';
 
 // Mock HAProxyService to avoid Docker dependencies in tests
 jest.mock('../services/haproxy/haproxy-service');
@@ -37,7 +38,7 @@ describe('ApplicationServiceFactory', () => {
       start: jest.fn().mockResolvedValue({ success: true, message: 'Started', duration: 1000 }),
       stopAndCleanup: jest.fn().mockResolvedValue(undefined),
       getStatus: jest.fn().mockResolvedValue({
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         health: { status: 'healthy' as any, lastChecked: new Date() },
         metadata: {} as any
       }),
@@ -247,7 +248,7 @@ describe('ApplicationServiceFactory', () => {
       const status = await serviceFactory.getServiceStatus('test-service');
 
       expect(status).toBeDefined();
-      expect(status?.status).toBe(ServiceStatus.RUNNING);
+      expect(status?.status).toBe(ServiceStatusValues.RUNNING);
       expect(mockService.getStatus).toHaveBeenCalled();
     });
 

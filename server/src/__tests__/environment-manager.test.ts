@@ -3,7 +3,7 @@ import { EnvironmentManager } from '../services/environment-manager';
 import { ServiceRegistry } from '../services/service-registry';
 import { ApplicationServiceFactory } from '../services/application-service-factory';
 import { DockerExecutorService } from '../services/docker-executor';
-import { ServiceStatus, ApplicationServiceHealthStatus } from '@mini-infra/types';
+import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
 // Mock dependencies
 jest.mock('../services/service-registry');
@@ -71,8 +71,8 @@ describe('EnvironmentManager', () => {
           start: jest.fn().mockResolvedValue({ success: true, duration: 1000 }),
           stopAndCleanup: jest.fn().mockResolvedValue(undefined),
           getStatus: jest.fn().mockResolvedValue({
-            status: ServiceStatus.RUNNING,
-            health: { status: ApplicationServiceHealthStatus.HEALTHY, details: {} }
+            status: ServiceStatusValues.RUNNING,
+            health: { status: ApplicationServiceHealthStatusValues.HEALTHY, details: {} }
           })
         }
       }),
@@ -116,7 +116,7 @@ describe('EnvironmentManager', () => {
         name: 'test-env',
         description: 'Test environment',
         type: 'nonproduction',
-        status: ServiceStatus.UNINITIALIZED,
+        status: ServiceStatusValues.UNINITIALIZED,
         isActive: false,
         services: [],
         networks: [],
@@ -142,7 +142,7 @@ describe('EnvironmentManager', () => {
           name: 'test-env',
           description: 'Test environment',
           type: 'nonproduction',
-          status: ServiceStatus.UNINITIALIZED,
+          status: ServiceStatusValues.UNINITIALIZED,
           isActive: false
         },
         include: {
@@ -158,7 +158,7 @@ describe('EnvironmentManager', () => {
         id: 'env-1',
         name: 'test-env',
         type: 'nonproduction',
-        status: ServiceStatus.UNINITIALIZED,
+        status: ServiceStatusValues.UNINITIALIZED,
         isActive: false,
         services: [],
         networks: [],
@@ -208,7 +208,7 @@ describe('EnvironmentManager', () => {
         id: 'env-1',
         name: 'test-env',
         type: 'nonproduction',
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         isActive: true,
         services: [],
         networks: [],
@@ -248,7 +248,7 @@ describe('EnvironmentManager', () => {
           id: 'env-1',
           name: 'env-1',
           type: 'production',
-          status: ServiceStatus.RUNNING,
+          status: ServiceStatusValues.RUNNING,
           isActive: true,
           services: [],
           networks: [],
@@ -261,12 +261,12 @@ describe('EnvironmentManager', () => {
       mockPrisma.environment.findMany.mockResolvedValue(mockEnvironments);
       mockPrisma.environment.count.mockResolvedValue(1);
 
-      const result = await environmentManager.listEnvironments('production', ServiceStatus.RUNNING, 1, 10);
+      const result = await environmentManager.listEnvironments('production', ServiceStatusValues.RUNNING, 1, 10);
 
       expect(result.environments).toEqual(mockEnvironments);
       expect(result.total).toBe(1);
       expect(mockPrisma.environment.findMany).toHaveBeenCalledWith({
-        where: { type: 'production', status: ServiceStatus.RUNNING },
+        where: { type: 'production', status: ServiceStatusValues.RUNNING },
         include: {
           services: true,
           networks: true,
@@ -286,7 +286,7 @@ describe('EnvironmentManager', () => {
         name: 'updated-env',
         description: 'Updated description',
         type: 'production',
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         isActive: true,
         services: [],
         networks: [],
@@ -323,7 +323,7 @@ describe('EnvironmentManager', () => {
       const mockEnvironment = {
         id: 'env-1',
         name: 'test-env',
-        status: ServiceStatus.STOPPED,
+        status: ServiceStatusValues.STOPPED,
         services: [],
         networks: [],
         volumes: []
@@ -344,7 +344,7 @@ describe('EnvironmentManager', () => {
       const mockEnvironment = {
         id: 'env-1',
         name: 'test-env',
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         services: [],
         networks: [],
         volumes: []
@@ -370,7 +370,7 @@ describe('EnvironmentManager', () => {
       const mockEnvironment = {
         id: 'env-1',
         name: 'test-env',
-        status: ServiceStatus.INITIALIZED,
+        status: ServiceStatusValues.INITIALIZED,
         services: [{
           id: 'service-1',
           serviceName: 'my-haproxy',
@@ -396,7 +396,7 @@ describe('EnvironmentManager', () => {
     it('should return success if environment already running', async () => {
       const mockEnvironment = {
         id: 'env-1',
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         services: [],
         networks: [],
         volumes: []
@@ -425,7 +425,7 @@ describe('EnvironmentManager', () => {
       const mockEnvironment = {
         id: 'env-1',
         name: 'test-env',
-        status: ServiceStatus.RUNNING,
+        status: ServiceStatusValues.RUNNING,
         services: [{
           id: 'service-1',
           serviceName: 'my-haproxy',
@@ -449,7 +449,7 @@ describe('EnvironmentManager', () => {
     it('should return success if environment already stopped', async () => {
       const mockEnvironment = {
         id: 'env-1',
-        status: ServiceStatus.STOPPED,
+        status: ServiceStatusValues.STOPPED,
         services: [],
         networks: [],
         volumes: []
@@ -485,8 +485,8 @@ describe('EnvironmentManager', () => {
           environmentId: 'env-1',
           serviceName: 'my-haproxy',
           serviceType: 'haproxy',
-          status: ServiceStatus.UNINITIALIZED,
-          health: ApplicationServiceHealthStatus.UNKNOWN,
+          status: ServiceStatusValues.UNINITIALIZED,
+          health: ApplicationServiceHealthStatusValues.UNKNOWN,
           config: { setting: 'value' }
         }
       });

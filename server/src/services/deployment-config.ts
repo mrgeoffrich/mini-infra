@@ -18,7 +18,6 @@ import {
   ServiceHealthStatus,
   ContainerConfig,
   HealthCheckConfig,
-  TraefikConfig,
   RollbackConfig,
 } from "@mini-infra/types";
 
@@ -61,13 +60,6 @@ const healthCheckConfigSchema = z.object({
   interval: z.number().int().min(1000),
 });
 
-const traefikConfigSchema = z.object({
-  routerName: z.string().min(1),
-  serviceName: z.string().min(1),
-  rule: z.string().min(1),
-  middlewares: z.array(z.string()).optional(),
-  tls: z.boolean().optional(),
-});
 
 const rollbackConfigSchema = z.object({
   enabled: z.boolean(),
@@ -88,7 +80,6 @@ export const createDeploymentConfigSchema = z.object({
   dockerRegistry: z.string().optional(),
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
-  traefikConfig: traefikConfigSchema,
   rollbackConfig: rollbackConfigSchema,
   listeningPort: z.number().int().min(1).max(65535).optional(),
 });
@@ -107,7 +98,6 @@ export const updateDeploymentConfigSchema = z.object({
   dockerRegistry: z.string().optional(),
   containerConfig: containerConfigSchema.optional(),
   healthCheckConfig: healthCheckConfigSchema.optional(),
-  traefikConfig: traefikConfigSchema.optional(),
   rollbackConfig: rollbackConfigSchema.optional(),
   listeningPort: z.number().int().min(1).max(65535).optional(),
   isActive: z.boolean().optional(),
@@ -242,7 +232,6 @@ export class DeploymentConfigService extends ConfigurationService {
           dockerRegistry: request.dockerRegistry,
           containerConfig: request.containerConfig as any,
           healthCheckConfig: request.healthCheckConfig as any,
-          traefikConfig: request.traefikConfig as any,
           rollbackConfig: request.rollbackConfig as any,
           listeningPort: request.listeningPort,
           isActive: true,
@@ -331,8 +320,6 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.containerConfig = request.containerConfig;
       if (request.healthCheckConfig)
         updateData.healthCheckConfig = request.healthCheckConfig;
-      if (request.traefikConfig)
-        updateData.traefikConfig = request.traefikConfig;
       if (request.rollbackConfig)
         updateData.rollbackConfig = request.rollbackConfig;
       if (request.listeningPort !== undefined)
@@ -760,8 +747,6 @@ export class DeploymentConfigService extends ConfigurationService {
     // Validate health check config
     this.validateHealthCheckConfig(config.healthCheckConfig, errors);
 
-    // Validate traefik config
-    this.validateTraefikConfig(config.traefikConfig, errors);
 
     // Validate rollback config
     this.validateRollbackConfig(config.rollbackConfig, errors);
@@ -944,31 +929,6 @@ export class DeploymentConfigService extends ConfigurationService {
     }
   }
 
-  private validateTraefikConfig(
-    config: TraefikConfig,
-    errors: { field: string; message: string }[],
-  ): void {
-    if (!config.routerName || config.routerName.trim().length === 0) {
-      errors.push({
-        field: "traefikConfig.routerName",
-        message: "Router name is required",
-      });
-    }
-
-    if (!config.serviceName || config.serviceName.trim().length === 0) {
-      errors.push({
-        field: "traefikConfig.serviceName",
-        message: "Service name is required",
-      });
-    }
-
-    if (!config.rule || config.rule.trim().length === 0) {
-      errors.push({
-        field: "traefikConfig.rule",
-        message: "Routing rule is required",
-      });
-    }
-  }
 
   private validateRollbackConfig(
     config: RollbackConfig,
@@ -1004,7 +964,6 @@ export class DeploymentConfigService extends ConfigurationService {
       dockerRegistry: config.dockerRegistry,
       containerConfig: config.containerConfig as ContainerConfig,
       healthCheckConfig: config.healthCheckConfig as HealthCheckConfig,
-      traefikConfig: config.traefikConfig as TraefikConfig,
       rollbackConfig: config.rollbackConfig as RollbackConfig,
       listeningPort: config.listeningPort,
       isActive: config.isActive,

@@ -42,14 +42,6 @@ export interface HealthCheckConfig {
   interval: number; // milliseconds
 }
 
-// Traefik routing configuration
-export interface TraefikConfig {
-  routerName: string;
-  serviceName: string;
-  rule: string; // e.g., Host(`app.example.com`)
-  middlewares?: string[];
-  tls?: boolean;
-}
 
 // Rollback configuration
 export interface RollbackConfig {
@@ -65,7 +57,6 @@ export interface DeploymentConfig {
   dockerTag: string;
   containerConfig: ContainerConfig;
   healthCheck: HealthCheckConfig;
-  traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number | null;
 }
@@ -78,7 +69,6 @@ export interface DeploymentConfiguration {
   dockerRegistry: string | null;
   containerConfig: ContainerConfig; // JSON field
   healthCheckConfig: HealthCheckConfig; // JSON field
-  traefikConfig: TraefikConfig; // JSON field
   rollbackConfig: RollbackConfig; // JSON field
   listeningPort: number | null;
   isActive: boolean;
@@ -95,7 +85,6 @@ export interface DeploymentConfigurationInfo {
   dockerRegistry: string | null;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
-  traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
   listeningPort: number | null;
   isActive: boolean;
@@ -202,7 +191,6 @@ export interface CreateDeploymentConfigRequest {
   dockerRegistry?: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
-  traefikConfig: TraefikConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number;
 }
@@ -213,7 +201,6 @@ export interface UpdateDeploymentConfigRequest {
   dockerRegistry?: string;
   containerConfig?: ContainerConfig;
   healthCheckConfig?: HealthCheckConfig;
-  traefikConfig?: TraefikConfig;
   rollbackConfig?: RollbackConfig;
   listeningPort?: number;
   isActive?: boolean;

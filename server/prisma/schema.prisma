@@ -222,7 +222,6 @@ model DeploymentConfiguration {
   dockerRegistry    String?
   containerConfig   Json     // Ports, volumes, env vars
   healthCheckConfig Json     // Endpoint, validation rules
-  traefikConfig     Json     // Routing rules
   rollbackConfig    Json     // Rollback settings
   listeningPort     Int?     // Port used for health checks
   isActive          Boolean  @default(true)

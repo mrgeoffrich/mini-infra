@@ -84,13 +84,6 @@ const createConfigSchema = z.object({
     retries: z.number().int().min(1),
     interval: z.number().int().min(1000),
   }),
-  traefikConfig: z.object({
-    routerName: z.string().min(1),
-    serviceName: z.string().min(1),
-    rule: z.string().min(1),
-    middlewares: z.array(z.string()).optional(),
-    tls: z.boolean().optional(),
-  }),
   rollbackConfig: z.object({
     enabled: z.boolean(),
     maxWaitTime: z.number().int().min(1000),

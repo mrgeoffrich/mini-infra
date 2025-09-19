@@ -6,7 +6,6 @@ import {
 import DockerService from "../services/docker";
 import {
   ContainerConfig,
-  TraefikConfig,
   DeploymentPort,
   DeploymentVolume,
   ContainerEnvVar,
@@ -118,7 +117,6 @@ describe("ContainerLifecycleManager", () => {
       containerPurpose: undefined,
       isTemporary: false,
       deploymentId: undefined,
-      traefikEnabled: false
     });
 
     mockLabelManager.shouldCleanupContainer.mockReturnValue({
@@ -165,14 +163,6 @@ describe("ContainerLifecycleManager", () => {
     networks: ["app-network"],
   });
 
-  // Helper function to create valid Traefik config
-  const createValidTraefikConfig = (): TraefikConfig => ({
-    routerName: "test-app-router",
-    serviceName: "test-app-service",
-    rule: "Host(`test-app.localhost`)",
-    middlewares: ["auth-middleware"],
-    tls: false,
-  });
 
   describe("Container Creation", () => {
     it("should create container with basic configuration", async () => {
@@ -733,16 +723,14 @@ describe("ContainerLifecycleManager", () => {
               containerPurpose: "deployment",
               isTemporary: false,
               deploymentId: "deploy-123",
-              traefikEnabled: false
-            };
+                    };
           }
           return {
             isMiniInfraManaged: false,
             containerPurpose: undefined,
             isTemporary: false,
             deploymentId: undefined,
-            traefikEnabled: false
-          };
+                };
         });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
@@ -785,8 +773,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: undefined,
-          traefikEnabled: false
-        });
+            });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
 
@@ -819,8 +806,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: undefined,
-          traefikEnabled: false
-        });
+            });
 
         mockLabelManager.shouldCleanupContainer.mockReturnValue({
           shouldCleanup: true,
@@ -882,8 +868,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: "deploy-123",
-          traefikEnabled: false
-        });
+            });
 
         const orphaned = await containerManager.findOrphanedContainers(24);
 
@@ -918,8 +903,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: "deploy-123",
-          traefikEnabled: false
-        });
+            });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 
@@ -964,8 +948,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: "deploy-123",
-          traefikEnabled: false
-        });
+            });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, true);
 
@@ -1012,8 +995,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: "deploy-123",
-          traefikEnabled: false
-        });
+            });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 
@@ -1055,8 +1037,7 @@ describe("ContainerLifecycleManager", () => {
           containerPurpose: "deployment",
           isTemporary: false,
           deploymentId: "deploy-123",
-          traefikEnabled: false
-        });
+            });
 
         const cleaned = await containerManager.cleanupOrphanedContainers(24, false);
 

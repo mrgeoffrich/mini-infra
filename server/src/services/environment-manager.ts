@@ -8,8 +8,7 @@ import {
   EnvironmentOperationResult,
   ServiceOperationResult,
   EnvironmentStatusResponse,
-  ServiceStatus,
-  ApplicationServiceHealthStatus,
+  ServiceStatusValues,
   ApplicationServiceHealthStatusValues
 } from '@mini-infra/types';
 import {
@@ -212,7 +211,7 @@ export class EnvironmentManager {
         return false;
       }
 
-      if (environment.status === ServiceStatus.RUNNING) {
+      if (environment.status === ServiceStatusValues.RUNNING) {
         throw new Error('Cannot delete a running environment. Stop it first.');
       }
 
@@ -242,7 +241,7 @@ export class EnvironmentManager {
         };
       }
 
-      if (environment.status === ServiceStatus.RUNNING) {
+      if (environment.status === ServiceStatusValues.RUNNING) {
         return {
           success: true,
           message: 'Environment is already running'
@@ -252,7 +251,7 @@ export class EnvironmentManager {
       this.logger.info({ environmentId: id }, 'Starting environment');
 
       // Update status to starting
-      await this.updateEnvironmentStatus(id, ServiceStatus.STARTING);
+      await this.updateEnvironmentStatus(id, ServiceStatusValues.STARTING);
 
       try {
         // Initialize Docker executor
@@ -265,7 +264,7 @@ export class EnvironmentManager {
         await this.startAllServices(environment);
 
         // Update status to running
-        await this.updateEnvironmentStatus(id, ServiceStatus.RUNNING);
+        await this.updateEnvironmentStatus(id, ServiceStatusValues.RUNNING);
         await this.markEnvironmentActive(id, true);
 
         const duration = Date.now() - startTime;
@@ -283,7 +282,7 @@ export class EnvironmentManager {
 
       } catch (error) {
         // Update status to failed
-        await this.updateEnvironmentStatus(id, ServiceStatus.FAILED);
+        await this.updateEnvironmentStatus(id, ServiceStatusValues.FAILED);
 
         throw error;
       }
@@ -318,7 +317,7 @@ export class EnvironmentManager {
         };
       }
 
-      if (environment.status === ServiceStatus.STOPPED) {
+      if (environment.status === ServiceStatusValues.STOPPED) {
         return {
           success: true,
           message: 'Environment is already stopped'
@@ -328,14 +327,14 @@ export class EnvironmentManager {
       this.logger.info({ environmentId: id }, 'Stopping environment');
 
       // Update status to stopping
-      await this.updateEnvironmentStatus(id, ServiceStatus.STOPPING);
+      await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPING);
 
       try {
         // Stop services in reverse dependency order
         await this.stopAllServices(environment);
 
         // Update status to stopped
-        await this.updateEnvironmentStatus(id, ServiceStatus.STOPPED);
+        await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPED);
         await this.markEnvironmentActive(id, false);
 
         const duration = Date.now() - startTime;
@@ -353,7 +352,7 @@ export class EnvironmentManager {
 
       } catch (error) {
         // Update status to failed
-        await this.updateEnvironmentStatus(id, ServiceStatus.FAILED);
+        await this.updateEnvironmentStatus(id, ServiceStatusValues.FAILED);
 
         throw error;
       }
@@ -672,8 +671,8 @@ export class EnvironmentManager {
       // Update service status
       await this.updateServiceStatus(
         envService.id,
-        ServiceStatus.RUNNING,
-        ApplicationServiceHealthStatus.HEALTHY
+        ServiceStatusValues.RUNNING,
+        ApplicationServiceHealthStatusValues.HEALTHY
       );
 
       this.logger.info({
@@ -685,8 +684,8 @@ export class EnvironmentManager {
     } catch (error) {
       await this.updateServiceStatus(
         envService.id,
-        ServiceStatus.FAILED,
-        ApplicationServiceHealthStatus.UNHEALTHY
+        ServiceStatusValues.FAILED,
+        ApplicationServiceHealthStatusValues.UNHEALTHY
       );
 
       this.logger.error({
@@ -706,8 +705,8 @@ export class EnvironmentManager {
       // Update service status
       await this.updateServiceStatus(
         envService.id,
-        ServiceStatus.STOPPED,
-        ApplicationServiceHealthStatus.UNKNOWN
+        ServiceStatusValues.STOPPED,
+        ApplicationServiceHealthStatusValues.UNKNOWN
       );
 
       this.logger.info({
@@ -717,8 +716,8 @@ export class EnvironmentManager {
     } catch (error) {
       await this.updateServiceStatus(
         envService.id,
-        ServiceStatus.FAILED,
-        ApplicationServiceHealthStatus.UNHEALTHY
+        ServiceStatusValues.FAILED,
+        ApplicationServiceHealthStatusValues.UNHEALTHY
       );
 
       this.logger.error({
@@ -751,10 +750,10 @@ export class EnvironmentManager {
   ): Promise<void> {
     const updateData: any = { status, health };
 
-    if (status === ServiceStatus.RUNNING) {
+    if (status === ServiceStatusValues.RUNNING) {
       updateData.startedAt = new Date();
       updateData.stoppedAt = null;
-    } else if (status === ServiceStatus.STOPPED) {
+    } else if (status === ServiceStatusValues.STOPPED) {
       updateData.stoppedAt = new Date();
     }
 

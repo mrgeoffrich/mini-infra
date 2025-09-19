@@ -5,7 +5,6 @@ import ContainerLabelManager from "./container-label-manager";
 import prisma from "../lib/prisma";
 import {
   ContainerConfig,
-  TraefikConfig,
   DeploymentPort,
   DeploymentVolume,
   ContainerEnvVar,
@@ -20,7 +19,6 @@ export interface ContainerCreateOptions {
   image: string;
   tag?: string;
   config: ContainerConfig;
-  traefikConfig?: TraefikConfig;
   deploymentId?: string;
   labels?: Record<string, string>;
 }
@@ -57,7 +55,6 @@ export interface OrphanedContainer {
  * 
  * Key characteristics:
  * - Creates containers intended to run continuously
- * - Integrates with Traefik for load balancing and routing
  * - Supports blue-green deployment patterns
  * - Manages container networks, volumes, and port bindings
  * - Provides comprehensive status monitoring and health checks
@@ -126,7 +123,7 @@ export class ContainerLifecycleManager {
   }
 
   /**
-   * Create a new container with proper Traefik labels and deployment configuration
+   * Create a new container with proper deployment configuration
    */
   async createContainer(options: ContainerCreateOptions): Promise<string> {
     try {
@@ -159,7 +156,6 @@ export class ContainerLifecycleManager {
         serviceName: options.config.labels?.["com.docker.compose.service"] || options.name,
         containerPurpose: "deployment",
         isActive: true,
-        traefikConfig: options.traefikConfig,
         containerConfig: options.config,
         customLabels: options.labels,
       });

@@ -1,4 +1,4 @@
-import { TraefikConfig, ContainerConfig } from "@mini-infra/types";
+import { ContainerConfig } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 
 // ====================
@@ -28,11 +28,6 @@ export interface BaseContainerLabelOptions {
   customLabels?: Record<string, string>;
 }
 
-export interface TraefikLabelOptions extends BaseContainerLabelOptions {
-  traefikConfig: TraefikConfig;
-  containerConfig: ContainerConfig;
-  priority?: number;
-}
 
 export interface TaskExecutionLabelOptions extends BaseContainerLabelOptions {
   taskType?: string;
@@ -43,7 +38,6 @@ export interface TaskExecutionLabelOptions extends BaseContainerLabelOptions {
 
 export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
   // Deployment-specific options are inherited from BaseContainerLabelOptions
-  traefikConfig?: TraefikConfig;
   containerConfig?: ContainerConfig;
 }
 
@@ -62,13 +56,11 @@ export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
  * - Standardized label schema across all container types
  * - Purpose-specific label generators for different use cases
  * - Docker Compose-style compatibility for project grouping
- * - Traefik integration labels for routing and load balancing
  * - Container metadata parsing and analysis utilities
  * - Cleanup decision logic based on container labels
  * - Label validation following Docker conventions
  * 
  * Primary use cases:
- * - Generating deployment container labels with Traefik configuration
  * - Creating task execution labels for backup/restore operations
  * - Adding consistent base labels to all mini-infra managed containers
  * - Parsing container metadata from existing labels
@@ -80,7 +72,6 @@ export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
  * - Application context (app name, deployment ID, color)
  * - Container purpose (deployment, task, backup, restore, utility)
  * - Docker Compose compatibility (project, service, config hash)
- * - Traefik routing configuration (routers, services, priorities)
  * - Lifecycle metadata (active status, temporary flag, cleanup markers)
  * 
  * Do NOT use for:
@@ -91,7 +82,6 @@ export interface DeploymentLabelOptions extends BaseContainerLabelOptions {
 export class ContainerLabelManager {
   private static readonly MINI_INFRA_PREFIX = "mini-infra";
   private static readonly COMPOSE_PREFIX = "com.docker.compose";
-  private static readonly TRAEFIK_PREFIX = "traefik";
   
   // ====================
   // Core Label Generation
@@ -181,7 +171,7 @@ export class ContainerLabelManager {
   // ====================
 
   /**
-   * Generate labels for deployment containers with Traefik configuration
+   * Generate labels for deployment containers
    */
   generateDeploymentLabels(options: DeploymentLabelOptions): Record<string, string> {
     try {
@@ -190,7 +180,6 @@ export class ContainerLabelManager {
           applicationName: options.applicationName,
           deploymentId: options.deploymentId,
           deploymentColor: options.deploymentColor,
-          hasTraefik: !!options.traefikConfig,
         },
         "Generating deployment container labels"
       );
@@ -209,15 +198,6 @@ export class ContainerLabelManager {
       );
       Object.assign(labels, composeLabels);
 
-      // Add Traefik labels if configuration is provided
-      if (options.traefikConfig && options.containerConfig) {
-        const traefikLabels = this.generateTraefikLabels({
-          ...options,
-          traefikConfig: options.traefikConfig,
-          containerConfig: options.containerConfig,
-        });
-        Object.assign(labels, traefikLabels);
-      }
 
       servicesLogger().debug(
         {
@@ -313,104 +293,6 @@ export class ContainerLabelManager {
     }
   }
 
-  /**
-   * Generate Traefik labels for container routing configuration
-   */
-  generateTraefikLabels(options: TraefikLabelOptions): Record<string, string> {
-    try {
-      const { traefikConfig, containerConfig, deploymentColor, isActive } = options;
-      
-      servicesLogger().info(
-        {
-          routerName: traefikConfig.routerName,
-          serviceName: traefikConfig.serviceName,
-          deploymentColor,
-          isActive,
-        },
-        "Generating Traefik labels for container routing"
-      );
-
-      const labels: Record<string, string> = {};
-      
-      // Determine router and service names (add color suffix for blue-green deployment)
-      const routerName = deploymentColor 
-        ? `${traefikConfig.routerName}-${deploymentColor}`
-        : traefikConfig.routerName;
-      const serviceName = deploymentColor
-        ? `${traefikConfig.serviceName}-${deploymentColor}`
-        : traefikConfig.serviceName;
-
-      // Enable Traefik
-      labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.enable`] = "true";
-
-      // Router configuration
-      labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.routers.${routerName}.rule`] = traefikConfig.rule;
-      labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.routers.${routerName}.service`] = serviceName;
-
-      // Set priority
-      const priority = this.calculateTraefikPriority(traefikConfig.rule, isActive, options.priority);
-      labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.routers.${routerName}.priority`] = priority.toString();
-
-      // TLS configuration
-      if (traefikConfig.tls) {
-        labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.routers.${routerName}.tls`] = "true";
-      }
-
-      // Middlewares
-      if (traefikConfig.middlewares && traefikConfig.middlewares.length > 0) {
-        labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.routers.${routerName}.middlewares`] = 
-          traefikConfig.middlewares.join(",");
-      }
-
-      // Service configuration - use first port from container config
-      if (containerConfig.ports.length > 0) {
-        const port = containerConfig.ports[0];
-        labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.services.${serviceName}.loadbalancer.server.port`] = 
-          port.containerPort.toString();
-
-        // Set protocol if specified
-        if (port.protocol && port.protocol !== "tcp") {
-          labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.http.services.${serviceName}.loadbalancer.server.scheme`] = 
-            port.protocol === "udp" ? "udp" : "http";
-        }
-      }
-
-      // Add Traefik-specific mini-infra labels
-      labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.traefik.router-name`] = routerName;
-      labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.traefik.service-name`] = serviceName;
-      labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.traefik.generated-at`] = new Date().toISOString();
-
-      if (deploymentColor) {
-        labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.traefik.deployment-color`] = deploymentColor;
-      }
-
-      if (isActive !== undefined) {
-        labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.traefik.is-active`] = isActive.toString();
-      }
-
-      servicesLogger().debug(
-        {
-          routerName,
-          serviceName,
-          priority,
-          labelsCount: Object.keys(labels).length,
-        },
-        "Traefik labels generated successfully"
-      );
-
-      return labels;
-    } catch (error) {
-      servicesLogger().error(
-        {
-          routerName: options.traefikConfig.routerName,
-          serviceName: options.traefikConfig.serviceName,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to generate Traefik labels"
-      );
-      throw error;
-    }
-  }
 
   // ====================
   // Label Parsing and Analysis
@@ -429,7 +311,6 @@ export class ContainerLabelManager {
     containerPurpose?: string;
     isActive?: boolean;
     isTemporary?: boolean;
-    traefikEnabled: boolean;
     createdAt?: Date;
   } {
     const prefix = ContainerLabelManager.MINI_INFRA_PREFIX;
@@ -444,7 +325,6 @@ export class ContainerLabelManager {
       containerPurpose: labels[`${prefix}.purpose`],
       isActive: labels[`${prefix}.is-active`] === "true",
       isTemporary: labels[`${prefix}.temporary`] === "true",
-      traefikEnabled: labels[`${ContainerLabelManager.TRAEFIK_PREFIX}.enable`] === "true",
       createdAt: labels[`${prefix}.created`] ? new Date(labels[`${prefix}.created`]) : undefined,
     };
   }
@@ -494,37 +374,6 @@ export class ContainerLabelManager {
     return Buffer.from(configString).toString('base64').substring(0, 12);
   }
 
-  /**
-   * Calculate Traefik router priority based on rule complexity and deployment state
-   */
-  private calculateTraefikPriority(
-    rule: string,
-    isActive?: boolean,
-    basePriority?: number
-  ): number {
-    let priority = basePriority || 100;
-
-    // Active containers get higher priority
-    if (isActive) {
-      priority += 10;
-    }
-
-    // Calculate rule complexity bonus
-    let complexity = 0;
-    if (rule.includes("Host(")) complexity += 1;
-    if (rule.includes("PathPrefix(")) complexity += 2;
-    if (rule.includes("Path(")) complexity += 3;
-    if (rule.includes("Method(")) complexity += 1;
-    if (rule.includes("Headers(")) complexity += 2;
-
-    // Count logical operators
-    complexity += (rule.match(/&&/g) || []).length * 2;
-    complexity += (rule.match(/\|\|/g) || []).length * 1;
-
-    priority += Math.min(complexity, 20);
-
-    return priority;
-  }
 
   /**
    * Merge multiple label sets with conflict resolution

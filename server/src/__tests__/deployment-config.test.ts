@@ -105,13 +105,6 @@ describe("DeploymentConfigService", () => {
       retries: 3,
       interval: 10000,
     },
-    traefikConfig: {
-      routerName: "test-app-router",
-      serviceName: "test-app-service",
-      rule: "Host(`test-app.localhost`)",
-      middlewares: ["auth-middleware"],
-      tls: false,
-    },
     rollbackConfig: {
       enabled: true,
       maxWaitTime: 30000,
@@ -154,7 +147,6 @@ describe("DeploymentConfigService", () => {
         dockerRegistry: request.dockerRegistry,
         containerConfig: request.containerConfig,
         healthCheckConfig: request.healthCheckConfig,
-        traefikConfig: request.traefikConfig,
         rollbackConfig: request.rollbackConfig,
         isActive: true,
         userId: testUserId,

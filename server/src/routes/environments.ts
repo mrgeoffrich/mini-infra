@@ -8,7 +8,7 @@ import {
   ListEnvironmentsRequest,
   EnvironmentType,
   ServiceConfiguration,
-  ServiceStatus
+  ServiceStatusValues
 } from '@mini-infra/types';
 import { EnvironmentManager } from '../services/environment-manager';
 import { ServiceRegistry } from '../services/service-registry';
@@ -68,7 +68,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 
     const result = await environmentManager.listEnvironments(
       type,
-      status as ServiceStatus | undefined,
+      status as ServiceStatusValues | undefined,
       page,
       limit
     );

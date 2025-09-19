@@ -230,13 +230,6 @@ describe("Deployment API Integration Tests", () => {
       retries: 3,
       interval: 10000,
     },
-    traefikConfig: {
-      routerName: "test-app-router",
-      serviceName: "test-app-service",
-      rule: "Host(`test-app.localhost`)",
-      middlewares: ["auth-middleware"],
-      tls: false,
-    },
     rollbackConfig: {
       enabled: true,
       maxWaitTime: 30000,

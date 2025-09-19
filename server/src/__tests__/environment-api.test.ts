@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
-import { ServiceStatus, ApplicationServiceHealthStatus } from '@mini-infra/types';
+import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
 // Mock logger factory first (before other imports)
 jest.mock('../lib/logger-factory', () => {
@@ -39,11 +39,13 @@ jest.mock('../lib/logger-factory', () => {
 // Mock dependencies
 jest.mock('../services/environment-manager');
 jest.mock('../services/service-registry');
-jest.mock('../lib/auth-middleware', () => ({
-  requireAuth: (req: any, res: any, next: any) => {
+jest.mock('../middleware/auth', () => ({
+  requireSessionOrApiKey: (req: any, res: any, next: any) => {
     req.user = { id: 'test-user', email: 'test@example.com' };
     next();
   },
+  getAuthenticatedUser: (req: any) => ({ id: 'test-user', email: 'test@example.com' }),
+  getCurrentUserId: (req: any) => 'test-user',
   AuthErrorType: {},
   createAuthErrorResponse: jest.fn()
 }));
@@ -91,15 +93,15 @@ describe('Environment API', () => {
     name: 'test-environment',
     description: 'Test environment',
     type: 'nonproduction',
-    status: ServiceStatus.RUNNING,
+    status: ServiceStatusValues.RUNNING,
     isActive: true,
     services: [{
       id: 'service-1',
       environmentId: 'env-1',
       serviceName: 'my-haproxy',
       serviceType: 'haproxy',
-      status: ServiceStatus.RUNNING,
-      health: ApplicationServiceHealthStatus.HEALTHY,
+      status: ServiceStatusValues.RUNNING,
+      health: ApplicationServiceHealthStatusValues.HEALTHY,
       config: {},
       createdAt: new Date('2025-09-17T10:31:21.990Z'),
       updatedAt: new Date('2025-09-17T10:31:21.990Z')
@@ -166,7 +168,7 @@ describe('Environment API', () => {
         .expect(200);
 
       expect(mockEnvironmentManager.listEnvironments).toHaveBeenCalledWith(
-        'production', 'running', '2', '10'
+        'production', 'running', 2, 10
       );
     });
 
@@ -344,8 +346,8 @@ describe('Environment API', () => {
         environment: mockEnvironment,
         servicesHealth: [{
           serviceName: 'my-haproxy',
-          status: ServiceStatus.RUNNING,
-          health: ApplicationServiceHealthStatus.HEALTHY,
+          status: ServiceStatusValues.RUNNING,
+          health: ApplicationServiceHealthStatusValues.HEALTHY,
           healthDetails: { uptime: 1000 }
         }],
         networksStatus: [{
@@ -555,7 +557,6 @@ describe('Environment API', () => {
         serviceType: 'haproxy',
         description: 'HAProxy load balancer',
         metadata: {
-          name: 'haproxy',
           version: '3.2.0',
           dependencies: ['docker'],
           tags: ['proxy'],
@@ -565,13 +566,24 @@ describe('Environment API', () => {
         }
       };
 
+      const expectedResponse = {
+        serviceType: 'haproxy',
+        description: 'HAProxy load balancer',
+        version: '3.2.0',
+        dependencies: ['docker'],
+        tags: ['proxy'],
+        requiredNetworks: [],
+        requiredVolumes: [],
+        exposedPorts: []
+      };
+
       mockServiceRegistry.getServiceDefinition.mockReturnValue(serviceDefinition);
 
       const response = await request(app)
         .get('/api/environments/services/available/haproxy')
         .expect(200);
 
-      expect(response.body).toEqual(serviceDefinition);
+      expect(response.body).toEqual(expectedResponse);
       expect(mockServiceRegistry.getServiceDefinition).toHaveBeenCalledWith('haproxy');
     });
 
