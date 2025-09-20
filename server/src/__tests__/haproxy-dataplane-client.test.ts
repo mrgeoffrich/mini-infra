@@ -108,7 +108,7 @@ describe('HAProxyDataPlaneClient', () => {
       expect(mockDockerService.initialize).toHaveBeenCalled();
       expect(mockDocker.getContainer).toHaveBeenCalledWith('container123');
       expect(mockContainer.inspect).toHaveBeenCalled();
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://0.0.0.0:5555/v2');
+      expect(mockAxiosInstance.defaults.baseURL).toBe('http://0.0.0.0:5555/v3');
       expect(mockAxiosInstance.defaults.auth).toEqual({
         username: 'admin',
         password: 'adminpwd'
@@ -135,7 +135,7 @@ describe('HAProxyDataPlaneClient', () => {
 
       await client.initialize('container123');
 
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v2');
+      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v3');
     });
 
     it('should prefer custom network over bridge network', async () => {
@@ -160,7 +160,7 @@ describe('HAProxyDataPlaneClient', () => {
 
       await client.initialize('container123');
 
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v2');
+      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v3');
     });
 
     it('should throw error when container not found', async () => {
@@ -885,7 +885,7 @@ describe('HAProxyDataPlaneClient', () => {
       const connectionInfo = client.getConnectionInfo();
 
       expect(connectionInfo).toEqual({
-        baseUrl: 'http://0.0.0.0:5555/v2',
+        baseUrl: 'http://0.0.0.0:5555/v3',
         containerName: 'test-haproxy',
         containerId: 'container123'
       });

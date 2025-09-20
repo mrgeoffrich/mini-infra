@@ -110,6 +110,20 @@ export interface HAProxyEndpointInfo {
   containerId: string;
 }
 
+export interface Version {
+  version: number;
+}
+
+export interface ApiResponse<T> {
+  data: T;
+  version?: number;
+}
+
+export interface ErrorResponse {
+  code: number;
+  message: string;
+}
+
 // ====================
 // HAProxy DataPlane API Client
 // ====================
@@ -215,7 +229,7 @@ export class HAProxyDataPlaneClient {
       if (hostBinding && hostBinding.HostPort) {
         // Use host binding
         const hostIp = hostBinding.HostIp || 'localhost';
-        baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v2`;
+        baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
       } else {
         // Use container network IP
         const networks = containerInfo.NetworkSettings?.Networks || {};
@@ -233,7 +247,7 @@ export class HAProxyDataPlaneClient {
           throw new Error(`No IP address found for HAProxy container on network ${preferredNetwork}`);
         }
 
-        baseUrl = `http://${networkInfo.IPAddress}:5555/v2`;
+        baseUrl = `http://${networkInfo.IPAddress}:5555/v3`;
       }
 
       return {
@@ -282,6 +296,24 @@ export class HAProxyDataPlaneClient {
   }
 
   // ====================
+  // Version Management
+  // ====================
+
+  /**
+   * Get current configuration version
+   */
+  async getVersion(): Promise<number> {
+    try {
+      const response = await this.axiosInstance.get('/services/haproxy/configuration/version');
+      // API returns plain number, not an object
+      return typeof response.data === 'number' ? response.data : parseInt(response.data, 10);
+    } catch (error) {
+      this.handleApiError(error, 'get version');
+      throw error;
+    }
+  }
+
+  // ====================
   // Backend Management
   // ====================
 
@@ -290,6 +322,7 @@ export class HAProxyDataPlaneClient {
    */
   async createBackend(config: BackendConfig): Promise<void> {
     try {
+      const version = await this.getVersion();
       const backendData = {
         name: config.name,
         mode: config.mode || 'http',
@@ -301,10 +334,10 @@ export class HAProxyDataPlaneClient {
         ...(config.server_timeout && { server_timeout: config.server_timeout })
       };
 
-      await this.axiosInstance.post('/services/haproxy/configuration/backends', backendData);
+      await this.axiosInstance.post(`/services/haproxy/configuration/backends?version=${version}`, backendData);
 
       logger.info(
-        { backendName: config.name, mode: config.mode },
+        { backendName: config.name, mode: config.mode, version },
         'Created HAProxy backend successfully'
       );
     } catch (error) {
@@ -317,10 +350,11 @@ export class HAProxyDataPlaneClient {
    */
   async deleteBackend(name: string): Promise<void> {
     try {
-      await this.axiosInstance.delete(`/services/haproxy/configuration/backends/${name}`);
+      const version = await this.getVersion();
+      await this.axiosInstance.delete(`/services/haproxy/configuration/backends/${name}?version=${version}`);
 
       logger.info(
-        { backendName: name },
+        { backendName: name, version },
         'Deleted HAProxy backend successfully'
       );
     } catch (error) {
@@ -334,7 +368,8 @@ export class HAProxyDataPlaneClient {
   async getBackend(name: string): Promise<Backend | null> {
     try {
       const response = await this.axiosInstance.get(`/services/haproxy/configuration/backends/${name}`);
-      return response.data.data;
+      // Handle both direct object and wrapped response formats
+      return response.data.data || response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
         return null;
@@ -350,7 +385,8 @@ export class HAProxyDataPlaneClient {
   async listBackends(): Promise<Backend[]> {
     try {
       const response = await this.axiosInstance.get('/services/haproxy/configuration/backends');
-      return response.data.data || [];
+      // API returns direct array, not wrapped in data property
+      return Array.isArray(response.data) ? response.data : (response.data.data || []);
     } catch (error) {
       // Log the error but don't throw - return empty array instead
       if (axios.isAxiosError(error)) {
@@ -382,6 +418,7 @@ export class HAProxyDataPlaneClient {
    */
   async addServer(backendName: string, config: ServerConfig): Promise<void> {
     try {
+      const version = await this.getVersion();
       const serverData = {
         name: config.name,
         address: config.address,
@@ -397,7 +434,7 @@ export class HAProxyDataPlaneClient {
       };
 
       await this.axiosInstance.post(
-        `/services/haproxy/configuration/backends/${backendName}/servers`,
+        `/services/haproxy/configuration/backends/${backendName}/servers?version=${version}`,
         serverData
       );
 
@@ -407,7 +444,8 @@ export class HAProxyDataPlaneClient {
           serverName: config.name,
           address: config.address,
           port: config.port,
-          enabled: serverData.enabled
+          enabled: serverData.enabled,
+          version
         },
         'Added server to HAProxy backend successfully'
       );
@@ -481,12 +519,13 @@ export class HAProxyDataPlaneClient {
    */
   async deleteServer(backendName: string, serverName: string): Promise<void> {
     try {
+      const version = await this.getVersion();
       await this.axiosInstance.delete(
-        `/services/haproxy/configuration/backends/${backendName}/servers/${serverName}`
+        `/services/haproxy/configuration/backends/${backendName}/servers/${serverName}?version=${version}`
       );
 
       logger.info(
-        { backendName, serverName },
+        { backendName, serverName, version },
         'Deleted server from HAProxy backend'
       );
     } catch (error) {
@@ -503,16 +542,17 @@ export class HAProxyDataPlaneClient {
    */
   async createFrontend(config: FrontendConfig): Promise<void> {
     try {
+      const version = await this.getVersion();
       const frontendData = {
         name: config.name,
         mode: config.mode || 'http',
         ...(config.default_backend && { default_backend: config.default_backend })
       };
 
-      await this.axiosInstance.post('/services/haproxy/configuration/frontends', frontendData);
+      await this.axiosInstance.post(`/services/haproxy/configuration/frontends?version=${version}`, frontendData);
 
       logger.info(
-        { frontendName: config.name, mode: config.mode },
+        { frontendName: config.name, mode: config.mode, version },
         'Created HAProxy frontend successfully'
       );
     } catch (error) {
@@ -525,6 +565,7 @@ export class HAProxyDataPlaneClient {
    */
   async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
     try {
+      const version = await this.getVersion();
       const bindData = {
         name: `bind_${port}`,
         address,
@@ -532,12 +573,12 @@ export class HAProxyDataPlaneClient {
       };
 
       await this.axiosInstance.post(
-        `/services/haproxy/configuration/frontends/${frontendName}/binds`,
+        `/services/haproxy/configuration/frontends/${frontendName}/binds?version=${version}`,
         bindData
       );
 
       logger.info(
-        { frontendName, address, port },
+        { frontendName, address, port, version },
         'Added bind to HAProxy frontend'
       );
     } catch (error) {
@@ -636,14 +677,15 @@ export class HAProxyDataPlaneClient {
    */
   async beginTransaction(): Promise<string> {
     try {
-      const response = await this.axiosInstance.post('/services/haproxy/transactions', {
-        version: 1
+      const version = await this.getVersion();
+      const response = await this.axiosInstance.post(`/services/haproxy/transactions?version=${version}`, {
+        version
       });
 
       const transactionId = response.data.id;
 
       logger.debug(
-        { transactionId },
+        { transactionId, version },
         'Started HAProxy configuration transaction'
       );
 
@@ -723,7 +765,19 @@ export class HAProxyDataPlaneClient {
 
       logger.error(errorDetails, `HAProxy DataPlane API ${operation} failed`);
 
-      throw new Error(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
+      // Handle specific error codes as per specification
+      switch (status) {
+        case 409:
+          throw new Error(`Version conflict: ${message}. Please retry with the latest version.`);
+        case 404:
+          throw new Error(`Resource not found: ${message}`);
+        case 401:
+          throw new Error(`Authentication failed: ${message}`);
+        case 400:
+          throw new Error(`Bad request: ${message}`);
+        default:
+          throw new Error(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
+      }
     } else {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error(
@@ -733,6 +787,125 @@ export class HAProxyDataPlaneClient {
 
       throw new Error(`HAProxy ${operation} failed: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Execute operation with retry logic for version conflicts
+   */
+  protected async withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+
+        // Only retry on version conflicts
+        if (error.message?.includes('Version conflict') && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt);
+          logger.debug(
+            { attempt, delay, error: error.message },
+            'Retrying after version conflict'
+          );
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw lastError!;
+  }
+}
+
+// ====================
+// Transaction Manager for Atomic Operations
+// ====================
+
+export class TransactionManager {
+  constructor(private client: HAProxyDataPlaneClient) {}
+
+  /**
+   * Execute multiple operations atomically within a transaction
+   */
+  async executeInTransaction<T>(
+    operations: (transactionId: string) => Promise<T>
+  ): Promise<T> {
+    const transaction = await this.client.beginTransaction();
+
+    try {
+      const result = await operations(transaction);
+      await this.client.commitTransaction(transaction);
+      return result;
+    } catch (error) {
+      await this.client.rollbackTransaction(transaction);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method to add transaction_id to requests
+   */
+  withTransaction(transactionId: string, url: string): string {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}transaction_id=${transactionId}`;
+  }
+}
+
+// ====================
+// Retryable HAProxy Client with Exponential Backoff
+// ====================
+
+export class RetryableHAProxyClient extends HAProxyDataPlaneClient {
+  private maxRetries = 3;
+  private baseDelay = 1000;
+
+  /**
+   * Override createBackend with retry logic
+   */
+  async createBackend(config: BackendConfig): Promise<void> {
+    return this.withRetry(() => super.createBackend(config));
+  }
+
+  /**
+   * Override addServer with retry logic
+   */
+  async addServer(backendName: string, config: ServerConfig): Promise<void> {
+    return this.withRetry(() => super.addServer(backendName, config));
+  }
+
+  /**
+   * Override deleteBackend with retry logic
+   */
+  async deleteBackend(name: string): Promise<void> {
+    return this.withRetry(() => super.deleteBackend(name));
+  }
+
+  /**
+   * Override deleteServer with retry logic
+   */
+  async deleteServer(backendName: string, serverName: string): Promise<void> {
+    return this.withRetry(() => super.deleteServer(backendName, serverName));
+  }
+
+  /**
+   * Override createFrontend with retry logic
+   */
+  async createFrontend(config: FrontendConfig): Promise<void> {
+    return this.withRetry(() => super.createFrontend(config));
+  }
+
+  /**
+   * Override addFrontendBind with retry logic
+   */
+  async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
+    return this.withRetry(() => super.addFrontendBind(frontendName, address, port));
   }
 }
 

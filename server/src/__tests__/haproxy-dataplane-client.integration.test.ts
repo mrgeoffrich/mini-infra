@@ -1,5 +1,13 @@
-import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../services/haproxy/haproxy-dataplane-client';
+import {
+  HAProxyDataPlaneClient,
+  BackendConfig,
+  ServerConfig,
+  TransactionManager,
+  RetryableHAProxyClient
+} from '../services/haproxy/haproxy-dataplane-client';
 import DockerService from '../services/docker';
+import { testPrisma, createTestUser } from './setup';
+import { DockerConfigService } from '../services/docker-config';
 
 // Integration tests for HAProxy DataPlane Client
 // These tests require a running HAProxy container with DataPlane API enabled
@@ -21,11 +29,93 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       return;
     }
 
+    // Set up Docker configuration for test environment
+    const testUser = await createTestUser();
+
+    // Configure Docker host setting in test database
+    await testPrisma.systemSettings.upsert({
+      where: {
+        category_key: {
+          category: 'docker',
+          key: 'host'
+        }
+      },
+      create: {
+        category: 'docker',
+        key: 'host',
+        value: 'unix:///var/run/docker.sock',
+        isEncrypted: false,
+        isActive: true,
+        createdBy: testUser.id,
+        updatedBy: testUser.id
+      },
+      update: {
+        value: 'unix:///var/run/docker.sock',
+        isActive: true,
+        updatedBy: testUser.id
+      }
+    });
+
+    // Verify the configuration was saved correctly
+    const savedConfig = await testPrisma.systemSettings.findUnique({
+      where: {
+        category_key: {
+          category: 'docker',
+          key: 'host'
+        }
+      }
+    });
+    console.log('Saved Docker configuration:', savedConfig);
+
+    // Reset Docker service singleton for test
+    (DockerService as any).instance = null;
     dockerService = DockerService.getInstance();
-    await dockerService.initialize();
+
+    console.log('Initializing Docker service...');
+    try {
+      await dockerService.initialize();
+      console.log('Docker service initialized successfully');
+    } catch (error) {
+      console.error('Docker service initialization failed:', error);
+      throw error;
+    }
+
+    // Override the Docker config service to use test database AFTER initialization
+    console.log('Overriding Docker config service with test database...');
+    (dockerService as any).dockerConfigService = new DockerConfigService(testPrisma);
+
+    // Now try to create the Docker client with correct config
+    console.log('Attempting to create Docker client with test config...');
+    try {
+      await (dockerService as any).createDockerClientFromSettings();
+      await (dockerService as any).connect(false);
+      console.log('Docker client creation and connection succeeded');
+    } catch (clientError) {
+      console.error('Docker client creation failed:', clientError);
+      throw clientError;
+    }
+
+    // Check if Docker service is connected
+    console.log('Checking Docker connection status...');
+    try {
+      // Try to access the Docker service directly to see if it's connected
+      const isConnected = (dockerService as any).connected;
+      console.log('Docker service connected status:', isConnected);
+
+      if (!isConnected) {
+        console.log('Docker service not connected, attempting manual connection...');
+        // Let's try to force a connection
+        await (dockerService as any).connect(false);
+        console.log('Manual connection attempt completed');
+      }
+    } catch (error) {
+      console.error('Error checking/establishing Docker connection:', error);
+    }
 
     // Find running HAProxy container for testing
+    console.log('Looking for HAProxy container...');
     testContainerId = await findHAProxyContainer();
+    console.log('HAProxy container ID:', testContainerId);
 
     if (!testContainerId) {
       throw new Error('No running HAProxy container found for integration tests');
@@ -36,13 +126,23 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   }, 30000);
 
   afterAll(async () => {
-    if (!process.env.RUN_INTEGRATION_TESTS || !client.isInitialized()) {
+    if (!process.env.RUN_INTEGRATION_TESTS) {
       return;
     }
 
     // Cleanup test resources
     try {
-      await cleanupTestResources();
+      if (client && client.isInitialized()) {
+        await cleanupTestResources();
+      }
+
+      // Clean up Docker configuration from test database
+      await testPrisma.systemSettings.deleteMany({
+        where: {
+          category: 'docker',
+          key: 'host'
+        }
+      });
     } catch (error) {
       console.warn('Cleanup failed:', error);
     }
@@ -51,7 +151,9 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   // Helper function to find HAProxy container
   async function findHAProxyContainer(): Promise<string> {
     try {
+      console.log('Attempting to list containers...');
       const containers = await dockerService.listContainers();
+      console.log('Successfully listed containers, count:', containers.length);
 
       const haproxyContainer = containers.find((container: any) => {
         const labels = container.labels || {};
@@ -84,10 +186,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   async function cleanupTestResources(): Promise<void> {
     try {
       // Remove test server
-      await client.deleteServer(TEST_BACKEND_NAME, TEST_SERVER_NAME).catch(() => {});
+      await client.deleteServer(TEST_BACKEND_NAME, TEST_SERVER_NAME).catch(() => { });
 
       // Remove test backend
-      await client.deleteBackend(TEST_BACKEND_NAME).catch(() => {});
+      await client.deleteBackend(TEST_BACKEND_NAME).catch(() => { });
 
       console.log('Test resources cleaned up successfully');
     } catch (error) {
@@ -116,7 +218,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       const connectionInfo = client.getConnectionInfo();
 
       expect(connectionInfo).toBeTruthy();
-      expect(connectionInfo!.baseUrl).toMatch(/^https?:\/\/.+:\d+\/v2$/);
+      expect(connectionInfo!.baseUrl).toMatch(/^https?:\/\/.+:\d+\/v3$/);
       expect(connectionInfo!.containerName).toBeTruthy();
       expect(connectionInfo!.containerId).toBe(testContainerId);
     });
@@ -520,6 +622,199 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       };
 
       await expect(client.addServer('nonexistent-backend', serverConfig)).rejects.toThrow();
+    }, 10000);
+  });
+
+  describe('version management', () => {
+    it('should get configuration version', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      const version = await client.getVersion();
+      expect(typeof version).toBe('number');
+      expect(version).toBeGreaterThan(0);
+    }, 5000);
+
+    it('should include version in configuration operations', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      const backendConfig: BackendConfig = {
+        name: 'version-test-backend',
+        mode: 'http'
+      };
+
+      try {
+        // Version should be automatically included in create operation
+        await client.createBackend(backendConfig);
+
+        // Verify backend was created
+        const backend = await client.getBackend('version-test-backend');
+        expect(backend).toBeTruthy();
+        expect(backend!.name).toBe('version-test-backend');
+      } finally {
+        // Cleanup
+        try {
+          await client.deleteBackend('version-test-backend');
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    }, 10000);
+  });
+
+  describe('transaction manager', () => {
+    it('should execute atomic operations', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      const tm = new TransactionManager(client);
+      const backendName = 'transaction-test-backend';
+      const serverName = 'transaction-test-server';
+
+      try {
+        await tm.executeInTransaction(async () => {
+          // All operations here should be atomic
+          await client.createBackend({
+            name: backendName,
+            mode: 'http',
+            balance: 'roundrobin'
+          });
+
+          await client.addServer(backendName, {
+            name: serverName,
+            address: '127.0.0.1',
+            port: 8080,
+            check: 'enabled'
+          });
+
+          return 'success';
+        });
+
+        // Verify both backend and server were created
+        const backend = await client.getBackend(backendName);
+        expect(backend).toBeTruthy();
+
+        const stats = await client.getServerStats(backendName, serverName);
+        expect(stats).toBeTruthy();
+      } finally {
+        // Cleanup
+        try {
+          await client.deleteServer(backendName, serverName);
+          await client.deleteBackend(backendName);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    }, 15000);
+
+    it('should rollback on transaction failure', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      const tm = new TransactionManager(client);
+      const backendName = 'rollback-test-backend';
+
+      try {
+        await expect(tm.executeInTransaction(async () => {
+          // Create backend
+          await client.createBackend({
+            name: backendName,
+            mode: 'http'
+          });
+
+          // Force an error to trigger rollback
+          throw new Error('Simulated failure');
+        })).rejects.toThrow('Simulated failure');
+
+        // Backend should not exist due to rollback
+        const backend = await client.getBackend(backendName);
+        expect(backend).toBeNull();
+      } finally {
+        // Cleanup just in case
+        try {
+          await client.deleteBackend(backendName);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    }, 15000);
+  });
+
+  describe('retryable client', () => {
+    it('should handle basic operations with retry logic', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      const retryableClient = new RetryableHAProxyClient();
+      await retryableClient.initialize(testContainerId);
+
+      const backendName = 'retry-test-backend';
+
+      try {
+        // This should work normally (no retries needed)
+        await retryableClient.createBackend({
+          name: backendName,
+          mode: 'http'
+        });
+
+        // Verify backend was created
+        const backend = await retryableClient.getBackend(backendName);
+        expect(backend).toBeTruthy();
+        expect(backend!.name).toBe(backendName);
+      } finally {
+        // Cleanup
+        try {
+          await retryableClient.deleteBackend(backendName);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    }, 10000);
+  });
+
+  describe('error handling improvements', () => {
+    it('should provide specific error messages for different status codes', async () => {
+      if (!process.env.RUN_INTEGRATION_TESTS) {
+        pending('Integration tests skipped');
+        return;
+      }
+
+      // Test 404 error
+      await expect(client.getBackend('definitely-does-not-exist-404')).resolves.toBeNull();
+
+      // Test duplicate creation (should give specific error)
+      const backendName = 'duplicate-test-backend';
+
+      try {
+        await client.createBackend({
+          name: backendName,
+          mode: 'http'
+        });
+
+        // Try to create same backend again
+        await expect(client.createBackend({
+          name: backendName,
+          mode: 'http'
+        })).rejects.toThrow();
+      } finally {
+        // Cleanup
+        try {
+          await client.deleteBackend(backendName);
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
     }, 10000);
   });
 
