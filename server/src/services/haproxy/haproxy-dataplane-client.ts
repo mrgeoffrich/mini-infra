@@ -507,7 +507,7 @@ export class HAProxyDataPlaneClient {
   async enableServer(backendName: string, serverName: string): Promise<void> {
     try {
       await this.axiosInstance.put(
-        `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
+        `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
         { admin_state: 'ready' }
       );
 
@@ -526,7 +526,7 @@ export class HAProxyDataPlaneClient {
   async disableServer(backendName: string, serverName: string): Promise<void> {
     try {
       await this.axiosInstance.put(
-        `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
+        `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
         { admin_state: 'maint' }
       );
 
@@ -545,7 +545,7 @@ export class HAProxyDataPlaneClient {
   async setServerState(backendName: string, serverName: string, state: 'ready' | 'maint' | 'drain'): Promise<void> {
     try {
       await this.axiosInstance.put(
-        `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
+        `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
         { admin_state: state }
       );
 
@@ -672,27 +672,32 @@ export class HAProxyDataPlaneClient {
         `/services/haproxy/stats/native?type=server&parent=${backendName}&name=${serverName}`
       );
 
-      const stats = response.data?.[0];
+      const statsArray = response.data?.stats;
+      if (!statsArray || statsArray.length === 0) {
+        return null;
+      }
+
+      const stats = statsArray[0].stats;
       if (!stats) {
         return null;
       }
 
       return {
-        name: stats.svname,
+        name: statsArray[0].name,
         status: stats.status,
-        check_status: stats.check_status,
-        check_duration: stats.check_duration,
-        weight: stats.weight,
-        current_sessions: stats.scur,
-        max_sessions: stats.smax,
-        total_sessions: stats.stot,
-        bytes_in: stats.bin,
-        bytes_out: stats.bout,
-        denied_requests: stats.dreq,
-        errors_con: stats.econ,
-        errors_resp: stats.eresp,
-        warnings_retr: stats.wretr,
-        warnings_redis: stats.wredis
+        check_status: stats.check_status || '',
+        check_duration: stats.check_duration || 0,
+        weight: stats.weight || 0,
+        current_sessions: stats.scur || 0,
+        max_sessions: stats.smax || 0,
+        total_sessions: stats.stot || 0,
+        bytes_in: stats.bin || 0,
+        bytes_out: stats.bout || 0,
+        denied_requests: stats.dreq || 0,
+        errors_con: stats.econ || 0,
+        errors_resp: stats.eresp || 0,
+        warnings_retr: stats.wretr || 0,
+        warnings_redis: stats.wredis || 0
       };
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -712,13 +717,18 @@ export class HAProxyDataPlaneClient {
         `/services/haproxy/stats/native?type=backend&name=${backendName}`
       );
 
-      const stats = response.data?.[0];
+      const statsArray = response.data?.stats;
+      if (!statsArray || statsArray.length === 0) {
+        return null;
+      }
+
+      const stats = statsArray[0].stats;
       if (!stats) {
         return null;
       }
 
       return {
-        name: stats.pxname,
+        name: statsArray[0].name,
         status: stats.status,
         current_sessions: stats.scur,
         max_sessions: stats.smax,
