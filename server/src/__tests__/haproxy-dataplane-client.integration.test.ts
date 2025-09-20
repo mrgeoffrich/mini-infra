@@ -421,10 +421,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Wait for server to appear in runtime (up to 10 seconds)
       let serverInRuntime = false;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 100; i++) {
         serverInRuntime = await client.isServerInRuntime(TEST_BACKEND_NAME, TEST_SERVER_NAME);
         if (serverInRuntime) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       if (serverInRuntime) {
@@ -476,10 +476,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Wait for server to appear in runtime
       let serverInRuntime = false;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 100; i++) {
         serverInRuntime = await client.isServerInRuntime(TEST_BACKEND_NAME, TEST_SERVER_NAME);
         if (serverInRuntime) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       if (serverInRuntime) {
@@ -595,10 +595,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Wait for server to appear in runtime (up to 10 seconds)
       let serverInRuntime = false;
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 100; i++) {
         serverInRuntime = await client.isServerInRuntime(TEST_BACKEND_NAME, TEST_SERVER_NAME);
         if (serverInRuntime) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       if (!serverInRuntime) {
@@ -626,7 +626,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       }
 
       // Wait a moment for backend to be available in runtime
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       const stats = await client.getBackendStats(TEST_BACKEND_NAME);
 
@@ -841,10 +841,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
         // Wait for server to appear in runtime (may take time after transaction commit)
         let serverInRuntime = false;
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 100; i++) {
           serverInRuntime = await client.isServerInRuntime(backendName, serverName);
           if (serverInRuntime) break;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         if (serverInRuntime) {
@@ -1003,10 +1003,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
         // 3. Wait for server to be available in runtime
         let serverInRuntime = false;
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 100; i++) {
           serverInRuntime = await client.isServerInRuntime(backendName, serverName);
           if (serverInRuntime) break;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         if (serverInRuntime) {
