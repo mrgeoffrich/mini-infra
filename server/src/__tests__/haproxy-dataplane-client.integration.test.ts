@@ -17,10 +17,14 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   let testContainerId: string;
   let dockerService: DockerService;
 
-  // Test configuration
-  const TEST_BACKEND_NAME = 'test-integration-backend';
-  const TEST_SERVER_NAME = 'test-integration-server';
-  const TEST_FRONTEND_NAME = 'test-integration-frontend';
+  // Test configuration - use timestamp to ensure uniqueness
+  const TEST_TIMESTAMP = Date.now();
+  const TEST_BACKEND_NAME = `test-integration-backend-${TEST_TIMESTAMP}`;
+  const TEST_SERVER_NAME = `test-integration-server-${TEST_TIMESTAMP}`;
+  const TEST_FRONTEND_NAME = `test-integration-frontend-${TEST_TIMESTAMP}`;
+
+  // Helper to wait between operations to reduce version conflicts
+  const waitBetweenOperations = () => new Promise(resolve => setTimeout(resolve, 100));
 
   beforeAll(async () => {
     // Skip integration tests if not in integration test environment
@@ -135,6 +139,25 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       if (client && client.isInitialized()) {
         await cleanupTestResources();
       }
+
+      // Clean up Docker service resources that keep the process alive
+      if (dockerService) {
+        // Clear any active reconnect intervals
+        const reconnectInterval = (dockerService as any).reconnectInterval;
+        if (reconnectInterval) {
+          clearInterval(reconnectInterval);
+          (dockerService as any).reconnectInterval = null;
+        }
+
+        // Close the NodeCache instance to stop its internal timers
+        const cache = (dockerService as any).cache;
+        if (cache && typeof cache.close === 'function') {
+          cache.close();
+        }
+      }
+
+      // Reset Docker service singleton to prevent state leakage
+      (DockerService as any).instance = null;
 
       // Clean up Docker configuration from test database
       await testPrisma.systemSettings.deleteMany({
@@ -254,6 +277,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Create backend
       await client.createBackend(backendConfig);
+      await waitBetweenOperations();
 
       // Verify backend exists
       const retrievedBackend = await client.getBackend(TEST_BACKEND_NAME);
@@ -268,6 +292,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Delete backend
       await client.deleteBackend(TEST_BACKEND_NAME);
+      await waitBetweenOperations();
 
       // Verify backend is deleted
       const deletedBackend = await client.getBackend(TEST_BACKEND_NAME);
@@ -351,6 +376,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
       // Add server
       await client.addServer(TEST_BACKEND_NAME, serverConfig);
+      await waitBetweenOperations(); // Wait for server to be propagated to runtime
 
       // Enable server
       await client.enableServer(TEST_BACKEND_NAME, TEST_SERVER_NAME);
@@ -388,6 +414,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       };
 
       await client.addServer(TEST_BACKEND_NAME, serverConfig);
+      await waitBetweenOperations(); // Wait for server to be propagated to runtime
 
       // Test different server states
       await client.setServerState(TEST_BACKEND_NAME, TEST_SERVER_NAME, 'ready');

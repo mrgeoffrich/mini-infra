@@ -467,7 +467,7 @@ describe('HAProxyDataPlaneClient', () => {
             name: 'server1',
             address: '192.168.1.100',
             port: 8080,
-            maintenance: false,
+            maintenance: 'disabled',
             enabled: true
           }
         );
@@ -504,7 +504,7 @@ describe('HAProxyDataPlaneClient', () => {
             rise: 2,
             fall: 3,
             weight: 100,
-            maintenance: false,
+            maintenance: 'disabled',
             enabled: false
           }
         );

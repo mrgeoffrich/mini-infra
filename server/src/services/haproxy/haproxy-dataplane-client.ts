@@ -17,7 +17,7 @@ export interface ServerConfig {
   inter?: number; // health check interval in ms
   rise?: number; // number of checks to consider server up
   fall?: number; // number of checks to consider server down
-  maintenance?: boolean;
+  maintenance?: 'enabled' | 'disabled';
   enabled?: boolean;
   weight?: number;
 }
@@ -429,7 +429,7 @@ export class HAProxyDataPlaneClient {
         ...(config.rise && { rise: config.rise }),
         ...(config.fall && { fall: config.fall }),
         ...(config.weight && { weight: config.weight }),
-        maintenance: config.maintenance || false,
+        maintenance: config.maintenance || 'disabled',
         enabled: config.enabled !== false // default to true
       };
 
