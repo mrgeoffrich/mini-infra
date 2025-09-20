@@ -65,7 +65,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Use async polling with timeout (2 minutes as defined in state machine)
 
 ### 3. AddContainerToLB Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Configure HAProxy backend and server
 
@@ -77,7 +77,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Send LB_CONFIGURED or LB_CONFIG_ERROR event
 
 ### 4. PerformHealthChecks Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Monitor HAProxy's health check results
 
@@ -89,7 +89,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Timeout after 90 seconds as defined in state machine
 
 ### 5. EnableTraffic Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Enable the server in HAProxy backend
 
@@ -99,7 +99,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Send TRAFFIC_ENABLED or TRAFFIC_ENABLE_FAILED event
 
 ### 6. ValidateTraffic Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Monitor traffic stability
 
@@ -111,7 +111,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Run for 30 seconds minimum as defined in state machine
 
 ### 7. LogDeploymentSuccess Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Log successful deployment
 
@@ -121,7 +121,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Update database records if needed
 
 ### 8. AlertOperationsTeam Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Handle deployment failures
 
@@ -131,7 +131,7 @@ The initial deployment state machine needs to orchestrate the deployment of a ne
 - Document failure reason and context
 
 ### 9. CleanupTempResources Action
-**Status: PENDING**
+**Status: COMPLETED**
 
 **Purpose**: Clean up any temporary resources
 

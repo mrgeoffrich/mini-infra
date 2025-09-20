@@ -57,8 +57,8 @@ type InitialDeploymentEvent =
     | { type: 'START_DEPLOYMENT' }
     | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING' }
-    | { type: 'STARTUP_TIMEOUT' }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress?: string; containerPort?: number }
+    | { type: 'STARTUP_TIMEOUT'; error?: string }
     | { type: 'LB_CONFIGURED' }
     | { type: 'LB_CONFIG_ERROR'; error: string }
     | { type: 'SERVERS_HEALTHY' }
@@ -101,29 +101,61 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
-        initializeHAProxy: ({ context }) => {
-            addContainerToLB.execute(context);
+        initializeHAProxy: ({ context, self }) => {
+            // Execute async action with event callback
+            addContainerToLB.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'LB_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        performHealthChecks: ({ context }) => {
-            performHealthChecks.execute(context);
+        performHealthChecks: ({ context, self }) => {
+            // Execute async action with event callback
+            performHealthChecks.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'HEALTH_CHECK_TIMEOUT',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        enableTraffic: ({ context }) => {
-            enableTraffic.execute(context);
+        enableTraffic: ({ context, self }) => {
+            // Execute async action with event callback
+            enableTraffic.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'TRAFFIC_ENABLE_FAILED',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        validateTraffic: () => {
-            validateTraffic.execute();
+        validateTraffic: ({ context, self }) => {
+            // Execute async action with event callback
+            validateTraffic.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'CRITICAL_ISSUES',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
         startExtendedMonitoring: assign({
             monitoringStartTime: () => Date.now()
         }),
-        logDeploymentSuccess: () => {
-            logDeploymentSuccess.execute();
+        logDeploymentSuccess: ({ context }) => {
+            logDeploymentSuccess.execute(context);
         },
-        alertOperationsTeam: () => {
-            alertOperationsTeam.execute();
+        alertOperationsTeam: ({ context }) => {
+            alertOperationsTeam.execute(context);
         },
-        cleanupTempResources: () => {
-            cleanupTempResources.execute();
+        cleanupTempResources: ({ context }) => {
+            cleanupTempResources.execute(context);
         },
         preserveErrorContext: assign({
             error: ({ event }) => {
