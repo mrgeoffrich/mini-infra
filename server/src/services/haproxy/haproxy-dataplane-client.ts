@@ -417,52 +417,87 @@ export class HAProxyDataPlaneClient {
    * Add server to backend
    */
   async addServer(backendName: string, config: ServerConfig): Promise<void> {
-    // Use transaction to ensure server is properly committed to runtime
-    const transaction = await this.beginTransaction();
+    await this.addServerInternal(backendName, config, true);
+  }
 
-    try {
-      const serverData = {
-        name: config.name,
-        address: config.address,
-        port: config.port,
-        ...(config.check && { check: config.check }),
-        ...(config.check_path && { check_path: config.check_path }),
-        ...(config.inter && { inter: config.inter }),
-        ...(config.rise && { rise: config.rise }),
-        ...(config.fall && { fall: config.fall }),
-        ...(config.weight && { weight: config.weight }),
-        maintenance: config.maintenance || 'disabled',
-        enabled: config.enabled !== false // default to true
-      };
+  /**
+   * Internal method to add server with optional transaction management
+   */
+  private async addServerInternal(backendName: string, config: ServerConfig, useTransaction: boolean = true): Promise<void> {
+    const serverData = {
+      name: config.name,
+      address: config.address,
+      port: config.port,
+      ...(config.check && { check: config.check }),
+      ...(config.check_path && { check_path: config.check_path }),
+      ...(config.inter && { inter: config.inter }),
+      ...(config.rise && { rise: config.rise }),
+      ...(config.fall && { fall: config.fall }),
+      ...(config.weight && { weight: config.weight }),
+      maintenance: config.maintenance || 'disabled',
+      enabled: config.enabled !== false // default to true
+    };
 
-      await this.axiosInstance.post(
-        `/services/haproxy/configuration/backends/${backendName}/servers?transaction_id=${transaction}`,
-        serverData
-      );
+    if (useTransaction) {
+      // Use transaction to ensure server is properly committed to runtime
+      const transaction = await this.beginTransaction();
 
-      // Commit the transaction to apply changes to runtime
-      await this.commitTransaction(transaction);
+      try {
+        await this.axiosInstance.post(
+          `/services/haproxy/configuration/backends/${backendName}/servers?transaction_id=${transaction}`,
+          serverData
+        );
 
-      logger.info(
-        {
+        // Commit the transaction to apply changes to runtime
+        await this.commitTransaction(transaction);
+
+        logger.info(
+          {
+            backendName,
+            serverName: config.name,
+            address: config.address,
+            port: config.port,
+            enabled: serverData.enabled,
+            transaction
+          },
+          'Added server to HAProxy backend successfully via transaction'
+        );
+
+        // Wait a moment for the committed changes to be available in runtime
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        await this.rollbackTransaction(transaction);
+        this.handleApiError(error, 'add server', {
           backendName,
-          serverName: config.name,
-          address: config.address,
-          port: config.port,
-          enabled: serverData.enabled,
-          transaction
-        },
-        'Added server to HAProxy backend successfully via transaction'
-      );
+          serverName: config.name
+        });
+      }
+    } else {
+      // Use version-based approach (for use within external transactions)
+      try {
+        const version = await this.getVersion();
+        await this.axiosInstance.post(
+          `/services/haproxy/configuration/backends/${backendName}/servers?version=${version}`,
+          serverData
+        );
 
-      // Wait a moment for the committed changes to be available in runtime
-      await new Promise(resolve => setTimeout(resolve, 500));
-    } catch (error) {
-      await this.rollbackTransaction(transaction);
-      this.handleApiError(error, 'add server', {
-        backendName,
-        serverName: config.name
-      });
+        logger.info(
+          {
+            backendName,
+            serverName: config.name,
+            address: config.address,
+            port: config.port,
+            enabled: serverData.enabled,
+            version
+          },
+          'Added server to HAProxy backend successfully with version'
+        );
+      } catch (error) {
+        this.handleApiError(error, 'add server', {
+          backendName,
+          serverName: config.name
+        });
+      }
     }
   }
 
@@ -884,22 +919,28 @@ export class TransactionManager {
       const originalPost = this.client['axiosInstance'].post;
       const originalPut = this.client['axiosInstance'].put;
       const originalDelete = this.client['axiosInstance'].delete;
+      const originalAddServer = this.client.addServer;
 
-      // Add transaction_id to all requests
+      // Override addServer to use non-transactional version
+      this.client.addServer = (backendName: string, config: ServerConfig) => {
+        return (this.client as any).addServerInternal(backendName, config, false);
+      };
+
+      // Add transaction_id to all requests, but skip transaction-related endpoints
       this.client['axiosInstance'].get = (url: string, config?: any) => {
-        return originalGet.call(this.client['axiosInstance'], this.withTransaction(transaction, url), config);
+        return originalGet.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 
       this.client['axiosInstance'].post = (url: string, data?: any, config?: any) => {
-        return originalPost.call(this.client['axiosInstance'], this.withTransaction(transaction, url), data, config);
+        return originalPost.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
       this.client['axiosInstance'].put = (url: string, data?: any, config?: any) => {
-        return originalPut.call(this.client['axiosInstance'], this.withTransaction(transaction, url), data, config);
+        return originalPut.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
       this.client['axiosInstance'].delete = (url: string, config?: any) => {
-        return originalDelete.call(this.client['axiosInstance'], this.withTransaction(transaction, url), config);
+        return originalDelete.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 
       try {
@@ -912,6 +953,7 @@ export class TransactionManager {
         this.client['axiosInstance'].post = originalPost;
         this.client['axiosInstance'].put = originalPut;
         this.client['axiosInstance'].delete = originalDelete;
+        this.client.addServer = originalAddServer;
       }
     } catch (error) {
       await this.client.rollbackTransaction(transaction);
@@ -920,11 +962,33 @@ export class TransactionManager {
   }
 
   /**
+   * Check if URL should use transaction_id
+   */
+  private shouldUseTransaction(url: string): boolean {
+    // Don't add transaction_id to transaction management endpoints or version endpoints
+    return !url.includes('/transactions') && !url.includes('/version');
+  }
+
+  /**
    * Helper method to add transaction_id to requests
    */
   withTransaction(transactionId: string, url: string): string {
-    const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}transaction_id=${transactionId}`;
+    // Remove version parameter if present since transaction_id and version are mutually exclusive
+    const urlParts = url.split('?');
+    const baseUrl = urlParts[0];
+    let queryParams = '';
+
+    if (urlParts.length > 1) {
+      const params = new URLSearchParams(urlParts[1]);
+      // Remove version parameter to avoid conflict with transaction_id
+      params.delete('version');
+      if (params.toString()) {
+        queryParams = `?${params.toString()}`;
+      }
+    }
+
+    const separator = queryParams ? '&' : '?';
+    return `${baseUrl}${queryParams}${separator}transaction_id=${transactionId}`;
   }
 }
 
