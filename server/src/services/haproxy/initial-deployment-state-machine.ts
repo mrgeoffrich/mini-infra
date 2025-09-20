@@ -36,6 +36,8 @@ interface InitialDeploymentContext {
 
     // Container state
     containerId?: string;
+    containerIpAddress?: string;
+    containerPort?: number;
     applicationReady: boolean;
     haproxyConfigured: boolean;
     healthChecksPassed: boolean;
@@ -77,11 +79,27 @@ export const initialDeploymentMachine = setup({
         events: {} as InitialDeploymentEvent
     },
     actions: {
-        deployApplicationContainers: ({ context }) => {
-            deployApplicationContainers.execute(context);
+        deployApplicationContainers: ({ context, self }) => {
+            // Execute async action with event callback
+            deployApplicationContainers.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'DEPLOYMENT_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        monitorContainerStartup: ({ context }) => {
-            monitorContainerStartup.execute(context);
+        monitorContainerStartup: ({ context, self }) => {
+            // Execute async action with event callback
+            monitorContainerStartup.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'STARTUP_TIMEOUT',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
         initializeHAProxy: ({ context }) => {
             addContainerToLB.execute(context);
@@ -119,6 +137,8 @@ export const initialDeploymentMachine = setup({
             // Keep deployment identifiers and environment context
             // Only reset deployment state
             containerId: undefined,
+            containerIpAddress: undefined,
+            containerPort: undefined,
             applicationReady: false,
             haproxyConfigured: false,
             healthChecksPassed: false,
@@ -214,7 +234,21 @@ export const initialDeploymentMachine = setup({
             on: {
                 CONTAINERS_RUNNING: {
                     target: 'initializingFirstLB',
-                    actions: assign({ applicationReady: true })
+                    actions: assign({
+                        applicationReady: true,
+                        containerIpAddress: ({ event }) => {
+                            if (event.type === 'CONTAINERS_RUNNING') {
+                                return event.containerIpAddress;
+                            }
+                            return undefined;
+                        },
+                        containerPort: ({ event }) => {
+                            if (event.type === 'CONTAINERS_RUNNING') {
+                                return event.containerPort;
+                            }
+                            return undefined;
+                        }
+                    })
                 },
                 STARTUP_TIMEOUT: {
                     target: 'failed',
