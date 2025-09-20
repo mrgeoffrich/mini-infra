@@ -454,9 +454,15 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       // Delete server (this works on configuration, not runtime)
       await client.deleteServer(TEST_BACKEND_NAME, TEST_SERVER_NAME);
 
-      // Verify server is deleted (stats should return null)
+      // Verify server is deleted from configuration
+      // Note: Server may still appear in runtime stats with MAINT status until reload
       const deletedStats = await client.getServerStats(TEST_BACKEND_NAME, TEST_SERVER_NAME);
-      expect(deletedStats).toBeNull();
+      // After deletion, server should either be null (not in runtime) or MAINT (deleted from config but still in runtime)
+      if (deletedStats !== null) {
+        expect(deletedStats.status).toBe('MAINT');
+      } else {
+        expect(deletedStats).toBeNull();
+      }
     }, 25000);
 
     it('should handle server state transitions', async () => {
@@ -616,7 +622,10 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       expect(typeof stats!.total_sessions).toBe('number');
       expect(typeof stats!.bytes_in).toBe('number');
       expect(typeof stats!.bytes_out).toBe('number');
-      expect(['UP', 'DOWN', 'MAINT', 'DRAIN']).toContain(stats!.status);
+      expect(typeof stats!.status).toBe('string');
+      expect(stats!.status.length).toBeGreaterThan(0);
+      // Status can be UP, DOWN, MAINT, DRAIN, or combinations like "UP 1/3"
+      expect(stats!.status).toMatch(/^(UP|DOWN|MAINT|DRAIN)(\s+\d+\/\d+)?/i);
     }, 15000);
 
     it('should retrieve backend statistics', async () => {

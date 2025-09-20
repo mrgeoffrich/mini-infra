@@ -25,13 +25,12 @@ dataplaneapi:
 haproxy:
   config_file: /usr/local/etc/haproxy/haproxy.cfg
   haproxy_bin: /usr/local/sbin/haproxy
-  master_worker_mode: true
-  master_runtime: /var/run/haproxy.sock
+  master_worker_mode: false
+  runtime: /var/run/haproxy.sock
   reload:
-    reload_delay: 5
     reload_strategy: custom
-    reload_cmd: "kill -USR2 1"
-    restart_cmd: "kill -TERM 1"
+    reload_cmd: "/usr/local/sbin/haproxy -f /usr/local/etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -sf $(cat /var/run/haproxy.pid)"
+    restart_cmd: "/usr/local/sbin/haproxy -f /usr/local/etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid"
 
 # Logging configuration
 log_targets:
