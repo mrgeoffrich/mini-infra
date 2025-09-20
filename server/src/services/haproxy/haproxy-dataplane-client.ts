@@ -417,8 +417,10 @@ export class HAProxyDataPlaneClient {
    * Add server to backend
    */
   async addServer(backendName: string, config: ServerConfig): Promise<void> {
+    // Use transaction to ensure server is properly committed to runtime
+    const transaction = await this.beginTransaction();
+
     try {
-      const version = await this.getVersion();
       const serverData = {
         name: config.name,
         address: config.address,
@@ -434,9 +436,12 @@ export class HAProxyDataPlaneClient {
       };
 
       await this.axiosInstance.post(
-        `/services/haproxy/configuration/backends/${backendName}/servers?version=${version}`,
+        `/services/haproxy/configuration/backends/${backendName}/servers?transaction_id=${transaction}`,
         serverData
       );
+
+      // Commit the transaction to apply changes to runtime
+      await this.commitTransaction(transaction);
 
       logger.info(
         {
@@ -445,11 +450,15 @@ export class HAProxyDataPlaneClient {
           address: config.address,
           port: config.port,
           enabled: serverData.enabled,
-          version
+          transaction
         },
-        'Added server to HAProxy backend successfully'
+        'Added server to HAProxy backend successfully via transaction'
       );
+
+      // Wait a moment for the committed changes to be available in runtime
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
+      await this.rollbackTransaction(transaction);
       this.handleApiError(error, 'add server', {
         backendName,
         serverName: config.name
@@ -511,6 +520,18 @@ export class HAProxyDataPlaneClient {
       );
     } catch (error) {
       this.handleApiError(error, 'set server state', { backendName, serverName, state });
+    }
+  }
+
+  /**
+   * Check if server exists in runtime
+   */
+  async isServerInRuntime(backendName: string, serverName: string): Promise<boolean> {
+    try {
+      const stats = await this.getServerStats(backendName, serverName);
+      return stats !== null;
+    } catch (error) {
+      return false;
     }
   }
 
@@ -586,6 +607,23 @@ export class HAProxyDataPlaneClient {
     }
   }
 
+  /**
+   * Delete a frontend
+   */
+  async deleteFrontend(name: string): Promise<void> {
+    try {
+      const version = await this.getVersion();
+      await this.axiosInstance.delete(`/services/haproxy/configuration/frontends/${name}?version=${version}`);
+
+      logger.info(
+        { frontendName: name, version },
+        'Deleted HAProxy frontend successfully'
+      );
+    } catch (error) {
+      this.handleApiError(error, 'delete frontend', { frontendName: name });
+    }
+  }
+
   // ====================
   // Stats and Monitoring
   // ====================
@@ -596,7 +634,7 @@ export class HAProxyDataPlaneClient {
   async getServerStats(backendName: string, serverName: string): Promise<ServerStats | null> {
     try {
       const response = await this.axiosInstance.get(
-        `/services/haproxy/stats/native?type=server&name=${backendName}/${serverName}`
+        `/services/haproxy/stats/native?type=server&parent=${backendName}&name=${serverName}`
       );
 
       const stats = response.data?.[0];
@@ -748,6 +786,7 @@ export class HAProxyDataPlaneClient {
     return this.endpointInfo !== null;
   }
 
+
   /**
    * Handle API errors consistently
    */
@@ -835,14 +874,45 @@ export class TransactionManager {
    * Execute multiple operations atomically within a transaction
    */
   async executeInTransaction<T>(
-    operations: (transactionId: string) => Promise<T>
+    operations: () => Promise<T>
   ): Promise<T> {
     const transaction = await this.client.beginTransaction();
 
     try {
-      const result = await operations(transaction);
-      await this.client.commitTransaction(transaction);
-      return result;
+      // Override the axios instance to include transaction_id in all requests
+      const originalGet = this.client['axiosInstance'].get;
+      const originalPost = this.client['axiosInstance'].post;
+      const originalPut = this.client['axiosInstance'].put;
+      const originalDelete = this.client['axiosInstance'].delete;
+
+      // Add transaction_id to all requests
+      this.client['axiosInstance'].get = (url: string, config?: any) => {
+        return originalGet.call(this.client['axiosInstance'], this.withTransaction(transaction, url), config);
+      };
+
+      this.client['axiosInstance'].post = (url: string, data?: any, config?: any) => {
+        return originalPost.call(this.client['axiosInstance'], this.withTransaction(transaction, url), data, config);
+      };
+
+      this.client['axiosInstance'].put = (url: string, data?: any, config?: any) => {
+        return originalPut.call(this.client['axiosInstance'], this.withTransaction(transaction, url), data, config);
+      };
+
+      this.client['axiosInstance'].delete = (url: string, config?: any) => {
+        return originalDelete.call(this.client['axiosInstance'], this.withTransaction(transaction, url), config);
+      };
+
+      try {
+        const result = await operations();
+        await this.client.commitTransaction(transaction);
+        return result;
+      } finally {
+        // Restore original methods
+        this.client['axiosInstance'].get = originalGet;
+        this.client['axiosInstance'].post = originalPost;
+        this.client['axiosInstance'].put = originalPut;
+        this.client['axiosInstance'].delete = originalDelete;
+      }
     } catch (error) {
       await this.client.rollbackTransaction(transaction);
       throw error;

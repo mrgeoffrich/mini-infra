@@ -53,16 +53,11 @@ RUN_INTEGRATION_TESTS=true npm test -- haproxy-dataplane-client.integration.test
 ```
 
 ### Prerequisites
-- Running HAProxy container with DataPlane API on port 5555
-- Container labeled with `mini-infra.service=haproxy`
 
-### Setup HAProxy for Testing
+Use docker compose to start haproxy:
 ```bash
-# Label existing HAProxy container
-docker label <container-id> mini-infra.service=haproxy
-
-# Or verify DataPlane API is accessible
-curl http://localhost:5555/v2/info
+cd server/docker-compose
+docker compose -f docker-compose.haproxy.yml up -d
 ```
 
 ### Troubleshooting
