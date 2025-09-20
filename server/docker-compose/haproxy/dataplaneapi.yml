@@ -26,11 +26,12 @@ haproxy:
   config_file: /usr/local/etc/haproxy/haproxy.cfg
   haproxy_bin: /usr/local/sbin/haproxy
   master_worker_mode: true
-  master_runtime: /var/run/haproxy/master.sock
+  master_runtime: /var/run/haproxy.sock
   reload:
     reload_delay: 5
-    service_name: haproxy
-    reload_strategy: systemd
+    reload_strategy: custom
+    reload_cmd: "kill -USR2 1"
+    restart_cmd: "kill -TERM 1"
 
 # Logging configuration
 log_targets:

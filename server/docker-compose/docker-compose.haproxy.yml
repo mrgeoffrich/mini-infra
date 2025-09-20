@@ -1,7 +1,7 @@
 services:
   haproxy-init:
     image: haproxytech/haproxy-alpine:3.2
-    container_name: haproxy-init
+    container_name: haproxy-integration-test-init
     volumes:
       - ./haproxy/dataplaneapi.yml:/tmp/dataplaneapi.yml:ro
       - ./haproxy/haproxy.cfg:/tmp/haproxy.cfg:ro
@@ -10,7 +10,7 @@ services:
 
   haproxy:
     image: haproxytech/haproxy-alpine:3.2
-    container_name: haproxy
+    container_name: haproxy-integration-test
     restart: unless-stopped
     depends_on:
       haproxy-init:
@@ -23,6 +23,8 @@ services:
     volumes:
       - haproxy_config:/usr/local/etc/haproxy/
       - ./haproxy/certs:/etc/ssl/certs:rw # SSL certificates directory
+    labels:
+      - mini-infra.service=haproxy-integration-test
     networks:
       - haproxy_network
     environment:
@@ -37,7 +39,8 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost:8404/stats",
+          "--header=Authorization: Basic YWRtaW46YWRtaW4=",
+          "http://127.0.0.1:8404/stats",
         ]
       interval: 30s
       timeout: 5s

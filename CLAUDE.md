@@ -42,6 +42,29 @@ curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/config
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
 
+## 🧪 HAProxy DataPlane Integration Tests
+
+To run HAProxy DataPlane API integration tests:
+
+### Quick Start
+```bash
+cd server
+RUN_INTEGRATION_TESTS=true npm test -- haproxy-dataplane-client.integration.test.ts
+```
+
+### Prerequisites
+
+Use docker compose to start haproxy:
+```bash
+cd server/docker-compose
+docker compose -f docker-compose.haproxy.yml up -d
+```
+
+### Troubleshooting
+- Tests will be skipped if `RUN_INTEGRATION_TESTS` not set
+- Check `docker ps --filter "label=mini-infra.service=haproxy"` for labeled containers
+- Tests automatically find HAProxy by image name as fallback
+
 ---
 
 ## Project Overview

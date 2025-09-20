@@ -108,7 +108,7 @@ jest.mock("../lib/logger-factory.ts", () => ({
     warn: jest.fn(),
     debug: jest.fn(),
   })),
-  applicationLogger: jest.fn(() => ({
+  appLogger: jest.fn(() => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
@@ -127,6 +127,24 @@ jest.mock("../lib/logger-factory.ts", () => ({
     debug: jest.fn(),
   })),
   servicesLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  dockerExecutorLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  deploymentLogger: jest.fn(() => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  })),
+  loadbalancerLogger: jest.fn(() => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
