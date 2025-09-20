@@ -41,7 +41,6 @@ import {
   Save,
   Container,
   Activity,
-  Globe,
   RotateCcw,
   Info,
   ArrowLeft,
@@ -55,7 +54,6 @@ import type {
   UpdateDeploymentConfigRequest,
   ContainerConfig,
   HealthCheckConfig,
-  HAProxyConfig,
   RollbackConfig,
 } from "@mini-infra/types";
 
@@ -68,7 +66,6 @@ interface DeploymentFormData {
   environmentId: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
-  haproxyConfig: HAProxyConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number;
 }
@@ -127,13 +124,6 @@ export function NewDeploymentConfigPage() {
         retries: 3,
         interval: 30000,
       },
-      haproxyConfig: {
-        backendName: "",
-        frontendName: "",
-        hostRule: "",
-        pathRule: "",
-        ssl: false,
-      },
       rollbackConfig: {
         enabled: true,
         maxWaitTime: 300000,
@@ -179,30 +169,6 @@ export function NewDeploymentConfigPage() {
     }
   }, [deploymentConfig, form]);
 
-  // Auto-generate backend and frontend names from application name
-  const watchedAppName = form.watch("applicationName");
-  useEffect(() => {
-    if (watchedAppName && !isEditing) {
-      const sanitized = watchedAppName
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "-");
-      form.setValue("haproxyConfig.backendName", `${sanitized}-backend`);
-      form.setValue("haproxyConfig.frontendName", `${sanitized}-frontend`);
-    }
-  }, [watchedAppName, form, isEditing]);
-
-  // Auto-generate host rule from application name
-  const watchedBackendName = form.watch("haproxyConfig.backendName");
-  useEffect(() => {
-    if (
-      watchedBackendName &&
-      !isEditing &&
-      !form.getValues("haproxyConfig.hostRule")
-    ) {
-      const appName = watchedBackendName.replace("-backend", "");
-      form.setValue("haproxyConfig.hostRule", `${appName}.localhost`);
-    }
-  }, [watchedBackendName, form, isEditing]);
 
   const onSubmit = async (data: any) => {
     setSubmitError(null);
@@ -298,7 +264,7 @@ export function NewDeploymentConfigPage() {
           </h1>
           <p className="text-muted-foreground">
             Configure deployment settings for your application including Docker,
-            health checks, HAProxy routing, and rollback options.
+            health checks, and rollback options.
           </p>
         </div>
       </div>
@@ -313,7 +279,7 @@ export function NewDeploymentConfigPage() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="docker" className="flex items-center gap-2">
                 <Container className="w-4 h-4" />
                 Docker
@@ -321,10 +287,6 @@ export function NewDeploymentConfigPage() {
               <TabsTrigger value="health" className="flex items-center gap-2">
                 <Activity className="w-4 h-4" />
                 Health Check
-              </TabsTrigger>
-              <TabsTrigger value="haproxy" className="flex items-center gap-2">
-                <Globe className="w-4 h-4" />
-                HAProxy
               </TabsTrigger>
               <TabsTrigger value="rollback" className="flex items-center gap-2">
                 <RotateCcw className="w-4 h-4" />
@@ -653,137 +615,6 @@ export function NewDeploymentConfigPage() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="haproxy" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-purple-500" />
-                    HAProxy Configuration
-                  </CardTitle>
-                  <CardDescription>
-                    Configure HAProxy routing and load balancing
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="haproxyConfig.backendName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Backend Name</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="my-app-backend"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9-]/g, "-");
-                                field.onChange(value);
-                              }}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Unique HAProxy backend name
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="haproxyConfig.frontendName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Frontend Name</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="my-app-frontend"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9-]/g, "-");
-                                field.onChange(value);
-                              }}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Unique HAProxy frontend name
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="haproxyConfig.hostRule"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Host Rule</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="my-app.localhost"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Host pattern for routing (e.g., api.example.com)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="haproxyConfig.pathRule"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Path Rule (Optional)</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="/api"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Path prefix for routing (optional)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="haproxyConfig.ssl"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">Enable SSL</FormLabel>
-                          <FormDescription>
-                            Enable SSL/TLS for this service
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-            </TabsContent>
 
             <TabsContent value="rollback" className="space-y-6">
               <Card>
