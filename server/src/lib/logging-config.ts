@@ -28,15 +28,23 @@ const environmentLogConfigSchema = z.object({
   loadbalancer: loggerConfigSchema,
 });
 
+const openobserveConfigSchema = z.object({
+  batchSize: z.number().optional(),
+  timeThreshold: z.number().optional(),
+  enabled: z.boolean().optional(),
+});
+
 const loggingConfigSchema = z.object({
   development: environmentLogConfigSchema,
   production: environmentLogConfigSchema,
   test: environmentLogConfigSchema,
+  openobserve: openobserveConfigSchema.optional(),
   redactionPaths: z.array(z.string()),
 });
 
 export type LoggerConfig = z.infer<typeof loggerConfigSchema>;
 export type EnvironmentLogConfig = z.infer<typeof environmentLogConfigSchema>;
+export type OpenObserveConfig = z.infer<typeof openobserveConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 
 let loggingConfig: LoggingConfig;
@@ -104,6 +112,11 @@ export function loadLoggingConfig(): LoggingConfig {
         "req.body.password",
         'res.headers["set-cookie"]',
       ],
+      openobserve: {
+        batchSize: 100,
+        timeThreshold: 30000,
+        enabled: false,
+      },
     };
 
     return loggingConfig;
@@ -130,6 +143,25 @@ export function getLoggerConfig(
 export function getRedactionPaths(): string[] {
   const fullConfig = loadLoggingConfig();
   return fullConfig.redactionPaths;
+}
+
+// Get OpenObserve configuration
+export function getOpenObserveConfig(): OpenObserveConfig | null {
+  const fullConfig = loadLoggingConfig();
+  return fullConfig.openobserve || null;
+}
+
+// Check if OpenObserve is properly configured via environment variables
+export function isOpenObserveConfigured(): boolean {
+  const requiredEnvVars = [
+    'OPENOBSERVE_URL',
+    'OPENOBSERVE_ORGANIZATION_NAME',
+    'OPENOBSERVE_USERNAME',
+    'OPENOBSERVE_PASSWORD',
+    'OPENOBSERVE_STREAM_NAME'
+  ];
+
+  return requiredEnvVars.every(envVar => process.env[envVar]);
 }
 
 // Ensure log directory exists

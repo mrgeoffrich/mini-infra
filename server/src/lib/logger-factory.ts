@@ -4,6 +4,8 @@ import {
   getLoggerConfig,
   getRedactionPaths,
   ensureLogDirectory,
+  getOpenObserveConfig,
+  isOpenObserveConfigured,
   type LoggerConfig,
 } from "./logging-config";
 
@@ -176,6 +178,26 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
         colorize: true,
         translateTime: "yyyy-mm-dd HH:MM:ss",
         ignore: "pid,hostname",
+      },
+      level: config.level,
+    });
+  }
+
+  // Add OpenObserve target if properly configured
+  if (isOpenObserveConfigured()) {
+    const openobserveConfig = getOpenObserveConfig();
+    targets.push({
+      target: "@openobserve/pino-openobserve",
+      options: {
+        url: process.env.OPENOBSERVE_URL,
+        organization: process.env.OPENOBSERVE_ORGANIZATION_NAME,
+        auth: {
+          username: process.env.OPENOBSERVE_USERNAME,
+          password: process.env.OPENOBSERVE_PASSWORD,
+        },
+        streamName: process.env.OPENOBSERVE_STREAM_NAME,
+        batchSize: openobserveConfig?.batchSize || 100,
+        timeThreshold: openobserveConfig?.timeThreshold || 30000,
       },
       level: config.level,
     });
