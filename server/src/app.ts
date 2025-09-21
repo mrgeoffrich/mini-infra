@@ -48,6 +48,22 @@ app.use(
         headers: res.headers,
       }),
     },
+    // Disable automatic error logging by pino-http to prevent duplicate/wrong stack traces
+    customAttributeKeys: {
+      req: 'req',
+      res: 'res',
+      err: 'err',
+      responseTime: 'responseTime'
+    },
+    // Only log HTTP request/response info, not errors - let our error handler do that
+    autoLogging: {
+      ignore: (req) => false,
+      ignorePaths: []
+    },
+    // Prevent pino-http from logging errors with its own stack trace
+    customErrorMessage: () => '', // Empty string disables error logging
+    // Don't log error details in HTTP logger - our error handler will do it
+    customErrorObject: () => ({})
   }),
 );
 
