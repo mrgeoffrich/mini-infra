@@ -7,6 +7,7 @@ import express, {
 import { z } from "zod";
 import DockerService from "../services/docker";
 import { appLogger } from "../lib/logger-factory";
+import { trace } from "@opentelemetry/api";
 
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
@@ -131,6 +132,16 @@ router.get("/", requireSessionOrApiKey, (async (
         requestId,
       });
     }
+
+    // Test manual span to verify debug processors
+    const tracer = trace.getTracer("test-tracer");
+    const testSpan = tracer.startSpan("test.manual.span");
+    testSpan.setAttributes({
+      "test.manual": true,
+      "test.timestamp": Date.now(),
+      "test.user": userId || "unknown"
+    });
+    testSpan.end();
 
     // Fetch containers from Docker service
     let dockerContainers = await dockerService.listContainers(true);

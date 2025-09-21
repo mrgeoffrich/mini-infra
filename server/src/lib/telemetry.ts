@@ -1,9 +1,13 @@
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor, SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { appLogger } from "./logger-factory";
 
 // Create logger instance for telemetry
@@ -18,6 +22,7 @@ export interface TelemetryConfig {
   resourceAttributes?: Record<string, string>;
   samplingRatio?: number;
   enabled: boolean;
+  debugEnabled: boolean;
 }
 
 // Get telemetry configuration from environment variables
@@ -66,7 +71,58 @@ function getTelemetryConfig(): TelemetryConfig {
     resourceAttributes,
     samplingRatio: process.env.OTEL_SAMPLING_RATIO ? parseFloat(process.env.OTEL_SAMPLING_RATIO) : 1.0,
     enabled: process.env.OTEL_ENABLED !== "false" && !!endpoint,
+    debugEnabled: process.env.OTEL_DEBUG === "true",
   };
+}
+
+
+// Debug trace exporter to log export data
+class DebugTraceExporter {
+  private enabled: boolean;
+  private originalExporter: OTLPTraceExporter;
+
+  constructor(originalExporter: OTLPTraceExporter, enabled: boolean) {
+    this.originalExporter = originalExporter;
+    this.enabled = enabled;
+  }
+
+  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    if (this.enabled) {
+      console.log('\n📤 OTEL DEBUG - Exporting Spans:', {
+        spanCount: spans.length,
+        endpoint: (this.originalExporter as any)._otlpExporter?.url,
+        spans: spans.map(span => ({
+          spanId: span.spanContext().spanId,
+          traceId: span.spanContext().traceId,
+          name: span.name,
+          kind: span.kind,
+          status: span.status,
+          startTime: new Date(span.startTime[0] * 1000 + span.startTime[1] / 1000000).toISOString(),
+          endTime: new Date(span.endTime[0] * 1000 + span.endTime[1] / 1000000).toISOString(),
+          attributes: span.attributes,
+          events: span.events?.length || 0,
+          links: span.links?.length || 0,
+        })),
+      });
+    }
+
+    // Call the original exporter
+    this.originalExporter.export(spans, (result: ExportResult) => {
+      if (this.enabled) {
+        console.log('\n✅ OTEL DEBUG - Export Result:', {
+          code: result.code,
+          error: result.error?.message,
+          success: result.code === ExportResultCode.SUCCESS,
+          spanCount: spans.length,
+        });
+      }
+      resultCallback(result);
+    });
+  }
+
+  shutdown(): Promise<void> {
+    return this.originalExporter.shutdown();
+  }
 }
 
 // Global SDK instance
@@ -78,6 +134,34 @@ export function initializeTelemetry(): void {
 
   if (!config.enabled) {
     logger.info("OpenTelemetry is disabled or no endpoint configured");
+    return;
+  }
+
+  // Check if SDK was already initialized in bootstrap
+  if ((global as any).__otelSDK) {
+    logger.info("OpenTelemetry SDK already initialized in bootstrap, reusing...");
+    sdk = (global as any).__otelSDK;
+
+    logger.info({
+      serviceName: config.serviceName,
+      serviceVersion: config.serviceVersion,
+      endpoint: config.endpoint,
+      samplingRatio: config.samplingRatio,
+      debugEnabled: config.debugEnabled,
+    }, "OpenTelemetry initialized successfully (bootstrap)");
+
+    if (config.debugEnabled) {
+      console.log('\n🚀 OTEL DEBUG MODE ENABLED (BOOTSTRAP)');
+      console.log('📋 Configuration:', {
+        serviceName: config.serviceName,
+        serviceVersion: config.serviceVersion,
+        endpoint: config.endpoint,
+        headers: Object.keys(config.headers || {}),
+        resourceAttributes: config.resourceAttributes,
+        samplingRatio: config.samplingRatio,
+      });
+      console.log('💡 All OpenTelemetry spans and exports will be logged to console');
+    }
     return;
   }
 
@@ -97,60 +181,86 @@ export function initializeTelemetry(): void {
       headers: config.headers,
     });
 
+    // Wrap exporter with debug logger if debug is enabled
+    const debugExporter = new DebugTraceExporter(traceExporter, config.debugEnabled);
+
     // Create span processor with batching for performance
-    const spanProcessor = new BatchSpanProcessor(traceExporter, {
+    const spanProcessor = new BatchSpanProcessor(debugExporter as any, {
       maxQueueSize: 1000,
       maxExportBatchSize: 100,
       exportTimeoutMillis: 30000,
       scheduledDelayMillis: 5000,
     });
 
-    // Configure auto-instrumentations
-    const instrumentations = getNodeAutoInstrumentations({
-      // Enable Express instrumentation
-      "@opentelemetry/instrumentation-express": {
-        enabled: true,
-        requestHook: (span, info) => {
-          // Add custom attributes to HTTP spans
-          span.setAttributes({
-            "http.request.body.size": info.request.headers["content-length"] || 0,
-            "http.user_agent": info.request.headers["user-agent"] || "",
-          });
-        },
-      },
-      // Enable HTTP instrumentation for outgoing requests
-      "@opentelemetry/instrumentation-http": {
-        enabled: true,
+    // Configure manual instrumentations for better control
+    const instrumentations = [
+      // Manual HTTP instrumentation
+      new HttpInstrumentation({
         requestHook: (span, request) => {
-          // Add custom attributes for outgoing HTTP requests
+          if (config.debugEnabled) {
+            console.log(`🌐 HTTP Request: ${(request as any).method} ${(request as any).url}`);
+          }
+          // Add custom attributes for HTTP requests
           if (request && typeof request === "object") {
-            const url = (request as any).url || (request as any).href || "";
+            const req = request as any;
             span.setAttributes({
-              "http.client.request.url": url,
+              "http.user_agent": req.headers?.["user-agent"] || "",
+              "http.content_length": req.headers?.["content-length"] || 0,
             });
           }
         },
-      },
-      // Enable Pino instrumentation for log correlation
-      "@opentelemetry/instrumentation-pino": {
-        enabled: true,
-        logHook: (span, record) => {
-          // Add trace context to log records
-          record["trace_id"] = span.spanContext().traceId;
-          record["span_id"] = span.spanContext().spanId;
-        },
-      },
-      // Disable file system instrumentation to reduce noise
-      "@opentelemetry/instrumentation-fs": {
-        enabled: false,
-      },
-      // Disable DNS instrumentation to reduce noise
-      "@opentelemetry/instrumentation-dns": {
-        enabled: false,
-      },
-    });
+        responseHook: (span, response) => {
+          if (config.debugEnabled) {
+            console.log(`📡 HTTP Response: ${(response as any).statusCode}`);
+          }
+        }
+      }),
 
-    // Initialize the SDK
+      // Manual Express instrumentation
+      new ExpressInstrumentation({
+        requestHook: (span, info) => {
+          if (config.debugEnabled) {
+            console.log(`🚀 Express Request: ${info.request.method} ${info.request.url}`);
+          }
+          // Add custom attributes to Express spans
+          span.setAttributes({
+            "express.request.body.size": info.request.headers["content-length"] || 0,
+            "express.user_agent": info.request.headers["user-agent"] || "",
+            "express.request.route": info.request.route?.path || info.request.url,
+          });
+        },
+      }),
+
+      // Add remaining auto-instrumentations (excluding the ones we manually configured)
+      ...getNodeAutoInstrumentations({
+        // Disable the ones we're manually configuring
+        "@opentelemetry/instrumentation-http": {
+          enabled: false,
+        },
+        "@opentelemetry/instrumentation-express": {
+          enabled: false,
+        },
+        // Enable Pino instrumentation for log correlation
+        "@opentelemetry/instrumentation-pino": {
+          enabled: true,
+          logHook: (span, record) => {
+            // Add trace context to log records
+            record["trace_id"] = span.spanContext().traceId;
+            record["span_id"] = span.spanContext().spanId;
+          },
+        },
+        // Disable file system instrumentation to reduce noise
+        "@opentelemetry/instrumentation-fs": {
+          enabled: false,
+        },
+        // Disable DNS instrumentation to reduce noise
+        "@opentelemetry/instrumentation-dns": {
+          enabled: false,
+        },
+      })
+    ];
+
+    // Initialize the SDK with span processor
     sdk = new NodeSDK({
       resource,
       spanProcessor,
@@ -165,7 +275,21 @@ export function initializeTelemetry(): void {
       serviceVersion: config.serviceVersion,
       endpoint: config.endpoint,
       samplingRatio: config.samplingRatio,
+      debugEnabled: config.debugEnabled,
     }, "OpenTelemetry initialized successfully");
+
+    if (config.debugEnabled) {
+      console.log('\n🚀 OTEL DEBUG MODE ENABLED');
+      console.log('📋 Configuration:', {
+        serviceName: config.serviceName,
+        serviceVersion: config.serviceVersion,
+        endpoint: config.endpoint,
+        headers: Object.keys(config.headers || {}),
+        resourceAttributes: config.resourceAttributes,
+        samplingRatio: config.samplingRatio,
+      });
+      console.log('💡 All OpenTelemetry spans and exports will be logged to console');
+    }
 
   } catch (error) {
     logger.error({ error }, "Failed to initialize OpenTelemetry");
@@ -191,4 +315,17 @@ export function getTelemetryStatus(): TelemetryConfig & { initialized: boolean }
     ...getTelemetryConfig(),
     initialized: sdk !== null,
   };
+}
+
+// Enable/disable debug mode at runtime
+export function setDebugMode(enabled: boolean): void {
+  const config = getTelemetryConfig();
+  process.env.OTEL_DEBUG = enabled ? "true" : "false";
+
+  if (enabled) {
+    console.log('\n🚀 OTEL DEBUG MODE ENABLED AT RUNTIME');
+    console.log('💡 All new OpenTelemetry spans will be logged to console');
+  } else {
+    console.log('\n🔇 OTEL DEBUG MODE DISABLED AT RUNTIME');
+  }
 }
