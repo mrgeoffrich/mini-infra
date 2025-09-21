@@ -48,6 +48,15 @@ const configSchema = z.object({
   connectivity: z.object({
     checkInterval: z.number(),
   }),
+  telemetry: z.object({
+    enabled: z.boolean(),
+    serviceName: z.string(),
+    serviceVersion: z.string(),
+    endpoint: z.string().optional(),
+    headers: z.string().optional(),
+    resourceAttributes: z.string().optional(),
+    samplingRatio: z.number().min(0).max(1),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -146,6 +155,18 @@ const appConfig: Config = {
       300000,
     ),
   },
+  telemetry: {
+    enabled: (() => {
+      const value = getConfigValue("telemetry.enabled", "OTEL_ENABLED", "true");
+      return value === "true" || value === true;
+    })(),
+    serviceName: getConfigValue("telemetry.serviceName", "OTEL_SERVICE_NAME", "mini-infra"),
+    serviceVersion: getConfigValue("telemetry.serviceVersion", "OTEL_SERVICE_VERSION", "0.1.0"),
+    endpoint: getConfigValue("telemetry.endpoint", "OTEL_EXPORTER_OTLP_ENDPOINT", undefined),
+    headers: getConfigValue("telemetry.headers", "OTEL_EXPORTER_OTLP_HEADERS", undefined),
+    resourceAttributes: getConfigValue("telemetry.resourceAttributes", "OTEL_RESOURCE_ATTRIBUTES", undefined),
+    samplingRatio: getConfigValue("telemetry.samplingRatio", "OTEL_SAMPLING_RATIO", 1.0),
+  },
 };
 
 // Validate the final configuration
@@ -194,4 +215,5 @@ export const {
   docker: dockerConfig,
   azure: azureConfig,
   connectivity: connectivityConfig,
+  telemetry: telemetryConfig,
 } = validatedConfig;

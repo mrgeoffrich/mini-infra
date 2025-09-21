@@ -58,7 +58,6 @@ app.use(
     // Only log HTTP request/response info, not errors - let our error handler do that
     autoLogging: {
       ignore: (req) => false,
-      ignorePaths: []
     },
     // Prevent pino-http from logging errors with its own stack trace
     customErrorMessage: () => '', // Empty string disables error logging

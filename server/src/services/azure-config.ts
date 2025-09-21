@@ -13,6 +13,7 @@ import {
   BlockBlobClient,
 } from "@azure/storage-blob";
 import NodeCache from "node-cache";
+import { createAzureSpan } from "../lib/http-instrumentation";
 
 /**
  * Backup file metadata interface
@@ -521,28 +522,37 @@ export class AzureConfigService extends ConfigurationService {
       }
 
       // Test container access with retry logic
-      const accessible = await this.retryOperation(
+      const accessible = await createAzureSpan(
+        "test_container_access",
         async () => {
-          const blobServiceClient =
-            BlobServiceClient.fromConnectionString(connectionString);
-          const containerClient =
-            blobServiceClient.getContainerClient(containerName);
+          return this.retryOperation(
+            async () => {
+              const blobServiceClient =
+                BlobServiceClient.fromConnectionString(connectionString);
+              const containerClient =
+                blobServiceClient.getContainerClient(containerName);
 
-          // Try to get container properties (faster than listing blobs)
-          const propertiesPromise = containerClient.getProperties();
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Container access test timeout")),
-              5000, // Shorter timeout for container access test
-            ),
-          );
+              // Try to get container properties (faster than listing blobs)
+              const propertiesPromise = containerClient.getProperties();
+              const timeoutPromise = new Promise<never>((_, reject) =>
+                setTimeout(
+                  () => reject(new Error("Container access test timeout")),
+                  5000, // Shorter timeout for container access test
+                ),
+              );
 
-          await Promise.race([propertiesPromise, timeoutPromise]);
-          return true;
+              await Promise.race([propertiesPromise, timeoutPromise]);
+              return true;
+            },
+            2,
+            500,
+          ); // 2 retries with 500ms base delay
         },
-        2,
-        500,
-      ); // 2 retries with 500ms base delay
+        {
+          "azure.container.name": containerName,
+          "azure.operation.type": "test_access",
+        }
+      );
 
       const result = {
         accessible,

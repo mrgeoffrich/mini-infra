@@ -85,10 +85,7 @@ router.get(
       await initializeProgressTracker();
 
       // Get backup progress
-      const progress = await progressTracker.getBackupProgress(
-        operationId,
-        userId,
-      );
+      const progress = await progressTracker.getBackupProgress(operationId);
 
       if (!progress) {
         return res.status(404).json({
@@ -190,10 +187,7 @@ router.get(
       await initializeProgressTracker();
 
       // Get restore progress
-      const progress = await progressTracker.getRestoreProgress(
-        operationId,
-        userId,
-      );
+      const progress = await progressTracker.getRestoreProgress(operationId);
 
       if (!progress) {
         return res.status(404).json({
@@ -270,8 +264,7 @@ router.get(
       await initializeProgressTracker();
 
       // Get active operations
-      const activeOperations =
-        await progressTracker.getActiveOperations(userId);
+      const activeOperations = await progressTracker.getActiveOperations();
 
       logger.debug(
         {
@@ -370,7 +363,6 @@ router.get(
 
       // Build filter
       const filter: any = {
-        userId,
         databaseId,
         operationType,
         status: status === "all" ? undefined : status,

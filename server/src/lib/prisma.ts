@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { prismaLogger } from "./logger-factory";
+import { instrumentPrismaClient, createDatabaseSpan } from "./prisma-instrumentation";
 
 // Re-export PrismaClient type for use by other modules
 export { PrismaClient };
@@ -85,4 +86,10 @@ if (process.env.NODE_ENV !== "test") {
 
 if (process.env.NODE_ENV !== "production") globalThis.prisma = prisma;
 
-export default prisma;
+// Apply OpenTelemetry instrumentation
+const instrumentedPrisma = instrumentPrismaClient(prisma);
+
+export default instrumentedPrisma;
+
+// Re-export helper for custom database spans
+export { createDatabaseSpan };
