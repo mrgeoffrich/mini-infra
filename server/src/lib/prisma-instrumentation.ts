@@ -4,68 +4,139 @@ import { PrismaClient } from "@prisma/client";
 // Tracer for Prisma operations
 const tracer = trace.getTracer("mini-infra-prisma", "1.0.0");
 
+// Prisma Extension for OpenTelemetry instrumentation (Prisma v5+)
+const tracingExtension = {
+  name: 'opentelemetry-tracing',
+  query: {
+    $allOperations: async ({ operation, model, args, query }: any) => {
+      const spanName = `prisma.${model || "unknown"}.${operation}`;
+
+      return tracer.startActiveSpan(
+        spanName,
+        {
+          kind: SpanKind.CLIENT,
+          attributes: {
+            "db.system": "sqlite",
+            "db.operation": operation,
+            "db.sql.table": model || "unknown",
+            "component": "prisma",
+          },
+        },
+        async (span) => {
+          try {
+            // Add query-specific attributes if available
+            if (args) {
+              // Don't log sensitive data, just the structure
+              span.setAttributes({
+                "db.prisma.args_count": Object.keys(args).length,
+                "db.prisma.has_where": "where" in args,
+                "db.prisma.has_select": "select" in args,
+                "db.prisma.has_include": "include" in args,
+              });
+            }
+
+            const startTime = Date.now();
+            const result = await query(args);
+            const duration = Date.now() - startTime;
+
+            // Add result metadata (without sensitive data)
+            span.setAttributes({
+              "db.operation.duration_ms": duration,
+              "db.operation.success": true,
+            });
+
+            // For queries that return arrays, add count
+            if (Array.isArray(result)) {
+              span.setAttributes({
+                "db.result.count": result.length,
+              });
+            }
+
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          } catch (error) {
+            span.recordException(error as Error);
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error instanceof Error ? error.message : "Unknown error",
+            });
+            throw error;
+          } finally {
+            span.end();
+          }
+        }
+      );
+    },
+  },
+};
+
 // Enhanced Prisma client with OpenTelemetry instrumentation
 export function instrumentPrismaClient(prisma: PrismaClient): PrismaClient {
-  // Use Prisma middleware to add tracing if available
+  // Use Prisma Extension for v5+ (new approach)
+  if (typeof (prisma as any).$extends === 'function') {
+    return (prisma as any).$extends(tracingExtension);
+  }
+
+  // Fallback for older versions with middleware (deprecated)
   if (typeof (prisma as any).$use === 'function') {
     (prisma as any).$use(async (params: any, next: any) => {
-    const spanName = `prisma.${params.model || "unknown"}.${params.action}`;
+      const spanName = `prisma.${params.model || "unknown"}.${params.action}`;
 
-    return tracer.startActiveSpan(
-      spanName,
-      {
-        kind: SpanKind.CLIENT,
-        attributes: {
-          "db.system": "sqlite",
-          "db.operation": params.action,
-          "db.sql.table": params.model || "unknown",
-          "component": "prisma",
+      return tracer.startActiveSpan(
+        spanName,
+        {
+          kind: SpanKind.CLIENT,
+          attributes: {
+            "db.system": "sqlite",
+            "db.operation": params.action,
+            "db.sql.table": params.model || "unknown",
+            "component": "prisma",
+          },
         },
-      },
-      async (span) => {
-        try {
-          // Add query-specific attributes if available
-          if (params.args) {
-            // Don't log sensitive data, just the structure
+        async (span) => {
+          try {
+            // Add query-specific attributes if available
+            if (params.args) {
+              // Don't log sensitive data, just the structure
+              span.setAttributes({
+                "db.prisma.args_count": Object.keys(params.args).length,
+                "db.prisma.has_where": "where" in params.args,
+                "db.prisma.has_select": "select" in params.args,
+                "db.prisma.has_include": "include" in params.args,
+              });
+            }
+
+            const startTime = Date.now();
+            const result = await next(params);
+            const duration = Date.now() - startTime;
+
+            // Add result metadata (without sensitive data)
             span.setAttributes({
-              "db.prisma.args_count": Object.keys(params.args).length,
-              "db.prisma.has_where": "where" in params.args,
-              "db.prisma.has_select": "select" in params.args,
-              "db.prisma.has_include": "include" in params.args,
+              "db.operation.duration_ms": duration,
+              "db.operation.success": true,
             });
-          }
 
-          const startTime = Date.now();
-          const result = await next(params);
-          const duration = Date.now() - startTime;
+            // For queries that return arrays, add count
+            if (Array.isArray(result)) {
+              span.setAttributes({
+                "db.result.count": result.length,
+              });
+            }
 
-          // Add result metadata (without sensitive data)
-          span.setAttributes({
-            "db.operation.duration_ms": duration,
-            "db.operation.success": true,
-          });
-
-          // For queries that return arrays, add count
-          if (Array.isArray(result)) {
-            span.setAttributes({
-              "db.result.count": result.length,
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          } catch (error) {
+            span.recordException(error as Error);
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: error instanceof Error ? error.message : "Unknown error",
             });
+            throw error;
+          } finally {
+            span.end();
           }
-
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (error) {
-          span.recordException(error as Error);
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: error instanceof Error ? error.message : "Unknown error",
-          });
-          throw error;
-        } finally {
-          span.end();
         }
-      }
-    );
+      );
     });
   }
 
