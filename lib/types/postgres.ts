@@ -17,7 +17,6 @@ export interface PostgresDatabase {
   updatedAt: Date;
   lastHealthCheck: Date | null;
   healthStatus: string;
-  userId: string;
 }
 
 // PostgresDatabase for API responses (frontend-friendly with date strings)
@@ -35,7 +34,6 @@ export interface PostgresDatabaseInfo {
   updatedAt: string;
   lastHealthCheck: string | null;
   healthStatus: DatabaseHealthStatus;
-  userId: string;
 }
 
 // ====================
