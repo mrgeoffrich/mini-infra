@@ -158,7 +158,7 @@ router.get("/", requireSessionOrApiKey, (async (
 ) => {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       query: req.query,
@@ -221,7 +221,7 @@ router.get("/", requireSessionOrApiKey, (async (
     const totalCount = allDatabases.length;
     const hasMore = offset + limit < totalCount;
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         totalDatabases: totalCount,
@@ -269,7 +269,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       databaseId,
@@ -309,7 +309,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId,
@@ -349,7 +349,7 @@ router.post("/", requireSessionOrApiKey, (async (
 ) => {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       body: { ...req.body, password: "[REDACTED]" }, // Redact password from logs
@@ -385,7 +385,7 @@ router.post("/", requireSessionOrApiKey, (async (
       createRequest,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId: createdDatabase.id,
@@ -396,7 +396,7 @@ router.post("/", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_created",
         requestId,
@@ -465,7 +465,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       databaseId,
@@ -517,7 +517,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
       updateRequest,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId,
@@ -527,7 +527,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_updated",
         requestId,
@@ -605,7 +605,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       databaseId,
@@ -641,7 +641,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     // Delete database configuration
     await databaseConfigService.deleteDatabase(databaseId);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId,
@@ -651,7 +651,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_deleted",
         requestId,
@@ -708,7 +708,7 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       databaseId,
@@ -732,7 +732,7 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
       databaseId,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId,
@@ -744,7 +744,7 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_tested",
         requestId,
@@ -812,7 +812,7 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
 ) => {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       body: { ...req.body, password: "[REDACTED]" },
@@ -846,7 +846,7 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
     // Test connection
     const testResult = await databaseConfigService.testConnection(testRequest);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         host: testRequest.host,
@@ -860,7 +860,7 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_connection_tested",
         requestId,

@@ -39,7 +39,7 @@ router.get("/", (async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
 
   try {
-    logger.info({ userId, requestId }, "Fetching user API keys");
+    logger.debug({ userId, requestId }, "Fetching user API keys");
 
     const apiKeys = await getUserApiKeys(userId);
 
@@ -81,7 +81,7 @@ router.post("/", (async (req: Request, res: Response) => {
 
     const createRequest: CreateApiKeyRequest = validationResult.data;
 
-    logger.info(
+    logger.debug(
       { userId, requestId, name: createRequest.name },
       "Creating new API key",
     );
@@ -113,7 +113,7 @@ router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
 
   try {
-    logger.info({ userId, requestId, keyId }, "Revoking API key");
+    logger.debug({ userId, requestId, keyId }, "Revoking API key");
 
     await revokeApiKey(userId, keyId);
 
@@ -150,7 +150,7 @@ router.post("/:keyId/rotate", (async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
 
   try {
-    logger.info({ userId, requestId, keyId }, "Rotating API key");
+    logger.debug({ userId, requestId, keyId }, "Rotating API key");
 
     const newApiKey = await rotateApiKey(userId, keyId);
 
@@ -189,7 +189,7 @@ router.delete("/:keyId", (async (req: Request, res: Response) => {
   const requestId = req.headers["x-request-id"] as string;
 
   try {
-    logger.info({ userId, requestId, keyId }, "Deleting API key permanently");
+    logger.debug({ userId, requestId, keyId }, "Deleting API key permanently");
 
     await deleteApiKey(userId, keyId);
 

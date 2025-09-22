@@ -456,7 +456,7 @@ router.post(
       // Perform cleanup
       const result = await progressTracker.cleanupOldOperations();
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,

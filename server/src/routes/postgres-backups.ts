@@ -134,7 +134,7 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const { databaseId } = req.params;
 
   try {
-    logger.info(
+    logger.debug(
       { requestId, userId, databaseId },
       "Fetching backup operations for database",
     );
@@ -191,7 +191,7 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
       },
     };
 
-    logger.info(
+    logger.debug(
       { requestId, userId, databaseId, count: backupOperations.length },
       "Successfully fetched backup operations",
     );
@@ -238,7 +238,7 @@ router.post(
     const userId = user.id;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, databaseId },
         "Triggering manual backup",
       );
@@ -312,7 +312,7 @@ router.post(
         userId,
       );
 
-      logger.info(
+      logger.debug(
         { requestId, userId, databaseId, operationId: backupOperation.id },
         "Manual backup queued successfully",
       );
@@ -362,7 +362,7 @@ router.get(
     const { backupId } = req.params;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Fetching backup operation status",
       );
@@ -409,7 +409,7 @@ router.get(
         requestId,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId, status: operation.status },
         "Successfully fetched backup operation status",
       );
@@ -448,7 +448,7 @@ router.delete(
     const { backupId } = req.params;
 
     try {
-      logger.info({ requestId, userId, backupId }, "Deleting backup operation");
+      logger.debug({ requestId, userId, backupId }, "Deleting backup operation");
 
       // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
@@ -492,7 +492,7 @@ router.delete(
       // TODO: Delete Azure blob if it exists
       // This would require Azure Storage integration
       if (operation.azureBlobUrl) {
-        logger.info(
+        logger.debug(
           { requestId, backupId, blobUrl: operation.azureBlobUrl },
           "TODO: Delete Azure blob (not implemented yet)",
         );
@@ -503,7 +503,7 @@ router.delete(
         where: { id: backupId },
       });
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Successfully deleted backup operation",
       );
@@ -549,7 +549,7 @@ router.get(
     const { backupId } = req.params;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Fetching backup operation progress",
       );
@@ -606,7 +606,7 @@ router.get(
         metadata,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId, progress: operation.progress },
         "Successfully fetched backup operation progress",
       );

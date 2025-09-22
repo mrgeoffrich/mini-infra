@@ -58,7 +58,6 @@ export const verifyToken = (token: string): JwtPayload => {
       algorithms: ["HS256"],
     }) as JwtPayload;
 
-    logger.debug({ userId: decoded.sub }, "JWT token verified successfully");
     return decoded;
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {

@@ -97,7 +97,7 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const databaseId = req.params.databaseId;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       databaseId,
@@ -137,7 +137,7 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         databaseId,
@@ -180,7 +180,7 @@ router.post("/", requireSessionOrApiKey, (async (
 ) => {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       body: req.body,
@@ -225,7 +225,7 @@ router.post("/", requireSessionOrApiKey, (async (
       },
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         configId: createdConfig.id,
@@ -238,7 +238,7 @@ router.post("/", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_created",
         requestId,
@@ -323,7 +323,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const configId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       configId,
@@ -372,7 +372,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
       updateRequest,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         configId,
@@ -384,7 +384,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_updated",
         requestId,
@@ -458,7 +458,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
   const requestId = req.headers["x-request-id"] as string;
   const configId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       configId,
@@ -480,7 +480,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     // Delete backup configuration
     await backupConfigService.deleteBackupConfig(configId,);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         configId,
@@ -489,7 +489,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_deleted",
         requestId,

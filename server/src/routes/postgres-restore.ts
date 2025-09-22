@@ -509,7 +509,7 @@ router.post(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, databaseId },
         "Creating restore operation",
       );
@@ -554,7 +554,7 @@ router.post(
 
       // Check for confirmation if not explicitly provided
       if (validatedData.confirmRestore !== true) {
-        logger.info(
+        logger.debug(
           { requestId, userId: user?.id, databaseId },
           "Restore operation requires confirmation",
         );
@@ -597,7 +597,7 @@ router.post(
       // For now, the restore service handles basic restore operations
       // The new database creation logic is handled on the frontend by prompting user to create database first
       if (validatedData.restoreToNewDatabase) {
-        logger.info(
+        logger.debug(
           {
             requestId,
                 databaseId,
@@ -620,7 +620,7 @@ router.post(
           : undefined,
       );
 
-      logger.info(
+      logger.debug(
         {
           requestId,
             databaseId,
@@ -709,7 +709,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId },
         "Fetching restore operation status",
       );
@@ -755,7 +755,7 @@ router.get(
         requestId,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId, status: operation.status },
         "Successfully fetched restore operation status",
       );
@@ -804,7 +804,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, containerName },
         "Browsing available backups in container",
       );
@@ -834,7 +834,7 @@ router.get(
         },
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, containerName, count: items.length },
         "Successfully fetched available backups",
       );
@@ -887,7 +887,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, databaseId },
         "Fetching restore operations for database",
       );
@@ -946,7 +946,7 @@ router.get(
         },
       };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
             databaseId,
@@ -999,7 +999,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId },
         "Fetching restore operation progress",
       );
@@ -1048,7 +1048,7 @@ router.get(
         backupUrl: operation.backupUrl,
       };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
             operationId,

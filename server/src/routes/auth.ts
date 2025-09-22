@@ -33,7 +33,7 @@ router.use(passport.initialize());
 // Google OAuth initiation
 router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
   const redirectParam = req.query.redirect as string;
-  logger.info({ redirect: redirectParam }, "Initiating Google OAuth flow");
+  logger.debug({ redirect: redirectParam }, "Initiating Google OAuth flow");
 
   // Store redirect URL in query state for OAuth callback
   const state = redirectParam
@@ -67,7 +67,7 @@ router.get("/google/callback", ((
     try {
       const token = generateToken(user as UserProfile);
 
-      logger.info(
+      logger.debug(
         { userId: user.id },
         "OAuth authentication successful, JWT token generated",
       );
@@ -97,7 +97,7 @@ router.get("/google/callback", ((
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
-      logger.info(
+      logger.debug(
         { redirectUrl },
         "Redirecting after successful OAuth with JWT cookie",
       );
@@ -122,7 +122,7 @@ router.get("/failure", ((req: Request, res: Response) => {
     (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
   const redirectUrl = `${frontendUrl}/login?auth=error`;
 
-  logger.info({ redirectUrl }, "Redirecting after failed OAuth");
+  logger.debug({ redirectUrl }, "Redirecting after failed OAuth");
   res.redirect(redirectUrl);
 }) as RequestHandler);
 
@@ -138,7 +138,7 @@ router.post("/logout", ((req: Request, res: Response) => {
       sameSite: serverConfig.nodeEnv === "production" ? "strict" : "lax",
     });
 
-    logger.info({ userId }, "User logged out successfully");
+    logger.debug({ userId }, "User logged out successfully");
     res.json({ message: "Logged out successfully" });
   } catch (error) {
     logger.error({ error, userId }, "Error during logout");

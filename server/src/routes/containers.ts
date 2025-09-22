@@ -81,7 +81,7 @@ router.get("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -211,7 +211,7 @@ router.get("/", requireSessionOrApiKey, (async (
       limit,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -225,7 +225,7 @@ router.get("/", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "container_list_viewed",
         userId,
@@ -300,7 +300,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const containerId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -361,7 +361,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -439,7 +439,7 @@ router.post("/cache/flush", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -450,7 +450,7 @@ router.post("/cache/flush", requireSessionOrApiKey, (async (
   const dockerService = DockerService.getInstance();
   dockerService.flushCache();
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,

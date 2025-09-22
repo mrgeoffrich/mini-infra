@@ -68,7 +68,7 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
     });
   }
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId: user.id,
@@ -104,7 +104,7 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
     const { type, image, registryUsername, registryPassword } =
       bodyValidation.data;
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId: user.id,
@@ -130,7 +130,7 @@ router.post("/test-docker-registry", requireSessionOrApiKey, (async (
       await dockerExecutor.testDockerRegistryConnection(testOptions);
 
     if (result.success) {
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId: user.id,

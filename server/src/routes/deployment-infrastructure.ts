@@ -36,7 +36,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info({ requestId, userId }, "Infrastructure deployment requested");
+  logger.debug({ requestId, userId }, "Infrastructure deployment requested");
 
   try {
     if (!user || !userId) {
@@ -90,7 +90,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
 
       const containerId = mainContainer?.Id || 'unknown';
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -164,7 +164,7 @@ router.get("/status", requireSessionOrApiKey, (async (
   const networkName = req.query.networkName as string;
   const environmentId = req.query.environmentId as string;
 
-  logger.info(
+  logger.debug(
     { requestId, userId, networkName, environmentId },
     "Infrastructure status requested",
   );
@@ -212,7 +212,7 @@ router.get("/status", requireSessionOrApiKey, (async (
 
       const status = { networkStatus, haproxyStatus };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -281,7 +281,7 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
   const networkName = req.body.networkName as string;
   const environmentId = req.body.environmentId as string;
 
-  logger.info(
+  logger.debug(
     { requestId, userId, networkName, environmentId },
     "Infrastructure cleanup requested",
   );
@@ -321,7 +321,7 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       await haproxyService.initialize();
       await haproxyService.removeHAProxy();
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,

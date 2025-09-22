@@ -110,7 +110,7 @@ router.get(
 
       setCachedResponse(cacheKey, response);
 
-      logger.info(
+      logger.debug(
         {
           requestId: res.locals.requestId,
           service: "cloudflare",
@@ -223,7 +223,7 @@ router.get(
 
       setCachedResponse(cacheKey, response);
 
-      logger.info(
+      logger.debug(
         {
           requestId: res.locals.requestId,
           service: "cloudflare",

@@ -104,11 +104,6 @@ export const extractJwtUser = async (
       createdAt: user.createdAt,
     };
 
-    logger.debug(
-      { userId: user.id, requestId, path: req.path },
-      "JWT authentication successful",
-    );
-
     next();
   } catch (error) {
     logger.warn(
@@ -156,11 +151,6 @@ export const requireJwtAuth = (
       res.status(401).json(errorResponse);
       return;
     }
-
-    logger.debug(
-      { requestId, path: req.path, userId: req.user.id },
-      "JWT authentication successful",
-    );
 
     next();
   } catch (error) {
