@@ -51,7 +51,7 @@ router.get("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -89,7 +89,7 @@ router.get("/", requireSessionOrApiKey, (async (
     });
 
     if (!latestStatus) {
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -128,7 +128,7 @@ router.get("/", requireSessionOrApiKey, (async (
     // Cache the response
     latestStatusCache.set(cacheKey, response);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -168,7 +168,7 @@ router.get("/history", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -301,7 +301,7 @@ router.get("/history", requireSessionOrApiKey, (async (
     // Cache the response
     historyCache.set(cacheKey, response);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,

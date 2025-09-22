@@ -35,19 +35,17 @@ export class BackupConfigService {
       compressionLevel?: number;
       isEnabled?: boolean;
     },
-    userId: string,
   ): Promise<BackupConfigurationInfo> {
     try {
-      // Verify database exists and user owns it
+      // Verify database exists
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
       if (!database) {
-        throw new Error("Database not found or access denied");
+        throw new Error("Database not found");
       }
 
       // Validate cron expression if provided
@@ -55,17 +53,8 @@ export class BackupConfigService {
         throw new Error("Invalid cron expression");
       }
 
-      // Determine timezone - use provided timezone, user preference, or default to UTC
-      let timezone = config.timezone;
-      if (!timezone) {
-        try {
-          const userPreferences =
-            await UserPreferencesService.getUserPreferences(userId);
-          timezone = userPreferences.timezone || "UTC";
-        } catch (error) {
-          timezone = "UTC"; // fallback to UTC if user preferences fails
-        }
-      }
+      // Determine timezone - use provided timezone or default to UTC
+      let timezone = config.timezone || "UTC";
 
       // Validate timezone
       if (!UserPreferencesService.validateTimezone(timezone)) {
@@ -120,7 +109,7 @@ export class BackupConfigService {
               databaseId,
               config.schedule,
               timezone,
-              userId,
+              "system", // System-initiated backup
             );
 
             // Enable the schedule if the config is enabled
@@ -150,7 +139,6 @@ export class BackupConfigService {
           schedule: config.schedule,
           timezone: timezone,
           azureContainer: config.azureContainerName,
-          userId: userId,
         },
         "Backup configuration created",
       );
@@ -160,7 +148,6 @@ export class BackupConfigService {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to create backup configuration",
@@ -184,10 +171,9 @@ export class BackupConfigService {
       compressionLevel?: number;
       isEnabled?: boolean;
     },
-    userId: string,
   ): Promise<BackupConfigurationInfo> {
     try {
-      // Get existing configuration and verify ownership
+      // Get existing configuration
       const existingConfig = await this.prisma.backupConfiguration.findUnique({
         where: { id: configId },
         include: { database: true },
@@ -195,12 +181,6 @@ export class BackupConfigService {
 
       if (!existingConfig) {
         throw new Error("Backup configuration not found");
-      }
-
-      if (existingConfig.database.userId !== userId) {
-        throw new Error(
-          "Access denied: You can only update backup configurations for your own databases",
-        );
       }
 
       // Validate cron expression if provided
@@ -309,7 +289,7 @@ export class BackupConfigService {
               existingConfig.databaseId,
               finalSchedule,
               finalTimezone,
-              existingConfig.database.userId,
+              "system", // System-initiated backup
             );
 
             // Enable or disable based on the final enabled state
@@ -341,7 +321,6 @@ export class BackupConfigService {
         {
           configId: configId,
           databaseId: existingConfig.databaseId,
-          userId: userId,
         },
         "Backup configuration updated",
       );
@@ -351,8 +330,7 @@ export class BackupConfigService {
       servicesLogger().error(
         {
           configId: configId,
-          userId: userId,
-          error: error instanceof Error ? error.message : "Unknown error",
+                    error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to update backup configuration",
       );
@@ -365,7 +343,6 @@ export class BackupConfigService {
    */
   async getBackupConfigByDatabaseId(
     databaseId: string,
-    userId: string,
   ): Promise<BackupConfigurationInfo | null> {
     try {
       const config = await this.prisma.backupConfiguration.findUnique({
@@ -377,17 +354,12 @@ export class BackupConfigService {
         return null;
       }
 
-      // Verify ownership
-      if (config.database.userId !== userId) {
-        return null;
-      }
 
       return this.toBackupConfigInfo(config);
     } catch (error) {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to get backup configuration",
@@ -399,9 +371,9 @@ export class BackupConfigService {
   /**
    * Delete a backup configuration
    */
-  async deleteBackupConfig(configId: string, userId: string): Promise<void> {
+  async deleteBackupConfig(configId: string): Promise<void> {
     try {
-      // Verify ownership
+      // Get configuration
       const config = await this.prisma.backupConfiguration.findUnique({
         where: { id: configId },
         include: { database: true },
@@ -409,10 +381,6 @@ export class BackupConfigService {
 
       if (!config) {
         throw new Error("Backup configuration not found");
-      }
-
-      if (config.database.userId !== userId) {
-        throw new Error("Access denied");
       }
 
       // Unregister from scheduler before deleting
@@ -444,16 +412,14 @@ export class BackupConfigService {
         {
           configId: configId,
           databaseId: config.databaseId,
-          userId: userId,
-        },
+                  },
         "Backup configuration deleted",
       );
     } catch (error) {
       servicesLogger().error(
         {
           configId: configId,
-          userId: userId,
-          error: error instanceof Error ? error.message : "Unknown error",
+                    error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to delete backup configuration",
       );

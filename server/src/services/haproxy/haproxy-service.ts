@@ -1,5 +1,6 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
+import ContainerLabelManager from '../container-label-manager';
 import * as path from 'path';
 import {
   IApplicationService,
@@ -16,6 +17,7 @@ import {
 
 export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
+  private labelManager: ContainerLabelManager;
   private readonly projectName: string;
   private readonly initContainerName: string;
   private readonly mainContainerName: string;
@@ -83,9 +85,11 @@ export class HAProxyService implements IApplicationService {
   };
 
   constructor(
-    projectName: string = 'haproxy'
+    projectName: string = 'haproxy',
+    private environmentId?: string
   ) {
     this.dockerExecutor = new DockerExecutorService();
+    this.labelManager = new ContainerLabelManager();
     this.projectName = projectName;
     this.initContainerName = `${this.projectName}-haproxy-init`;
     this.mainContainerName = `${this.projectName}-haproxy`;
@@ -253,6 +257,11 @@ export class HAProxyService implements IApplicationService {
       projectName: this.projectName,
       serviceName: 'haproxy-init',
       env: {},
+      labels: this.environmentId ? this.labelManager.generateHAProxyLabels({
+        environmentId: this.environmentId,
+        projectName: this.projectName,
+        serviceName: 'haproxy-init'
+      }) : undefined,
       cmd: [
         'sh',
         '-c',
@@ -322,6 +331,11 @@ export class HAProxyService implements IApplicationService {
         'HAPROXY_MWORKER': '1',
         'DATAPLANEAPI_USERLIST_FILE': '/usr/local/etc/haproxy/haproxy.cfg'
       },
+      labels: this.environmentId ? this.labelManager.generateHAProxyLabels({
+        environmentId: this.environmentId,
+        projectName: this.projectName,
+        serviceName: 'haproxy'
+      }) : undefined,
       ports: {
         '80/tcp': [{ HostPort: '8111' }],
         '443/tcp': [{ HostPort: '8443' }],

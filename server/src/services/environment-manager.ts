@@ -650,7 +650,8 @@ export class EnvironmentManager {
         serviceName: prefixedServiceName,
         serviceType: envService.serviceType,
         config: envService.config,
-        projectName: environment.name
+        projectName: environment.name,
+        environmentId: environment.id
       });
 
       if (!result.success || !result.service) {

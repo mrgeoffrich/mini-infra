@@ -262,7 +262,7 @@ router.get("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -330,7 +330,7 @@ router.get("/", requireSessionOrApiKey, (async (
     // Serialize settings for API response
     const serializedSettings = settings.map(serializeSystemSetting);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -379,7 +379,7 @@ router.post("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -463,7 +463,7 @@ router.post("/", requireSessionOrApiKey, (async (
       },
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -508,7 +508,7 @@ router.get("/connectivity", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -585,7 +585,7 @@ router.get("/connectivity", requireSessionOrApiKey, (async (
       serializeConnectivityStatus,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -651,7 +651,7 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const service = req.params.service;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -764,7 +764,7 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -848,7 +848,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const settingId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -890,7 +890,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -935,7 +935,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const settingId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -1028,7 +1028,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
       data: updateData,
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -1075,7 +1075,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
   const userId = user?.id;
   const settingId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -1132,7 +1132,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
       where: { id: settingId },
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,

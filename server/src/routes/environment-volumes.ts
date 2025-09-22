@@ -84,7 +84,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       volumeName: validatedData.name
     }, 'Volume created for environment');
@@ -139,7 +139,7 @@ router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
       }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       volumeId,
       updates: Object.keys(validatedData)
@@ -213,7 +213,7 @@ router.delete('/:volumeId', requireSessionOrApiKey, async (req, res) => {
       where: { id: volumeId }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       volumeId,
       volumeName: existingVolume.name

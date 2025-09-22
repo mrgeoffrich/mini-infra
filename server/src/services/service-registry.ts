@@ -32,6 +32,7 @@ export class ServiceRegistry {
 
   private registerDefaultServices(): void {
     // Register HAProxy service
+    // Create temporary instance just to get metadata
     const haproxyInstance = new HAProxyService();
     this.registerService({
       serviceType: 'haproxy',

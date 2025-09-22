@@ -157,13 +157,10 @@ router.get("/", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       query: req.query,
     },
     "PostgreSQL database list requested",
@@ -176,7 +173,6 @@ router.get("/", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           validationErrors: queryValidation.error.issues,
         },
         "Invalid query parameters for PostgreSQL database list",
@@ -214,7 +210,6 @@ router.get("/", requireSessionOrApiKey, (async (
 
     // Fetch databases
     const databases = await databaseConfigService.listDatabases(
-      userId!,
       filter,
       sortOptions,
       limit,
@@ -222,14 +217,13 @@ router.get("/", requireSessionOrApiKey, (async (
     );
 
     // Get total count for pagination
-    const allDatabases = await databaseConfigService.listDatabases(userId!);
+    const allDatabases = await databaseConfigService.listDatabases();
     const totalCount = allDatabases.length;
     const hasMore = offset + limit < totalCount;
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         totalDatabases: totalCount,
         returnedDatabases: databases.length,
         page,
@@ -255,7 +249,6 @@ router.get("/", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         query: req.query,
       },
       "Failed to fetch PostgreSQL database list",
@@ -274,14 +267,11 @@ router.get("/:id", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       databaseId,
     },
     "PostgreSQL database details requested",
@@ -300,14 +290,12 @@ router.get("/:id", requireSessionOrApiKey, (async (
 
     const database = await databaseConfigService.getDatabaseById(
       databaseId,
-      userId!,
     );
 
     if (!database) {
       logger.warn(
         {
           requestId,
-          userId,
           databaseId,
         },
         "PostgreSQL database not found",
@@ -321,10 +309,9 @@ router.get("/:id", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId,
         databaseName: database.name,
         healthStatus: database.healthStatus,
@@ -343,7 +330,6 @@ router.get("/:id", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId,
       },
       "Failed to fetch PostgreSQL database details",
@@ -362,13 +348,10 @@ router.post("/", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       body: { ...req.body, password: "[REDACTED]" }, // Redact password from logs
     },
     "PostgreSQL database creation requested",
@@ -381,7 +364,6 @@ router.post("/", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           validationErrors: bodyValidation.error.issues,
         },
         "Invalid request body for PostgreSQL database creation",
@@ -401,13 +383,11 @@ router.post("/", requireSessionOrApiKey, (async (
     // Create database configuration
     const createdDatabase = await databaseConfigService.createDatabase(
       createRequest,
-      userId!,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId: createdDatabase.id,
         databaseName: createdDatabase.name,
         host: createdDatabase.host,
@@ -416,10 +396,9 @@ router.post("/", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_created",
-        userId,
         requestId,
         databaseId: createdDatabase.id,
         databaseName: createdDatabase.name,
@@ -443,7 +422,6 @@ router.post("/", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseName: req.body?.name,
       },
       "Failed to create PostgreSQL database configuration",
@@ -485,14 +463,11 @@ router.put("/:id", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       databaseId,
       body: {
         ...req.body,
@@ -519,7 +494,6 @@ router.put("/:id", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           databaseId,
           validationErrors: bodyValidation.error.issues,
         },
@@ -541,13 +515,11 @@ router.put("/:id", requireSessionOrApiKey, (async (
     const updatedDatabase = await databaseConfigService.updateDatabase(
       databaseId,
       updateRequest,
-      userId!,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId,
         databaseName: updatedDatabase.name,
       },
@@ -555,10 +527,9 @@ router.put("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_updated",
-        userId,
         requestId,
         databaseId,
         databaseName: updatedDatabase.name,
@@ -579,7 +550,6 @@ router.put("/:id", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId,
       },
       "Failed to update PostgreSQL database configuration",
@@ -633,14 +603,11 @@ router.delete("/:id", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       databaseId,
     },
     "PostgreSQL database deletion requested",
@@ -660,7 +627,6 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     // Get database info before deletion for logging
     const databaseInfo = await databaseConfigService.getDatabaseById(
       databaseId,
-      userId!,
     );
 
     if (!databaseInfo) {
@@ -673,12 +639,11 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     }
 
     // Delete database configuration
-    await databaseConfigService.deleteDatabase(databaseId, userId!);
+    await databaseConfigService.deleteDatabase(databaseId);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId,
         databaseName: databaseInfo.name,
       },
@@ -686,10 +651,9 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_deleted",
-        userId,
         requestId,
         databaseId,
         databaseName: databaseInfo.name,
@@ -711,7 +675,6 @@ router.delete("/:id", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId,
       },
       "Failed to delete PostgreSQL database configuration",
@@ -743,14 +706,11 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const databaseId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       databaseId,
     },
     "PostgreSQL database connection test requested",
@@ -770,13 +730,11 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
     // Test database connection
     const testResult = await databaseConfigService.testDatabaseConnection(
       databaseId,
-      userId!,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId,
         isConnected: testResult.isValid,
         responseTimeMs: testResult.responseTimeMs,
@@ -786,10 +744,9 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_database_tested",
-        userId,
         requestId,
         databaseId,
         isConnected: testResult.isValid,
@@ -823,7 +780,6 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId,
       },
       "Failed to test PostgreSQL database connection",
@@ -855,13 +811,10 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       body: { ...req.body, password: "[REDACTED]" },
     },
     "PostgreSQL test connection requested with provided credentials",
@@ -874,7 +827,6 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           validationErrors: bodyValidation.error.issues,
         },
         "Invalid request body for PostgreSQL test connection",
@@ -894,10 +846,9 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
     // Test connection
     const testResult = await databaseConfigService.testConnection(testRequest);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         host: testRequest.host,
         port: testRequest.port,
         database: testRequest.database,
@@ -909,10 +860,9 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_connection_tested",
-        userId,
         requestId,
         host: testRequest.host,
         port: testRequest.port,
@@ -948,7 +898,6 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         host: req.body?.host,
       },
       "Failed to test PostgreSQL connection",

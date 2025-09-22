@@ -509,7 +509,7 @@ router.post(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, databaseId },
         "Creating restore operation",
       );
@@ -523,8 +523,7 @@ router.post(
       logger.debug(
         {
           requestId,
-          userId: user?.id,
-          databaseId,
+            databaseId,
           backupUrl: validatedData.backupUrl,
           restoreToNewDatabase: validatedData.restoreToNewDatabase,
           newDatabaseName: validatedData.newDatabaseName,
@@ -536,8 +535,7 @@ router.post(
       const database = await prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: user?.id,
-        },
+          },
       });
 
       if (!database) {
@@ -556,7 +554,7 @@ router.post(
 
       // Check for confirmation if not explicitly provided
       if (validatedData.confirmRestore !== true) {
-        logger.info(
+        logger.debug(
           { requestId, userId: user?.id, databaseId },
           "Restore operation requires confirmation",
         );
@@ -582,8 +580,7 @@ router.post(
         logger.warn(
           {
             requestId,
-            userId: user?.id,
-            databaseId,
+                databaseId,
             runningRestoreId: runningRestore.id,
           },
           "Restore already in progress",
@@ -600,11 +597,10 @@ router.post(
       // For now, the restore service handles basic restore operations
       // The new database creation logic is handled on the frontend by prompting user to create database first
       if (validatedData.restoreToNewDatabase) {
-        logger.info(
+        logger.debug(
           {
             requestId,
-            userId: user?.id,
-            databaseId,
+                databaseId,
             newDbName: validatedData.newDatabaseName,
           },
           "Restore to new database requested - user should create database first",
@@ -624,11 +620,10 @@ router.post(
           : undefined,
       );
 
-      logger.info(
+      logger.debug(
         {
           requestId,
-          userId: user?.id,
-          databaseId,
+            databaseId,
           operationId: restoreOperation.id,
         },
         "Restore operation queued successfully",
@@ -657,8 +652,7 @@ router.post(
         logger.warn(
           {
             requestId,
-            userId: user?.id,
-            databaseId,
+                databaseId,
             validationErrors: error.issues,
           },
           "Invalid restore operation request",
@@ -715,7 +709,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId },
         "Fetching restore operation status",
       );
@@ -724,7 +718,6 @@ router.get(
       const operation = await prisma.restoreOperation.findFirst({
         where: {
           id: operationId,
-          database: { userId: user?.id },
         },
         include: {
           database: true,
@@ -755,14 +748,14 @@ router.get(
           completedAt: operation.completedAt?.toISOString() || null,
           errorMessage: operation.errorMessage,
           backupUrl: operation.backupUrl,
-          databaseName: operation.database.database,
+          databaseName: operation.database.name,
         },
         message: `Restore operation is ${operation.status}`,
         timestamp: new Date().toISOString(),
         requestId,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId, status: operation.status },
         "Successfully fetched restore operation status",
       );
@@ -811,7 +804,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, containerName },
         "Browsing available backups in container",
       );
@@ -841,7 +834,7 @@ router.get(
         },
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, containerName, count: items.length },
         "Successfully fetched available backups",
       );
@@ -854,8 +847,7 @@ router.get(
       logger.error(
         {
           requestId,
-          userId: user?.id,
-          containerName,
+            containerName,
           error: errorMessage,
         },
         "Failed to browse available backups",
@@ -895,7 +887,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, databaseId },
         "Fetching restore operations for database",
       );
@@ -904,8 +896,7 @@ router.get(
       const database = await prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: user?.id,
-        },
+          },
       });
 
       if (!database) {
@@ -955,11 +946,10 @@ router.get(
         },
       };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
-          userId: user?.id,
-          databaseId,
+            databaseId,
           count: restoreOperations.length,
         },
         "Successfully fetched restore operations",
@@ -1009,7 +999,7 @@ router.get(
     }
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId: user?.id, operationId },
         "Fetching restore operation progress",
       );
@@ -1018,7 +1008,6 @@ router.get(
       const operation = await prisma.restoreOperation.findFirst({
         where: {
           id: operationId,
-          database: { userId: user?.id },
         },
         include: {
           database: true,
@@ -1059,11 +1048,10 @@ router.get(
         backupUrl: operation.backupUrl,
       };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
-          userId: user?.id,
-          operationId,
+            operationId,
           progress: operation.progress,
         },
         "Successfully fetched restore operation progress",

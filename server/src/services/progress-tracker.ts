@@ -34,7 +34,6 @@ export interface ProgressEvents {
  * Operation history filter options
  */
 export interface OperationHistoryFilter {
-  userId?: string;
   databaseId?: string;
   operationType?: "backup" | "restore" | "all";
   status?: BackupOperationStatus | RestoreOperationStatus | "all";
@@ -110,15 +109,11 @@ export class ProgressTrackerService extends EventEmitter {
    */
   public async getBackupProgress(
     operationId: string,
-    userId: string,
   ): Promise<BackupOperationProgress | null> {
     try {
       const operation = await this.prisma.backupOperation.findFirst({
         where: {
           id: operationId,
-          database: {
-            userId,
-          },
         },
         include: {
           database: {
@@ -139,7 +134,6 @@ export class ProgressTrackerService extends EventEmitter {
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
-          userId,
         },
         "Failed to get backup progress",
       );
@@ -152,15 +146,11 @@ export class ProgressTrackerService extends EventEmitter {
    */
   public async getRestoreProgress(
     operationId: string,
-    userId: string,
   ): Promise<RestoreOperationProgress | null> {
     try {
       const operation = await this.prisma.restoreOperation.findFirst({
         where: {
           id: operationId,
-          database: {
-            userId,
-          },
         },
         include: {
           database: {
@@ -181,7 +171,6 @@ export class ProgressTrackerService extends EventEmitter {
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
-          userId,
         },
         "Failed to get restore progress",
       );
@@ -190,9 +179,9 @@ export class ProgressTrackerService extends EventEmitter {
   }
 
   /**
-   * Get all active operations (pending or running) for a user
+   * Get all active operations (pending or running) for all databases
    */
-  public async getActiveOperations(userId: string): Promise<{
+  public async getActiveOperations(): Promise<{
     backupOperations: BackupOperationProgress[];
     restoreOperations: RestoreOperationProgress[];
   }> {
@@ -200,9 +189,6 @@ export class ProgressTrackerService extends EventEmitter {
       const [backupOperations, restoreOperations] = await Promise.all([
         this.prisma.backupOperation.findMany({
           where: {
-            database: {
-              userId,
-            },
             status: {
               in: ["pending", "running"],
             },
@@ -220,9 +206,6 @@ export class ProgressTrackerService extends EventEmitter {
         }),
         this.prisma.restoreOperation.findMany({
           where: {
-            database: {
-              userId,
-            },
             status: {
               in: ["pending", "running"],
             },
@@ -252,7 +235,6 @@ export class ProgressTrackerService extends EventEmitter {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
-          userId,
         },
         "Failed to get active operations",
       );
@@ -272,7 +254,6 @@ export class ProgressTrackerService extends EventEmitter {
   }> {
     try {
       const {
-        userId,
         databaseId,
         operationType = "all",
         status = "all",
@@ -284,9 +265,6 @@ export class ProgressTrackerService extends EventEmitter {
 
       // Build where clauses for backup and restore operations
       const baseWhere: any = {};
-      if (userId) {
-        baseWhere.database = { userId };
-      }
       if (databaseId) {
         baseWhere.databaseId = databaseId;
       }

@@ -124,7 +124,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
 
     const environment = await environmentManager.createEnvironment(request);
 
-    logger.info({
+    logger.debug({
       environmentId: environment.id,
       environmentName: environment.name,
       serviceCount: environment.services.length
@@ -189,7 +189,7 @@ router.put('/:id', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       updates: Object.keys(request)
     }, 'Environment updated via API');
@@ -218,6 +218,21 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check if environment has associated deployment configurations
+    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
+      where: { environmentId: id },
+      select: { id: true, applicationName: true }
+    });
+
+    if (deploymentConfigs.length > 0) {
+      const appNames = deploymentConfigs.map(config => config.applicationName).join(', ');
+      return res.status(400).json({
+        error: 'Environment has associated deployments',
+        message: `Cannot delete environment with existing deployment configurations. Please delete the following deployment configurations first: ${appNames}`,
+        deploymentConfigurations: deploymentConfigs
+      });
+    }
+
     const success = await environmentManager.deleteEnvironment(id);
 
     if (!success) {
@@ -227,7 +242,7 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    logger.info({ environmentId: id }, 'Environment deleted via API');
+    logger.debug({ environmentId: id }, 'Environment deleted via API');
 
     res.status(204).send();
 
@@ -288,7 +303,7 @@ router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       duration: result.duration
     }, 'Environment started via API');
@@ -319,7 +334,7 @@ router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       duration: result.duration
     }, 'Environment stopped via API');
@@ -380,7 +395,7 @@ router.post('/:id/services', requireSessionOrApiKey, async (req, res) => {
     // Return updated environment
     const environment = await environmentManager.getEnvironmentById(id);
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       serviceName: request.serviceName,
       serviceType: request.serviceType

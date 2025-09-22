@@ -5,6 +5,7 @@ import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
+import { createDockerSpan, createContainerSpan } from "../lib/docker-instrumentation";
 
 class DockerService {
   private static instance: DockerService;
@@ -379,35 +380,39 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    const cacheKey = `containers_${all}`;
-    const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
+    return createDockerSpan(
+      "list_containers",
+      async () => {
+        const cacheKey = `containers_${all}`;
+        const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
 
-    if (cached) {
-      servicesLogger().debug("Returning cached container list");
-      return cached;
-    }
+        if (cached) {
+          servicesLogger().debug("Returning cached container list");
+          return cached;
+        }
 
-    try {
-      const containers = await this.raceWithTimeout(
-        this.docker.listContainers({ all }),
-        5000,
-        "Docker API timeout",
-      );
+        const containers = await this.raceWithTimeout(
+          this.docker.listContainers({ all }),
+          5000,
+          "Docker API timeout",
+        );
 
-      const containerInfos = await Promise.all(
-        containers.map((container) => this.transformContainerData(container)),
-      );
+        const containerInfos = await Promise.all(
+          containers.map((container) => this.transformContainerData(container)),
+        );
 
-      this.cache.set(cacheKey, containerInfos);
-      servicesLogger().info(
-        `Retrieved ${containerInfos.length} containers from Docker API`,
-      );
+        this.cache.set(cacheKey, containerInfos);
+        servicesLogger().info(
+          `Retrieved ${containerInfos.length} containers from Docker API`,
+        );
 
-      return containerInfos;
-    } catch (error) {
-      servicesLogger().error({ error }, "Failed to list containers");
-      throw error;
-    }
+        return containerInfos;
+      },
+      {
+        "docker.list.all": all,
+        "docker.cache.hit": false,
+      }
+    );
   }
 
   public async getContainer(id: string): Promise<DockerContainerInfo | null> {
@@ -415,26 +420,33 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    const cacheKey = `container_${id}`;
-    const cached = this.cache.get<DockerContainerInfo>(cacheKey);
+    return createContainerSpan(
+      "inspect",
+      id,
+      async () => {
+        const cacheKey = `container_${id}`;
+        const cached = this.cache.get<DockerContainerInfo>(cacheKey);
 
-    if (cached) {
-      return cached;
-    }
+        if (cached) {
+          return cached;
+        }
 
-    try {
-      const container = this.docker.getContainer(id);
-      const data = await this.raceWithTimeout(
-        container.inspect(),
-        5000,
-        "Docker API timeout",
-      );
+        const container = this.docker.getContainer(id);
+        const data = await this.raceWithTimeout(
+          container.inspect(),
+          5000,
+          "Docker API timeout",
+        );
 
-      const containerInfo = this.transformDetailedContainerData(data);
-      this.cache.set(cacheKey, containerInfo);
+        const containerInfo = this.transformDetailedContainerData(data);
+        this.cache.set(cacheKey, containerInfo);
 
-      return containerInfo;
-    } catch (error) {
+        return containerInfo;
+      },
+      {
+        "docker.cache.hit": false,
+      }
+    ).catch((error) => {
       if ((error as any).statusCode === 404) {
         return null;
       }
@@ -446,7 +458,7 @@ class DockerService {
         "Failed to get container details",
       );
       throw error;
-    }
+    });
   }
 
   private transformContainerData(container: any): DockerContainerInfo {
@@ -631,33 +643,39 @@ class DockerService {
    * This method can be called when Docker settings are updated
    */
   public async refreshConnection(): Promise<void> {
-    servicesLogger().info(
-      "Refreshing Docker connection with updated settings...",
-    );
+    return createDockerSpan(
+      "refresh_connection",
+      async () => {
+        servicesLogger().info(
+          "Refreshing Docker connection with updated settings...",
+        );
 
-    try {
-      // Stop current reconnection attempts
-      if (this.reconnectInterval) {
-        clearInterval(this.reconnectInterval);
-        this.reconnectInterval = null;
+        // Stop current reconnection attempts
+        if (this.reconnectInterval) {
+          clearInterval(this.reconnectInterval);
+          this.reconnectInterval = null;
+        }
+
+        // Ensure Docker configuration service is initialized
+        if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
+          this.dockerConfigService = new DockerConfigService(prisma);
+        }
+
+        // Recreate Docker client with updated settings
+        await this.createDockerClientFromSettings();
+
+        // Attempt new connection
+        await this.connect(true);
+
+        // Setup event listeners for new connection
+        this.setupEventListeners();
+
+        servicesLogger().info("Docker connection refreshed successfully");
+      },
+      {
+        "docker.connection.type": "refresh",
       }
-
-      // Ensure Docker configuration service is initialized
-      if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
-        this.dockerConfigService = new DockerConfigService(prisma);
-      }
-
-      // Recreate Docker client with updated settings
-      await this.createDockerClientFromSettings();
-
-      // Attempt new connection
-      await this.connect(true);
-
-      // Setup event listeners for new connection
-      this.setupEventListeners();
-
-      servicesLogger().info("Docker connection refreshed successfully");
-    } catch (error) {
+    ).catch((error) => {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
@@ -669,7 +687,7 @@ class DockerService {
       this.scheduleReconnect();
 
       throw error;
-    }
+    });
   }
 }
 

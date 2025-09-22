@@ -84,7 +84,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       networkName: validatedData.name
     }, 'Network created for environment');
@@ -139,7 +139,7 @@ router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
       }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       networkId,
       updates: Object.keys(validatedData)
@@ -213,7 +213,7 @@ router.delete('/:networkId', requireSessionOrApiKey, async (req, res) => {
       where: { id: networkId }
     });
 
-    logger.info({
+    logger.debug({
       environmentId: id,
       networkId,
       networkName: existingNetwork.name

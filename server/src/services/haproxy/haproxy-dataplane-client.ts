@@ -937,19 +937,19 @@ export class TransactionManager {
       };
 
       // Add transaction_id to all requests, but skip transaction-related endpoints
-      this.client['axiosInstance'].get = (url: string, config?: any) => {
+      (this.client['axiosInstance'].get as any) = (url: string, config?: any) => {
         return originalGet.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 
-      this.client['axiosInstance'].post = (url: string, data?: any, config?: any) => {
+      (this.client['axiosInstance'].post as any) = (url: string, data?: any, config?: any) => {
         return originalPost.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
-      this.client['axiosInstance'].put = (url: string, data?: any, config?: any) => {
+      (this.client['axiosInstance'].put as any) = (url: string, data?: any, config?: any) => {
         return originalPut.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
-      this.client['axiosInstance'].delete = (url: string, config?: any) => {
+      (this.client['axiosInstance'].delete as any) = (url: string, config?: any) => {
         return originalDelete.call(this.client['axiosInstance'], this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 

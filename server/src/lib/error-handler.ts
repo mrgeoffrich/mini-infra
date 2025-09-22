@@ -91,8 +91,10 @@ export const errorHandler = (
         message: error.message,
         stack: error.stack,
       },
+      // Add the full error object for better debugging
+      err: error,
     },
-    "Unexpected server error",
+    `Unexpected server error: ${error.message}`,
   );
 
   // Don't leak error details in production

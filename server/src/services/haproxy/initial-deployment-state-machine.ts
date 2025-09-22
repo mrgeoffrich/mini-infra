@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate';
+import { DeploymentConfig } from '@mini-infra/types';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -36,12 +37,13 @@ interface InitialDeploymentContext {
 
     // Container state
     containerId?: string;
+    containerIpAddress?: string;
+    containerPort?: number;
     applicationReady: boolean;
     haproxyConfigured: boolean;
     healthChecksPassed: boolean;
     trafficEnabled: boolean;
     validationErrors: number;
-    monitoringStartTime?: number;
     error?: string;
     retryCount: number;
 
@@ -49,24 +51,25 @@ interface InitialDeploymentContext {
     triggerType: string;
     triggeredBy?: string;
     startTime: number;
+
+    // Configuration
+    config?: DeploymentConfig;
 }
 
 type InitialDeploymentEvent =
     | { type: 'START_DEPLOYMENT' }
     | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING' }
-    | { type: 'STARTUP_TIMEOUT' }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress?: string; containerPort?: number }
+    | { type: 'STARTUP_TIMEOUT'; error?: string }
     | { type: 'LB_CONFIGURED' }
     | { type: 'LB_CONFIG_ERROR'; error: string }
     | { type: 'SERVERS_HEALTHY' }
-    | { type: 'HEALTH_CHECK_TIMEOUT' }
+    | { type: 'HEALTH_CHECK_TIMEOUT'; error?: string }
     | { type: 'TRAFFIC_ENABLED' }
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }
     | { type: 'CRITICAL_ISSUES'; error: string }
-    | { type: 'MONITORING_COMPLETE' }
-    | { type: 'ISSUES_DETECTED'; error: string }
     | { type: 'RESET' }
     | { type: 'MANUAL_INTERVENTION_COMPLETE' };
 
@@ -77,35 +80,80 @@ export const initialDeploymentMachine = setup({
         events: {} as InitialDeploymentEvent
     },
     actions: {
-        deployApplicationContainers: ({ context }) => {
-            deployApplicationContainers.execute(context);
+        deployApplicationContainers: ({ context, self }) => {
+            // Execute async action with event callback
+            deployApplicationContainers.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'DEPLOYMENT_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        monitorContainerStartup: ({ context }) => {
-            monitorContainerStartup.execute(context);
+        monitorContainerStartup: ({ context, self }) => {
+            // Execute async action with event callback
+            monitorContainerStartup.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'STARTUP_TIMEOUT',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        initializeHAProxy: ({ context }) => {
-            addContainerToLB.execute(context);
+        initializeHAProxy: ({ context, self }) => {
+            // Execute async action with event callback
+            addContainerToLB.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'LB_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        performHealthChecks: ({ context }) => {
-            performHealthChecks.execute(context);
+        performHealthChecks: ({ context, self }) => {
+            // Execute async action with event callback
+            performHealthChecks.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'HEALTH_CHECK_TIMEOUT',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        enableTraffic: ({ context }) => {
-            enableTraffic.execute(context);
+        enableTraffic: ({ context, self }) => {
+            // Execute async action with event callback
+            enableTraffic.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'TRAFFIC_ENABLE_FAILED',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        validateTraffic: () => {
-            validateTraffic.execute();
+        validateTraffic: ({ context, self }) => {
+            // Execute async action with event callback
+            validateTraffic.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'CRITICAL_ISSUES',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
-        startExtendedMonitoring: assign({
-            monitoringStartTime: () => Date.now()
-        }),
-        logDeploymentSuccess: () => {
-            logDeploymentSuccess.execute();
+        logDeploymentSuccess: ({ context }) => {
+            logDeploymentSuccess.execute(context);
         },
-        alertOperationsTeam: () => {
-            alertOperationsTeam.execute();
+        alertOperationsTeam: ({ context }) => {
+            alertOperationsTeam.execute(context);
         },
-        cleanupTempResources: () => {
-            cleanupTempResources.execute();
+        cleanupTempResources: ({ context }) => {
+            cleanupTempResources.execute(context);
         },
         preserveErrorContext: assign({
             error: ({ event }) => {
@@ -119,12 +167,13 @@ export const initialDeploymentMachine = setup({
             // Keep deployment identifiers and environment context
             // Only reset deployment state
             containerId: undefined,
+            containerIpAddress: undefined,
+            containerPort: undefined,
             applicationReady: false,
             haproxyConfigured: false,
             healthChecksPassed: false,
             trafficEnabled: false,
             validationErrors: 0,
-            monitoringStartTime: undefined,
             error: undefined,
             retryCount: 0
         }))
@@ -139,41 +188,43 @@ export const initialDeploymentMachine = setup({
         trafficStable: ({ context }) => {
             return context.validationErrors === 0;
         },
-        monitoringPeriodComplete: ({ context }) => {
-            if (!context.monitoringStartTime) return false;
-            const elapsed = Date.now() - context.monitoringStartTime;
-            return elapsed >= 300000; // 5 minutes
-        }
     }
 }).createMachine({
     id: 'initialDeployment',
     initial: 'idle',
-    context: {
-        // Deployment identifiers
-        deploymentId: "",
-        configurationId: "",
-        applicationName: "",
-        dockerImage: "",
+    context: ({ input }: { input: InitialDeploymentContext }) => ({
+        // Use input values if provided, otherwise use defaults
+        deploymentId: input?.deploymentId || "",
+        configurationId: input?.configurationId || "",
+        applicationName: input?.applicationName || "",
+        dockerImage: input?.dockerImage || "",
 
         // Environment context
-        environmentId: "",
-        environmentName: "",
-        haproxyContainerId: "",
-        haproxyNetworkName: "",
+        environmentId: input?.environmentId || "",
+        environmentName: input?.environmentName || "",
+        haproxyContainerId: input?.haproxyContainerId || "",
+        haproxyNetworkName: input?.haproxyNetworkName || "",
 
         // Container state
-        applicationReady: false,
-        haproxyConfigured: false,
-        healthChecksPassed: false,
-        trafficEnabled: false,
-        validationErrors: 0,
-        retryCount: 0,
+        containerId: input?.containerId,
+        containerIpAddress: input?.containerIpAddress,
+        containerPort: input?.containerPort,
+        applicationReady: input?.applicationReady || false,
+        haproxyConfigured: input?.haproxyConfigured || false,
+        healthChecksPassed: input?.healthChecksPassed || false,
+        trafficEnabled: input?.trafficEnabled || false,
+        validationErrors: input?.validationErrors || 0,
+        error: input?.error,
+        retryCount: input?.retryCount || 0,
 
         // Deployment metadata
-        triggerType: "manual",
-        triggeredBy: undefined,
-        startTime: Date.now(),
-    },
+        triggerType: input?.triggerType || "manual",
+        triggeredBy: input?.triggeredBy,
+        startTime: input?.startTime || Date.now(),
+
+        // Configuration
+        config: input?.config,
+    }),
 
     states: {
         idle: {
@@ -214,7 +265,21 @@ export const initialDeploymentMachine = setup({
             on: {
                 CONTAINERS_RUNNING: {
                     target: 'initializingFirstLB',
-                    actions: assign({ applicationReady: true })
+                    actions: assign({
+                        applicationReady: true,
+                        containerIpAddress: ({ event }) => {
+                            if (event.type === 'CONTAINERS_RUNNING') {
+                                return event.containerIpAddress;
+                            }
+                            return undefined;
+                        },
+                        containerPort: ({ event }) => {
+                            if (event.type === 'CONTAINERS_RUNNING') {
+                                return event.containerPort;
+                            }
+                            return undefined;
+                        }
+                    })
                 },
                 STARTUP_TIMEOUT: {
                     target: 'failed',
@@ -285,36 +350,11 @@ export const initialDeploymentMachine = setup({
             entry: 'validateTraffic',
             on: {
                 TRAFFIC_STABLE: {
-                    target: 'initialMonitoring'
+                    target: 'completed'
                 },
                 CRITICAL_ISSUES: {
                     target: 'failed',
                     actions: 'preserveErrorContext'
-                }
-            },
-            after: {
-                30000: { // 30 second minimum validation
-                    target: 'initialMonitoring',
-                    guard: 'trafficStable'
-                }
-            }
-        },
-
-        initialMonitoring: {
-            description: 'Extended monitoring for first deployment',
-            entry: 'startExtendedMonitoring',
-            on: {
-                MONITORING_COMPLETE: {
-                    target: 'completed'
-                },
-                ISSUES_DETECTED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
-                }
-            },
-            after: {
-                300000: { // 5 minute monitoring period
-                    target: 'completed'
                 }
             }
         },

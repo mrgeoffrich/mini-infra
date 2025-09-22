@@ -134,16 +134,15 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
   const { databaseId } = req.params;
 
   try {
-    logger.info(
+    logger.debug(
       { requestId, userId, databaseId },
       "Fetching backup operations for database",
     );
 
-    // Verify database exists and user has access
+    // Verify database exists
     const database = await prisma.postgresDatabase.findFirst({
       where: {
         id: databaseId,
-        userId: userId,
       },
     });
 
@@ -192,7 +191,7 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
       },
     };
 
-    logger.info(
+    logger.debug(
       { requestId, userId, databaseId, count: backupOperations.length },
       "Successfully fetched backup operations",
     );
@@ -239,16 +238,15 @@ router.post(
     const userId = user.id;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, databaseId },
         "Triggering manual backup",
       );
 
-      // Verify database exists and user has access
+      // Verify database exists
       const database = await prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
@@ -314,7 +312,7 @@ router.post(
         userId,
       );
 
-      logger.info(
+      logger.debug(
         { requestId, userId, databaseId, operationId: backupOperation.id },
         "Manual backup queued successfully",
       );
@@ -364,16 +362,15 @@ router.get(
     const { backupId } = req.params;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Fetching backup operation status",
       );
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,
@@ -412,7 +409,7 @@ router.get(
         requestId,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId, status: operation.status },
         "Successfully fetched backup operation status",
       );
@@ -451,13 +448,12 @@ router.delete(
     const { backupId } = req.params;
 
     try {
-      logger.info({ requestId, userId, backupId }, "Deleting backup operation");
+      logger.debug({ requestId, userId, backupId }, "Deleting backup operation");
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,
@@ -496,7 +492,7 @@ router.delete(
       // TODO: Delete Azure blob if it exists
       // This would require Azure Storage integration
       if (operation.azureBlobUrl) {
-        logger.info(
+        logger.debug(
           { requestId, backupId, blobUrl: operation.azureBlobUrl },
           "TODO: Delete Azure blob (not implemented yet)",
         );
@@ -507,7 +503,7 @@ router.delete(
         where: { id: backupId },
       });
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Successfully deleted backup operation",
       );
@@ -553,16 +549,15 @@ router.get(
     const { backupId } = req.params;
 
     try {
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId },
         "Fetching backup operation progress",
       );
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,
@@ -611,7 +606,7 @@ router.get(
         metadata,
       };
 
-      logger.info(
+      logger.debug(
         { requestId, userId, backupId, progress: operation.progress },
         "Successfully fetched backup operation progress",
       );

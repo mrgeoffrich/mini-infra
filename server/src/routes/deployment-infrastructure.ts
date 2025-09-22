@@ -21,6 +21,7 @@ const deployInfrastructureSchema = z.object({
   networkDriver: z
     .enum(["bridge", "overlay", "host", "none"])
     .default("bridge"),
+  environmentId: z.string().min(1, "Environment ID is required"),
 });
 
 /**
@@ -35,7 +36,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info({ requestId, userId }, "Infrastructure deployment requested");
+  logger.debug({ requestId, userId }, "Infrastructure deployment requested");
 
   try {
     if (!user || !userId) {
@@ -71,10 +72,11 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     const {
       networkName,
       networkDriver,
+      environmentId,
     } = bodyValidation.data;
 
     // Deploy HAProxy using the HAProxy service directly
-    const haproxyService = new HAProxyService('haproxy');
+    const haproxyService = new HAProxyService('haproxy', environmentId);
     
     try {
       await haproxyService.initialize();
@@ -88,7 +90,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
 
       const containerId = mainContainer?.Id || 'unknown';
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -160,9 +162,10 @@ router.get("/status", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
   const networkName = req.query.networkName as string;
+  const environmentId = req.query.environmentId as string;
 
-  logger.info(
-    { requestId, userId, networkName },
+  logger.debug(
+    { requestId, userId, networkName, environmentId },
     "Infrastructure status requested",
   );
 
@@ -176,8 +179,17 @@ router.get("/status", requireSessionOrApiKey, (async (
       });
     }
 
+    if (!environmentId) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Environment ID is required as query parameter",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
     // Get infrastructure status using HAProxy service
-    const haproxyService = new HAProxyService('haproxy');
+    const haproxyService = new HAProxyService('haproxy', environmentId);
     
     try {
       await haproxyService.initialize();
@@ -200,7 +212,7 @@ router.get("/status", requireSessionOrApiKey, (async (
 
       const status = { networkStatus, haproxyStatus };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -267,9 +279,10 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
   const networkName = req.body.networkName as string;
+  const environmentId = req.body.environmentId as string;
 
-  logger.info(
-    { requestId, userId, networkName },
+  logger.debug(
+    { requestId, userId, networkName, environmentId },
     "Infrastructure cleanup requested",
   );
 
@@ -292,14 +305,23 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
       });
     }
 
+    if (!environmentId) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Environment ID is required in request body",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
     // Clean up infrastructure using HAProxy service
-    const haproxyService = new HAProxyService('haproxy');
+    const haproxyService = new HAProxyService('haproxy', environmentId);
     
     try {
       await haproxyService.initialize();
       await haproxyService.removeHAProxy();
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,

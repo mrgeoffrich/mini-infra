@@ -69,7 +69,7 @@ router.get("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -90,7 +90,7 @@ router.get("/", requireSessionOrApiKey, (async (
       },
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -126,7 +126,7 @@ router.post("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -169,7 +169,7 @@ router.post("/", requireSessionOrApiKey, (async (
         await cloudflareConfigService.setAccountId(account_id, userId);
       }
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -183,7 +183,7 @@ router.post("/", requireSessionOrApiKey, (async (
         await cloudflareConfigService.setAccountId(account_id, userId);
       }
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -233,7 +233,7 @@ router.patch("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -294,7 +294,7 @@ router.patch("/", requireSessionOrApiKey, (async (
       },
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -330,7 +330,7 @@ router.delete("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -343,7 +343,7 @@ router.delete("/", requireSessionOrApiKey, (async (
     await cloudflareConfigService.delete("api_token", userId);
     await cloudflareConfigService.delete("account_id", userId);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -386,7 +386,7 @@ router.post("/test", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -440,7 +440,7 @@ router.post("/test", requireSessionOrApiKey, (async (
         },
       };
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,
@@ -483,7 +483,7 @@ router.get("/tunnels", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -521,7 +521,7 @@ router.get("/tunnels", requireSessionOrApiKey, (async (
     const apiToken = await cloudflareConfigService.getApiToken();
     const accountId = await cloudflareConfigService.getAccountId();
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -559,7 +559,7 @@ router.get("/tunnels", requireSessionOrApiKey, (async (
     // Fetch tunnel information from Cloudflare API
     const tunnels = await cloudflareConfigService.getTunnelInfo();
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -587,7 +587,7 @@ router.get("/tunnels", requireSessionOrApiKey, (async (
       timestamp: Date.now(),
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -668,7 +668,7 @@ router.get("/tunnels/:id", requireSessionOrApiKey, (async (
   const userId = user?.id || "system";
   const { id: tunnelId } = req.params;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -774,7 +774,7 @@ router.get("/tunnels/:id", requireSessionOrApiKey, (async (
       timestamp: Date.now(),
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -846,7 +846,7 @@ router.get("/tunnels/:id/config", requireSessionOrApiKey, (async (
   const userId = user?.id || "system";
   const { id: tunnelId } = req.params;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -916,7 +916,7 @@ router.get("/tunnels/:id/config", requireSessionOrApiKey, (async (
       timestamp: Date.now(),
     });
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -989,7 +989,7 @@ router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
   const userId = user?.id || "system";
   const { id: tunnelId } = req.params;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -1094,7 +1094,7 @@ router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -1174,7 +1174,7 @@ router.delete(
     const { id: tunnelId, hostname } = req.params;
     const { path } = req.query;
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -1224,7 +1224,7 @@ router.delete(
         });
       }
 
-      logger.info(
+      logger.debug(
         {
           requestId,
           userId,

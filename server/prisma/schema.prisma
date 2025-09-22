@@ -23,7 +23,6 @@ model User {
   // Relations
   apiKeys       ApiKey[]
   userPreference UserPreference?
-  postgresDatabases PostgresDatabase[]
 
   @@map("users")
 }
@@ -129,7 +128,7 @@ model ConnectivityStatus {
 // PostgresDatabase model for managing database configurations
 model PostgresDatabase {
   id               String   @id @default(cuid())
-  name             String
+  name             String   @unique
   connectionString String   // Encrypted
   host             String
   port             Int
@@ -141,15 +140,11 @@ model PostgresDatabase {
   updatedAt        DateTime @updatedAt
   lastHealthCheck  DateTime?
   healthStatus     String   @default("unknown")
-  userId           String
-  user             User     @relation(fields: [userId], references: [id])
-  
+
   backupConfig     BackupConfiguration?
   backupOperations BackupOperation[]
   restoreOperations RestoreOperation[]
-  
-  @@unique([userId, name])
-  @@index([userId])
+
   @@map("postgres_databases")
 }
 

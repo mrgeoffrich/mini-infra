@@ -128,12 +128,10 @@ export class DatabaseConfigService {
   /**
    * Create a new database configuration
    * @param request - Database creation request
-   * @param userId - User ID creating the database
    * @returns Created database information
    */
   async createDatabase(
     request: CreatePostgresDatabaseRequest,
-    userId: string,
   ): Promise<PostgresDatabaseInfo> {
     try {
       // Validate input
@@ -153,13 +151,10 @@ export class DatabaseConfigService {
       const encryptedConnectionString =
         this.encryptConnectionString(connectionString);
 
-      // Check for duplicate name for this user
+      // Check for duplicate name system-wide
       const existingDb = await this.prisma.postgresDatabase.findUnique({
         where: {
-          userId_name: {
-            userId: userId,
-            name: request.name,
-          },
+          name: request.name,
         },
       });
 
@@ -181,7 +176,6 @@ export class DatabaseConfigService {
           sslMode: request.sslMode,
           tags: JSON.stringify(request.tags || []),
           healthStatus: "unknown",
-          userId: userId,
         },
       });
 
@@ -190,7 +184,6 @@ export class DatabaseConfigService {
           databaseId: createdDb.id,
           name: createdDb.name,
           host: createdDb.host,
-          userId: userId,
         },
         "Database configuration created",
       );
@@ -201,7 +194,6 @@ export class DatabaseConfigService {
         {
           name: request.name,
           host: request.host,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to create database configuration",
@@ -214,28 +206,20 @@ export class DatabaseConfigService {
    * Update an existing database configuration
    * @param databaseId - Database ID to update
    * @param request - Database update request
-   * @param userId - User ID updating the database
    * @returns Updated database information
    */
   async updateDatabase(
     databaseId: string,
     request: UpdatePostgresDatabaseRequest,
-    userId: string,
   ): Promise<PostgresDatabaseInfo> {
     try {
-      // Get existing database and verify ownership
+      // Get existing database
       const existingDb = await this.prisma.postgresDatabase.findUnique({
         where: { id: databaseId },
       });
 
       if (!existingDb) {
         throw new Error("Database configuration not found");
-      }
-
-      if (existingDb.userId !== userId) {
-        throw new Error(
-          "Access denied: You can only update your own database configurations",
-        );
       }
 
       // Prepare update data
@@ -291,13 +275,10 @@ export class DatabaseConfigService {
 
       // Update other fields
       if (request.name) {
-        // Check for duplicate name
+        // Check for duplicate name system-wide
         const existingWithName = await this.prisma.postgresDatabase.findUnique({
           where: {
-            userId_name: {
-              userId: userId,
-              name: request.name,
-            },
+            name: request.name,
           },
         });
 
@@ -325,7 +306,6 @@ export class DatabaseConfigService {
           databaseId: updatedDb.id,
           name: updatedDb.name,
           connectionStringUpdated: needsConnectionStringUpdate,
-          userId: userId,
         },
         "Database configuration updated",
       );
@@ -335,7 +315,6 @@ export class DatabaseConfigService {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to update database configuration",
@@ -347,18 +326,15 @@ export class DatabaseConfigService {
   /**
    * Get a database configuration by ID
    * @param databaseId - Database ID
-   * @param userId - User ID requesting the database
    * @returns Database information or null if not found
    */
   async getDatabaseById(
     databaseId: string,
-    userId: string,
   ): Promise<PostgresDatabaseInfo | null> {
     try {
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
@@ -371,7 +347,6 @@ export class DatabaseConfigService {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to get database configuration",
@@ -381,8 +356,7 @@ export class DatabaseConfigService {
   }
 
   /**
-   * List database configurations for a user with filtering and sorting
-   * @param userId - User ID
+   * List database configurations with filtering and sorting
    * @param filter - Optional filter criteria
    * @param sort - Optional sort options
    * @param limit - Optional limit for pagination
@@ -390,7 +364,6 @@ export class DatabaseConfigService {
    * @returns List of database configurations
    */
   async listDatabases(
-    userId: string,
     filter?: PostgresDatabaseFilter,
     sort?: PostgresDatabaseSortOptions,
     limit?: number,
@@ -398,9 +371,7 @@ export class DatabaseConfigService {
   ): Promise<PostgresDatabaseInfo[]> {
     try {
       // Build where clause
-      const where: any = {
-        userId: userId,
-      };
+      const where: any = {};
 
       if (filter) {
         if (filter.name) {
@@ -451,7 +422,6 @@ export class DatabaseConfigService {
     } catch (error) {
       servicesLogger().error(
         {
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to list database configurations",
@@ -463,20 +433,18 @@ export class DatabaseConfigService {
   /**
    * Delete a database configuration
    * @param databaseId - Database ID to delete
-   * @param userId - User ID deleting the database
    */
-  async deleteDatabase(databaseId: string, userId: string): Promise<void> {
+  async deleteDatabase(databaseId: string): Promise<void> {
     try {
-      // Verify ownership and existence
+      // Verify existence
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
       if (!database) {
-        throw new Error("Database configuration not found or access denied");
+        throw new Error("Database configuration not found");
       }
 
       // Delete database configuration (cascade will handle related records)
@@ -488,7 +456,6 @@ export class DatabaseConfigService {
         {
           databaseId: databaseId,
           name: database.name,
-          userId: userId,
         },
         "Database configuration deleted",
       );
@@ -496,7 +463,6 @@ export class DatabaseConfigService {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to delete database configuration",
@@ -621,24 +587,21 @@ export class DatabaseConfigService {
   /**
    * Test connection for an existing database configuration
    * @param databaseId - Database ID
-   * @param userId - User ID
    * @returns Validation result
    */
   async testDatabaseConnection(
     databaseId: string,
-    userId: string,
   ): Promise<DatabaseValidationResult> {
     try {
       // Get database configuration
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
       if (!database) {
-        throw new Error("Database configuration not found or access denied");
+        throw new Error("Database configuration not found");
       }
 
       // Decrypt connection string
@@ -658,7 +621,6 @@ export class DatabaseConfigService {
       servicesLogger().error(
         {
           databaseId: databaseId,
-          userId: userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to test database connection",
@@ -745,24 +707,21 @@ export class DatabaseConfigService {
   /**
    * Get decrypted connection configuration for a database
    * @param databaseId - Database ID
-   * @param userId - User ID for authorization
    * @returns Database connection configuration
    */
   async getConnectionConfig(
     databaseId: string,
-    userId: string,
   ): Promise<DatabaseConnectionConfig> {
     try {
       // Get database record
       const database = await this.prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
       if (!database) {
-        throw new Error("Database not found or access denied");
+        throw new Error("Database not found");
       }
 
       // Decrypt connection string and parse configuration
@@ -774,7 +733,6 @@ export class DatabaseConfigService {
       servicesLogger().error(
         {
           databaseId,
-          userId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to get connection configuration",
@@ -839,7 +797,6 @@ export class DatabaseConfigService {
       updatedAt: database.updatedAt.toISOString(),
       lastHealthCheck: database.lastHealthCheck?.toISOString() || null,
       healthStatus: database.healthStatus as DatabaseHealthStatus,
-      userId: database.userId,
     };
   }
 

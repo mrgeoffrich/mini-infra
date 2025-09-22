@@ -160,18 +160,10 @@ export async function requireSessionOrApiKey(
 ): Promise<void> {
   const requestId = req.headers["x-request-id"] as string;
 
-  logger.debug(
-    { requestId, path: req.path },
-    "Checking session or API key authentication",
-  );
 
   try {
     // Check if user is authenticated via session
     if (req.user) {
-      logger.debug(
-        { requestId, path: req.path, userId: req.user.id },
-        "Session authentication found",
-      );
       next();
       return;
     }

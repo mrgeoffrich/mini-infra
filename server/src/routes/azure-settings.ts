@@ -91,7 +91,7 @@ router.get("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -143,7 +143,7 @@ router.get("/", requireSessionOrApiKey, (async (
       requestId,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -181,7 +181,7 @@ router.put("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -271,7 +271,7 @@ router.put("/", requireSessionOrApiKey, (async (
       requestId,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -314,7 +314,7 @@ router.post("/validate", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -454,7 +454,7 @@ router.post("/validate", requireSessionOrApiKey, (async (
       requestId,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -493,7 +493,7 @@ router.delete("/", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -516,7 +516,7 @@ router.delete("/", requireSessionOrApiKey, (async (
     // Remove Azure configuration
     await azureConfigService.removeConfiguration(userId);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -557,7 +557,7 @@ router.get("/containers", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -593,7 +593,7 @@ router.get("/containers", requireSessionOrApiKey, (async (
       requestId,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,
@@ -630,7 +630,7 @@ router.post("/test-container", requireSessionOrApiKey, (async (
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
       userId,
@@ -714,7 +714,7 @@ router.post("/test-container", requireSessionOrApiKey, (async (
       requestId,
     };
 
-    logger.info(
+    logger.debug(
       {
         requestId,
         userId,

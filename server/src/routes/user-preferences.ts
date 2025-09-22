@@ -49,12 +49,12 @@ router.get("/preferences", async (req: Request, res: Response) => {
     const user = req.user as JWTUser;
     const userId = user.id;
 
-    logger.info({ userId }, "Getting user preferences");
+    logger.debug({ userId }, "Getting user preferences");
 
     const preferences = await UserPreferencesService.getUserPreferences(userId);
     const preferenceInfo = serializeUserPreferenceInfo(preferences);
 
-    logger.info(
+    logger.debug(
       { userId, preferencesId: preferences.id },
       "User preferences retrieved successfully",
     );
@@ -84,7 +84,7 @@ router.put("/preferences", async (req: Request, res: Response) => {
     const user = req.user as JWTUser;
     const userId = user.id;
 
-    logger.info({ userId, body: req.body }, "Updating user preferences");
+    logger.debug({ userId, body: req.body }, "Updating user preferences");
 
     // Validate request body
     const validatedData = UpdateUserPreferencesSchema.parse(req.body);
@@ -95,7 +95,7 @@ router.put("/preferences", async (req: Request, res: Response) => {
     );
     const preferenceInfo = serializeUserPreferenceInfo(preferences);
 
-    logger.info(
+    logger.debug(
       { userId, preferencesId: preferences.id },
       "User preferences updated successfully",
     );

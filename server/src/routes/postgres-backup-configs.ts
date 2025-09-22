@@ -95,14 +95,11 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const databaseId = req.params.databaseId;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       databaseId,
     },
     "Backup configuration requested for database",
@@ -121,14 +118,12 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
 
     const backupConfig = await backupConfigService.getBackupConfigByDatabaseId(
       databaseId,
-      userId!,
     );
 
     if (!backupConfig) {
       logger.warn(
         {
           requestId,
-          userId,
           databaseId,
         },
         "Backup configuration not found for database",
@@ -142,10 +137,9 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
       });
     }
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         databaseId,
         configId: backupConfig.id,
         isEnabled: backupConfig.isEnabled,
@@ -167,7 +161,6 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId,
       },
       "Failed to fetch backup configuration",
@@ -186,13 +179,10 @@ router.post("/", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       body: req.body,
     },
     "Backup configuration creation requested",
@@ -205,7 +195,6 @@ router.post("/", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           validationErrors: bodyValidation.error.issues,
         },
         "Invalid request body for backup configuration creation",
@@ -234,13 +223,11 @@ router.post("/", requireSessionOrApiKey, (async (
         compressionLevel: createRequest.compressionLevel,
         isEnabled: createRequest.isEnabled,
       },
-      userId!,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         configId: createdConfig.id,
         databaseId: createRequest.databaseId,
         azureContainer: createRequest.azureContainerName,
@@ -251,10 +238,9 @@ router.post("/", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_created",
-        userId,
         requestId,
         configId: createdConfig.id,
         databaseId: createRequest.databaseId,
@@ -281,7 +267,6 @@ router.post("/", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         databaseId: req.body?.databaseId,
       },
       "Failed to create backup configuration",
@@ -336,14 +321,11 @@ router.put("/:id", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const configId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       configId,
       body: req.body,
     },
@@ -367,7 +349,6 @@ router.put("/:id", requireSessionOrApiKey, (async (
       logger.warn(
         {
           requestId,
-          userId,
           configId,
           validationErrors: bodyValidation.error.issues,
         },
@@ -389,13 +370,11 @@ router.put("/:id", requireSessionOrApiKey, (async (
     const updatedConfig = await backupConfigService.updateBackupConfig(
       configId,
       updateRequest,
-      userId!,
     );
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         configId,
         updates: Object.keys(updateRequest),
         isEnabled: updatedConfig.isEnabled,
@@ -405,10 +384,9 @@ router.put("/:id", requireSessionOrApiKey, (async (
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_updated",
-        userId,
         requestId,
         configId,
         databaseId: updatedConfig.databaseId,
@@ -433,7 +411,6 @@ router.put("/:id", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         configId,
       },
       "Failed to update backup configuration",
@@ -479,14 +456,11 @@ router.delete("/:id", requireSessionOrApiKey, (async (
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id;
   const configId = req.params.id;
 
-  logger.info(
+  logger.debug(
     {
       requestId,
-      userId,
       configId,
     },
     "Backup configuration deletion requested",
@@ -504,22 +478,20 @@ router.delete("/:id", requireSessionOrApiKey, (async (
     }
 
     // Delete backup configuration
-    await backupConfigService.deleteBackupConfig(configId, userId!);
+    await backupConfigService.deleteBackupConfig(configId,);
 
-    logger.info(
+    logger.debug(
       {
         requestId,
-        userId,
         configId,
       },
       "Backup configuration deleted successfully",
     );
 
     // Log business event
-    logger.info(
+    logger.debug(
       {
         event: "postgres_backup_config_deleted",
-        userId,
         requestId,
         configId,
       },
@@ -539,7 +511,6 @@ router.delete("/:id", requireSessionOrApiKey, (async (
       {
         error: error instanceof Error ? error.message : "Unknown error",
         requestId,
-        userId,
         configId,
       },
       "Failed to delete backup configuration",

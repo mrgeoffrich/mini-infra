@@ -1,3 +1,7 @@
+// Initialize OpenTelemetry FIRST - before any other imports
+import { initializeTelemetry, shutdownTelemetry } from "./lib/telemetry";
+initializeTelemetry();
+
 import app from "./app";
 import appConfig from "./lib/config-new";
 import {
@@ -151,6 +155,9 @@ startServer()
         await restoreExecutorService.shutdown();
         logger.info("Restore executor service stopped");
       }
+
+      // Shutdown OpenTelemetry
+      await shutdownTelemetry();
 
       server.close((err) => {
         if (err) {

@@ -1,7 +1,7 @@
 {
   "development": {
     "app": {
-      "level": "debug",
+      "level": "info",
       "destination": "logs/app.log",
       "prettyPrint": true,
       "includeCaller": true,
@@ -156,6 +156,11 @@
     "loadbalancer": {
       "level": "silent"
     }
+  },
+  "openobserve": {
+    "batchSize": 1000,
+    "timeThreshold": 5000,
+    "enabled": true
   },
   "redactionPaths": [
     "password",
