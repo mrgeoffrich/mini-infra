@@ -139,11 +139,10 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
       "Fetching backup operations for database",
     );
 
-    // Verify database exists and user has access
+    // Verify database exists
     const database = await prisma.postgresDatabase.findFirst({
       where: {
         id: databaseId,
-        userId: userId,
       },
     });
 
@@ -244,11 +243,10 @@ router.post(
         "Triggering manual backup",
       );
 
-      // Verify database exists and user has access
+      // Verify database exists
       const database = await prisma.postgresDatabase.findFirst({
         where: {
           id: databaseId,
-          userId: userId,
         },
       });
 
@@ -369,11 +367,10 @@ router.get(
         "Fetching backup operation status",
       );
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,
@@ -453,11 +450,10 @@ router.delete(
     try {
       logger.info({ requestId, userId, backupId }, "Deleting backup operation");
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,
@@ -558,11 +554,10 @@ router.get(
         "Fetching backup operation progress",
       );
 
-      // Get backup operation with database check for access control
+      // Get backup operation
       const operation = await prisma.backupOperation.findFirst({
         where: {
           id: backupId,
-          database: { userId },
         },
         include: {
           database: true,

@@ -428,7 +428,6 @@ export class RestoreExecutorService {
 
       const database = await this.databaseConfigService.getDatabaseById(
         databaseId,
-        userId,
       );
       if (!database) {
         throw new Error(
@@ -592,7 +591,6 @@ export class RestoreExecutorService {
       const baseConnectionConfig =
         await this.databaseConfigService.getConnectionConfig(
           databaseId,
-          userId,
         );
 
       // Use target database name if provided, otherwise use the original database name

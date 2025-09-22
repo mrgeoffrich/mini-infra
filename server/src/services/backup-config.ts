@@ -109,6 +109,7 @@ export class BackupConfigService {
               databaseId,
               config.schedule,
               timezone,
+              "system", // System-initiated backup
             );
 
             // Enable the schedule if the config is enabled
@@ -288,6 +289,7 @@ export class BackupConfigService {
               existingConfig.databaseId,
               finalSchedule,
               finalTimezone,
+              "system", // System-initiated backup
             );
 
             // Enable or disable based on the final enabled state

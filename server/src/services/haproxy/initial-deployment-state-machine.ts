@@ -62,7 +62,7 @@ type InitialDeploymentEvent =
     | { type: 'LB_CONFIGURED' }
     | { type: 'LB_CONFIG_ERROR'; error: string }
     | { type: 'SERVERS_HEALTHY' }
-    | { type: 'HEALTH_CHECK_TIMEOUT' }
+    | { type: 'HEALTH_CHECK_TIMEOUT'; error?: string }
     | { type: 'TRAFFIC_ENABLED' }
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }

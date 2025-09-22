@@ -411,7 +411,7 @@ export class BackupSchedulerService {
               config.databaseId,
               config.schedule,
               config.timezone || "UTC",
-              config.database.userId,
+              "system", // System-initiated backup since user relation removed
             );
 
             // Enable the schedule if it was previously enabled

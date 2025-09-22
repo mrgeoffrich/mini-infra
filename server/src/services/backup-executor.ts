@@ -400,7 +400,6 @@ export class BackupExecutorService {
 
       const database = await this.databaseConfigService.getDatabaseById(
         databaseId,
-        userId,
       );
       if (!database) {
         throw new Error("Database not found or access denied");
@@ -429,7 +428,6 @@ export class BackupExecutorService {
       const backupConfig =
         await this.backupConfigService.getBackupConfigByDatabaseId(
           databaseId,
-          userId,
         );
       if (!backupConfig) {
         servicesLogger().error(
@@ -568,7 +566,6 @@ export class BackupExecutorService {
       const connectionConfig =
         await this.databaseConfigService.getConnectionConfig(
           databaseId,
-          userId,
         );
 
       servicesLogger().debug(

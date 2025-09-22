@@ -57,6 +57,7 @@
         "@opentelemetry/resources": "^2.1.0",
         "@opentelemetry/sdk-node": "^0.205.0",
         "@prisma/client": "^6.15.0",
+        "@prisma/instrumentation": "^6.16.2",
         "@types/cloudflare": "^2.7.15",
         "@types/dockerode": "^3.3.43",
         "@types/js-yaml": "^4.0.9",

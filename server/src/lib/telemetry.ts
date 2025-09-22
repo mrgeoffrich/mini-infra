@@ -192,53 +192,32 @@ export function initializeTelemetry(): void {
       scheduledDelayMillis: 5000,
     });
 
-    // Configure manual instrumentations for better control
+    // Use auto-instrumentations with custom hooks
     const instrumentations = [
-      // Manual HTTP instrumentation
-      new HttpInstrumentation({
-        requestHook: (span, request) => {
-          if (config.debugEnabled) {
-            console.log(`🌐 HTTP Request: ${(request as any).method} ${(request as any).url}`);
-          }
-          // Add custom attributes for HTTP requests
-          if (request && typeof request === "object") {
-            const req = request as any;
-            span.setAttributes({
-              "http.user_agent": req.headers?.["user-agent"] || "",
-              "http.content_length": req.headers?.["content-length"] || 0,
-            });
-          }
-        },
-        responseHook: (span, response) => {
-          if (config.debugEnabled) {
-            console.log(`📡 HTTP Response: ${(response as any).statusCode}`);
-          }
-        }
-      }),
-
-      // Manual Express instrumentation
-      new ExpressInstrumentation({
-        requestHook: (span, info) => {
-          if (config.debugEnabled) {
-            console.log(`🚀 Express Request: ${info.request.method} ${info.request.url}`);
-          }
-          // Add custom attributes to Express spans
-          span.setAttributes({
-            "express.request.body.size": info.request.headers["content-length"] || 0,
-            "express.user_agent": info.request.headers["user-agent"] || "",
-            "express.request.route": info.request.route?.path || info.request.url,
-          });
-        },
-      }),
-
-      // Add remaining auto-instrumentations (excluding the ones we manually configured)
+      // Use auto-instrumentations with debug logging
       ...getNodeAutoInstrumentations({
-        // Disable the ones we're manually configuring
+        // Enable HTTP instrumentation with custom debug hooks
         "@opentelemetry/instrumentation-http": {
-          enabled: false,
+          enabled: true,
+          requestHook: (span, request) => {
+            if (config.debugEnabled) {
+              console.log(`🌐 HTTP Request: ${(request as any).method} ${(request as any).url}`);
+            }
+          },
+          responseHook: (span, response) => {
+            if (config.debugEnabled) {
+              console.log(`📡 HTTP Response: ${(response as any).statusCode}`);
+            }
+          }
         },
+        // Enable Express instrumentation with custom debug hooks
         "@opentelemetry/instrumentation-express": {
-          enabled: false,
+          enabled: true,
+          requestHook: (span, info) => {
+            if (config.debugEnabled) {
+              console.log(`🚀 Express Request: ${info.request.method} ${info.request.url}`);
+            }
+          }
         },
         // Enable Pino instrumentation for log correlation
         "@opentelemetry/instrumentation-pino": {

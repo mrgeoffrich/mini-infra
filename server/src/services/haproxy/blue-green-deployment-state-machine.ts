@@ -130,30 +130,30 @@ export const blueGreenDeploymentMachine = setup({
     },
     actions: {
         // Green deployment actions
-        deployGreenApplicationContainers: ({ context }) => {
-            deployApplicationContainers.execute(context);
+        deployGreenApplicationContainers: ({ context, self }) => {
+            deployApplicationContainers.execute(context, (event) => self.send(event));
         },
 
-        monitorGreenContainerStartup: ({ context }) => {
-            monitorContainerStartup.execute(context);
+        monitorGreenContainerStartup: ({ context, self }) => {
+            monitorContainerStartup.execute(context, (event) => self.send(event));
         },
 
         // Load balancer configuration actions
-        initializeGreenLB: ({ context }) => {
-            addContainerToLB.execute(context);
+        initializeGreenLB: ({ context, self }) => {
+            addContainerToLB.execute(context, (event) => self.send(event));
         },
 
-        performGreenHealthChecks: ({ context }) => {
-            performHealthChecks.execute(context);
+        performGreenHealthChecks: ({ context, self }) => {
+            performHealthChecks.execute(context, (event) => self.send(event));
         },
 
         // Traffic management actions
-        openTrafficToGreen: ({ context }) => {
-            enableTraffic.execute(context);
+        openTrafficToGreen: ({ context, self }) => {
+            enableTraffic.execute(context, (event) => self.send(event));
         },
 
-        validateGreenTraffic: () => {
-            validateTraffic.execute();
+        validateGreenTraffic: ({ context, self }) => {
+            validateTraffic.execute(context, (event) => self.send(event));
         },
 
         // Blue draining actions
@@ -179,8 +179,8 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         // Rollback actions
-        restoreBlueTraffic: () => {
-            enableTraffic.execute(); // Open traffic back to the blue container
+        restoreBlueTraffic: ({ context, self }) => {
+            enableTraffic.execute(context, (event) => self.send(event)); // Open traffic back to the blue container
         },
 
         disableGreenTraffic: () => {
@@ -204,16 +204,16 @@ export const blueGreenDeploymentMachine = setup({
             monitoringStartTime: () => Date.now()
         }),
 
-        logDeploymentSuccess: () => {
-            logDeploymentSuccess.execute();
+        logDeploymentSuccess: ({ context }) => {
+            logDeploymentSuccess.execute(context);
         },
 
-        alertOperationsTeam: () => {
-            alertOperationsTeam.execute();
+        alertOperationsTeam: ({ context }) => {
+            alertOperationsTeam.execute(context);
         },
 
-        cleanupTempResources: () => {
-            cleanupTempResources.execute();
+        cleanupTempResources: ({ context }) => {
+            cleanupTempResources.execute(context);
         },
 
         // Context management actions
