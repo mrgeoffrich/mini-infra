@@ -11,6 +11,7 @@ export interface ServiceCreationOptions {
   serviceType: string;
   config?: Record<string, any>;
   projectName?: string;
+  environmentId?: string;
 }
 
 export interface ServiceCreationResult {
@@ -38,7 +39,7 @@ export class ApplicationServiceFactory {
   }
 
   public async createService(options: ServiceCreationOptions): Promise<ServiceCreationResult> {
-    const { serviceName, serviceType, config = {}, projectName } = options;
+    const { serviceName, serviceType, config = {}, projectName, environmentId } = options;
 
     try {
       // Check if service type is available
@@ -72,7 +73,7 @@ export class ApplicationServiceFactory {
       }
 
       // Create service instance
-      const service = this.instantiateService(serviceDefinition, serviceName, config, projectName);
+      const service = this.instantiateService(serviceDefinition, serviceName, config, projectName, environmentId);
 
       // Store service instance
       this.activeServices.set(serviceName, service);
@@ -109,7 +110,8 @@ export class ApplicationServiceFactory {
     serviceDefinition: any,
     serviceName: string,
     config: Record<string, any>,
-    projectName?: string
+    projectName?: string,
+    environmentId?: string
   ): IApplicationService {
     const { implementation } = serviceDefinition;
 
@@ -117,7 +119,7 @@ export class ApplicationServiceFactory {
     // Different services may require different constructor parameters
     switch (serviceDefinition.serviceType) {
       case 'haproxy':
-        return new implementation(projectName || serviceName);
+        return new implementation(projectName || serviceName, environmentId);
 
       default:
         // Generic instantiation - may need to be customized per service

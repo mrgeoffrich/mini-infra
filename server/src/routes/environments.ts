@@ -218,6 +218,21 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Check if environment has associated deployment configurations
+    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
+      where: { environmentId: id },
+      select: { id: true, applicationName: true }
+    });
+
+    if (deploymentConfigs.length > 0) {
+      const appNames = deploymentConfigs.map(config => config.applicationName).join(', ');
+      return res.status(400).json({
+        error: 'Environment has associated deployments',
+        message: `Cannot delete environment with existing deployment configurations. Please delete the following deployment configurations first: ${appNames}`,
+        deploymentConfigurations: deploymentConfigs
+      });
+    }
+
     const success = await environmentManager.deleteEnvironment(id);
 
     if (!success) {

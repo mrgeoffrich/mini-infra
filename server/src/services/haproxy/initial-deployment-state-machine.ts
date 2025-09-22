@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate';
+import { DeploymentConfig } from '@mini-infra/types';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -43,7 +44,6 @@ interface InitialDeploymentContext {
     healthChecksPassed: boolean;
     trafficEnabled: boolean;
     validationErrors: number;
-    monitoringStartTime?: number;
     error?: string;
     retryCount: number;
 
@@ -51,6 +51,9 @@ interface InitialDeploymentContext {
     triggerType: string;
     triggeredBy?: string;
     startTime: number;
+
+    // Configuration
+    config?: DeploymentConfig;
 }
 
 type InitialDeploymentEvent =
@@ -67,8 +70,6 @@ type InitialDeploymentEvent =
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }
     | { type: 'CRITICAL_ISSUES'; error: string }
-    | { type: 'MONITORING_COMPLETE' }
-    | { type: 'ISSUES_DETECTED'; error: string }
     | { type: 'RESET' }
     | { type: 'MANUAL_INTERVENTION_COMPLETE' };
 
@@ -145,9 +146,6 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
-        startExtendedMonitoring: assign({
-            monitoringStartTime: () => Date.now()
-        }),
         logDeploymentSuccess: ({ context }) => {
             logDeploymentSuccess.execute(context);
         },
@@ -176,7 +174,6 @@ export const initialDeploymentMachine = setup({
             healthChecksPassed: false,
             trafficEnabled: false,
             validationErrors: 0,
-            monitoringStartTime: undefined,
             error: undefined,
             retryCount: 0
         }))
@@ -191,41 +188,43 @@ export const initialDeploymentMachine = setup({
         trafficStable: ({ context }) => {
             return context.validationErrors === 0;
         },
-        monitoringPeriodComplete: ({ context }) => {
-            if (!context.monitoringStartTime) return false;
-            const elapsed = Date.now() - context.monitoringStartTime;
-            return elapsed >= 300000; // 5 minutes
-        }
     }
 }).createMachine({
     id: 'initialDeployment',
     initial: 'idle',
-    context: {
-        // Deployment identifiers
-        deploymentId: "",
-        configurationId: "",
-        applicationName: "",
-        dockerImage: "",
+    context: ({ input }: { input: InitialDeploymentContext }) => ({
+        // Use input values if provided, otherwise use defaults
+        deploymentId: input?.deploymentId || "",
+        configurationId: input?.configurationId || "",
+        applicationName: input?.applicationName || "",
+        dockerImage: input?.dockerImage || "",
 
         // Environment context
-        environmentId: "",
-        environmentName: "",
-        haproxyContainerId: "",
-        haproxyNetworkName: "",
+        environmentId: input?.environmentId || "",
+        environmentName: input?.environmentName || "",
+        haproxyContainerId: input?.haproxyContainerId || "",
+        haproxyNetworkName: input?.haproxyNetworkName || "",
 
         // Container state
-        applicationReady: false,
-        haproxyConfigured: false,
-        healthChecksPassed: false,
-        trafficEnabled: false,
-        validationErrors: 0,
-        retryCount: 0,
+        containerId: input?.containerId,
+        containerIpAddress: input?.containerIpAddress,
+        containerPort: input?.containerPort,
+        applicationReady: input?.applicationReady || false,
+        haproxyConfigured: input?.haproxyConfigured || false,
+        healthChecksPassed: input?.healthChecksPassed || false,
+        trafficEnabled: input?.trafficEnabled || false,
+        validationErrors: input?.validationErrors || 0,
+        error: input?.error,
+        retryCount: input?.retryCount || 0,
 
         // Deployment metadata
-        triggerType: "manual",
-        triggeredBy: undefined,
-        startTime: Date.now(),
-    },
+        triggerType: input?.triggerType || "manual",
+        triggeredBy: input?.triggeredBy,
+        startTime: input?.startTime || Date.now(),
+
+        // Configuration
+        config: input?.config,
+    }),
 
     states: {
         idle: {
@@ -351,36 +350,11 @@ export const initialDeploymentMachine = setup({
             entry: 'validateTraffic',
             on: {
                 TRAFFIC_STABLE: {
-                    target: 'initialMonitoring'
+                    target: 'completed'
                 },
                 CRITICAL_ISSUES: {
                     target: 'failed',
                     actions: 'preserveErrorContext'
-                }
-            },
-            after: {
-                30000: { // 30 second minimum validation
-                    target: 'initialMonitoring',
-                    guard: 'trafficStable'
-                }
-            }
-        },
-
-        initialMonitoring: {
-            description: 'Extended monitoring for first deployment',
-            entry: 'startExtendedMonitoring',
-            on: {
-                MONITORING_COMPLETE: {
-                    target: 'completed'
-                },
-                ISSUES_DETECTED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
-                }
-            },
-            after: {
-                300000: { // 5 minute monitoring period
-                    target: 'completed'
                 }
             }
         },

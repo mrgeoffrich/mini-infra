@@ -71,9 +71,22 @@ export class ValidateTraffic {
                 pollIntervalMs
             }, 'Starting traffic validation monitoring');
 
-            // Validation loop - monitor for the minimum duration
-            while ((Date.now() - startTime) < validationDurationMs) {
+            // Validation loop - run exactly 3 times with 5 second pauses
+            const maxValidations = 3;
+            let validationCount = 0;
+
+            while (validationCount < maxValidations) {
                 try {
+                    validationCount++;
+
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        backendName,
+                        serverName,
+                        validationAttempt: validationCount,
+                        maxValidations
+                    }, `Traffic validation attempt ${validationCount}/${maxValidations}`);
+
                     // Get current server and backend statistics
                     const [serverStats, backendStats] = await Promise.all([
                         this.haproxyClient.getServerStats(backendName, serverName),
@@ -84,76 +97,78 @@ export class ValidateTraffic {
                         logger.warn({
                             deploymentId: context.deploymentId,
                             backendName,
-                            serverName
+                            serverName,
+                            validationAttempt: validationCount
                         }, 'Server stats not available during traffic validation');
                         validationErrors++;
-                        continue;
-                    }
-
-                    if (!backendStats) {
+                    } else if (!backendStats) {
                         logger.warn({
                             deploymentId: context.deploymentId,
-                            backendName
+                            backendName,
+                            validationAttempt: validationCount
                         }, 'Backend stats not available during traffic validation');
                         validationErrors++;
-                        continue;
-                    }
+                    } else {
 
-                    // Calculate current metrics
-                    const currentMetrics: TrafficValidationMetrics = {
-                        errorRate: this.calculateErrorRate(serverStats),
-                        connectionErrors: serverStats.errors_con,
-                        responseErrors: serverStats.errors_resp,
-                        totalSessions: serverStats.total_sessions,
-                        currentSessions: serverStats.current_sessions,
-                        serverStatus: serverStats.status,
-                        checkStatus: serverStats.check_status
-                    };
+                        // Calculate current metrics
+                        const currentMetrics: TrafficValidationMetrics = {
+                            errorRate: this.calculateErrorRate(serverStats),
+                            connectionErrors: serverStats.errors_con,
+                            responseErrors: serverStats.errors_resp,
+                            totalSessions: serverStats.total_sessions,
+                            currentSessions: serverStats.current_sessions,
+                            serverStatus: serverStats.status,
+                            checkStatus: serverStats.check_status
+                        };
 
-                    // Set baseline on first measurement
-                    if (!baselineMetrics) {
-                        baselineMetrics = { ...currentMetrics };
+                        // Set baseline on first measurement
+                        if (!baselineMetrics) {
+                            baselineMetrics = { ...currentMetrics };
+                            logger.info({
+                                deploymentId: context.deploymentId,
+                                backendName,
+                                serverName,
+                                baselineMetrics,
+                                validationAttempt: validationCount
+                            }, 'Established baseline metrics for traffic validation');
+                        }
+
+                        // Log current status
                         logger.info({
                             deploymentId: context.deploymentId,
                             backendName,
                             serverName,
-                            baselineMetrics
-                        }, 'Established baseline metrics for traffic validation');
-                    }
-
-                    // Log current status
-                    logger.debug({
-                        deploymentId: context.deploymentId,
-                        backendName,
-                        serverName,
-                        currentMetrics,
-                        elapsedTime: Date.now() - startTime,
-                        validationErrors
-                    }, 'Traffic validation metrics');
-
-                    // Validate traffic stability
-                    const issues = this.validateMetrics(currentMetrics, baselineMetrics, lastMetrics);
-
-                    if (issues.length > 0) {
-                        validationErrors += issues.length;
-                        logger.warn({
-                            deploymentId: context.deploymentId,
-                            backendName,
-                            serverName,
-                            issues,
                             currentMetrics,
+                            validationAttempt: validationCount,
                             validationErrors
-                        }, 'Traffic validation issues detected');
-                    } else {
-                        logger.debug({
-                            deploymentId: context.deploymentId,
-                            backendName,
-                            serverName,
-                            currentMetrics
-                        }, 'Traffic validation metrics look healthy');
-                    }
+                        }, 'Traffic validation metrics');
 
-                    lastMetrics = currentMetrics;
+                        // Validate traffic stability
+                        const issues = this.validateMetrics(currentMetrics, baselineMetrics, lastMetrics);
+
+                        if (issues.length > 0) {
+                            validationErrors += issues.length;
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                backendName,
+                                serverName,
+                                issues,
+                                currentMetrics,
+                                validationErrors,
+                                validationAttempt: validationCount
+                            }, 'Traffic validation issues detected');
+                        } else {
+                            logger.info({
+                                deploymentId: context.deploymentId,
+                                backendName,
+                                serverName,
+                                currentMetrics,
+                                validationAttempt: validationCount
+                            }, 'Traffic validation metrics look healthy');
+                        }
+
+                        lastMetrics = currentMetrics;
+                    }
 
                 } catch (statsError) {
                     validationErrors++;
@@ -162,15 +177,19 @@ export class ValidateTraffic {
                         backendName,
                         serverName,
                         error: statsError instanceof Error ? statsError.message : 'Unknown error',
-                        elapsedTime: Date.now() - startTime,
+                        validationAttempt: validationCount,
                         validationErrors
                     }, 'Error getting stats during traffic validation');
                 }
 
-                // Wait before next poll (unless we're at the end)
-                const remainingTime = validationDurationMs - (Date.now() - startTime);
-                if (remainingTime > pollIntervalMs) {
-                    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                // Wait 5 seconds before next validation (unless this is the last one)
+                if (validationCount < maxValidations) {
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        validationAttempt: validationCount,
+                        nextValidationIn: '5 seconds'
+                    }, 'Waiting before next validation');
+                    await new Promise(resolve => setTimeout(resolve, 5000));
                 }
             }
 
@@ -188,6 +207,7 @@ export class ValidateTraffic {
                     backendName,
                     serverName,
                     totalTime,
+                    validationAttempts: validationCount,
                     validationErrors,
                     applicationName: context.applicationName
                 }, 'Traffic validation completed successfully - traffic is stable');
@@ -202,13 +222,14 @@ export class ValidateTraffic {
                     backendName,
                     serverName,
                     totalTime,
+                    validationAttempts: validationCount,
                     validationErrors
                 }, 'Traffic validation failed - critical issues detected');
 
                 // Send critical issues event
                 sendEvent({
                     type: 'CRITICAL_ISSUES',
-                    error: `Traffic validation failed with ${validationErrors} validation errors`
+                    error: `Traffic validation failed with ${validationErrors} validation errors after ${validationCount} attempts`
                 });
             }
 

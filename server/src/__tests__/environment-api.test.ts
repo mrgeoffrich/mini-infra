@@ -31,6 +31,9 @@ jest.mock('../lib/logger-factory', () => {
     servicesLogger: jest.fn(() => mockLoggerInstance),
     httpLogger: jest.fn(() => mockLoggerInstance),
     prismaLogger: jest.fn(() => mockLoggerInstance),
+    loadbalancerLogger: jest.fn(() => mockLoggerInstance),
+    deploymentLogger: jest.fn(() => mockLoggerInstance),
+    dockerExecutorLogger: jest.fn(() => mockLoggerInstance),
     __esModule: true,
     default: jest.fn(() => mockLoggerInstance),
   };
@@ -39,6 +42,11 @@ jest.mock('../lib/logger-factory', () => {
 // Mock dependencies
 jest.mock('../services/environment-manager');
 jest.mock('../services/service-registry');
+jest.mock('../lib/prisma', () => ({
+  deploymentConfiguration: {
+    findMany: jest.fn()
+  }
+}));
 jest.mock('../middleware/auth', () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     req.user = { id: 'test-user', email: 'test@example.com' };
@@ -71,6 +79,12 @@ const mockServiceRegistry = {
   getInstance: jest.fn()
 };
 
+const mockPrisma = {
+  deploymentConfiguration: {
+    findMany: jest.fn()
+  }
+};
+
 // Mock the modules
 jest.doMock('../services/environment-manager', () => ({
   EnvironmentManager: {
@@ -86,6 +100,7 @@ jest.doMock('../services/service-registry', () => ({
 
 // Import app after mocks are set up
 import app from '../app';
+import prisma from '../lib/prisma';
 
 describe('Environment API', () => {
   const mockEnvironment = {
@@ -126,6 +141,8 @@ describe('Environment API', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset Prisma mock
+    (prisma.deploymentConfiguration.findMany as jest.Mock).mockReset();
   });
 
   describe('GET /api/environments', () => {
@@ -311,6 +328,8 @@ describe('Environment API', () => {
 
   describe('DELETE /api/environments/:id', () => {
     it('should delete environment successfully', async () => {
+      // Mock no deployment configurations to allow deletion
+      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
 
       await request(app)
@@ -321,6 +340,8 @@ describe('Environment API', () => {
     });
 
     it('should return 404 for non-existent environment', async () => {
+      // Mock no deployment configurations
+      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(false);
 
       await request(app)
@@ -329,6 +350,8 @@ describe('Environment API', () => {
     });
 
     it('should handle running environment deletion error', async () => {
+      // Mock no deployment configurations to pass the first check
+      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
       const runningError = new Error('Cannot delete a running environment. Stop it first.');
       mockEnvironmentManager.deleteEnvironment.mockRejectedValue(runningError);
 
@@ -337,6 +360,49 @@ describe('Environment API', () => {
         .expect(400);
 
       expect(response.body.error).toBe('Environment is running');
+    });
+
+    it('should prevent deletion when environment has deployment configurations', async () => {
+      // Mock deploymentConfigurations that exist for this environment
+      const mockDeploymentConfigs = [
+        { id: 'deploy-1', applicationName: 'my-app' },
+        { id: 'deploy-2', applicationName: 'other-app' }
+      ];
+
+      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue(mockDeploymentConfigs);
+
+      const response = await request(app)
+        .delete('/api/environments/env-with-deployments')
+        .expect(400);
+
+      expect(response.body.error).toBe('Environment has associated deployments');
+      expect(response.body.message).toContain('my-app, other-app');
+      expect(response.body.deploymentConfigurations).toEqual(mockDeploymentConfigs);
+
+      // Verify that the Prisma query was called with the correct environment ID
+      expect(prisma.deploymentConfiguration.findMany).toHaveBeenCalledWith({
+        where: { environmentId: 'env-with-deployments' },
+        select: { id: true, applicationName: true }
+      });
+    });
+
+    it('should allow deletion when environment has no deployment configurations', async () => {
+      // Mock no deployment configurations
+      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
+      mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
+
+      await request(app)
+        .delete('/api/environments/env-no-deployments')
+        .expect(204);
+
+      // Verify that the deployment check was performed
+      expect(prisma.deploymentConfiguration.findMany).toHaveBeenCalledWith({
+        where: { environmentId: 'env-no-deployments' },
+        select: { id: true, applicationName: true }
+      });
+
+      // Verify that deletion proceeded normally
+      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-no-deployments');
     });
   });
 

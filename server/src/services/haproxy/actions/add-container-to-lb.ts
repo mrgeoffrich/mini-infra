@@ -38,7 +38,7 @@ export class AddContainerToLB {
             if (!context.containerPort) {
                 throw new Error('Container port is required for server configuration');
             }
-            if (!context.config?.healthCheckConfig) {
+            if (!context.config?.healthCheck) {
                 throw new Error('Health check configuration is required for server setup');
             }
 
@@ -85,7 +85,7 @@ export class AddContainerToLB {
             }
 
             // Extract health check configuration from deployment config
-            const healthCheck: HealthCheckConfig = context.config.healthCheckConfig;
+            const healthCheck: HealthCheckConfig = context.config.healthCheck;
             const healthCheckEndpoint = healthCheck.endpoint || '/health';
 
             // Configure server with health check settings

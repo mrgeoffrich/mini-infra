@@ -14,6 +14,7 @@ export interface BaseContainerLabelOptions {
   applicationName?: string;
   deploymentId?: string;
   deploymentColor?: "blue" | "green";
+  environmentId?: string;
 
   // Docker Compose-style project grouping
   projectName?: string;
@@ -109,6 +110,10 @@ export class ContainerLabelManager {
 
     if (options.deploymentColor) {
       labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.deployment.color`] = options.deploymentColor;
+    }
+
+    if (options.environmentId) {
+      labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.environment`] = options.environmentId;
     }
 
     // Container purpose and lifecycle
@@ -297,6 +302,63 @@ export class ContainerLabelManager {
     }
   }
 
+  /**
+   * Generate labels for HAProxy infrastructure containers
+   */
+  generateHAProxyLabels(options: {
+    environmentId: string;
+    projectName?: string;
+    serviceName?: string;
+    customLabels?: Record<string, string>;
+  }): Record<string, string> {
+    try {
+      servicesLogger().info(
+        {
+          environmentId: options.environmentId,
+          projectName: options.projectName,
+          serviceName: options.serviceName
+        },
+        "Generating HAProxy container labels"
+      );
+
+      // Start with base labels
+      const labels = this.generateBaseLabels({
+        environmentId: options.environmentId,
+        containerPurpose: "utility",
+        managed: true,
+        isTemporary: false,
+        isActive: true,
+        customLabels: options.customLabels
+      });
+
+      // Add compose-style labels
+      const composeLabels = this.generateComposeLabels(
+        options.projectName,
+        options.serviceName || "haproxy"
+      );
+      Object.assign(labels, composeLabels);
+
+      servicesLogger().debug(
+        {
+          environmentId: options.environmentId,
+          labelsCount: Object.keys(labels).length
+        },
+        "HAProxy labels generated successfully"
+      );
+
+      return labels;
+    } catch (error) {
+      servicesLogger().error(
+        {
+          environmentId: options.environmentId,
+          error: error instanceof Error ? error.message : "Unknown error"
+        },
+        "Failed to generate HAProxy labels"
+      );
+      throw error;
+    }
+  }
+
 
   // ====================
   // Label Parsing and Analysis
@@ -310,6 +372,7 @@ export class ContainerLabelManager {
     applicationName?: string;
     deploymentId?: string;
     deploymentColor?: "blue" | "green";
+    environmentId?: string;
     projectName?: string;
     serviceName?: string;
     containerPurpose?: string;
@@ -324,6 +387,7 @@ export class ContainerLabelManager {
       applicationName: labels[`${prefix}.application`],
       deploymentId: labels[`${prefix}.deployment.id`],
       deploymentColor: labels[`${prefix}.deployment.color`] as "blue" | "green" | undefined,
+      environmentId: labels[`${prefix}.environment`],
       projectName: labels[`${prefix}.project`] || labels[`${ContainerLabelManager.COMPOSE_PREFIX}.project`],
       serviceName: labels[`${prefix}.service`] || labels[`${ContainerLabelManager.COMPOSE_PREFIX}.service`],
       containerPurpose: labels[`${prefix}.purpose`],
