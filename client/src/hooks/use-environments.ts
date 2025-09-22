@@ -126,10 +126,17 @@ async function updateEnvironment(
 }
 
 async function deleteEnvironment(
-  id: string,
+  options: { id: string; deleteVolumes?: boolean; deleteNetworks?: boolean },
   correlationId: string,
 ): Promise<void> {
-  const response = await fetch(`/api/environments/${id}`, {
+  const { id, deleteVolumes = false, deleteNetworks = false } = options;
+  const url = new URL(`/api/environments/${id}`, window.location.origin);
+
+  // Add query parameters for deletion options
+  if (deleteVolumes) url.searchParams.set("deleteVolumes", "true");
+  if (deleteNetworks) url.searchParams.set("deleteNetworks", "true");
+
+  const response = await fetch(url.toString(), {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -661,11 +668,12 @@ export function useDeleteEnvironment() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteEnvironment(id, correlationId),
-    onSuccess: (_, id) => {
+    mutationFn: (options: { id: string; deleteVolumes?: boolean; deleteNetworks?: boolean }) =>
+      deleteEnvironment(options, correlationId),
+    onSuccess: (_, options) => {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.removeQueries({ queryKey: ["environment", id] });
-      queryClient.removeQueries({ queryKey: ["environmentStatus", id] });
+      queryClient.removeQueries({ queryKey: ["environment", options.id] });
+      queryClient.removeQueries({ queryKey: ["environmentStatus", options.id] });
     },
   });
 }

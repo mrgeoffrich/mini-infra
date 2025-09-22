@@ -1301,6 +1301,128 @@ export class DockerExecutorService {
   }
 
   /**
+   * Remove a Docker volume
+   */
+  public async removeVolume(volumeName: string): Promise<void> {
+    try {
+      const volume = this.docker.getVolume(volumeName);
+      await volume.remove();
+      servicesLogger().info({ volumeName }, 'Docker volume removed successfully');
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          volumeName,
+        },
+        "Failed to remove Docker volume"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a Docker network
+   */
+  public async removeNetwork(networkName: string): Promise<void> {
+    try {
+      const network = this.docker.getNetwork(networkName);
+      await network.remove();
+      servicesLogger().info({ networkName }, 'Docker network removed successfully');
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          networkName,
+        },
+        "Failed to remove Docker network"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Capture logs from a container (both stdout and stderr)
+   */
+  public async captureContainerLogs(
+    containerId: string,
+    options?: {
+      tail?: number;
+      since?: string;
+      includeTimestamps?: boolean;
+    }
+  ): Promise<{ stdout: string; stderr: string }> {
+    try {
+      const container = this.docker.getContainer(containerId);
+
+      const logOptions = {
+        follow: true as const, // Need to follow to get a stream
+        stdout: true,
+        stderr: true,
+        timestamps: options?.includeTimestamps || false,
+        tail: options?.tail || 100, // Default to last 100 lines
+        since: options?.since
+      };
+
+      const stream = await container.logs(logOptions) as any;
+
+      return new Promise((resolve, reject) => {
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+
+        const timeout = setTimeout(() => {
+          reject(new Error('Log capture timeout'));
+        }, 30000); // 30 second timeout
+
+        // Docker multiplexes stdout and stderr in a single stream
+        // Each chunk has an 8-byte header: [stream_type, 0, 0, 0, size_bytes...]
+        stream.on("data", (chunk: Buffer) => {
+          if (chunk.length < 8) return;
+
+          const streamType = chunk.readUInt8(0);
+          const size = chunk.readUInt32BE(4);
+          const data = chunk.subarray(8, 8 + size);
+
+          if (streamType === 1) {
+            stdoutChunks.push(data);
+          } else if (streamType === 2) {
+            stderrChunks.push(data);
+          }
+        });
+
+        stream.on("end", () => {
+          clearTimeout(timeout);
+          resolve({
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8')
+          });
+        });
+
+        stream.on("error", (error: any) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+
+        // For containers that have already exited, the stream might end immediately
+        // Set a small delay to allow data to be emitted before ending
+        setTimeout(() => {
+          if (stream.readable && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+        }, 1000);
+      });
+    } catch (error) {
+      dockerExecutorLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+          containerId,
+        },
+        "Failed to capture container logs"
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Get the Docker client instance for advanced operations
    */
   public getDockerClient(): Docker {

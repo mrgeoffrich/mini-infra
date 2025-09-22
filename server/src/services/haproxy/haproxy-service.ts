@@ -189,6 +189,9 @@ export class HAProxyService implements IApplicationService {
       // Deploy main haproxy container
       await this.deployHAProxyContainer();
 
+      // Cleanup init container after main container is running
+      await this.cleanupInitContainer();
+
       this.logger.info('HAProxy deployment completed successfully');
     } catch (error) {
       this.logger.error({ error }, 'Failed to deploy HAProxy');
@@ -372,6 +375,58 @@ export class HAProxyService implements IApplicationService {
 
     await container.start();
     this.logger.info('Started haproxy container');
+  }
+
+  /**
+   * Capture logs and remove the init container after successful deployment
+   */
+  private async cleanupInitContainer(): Promise<void> {
+    try {
+      this.logger.info({ containerName: this.initContainerName }, 'Starting init container cleanup');
+
+      // Capture logs before removing the container
+      const { stdout, stderr } = await this.dockerExecutor.captureContainerLogs(
+        this.initContainerName,
+        { tail: 100, includeTimestamps: true }
+      );
+
+      // Log the captured output for debugging and audit purposes
+      if (stdout.trim()) {
+        this.logger.info(
+          {
+            containerName: this.initContainerName,
+            stdout: stdout.trim()
+          },
+          'HAProxy init container stdout'
+        );
+      }
+
+      if (stderr.trim()) {
+        this.logger.info(
+          {
+            containerName: this.initContainerName,
+            stderr: stderr.trim()
+          },
+          'HAProxy init container stderr'
+        );
+      }
+
+      // Remove the init container
+      const docker = this.dockerExecutor.getDockerClient();
+      const container = docker.getContainer(this.initContainerName);
+      await container.remove({ force: true });
+
+      this.logger.info({ containerName: this.initContainerName }, 'Init container cleaned up successfully');
+    } catch (error) {
+      // Log cleanup failure as warning to avoid breaking the deployment
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          containerName: this.initContainerName
+        },
+        'Failed to cleanup init container - continuing with deployment'
+      );
+    }
   }
 
   /**

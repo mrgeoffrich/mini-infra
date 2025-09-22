@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, Server, Network, HardDrive } from "lucide-react";
@@ -30,6 +31,8 @@ export function EnvironmentDeleteDialog({
   onSuccess,
 }: EnvironmentDeleteDialogProps) {
   const [confirmationText, setConfirmationText] = useState("");
+  const [deleteVolumes, setDeleteVolumes] = useState(false);
+  const [deleteNetworks, setDeleteNetworks] = useState(false);
   const deleteMutation = useDeleteEnvironment();
 
   const isConfirmed = confirmationText === environment.name;
@@ -39,10 +42,16 @@ export function EnvironmentDeleteDialog({
     if (!isConfirmed) return;
 
     try {
-      await deleteMutation.mutateAsync(environment.id);
+      await deleteMutation.mutateAsync({
+        id: environment.id,
+        deleteVolumes,
+        deleteNetworks,
+      });
       toast.success(`Environment "${environment.name}" deleted successfully`);
       onOpenChange(false);
       setConfirmationText("");
+      setDeleteVolumes(false);
+      setDeleteNetworks(false);
       onSuccess?.();
     } catch (error) {
       toast.error(
@@ -56,6 +65,8 @@ export function EnvironmentDeleteDialog({
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       setConfirmationText("");
+      setDeleteVolumes(false);
+      setDeleteNetworks(false);
     }
     onOpenChange(open);
   };
@@ -115,20 +126,84 @@ export function EnvironmentDeleteDialog({
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium mb-2">The following resources will be deleted:</div>
+                <div className="font-medium mb-2">The following services will be deleted:</div>
                 <ul className="text-sm space-y-1">
                   {environment.services.length > 0 && (
                     <li>• {environment.services.length} service(s): {environment.services.map(s => s.serviceName).join(", ")}</li>
                   )}
-                  {environment.networks.length > 0 && (
-                    <li>• {environment.networks.length} network(s): {environment.networks.map(n => n.name).join(", ")}</li>
-                  )}
-                  {environment.volumes.length > 0 && (
-                    <li>• {environment.volumes.length} volume(s): {environment.volumes.map(v => v.name).join(", ")}</li>
-                  )}
                 </ul>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Networks and volumes will be preserved by default unless explicitly selected below.
+                </div>
               </AlertDescription>
             </Alert>
+          )}
+
+          {/* Volume and Network deletion options */}
+          {!isRunning && (environment.networks.length > 0 || environment.volumes.length > 0) && (
+            <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+              <div className="font-medium text-sm">Additional Cleanup Options</div>
+
+              {/* Network deletion option */}
+              {environment.networks.length > 0 && (
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id="delete-networks"
+                    checked={deleteNetworks}
+                    onCheckedChange={(checked) => setDeleteNetworks(checked === true)}
+                  />
+                  <div className="grid gap-1.5 leading-none">
+                    <Label
+                      htmlFor="delete-networks"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Also delete networks ({environment.networks.length})
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Networks: {environment.networks.map(n => n.name).join(", ")}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Volume deletion option */}
+              {environment.volumes.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-start space-x-3">
+                    <Checkbox
+                      id="delete-volumes"
+                      checked={deleteVolumes}
+                      onCheckedChange={(checked) => setDeleteVolumes(checked === true)}
+                    />
+                    <div className="grid gap-1.5 leading-none">
+                      <Label
+                        htmlFor="delete-volumes"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        Also delete volumes ({environment.volumes.length})
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Volumes: {environment.volumes.map(v => v.name).join(", ")}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Data loss warning for volumes */}
+                  {deleteVolumes && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="font-medium">⚠️ DATA LOSS WARNING</div>
+                        <div className="text-sm mt-1">
+                          Deleting volumes will permanently destroy all data stored in them.
+                          This action cannot be undone and may result in irreversible data loss.
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Confirmation Input */}

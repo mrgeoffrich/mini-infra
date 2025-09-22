@@ -192,39 +192,42 @@ export const initialDeploymentMachine = setup({
 }).createMachine({
     id: 'initialDeployment',
     initial: 'idle',
-    context: ({ input }: { input: InitialDeploymentContext }) => ({
+    context: ({ input }) => {
+        const deploymentInput = input as InitialDeploymentContext | undefined;
+        return {
         // Use input values if provided, otherwise use defaults
-        deploymentId: input?.deploymentId || "",
-        configurationId: input?.configurationId || "",
-        applicationName: input?.applicationName || "",
-        dockerImage: input?.dockerImage || "",
+        deploymentId: deploymentInput?.deploymentId || "",
+        configurationId: deploymentInput?.configurationId || "",
+        applicationName: deploymentInput?.applicationName || "",
+        dockerImage: deploymentInput?.dockerImage || "",
 
         // Environment context
-        environmentId: input?.environmentId || "",
-        environmentName: input?.environmentName || "",
-        haproxyContainerId: input?.haproxyContainerId || "",
-        haproxyNetworkName: input?.haproxyNetworkName || "",
+        environmentId: deploymentInput?.environmentId || "",
+        environmentName: deploymentInput?.environmentName || "",
+        haproxyContainerId: deploymentInput?.haproxyContainerId || "",
+        haproxyNetworkName: deploymentInput?.haproxyNetworkName || "",
 
         // Container state
-        containerId: input?.containerId,
-        containerIpAddress: input?.containerIpAddress,
-        containerPort: input?.containerPort,
-        applicationReady: input?.applicationReady || false,
-        haproxyConfigured: input?.haproxyConfigured || false,
-        healthChecksPassed: input?.healthChecksPassed || false,
-        trafficEnabled: input?.trafficEnabled || false,
-        validationErrors: input?.validationErrors || 0,
-        error: input?.error,
-        retryCount: input?.retryCount || 0,
+        containerId: deploymentInput?.containerId,
+        containerIpAddress: deploymentInput?.containerIpAddress,
+        containerPort: deploymentInput?.containerPort,
+        applicationReady: deploymentInput?.applicationReady || false,
+        haproxyConfigured: deploymentInput?.haproxyConfigured || false,
+        healthChecksPassed: deploymentInput?.healthChecksPassed || false,
+        trafficEnabled: deploymentInput?.trafficEnabled || false,
+        validationErrors: deploymentInput?.validationErrors || 0,
+        error: deploymentInput?.error,
+        retryCount: deploymentInput?.retryCount || 0,
 
         // Deployment metadata
-        triggerType: input?.triggerType || "manual",
-        triggeredBy: input?.triggeredBy,
-        startTime: input?.startTime || Date.now(),
+        triggerType: deploymentInput?.triggerType || "manual",
+        triggeredBy: deploymentInput?.triggeredBy,
+        startTime: deploymentInput?.startTime || Date.now(),
 
         // Configuration
-        config: input?.config,
-    }),
+        config: deploymentInput?.config,
+        };
+    },
 
     states: {
         idle: {

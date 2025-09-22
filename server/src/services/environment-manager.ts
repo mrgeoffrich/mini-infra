@@ -204,7 +204,12 @@ export class EnvironmentManager {
     }
   }
 
-  public async deleteEnvironment(id: string): Promise<boolean> {
+  public async deleteEnvironment(
+    id: string,
+    options: { deleteVolumes?: boolean; deleteNetworks?: boolean } = {}
+  ): Promise<boolean> {
+    const { deleteVolumes = false, deleteNetworks = false } = options;
+
     try {
       // Check if environment is running
       const environment = await this.getEnvironmentById(id);
@@ -216,16 +221,83 @@ export class EnvironmentManager {
         throw new Error('Cannot delete a running environment. Stop it first.');
       }
 
+      this.logger.info({
+        environmentId: id,
+        deleteVolumes,
+        deleteNetworks,
+        networkCount: environment.networks.length,
+        volumeCount: environment.volumes.length
+      }, 'Starting environment deletion');
+
+      // Delete Docker volumes if requested
+      if (deleteVolumes && environment.volumes.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          volumes: environment.volumes.map(v => v.name)
+        }, 'Deleting Docker volumes');
+
+        for (const volume of environment.volumes) {
+          try {
+            await this.dockerExecutor.removeVolume(volume.name);
+            this.logger.debug({
+              environmentId: id,
+              volumeName: volume.name
+            }, 'Docker volume deleted successfully');
+          } catch (error) {
+            this.logger.warn({
+              error,
+              environmentId: id,
+              volumeName: volume.name
+            }, 'Failed to delete Docker volume (volume may not exist in Docker)');
+            // Continue with deletion even if Docker volume removal fails
+          }
+        }
+      }
+
+      // Delete Docker networks if requested
+      if (deleteNetworks && environment.networks.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          networks: environment.networks.map(n => n.name)
+        }, 'Deleting Docker networks');
+
+        for (const network of environment.networks) {
+          try {
+            await this.dockerExecutor.removeNetwork(network.name);
+            this.logger.debug({
+              environmentId: id,
+              networkName: network.name
+            }, 'Docker network deleted successfully');
+          } catch (error) {
+            this.logger.warn({
+              error,
+              environmentId: id,
+              networkName: network.name
+            }, 'Failed to delete Docker network (network may not exist in Docker)');
+            // Continue with deletion even if Docker network removal fails
+          }
+        }
+      }
+
       // Delete environment (cascade will handle related records)
       await this.prisma.environment.delete({
         where: { id }
       });
 
-      this.logger.info({ environmentId: id }, 'Environment deleted successfully');
+      this.logger.info({
+        environmentId: id,
+        deleteVolumes,
+        deleteNetworks
+      }, 'Environment deleted successfully');
       return true;
 
     } catch (error) {
-      this.logger.error({ error, environmentId: id }, 'Failed to delete environment');
+      this.logger.error({
+        error,
+        environmentId: id,
+        deleteVolumes,
+        deleteNetworks
+      }, 'Failed to delete environment');
       throw error;
     }
   }

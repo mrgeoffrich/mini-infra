@@ -217,6 +217,11 @@ router.put('/:id', requireSessionOrApiKey, async (req, res) => {
 router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
+    const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
+
+    // Parse boolean query parameters
+    const shouldDeleteVolumes = deleteVolumes === 'true';
+    const shouldDeleteNetworks = deleteNetworks === 'true';
 
     // Check if environment has associated deployment configurations
     const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
@@ -233,7 +238,10 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    const success = await environmentManager.deleteEnvironment(id);
+    const success = await environmentManager.deleteEnvironment(id, {
+      deleteVolumes: shouldDeleteVolumes,
+      deleteNetworks: shouldDeleteNetworks
+    });
 
     if (!success) {
       return res.status(404).json({
@@ -242,7 +250,11 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
       });
     }
 
-    logger.debug({ environmentId: id }, 'Environment deleted via API');
+    logger.debug({
+      environmentId: id,
+      deleteVolumes: shouldDeleteVolumes,
+      deleteNetworks: shouldDeleteNetworks
+    }, 'Environment deleted via API');
 
     res.status(204).send();
 
