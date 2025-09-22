@@ -110,6 +110,13 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
   return new Proxy(pinoInstance, { get });
 }
 
+// Transport target interface for Pino
+interface PinoTransportTarget {
+  target: string;
+  options: Record<string, any>;
+  level: string;
+}
+
 // Base Pino options for all loggers
 function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
   const redactionPaths = getRedactionPaths();
@@ -126,7 +133,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
   };
 
   // Configure transport targets (file and/or console)
-  const targets = [];
+  const targets: PinoTransportTarget[] = [];
 
   // Add file destination if specified
   if (config.destination) {
@@ -216,6 +223,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
         streamName: process.env.OPENOBSERVE_STREAM_NAME,
         batchSize: openobserveConfig?.batchSize || 100,
         timeThreshold: openobserveConfig?.timeThreshold || 30000,
+        silentSuccess: true,
       },
       level: config.level,
     });
