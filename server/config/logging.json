@@ -160,7 +160,7 @@
   "openobserve": {
     "batchSize": 1000,
     "timeThreshold": 5000,
-    "enabled": false
+    "enabled": true
   },
   "redactionPaths": [
     "password",
