@@ -158,11 +158,22 @@ export const deploymentConfigSchema = z.object({
     .string()
     .min(1, "Docker image is required")
     .max(500, "Docker image must be less than 500 characters"),
+  dockerTag: z
+    .string()
+    .min(1, "Docker tag is required")
+    .max(100, "Docker tag must be less than 100 characters")
+    .default("latest"),
   dockerRegistry: z
     .string()
     .max(500, "Docker registry must be less than 500 characters")
     .optional(),
   hostname: hostnameSchema,
+  listeningPort: z
+    .number()
+    .int()
+    .min(1, "Port must be greater than 0")
+    .max(65535, "Port must be less than 65536")
+    .optional(),
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
   haproxyConfig: haproxyConfigSchema,
