@@ -6,8 +6,6 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-
-const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { AzureConfigService } from "../services/azure-config";
@@ -22,6 +20,7 @@ import {
 } from "@mini-infra/types";
 
 const router = express.Router();
+const logger = appLogger();
 
 // Create Azure configuration service instance
 const azureConfigService = new AzureConfigService(prisma);
@@ -375,13 +374,13 @@ router.post("/validate", requireSessionOrApiKey, (async (
           responseTimeMs: validationResult.responseTimeMs || 0,
           accountInfo: validationResult.metadata?.accountName
             ? {
-                accountName: validationResult.metadata.accountName,
-                accountKind:
-                  validationResult.metadata.accountKind || "StorageV2",
-                skuName: validationResult.metadata.skuName || "Unknown",
-                skuTier: "Standard",
-                primaryLocation: "Unknown",
-              }
+              accountName: validationResult.metadata.accountName,
+              accountKind:
+                validationResult.metadata.accountKind || "StorageV2",
+              skuName: validationResult.metadata.skuName || "Unknown",
+              skuTier: "Standard",
+              primaryLocation: "Unknown",
+            }
             : undefined,
           containerCount: validationResult.metadata?.containerCount,
           sampleContainers: validationResult.metadata?.containers?.map(
@@ -423,12 +422,12 @@ router.post("/validate", requireSessionOrApiKey, (async (
         responseTimeMs: validationResult.responseTimeMs || 0,
         accountInfo: validationResult.metadata?.accountName
           ? {
-              accountName: validationResult.metadata.accountName,
-              accountKind: validationResult.metadata.accountKind || "StorageV2",
-              skuName: validationResult.metadata.skuName || "Unknown",
-              skuTier: "Standard",
-              primaryLocation: "Unknown",
-            }
+            accountName: validationResult.metadata.accountName,
+            accountKind: validationResult.metadata.accountKind || "StorageV2",
+            skuName: validationResult.metadata.skuName || "Unknown",
+            skuTier: "Standard",
+            primaryLocation: "Unknown",
+          }
           : undefined,
         containerCount: validationResult.metadata?.containerCount,
         sampleContainers: validationResult.metadata?.containers?.map(

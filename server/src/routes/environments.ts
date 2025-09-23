@@ -15,10 +15,10 @@ import { EnvironmentManager } from '../services/environment-manager';
 import { ServiceRegistry } from '../services/service-registry';
 import { requireSessionOrApiKey } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { servicesLogger } from '../lib/logger-factory';
+import { appLogger } from '../lib/logger-factory';
 
 const router = Router();
-const logger = servicesLogger();
+const logger = appLogger();
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);

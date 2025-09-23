@@ -5,9 +5,9 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { servicesLogger } from "../lib/logger-factory";
+import { appLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { DockerExecutorService } from "../services/docker-executor";
 import type {

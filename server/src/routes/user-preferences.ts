@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { httpLogger } from "../lib/logger-factory";
+import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
 import type {
@@ -9,7 +9,7 @@ import type {
   UpdateUserPreferencesRequest,
 } from "@mini-infra/types";
 
-const logger = httpLogger();
+const logger = appLogger();
 const router = Router();
 
 // Validation schemas

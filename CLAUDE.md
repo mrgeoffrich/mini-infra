@@ -278,15 +278,13 @@ When creating new API routes in `server/src/routes/`, follow this pattern:
 
 #### 1. Basic Route Structure
 ```typescript
-import express, { Request, Response, NextFunction, RequestHandler } from "express";
-import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { z } from "zod";
 import prisma from "../lib/prisma";
 
 const logger = appLogger();
 const router = express.Router();
-
 // Your route handlers here...
 
 export default router;
@@ -304,27 +302,10 @@ Available authentication middleware:
 
 #### 3. Route Handler Pattern
 ```typescript
-// GET endpoint with authentication
-router.get('/', requireSessionOrApiKey, async (req, res) => {
-  const user = getAuthenticatedUser(req);
-  const userId = getCurrentUserId(req);
 
+// POST endpoint with authentication
+router.post('/', requireSessionOrApiKey, async (req, res) => {
   try {
-    // Your business logic here
-    const result = await someService.getData(userId);
-
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    logger.error({ error, userId }, "Error in route handler");
-    res.status(500).json({
-      success: false,
-      error: "Internal server error"
-    });
-  }
-});
 ```
 
 #### 4. Validation with Zod
@@ -349,13 +330,6 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
 ```
 
 ### Authentication Import Rules
-
-❌ **DON'T** import auth functions directly from lib:
-```typescript
-// WRONG - Don't do this
-import { requireSessionOrApiKey } from "../lib/api-key-middleware";
-import { getAuthenticatedUser } from "../lib/auth-middleware";
-```
 
 ✅ **DO** import all auth functions from the centralized middleware:
 ```typescript

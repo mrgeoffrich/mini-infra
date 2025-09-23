@@ -5,7 +5,7 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { servicesLogger } from "../lib/logger-factory";
+import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { DeploymentConfigService } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
@@ -27,7 +27,7 @@ import {
   HostnameValidationResponse,
 } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = appLogger();
 const router = express.Router();
 
 // Initialize services
@@ -558,7 +558,7 @@ router.post(
 
       // Determine Docker image with tag
       const dockerImage = tag
-        ? config.dockerImage.includes(':') 
+        ? config.dockerImage.includes(':')
           ? `${config.dockerImage.split(':')[0]}:${tag}`
           : `${config.dockerImage}:${tag}`
         : config.dockerImage;
