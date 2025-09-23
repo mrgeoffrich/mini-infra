@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -14,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Form,
@@ -35,21 +34,17 @@ import {
   useCreateSystemSetting,
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
-import { useAdvancedSettingsValidation } from "@/hooks/use-settings-validation";
+import { useValidateService } from "@/hooks/use-settings-validation";
 import {
   Database,
   CheckCircle,
   XCircle,
   AlertCircle,
-  Clock,
   ArrowLeft,
-  Save,
-  TestTube,
   Loader2,
   Eye,
   EyeOff,
   Shield,
-  Server,
   HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -73,38 +68,15 @@ const azureSettingsSchema = z.object({
 
 type AzureSettingsFormData = z.infer<typeof azureSettingsSchema>;
 
-// Map connectivity status to UI elements
-const STATUS_VARIANTS = {
-  connected: {
-    variant: "default" as const,
-    icon: CheckCircle,
-    color: "text-green-600",
-    bgColor: "bg-green-50 border-green-200",
-  },
-  failed: {
-    variant: "destructive" as const,
-    icon: XCircle,
-    color: "text-red-600",
-    bgColor: "bg-red-50 border-red-200",
-  },
-  timeout: {
-    variant: "secondary" as const,
-    icon: Clock,
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 border-yellow-200",
-  },
-  unreachable: {
-    variant: "outline" as const,
-    icon: AlertCircle,
-    color: "text-gray-600",
-    bgColor: "bg-gray-50 border-gray-200",
-  },
-} as const;
 
 export default function AzureSettingsPage() {
-  const { formatDateTime } = useFormattedDate();
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const queryClient = useQueryClient();
   const [showConnectionString, setShowConnectionString] = useState(false);
+  const [validationState, setValidationState] = useState<{
+    isValidating: boolean;
+    isSuccess: boolean;
+    error: string | null;
+  }>({ isValidating: false, isSuccess: false, error: null });
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {},
   );
@@ -132,96 +104,8 @@ export default function AzureSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
-  const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
-
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Auto-save functionality with debouncing
-  useEffect(() => {
-    if (!form.formState.isValid || !debouncedValues.connectionString) {
-      return;
-    }
-
-    // Only auto-save if the connection string has actually changed from the saved value
-    const currentSavedValue = settings.connection_string?.value || "";
-    if (debouncedValues.connectionString === currentSavedValue) {
-      return;
-    }
-
-    // Auto-save after debounce delay
-    const autoSaveTimer = setTimeout(async () => {
-      try {
-        setAutoSaveStatus("saving");
-
-        // Save or update connection string setting (encrypted)
-        if (settings.connection_string) {
-          await updateSetting.mutateAsync({
-            id: settings.connection_string.id,
-            setting: { value: debouncedValues.connectionString },
-          });
-        } else {
-          await createSetting.mutateAsync({
-            category: "azure",
-            key: "connection_string",
-            value: debouncedValues.connectionString,
-            isEncrypted: true,
-          });
-        }
-
-        setAutoSaveStatus("saved");
-        toast.success("Azure Storage settings auto-saved successfully");
-
-        // Clear saved status after a short delay
-        setTimeout(() => {
-          setAutoSaveStatus("idle");
-        }, 2000);
-      } catch (error) {
-        setAutoSaveStatus("error");
-        console.error("Auto-save failed:", error);
-        toast.error(`Auto-save failed: ${(error as Error).message}`);
-
-        // Clear error status after a delay
-        setTimeout(() => {
-          setAutoSaveStatus("idle");
-        }, 3000);
-      }
-    }, 1000); // 1 second delay for auto-save
-
-    return () => clearTimeout(autoSaveTimer);
-  }, [
-    debouncedValues.connectionString,
-    form.formState.isValid,
-    settings.connection_string,
-    updateSetting,
-    createSetting,
-  ]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "azure",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: true, // Always enable connectivity monitoring
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Azure Storage connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Azure Storage validation failed: ${error.message}`);
-      },
-    },
-  );
+  // Validation service
+  const validateService = useValidateService();
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -242,9 +126,21 @@ export default function AzureSettingsPage() {
     }
   }, [settingsData, form]);
 
-  const handleSave = async (data: AzureSettingsFormData) => {
+  const handleValidateAndSave = async (data: AzureSettingsFormData) => {
+    setValidationState({ isValidating: true, isSuccess: false, error: null });
+
     try {
-      // Save or update connection string setting (encrypted)
+      // Step 1: Validate the connection settings
+      const validationResult = await validateService.mutateAsync({
+        service: "azure",
+        settings: { connectionString: data.connectionString },
+      });
+
+      if (!validationResult.data.isValid) {
+        throw new Error(validationResult.message || "Connection validation failed");
+      }
+
+      // Step 2: Save settings if validation passed
       if (settings.connection_string) {
         await updateSetting.mutateAsync({
           id: settings.connection_string.id,
@@ -259,43 +155,24 @@ export default function AzureSettingsPage() {
         });
       }
 
-      toast.success("Azure Storage settings saved successfully");
+      // Step 3: Force refresh connectivity status and show success feedback
+      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      setValidationState({ isValidating: false, isSuccess: true, error: null });
+      toast.success("Azure Storage connection validated and saved successfully");
+
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setValidationState(prev => ({ ...prev, isSuccess: false }));
+      }, 5000);
+
     } catch (error) {
-      toast.error(`Failed to save settings: ${(error as Error).message}`);
+      const errorMessage = (error as Error).message;
+      setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
+      toast.error(`Failed to validate and save: ${errorMessage}`);
     }
   };
 
-  const handleTestConnection = async () => {
-    setIsTestingConnection(true);
-    try {
-      await validation.validateManually();
-    } finally {
-      setIsTestingConnection(false);
-    }
-  };
-
-  // Get latest connectivity status
-  const latestConnectivity = validation.connectivity.data?.data?.[0];
-  const StatusIcon = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.icon || AlertCircle
-    : AlertCircle;
-  const statusColor = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.color || "text-gray-600"
-    : "text-gray-600";
-  const statusBg = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.bgColor || "bg-gray-50 border-gray-200"
-    : "bg-gray-50 border-gray-200";
-
-  // Parse metadata to show storage account details
-  const metadata = latestConnectivity?.metadata
-    ? JSON.parse(latestConnectivity.metadata)
-    : null;
-
-  const isLoading = settingsLoading || validation.isValidating;
-  const isSaving = createSetting.isPending || updateSetting.isPending;
+  const isSaving = createSetting.isPending || updateSetting.isPending || validationState.isValidating;
 
   if (settingsError) {
     return (
@@ -373,7 +250,7 @@ export default function AzureSettingsPage() {
             ) : (
               <Form {...form}>
                 <form
-                  onSubmit={form.handleSubmit(handleSave)}
+                  onSubmit={form.handleSubmit(handleValidateAndSave)}
                   className="space-y-6"
                 >
                   <FormField
@@ -466,60 +343,15 @@ export default function AzureSettingsPage() {
                     <Button
                       type="submit"
                       disabled={!form.formState.isValid || isSaving}
+                      className="bg-green-600 hover:bg-green-700"
                     >
                       {isSaving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <Save className="mr-2 h-4 w-4" />
+                        <CheckCircle className="mr-2 h-4 w-4" />
                       )}
-                      Save Settings
+                      Validate & Save
                     </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={
-                        !form.formState.isValid ||
-                        isTestingConnection ||
-                        validation.isValidating
-                      }
-                      onClick={handleTestConnection}
-                    >
-                      {isTestingConnection || validation.isValidating ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <TestTube className="mr-2 h-4 w-4" />
-                      )}
-                      Test Connection
-                    </Button>
-
-                    {/* Auto-save status indicator */}
-                    {autoSaveStatus !== "idle" && (
-                      <div className="flex items-center gap-2 text-sm">
-                        {autoSaveStatus === "saving" && (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                            <span className="text-blue-600">
-                              Auto-saving...
-                            </span>
-                          </>
-                        )}
-                        {autoSaveStatus === "saved" && (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-green-600">Auto-saved</span>
-                          </>
-                        )}
-                        {autoSaveStatus === "error" && (
-                          <>
-                            <XCircle className="h-4 w-4 text-red-600" />
-                            <span className="text-red-600">
-                              Auto-save failed
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </form>
               </Form>
@@ -527,133 +359,28 @@ export default function AzureSettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Status Panels - Two Column Layout */}
-        <div className="grid gap-6 md:grid-cols-2 mt-6">
-          {/* Connection Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Connection Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading && !latestConnectivity ? (
-                <Skeleton className="h-20" />
-              ) : latestConnectivity ? (
-                <div className={`p-4 rounded-md border ${statusBg}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <StatusIcon className={`h-5 w-5 ${statusColor}`} />
-                    <Badge
-                      variant={
-                        STATUS_VARIANTS[
-                          latestConnectivity.status as keyof typeof STATUS_VARIANTS
-                        ]?.variant || "outline"
-                      }
-                    >
-                      {latestConnectivity.status}
-                    </Badge>
-                  </div>
-                  {latestConnectivity.responseTimeMs && (
-                    <div className="text-sm text-muted-foreground mb-1">
-                      Response time: {latestConnectivity.responseTimeMs}ms
-                    </div>
-                  )}
-                  {latestConnectivity.lastSuccessfulAt && (
-                    <div className="text-sm text-muted-foreground mb-1">
-                      Last successful:{" "}
-                      {formatDateTime(latestConnectivity.lastSuccessfulAt)}
-                    </div>
-                  )}
-                  <div className="text-xs text-muted-foreground">
-                    Checked: {formatDateTime(latestConnectivity.checkedAt)}
-                  </div>
-                  {latestConnectivity.errorMessage && (
-                    <div className="text-sm text-red-600 mt-2">
-                      {latestConnectivity.errorMessage}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="p-4 rounded-md border bg-gray-50 border-gray-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="h-5 w-5 text-gray-600" />
-                    <Badge variant="outline">Unknown</Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    No connectivity checks performed yet
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {/* Validation Feedback */}
+        {validationState.isSuccess && (
+          <Alert className="bg-green-50 border-green-200 mt-6">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-700">
+              Azure Storage connection has been validated and configured successfully.
+              The system can now perform backup operations to your storage account.
+            </AlertDescription>
+          </Alert>
+        )}
 
-          {/* Storage Account Info */}
-          {metadata && latestConnectivity?.status === "connected" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  <Server className="inline mr-2 h-4 w-4" />
-                  Storage Account Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <div>
-                  <strong>Account Name:</strong> {metadata.accountName}
-                </div>
-                {metadata.accountKind && (
-                  <div>
-                    <strong>Account Kind:</strong> {metadata.accountKind}
-                  </div>
-                )}
-                {metadata.skuName && (
-                  <div>
-                    <strong>SKU:</strong> {metadata.skuName}
-                  </div>
-                )}
-                <div>
-                  <strong>Containers:</strong> {metadata.containerCount || 0}
-                </div>
-                {metadata.containers && metadata.containers.length > 0 && (
-                  <div>
-                    <strong>Sample Containers:</strong>
-                    <ul className="mt-1 text-xs text-muted-foreground">
-                      {metadata.containers.map(
-                        (container: string, index: number) => (
-                          <li key={index}>• {container}</li>
-                        ),
-                      )}
-                      {metadata.containerCount > metadata.containers.length && (
-                        <li>
-                          • ... and{" "}
-                          {metadata.containerCount - metadata.containers.length}{" "}
-                          more
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            // Placeholder card when not connected to maintain grid layout
-            <Card className="opacity-50">
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  <Server className="inline mr-2 h-4 w-4" />
-                  Storage Account Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  Connect to Azure Storage to view account details
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        {validationState.error && (
+          <Alert variant="destructive" className="mt-6">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>
+              Validation failed: {validationState.error}
+            </AlertDescription>
+          </Alert>
+        )}
 
-        {/* Container List - Only show when Azure connection is established */}
-        {latestConnectivity?.status === "connected" && (
+        {/* Container List - Only show when validation is successful */}
+        {validationState.isSuccess && (
           <div className="mt-8">
             <AzureContainerList />
           </div>

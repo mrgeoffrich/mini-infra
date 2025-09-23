@@ -72,14 +72,15 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   /**
    * Validate PostgreSQL settings configuration
    * Validates that the Docker images are in valid format and accessible
+   * @param settings - Optional settings to validate with (overrides stored settings)
    */
-  async validate(): Promise<ValidationResult> {
+  async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
 
     try {
-      // Get configured Docker images from settings
-      const backupImage = await this.get("backupDockerImage");
-      const restoreImage = await this.get("restoreDockerImage");
+      // Get configured Docker images from settings (use provided settings or fallback to stored)
+      const backupImage = settings?.backupDockerImage || await this.get("backupDockerImage");
+      const restoreImage = settings?.restoreDockerImage || await this.get("restoreDockerImage");
 
       // Use defaults if not configured
       const effectiveBackupImage =

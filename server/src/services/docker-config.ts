@@ -20,15 +20,16 @@ export class DockerConfigService extends ConfigurationService {
 
   /**
    * Validate Docker host connectivity and configuration
+   * @param settings - Optional settings to validate with (overrides stored settings)
    */
-  async validate(): Promise<ValidationResult> {
+  async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
     let docker: Docker | null = null;
 
     try {
-      // Get Docker configuration from settings
-      const dockerHost = await this.get("host");
-      const apiVersion = await this.get("apiVersion");
+      // Get Docker configuration from settings (use provided settings or fallback to stored)
+      const dockerHost = settings?.host || await this.get("host");
+      const apiVersion = settings?.version || await this.get("apiVersion");
 
       // Use default if no host configured
       const host = dockerHost || this.getDefaultDockerHost();

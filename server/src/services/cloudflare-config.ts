@@ -280,9 +280,10 @@ export class CloudflareConfigService extends ConfigurationService {
   /**
    * Validate Cloudflare API configuration by testing API connectivity
    * Implements circuit breaker pattern and request deduplication
+   * @param settings - Optional settings to validate with (overrides stored settings)
    * @returns ValidationResult with connectivity status and details
    */
-  async validate(): Promise<ValidationResult> {
+  async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
 
     // Check for request deduplication
@@ -330,7 +331,7 @@ export class CloudflareConfigService extends ConfigurationService {
     }
 
     // Create the validation promise
-    const validationPromise = this.performValidation(startTime);
+    const validationPromise = this.performValidation(startTime, settings);
 
     // Store for deduplication
     this.pendingValidation = {
@@ -349,13 +350,17 @@ export class CloudflareConfigService extends ConfigurationService {
   /**
    * Perform the actual validation logic
    * @param startTime The start time of the validation request
+   * @param settings Optional settings to validate with (overrides stored settings)
    * @returns ValidationResult with connectivity status and details
    */
   private async performValidation(
     startTime: number,
+    settings?: Record<string, string>,
   ): Promise<ValidationResult> {
     try {
-      const apiToken = await this.get(CloudflareConfigService.API_TOKEN_KEY);
+      // Use provided settings or fallback to stored settings
+      const apiToken = settings?.apiToken || await this.get(CloudflareConfigService.API_TOKEN_KEY);
+      const accountId = settings?.accountId || await this.get(CloudflareConfigService.ACCOUNT_ID_KEY);
 
       servicesLogger().debug(
         this.redactSensitiveData({
@@ -413,7 +418,6 @@ export class CloudflareConfigService extends ConfigurationService {
 
       // Test account access if account ID is configured
       let accountInfo = null;
-      const accountId = await this.get(CloudflareConfigService.ACCOUNT_ID_KEY);
       if (accountId) {
         try {
           accountInfo = await cf.accounts.get({ account_id: accountId });

@@ -21,8 +21,9 @@ export abstract class ConfigurationService implements IConfigurationService {
   /**
    * Abstract method to validate the service configuration
    * Must be implemented by concrete service classes
+   * @param settings - Optional settings to validate with (overrides stored settings)
    */
-  abstract validate(): Promise<ValidationResult>;
+  abstract validate(settings?: Record<string, string>): Promise<ValidationResult>;
 
   /**
    * Abstract method to get health status of the service

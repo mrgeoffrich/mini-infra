@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -33,20 +34,19 @@ import {
   useCreateSystemSetting,
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
-import { useAdvancedSettingsValidation } from "@/hooks/use-settings-validation";
+import { useValidateService } from "@/hooks/use-settings-validation";
 import {
   Container,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   ArrowLeft,
-  Save,
-  TestTube,
   Loader2,
   Zap,
   HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { ServiceStatusCard } from "@/components/connectivity-status";
 
 // Docker settings schema
 const dockerSettingsSchema = z.object({
@@ -71,7 +71,12 @@ const dockerSettingsSchema = z.object({
 type DockerSettingsFormData = z.infer<typeof dockerSettingsSchema>;
 
 export default function DockerSettingsPage() {
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const queryClient = useQueryClient();
+  const [validationState, setValidationState] = useState<{
+    isValidating: boolean;
+    isSuccess: boolean;
+    error: string | null;
+  }>({ isValidating: false, isSuccess: false, error: null });
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {},
   );
@@ -100,33 +105,8 @@ export default function DockerSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
-  const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
-
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "docker",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: form.formState.isValid,
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Docker connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Docker validation failed: ${error.message}`);
-      },
-    },
-  );
+  // Validation service
+  const validateService = useValidateService();
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -150,8 +130,21 @@ export default function DockerSettingsPage() {
     }
   }, [settingsData, form]);
 
-  const handleSave = async (data: DockerSettingsFormData) => {
+  const handleValidateAndSave = async (data: DockerSettingsFormData) => {
+    setValidationState({ isValidating: true, isSuccess: false, error: null });
+
     try {
+      // Step 1: Validate the connection settings
+      const validationResult = await validateService.mutateAsync({
+        service: "docker",
+        settings: { host: data.host, version: data.version },
+      });
+
+      if (!validationResult.data.isValid) {
+        throw new Error(validationResult.message || "Connection validation failed");
+      }
+
+      // Step 2: Save settings if validation passed
       const promises: Promise<unknown>[] = [];
 
       // Save or update host setting
@@ -193,26 +186,25 @@ export default function DockerSettingsPage() {
       }
 
       await Promise.all(promises);
-      toast.success("Docker settings saved successfully");
+
+      // Step 3: Force refresh connectivity status and show success feedback
+      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      setValidationState({ isValidating: false, isSuccess: true, error: null });
+      toast.success("Docker connection validated and saved successfully");
+
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setValidationState(prev => ({ ...prev, isSuccess: false }));
+      }, 5000);
+
     } catch (error) {
-      toast.error(`Failed to save settings: ${(error as Error).message}`);
+      const errorMessage = (error as Error).message;
+      setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
+      toast.error(`Failed to validate and save: ${errorMessage}`);
     }
   };
 
-  const handleTestConnection = async () => {
-    setIsTestingConnection(true);
-    try {
-      await validation.validateManually();
-    } finally {
-      setIsTestingConnection(false);
-    }
-  };
-
-  // Get latest connectivity status
-  const latestConnectivity = validation.connectivity.data?.data?.[0];
-
-  const isLoading = settingsLoading || validation.isValidating;
-  const isSaving = createSetting.isPending || updateSetting.isPending;
+  const isSaving = createSetting.isPending || updateSetting.isPending || validationState.isValidating;
 
   if (settingsError) {
     return (
@@ -268,10 +260,8 @@ export default function DockerSettingsPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-4xl">
-        <div className="grid gap-6 md:grid-cols-3">
-          {/* Configuration Form */}
-          <div className="md:col-span-2">
-            <Card>
+        {/* Configuration Form */}
+        <Card>
               <CardHeader>
                 <CardTitle>Connection Settings</CardTitle>
                 <CardDescription>
@@ -289,7 +279,7 @@ export default function DockerSettingsPage() {
                 ) : (
                   <Form {...form}>
                     <form
-                      onSubmit={form.handleSubmit(handleSave)}
+                      onSubmit={form.handleSubmit(handleValidateAndSave)}
                       className="space-y-6"
                     >
                       <FormField
@@ -423,51 +413,41 @@ export default function DockerSettingsPage() {
                         <Button
                           type="submit"
                           disabled={!form.formState.isValid || isSaving}
+                          className="bg-green-600 hover:bg-green-700"
                         >
                           {isSaving ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           ) : (
-                            <Save className="mr-2 h-4 w-4" />
+                            <CheckCircle className="mr-2 h-4 w-4" />
                           )}
-                          Save Settings
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={
-                            !form.formState.isValid ||
-                            isTestingConnection ||
-                            validation.isValidating
-                          }
-                          onClick={handleTestConnection}
-                        >
-                          {isTestingConnection || validation.isValidating ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <TestTube className="mr-2 h-4 w-4" />
-                          )}
-                          Test Connection
+                          Validate & Save
                         </Button>
                       </div>
                     </form>
                   </Form>
                 )}
               </CardContent>
-            </Card>
-          </div>
+        </Card>
 
-          {/* Status Panel */}
-          <div className="space-y-6">
-            {/* Connection Status */}
-            <ServiceStatusCard
-              service="docker"
-              status={latestConnectivity}
-              isLoading={isLoading && !latestConnectivity}
-              onRefresh={handleTestConnection}
-            />
-          </div>
-        </div>
+        {/* Validation Feedback */}
+        {validationState.isSuccess && (
+          <Alert className="bg-green-50 border-green-200 mt-6">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-700">
+              Docker connection has been validated and configured successfully.
+              The system can now manage Docker containers and perform operations.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {validationState.error && (
+          <Alert variant="destructive" className="mt-6">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>
+              Validation failed: {validationState.error}
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </div>
   );
