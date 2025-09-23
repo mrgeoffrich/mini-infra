@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -14,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Form,
@@ -30,16 +29,13 @@ import {
   useCreateSystemSetting,
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
-import { useAdvancedSettingsValidation } from "@/hooks/use-settings-validation";
+import { useValidateService } from "@/hooks/use-settings-validation";
 import {
   Cloud,
   CheckCircle,
   XCircle,
   AlertCircle,
-  Clock,
   ArrowLeft,
-  Save,
-  TestTube,
   Loader2,
   Eye,
   EyeOff,
@@ -66,38 +62,15 @@ const cloudflareSettingsSchema = z.object({
 
 type CloudflareSettingsFormData = z.infer<typeof cloudflareSettingsSchema>;
 
-// Map connectivity status to UI elements
-const STATUS_VARIANTS = {
-  connected: {
-    variant: "default" as const,
-    icon: CheckCircle,
-    color: "text-green-600",
-    bgColor: "bg-green-50 border-green-200",
-  },
-  failed: {
-    variant: "destructive" as const,
-    icon: XCircle,
-    color: "text-red-600",
-    bgColor: "bg-red-50 border-red-200",
-  },
-  timeout: {
-    variant: "secondary" as const,
-    icon: Clock,
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 border-yellow-200",
-  },
-  unreachable: {
-    variant: "outline" as const,
-    icon: AlertCircle,
-    color: "text-gray-600",
-    bgColor: "bg-gray-50 border-gray-200",
-  },
-} as const;
 
 export default function CloudflareSettingsPage() {
-  const { formatDateTime } = useFormattedDate();
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const queryClient = useQueryClient();
   const [showApiToken, setShowApiToken] = useState(false);
+  const [validationState, setValidationState] = useState<{
+    isValidating: boolean;
+    isSuccess: boolean;
+    error: string | null;
+  }>({ isValidating: false, isSuccess: false, error: null });
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {}
   );
@@ -126,33 +99,8 @@ export default function CloudflareSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
-  const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
-
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "cloudflare",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: true, // Always enable connectivity monitoring
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Cloudflare connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Cloudflare validation failed: ${error.message}`);
-      },
-    }
-  );
+  // Validation service
+  const validateService = useValidateService();
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -176,8 +124,21 @@ export default function CloudflareSettingsPage() {
     }
   }, [settingsData, form]);
 
-  const handleSave = async (data: CloudflareSettingsFormData) => {
+  const handleValidateAndSave = async (data: CloudflareSettingsFormData) => {
+    setValidationState({ isValidating: true, isSuccess: false, error: null });
+
     try {
+      // Step 1: Validate the connection settings
+      const validationResult = await validateService.mutateAsync({
+        service: "cloudflare",
+        settings: { apiToken: data.apiToken, accountId: data.accountId },
+      });
+
+      if (!validationResult.data.isValid) {
+        throw new Error(validationResult.message || "Connection validation failed");
+      }
+
+      // Step 2: Save settings if validation passed
       const promises: Promise<unknown>[] = [];
 
       // Save or update API token setting (encrypted)
@@ -221,38 +182,25 @@ export default function CloudflareSettingsPage() {
       }
 
       await Promise.all(promises);
-      toast.success("Cloudflare settings saved successfully");
+
+      // Step 3: Force refresh connectivity status and show success feedback
+      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      setValidationState({ isValidating: false, isSuccess: true, error: null });
+      toast.success("Cloudflare connection validated and saved successfully");
+
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setValidationState(prev => ({ ...prev, isSuccess: false }));
+      }, 5000);
+
     } catch (error) {
-      toast.error(`Failed to save settings: ${(error as Error).message}`);
+      const errorMessage = (error as Error).message;
+      setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
+      toast.error(`Failed to validate and save: ${errorMessage}`);
     }
   };
 
-  const handleTestConnection = async () => {
-    setIsTestingConnection(true);
-    try {
-      await validation.validateManually();
-    } finally {
-      setIsTestingConnection(false);
-    }
-  };
-
-  // Get latest connectivity status
-  const latestConnectivity = validation.connectivity.data?.data?.[0];
-  const StatusIcon = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.icon || AlertCircle
-    : AlertCircle;
-  const statusColor = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.color || "text-gray-600"
-    : "text-gray-600";
-  const statusBg = latestConnectivity
-    ? STATUS_VARIANTS[latestConnectivity.status as keyof typeof STATUS_VARIANTS]
-        ?.bgColor || "bg-gray-50 border-gray-200"
-    : "bg-gray-50 border-gray-200";
-
-  const isLoading = settingsLoading || validation.isValidating;
-  const isSaving = createSetting.isPending || updateSetting.isPending;
+  const isSaving = createSetting.isPending || updateSetting.isPending || validationState.isValidating;
 
   if (settingsError) {
     return (
@@ -309,10 +257,8 @@ export default function CloudflareSettingsPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-4xl">
-        <div className="grid gap-6 md:grid-cols-3">
-          {/* Configuration Form */}
-          <div className="md:col-span-2">
-            <Card>
+        {/* Configuration Form */}
+        <Card>
               <CardHeader>
                 <CardTitle>API Configuration</CardTitle>
                 <CardDescription>
@@ -331,7 +277,7 @@ export default function CloudflareSettingsPage() {
                 ) : (
                   <Form {...form}>
                     <form
-                      onSubmit={form.handleSubmit(handleSave)}
+                      onSubmit={form.handleSubmit(handleValidateAndSave)}
                       className="space-y-6"
                     >
                       <FormField
@@ -415,133 +361,36 @@ export default function CloudflareSettingsPage() {
                           {isSaving ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           ) : (
-                            <Save className="mr-2 h-4 w-4" />
+                            <CheckCircle className="mr-2 h-4 w-4" />
                           )}
-                          Save Settings
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={
-                            !form.formState.isValid ||
-                            isTestingConnection ||
-                            validation.isValidating
-                          }
-                          onClick={handleTestConnection}
-                        >
-                          {isTestingConnection || validation.isValidating ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <TestTube className="mr-2 h-4 w-4" />
-                          )}
-                          Test Connection
+                          Validate & Save
                         </Button>
                       </div>
                     </form>
                   </Form>
                 )}
               </CardContent>
-            </Card>
-          </div>
+        </Card>
 
-          {/* Status Panel */}
-          <div className="space-y-6">
-            {/* Connection Status */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">
-                  Connection Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isLoading && !latestConnectivity ? (
-                  <Skeleton className="h-20" />
-                ) : latestConnectivity ? (
-                  <div className={`p-4 rounded-md border ${statusBg}`}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <StatusIcon className={`h-5 w-5 ${statusColor}`} />
-                      <Badge
-                        variant={
-                          STATUS_VARIANTS[
-                            latestConnectivity.status as keyof typeof STATUS_VARIANTS
-                          ]?.variant || "outline"
-                        }
-                      >
-                        {latestConnectivity.status}
-                      </Badge>
-                    </div>
-                    {latestConnectivity.responseTimeMs && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Response time: {latestConnectivity.responseTimeMs}ms
-                      </div>
-                    )}
-                    {latestConnectivity.lastSuccessfulAt && (
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Last successful:{" "}
-                        {formatDateTime(latestConnectivity.lastSuccessfulAt)}
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      Checked: {formatDateTime(latestConnectivity.checkedAt)}
-                    </div>
-                    {latestConnectivity.errorMessage && (
-                      <div className="text-sm text-red-600 mt-2">
-                        {latestConnectivity.errorMessage}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-md border bg-gray-50 border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="h-5 w-5 text-gray-600" />
-                      <Badge variant="outline">Unknown</Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      No connectivity checks performed yet
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        {/* Validation Feedback */}
+        {validationState.isSuccess && (
+          <Alert className="bg-green-50 border-green-200 mt-6">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-700">
+              Cloudflare connection has been validated and configured successfully.
+              The system can now monitor your tunnels and manage Cloudflare resources.
+            </AlertDescription>
+          </Alert>
+        )}
 
-            {/* Validation Status */}
-            {(validation.validation.data ||
-              validation.validation.isLoading) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">
-                    Real-time Validation
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {validation.validation.isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        Validating configuration...
-                      </span>
-                    </div>
-                  ) : validation.validation.data?.data.isValid ? (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration is valid
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <XCircle className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        Configuration has issues
-                      </span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
+        {validationState.error && (
+          <Alert variant="destructive" className="mt-6">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>
+              Validation failed: {validationState.error}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Tunnel Management Link */}
         <div className="mt-6">
