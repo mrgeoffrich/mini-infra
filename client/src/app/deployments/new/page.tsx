@@ -77,7 +77,7 @@ export function NewDeploymentConfigPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
-  
+
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("docker");
   const isEditing = !!editId;
@@ -92,12 +92,10 @@ export function NewDeploymentConfigPage() {
   const deploymentConfig = deploymentConfigResponse?.data;
 
   // Fetch environments for selection
-  const {
-    data: environmentsResponse,
-    isLoading: isLoadingEnvironments,
-  } = useEnvironments({
-    filters: { limit: 100 }, // Get all environments
-  });
+  const { data: environmentsResponse, isLoading: isLoadingEnvironments } =
+    useEnvironments({
+      filters: { limit: 100 }, // Get all environments
+    });
 
   const environments = environmentsResponse?.environments || [];
 
@@ -158,8 +156,10 @@ export function NewDeploymentConfigPage() {
         healthCheckConfig: {
           endpoint: deploymentConfig.healthCheckConfig?.endpoint || "/health",
           method: deploymentConfig.healthCheckConfig?.method || "GET",
-          expectedStatus: deploymentConfig.healthCheckConfig?.expectedStatus || [200],
-          responseValidation: deploymentConfig.healthCheckConfig?.responseValidation || undefined,
+          expectedStatus: deploymentConfig.healthCheckConfig
+            ?.expectedStatus || [200],
+          responseValidation:
+            deploymentConfig.healthCheckConfig?.responseValidation || undefined,
           timeout: deploymentConfig.healthCheckConfig?.timeout || 10000,
           retries: deploymentConfig.healthCheckConfig?.retries || 3,
           interval: deploymentConfig.healthCheckConfig?.interval || 30000,
@@ -167,13 +167,13 @@ export function NewDeploymentConfigPage() {
         rollbackConfig: {
           enabled: deploymentConfig.rollbackConfig?.enabled ?? true,
           maxWaitTime: deploymentConfig.rollbackConfig?.maxWaitTime || 300000,
-          keepOldContainer: deploymentConfig.rollbackConfig?.keepOldContainer || false,
+          keepOldContainer:
+            deploymentConfig.rollbackConfig?.keepOldContainer || false,
         },
         listeningPort: deploymentConfig.listeningPort || undefined,
       });
     }
   }, [deploymentConfig, form]);
-
 
   const onSubmit = async (data: any) => {
     setSubmitError(null);
@@ -227,16 +227,21 @@ export function NewDeploymentConfigPage() {
     navigate("/deployments");
   };
 
-  const isLoading = createMutation.isPending || updateMutation.isPending || isLoadingConfig;
+  const isLoading =
+    createMutation.isPending || updateMutation.isPending || isLoadingConfig;
 
   if (isEditing && configError) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
-            <p className="text-muted-foreground">Failed to load deployment configuration</p>
+            <p className="text-muted-foreground">
+              Failed to load deployment configuration
+            </p>
             <p className="text-sm text-destructive mt-2">
-              {configError instanceof Error ? configError.message : "Unknown error"}
+              {configError instanceof Error
+                ? configError.message
+                : "Unknown error"}
             </p>
             <Button onClick={handleBack} className="mt-4">
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -267,7 +272,9 @@ export function NewDeploymentConfigPage() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {isEditing ? "Edit Deployment Configuration" : "New Deployment Configuration"}
+            {isEditing
+              ? "Edit Deployment Configuration"
+              : "New Deployment Configuration"}
           </h1>
           <p className="text-muted-foreground">
             Configure deployment settings for your application including Docker,
@@ -317,52 +324,6 @@ export function NewDeploymentConfigPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="applicationName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Application Name</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="my-app"
-                              {...field}
-                              onChange={(e) => {
-                                const value = e.target.value
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9-]/g, "-");
-                                field.onChange(value);
-                              }}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Unique name for your application (lowercase,
-                            alphanumeric, hyphens only)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="dockerRegistry"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Docker Registry (Optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="docker.io" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Docker registry URL (leave empty for Docker Hub)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
                   {/* Environment Selection */}
                   <FormField
                     control={form.control}
@@ -371,38 +332,99 @@ export function NewDeploymentConfigPage() {
                       <FormItem>
                         <FormLabel>Environment</FormLabel>
                         <FormControl>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={isEditing || isLoadingEnvironments}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={
-                                isLoadingEnvironments
-                                  ? "Loading environments..."
-                                  : "Select an environment"
-                              } />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {environments
-                                .filter(env => env.isActive)
-                                .map((environment) => (
-                                <SelectItem key={environment.id} value={environment.id}>
-                                  {environment.name} ({environment.type})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {isEditing ? (
+                            <Input
+                              value={
+                                environments.find((env) => env.id === field.value)?.name || ""
+                              }
+                              disabled
+                              className="bg-muted"
+                            />
+                          ) : (
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              disabled={isLoadingEnvironments}
+                            >
+                              <SelectTrigger>
+                                <SelectValue
+                                  placeholder={
+                                    isLoadingEnvironments
+                                      ? "Loading environments..."
+                                      : "Select an environment"
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {environments
+                                  .filter((env) => env.isActive)
+                                  .map((environment) => (
+                                    <SelectItem
+                                      key={environment.id}
+                                      value={environment.id}
+                                    >
+                                      {environment.name} ({environment.type})
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </FormControl>
                         <FormDescription>
-                          Select the environment where this application will be deployed.
-                          {isEditing ? " (Cannot be changed after creation)" : ""}
+                          Select the environment where this application will be
+                          deployed.
+                          {isEditing
+                            ? " (Cannot be changed after creation)"
+                            : ""}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="applicationName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Application Name</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="my-app"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value
+                                .toLowerCase()
+                                .replace(/[^a-z0-9-]/g, "-");
+                              field.onChange(value);
+                            }}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Unique name for your application (lowercase,
+                          alphanumeric, hyphens only)
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="dockerRegistry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Docker Registry (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="docker.io" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          Docker registry URL (leave empty for Docker Hub)
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <div className="grid grid-cols-3 gap-4">
                     <div className="col-span-2">
                       <FormField
@@ -459,7 +481,9 @@ export function NewDeploymentConfigPage() {
                           />
                         </FormControl>
                         <FormDescription>
-                          Specific port your application listens on for health checks. If not specified, the system will use port discovery from your port configuration.
+                          Specific port your application listens on for health
+                          checks. If not specified, the system will use port
+                          discovery from your port configuration.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -483,8 +507,9 @@ export function NewDeploymentConfigPage() {
                     Hostname Configuration
                   </CardTitle>
                   <CardDescription>
-                    Configure the public hostname for accessing your application through Cloudflare tunnel.
-                    This hostname will be used to route traffic to your application.
+                    Configure the public hostname for accessing your application
+                    through Cloudflare tunnel. This hostname will be used to
+                    route traffic to your application.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -495,7 +520,7 @@ export function NewDeploymentConfigPage() {
                       <HostnameFormField
                         field={{
                           value: field.value || "",
-                          onChange: field.onChange
+                          onChange: field.onChange,
                         }}
                         excludeConfigId={deploymentConfig?.id}
                         showValidateButton={true}
@@ -511,10 +536,22 @@ export function NewDeploymentConfigPage() {
                       <div className="space-y-2">
                         <p className="font-medium">About Hostnames:</p>
                         <ul className="text-sm space-y-1 list-disc list-inside">
-                          <li>Hostnames must be valid domain names (e.g., api.example.com)</li>
-                          <li>The system will check for conflicts with existing deployments and Cloudflare tunnels</li>
-                          <li>You can leave this field empty if your application doesn't need external access</li>
-                          <li>Hostnames are used for traffic routing through Cloudflare tunnels</li>
+                          <li>
+                            Hostnames must be valid domain names (e.g.,
+                            api.example.com)
+                          </li>
+                          <li>
+                            The system will check for conflicts with existing
+                            deployments and Cloudflare tunnels
+                          </li>
+                          <li>
+                            You can leave this field empty if your application
+                            doesn't need external access
+                          </li>
+                          <li>
+                            Hostnames are used for traffic routing through
+                            Cloudflare tunnels
+                          </li>
                         </ul>
                       </div>
                     </AlertDescription>
@@ -531,8 +568,8 @@ export function NewDeploymentConfigPage() {
                     Health Check Configuration
                   </CardTitle>
                   <CardDescription>
-                    Configure health checks to ensure your application is
-                    ready before switching traffic
+                    Configure health checks to ensure your application is ready
+                    before switching traffic
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -673,7 +710,6 @@ export function NewDeploymentConfigPage() {
                 </CardContent>
               </Card>
             </TabsContent>
-
 
             <TabsContent value="rollback" className="space-y-6">
               <Card>
