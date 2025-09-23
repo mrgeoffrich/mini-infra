@@ -1,38 +1,19 @@
 # Mini Infra - Claude Code Context
 
-## Docker Compose
+## Important Instructions
 
-NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
-
-## 🤖 Claude API Access Instructions
-
-**FOR CLAUDE**: You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
-
-### Step 1: Get Your API Key
-Run this command to display your development API key:
-```bash
-cd server && npm run show-dev-key -- --recreate
+* NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
+* You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
+* Whenever you need to change folders or change directory use the environment variable ROOT_APPLICATION_FOLDER as the root folder of the application. For example to change to the server folder run on linux: `cd $ROOT_APPLICATION_FOLDER/server` or on windows: `cd $env:ROOT_APPLICATION_FOLDER\server`
+* Run this command to display your development API key:
+```powershell
+cd $env:ROOT_APPLICATION_FOLDER\server && npm run show-dev-key -- --recreate
 ```
 
-### Step 2: Use the API Key
+### Use the API Key
 Add one of these headers to your HTTP requests:
 - **Authorization Header**: `Authorization: Bearer <your-api-key>`
 - **x-api-key Header**: `x-api-key: <your-api-key>`
-
-### Step 3: All Endpoints should be Available
-
-#### Deployment API Endpoints
-The application now includes comprehensive deployment API endpoints:
-
-- **GET /api/deployments/configs** - List deployment configurations
-- **POST /api/deployments/configs** - Create deployment configuration
-- **GET /api/deployments/configs/:id** - Get deployment configuration
-- **PUT /api/deployments/configs/:id** - Update deployment configuration
-- **DELETE /api/deployments/configs/:id** - Delete deployment configuration
-- **POST /api/deployments/trigger** - Trigger a new deployment
-- **GET /api/deployments/:id/status** - Get deployment status with progress
-- **POST /api/deployments/:id/rollback** - Rollback a deployment
-- **GET /api/deployments/history** - Get deployment history
 
 ### Example Usage
 ```bash
@@ -54,9 +35,9 @@ RUN_INTEGRATION_TESTS=true npm test -- haproxy-dataplane-client.integration.test
 
 ### Prerequisites
 
-Use docker compose to start haproxy:
+Use docker compose to start haproxy for the integration tests:
 ```bash
-cd server/docker-compose
+cd $ROOT_APPLICATION_FOLDER/server/docker-compose
 docker compose -f docker-compose.haproxy.yml up -d
 ```
 
@@ -134,13 +115,6 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Platform Detection**: If Claude is unsure about the platform, run `uname -s 2>/dev/null || echo "Windows"` to detect the operating system reliably
 - **Path Handling**: Use Unix-style paths when using the Bash tool (convert C:\path to /c/path) if you running git bash on windows. Otherwise use windows path style if you are using powershell on Windows.
 - **Shell**: Git Bash expects forward slashes and Unix-style drive references
-
-## Core Features
-
-### 1. Docker Container Management
-### 2. PostgreSQL Database Management
-### 3. Zero-Downtime Deployment System
-### 4. Cloudflare Tunnel Management
 
 ## Project Structure
 
@@ -251,34 +225,6 @@ The application implements a comprehensive timezone-aware date and time display 
 - **Core Functions**: Underlying timezone-aware date formatting using `date-fns-tz`
 - **Options Support**: Configurable display options (showSeconds, custom formats, etc.)
 - **Timezone Handling**: Automatic timezone conversion from UTC to user preference
-
-#### Data Storage and Retrieval
-
-**Timezone Storage**:
-- **Format**: IANA timezone identifiers (e.g., "America/New_York", "Europe/London", "UTC")
-- **Validation**: Server-side validation ensures only valid timezone strings are stored
-- **Default Value**: UTC used as fallback when no preference is set
-
-**API Response Format**:
-- **Dates**: All API responses return dates in ISO 8601 format (UTC)
-- **Client Conversion**: Frontend converts UTC timestamps to user's timezone for display
-- **Consistency**: Ensures consistent date handling regardless of server timezone
-
-## External Integrations
-
-- **Docker API**: Container management via dockerode library with singleton service pattern
-- **HAProxy DataPlane API**: Load balancer configuration and traffic routing
-- **Cloudflare API**: Tunnel monitoring (read-only)
-- **Azure Storage API**: Backup/restore operations
-- **PostgreSQL API**: Direct database connectivity for health checks and backup/restore operations
-- **Google OAuth API**: User authentication
-
-### Deployment Infrastructure Integration
-
-- **Docker Network Management**: Automated creation and management of Docker networks for deployment isolation
-- **HAProxy Container Deployment**: Automated HAProxy load balancer container deployment with configuration
-- **Infrastructure Status Monitoring**: Real-time monitoring of network and HAProxy container status
-- **Zero-Downtime Deployment Support**: Infrastructure for blue-green deployment strategies
 
 ## Service Layer Architecture
 
@@ -441,51 +387,17 @@ Logs are found in `server/logs/` directory with the following files:
 
 The development database can be queried directly using the sqlite3 binary. The database file is located at `server/prisma/dev.db`.
 
-### SQLite3 Binary Download Instructions
-
-#### Windows
-1. Go to https://sqlite.org/download.html
-2. Under "Precompiled Binaries for Windows", download:
-   - `sqlite-tools-win32-x86-*.zip` (for 32-bit) or
-   - `sqlite-tools-win64-x64-*.zip` (for 64-bit)
-3. Extract the zip file
-4. Copy `sqlite3.exe` to the `server/` directory
-
-#### Linux
-**Ubuntu/Debian:**
-```bash
-sudo apt-get update
-sudo apt-get install sqlite3
-```
-
-**CentOS/RHEL/Fedora:**
-```bash
-sudo yum install sqlite3  # CentOS/RHEL 7
-sudo dnf install sqlite3  # Fedora/RHEL 8+
-```
-
-#### macOS
-**With Homebrew (recommended):**
-```bash
-brew install sqlite3
-```
-
-**With MacPorts:**
-```bash
-sudo port install sqlite3
-```
-
 ## Running Queries against the database
 
 ### Single Query Mode on Windows (PowerShell)
 ```powershell
-cd server
+cd $env:ROOT_APPLICATION_FOLDER\server
 "SELECT * FROM users;" | .\sqlite3.exe prisma/dev.db
 ```
 
 ### Query with Headers and Formatting on Windows (PowerShell)
 ```powershell
-cd server
+cd $env:ROOT_APPLICATION_FOLDER\server
 @"
 .headers on
 .mode column
@@ -496,26 +408,26 @@ SELECT * FROM users;
 ### File-based Queries on Windows (PowerShell)
 Create a SQL file and run:
 ```powershell
-cd server
+cd $env:ROOT_APPLICATION_FOLDER\server
 Get-Content your_queries.sql | .\sqlite3.exe prisma/dev.db
 ```
 
 ### Single Query Mode on Linux
 ```bash
-cd server
+cd $ROOT_APPLICATION_FOLDER/server
 echo "SELECT * FROM users;" | sqlite3 prisma/dev.db
 ```
 
 ### Query with Headers and Formatting on Linux
 ```bash
-cd server
+cd $ROOT_APPLICATION_FOLDER/server
 printf ".headers on\n.mode column\nSELECT * FROM users;\n" | sqlite3 prisma/dev.db
 ```
 
 ### File-based Queries on Linux
 Create a SQL file and run:
 ```bash
-cd server
+cd $ROOT_APPLICATION_FOLDER/server
 sqlite3 prisma/dev.db < your_queries.sql
 ```
 
