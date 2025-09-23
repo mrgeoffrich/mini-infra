@@ -1,6 +1,7 @@
 import { useState } from "react";
 import React from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -41,6 +42,8 @@ import {
   useCreateDeploymentConfig,
   useUpdateDeploymentConfig,
 } from "@/hooks/use-deployment-configs";
+import { useEnvironments } from "@/hooks/use-environments";
+import { deploymentConfigSchema } from "./schemas";
 import {
   AlertCircle,
   Loader2,
@@ -60,6 +63,7 @@ import type {
   DeploymentConfigurationInfo,
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
+  Environment,
 } from "@mini-infra/types";
 
 interface DeploymentConfigFormProps {
@@ -80,9 +84,12 @@ export function DeploymentConfigForm({
   const createMutation = useCreateDeploymentConfig();
   const updateMutation = useUpdateDeploymentConfig();
 
+  const { data: environments } = useEnvironments();
+
   const form = useForm({
-    // resolver: zodResolver(formSchema),
+    resolver: zodResolver(deploymentConfigSchema),
     defaultValues: {
+      environmentId: deploymentConfig?.environmentId || "",
       applicationName: deploymentConfig?.applicationName || "",
       dockerImage: deploymentConfig?.dockerImage || "",
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
@@ -121,16 +128,34 @@ export function DeploymentConfigForm({
 
 
   const onSubmit = async (data: {
+    environmentId: string;
     applicationName: string;
     dockerImage: string;
     dockerTag: string;
     dockerRegistry?: string;
     hostname?: string;
-    containerConfig: any;
-    healthCheckConfig: any;
-    rollbackConfig: any;
     listeningPort?: number;
-    environmentId?: string;
+    containerConfig: {
+      ports: Array<{ containerPort: number; hostPort?: number; protocol: "tcp" | "udp" }>;
+      volumes: Array<{ hostPath: string; containerPath: string; mode?: "rw" | "ro" }>;
+      environment: Array<{ name: string; value: string }>;
+      labels: Record<string, string>;
+      networks: string[];
+    };
+    healthCheckConfig: {
+      endpoint: string;
+      method: "GET" | "POST";
+      expectedStatus: number[];
+      responseValidation?: string;
+      timeout: number;
+      retries: number;
+      interval: number;
+    };
+    rollbackConfig: {
+      enabled: boolean;
+      maxWaitTime: number;
+      keepOldContainer: boolean;
+    };
   }) => {
     setSubmitError(null);
     try {
@@ -162,7 +187,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
-          environmentId: data.environmentId || "",
+          environmentId: data.environmentId!,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -217,6 +242,52 @@ export function DeploymentConfigForm({
               onSubmit={form.handleSubmit(onSubmit)}
               className="h-full flex flex-col"
             >
+              {/* Environment field - very first field above all tabs */}
+              <div className="mb-6 p-4 border rounded-lg bg-gray-50/50">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <FormLabel className="text-base font-semibold">Environment</FormLabel>
+                    <div className="p-3 bg-white border rounded-md text-sm font-medium">
+                      {environments?.environments?.find(env => env.id === deploymentConfig?.environmentId)?.name || "Unknown Environment"}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Environment cannot be changed after deployment creation
+                    </p>
+                  </div>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="environmentId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-base font-semibold">Environment</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select an environment" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {environments?.environments?.map((env: Environment) => (
+                              <SelectItem key={env.id} value={env.id}>
+                                {env.name} ({env.type})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Environment where this deployment will run
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
@@ -405,7 +476,10 @@ export function DeploymentConfigForm({
                           name="hostname"
                           render={({ field }) => (
                             <HostnameFormField
-                              field={field}
+                              field={{
+                                value: field.value || "",
+                                onChange: field.onChange
+                              }}
                               excludeConfigId={deploymentConfig?.id}
                               showValidateButton={true}
                               description="Public hostname for accessing your application (e.g., api.example.com). Click 'Validate' to check availability against Cloudflare and existing configurations."
