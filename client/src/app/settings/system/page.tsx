@@ -50,8 +50,8 @@ const systemSettingsSchema = z.object({
     .string()
     .min(1, "Backup Docker image is required")
     .regex(
-      /^[\w\-./]+(?::\w+[\w\-.]*)?$/,
-      "Invalid Docker image format (e.g., postgres:15-alpine, myregistry/postgres:latest)",
+      /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
+      "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
     ),
   backupRegistryUsername: z.string().optional(),
   backupRegistryPassword: z.string().optional(),
@@ -61,8 +61,8 @@ const systemSettingsSchema = z.object({
     .string()
     .min(1, "Restore Docker image is required")
     .regex(
-      /^[\w\-./]+(?::\w+[\w\-.]*)?$/,
-      "Invalid Docker image format (e.g., postgres:15-alpine, myregistry/postgres:latest)",
+      /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
+      "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
     ),
   restoreRegistryUsername: z.string().optional(),
   restoreRegistryPassword: z.string().optional(),

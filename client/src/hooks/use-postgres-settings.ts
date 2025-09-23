@@ -34,7 +34,7 @@ export function usePostgresSettings() {
 
         const data = await response.json();
 
-        if (data?.isValid) {
+        if (data?.data?.isValid) {
           return {
             isConfigured: true,
             hasBackupImage: true,
@@ -46,7 +46,7 @@ export function usePostgresSettings() {
             isConfigured: false,
             hasBackupImage: false,
             hasRestoreImage: false,
-            error: data?.message || "PostgreSQL settings validation failed",
+            error: data?.data?.error || data?.message || "PostgreSQL settings validation failed",
           };
         }
       } catch (error) {
