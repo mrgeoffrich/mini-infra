@@ -222,7 +222,7 @@ export interface ServiceHealthStatus {
 
 // Configuration service interface (abstract base)
 export interface IConfigurationService {
-  validate(): Promise<ValidationResult>;
+  validate(settings?: Record<string, string>): Promise<ValidationResult>;
   getHealthStatus(): Promise<ServiceHealthStatus>;
   set(key: string, value: string, userId: string): Promise<void>;
   get(key: string): Promise<string | null>;

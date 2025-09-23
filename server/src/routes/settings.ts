@@ -721,7 +721,7 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
     // Perform validation with timeout protection
     const startTime = Date.now();
     const validationResult = (await raceWithTimeout(
-      configService.validate(),
+      configService.validate(settings),
       30000,
       "Validation timeout",
     )) as any;

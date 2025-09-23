@@ -138,13 +138,14 @@ export class AzureConfigService extends ConfigurationService {
 
   /**
    * Validate Azure Storage configuration by testing connection
+   * @param settings - Optional settings to validate with (overrides stored settings)
    * @returns ValidationResult with connectivity status and details
    */
-  async validate(): Promise<ValidationResult> {
+  async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
 
     try {
-      const connectionString = await this.get(
+      const connectionString = settings?.connectionString || await this.get(
         AzureConfigService.CONNECTION_STRING_KEY,
       );
 
