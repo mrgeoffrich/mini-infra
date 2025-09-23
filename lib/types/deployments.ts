@@ -68,6 +68,7 @@ export interface DeploymentConfig {
   healthCheck: HealthCheckConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number | null;
+  hostname?: string | null;
 }
 
 // Database deployment configuration (matches Prisma model)
@@ -80,6 +81,7 @@ export interface DeploymentConfiguration {
   healthCheckConfig: HealthCheckConfig; // JSON field
   rollbackConfig: RollbackConfig; // JSON field
   listeningPort: number | null;
+  hostname: string | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
   createdAt: Date;
@@ -96,6 +98,7 @@ export interface DeploymentConfigurationInfo {
   healthCheckConfig: HealthCheckConfig;
   rollbackConfig: RollbackConfig;
   listeningPort: number | null;
+  hostname: string | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
   createdAt: string;
@@ -202,6 +205,7 @@ export interface CreateDeploymentConfigRequest {
   healthCheckConfig: HealthCheckConfig;
   rollbackConfig: RollbackConfig;
   listeningPort?: number;
+  hostname?: string;
   environmentId: string; // Required environment assignment
 }
 
@@ -213,6 +217,7 @@ export interface UpdateDeploymentConfigRequest {
   healthCheckConfig?: HealthCheckConfig;
   rollbackConfig?: RollbackConfig;
   listeningPort?: number;
+  hostname?: string;
   isActive?: boolean;
 }
 
@@ -273,6 +278,31 @@ export interface DeploymentConfigValidationResult {
     field: string;
     message: string;
   }[];
+}
+
+// Hostname validation types
+export interface HostnameValidationRequest {
+  hostname: string;
+}
+
+export interface HostnameValidationResult {
+  isValid: boolean;
+  isAvailable: boolean;
+  message: string;
+  conflictDetails?: {
+    existsInCloudflare: boolean;
+    existsInDeploymentConfigs: boolean;
+    cloudflareZone?: string;
+    conflictingConfigId?: string;
+    conflictingConfigName?: string;
+  };
+  suggestions?: string[];
+}
+
+export interface HostnameValidationResponse {
+  success: boolean;
+  data: HostnameValidationResult;
+  message?: string;
 }
 
 // ====================

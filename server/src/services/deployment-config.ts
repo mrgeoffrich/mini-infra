@@ -19,7 +19,9 @@ import {
   ContainerConfig,
   HealthCheckConfig,
   RollbackConfig,
+  HostnameValidationResult,
 } from "@mini-infra/types";
+import { CloudflareConfigService } from "./cloudflare-config";
 
 // ====================
 // Zod Validation Schemas
@@ -82,6 +84,15 @@ export const createDeploymentConfigSchema = z.object({
   healthCheckConfig: healthCheckConfigSchema,
   rollbackConfig: rollbackConfigSchema,
   listeningPort: z.number().int().min(1).max(65535).optional(),
+  hostname: z
+    .string()
+    .min(1, "Hostname cannot be empty")
+    .max(253, "Hostname must be 253 characters or less")
+    .regex(
+      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/,
+      "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
+    )
+    .optional(),
   environmentId: z.string().min(1, "Environment ID is required"),
 });
 
@@ -101,6 +112,15 @@ export const updateDeploymentConfigSchema = z.object({
   healthCheckConfig: healthCheckConfigSchema.optional(),
   rollbackConfig: rollbackConfigSchema.optional(),
   listeningPort: z.number().int().min(1).max(65535).optional(),
+  hostname: z
+    .string()
+    .min(1, "Hostname cannot be empty")
+    .max(253, "Hostname must be 253 characters or less")
+    .regex(
+      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/,
+      "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
+    )
+    .optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -108,6 +128,7 @@ export class DeploymentConfigService extends ConfigurationService {
   private cache: NodeCache;
   private dockerService: DockerService;
   private containerManager: ContainerLifecycleManager;
+  private cloudflareService: CloudflareConfigService;
 
   constructor(prismaInstance: PrismaClient, encryptionKey?: string) {
     super(prismaInstance, "deployments" as SettingsCategory);
@@ -122,6 +143,7 @@ export class DeploymentConfigService extends ConfigurationService {
     // Initialize Docker service and container manager for cleanup operations
     this.dockerService = DockerService.getInstance();
     this.containerManager = new ContainerLifecycleManager();
+    this.cloudflareService = new CloudflareConfigService(prismaInstance);
   }
 
   // ====================
@@ -253,6 +275,7 @@ export class DeploymentConfigService extends ConfigurationService {
           healthCheckConfig: request.healthCheckConfig as any,
           rollbackConfig: request.rollbackConfig as any,
           listeningPort: request.listeningPort,
+          hostname: request.hostname,
           environmentId: request.environmentId,
           isActive: true,
         },
@@ -338,6 +361,8 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.rollbackConfig = request.rollbackConfig;
       if (request.listeningPort !== undefined)
         updateData.listeningPort = request.listeningPort;
+      if (request.hostname !== undefined)
+        updateData.hostname = request.hostname;
       if (request.isActive !== undefined)
         updateData.isActive = request.isActive;
 
@@ -704,6 +729,150 @@ export class DeploymentConfigService extends ConfigurationService {
   }
 
   // ====================
+  // Hostname Validation Methods
+  // ====================
+
+  /**
+   * Validate a hostname for deployment configuration
+   * Checks if hostname is available and not conflicting with existing configs or Cloudflare
+   */
+  async validateHostname(hostname: string, excludeConfigId?: string): Promise<HostnameValidationResult> {
+    const logger = servicesLogger();
+
+    try {
+      // Basic hostname format validation
+      const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/;
+      if (!hostnameRegex.test(hostname)) {
+        return {
+          isValid: false,
+          isAvailable: false,
+          message: "Invalid hostname format. Must be a valid domain name (e.g., example.com, api.example.com)",
+          suggestions: []
+        };
+      }
+
+      if (hostname.length > 253) {
+        return {
+          isValid: false,
+          isAvailable: false,
+          message: "Hostname must be 253 characters or less",
+          suggestions: []
+        };
+      }
+
+      // Check if hostname already exists in deployment configurations
+      const existingConfig = await this.prisma.deploymentConfiguration.findFirst({
+        where: {
+          hostname: hostname,
+          ...(excludeConfigId ? { id: { not: excludeConfigId } } : {})
+        },
+        select: {
+          id: true,
+          applicationName: true,
+        }
+      });
+
+      const conflictDetails = {
+        existsInCloudflare: false,
+        existsInDeploymentConfigs: !!existingConfig,
+        conflictingConfigId: existingConfig?.id,
+        conflictingConfigName: existingConfig?.applicationName,
+      };
+
+      if (existingConfig) {
+        return {
+          isValid: true, // hostname format is valid
+          isAvailable: false,
+          message: `Hostname '${hostname}' is already used by deployment configuration '${existingConfig.applicationName}'`,
+          conflictDetails,
+          suggestions: [
+            `${hostname.split('.')[0]}-v2.${hostname.split('.').slice(1).join('.')}`,
+            `api.${hostname}`,
+            `app.${hostname}`,
+          ]
+        };
+      }
+
+      // Check Cloudflare for existing hostname usage
+      let cloudflareConflict = false;
+      let cloudflareZone: string | undefined;
+
+      try {
+        // Get tunnel information to check for hostname conflicts
+        const tunnels = await this.cloudflareService.getTunnelInfo();
+
+        for (const tunnel of tunnels) {
+          // Get tunnel configuration to check ingress rules
+          try {
+            const config = await this.cloudflareService.getTunnelConfig(tunnel.id);
+            if (config?.config?.ingress) {
+              const hasHostname = config.config.ingress.some((rule: any) =>
+                rule.hostname === hostname
+              );
+              if (hasHostname) {
+                cloudflareConflict = true;
+                cloudflareZone = tunnel.name; // Use tunnel name as zone identifier
+                break;
+              }
+            }
+          } catch (configError) {
+            // Log but continue checking other tunnels
+            logger.debug({
+              tunnelId: tunnel.id,
+              error: configError instanceof Error ? configError.message : "Unknown error"
+            }, "Failed to retrieve tunnel config during hostname validation");
+          }
+        }
+      } catch (cloudflareError) {
+        // Log error but don't fail validation - Cloudflare might not be configured
+        logger.warn({
+          hostname,
+          error: cloudflareError instanceof Error ? cloudflareError.message : "Unknown error"
+        }, "Failed to check Cloudflare for hostname conflicts");
+      }
+
+      conflictDetails.existsInCloudflare = cloudflareConflict;
+      conflictDetails.cloudflareZone = cloudflareZone;
+
+      if (cloudflareConflict) {
+        return {
+          isValid: true,
+          isAvailable: false,
+          message: `Hostname '${hostname}' is already configured in Cloudflare tunnel${cloudflareZone ? ` (${cloudflareZone})` : ''}`,
+          conflictDetails,
+          suggestions: [
+            `${hostname.split('.')[0]}-api.${hostname.split('.').slice(1).join('.')}`,
+            `new-${hostname}`,
+            `v2.${hostname}`,
+          ]
+        };
+      }
+
+      // Hostname is available
+      return {
+        isValid: true,
+        isAvailable: true,
+        message: `Hostname '${hostname}' is available for use`,
+        conflictDetails,
+        suggestions: []
+      };
+
+    } catch (error) {
+      logger.error({
+        hostname,
+        error: error instanceof Error ? error.message : "Unknown error"
+      }, "Failed to validate hostname");
+
+      return {
+        isValid: false,
+        isAvailable: false,
+        message: "Failed to validate hostname due to internal error",
+        suggestions: []
+      };
+    }
+  }
+
+  // ====================
   // Validation Methods
   // ====================
 
@@ -967,6 +1136,7 @@ export class DeploymentConfigService extends ConfigurationService {
       healthCheckConfig: config.healthCheckConfig as HealthCheckConfig,
       rollbackConfig: config.rollbackConfig as RollbackConfig,
       listeningPort: config.listeningPort,
+      hostname: config.hostname,
       isActive: config.isActive,
       environmentId: config.environmentId,
       createdAt: config.createdAt.toISOString(),

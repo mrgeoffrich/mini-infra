@@ -49,11 +49,13 @@ import {
   Activity,
   RotateCcw,
   Info,
+  Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EnvVarEditor } from "./env-var-editor";
 import { PortEditor } from "./port-editor";
 import { VolumeEditor } from "./volume-editor";
+import { HostnameFormField } from "./hostname-input";
 import type {
   DeploymentConfigurationInfo,
   CreateDeploymentConfigRequest,
@@ -85,6 +87,7 @@ export function DeploymentConfigForm({
       dockerImage: deploymentConfig?.dockerImage || "",
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
+      hostname: deploymentConfig?.hostname || "",
       containerConfig: {
         ports: deploymentConfig?.containerConfig?.ports || [],
         volumes: deploymentConfig?.containerConfig?.volumes || [],
@@ -117,7 +120,18 @@ export function DeploymentConfigForm({
 
 
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: {
+    applicationName: string;
+    dockerImage: string;
+    dockerTag: string;
+    dockerRegistry?: string;
+    hostname?: string;
+    containerConfig: any;
+    healthCheckConfig: any;
+    rollbackConfig: any;
+    listeningPort?: number;
+    environmentId?: string;
+  }) => {
     setSubmitError(null);
     try {
       // Combine docker image and tag for backend
@@ -131,6 +145,7 @@ export function DeploymentConfigForm({
           applicationName: data.applicationName,
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
+          hostname: data.hostname,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -146,6 +161,7 @@ export function DeploymentConfigForm({
           applicationName: data.applicationName,
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
+          hostname: data.hostname,
           environmentId: data.environmentId,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
@@ -213,6 +229,13 @@ export function DeploymentConfigForm({
                   >
                     <Container className="w-4 h-4" />
                     Docker
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="hostname"
+                    className="flex items-center gap-2"
+                  >
+                    <Globe className="w-4 h-4" />
+                    Hostname
                   </TabsTrigger>
                   <TabsTrigger
                     value="health"
@@ -362,6 +385,50 @@ export function DeploymentConfigForm({
                       <VolumeEditor form={form} />
                       <EnvVarEditor form={form} />
                     </div>
+                  </TabsContent>
+
+                  <TabsContent value="hostname" className="space-y-6 m-0">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Globe className="w-5 h-5 text-blue-500" />
+                          Hostname Configuration
+                        </CardTitle>
+                        <CardDescription>
+                          Configure the public hostname for accessing your application through Cloudflare tunnel.
+                          This hostname will be used to route traffic to your application.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="hostname"
+                          render={({ field }) => (
+                            <HostnameFormField
+                              field={field}
+                              excludeConfigId={deploymentConfig?.id}
+                              description="Public hostname for accessing your application (e.g., api.example.com). Leave empty if you don't need external access."
+                              placeholder="api.example.com"
+                            />
+                          )}
+                        />
+
+                        <Alert>
+                          <Info className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="space-y-2">
+                              <p className="font-medium">About Hostnames:</p>
+                              <ul className="text-sm space-y-1 list-disc list-inside">
+                                <li>Hostnames must be valid domain names (e.g., api.example.com)</li>
+                                <li>The system will check for conflicts with existing deployments and Cloudflare tunnels</li>
+                                <li>You can leave this field empty if your application doesn't need external access</li>
+                                <li>Hostnames are used for traffic routing through Cloudflare tunnels</li>
+                              </ul>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      </CardContent>
+                    </Card>
                   </TabsContent>
 
                   <TabsContent value="health" className="space-y-6 m-0">

@@ -130,6 +130,17 @@ export const rollbackConfigSchema = z.object({
   keepOldContainer: z.boolean().default(false),
 });
 
+// Hostname validation schema
+export const hostnameSchema = z
+  .string()
+  .min(1, "Hostname is required")
+  .max(253, "Hostname must be 253 characters or less")
+  .regex(
+    /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+    "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
+  )
+  .optional();
+
 // Complete deployment configuration schema (matches CreateDeploymentConfigRequest)
 export const deploymentConfigSchema = z.object({
   applicationName: z
@@ -148,6 +159,7 @@ export const deploymentConfigSchema = z.object({
     .string()
     .max(500, "Docker registry must be less than 500 characters")
     .optional(),
+  hostname: hostnameSchema,
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
   haproxyConfig: haproxyConfigSchema,
@@ -163,3 +175,6 @@ export type HealthCheckConfigFormData = z.infer<typeof healthCheckConfigSchema>;
 export type HAProxyConfigFormData = z.infer<typeof haproxyConfigSchema>;
 export type RollbackConfigFormData = z.infer<typeof rollbackConfigSchema>;
 export type DeploymentConfigFormData = z.infer<typeof deploymentConfigSchema>;
+
+// Hostname validation form data
+export type HostnameFormData = z.infer<typeof hostnameSchema>;
