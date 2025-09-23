@@ -242,6 +242,52 @@ export function DeploymentConfigForm({
               onSubmit={form.handleSubmit(onSubmit)}
               className="h-full flex flex-col"
             >
+              {/* Environment field - very first field above all tabs */}
+              <div className="mb-6 p-4 border rounded-lg bg-gray-50/50">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <FormLabel className="text-base font-semibold">Environment</FormLabel>
+                    <div className="p-3 bg-white border rounded-md text-sm font-medium">
+                      {environments?.data?.find(env => env.id === deploymentConfig?.environmentId)?.name || "Unknown Environment"}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Environment cannot be changed after deployment creation
+                    </p>
+                  </div>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="environmentId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-base font-semibold">Environment</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select an environment" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {environments?.data?.map((env: Environment) => (
+                              <SelectItem key={env.id} value={env.id}>
+                                {env.name} ({env.type})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Environment where this deployment will run
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
@@ -292,50 +338,6 @@ export function DeploymentConfigForm({
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
-                          {/* Environment field - first field as requested */}
-                          {isEditing ? (
-                            <div className="space-y-2">
-                              <FormLabel>Environment</FormLabel>
-                              <div className="p-2 bg-gray-50 border rounded-md text-sm font-medium">
-                                {environments?.data?.find(env => env.id === deploymentConfig?.environmentId)?.name || "Unknown Environment"}
-                              </div>
-                              <p className="text-sm text-muted-foreground">
-                                Environment cannot be changed after deployment creation
-                              </p>
-                            </div>
-                          ) : (
-                            <FormField
-                              control={form.control}
-                              name="environmentId"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Environment</FormLabel>
-                                  <Select
-                                    onValueChange={field.onChange}
-                                    value={field.value}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Select an environment" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {environments?.data?.map((env: Environment) => (
-                                        <SelectItem key={env.id} value={env.id}>
-                                          {env.name} ({env.type})
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormDescription>
-                                    Environment where this deployment will run
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          )}
-
                           <FormField
                             control={form.control}
                             name="applicationName"
@@ -362,9 +364,7 @@ export function DeploymentConfigForm({
                               </FormItem>
                             )}
                           />
-                        </div>
 
-                        <div className="grid grid-cols-1 gap-4">
                           <FormField
                             control={form.control}
                             name="dockerRegistry"
