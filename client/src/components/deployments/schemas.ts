@@ -143,6 +143,9 @@ export const hostnameSchema = z
 
 // Complete deployment configuration schema (matches CreateDeploymentConfigRequest)
 export const deploymentConfigSchema = z.object({
+  environmentId: z
+    .string()
+    .min(1, "Environment is required"),
   applicationName: z
     .string()
     .min(1, "Application name is required")

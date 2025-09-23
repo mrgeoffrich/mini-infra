@@ -1,6 +1,7 @@
 import { useState } from "react";
 import React from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -41,6 +42,8 @@ import {
   useCreateDeploymentConfig,
   useUpdateDeploymentConfig,
 } from "@/hooks/use-deployment-configs";
+import { useEnvironments } from "@/hooks/use-environments";
+import { deploymentConfigSchema } from "./schemas";
 import {
   AlertCircle,
   Loader2,
@@ -60,6 +63,7 @@ import type {
   DeploymentConfigurationInfo,
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
+  Environment,
 } from "@mini-infra/types";
 
 interface DeploymentConfigFormProps {
@@ -80,9 +84,12 @@ export function DeploymentConfigForm({
   const createMutation = useCreateDeploymentConfig();
   const updateMutation = useUpdateDeploymentConfig();
 
+  const { data: environments } = useEnvironments();
+
   const form = useForm({
-    // resolver: zodResolver(formSchema),
+    resolver: zodResolver(deploymentConfigSchema),
     defaultValues: {
+      environmentId: deploymentConfig?.environmentId || "",
       applicationName: deploymentConfig?.applicationName || "",
       dockerImage: deploymentConfig?.dockerImage || "",
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
@@ -126,9 +133,27 @@ export function DeploymentConfigForm({
     dockerTag: string;
     dockerRegistry?: string;
     hostname?: string;
-    containerConfig: any;
-    healthCheckConfig: any;
-    rollbackConfig: any;
+    containerConfig: {
+      ports: Array<{ containerPort: number; hostPort?: number; protocol?: string }>;
+      volumes: Array<{ hostPath: string; containerPath: string; mode?: string }>;
+      environment: Array<{ name: string; value: string }>;
+      labels: Record<string, string>;
+      networks: string[];
+    };
+    healthCheckConfig: {
+      endpoint: string;
+      method: string;
+      expectedStatus: number[];
+      responseValidation?: string;
+      timeout: number;
+      retries: number;
+      interval: number;
+    };
+    rollbackConfig: {
+      enabled: boolean;
+      maxWaitTime: number;
+      keepOldContainer: boolean;
+    };
     listeningPort?: number;
     environmentId?: string;
   }) => {
@@ -162,7 +187,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
-          environmentId: data.environmentId || "",
+          environmentId: data.environmentId!,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -266,6 +291,50 @@ export function DeploymentConfigForm({
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
+                        {/* Environment field - first field as requested */}
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <FormLabel>Environment</FormLabel>
+                            <div className="p-2 bg-gray-50 border rounded-md text-sm font-medium">
+                              {environments?.data?.find(env => env.id === deploymentConfig?.environmentId)?.name || "Unknown Environment"}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Environment cannot be changed after deployment creation
+                            </p>
+                          </div>
+                        ) : (
+                          <FormField
+                            control={form.control}
+                            name="environmentId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Environment</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select an environment" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {environments?.data?.map((env: Environment) => (
+                                      <SelectItem key={env.id} value={env.id}>
+                                        {env.name} ({env.type})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Environment where this deployment will run
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+
                         <div className="grid grid-cols-2 gap-4">
                           <FormField
                             control={form.control}
