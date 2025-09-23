@@ -17,8 +17,8 @@ function generateCorrelationId(): string {
 
 async function validateHostname(
   hostname: string,
-  excludeConfigId?: string,
   correlationId: string,
+  excludeConfigId?: string,
 ): Promise<HostnameValidationResult> {
   const url = `/api/deployments/configs/validate-hostname`;
 
@@ -65,7 +65,7 @@ export function useHostnameValidation() {
   const mutation = useMutation({
     mutationFn: async ({ hostname, excludeConfigId }: { hostname: string; excludeConfigId?: string }) => {
       const correlationId = generateCorrelationId();
-      const result = await validateHostname(hostname, excludeConfigId, correlationId);
+      const result = await validateHostname(hostname, correlationId, excludeConfigId);
       setLastValidatedHostname(hostname);
       return result;
     },

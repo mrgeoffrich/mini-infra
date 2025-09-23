@@ -42,6 +42,7 @@ import {
   Container,
   Activity,
   RotateCcw,
+  Globe,
   Info,
   ArrowLeft,
 } from "lucide-react";
@@ -49,6 +50,7 @@ import { toast } from "sonner";
 import { EnvVarEditor } from "@/components/deployments/env-var-editor";
 import { PortEditor } from "@/components/deployments/port-editor";
 import { VolumeEditor } from "@/components/deployments/volume-editor";
+import { HostnameFormField } from "@/components/deployments/hostname-input";
 import type {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
@@ -63,6 +65,7 @@ interface DeploymentFormData {
   dockerImage: string;
   dockerTag: string;
   dockerRegistry: string;
+  hostname?: string;
   environmentId: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
@@ -107,6 +110,7 @@ export function NewDeploymentConfigPage() {
       dockerImage: "",
       dockerTag: "latest",
       dockerRegistry: "",
+      hostname: "",
       environmentId: "",
       containerConfig: {
         ports: [],
@@ -142,6 +146,7 @@ export function NewDeploymentConfigPage() {
         dockerImage: deploymentConfig.dockerImage || "",
         dockerTag: deploymentConfig.dockerImage?.split(":")[1] || "latest",
         dockerRegistry: deploymentConfig.dockerRegistry || "",
+        hostname: deploymentConfig.hostname || "",
         environmentId: deploymentConfig.environmentId || "",
         containerConfig: {
           ports: deploymentConfig.containerConfig?.ports || [],
@@ -184,6 +189,7 @@ export function NewDeploymentConfigPage() {
           applicationName: data.applicationName,
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
+          hostname: data.hostname || undefined,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -199,6 +205,7 @@ export function NewDeploymentConfigPage() {
           applicationName: data.applicationName,
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
+          hostname: data.hostname || undefined,
           environmentId: data.environmentId,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
@@ -279,10 +286,14 @@ export function NewDeploymentConfigPage() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="docker" className="flex items-center gap-2">
                 <Container className="w-4 h-4" />
                 Docker
+              </TabsTrigger>
+              <TabsTrigger value="hostname" className="flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                Hostname
               </TabsTrigger>
               <TabsTrigger value="health" className="flex items-center gap-2">
                 <Activity className="w-4 h-4" />
@@ -462,6 +473,54 @@ export function NewDeploymentConfigPage() {
                 <VolumeEditor form={form} />
                 <EnvVarEditor form={form} />
               </div>
+            </TabsContent>
+
+            <TabsContent value="hostname" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-blue-500" />
+                    Hostname Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Configure the public hostname for accessing your application through Cloudflare tunnel.
+                    This hostname will be used to route traffic to your application.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="hostname"
+                    render={({ field }) => (
+                      <HostnameFormField
+                        field={{
+                          value: field.value || "",
+                          onChange: field.onChange
+                        }}
+                        excludeConfigId={deploymentConfig?.id}
+                        showValidateButton={true}
+                        description="Public hostname for accessing your application (e.g., api.example.com). Click 'Validate' to check availability against Cloudflare and existing configurations."
+                        placeholder="api.example.com"
+                      />
+                    )}
+                  />
+
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                      <div className="space-y-2">
+                        <p className="font-medium">About Hostnames:</p>
+                        <ul className="text-sm space-y-1 list-disc list-inside">
+                          <li>Hostnames must be valid domain names (e.g., api.example.com)</li>
+                          <li>The system will check for conflicts with existing deployments and Cloudflare tunnels</li>
+                          <li>You can leave this field empty if your application doesn't need external access</li>
+                          <li>Hostnames are used for traffic routing through Cloudflare tunnels</li>
+                        </ul>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="health" className="space-y-6">
