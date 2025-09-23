@@ -92,12 +92,8 @@ const databaseQuerySchema = z.object({
 const createDatabaseSchema = z.object({
   name: z
     .string()
-    .min(1, "Database name is required")
-    .max(100, "Database name must be 100 characters or less")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, hyphens, and underscores",
-    ),
+    .min(1, "Configuration name is required")
+    .max(255, "Configuration name must be 255 characters or less"),
   host: z.string().min(1, "Host is required"),
   port: z
     .number()
@@ -115,12 +111,8 @@ const createDatabaseSchema = z.object({
 const updateDatabaseSchema = z.object({
   name: z
     .string()
-    .min(1, "Database name is required")
-    .max(100, "Database name must be 100 characters or less")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, hyphens, and underscores",
-    )
+    .min(1, "Configuration name is required")
+    .max(255, "Configuration name must be 255 characters or less")
     .optional(),
   host: z.string().min(1, "Host is required").optional(),
   port: z

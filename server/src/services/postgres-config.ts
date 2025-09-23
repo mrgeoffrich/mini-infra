@@ -190,7 +190,42 @@ export class DatabaseConfigService {
         "Database configuration created",
       );
 
-      return this.toDatabaseInfo(createdDb);
+      // Perform immediate health check after creation
+      try {
+        servicesLogger().info(
+          {
+            databaseId: createdDb.id,
+            name: createdDb.name,
+          },
+          "Performing initial health check for newly created database",
+        );
+
+        await this.performHealthCheck(createdDb.id);
+
+        servicesLogger().info(
+          {
+            databaseId: createdDb.id,
+            name: createdDb.name,
+          },
+          "Initial health check completed for newly created database",
+        );
+      } catch (healthCheckError) {
+        servicesLogger().warn(
+          {
+            databaseId: createdDb.id,
+            name: createdDb.name,
+            error: healthCheckError instanceof Error ? healthCheckError.message : "Unknown error",
+          },
+          "Initial health check failed for newly created database, will retry during next scheduled check",
+        );
+      }
+
+      // Fetch updated database info with health status
+      const updatedDb = await this.prisma.postgresDatabase.findUnique({
+        where: { id: createdDb.id },
+      });
+
+      return this.toDatabaseInfo(updatedDb || createdDb);
     } catch (error) {
       servicesLogger().error(
         {
@@ -311,6 +346,45 @@ export class DatabaseConfigService {
         },
         "Database configuration updated",
       );
+
+      // Perform immediate health check if connection details changed
+      if (needsConnectionStringUpdate) {
+        try {
+          servicesLogger().info(
+            {
+              databaseId: updatedDb.id,
+              name: updatedDb.name,
+            },
+            "Performing health check after connection details update",
+          );
+
+          await this.performHealthCheck(updatedDb.id);
+
+          servicesLogger().info(
+            {
+              databaseId: updatedDb.id,
+              name: updatedDb.name,
+            },
+            "Health check completed after connection details update",
+          );
+        } catch (healthCheckError) {
+          servicesLogger().warn(
+            {
+              databaseId: updatedDb.id,
+              name: updatedDb.name,
+              error: healthCheckError instanceof Error ? healthCheckError.message : "Unknown error",
+            },
+            "Health check failed after connection details update, will retry during next scheduled check",
+          );
+        }
+
+        // Fetch updated database info with health status
+        const refreshedDb = await this.prisma.postgresDatabase.findUnique({
+          where: { id: updatedDb.id },
+        });
+
+        return this.toDatabaseInfo(refreshedDb || updatedDb);
+      }
 
       return this.toDatabaseInfo(updatedDb);
     } catch (error) {

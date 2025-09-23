@@ -3,12 +3,8 @@ import { z } from "zod";
 export const postgresDbSchema = z.object({
   name: z
     .string()
-    .min(1, "Database name is required")
-    .max(255, "Database name must be less than 255 characters")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, underscores, and hyphens",
-    ),
+    .min(1, "Configuration name is required")
+    .max(255, "Configuration name must be less than 255 characters"),
   host: z
     .string()
     .min(1, "Host is required")

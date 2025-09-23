@@ -19,7 +19,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   private static readonly DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
 
   constructor(prisma: PrismaClient) {
-    super(prisma, "postgres" as SettingsCategory);
+    super(prisma, "system" as SettingsCategory);
   }
 
   /**
@@ -233,23 +233,25 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   }
 
   /**
-   * Get backup Docker image setting with default fallback
+   * Get backup Docker image setting
    */
   async getBackupDockerImage(): Promise<string> {
     const configuredImage = await this.get("backupDockerImage");
-    return (
-      configuredImage || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE
-    );
+    if (!configuredImage) {
+      throw new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system");
+    }
+    return configuredImage;
   }
 
   /**
-   * Get restore Docker image setting with default fallback
+   * Get restore Docker image setting
    */
   async getRestoreDockerImage(): Promise<string> {
     const configuredImage = await this.get("restoreDockerImage");
-    return (
-      configuredImage || PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE
-    );
+    if (!configuredImage) {
+      throw new Error("Restore Docker image not configured in system settings. Please configure it at /settings/system");
+    }
+    return configuredImage;
   }
 
   /**

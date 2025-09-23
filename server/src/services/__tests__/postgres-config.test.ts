@@ -139,10 +139,15 @@ describe("DatabaseConfigService", () => {
 
       mockPrisma.postgresDatabase.findUnique = jest
         .fn()
-        .mockResolvedValue(null);
+        .mockResolvedValueOnce(null) // For duplicate check
+        .mockResolvedValueOnce(mockCreatedDb); // For fetching after health check (fallback to original)
       mockPrisma.postgresDatabase.create = jest
         .fn()
         .mockResolvedValue(mockCreatedDb);
+
+      // Mock the health check to fail silently so we get original behavior for this test
+      const healthCheckSpy = jest.spyOn(databaseConfigService, 'performHealthCheck')
+        .mockRejectedValue(new Error('Health check skipped in test'));
 
       const result = await databaseConfigService.createDatabase(
         validRequest,
@@ -163,8 +168,11 @@ describe("DatabaseConfigService", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
         lastHealthCheck: null,
         healthStatus: "unknown",
-        userId,
       });
+
+      // Verify health check was attempted
+      expect(healthCheckSpy).toHaveBeenCalledWith("db-123");
+      healthCheckSpy.mockRestore();
 
       expect(mockCryptoJS.AES.encrypt).toHaveBeenCalledWith(
         "postgresql://testuser:testpass@localhost:5432/testdb?sslmode=prefer",

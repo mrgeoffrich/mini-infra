@@ -15,7 +15,8 @@ import {
   usePostgresDatabaseFilters,
 } from "@/hooks/use-postgres-databases";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
-import { Database, AlertCircle, Plus } from "lucide-react";
+import { usePostgresSettings } from "@/hooks/use-postgres-settings";
+import { Database, AlertCircle, Plus, Settings } from "lucide-react";
 import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import { DatabaseModal } from "@/components/postgres/database-modal";
 import { BackupConfigurationModal } from "@/components/postgres/backup-configuration-modal";
@@ -62,6 +63,8 @@ export default function PostgresPage() {
     sortBy: filters.sortBy,
     sortOrder: filters.sortOrder,
   });
+
+  const { data: postgresSettings } = usePostgresSettings();
 
   const databases = databasesResponse?.data || [];
 
@@ -120,6 +123,26 @@ export default function PostgresPage() {
   return (
     <div className="container mx-auto px-6 py-8">
       <div className="space-y-6">
+        {/* PostgreSQL Settings Warning */}
+        {postgresSettings && !postgresSettings.isConfigured && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <div>
+                <strong>PostgreSQL containers not configured:</strong> Backup and restore operations require Docker images to be configured in system settings. Configure backup and restore Docker images before using PostgreSQL features.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/settings/system")}
+                className="ml-4 flex-shrink-0"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Configure Settings
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">PostgreSQL Management</h1>

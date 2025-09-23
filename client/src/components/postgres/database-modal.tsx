@@ -67,6 +67,7 @@ export function DatabaseModal({
   const [availableDatabases, setAvailableDatabases] = useState<DatabaseInfo[]>([]);
   const [connectionData, setConnectionData] = useState<PostgresConnectionFormData | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<string>("");
+  const [connectionError, setConnectionError] = useState<string>("");
 
   const isEditing = !!database;
 
@@ -126,6 +127,7 @@ export function DatabaseModal({
         setConnectionData(null);
         setAvailableDatabases([]);
         setSelectedDatabase("");
+        setConnectionError("");
         connectionForm.reset({
           host: "",
           port: 5432,
@@ -149,12 +151,14 @@ export function DatabaseModal({
 
   const handleConnectionTest = async () => {
     const formData = connectionForm.getValues();
+    setConnectionError(""); // Clear previous errors
 
     try {
       // Discover databases using the connection details
       const result = await discoverDatabasesMutation.mutateAsync(formData);
 
       if (result.data.databases.length === 0) {
+        setConnectionError("No databases found on this server");
         toast.warning("No databases found on this server");
         return;
       }
@@ -163,13 +167,12 @@ export function DatabaseModal({
       setConnectionData(formData);
       setAvailableDatabases(result.data.databases);
       setCurrentStep("database-selection");
+      setConnectionError(""); // Clear any previous errors
       toast.success(`Connected successfully! Found ${result.data.databases.length} database(s)`);
     } catch (error) {
-      toast.error(
-        `Connection failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      setConnectionError(`Connection failed: ${errorMessage}`);
+      toast.error(`Connection failed: ${errorMessage}`);
     }
   };
 
@@ -416,6 +419,12 @@ export function DatabaseModal({
                 )}
               />
 
+              {connectionError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                  <p className="text-sm text-destructive">{connectionError}</p>
+                </div>
+              )}
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={onClose}>
                   Cancel
@@ -440,7 +449,7 @@ export function DatabaseModal({
         {currentStep === "database-selection" && (
           <div className="space-y-4">
             <div className="space-y-3">
-              <FormLabel>Select Database</FormLabel>
+              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Select Database</label>
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {availableDatabases.map((db) => (
                   <div
