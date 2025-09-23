@@ -152,8 +152,12 @@ const hostnameValidationSchema = z.object({
   hostname: z
     .string()
     .min(1, "Hostname is required")
-    .max(253, "Hostname must be 253 characters or less"),
-  excludeConfigId: z.string().optional(),
+    .max(253, "Hostname must be 253 characters or less")
+    .regex(
+      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/,
+      "Hostname must be a valid domain name (e.g., example.com, api.example.com)"
+    ),
+  excludeConfigId: z.string().uuid().optional(),
 });
 
 // ====================

@@ -582,4 +582,207 @@ describe("DeploymentConfigService", () => {
       expect(result.errors).toBeUndefined();
     });
   });
+
+  describe("Hostname Validation", () => {
+    it("should validate valid hostname", async () => {
+      const result = await deploymentConfigService.validateHostname("api.example.com");
+
+      expect(result.isValid).toBe(true);
+      expect(result.isAvailable).toBe(true);
+      expect(result.message).toContain("available for use");
+      expect(result.suggestions).toEqual([]);
+    });
+
+    it("should reject invalid hostname format", async () => {
+      const result = await deploymentConfigService.validateHostname("invalid-hostname!");
+
+      expect(result.isValid).toBe(false);
+      expect(result.isAvailable).toBe(false);
+      expect(result.message).toContain("Hostname can only contain letters, numbers, dots, and hyphens");
+      expect(result.suggestions).toBeDefined();
+    });
+
+    it("should provide suggestions for invalid hostnames", async () => {
+      const result = await deploymentConfigService.validateHostname("my app");
+
+      expect(result.isValid).toBe(false);
+      expect(result.suggestions.length).toBeGreaterThan(0);
+      expect(result.suggestions[0]).toContain("my-app");
+    });
+
+    it("should reject hostname starting with hyphen", async () => {
+      const result = await deploymentConfigService.validateHostname("-api.example.com");
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("cannot start or end with a hyphen");
+    });
+
+    it("should reject hostname ending with hyphen", async () => {
+      const result = await deploymentConfigService.validateHostname("api.example.com-");
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("cannot start or end with a hyphen");
+    });
+
+    it("should reject hostname with consecutive dots", async () => {
+      const result = await deploymentConfigService.validateHostname("api..example.com");
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("cannot contain consecutive dots");
+    });
+
+    it("should reject hostname starting with dot", async () => {
+      const result = await deploymentConfigService.validateHostname(".api.example.com");
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("cannot start or end with a dot");
+    });
+
+    it("should reject hostname ending with dot", async () => {
+      const result = await deploymentConfigService.validateHostname("api.example.com.");
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("cannot start or end with a dot");
+    });
+
+    it("should reject hostname that is too long", async () => {
+      const longHostname = "a".repeat(254) + ".com";
+      const result = await deploymentConfigService.validateHostname(longHostname);
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("must be 253 characters or less");
+      expect(result.message).toContain(`currently ${longHostname.length} characters`);
+    });
+
+    it("should detect hostname conflicts with existing deployment configs", async () => {
+      // Create a deployment config with a hostname
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname: "api.example.com"
+      };
+      const config = await deploymentConfigService.createDeploymentConfig(request);
+
+      // Try to validate the same hostname
+      const result = await deploymentConfigService.validateHostname("api.example.com");
+
+      expect(result.isValid).toBe(true); // Format is valid
+      expect(result.isAvailable).toBe(false); // But not available
+      expect(result.message).toContain("already used by deployment configuration");
+      expect(result.conflictDetails?.existsInDeploymentConfigs).toBe(true);
+      expect(result.conflictDetails?.conflictingConfigName).toBe("test-app");
+      expect(result.suggestions.length).toBeGreaterThan(0);
+    });
+
+    it("should allow hostname reuse when excluding current config", async () => {
+      // Create a deployment config with a hostname
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname: "api.example.com"
+      };
+      const config = await deploymentConfigService.createDeploymentConfig(request);
+
+      // Validate the same hostname but exclude the current config
+      const result = await deploymentConfigService.validateHostname(
+        "api.example.com",
+        config.id
+      );
+
+      expect(result.isValid).toBe(true);
+      expect(result.isAvailable).toBe(true);
+      expect(result.message).toContain("available for use");
+    });
+
+    it("should provide appropriate suggestions for deployment config conflicts", async () => {
+      // Create a deployment config with a hostname
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname: "api.example.com"
+      };
+      await deploymentConfigService.createDeploymentConfig(request);
+
+      const result = await deploymentConfigService.validateHostname("api.example.com");
+
+      expect(result.suggestions).toContain("api-v2.example.com");
+      expect(result.suggestions).toContain("api-new.example.com");
+      expect(result.suggestions).toContain("api-staging.example.com");
+    });
+
+    it("should accept single word hostnames as valid", async () => {
+      const result = await deploymentConfigService.validateHostname("myapp");
+
+      expect(result.isValid).toBe(true);
+      expect(result.isAvailable).toBe(true);
+      expect(result.message).toContain("available for use");
+    });
+
+    it("should handle empty hostname", async () => {
+      await expect(
+        deploymentConfigService.validateHostname("")
+      ).rejects.toThrow();
+    });
+
+    it("should clean up invalid characters in suggestions", async () => {
+      const result = await deploymentConfigService.validateHostname("my@app#site");
+
+      expect(result.isValid).toBe(false);
+      expect(result.suggestions[0]).toBe("my-app-site");
+    });
+
+    it("should validate hostname with multiple subdomain levels", async () => {
+      const result = await deploymentConfigService.validateHostname("api.v1.app.example.com");
+
+      expect(result.isValid).toBe(true);
+      expect(result.isAvailable).toBe(true);
+      expect(result.message).toContain("available for use");
+    });
+
+    it("should limit suggestions to 6 items", async () => {
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname: "api.example.com"
+      };
+      await deploymentConfigService.createDeploymentConfig(request);
+
+      const result = await deploymentConfigService.validateHostname("api.example.com");
+
+      expect(result.suggestions.length).toBeLessThanOrEqual(6);
+    });
+
+    it("should filter out duplicate suggestions", async () => {
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname: "test.example.com"
+      };
+      await deploymentConfigService.createDeploymentConfig(request);
+
+      const result = await deploymentConfigService.validateHostname("test.example.com");
+
+      const uniqueSuggestions = [...new Set(result.suggestions)];
+      expect(result.suggestions.length).toBe(uniqueSuggestions.length);
+    });
+
+    it("should not include the original hostname in suggestions", async () => {
+      const hostname = "api.example.com";
+      const request = {
+        ...createValidDeploymentConfig(),
+        hostname
+      };
+      await deploymentConfigService.createDeploymentConfig(request);
+
+      const result = await deploymentConfigService.validateHostname(hostname);
+
+      expect(result.suggestions).not.toContain(hostname);
+    });
+
+    it("should handle database errors gracefully", async () => {
+      // Mock a database error by creating an invalid prisma instance
+      const invalidService = new DeploymentConfigService({} as any);
+
+      const result = await invalidService.validateHostname("api.example.com");
+
+      expect(result.isValid).toBe(false);
+      expect(result.isAvailable).toBe(false);
+      expect(result.message).toContain("Failed to validate hostname due to internal error");
+    });
+  });
 });

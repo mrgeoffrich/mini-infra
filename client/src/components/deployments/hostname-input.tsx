@@ -24,8 +24,9 @@ import {
   Lightbulb,
   Globe,
   AlertTriangle,
+  Check,
 } from "lucide-react";
-import { useHostnameValidationWithDebounce, useHostnameSuggestions } from "@/hooks/use-hostname-validation";
+import { useHostnameValidation, useHostnameValidationWithDebounce, useHostnameSuggestions } from "@/hooks/use-hostname-validation";
 import { cn } from "@/lib/utils";
 
 interface HostnameInputProps {
@@ -37,6 +38,7 @@ interface HostnameInputProps {
   className?: string;
   description?: string;
   showValidation?: boolean;
+  showValidateButton?: boolean;
   debounceMs?: number;
 }
 
@@ -49,18 +51,32 @@ export function HostnameInput({
   className,
   description,
   showValidation = true,
+  showValidateButton = true,
   debounceMs = 500,
 }: HostnameInputProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const validation = useHostnameValidationWithDebounce(
+  // Use both auto-validation and manual validation hooks
+  const autoValidation = useHostnameValidationWithDebounce(
     value,
     excludeConfigId,
     debounceMs,
-    showValidation && !!value
+    showValidation && !!value && !showValidateButton
   );
 
+  const manualValidation = useHostnameValidation();
+
+  // Use manual validation if validate button is shown, otherwise use auto validation
+  const validation = showValidateButton ? manualValidation : autoValidation;
+
   const { suggestions, hasSuggestions } = useHostnameSuggestions(value, validation.validationResult);
+
+  // Manual validation trigger
+  const handleValidateClick = () => {
+    if (value && showValidateButton) {
+      manualValidation.validateHostname(value, excludeConfigId);
+    }
+  };
 
   // Auto-hide suggestions when hostname becomes valid and available
   useEffect(() => {
@@ -71,7 +87,7 @@ export function HostnameInput({
 
   const getValidationState = () => {
     if (!value || !showValidation) return "neutral";
-    if (validation.isValidating || validation.isDebouncing) return "validating";
+    if (validation.isValidating || (autoValidation.isDebouncing && !showValidateButton)) return "validating";
     if (!validation.validationResult) return "neutral";
     if (!validation.isValid) return "invalid";
     if (validation.isValid && validation.isAvailable) return "valid";
@@ -205,25 +221,52 @@ export function HostnameInput({
         </FormLabel>
 
         <div className="relative">
-          <FormControl>
-            <Input
-              placeholder={placeholder}
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              disabled={disabled}
-              className={cn(
-                "pr-10",
-                validationState === "valid" && "border-green-500 focus-visible:ring-green-500",
-                validationState === "invalid" && "border-red-500 focus-visible:ring-red-500",
-                validationState === "conflict" && "border-yellow-500 focus-visible:ring-yellow-500",
-                className
-              )}
-            />
-          </FormControl>
+          <div className="flex gap-2">
+            <FormControl className="flex-1">
+              <Input
+                placeholder={placeholder}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                disabled={disabled}
+                className={cn(
+                  showValidateButton ? "pr-3" : "pr-10",
+                  validationState === "valid" && "border-green-500 focus-visible:ring-green-500",
+                  validationState === "invalid" && "border-red-500 focus-visible:ring-red-500",
+                  validationState === "conflict" && "border-yellow-500 focus-visible:ring-yellow-500",
+                  className
+                )}
+              />
+            </FormControl>
 
-          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-            {getValidationIcon()}
+            {showValidateButton && (
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                onClick={handleValidateClick}
+                disabled={!value || disabled || validation.isValidating}
+                className="shrink-0"
+              >
+                {validation.isValidating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Validating
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Validate
+                  </>
+                )}
+              </Button>
+            )}
           </div>
+
+          {!showValidateButton && (
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+              {getValidationIcon()}
+            </div>
+          )}
         </div>
 
         {description && (
@@ -291,6 +334,7 @@ export function HostnameInput({
 export function HostnameFormField({
   field,
   excludeConfigId,
+  showValidateButton = true,
   ...props
 }: {
   field: {
@@ -298,12 +342,14 @@ export function HostnameFormField({
     onChange: (value: string) => void;
   };
   excludeConfigId?: string;
-} & Omit<HostnameInputProps, 'value' | 'onChange'>) {
+  showValidateButton?: boolean;
+} & Omit<HostnameInputProps, 'value' | 'onChange' | 'showValidateButton'>) {
   return (
     <HostnameInput
       value={field.value || ""}
       onChange={field.onChange}
       excludeConfigId={excludeConfigId}
+      showValidateButton={showValidateButton}
       {...props}
     />
   );
