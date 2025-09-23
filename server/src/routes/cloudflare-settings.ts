@@ -40,7 +40,7 @@ const TUNNEL_CACHE_TTL = 60000; // 60 seconds
 // Request validation schemas
 const createCloudflareSettingSchema = z.object({
   api_token: z.string().min(40, "API token must be at least 40 characters"),
-  account_id: z.string().optional(),
+  account_id: z.string().min(1, "Account ID is required").regex(/^[a-f0-9]{32}$/, "Account ID must be a valid 32-character hex string"),
   encrypt: z.boolean().optional().default(true),
 });
 
@@ -49,7 +49,7 @@ const updateCloudflareSettingSchema = z.object({
     .string()
     .min(40, "API token must be at least 40 characters")
     .optional(),
-  account_id: z.string().optional(),
+  account_id: z.string().min(1, "Account ID is required").regex(/^[a-f0-9]{32}$/, "Account ID must be a valid 32-character hex string").optional(),
   encrypt: z.boolean().optional().default(true),
 });
 
@@ -165,9 +165,7 @@ router.post("/", requireSessionOrApiKey, (async (
     if (existingApiToken) {
       // Update existing configuration
       await cloudflareConfigService.setApiToken(api_token, userId);
-      if (account_id) {
-        await cloudflareConfigService.setAccountId(account_id, userId);
-      }
+      await cloudflareConfigService.setAccountId(account_id, userId);
 
       logger.debug(
         {
@@ -179,9 +177,7 @@ router.post("/", requireSessionOrApiKey, (async (
     } else {
       // Create new configuration
       await cloudflareConfigService.setApiToken(api_token, userId);
-      if (account_id) {
-        await cloudflareConfigService.setAccountId(account_id, userId);
-      }
+      await cloudflareConfigService.setAccountId(account_id, userId);
 
       logger.debug(
         {
@@ -200,7 +196,7 @@ router.post("/", requireSessionOrApiKey, (async (
       data: {
         isConfigured: true,
         hasApiToken: true,
-        accountId: account_id || existingAccountId || undefined,
+        accountId: account_id,
         isValid: validationResponse.isValid,
         validationMessage: validationResponse.message,
       },

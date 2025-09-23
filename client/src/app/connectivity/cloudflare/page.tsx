@@ -57,10 +57,10 @@ const cloudflareSettingsSchema = z.object({
     .regex(/^[A-Za-z0-9_-]+$/, "API token contains invalid characters"),
   accountId: z
     .string()
-    .optional()
-    .refine(
-      (val) => !val || /^[a-f0-9]{32}$/.test(val),
-      "Account ID must be a valid 32-character hex string",
+    .min(1, "Account ID is required")
+    .regex(
+      /^[a-f0-9]{32}$/,
+      "Account ID must be a valid 32-character hex string"
     ),
 });
 
@@ -99,7 +99,7 @@ export default function CloudflareSettingsPage() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [showApiToken, setShowApiToken] = useState(false);
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
-    {},
+    {}
   );
 
   // Fetch existing Cloudflare settings
@@ -151,7 +151,7 @@ export default function CloudflareSettingsPage() {
       onValidationError: (_, error) => {
         toast.error(`Cloudflare validation failed: ${error.message}`);
       },
-    },
+    }
   );
 
   // Update form when settings are loaded
@@ -162,7 +162,7 @@ export default function CloudflareSettingsPage() {
           acc[setting.key] = setting;
           return acc;
         },
-        {} as Record<string, SystemSettingsInfo>,
+        {} as Record<string, SystemSettingsInfo>
       );
       setSettings(settingsMap);
 
@@ -186,7 +186,7 @@ export default function CloudflareSettingsPage() {
           updateSetting.mutateAsync({
             id: settings.api_token.id,
             setting: { value: data.apiToken },
-          }),
+          })
         );
       } else {
         promises.push(
@@ -195,7 +195,7 @@ export default function CloudflareSettingsPage() {
             key: "api_token",
             value: data.apiToken,
             isEncrypted: true,
-          }),
+          })
         );
       }
 
@@ -206,7 +206,7 @@ export default function CloudflareSettingsPage() {
             updateSetting.mutateAsync({
               id: settings.account_id.id,
               setting: { value: data.accountId },
-            }),
+            })
           );
         } else {
           promises.push(
@@ -215,7 +215,7 @@ export default function CloudflareSettingsPage() {
               key: "account_id",
               value: data.accountId,
               isEncrypted: false,
-            }),
+            })
           );
         }
       }
@@ -388,7 +388,7 @@ export default function CloudflareSettingsPage() {
                         name="accountId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Account ID (Optional)</FormLabel>
+                            <FormLabel>Account ID</FormLabel>
                             <FormControl>
                               <Input
                                 placeholder="32-character account identifier"
@@ -396,9 +396,11 @@ export default function CloudflareSettingsPage() {
                               />
                             </FormControl>
                             <FormDescription>
-                              Your Cloudflare Account ID for enhanced tunnel
-                              management. Found in your Cloudflare dashboard
-                              sidebar.
+                              Your Cloudflare Account ID is required. You can
+                              find your Account ID in the URL when you browse to
+                              the dashboard - for example
+                              https://dash.cloudflare.com/xxxxxxxxxxxxxx/home
+                              where xxxxxxxxxxxxxx is your Account ID.
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
