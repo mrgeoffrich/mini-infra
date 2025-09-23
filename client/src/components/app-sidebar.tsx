@@ -1,17 +1,6 @@
 import * as React from "react";
 import { Link } from "react-router-dom";
-import {
-  IconBrandDocker,
-  IconCloud,
-  IconCloudComputing,
-  IconDashboard,
-  IconDatabase,
-  IconInnerShadowTop,
-  IconKey,
-  IconRocket,
-  IconServer,
-  IconSettings,
-} from "@tabler/icons-react";
+import { IconInnerShadowTop } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
@@ -25,77 +14,13 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-
-const data = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: IconDashboard,
-    },
-    {
-      title: "Containers",
-      url: "/containers",
-      icon: IconBrandDocker,
-    },
-    {
-      title: "PostgreSQL",
-      url: "/postgres",
-      icon: IconDatabase,
-    },
-    {
-      title: "Deployments",
-      url: "/deployments",
-      icon: IconRocket,
-    },
-    {
-      title: "Environments",
-      url: "/environments",
-      icon: IconServer,
-    },
-    {
-      title: "Cloudflare Tunnels",
-      url: "/tunnels",
-      icon: IconCloud,
-    },
-    {
-      title: "API Keys",
-      url: "/api-keys",
-      icon: IconKey,
-    },
-    {
-      title: "Connectivity",
-      url: "/connectivity",
-      icon: IconSettings,
-      items: [
-        {
-          title: "Docker Configuration",
-          url: "/connectivity/docker",
-          icon: IconBrandDocker,
-        },
-        {
-          title: "Cloudflare Settings",
-          url: "/connectivity/cloudflare",
-          icon: IconCloudComputing,
-        },
-        {
-          title: "Azure Storage",
-          url: "/connectivity/azure",
-          icon: IconCloud,
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "System Settings",
-      url: "/settings/system",
-      icon: IconSettings,
-    },
-  ],
-};
+import { getNavigationItems } from "@/lib/route-config";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  // Get navigation items from centralized route configuration
+  const navMain = getNavigationItems('main');
+  const navSecondary = getNavigationItems('secondary');
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -114,8 +39,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavMain items={navMain} />
+        <NavSecondary items={navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
