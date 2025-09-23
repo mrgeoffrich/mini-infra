@@ -49,6 +49,7 @@ const createEnvironmentSchema = z.object({
     ),
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const),
+  networkType: z.enum(["local", "internet"] as const).optional(),
   services: z
     .array(
       z.object({
@@ -89,6 +90,7 @@ export function EnvironmentCreateDialog({
       name: "",
       description: "",
       type: "nonproduction",
+      networkType: "local",
       services: [],
     },
   });
@@ -234,6 +236,35 @@ export function EnvironmentCreateDialog({
                       </Select>
                       <FormDescription>
                         Production environments have additional safety measures
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="networkType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Network Type</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={createMutation.isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select network type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="local">Local</SelectItem>
+                          <SelectItem value="internet">Internet</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Local networks require a host IP address. Internet networks use Cloudflare tunnels.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

@@ -116,6 +116,7 @@ describe('EnvironmentManager', () => {
         name: 'test-env',
         description: 'Test environment',
         type: 'nonproduction',
+        networkType: 'local',
         status: ServiceStatusValues.UNINITIALIZED,
         isActive: false,
         services: [],
@@ -142,6 +143,7 @@ describe('EnvironmentManager', () => {
           name: 'test-env',
           description: 'Test environment',
           type: 'nonproduction',
+          networkType: 'local',
           status: ServiceStatusValues.UNINITIALIZED,
           isActive: false
         },
@@ -199,6 +201,96 @@ describe('EnvironmentManager', () => {
 
       await expect(environmentManager.createEnvironment(request))
         .rejects.toThrow('Unknown service type: unknown');
+    });
+
+    it('should create environment with specified networkType', async () => {
+      const mockEnvironmentData = {
+        id: 'env-1',
+        name: 'test-env',
+        description: 'Test environment',
+        type: 'nonproduction',
+        networkType: 'internet',
+        status: ServiceStatusValues.UNINITIALIZED,
+        isActive: false,
+        services: [],
+        networks: [],
+        volumes: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      mockPrisma.environment.create.mockResolvedValue(mockEnvironmentData);
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironmentData);
+
+      const request = {
+        name: 'test-env',
+        description: 'Test environment',
+        type: 'nonproduction' as const,
+        networkType: 'internet' as const
+      };
+
+      const result = await environmentManager.createEnvironment(request);
+
+      expect(result).toEqual(mockEnvironmentData);
+      expect(mockPrisma.environment.create).toHaveBeenCalledWith({
+        data: {
+          name: 'test-env',
+          description: 'Test environment',
+          type: 'nonproduction',
+          networkType: 'internet',
+          status: ServiceStatusValues.UNINITIALIZED,
+          isActive: false
+        },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
+    });
+
+    it('should default networkType to local if not specified', async () => {
+      const mockEnvironmentData = {
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        networkType: 'local',
+        status: ServiceStatusValues.UNINITIALIZED,
+        isActive: false,
+        services: [],
+        networks: [],
+        volumes: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      mockPrisma.environment.create.mockResolvedValue(mockEnvironmentData);
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironmentData);
+
+      const request = {
+        name: 'test-env',
+        type: 'nonproduction' as const
+        // networkType is omitted, should default to 'local'
+      };
+
+      const result = await environmentManager.createEnvironment(request);
+
+      expect(result).toEqual(mockEnvironmentData);
+      expect(mockPrisma.environment.create).toHaveBeenCalledWith({
+        data: {
+          name: 'test-env',
+          description: undefined,
+          type: 'nonproduction',
+          networkType: 'local',
+          status: ServiceStatusValues.UNINITIALIZED,
+          isActive: false
+        },
+        include: {
+          services: true,
+          networks: true,
+          volumes: true
+        }
+      });
     });
   });
 

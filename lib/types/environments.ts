@@ -1,12 +1,14 @@
 import { ServiceStatus, ApplicationServiceHealthStatus } from './services';
 
 export type EnvironmentType = 'production' | 'nonproduction';
+export type EnvironmentNetworkType = 'local' | 'internet';
 
 export interface Environment {
   id: string;
   name: string;
   description?: string;
   type: EnvironmentType;
+  networkType: EnvironmentNetworkType;
   status: ServiceStatus;
   isActive: boolean;
   services: EnvironmentService[];
@@ -60,12 +62,14 @@ export interface CreateEnvironmentRequest {
   name: string;
   description?: string;
   type: EnvironmentType;
+  networkType?: EnvironmentNetworkType;
   services?: ServiceConfiguration[];
 }
 
 export interface UpdateEnvironmentRequest {
   description?: string;
   type?: EnvironmentType;
+  networkType?: EnvironmentNetworkType;
   isActive?: boolean;
 }
 

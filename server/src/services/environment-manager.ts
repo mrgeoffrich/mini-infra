@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   Environment,
   EnvironmentType,
+  EnvironmentNetworkType,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
   ServiceConfiguration,
@@ -61,6 +62,7 @@ export class EnvironmentManager {
           name: request.name,
           description: request.description,
           type: request.type,
+          networkType: request.networkType || 'local',
           status: 'uninitialized',
           isActive: false
         },
@@ -186,6 +188,7 @@ export class EnvironmentManager {
         data: {
           description: request.description,
           type: request.type,
+          networkType: request.networkType,
           isActive: request.isActive
         },
         include: {
@@ -860,6 +863,7 @@ export class EnvironmentManager {
       name: prismaEnv.name,
       description: prismaEnv.description,
       type: prismaEnv.type as EnvironmentType,
+      networkType: prismaEnv.networkType as EnvironmentNetworkType,
       status: prismaEnv.status as ServiceStatus,
       isActive: prismaEnv.isActive,
       services: prismaEnv.services.map((s: any) => ({

@@ -108,6 +108,7 @@ describe('Environment API', () => {
     name: 'test-environment',
     description: 'Test environment',
     type: 'nonproduction',
+    networkType: 'local',
     status: ServiceStatusValues.RUNNING,
     isActive: true,
     services: [{
@@ -207,6 +208,7 @@ describe('Environment API', () => {
         name: 'new-environment',
         description: 'New test environment',
         type: 'nonproduction',
+        networkType: 'internet',
         services: [{
           serviceName: 'my-haproxy',
           serviceType: 'haproxy',
@@ -268,6 +270,63 @@ describe('Environment API', () => {
 
       expect(response.body.error).toBe('Environment name already exists');
     });
+
+    it('should create environment with default local network type', async () => {
+      mockServiceRegistry.isServiceTypeAvailable.mockReturnValue(true);
+      mockEnvironmentManager.createEnvironment.mockResolvedValue(mockEnvironment);
+
+      const createRequest = {
+        name: 'new-environment',
+        description: 'New test environment',
+        type: 'nonproduction'
+        // networkType is omitted - should default to 'local'
+      };
+
+      const response = await request(app)
+        .post('/api/environments')
+        .send(createRequest)
+        .expect(201);
+
+      expect(response.body).toEqual(expect.objectContaining({
+        id: 'env-1',
+        name: 'test-environment'
+      }));
+
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest);
+    });
+
+    it('should validate networkType field', async () => {
+      const createRequest = {
+        name: 'new-environment',
+        type: 'nonproduction',
+        networkType: 'invalid-type'
+      };
+
+      const response = await request(app)
+        .post('/api/environments')
+        .send(createRequest)
+        .expect(400);
+
+      expect(response.body.error).toBe('Invalid query parameters');
+    });
+
+    it('should accept valid networkType values', async () => {
+      mockServiceRegistry.isServiceTypeAvailable.mockReturnValue(true);
+      mockEnvironmentManager.createEnvironment.mockResolvedValue({...mockEnvironment, networkType: 'internet'});
+
+      const createRequest = {
+        name: 'internet-environment',
+        type: 'nonproduction',
+        networkType: 'internet'
+      };
+
+      const response = await request(app)
+        .post('/api/environments')
+        .send(createRequest)
+        .expect(201);
+
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest);
+    });
   });
 
   describe('GET /api/environments/:id', () => {
@@ -303,8 +362,8 @@ describe('Environment API', () => {
       mockEnvironmentManager.updateEnvironment.mockResolvedValue(updatedEnvironment);
 
       const updateRequest = {
-        name: 'updated-environment',
-        description: 'Updated description'
+        description: 'Updated description',
+        networkType: 'internet'
       };
 
       const response = await request(app)
@@ -316,12 +375,42 @@ describe('Environment API', () => {
       expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
     });
 
+    it('should update environment networkType successfully', async () => {
+      const updatedEnvironment = { ...mockEnvironment, networkType: 'internet' };
+      mockEnvironmentManager.updateEnvironment.mockResolvedValue(updatedEnvironment);
+
+      const updateRequest = {
+        networkType: 'internet'
+      };
+
+      const response = await request(app)
+        .put('/api/environments/env-1')
+        .send(updateRequest)
+        .expect(200);
+
+      expect(response.body.networkType).toBe('internet');
+      expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
+    });
+
+    it('should validate networkType in update request', async () => {
+      const updateRequest = {
+        networkType: 'invalid-type'
+      };
+
+      const response = await request(app)
+        .put('/api/environments/env-1')
+        .send(updateRequest)
+        .expect(400);
+
+      expect(response.body.error).toBe('Invalid query parameters');
+    });
+
     it('should return 404 for non-existent environment', async () => {
       mockEnvironmentManager.updateEnvironment.mockResolvedValue(null);
 
       await request(app)
         .put('/api/environments/non-existent')
-        .send({ name: 'updated-name' })
+        .send({ description: 'updated-description' })
         .expect(404);
     });
   });

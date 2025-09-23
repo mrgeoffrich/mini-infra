@@ -30,14 +30,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const).optional(),
-  isActive: z.boolean().optional(),
 });
 
 type UpdateEnvironmentFormData = z.infer<typeof updateEnvironmentSchema>;
@@ -62,7 +60,6 @@ export function EnvironmentEditDialog({
     defaultValues: {
       description: environment.description || "",
       type: environment.type,
-      isActive: environment.isActive,
     },
   });
 
@@ -76,9 +73,6 @@ export function EnvironmentEditDialog({
       }
       if (data.type && data.type !== environment.type) {
         changes.type = data.type;
-      }
-      if (data.isActive !== environment.isActive) {
-        changes.isActive = data.isActive;
       }
 
       // If no changes, just close the dialog
@@ -110,7 +104,6 @@ export function EnvironmentEditDialog({
       form.reset({
         description: environment.description || "",
         type: environment.type,
-        isActive: environment.isActive,
       });
     }
   }, [environment, open, form]);
@@ -185,27 +178,16 @@ export function EnvironmentEditDialog({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="isActive"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={updateMutation.isPending}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Active Environment</FormLabel>
-                    <FormDescription>
-                      Whether this environment is actively used
-                    </FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+            <div className="p-4 bg-muted rounded-md">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium">Network Type:</span>
+                <code className="text-xs bg-background px-2 py-1 rounded capitalize">{environment.networkType}</code>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Network type cannot be changed after creation to maintain infrastructure consistency.
+              </p>
+            </div>
+
           </form>
         </Form>
 
