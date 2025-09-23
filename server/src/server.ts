@@ -30,6 +30,11 @@ let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 
+// Export function to get connectivity scheduler instance
+export function getConnectivityScheduler(): ConnectivityScheduler | null {
+  return connectivityScheduler;
+}
+
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
   try {

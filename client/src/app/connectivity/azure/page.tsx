@@ -36,6 +36,8 @@ import {
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
 import { useAdvancedSettingsValidation } from "@/hooks/use-settings-validation";
+import { useServiceTesting } from "@/hooks/use-service-testing";
+import { TestResultsPanel } from "@/components/TestResultsPanel";
 import {
   Database,
   CheckCircle,
@@ -103,7 +105,6 @@ const STATUS_VARIANTS = {
 
 export default function AzureSettingsPage() {
   const { formatDateTime } = useFormattedDate();
-  const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [showConnectionString, setShowConnectionString] = useState(false);
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {},
@@ -132,96 +133,29 @@ export default function AzureSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
+  // Watch form values
   const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<
-    "idle" | "saving" | "saved" | "error"
-  >("idle");
 
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Auto-save functionality with debouncing
-  useEffect(() => {
-    if (!form.formState.isValid || !debouncedValues.connectionString) {
-      return;
-    }
-
-    // Only auto-save if the connection string has actually changed from the saved value
-    const currentSavedValue = settings.connection_string?.value || "";
-    if (debouncedValues.connectionString === currentSavedValue) {
-      return;
-    }
-
-    // Auto-save after debounce delay
-    const autoSaveTimer = setTimeout(async () => {
-      try {
-        setAutoSaveStatus("saving");
-
-        // Save or update connection string setting (encrypted)
-        if (settings.connection_string) {
-          await updateSetting.mutateAsync({
-            id: settings.connection_string.id,
-            setting: { value: debouncedValues.connectionString },
-          });
-        } else {
-          await createSetting.mutateAsync({
-            category: "azure",
-            key: "connection_string",
-            value: debouncedValues.connectionString,
-            isEncrypted: true,
-          });
-        }
-
-        setAutoSaveStatus("saved");
-        toast.success("Azure Storage settings auto-saved successfully");
-
-        // Clear saved status after a short delay
-        setTimeout(() => {
-          setAutoSaveStatus("idle");
-        }, 2000);
-      } catch (error) {
-        setAutoSaveStatus("error");
-        console.error("Auto-save failed:", error);
-        toast.error(`Auto-save failed: ${(error as Error).message}`);
-
-        // Clear error status after a delay
-        setTimeout(() => {
-          setAutoSaveStatus("idle");
-        }, 3000);
-      }
-    }, 1000); // 1 second delay for auto-save
-
-    return () => clearTimeout(autoSaveTimer);
-  }, [
-    debouncedValues.connectionString,
-    form.formState.isValid,
-    settings.connection_string,
-    updateSetting,
-    createSetting,
-  ]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "azure",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: true, // Always enable connectivity monitoring
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Azure Storage connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Azure Storage validation failed: ${error.message}`);
-      },
+  // Service testing hook for test-only validation
+  const serviceTesting = useServiceTesting("azure", {
+    onSuccess: () => {
+      toast.success("Azure Storage connection test successful");
     },
-  );
+    onError: (error) => {
+      toast.error(`Azure Storage test failed: ${error.message}`);
+    },
+  });
+
+  // Advanced validation for saved settings connectivity monitoring
+  const validation = useAdvancedSettingsValidation("azure", {
+    enabled: true,
+    onValidationSuccess: () => {
+      toast.success("Azure Storage connection validated successfully");
+    },
+    onValidationError: (_, error) => {
+      toast.error(`Azure Storage validation failed: ${error.message}`);
+    },
+  });
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -259,18 +193,24 @@ export default function AzureSettingsPage() {
         });
       }
 
-      toast.success("Azure Storage settings saved successfully");
+      // Trigger immediate validation of saved settings
+      validation.validateManually();
+
+      toast.success("Azure Storage settings saved and connectivity check triggered");
     } catch (error) {
       toast.error(`Failed to save settings: ${(error as Error).message}`);
     }
   };
 
   const handleTestConnection = async () => {
-    setIsTestingConnection(true);
     try {
-      await validation.validateManually();
-    } finally {
-      setIsTestingConnection(false);
+      // Test connection with current form values (no database writes)
+      await serviceTesting.testConnection({
+        connection_string: formValues.connectionString,
+      });
+    } catch (error) {
+      // Error handling is done in the hook's onError callback
+      console.error("Test connection failed:", error);
     }
   };
 
@@ -480,52 +420,31 @@ export default function AzureSettingsPage() {
                       variant="outline"
                       disabled={
                         !form.formState.isValid ||
-                        isTestingConnection ||
-                        validation.isValidating
+                        serviceTesting.isTesting
                       }
                       onClick={handleTestConnection}
                     >
-                      {isTestingConnection || validation.isValidating ? (
+                      {serviceTesting.isTesting ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <TestTube className="mr-2 h-4 w-4" />
                       )}
                       Test Connection
                     </Button>
-
-                    {/* Auto-save status indicator */}
-                    {autoSaveStatus !== "idle" && (
-                      <div className="flex items-center gap-2 text-sm">
-                        {autoSaveStatus === "saving" && (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                            <span className="text-blue-600">
-                              Auto-saving...
-                            </span>
-                          </>
-                        )}
-                        {autoSaveStatus === "saved" && (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            <span className="text-green-600">Auto-saved</span>
-                          </>
-                        )}
-                        {autoSaveStatus === "error" && (
-                          <>
-                            <XCircle className="h-4 w-4 text-red-600" />
-                            <span className="text-red-600">
-                              Auto-save failed
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </form>
               </Form>
             )}
           </CardContent>
         </Card>
+
+        {/* Test Results Panel */}
+        <TestResultsPanel
+          testResults={serviceTesting.testResults}
+          isTesting={serviceTesting.isTesting}
+          onClearResults={serviceTesting.clearTestResults}
+          className="mt-6"
+        />
 
         {/* Status Panels - Two Column Layout */}
         <div className="grid gap-6 md:grid-cols-2 mt-6">
@@ -535,6 +454,9 @@ export default function AzureSettingsPage() {
               <CardTitle className="text-sm font-medium">
                 Connection Status
               </CardTitle>
+              <CardDescription className="text-xs">
+                Status of saved configuration (updated when settings are saved)
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading && !latestConnectivity ? (

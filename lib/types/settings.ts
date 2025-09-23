@@ -263,3 +263,43 @@ export interface ValidateServiceResponse {
   timestamp: string;
   requestId?: string;
 }
+
+// ====================
+// Test-Only Validation API Types
+// ====================
+
+export interface TestServiceRequest {
+  settings: Record<string, string>;
+}
+
+export interface TestServiceResponse {
+  success: boolean;
+  data: {
+    service: SettingsCategory;
+    isValid: boolean;
+    responseTimeMs: number;
+    error?: string;
+    errorCode?: string;
+    metadata?: Record<string, any>;
+    testedAt: string;
+  };
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+// ====================
+// Save and Validate API Types
+// ====================
+
+export interface SaveAndValidateResponse {
+  success: boolean;
+  data: {
+    saved: boolean;
+    validated: boolean;
+    connectivity?: ConnectivityStatusInfo;
+  };
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}

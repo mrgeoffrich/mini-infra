@@ -11,6 +11,7 @@ const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
+import { getConnectivityScheduler } from "../server";
 import {
   CreateSettingRequest,
   UpdateSettingRequest,
@@ -24,6 +25,8 @@ import {
   SettingsSortOptions,
   ValidateServiceRequest,
   ValidateServiceResponse,
+  TestServiceRequest,
+  TestServiceResponse,
   ConnectivityStatus,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
@@ -639,6 +642,173 @@ router.get("/connectivity", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * POST /api/settings/test/:service - Test service connectivity without database persistence
+ */
+router.post("/test/:service", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const service = req.params.service;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+      service,
+    },
+    "Service test requested (read-only)",
+  );
+
+  try {
+    if (!user || !userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate service parameter
+    if (
+      ![
+        "docker",
+        "cloudflare",
+        "azure",
+        "postgres",
+        "system",
+        "deployments",
+      ].includes(service)
+    ) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate request body
+    const testServiceSchema = z.object({
+      settings: z.record(z.string(), z.string()),
+    });
+
+    const bodyValidation = testServiceSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          service,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for service test",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const { settings } = bodyValidation.data;
+
+    // Create a temporary configuration service with the provided settings
+    // Note: This creates a service instance with test settings, not saved ones
+    const configService = configFactory.create({
+      category: service as SettingsCategory,
+    });
+
+    // Override the service's get method temporarily to use test settings
+    const originalGet = configService.get.bind(configService);
+    configService.get = async (key: string) => {
+      return settings[key] || null;
+    };
+
+    // Perform validation with timeout protection
+    const startTime = Date.now();
+    const validationResult = (await raceWithTimeout(
+      configService.validate(),
+      30000,
+      "Test validation timeout",
+    )) as any;
+
+    const responseTime = Date.now() - startTime;
+
+    // Restore original get method
+    configService.get = originalGet;
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        service,
+        isValid: validationResult.isValid,
+        responseTimeMs: responseTime,
+        errorCode: validationResult.errorCode,
+      },
+      "Service test completed (no database storage)",
+    );
+
+    const response: TestServiceResponse = {
+      success: true,
+      data: {
+        service: service as SettingsCategory,
+        isValid: validationResult.isValid,
+        responseTimeMs: responseTime,
+        error: validationResult.isValid ? undefined : validationResult.message,
+        errorCode: validationResult.errorCode,
+        metadata: validationResult.metadata,
+        testedAt: new Date().toISOString(),
+      },
+      message: validationResult.isValid
+        ? `${service} service test successful (read-only)`
+        : `${service} service test failed (read-only)`,
+      timestamp: new Date().toISOString(),
+      requestId,
+    };
+
+    res.json(response);
+  } catch (error) {
+    const responseTime = Date.now() - (Date.now() - 30000); // Fallback time calculation
+
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        service,
+      },
+      "Service test failed with error",
+    );
+
+    const response: TestServiceResponse = {
+      success: false,
+      data: {
+        service: service as SettingsCategory,
+        isValid: false,
+        responseTimeMs: responseTime,
+        error: error instanceof Error ? error.message : "Unknown test error",
+        errorCode: "TEST_ERROR",
+        testedAt: new Date().toISOString(),
+      },
+      message: `${service} service test failed`,
+      timestamp: new Date().toISOString(),
+      requestId,
+    };
+
+    res.status(500).json(response);
+  }
+}) as RequestHandler);
+
+/**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
 router.post("/validate/:service", requireSessionOrApiKey, (async (
@@ -762,6 +932,43 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
           lastValidatedAt: new Date(),
         },
       });
+
+      // Trigger immediate health check to update connectivity status
+      try {
+        const scheduler = getConnectivityScheduler();
+        if (scheduler) {
+          // Use the new immediate health check method for faster feedback
+          await scheduler.performImmediateHealthCheck(service as SettingsCategory);
+          logger.info(
+            {
+              requestId,
+              userId,
+              service,
+            },
+            "Immediate health check triggered after validation",
+          );
+        } else {
+          logger.warn(
+            {
+              requestId,
+              userId,
+              service,
+            },
+            "Connectivity scheduler not available for immediate health check",
+          );
+        }
+      } catch (schedulerError) {
+        // Log but don't fail the validation if scheduler fails
+        logger.error(
+          {
+            error: schedulerError,
+            requestId,
+            userId,
+            service,
+          },
+          "Failed to trigger immediate health check after validation",
+        );
+      }
     }
 
     logger.debug(

@@ -126,33 +126,17 @@ export default function CloudflareSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
-  const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
 
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "cloudflare",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: true, // Always enable connectivity monitoring
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Cloudflare connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Cloudflare validation failed: ${error.message}`);
-      },
-    }
-  );
+  // Advanced validation for saved settings connectivity monitoring
+  const validation = useAdvancedSettingsValidation("cloudflare", {
+    enabled: true,
+    onValidationSuccess: () => {
+      toast.success("Cloudflare connection validated successfully");
+    },
+    onValidationError: (_, error) => {
+      toast.error(`Cloudflare validation failed: ${error.message}`);
+    },
+  });
 
   // Update form when settings are loaded
   useEffect(() => {

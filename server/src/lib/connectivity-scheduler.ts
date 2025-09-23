@@ -401,6 +401,93 @@ export class ConnectivityScheduler {
   }
 
   /**
+   * Perform immediate health check for a specific service and store results in database
+   * This method is designed to be called after saving settings to get immediate feedback
+   * @param service - The service to check
+   * @returns Promise that resolves when health check is complete and stored
+   */
+  async performImmediateHealthCheck(service: SettingsCategory): Promise<void> {
+    const monitor = this.monitors.get(service);
+    if (!monitor) {
+      throw new Error(`Unsupported service: ${service}`);
+    }
+
+    logger.info({ service }, "Performing immediate health check with database storage");
+
+    try {
+      // Get the service instance for validation
+      const serviceInstance = this.factory.create({ category: service });
+
+      // Perform validation
+      const startTime = Date.now();
+      const result = await serviceInstance.validate();
+      const responseTime = Date.now() - startTime;
+
+      // Store results in ConnectivityStatus database
+      await this.prisma.connectivityStatus.create({
+        data: {
+          service,
+          status: result.isValid ? "connected" : "failed",
+          responseTimeMs: responseTime,
+          errorMessage: result.isValid ? null : result.message,
+          errorCode: result.errorCode || null,
+          lastSuccessfulAt: result.isValid ? new Date() : null,
+          checkInitiatedBy: "system", // Mark as system-initiated immediate check
+          metadata: result.metadata ? JSON.stringify(result.metadata) : null,
+        },
+      });
+
+      // Update SystemSettings validation status
+      await this.prisma.systemSettings.updateMany({
+        where: {
+          category: service,
+          isActive: true,
+        },
+        data: {
+          validationStatus: result.isValid ? "valid" : "invalid",
+          validationMessage: result.isValid ? null : result.message,
+          lastValidatedAt: new Date(),
+        },
+      });
+
+      logger.info(
+        {
+          service,
+          isValid: result.isValid,
+          responseTimeMs: responseTime,
+          errorCode: result.errorCode,
+        },
+        "Immediate health check completed and stored in database",
+      );
+    } catch (error) {
+      const responseTime = Date.now() - Date.now(); // Fallback time calculation
+      const errorMessage = error instanceof Error ? error.message : "Unknown validation error";
+
+      // Store failed validation in ConnectivityStatus database
+      await this.prisma.connectivityStatus.create({
+        data: {
+          service,
+          status: "error",
+          responseTimeMs: responseTime,
+          errorMessage,
+          errorCode: "IMMEDIATE_VALIDATION_ERROR",
+          checkInitiatedBy: "system",
+        },
+      });
+
+      logger.error(
+        {
+          error,
+          service,
+        },
+        "Immediate health check failed with error",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
    * Get the current status of all services
    * @returns Map of service statuses
    */

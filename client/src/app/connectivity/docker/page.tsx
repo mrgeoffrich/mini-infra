@@ -100,33 +100,17 @@ export default function DockerSettingsPage() {
     mode: "onChange",
   });
 
-  // Watch form values for real-time validation
-  const formValues = form.watch();
-  const [debouncedValues, setDebouncedValues] = useState(formValues);
 
-  // Debounce form values for validation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedValues(formValues);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [formValues]);
-
-  // Advanced validation with real-time connectivity testing
-  const validation = useAdvancedSettingsValidation(
-    "docker",
-    form.formState.isValid ? debouncedValues : undefined,
-    {
-      enabled: form.formState.isValid,
-      debounceDelay: 500,
-      onValidationSuccess: () => {
-        toast.success("Docker connection validated successfully");
-      },
-      onValidationError: (_, error) => {
-        toast.error(`Docker validation failed: ${error.message}`);
-      },
+  // Advanced validation for saved settings connectivity monitoring
+  const validation = useAdvancedSettingsValidation("docker", {
+    enabled: true,
+    onValidationSuccess: () => {
+      toast.success("Docker connection validated successfully");
     },
-  );
+    onValidationError: (_, error) => {
+      toast.error(`Docker validation failed: ${error.message}`);
+    },
+  });
 
   // Update form when settings are loaded
   useEffect(() => {

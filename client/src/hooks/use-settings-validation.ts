@@ -146,47 +146,26 @@ export function useConnectivityStatus(
 }
 
 // ====================
-// Settings Validator Hook with Debouncing
+// Settings Validator Hook (No Auto-Validation)
 // ====================
 
 export interface UseSettingsValidatorOptions {
   enabled?: boolean;
-  debounceDelay?: number;
   retry?: number | boolean | ((failureCount: number, error: Error) => boolean);
 }
 
 export function useSettingsValidator(
   service: SettingsCategory,
-  settings: Record<string, string> | undefined,
   options: UseSettingsValidatorOptions = {},
 ) {
-  const { enabled = true, debounceDelay = 500, retry = 1 } = options;
-
-  const [debouncedSettings, setDebouncedSettings] = useState(settings);
-  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const { enabled = true, retry = 1 } = options;
   const correlationId = generateCorrelationId();
 
-  // Debounce settings changes
-  useEffect(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    timeoutRef.current = setTimeout(() => {
-      setDebouncedSettings(settings);
-    }, debounceDelay);
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [settings, debounceDelay]);
-
+  // Only validate saved settings (no automatic validation of form changes)
   return useQuery({
-    queryKey: ["settingsValidator", service, debouncedSettings],
-    queryFn: () => validateService(service, debouncedSettings, correlationId),
-    enabled: enabled && !!service && !!debouncedSettings,
+    queryKey: ["settingsValidator", service],
+    queryFn: () => validateService(service, undefined, correlationId), // undefined = use saved settings
+    enabled: enabled && !!service,
     retry:
       typeof retry === "function"
         ? retry
@@ -464,7 +443,6 @@ export function useValidationRecovery(
 
 export interface UseAdvancedSettingsValidationOptions {
   enabled?: boolean;
-  debounceDelay?: number;
   pollingInterval?: number;
   maxRetries?: number;
   onValidationSuccess?: (
@@ -477,12 +455,10 @@ export interface UseAdvancedSettingsValidationOptions {
 
 export function useAdvancedSettingsValidation(
   service: SettingsCategory,
-  settings: Record<string, string> | undefined,
   options: UseAdvancedSettingsValidationOptions = {},
 ) {
   const {
     enabled = true,
-    debounceDelay = 500,
     pollingInterval = 30000,
     maxRetries = 3,
     onValidationSuccess,
@@ -490,10 +466,9 @@ export function useAdvancedSettingsValidation(
     onMaxRetriesExceeded,
   } = options;
 
-  // Individual hooks
-  const validator = useSettingsValidator(service, settings, {
+  // Individual hooks - no more automatic validation on form changes
+  const validator = useSettingsValidator(service, {
     enabled,
-    debounceDelay,
     retry: false, // Handle retries manually
   });
 
@@ -525,21 +500,18 @@ export function useAdvancedSettingsValidation(
 
   const optimistic = useOptimisticValidation();
 
-  // Manual validation with retry logic
+  // Manual validation with retry logic - validates saved settings only
   const validateWithRetry = useCallback(
-    async (
-      serviceToValidate: SettingsCategory,
-      settingsToValidate: Record<string, string>,
-    ) => {
-      optimistic.startValidation(serviceToValidate, settingsToValidate);
+    async (serviceToValidate: SettingsCategory) => {
+      optimistic.startValidation(serviceToValidate, {});
 
       try {
         const result = await validateService.mutateAsync({
           service: serviceToValidate,
-          settings: settingsToValidate,
+          settings: undefined, // Use saved settings
         });
 
-        optimistic.finishValidation(serviceToValidate, settingsToValidate, {
+        optimistic.finishValidation(serviceToValidate, {}, {
           isValid: result.data.isValid,
           message: result.message,
           responseTimeMs: result.data.responseTimeMs,
@@ -550,13 +522,13 @@ export function useAdvancedSettingsValidation(
       } catch (error) {
         const shouldRetry = recovery.retryValidation(
           serviceToValidate,
-          settingsToValidate,
-          () => validateWithRetry(serviceToValidate, settingsToValidate),
+          {},
+          () => validateWithRetry(serviceToValidate),
           error as Error,
         );
 
         if (!shouldRetry) {
-          optimistic.finishValidation(serviceToValidate, settingsToValidate, {
+          optimistic.finishValidation(serviceToValidate, {}, {
             isValid: false,
             message: (error as Error).message,
           });
@@ -575,9 +547,7 @@ export function useAdvancedSettingsValidation(
 
     // Actions
     validateManually: () => {
-      if (settings) {
-        validateWithRetry(service, settings);
-      }
+      validateWithRetry(service);
     },
     resetRetries: () => recovery.resetRetries(service),
 
