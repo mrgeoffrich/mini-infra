@@ -23,6 +23,8 @@ import {
   DeploymentFilter,
   DeploymentConfigFilter,
   DeploymentConfigSortOptions,
+  HostnameValidationRequest,
+  HostnameValidationResponse,
 } from "@mini-infra/types";
 
 const logger = servicesLogger();
@@ -144,6 +146,14 @@ const deploymentQuerySchema = z.object({
       if (!val) return undefined;
       return val.toLowerCase() === "true";
     }),
+});
+
+const hostnameValidationSchema = z.object({
+  hostname: z
+    .string()
+    .min(1, "Hostname is required")
+    .max(253, "Hostname must be 253 characters or less"),
+  excludeConfigId: z.string().optional(),
 });
 
 // ====================
@@ -801,6 +811,73 @@ router.get(
       logger.error(
         { error: error instanceof Error ? error.message : String(error) },
         "Failed to get deployment history",
+      );
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+/**
+ * POST /api/deployments/configs/validate-hostname
+ * Validate hostname availability for deployment configuration
+ */
+router.post(
+  "/configs/validate-hostname",
+  requireSessionOrApiKey as RequestHandler,
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+
+      // Validate request body
+      const validationResult = hostnameValidationSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request data",
+          errors: validationResult.error.issues.map((e) => ({
+            field: e.path.join("."),
+            message: e.message,
+          })),
+        });
+      }
+
+      const { hostname, excludeConfigId } = validationResult.data;
+
+      // Validate hostname
+      const hostnameValidation = await deploymentConfigService.validateHostname(
+        hostname,
+        excludeConfigId
+      );
+
+      const response: HostnameValidationResponse = {
+        success: true,
+        data: hostnameValidation,
+      };
+
+      res.json(response);
+
+      logger.info(
+        {
+          hostname,
+          isValid: hostnameValidation.isValid,
+          isAvailable: hostnameValidation.isAvailable,
+          userId: user.id,
+        },
+        "Hostname validation completed"
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          hostname: req.body?.hostname,
+        },
+        "Failed to validate hostname"
       );
       next(error);
     }

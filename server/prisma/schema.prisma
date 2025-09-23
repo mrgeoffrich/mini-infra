@@ -218,6 +218,7 @@ model DeploymentConfiguration {
   healthCheckConfig Json     // Endpoint, validation rules
   rollbackConfig    Json     // Rollback settings
   listeningPort     Int?     // Port used for health checks
+  hostname          String?  // Public hostname for Cloudflare routing
   isActive          Boolean  @default(true)
   environmentId     String   // Required environment assignment (immutable)
   environment       Environment @relation(fields: [environmentId], references: [id])
@@ -227,6 +228,7 @@ model DeploymentConfiguration {
   deployments       Deployment[]
 
   @@index([environmentId])
+  @@index([hostname])
   @@map("deployment_configurations")
 }
 
