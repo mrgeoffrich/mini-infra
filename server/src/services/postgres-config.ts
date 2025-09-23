@@ -14,6 +14,8 @@ import {
   PostgreSSLMode,
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
+  DiscoverDatabasesRequest,
+  DatabaseInfo,
 } from "@mini-infra/types";
 
 export class DatabaseConfigService {
@@ -738,6 +740,118 @@ export class DatabaseConfigService {
         "Failed to get connection configuration",
       );
       throw error;
+    }
+  }
+
+  /**
+   * Discover available databases on a PostgreSQL server
+   * @param request - Database discovery request with connection details
+   * @returns List of databases available on the server
+   */
+  async discoverDatabases(
+    request: DiscoverDatabasesRequest,
+  ): Promise<{ databases: DatabaseInfo[]; serverVersion?: string; responseTimeMs: number }> {
+    const startTime = Date.now();
+    let client: PostgresClient | null = null;
+
+    try {
+      // Create connection config to connect to postgres database for discovery
+      const connectionConfig: DatabaseConnectionConfig = {
+        ...request,
+        database: "postgres", // Use default postgres database for discovery
+      };
+
+      const connectionString = this.buildConnectionString(connectionConfig);
+
+      client = new PostgresClient({
+        connectionString,
+        connectionTimeoutMillis: 10000, // 10 second timeout
+        query_timeout: 5000, // 5 second query timeout
+      });
+
+      await client.connect();
+
+      // Get server version
+      const versionResult = await client.query("SELECT version()");
+      const serverVersion = versionResult.rows[0]?.version;
+
+      // Query for databases - exclude template databases by default
+      const databasesQuery = `
+        SELECT
+          datname as name,
+          datistemplate as is_template,
+          datallowconn as allow_connections,
+          pg_encoding_to_char(encoding) as encoding,
+          datcollate as collation,
+          datctype as character_classification,
+          pg_size_pretty(pg_database_size(datname)) as size_pretty,
+          (SELECT description FROM pg_shdescription WHERE objoid = d.oid) as description
+        FROM pg_database d
+        WHERE datallowconn = true
+          AND datistemplate = false
+          AND datname NOT IN ('postgres')
+        ORDER BY datname;
+      `;
+
+      const result = await client.query(databasesQuery);
+      const responseTimeMs = Date.now() - startTime;
+
+      const databases: DatabaseInfo[] = result.rows.map((row) => ({
+        name: row.name,
+        isTemplate: row.is_template,
+        allowConnections: row.allow_connections,
+        encoding: row.encoding,
+        collation: row.collation,
+        characterClassification: row.character_classification,
+        sizePretty: row.size_pretty,
+        description: row.description,
+      }));
+
+      servicesLogger().info(
+        {
+          host: request.host,
+          port: request.port,
+          databaseCount: databases.length,
+          responseTimeMs,
+        },
+        "Database discovery completed successfully",
+      );
+
+      return {
+        databases,
+        serverVersion,
+        responseTimeMs,
+      };
+    } catch (error) {
+      const responseTimeMs = Date.now() - startTime;
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      servicesLogger().warn(
+        {
+          host: request.host,
+          port: request.port,
+          errorMessage,
+          responseTimeMs,
+        },
+        "Database discovery failed",
+      );
+
+      throw error;
+    } finally {
+      if (client) {
+        try {
+          await client.end();
+        } catch (endError) {
+          servicesLogger().warn(
+            {
+              error:
+                endError instanceof Error ? endError.message : "Unknown error",
+            },
+            "Failed to close database connection during discovery",
+          );
+        }
+      }
     }
   }
 
