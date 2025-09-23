@@ -37,6 +37,7 @@ import { Loader2 } from "lucide-react";
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const).optional(),
+  networkType: z.enum(["local", "internet"] as const).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -62,6 +63,7 @@ export function EnvironmentEditDialog({
     defaultValues: {
       description: environment.description || "",
       type: environment.type,
+      networkType: environment.networkType,
       isActive: environment.isActive,
     },
   });
@@ -76,6 +78,9 @@ export function EnvironmentEditDialog({
       }
       if (data.type && data.type !== environment.type) {
         changes.type = data.type;
+      }
+      if (data.networkType && data.networkType !== environment.networkType) {
+        changes.networkType = data.networkType;
       }
       if (data.isActive !== environment.isActive) {
         changes.isActive = data.isActive;
@@ -110,6 +115,7 @@ export function EnvironmentEditDialog({
       form.reset({
         description: environment.description || "",
         type: environment.type,
+        networkType: environment.networkType,
         isActive: environment.isActive,
       });
     }
@@ -179,6 +185,35 @@ export function EnvironmentEditDialog({
                   </Select>
                   <FormDescription>
                     Production environments have additional safety measures
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="networkType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Network Type</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value}
+                    disabled={updateMutation.isPending}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select network type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="local">Local</SelectItem>
+                      <SelectItem value="internet">Internet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Local networks require a host IP address. Internet networks use Cloudflare tunnels.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

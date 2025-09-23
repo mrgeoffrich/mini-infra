@@ -29,6 +29,7 @@ const createEnvironmentSchema = z.object({
   name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, 'Name must contain only letters, numbers, underscores, and hyphens'),
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']),
+  networkType: z.enum(['local', 'internet']).optional(),
   services: z.array(z.object({
     serviceName: z.string().min(1).max(100),
     serviceType: z.string().min(1),
@@ -40,6 +41,7 @@ const updateEnvironmentSchema = z.object({
   name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).optional(),
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
+  networkType: z.enum(['local', 'internet']).optional(),
   isActive: z.boolean().optional()
 });
 

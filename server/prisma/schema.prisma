@@ -293,6 +293,7 @@ model Environment {
   name        String   @unique
   description String?
   type        String   // 'production', 'nonproduction'
+  networkType String   @default("local") // 'local', 'internet'
   status      String   @default("uninitialized") // Maps to ServiceStatus enum
   isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -305,6 +306,7 @@ model Environment {
   deploymentConfigurations DeploymentConfiguration[]
 
   @@index([type])
+  @@index([networkType])
   @@index([status])
   @@map("environments")
 }

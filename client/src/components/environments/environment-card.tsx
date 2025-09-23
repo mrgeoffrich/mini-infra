@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Environment, EnvironmentType } from "@mini-infra/types";
+import { Environment, EnvironmentType, EnvironmentNetworkType } from "@mini-infra/types";
 
 const ApplicationServiceHealthStatusValues = {
   HEALTHY: 'healthy' as const,
@@ -34,9 +34,6 @@ interface EnvironmentCardProps {
 
 export function EnvironmentCard({
   environment,
-  onEdit: _onEdit,
-  onDelete: _onDelete,
-  onAddService: _onAddService,
   className,
 }: EnvironmentCardProps) {
   const { formatDateTime } = useFormattedDate();
@@ -45,6 +42,12 @@ export function EnvironmentCard({
     return type === "production"
       ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
       : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+  };
+
+  const getNetworkTypeColor = (networkType: EnvironmentNetworkType) => {
+    return networkType === "internet"
+      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+      : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300";
   };
 
   const healthyServices = environment.services.filter(
@@ -71,6 +74,12 @@ export function EnvironmentCard({
               className={cn("text-xs", getTypeColor(environment.type))}
             >
               {environment.type}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={cn("text-xs", getNetworkTypeColor(environment.networkType))}
+            >
+              {environment.networkType}
             </Badge>
           </div>
           {environment.description && (
