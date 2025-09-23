@@ -139,10 +139,15 @@ describe("DatabaseConfigService", () => {
 
       mockPrisma.postgresDatabase.findUnique = jest
         .fn()
-        .mockResolvedValue(null);
+        .mockResolvedValueOnce(null) // For duplicate check
+        .mockResolvedValueOnce(mockCreatedDb); // For fetching after health check (fallback to original)
       mockPrisma.postgresDatabase.create = jest
         .fn()
         .mockResolvedValue(mockCreatedDb);
+
+      // Mock the health check to fail silently so we get original behavior for this test
+      const healthCheckSpy = jest.spyOn(databaseConfigService, 'performHealthCheck')
+        .mockRejectedValue(new Error('Health check skipped in test'));
 
       const result = await databaseConfigService.createDatabase(
         validRequest,
@@ -163,8 +168,11 @@ describe("DatabaseConfigService", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
         lastHealthCheck: null,
         healthStatus: "unknown",
-        userId,
       });
+
+      // Verify health check was attempted
+      expect(healthCheckSpy).toHaveBeenCalledWith("db-123");
+      healthCheckSpy.mockRestore();
 
       expect(mockCryptoJS.AES.encrypt).toHaveBeenCalledWith(
         "postgresql://testuser:testpass@localhost:5432/testdb?sslmode=prefer",
@@ -1129,6 +1137,171 @@ describe("DatabaseConfigService", () => {
       expect(() =>
         (databaseConfigService as any).validateDatabaseRequest(validRequest),
       ).not.toThrow();
+    });
+  });
+
+  describe("discoverDatabases", () => {
+    const discoveryRequest = {
+      host: "localhost",
+      port: 5432,
+      username: "postgres",
+      password: "password",
+      sslMode: "prefer" as PostgreSSLMode,
+    };
+
+    beforeEach(() => {
+      mockPgClient.connect.mockClear();
+      mockPgClient.query.mockClear();
+      mockPgClient.end.mockClear();
+    });
+
+    it("should successfully discover databases", async () => {
+      const mockVersionResult = {
+        rows: [{ version: "PostgreSQL 14.5 on x86_64-pc-linux-gnu" }],
+      };
+
+      const mockDatabasesResult = {
+        rows: [
+          {
+            name: "myapp_production",
+            is_template: false,
+            allow_connections: true,
+            encoding: "UTF8",
+            collation: "en_US.UTF-8",
+            character_classification: "en_US.UTF-8",
+            size_pretty: "45 MB",
+            description: "Production database",
+          },
+          {
+            name: "myapp_staging",
+            is_template: false,
+            allow_connections: true,
+            encoding: "UTF8",
+            collation: "en_US.UTF-8",
+            character_classification: "en_US.UTF-8",
+            size_pretty: "12 MB",
+            description: null,
+          },
+        ],
+      };
+
+      mockPgClient.connect.mockResolvedValue(undefined);
+      mockPgClient.query
+        .mockResolvedValueOnce(mockVersionResult)
+        .mockResolvedValueOnce(mockDatabasesResult);
+      mockPgClient.end.mockResolvedValue(undefined);
+
+      const result = await databaseConfigService.discoverDatabases(discoveryRequest);
+
+      expect(result).toEqual({
+        databases: [
+          {
+            name: "myapp_production",
+            isTemplate: false,
+            allowConnections: true,
+            encoding: "UTF8",
+            collation: "en_US.UTF-8",
+            characterClassification: "en_US.UTF-8",
+            sizePretty: "45 MB",
+            description: "Production database",
+          },
+          {
+            name: "myapp_staging",
+            isTemplate: false,
+            allowConnections: true,
+            encoding: "UTF8",
+            collation: "en_US.UTF-8",
+            characterClassification: "en_US.UTF-8",
+            sizePretty: "12 MB",
+            description: null,
+          },
+        ],
+        serverVersion: "PostgreSQL 14.5 on x86_64-pc-linux-gnu",
+        responseTimeMs: expect.any(Number),
+      });
+
+      expect(mockPgClient.connect).toHaveBeenCalledTimes(1);
+      expect(mockPgClient.query).toHaveBeenCalledTimes(2);
+      expect(mockPgClient.end).toHaveBeenCalledTimes(1);
+    });
+
+    it("should handle empty database list", async () => {
+      const mockVersionResult = {
+        rows: [{ version: "PostgreSQL 14.5" }],
+      };
+
+      const mockDatabasesResult = {
+        rows: [],
+      };
+
+      mockPgClient.connect.mockResolvedValue(undefined);
+      mockPgClient.query
+        .mockResolvedValueOnce(mockVersionResult)
+        .mockResolvedValueOnce(mockDatabasesResult);
+      mockPgClient.end.mockResolvedValue(undefined);
+
+      const result = await databaseConfigService.discoverDatabases(discoveryRequest);
+
+      expect(result.databases).toEqual([]);
+      expect(result.serverVersion).toBe("PostgreSQL 14.5");
+      expect(result.responseTimeMs).toBeGreaterThan(0);
+    });
+
+    it("should handle connection failures", async () => {
+      const connectionError = new Error("Connection refused");
+      mockPgClient.connect.mockRejectedValue(connectionError);
+
+      await expect(
+        databaseConfigService.discoverDatabases(discoveryRequest)
+      ).rejects.toThrow("Connection refused");
+
+      expect(mockPgClient.end).toHaveBeenCalledTimes(1);
+    });
+
+    it("should handle query failures", async () => {
+      const queryError = new Error("Query failed");
+      mockPgClient.connect.mockResolvedValue(undefined);
+      mockPgClient.query.mockRejectedValue(queryError);
+
+      await expect(
+        databaseConfigService.discoverDatabases(discoveryRequest)
+      ).rejects.toThrow("Query failed");
+
+      expect(mockPgClient.connect).toHaveBeenCalledTimes(1);
+      expect(mockPgClient.end).toHaveBeenCalledTimes(1);
+    });
+
+    it("should always close connection even if end() fails", async () => {
+      const endError = new Error("End failed");
+      mockPgClient.connect.mockResolvedValue(undefined);
+      mockPgClient.query
+        .mockResolvedValueOnce({ rows: [{ version: "PostgreSQL 14.5" }] })
+        .mockResolvedValueOnce({ rows: [] });
+      mockPgClient.end.mockRejectedValue(endError);
+
+      const result = await databaseConfigService.discoverDatabases(discoveryRequest);
+
+      expect(result.databases).toEqual([]);
+      expect(mockPgClient.end).toHaveBeenCalledTimes(1);
+    });
+
+    it("should connect to postgres database for discovery", async () => {
+      mockPgClient.connect.mockResolvedValue(undefined);
+      mockPgClient.query
+        .mockResolvedValueOnce({ rows: [{ version: "PostgreSQL 14.5" }] })
+        .mockResolvedValueOnce({ rows: [] });
+      mockPgClient.end.mockResolvedValue(undefined);
+
+      await databaseConfigService.discoverDatabases(discoveryRequest);
+
+      // Check that the connection string uses the postgres database
+      const pg = require("pg");
+      const Client = pg.Client;
+      expect(Client).toHaveBeenCalledWith({
+        connectionString: expect.stringContaining("/postgres?sslmode="),
+        connectionTimeoutMillis: 10000,
+        query_timeout: 5000,
+      });
     });
   });
 });

@@ -21,12 +21,14 @@ import { BackupSchedulerService } from "./services/backup-scheduler";
 import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
+import { PostgresDatabaseHealthScheduler } from "./services/postgres-database-health-scheduler";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
 let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
+let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -52,6 +54,13 @@ const initializeServices = async () => {
     setRestoreExecutorService(restoreExecutorService);
     await restoreExecutorService.initialize();
     logger.info("RestoreExecutorService initialized successfully");
+
+    // Initialize PostgreSQL database health scheduler
+    postgresDatabaseHealthScheduler = new PostgresDatabaseHealthScheduler(
+      appConfig.connectivity.checkInterval, // Use same interval as connectivity scheduler
+    );
+    postgresDatabaseHealthScheduler.start();
+    logger.info("PostgreSQL database health scheduler initialized successfully");
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -144,6 +153,11 @@ startServer()
       if (connectivityScheduler) {
         connectivityScheduler.stop();
         logger.info("Connectivity scheduler stopped");
+      }
+
+      if (postgresDatabaseHealthScheduler) {
+        postgresDatabaseHealthScheduler.stop();
+        logger.info("PostgreSQL database health scheduler stopped");
       }
 
       if (backupScheduler) {

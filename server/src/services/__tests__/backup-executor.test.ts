@@ -654,62 +654,59 @@ describe("BackupExecutorService", () => {
   });
 
   describe("getBackupDockerImage", () => {
-    it("should return Docker image from system settings", async () => {
-      mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue({
-        value: "custom-postgres:latest",
-      });
+    it("should return Docker image from PostgreSQL settings when configured", async () => {
+      // Mock the PostgreSQL settings service to return a configured image
+      const mockPostgresSettingsService = {
+        getBackupDockerImage: jest.fn().mockResolvedValue("custom-postgres:latest"),
+      };
+
+      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
 
       const result = await (
         backupExecutorService as any
       ).getBackupDockerImage();
 
       expect(result).toBe("custom-postgres:latest");
-      expect(mockPrisma.systemSettings.findFirst).toHaveBeenCalledWith({
-        where: {
-          category: "system",
-          key: "backup_docker_image",
-        },
-      });
+      expect(mockPostgresSettingsService.getBackupDockerImage).toHaveBeenCalled();
     });
 
-    it("should return default image when setting not found", async () => {
-      mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue(null);
+    it("should throw error when setting not found", async () => {
+      // Mock the PostgreSQL settings service to throw an error when not configured
+      const mockPostgresSettingsService = {
+        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
+      };
 
-      const result = await (
-        backupExecutorService as any
-      ).getBackupDockerImage();
+      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
 
-      expect(result).toBe("postgres:15-alpine");
+      await expect(
+        (backupExecutorService as any).getBackupDockerImage()
+      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations");
     });
 
-    it("should return default image when setting has no value", async () => {
-      mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue({
-        value: null,
-      });
+    it("should throw error when setting has no value", async () => {
+      // Mock the PostgreSQL settings service to throw an error when value is empty
+      const mockPostgresSettingsService = {
+        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
+      };
 
-      const result = await (
-        backupExecutorService as any
-      ).getBackupDockerImage();
+      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
 
-      expect(result).toBe("postgres:15-alpine");
+      await expect(
+        (backupExecutorService as any).getBackupDockerImage()
+      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations");
     });
 
-    it("should handle database query errors", async () => {
-      mockPrisma.systemSettings.findFirst = jest
-        .fn()
-        .mockRejectedValue(new Error("Database error"));
+    it("should handle PostgreSQL settings service errors", async () => {
+      // Mock the PostgreSQL settings service to throw a database error
+      const mockPostgresSettingsService = {
+        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Database error")),
+      };
 
-      const result = await (
-        backupExecutorService as any
-      ).getBackupDockerImage();
+      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
 
-      expect(result).toBe("postgres:15-alpine");
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          error: "Database error",
-        },
-        "Failed to get backup Docker image from settings, using default",
-      );
+      await expect(
+        (backupExecutorService as any).getBackupDockerImage()
+      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations. Error: Database error");
     });
   });
 

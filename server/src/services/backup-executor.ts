@@ -879,40 +879,25 @@ export class BackupExecutorService {
    */
   private async getBackupDockerImage(): Promise<string> {
     try {
-      // Get from system settings (category: "system" as used by frontend)
-      const setting = await this.prisma.systemSettings.findFirst({
-        where: {
-          category: "system",
-          key: "backup_docker_image",
-        },
-      });
+      const dockerImage = await this.postgresSettingsConfigService.getBackupDockerImage();
 
-      if (setting?.value) {
-        servicesLogger().info(
-          {
-            dockerImage: setting.value,
-          },
-          "Using backup Docker image from system settings",
-        );
-        return setting.value;
-      }
-
-      // Default fallback
       servicesLogger().info(
         {
-          dockerImage: "postgres:15-alpine",
+          dockerImage,
         },
-        "Using default backup Docker image",
+        "Retrieved backup Docker image from PostgreSQL settings",
       );
-      return "postgres:15-alpine";
+
+      return dockerImage;
     } catch (error) {
-      servicesLogger().warn(
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      servicesLogger().error(
         {
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: errorMessage,
         },
-        "Failed to get backup Docker image from settings, using default",
+        "Failed to get backup Docker image from PostgreSQL settings",
       );
-      return "postgres:15-alpine";
+      throw new Error(`Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations. Error: ${errorMessage}`);
     }
   }
 
@@ -924,32 +909,14 @@ export class BackupExecutorService {
     password?: string;
   }> {
     try {
-      const [usernameSetting, passwordSetting] = await Promise.all([
-        this.prisma.systemSettings.findFirst({
-          where: {
-            category: "system",
-            key: "backup_registry_username",
-          },
-        }),
-        this.prisma.systemSettings.findFirst({
-          where: {
-            category: "system",
-            key: "backup_registry_password",
-          },
-        }),
-      ]);
-
-      const credentials = {
-        username: usernameSetting?.value || undefined,
-        password: passwordSetting?.value || undefined,
-      };
+      const credentials = await this.postgresSettingsConfigService.getBackupRegistryCredentials();
 
       servicesLogger().info(
         {
           hasUsername: !!credentials.username,
           hasPassword: !!credentials.password,
         },
-        "Retrieved backup registry credentials from system settings",
+        "Retrieved backup registry credentials from PostgreSQL settings",
       );
 
       return credentials;
@@ -958,7 +925,7 @@ export class BackupExecutorService {
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to get backup registry credentials from system settings",
+        "Failed to get backup registry credentials from PostgreSQL settings",
       );
       return {
         username: undefined,

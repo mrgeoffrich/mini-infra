@@ -1578,58 +1578,25 @@ export class RestoreExecutorService {
    */
   private async getRestoreDockerImage(): Promise<string> {
     try {
-      // Try to get restore image from system settings first (category: "system" as used by frontend)
-      const setting = await this.prisma.systemSettings.findFirst({
-        where: {
-          category: "system",
-          key: "restore_docker_image",
-        },
-      });
+      const dockerImage = await this.postgresSettingsConfigService.getRestoreDockerImage();
 
-      if (setting?.value) {
-        servicesLogger().info(
-          {
-            dockerImage: setting.value,
-          },
-          "Using restore Docker image from system settings",
-        );
-        return setting.value;
-      }
-
-      // Fallback to backup image setting
-      const backupSetting = await this.prisma.systemSettings.findFirst({
-        where: {
-          category: "system",
-          key: "backup_docker_image",
-        },
-      });
-
-      if (backupSetting?.value) {
-        servicesLogger().info(
-          {
-            dockerImage: backupSetting.value,
-          },
-          "Using backup Docker image from system settings for restore",
-        );
-        return backupSetting.value;
-      }
-
-      // Default fallback
       servicesLogger().info(
         {
-          dockerImage: "postgres:15-alpine",
+          dockerImage,
         },
-        "Using default restore Docker image",
+        "Retrieved restore Docker image from PostgreSQL settings",
       );
-      return "postgres:15-alpine";
+
+      return dockerImage;
     } catch (error) {
-      servicesLogger().warn(
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      servicesLogger().error(
         {
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: errorMessage,
         },
-        "Failed to get restore Docker image from settings, using default",
+        "Failed to get restore Docker image from PostgreSQL settings",
       );
-      return "postgres:15-alpine";
+      throw new Error(`Restore Docker image not configured in system settings. Please configure PostgreSQL restore settings at /settings/system before running restore operations. Error: ${errorMessage}`);
     }
   }
 
@@ -1641,32 +1608,14 @@ export class RestoreExecutorService {
     password?: string;
   }> {
     try {
-      const [usernameSetting, passwordSetting] = await Promise.all([
-        this.prisma.systemSettings.findFirst({
-          where: {
-            category: "system",
-            key: "restore_registry_username",
-          },
-        }),
-        this.prisma.systemSettings.findFirst({
-          where: {
-            category: "system",
-            key: "restore_registry_password",
-          },
-        }),
-      ]);
-
-      const credentials = {
-        username: usernameSetting?.value || undefined,
-        password: passwordSetting?.value || undefined,
-      };
+      const credentials = await this.postgresSettingsConfigService.getRestoreRegistryCredentials();
 
       servicesLogger().info(
         {
           hasUsername: !!credentials.username,
           hasPassword: !!credentials.password,
         },
-        "Retrieved restore registry credentials from system settings",
+        "Retrieved restore registry credentials from PostgreSQL settings",
       );
 
       return credentials;
@@ -1675,7 +1624,7 @@ export class RestoreExecutorService {
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Failed to get restore registry credentials from system settings",
+        "Failed to get restore registry credentials from PostgreSQL settings",
       );
       return {
         username: undefined,

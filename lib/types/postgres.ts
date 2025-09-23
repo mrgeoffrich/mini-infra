@@ -79,6 +79,14 @@ export interface TestDatabaseConnectionRequest {
   sslMode: PostgreSSLMode;
 }
 
+export interface DiscoverDatabasesRequest {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  sslMode: PostgreSSLMode;
+}
+
 // ====================
 // API Response Types
 // ====================
@@ -117,6 +125,30 @@ export interface DatabaseConnectionTestResponse {
     errorCode?: string;
     serverVersion?: string;
     databaseName?: string;
+    testedAt: string;
+  };
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
+export interface DatabaseInfo {
+  name: string;
+  isTemplate?: boolean;
+  allowConnections?: boolean;
+  encoding?: string;
+  collation?: string;
+  characterClassification?: string;
+  sizePretty?: string;
+  description?: string;
+}
+
+export interface DatabaseDiscoveryResponse {
+  success: boolean;
+  data: {
+    databases: DatabaseInfo[];
+    serverVersion?: string;
+    responseTimeMs: number;
     testedAt: string;
   };
   message: string;

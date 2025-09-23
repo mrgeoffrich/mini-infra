@@ -15,10 +15,12 @@ import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,
   TestDatabaseConnectionRequest,
+  DiscoverDatabasesRequest,
   PostgresDatabaseResponse,
   PostgresDatabaseListResponse,
   PostgresDatabaseDeleteResponse,
   DatabaseConnectionTestResponse,
+  DatabaseDiscoveryResponse,
   PostgresDatabaseInfo,
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
@@ -90,12 +92,8 @@ const databaseQuerySchema = z.object({
 const createDatabaseSchema = z.object({
   name: z
     .string()
-    .min(1, "Database name is required")
-    .max(100, "Database name must be 100 characters or less")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, hyphens, and underscores",
-    ),
+    .min(1, "Configuration name is required")
+    .max(255, "Configuration name must be 255 characters or less"),
   host: z.string().min(1, "Host is required"),
   port: z
     .number()
@@ -113,12 +111,8 @@ const createDatabaseSchema = z.object({
 const updateDatabaseSchema = z.object({
   name: z
     .string()
-    .min(1, "Database name is required")
-    .max(100, "Database name must be 100 characters or less")
-    .regex(
-      /^[a-zA-Z0-9_-]+$/,
-      "Database name can only contain letters, numbers, hyphens, and underscores",
-    )
+    .min(1, "Configuration name is required")
+    .max(255, "Configuration name must be 255 characters or less")
     .optional(),
   host: z.string().min(1, "Host is required").optional(),
   port: z
@@ -143,6 +137,19 @@ const testConnectionSchema = z.object({
     .min(1, "Port must be between 1 and 65535")
     .max(65535, "Port must be between 1 and 65535"),
   database: z.string().min(1, "Database name is required"),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  sslMode: z.enum(["require", "disable", "prefer"]),
+});
+
+// Database discovery request validation schema
+const discoverDatabasesSchema = z.object({
+  host: z.string().min(1, "Host is required"),
+  port: z
+    .number()
+    .int()
+    .min(1, "Port must be between 1 and 65535")
+    .max(65535, "Port must be between 1 and 65535"),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
   sslMode: z.enum(["require", "disable", "prefer"]),
@@ -901,6 +908,102 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
         host: req.body?.host,
       },
       "Failed to test PostgreSQL connection",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/postgres/discover-databases - Discover databases on a PostgreSQL server
+ */
+router.post("/discover-databases", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+
+  logger.debug(
+    {
+      requestId,
+      body: { ...req.body, password: "[REDACTED]" },
+    },
+    "PostgreSQL database discovery requested",
+  );
+
+  try {
+    // Validate request body
+    const bodyValidation = discoverDatabasesSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for PostgreSQL database discovery",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const discoveryRequest: DiscoverDatabasesRequest = bodyValidation.data;
+
+    // Discover databases
+    const result = await databaseConfigService.discoverDatabases(discoveryRequest);
+
+    logger.debug(
+      {
+        requestId,
+        host: discoveryRequest.host,
+        port: discoveryRequest.port,
+        databaseCount: result.databases.length,
+        responseTimeMs: result.responseTimeMs,
+      },
+      "PostgreSQL database discovery completed",
+    );
+
+    // Log business event
+    logger.debug(
+      {
+        event: "postgres_databases_discovered",
+        requestId,
+        host: discoveryRequest.host,
+        port: discoveryRequest.port,
+        databaseCount: result.databases.length,
+        responseTimeMs: result.responseTimeMs,
+      },
+      "Business event: PostgreSQL databases discovered",
+    );
+
+    const response: DatabaseDiscoveryResponse = {
+      success: true,
+      data: {
+        databases: result.databases,
+        serverVersion: result.serverVersion,
+        responseTimeMs: result.responseTimeMs,
+        testedAt: new Date().toISOString(),
+      },
+      message: `Found ${result.databases.length} database(s)`,
+      timestamp: new Date().toISOString(),
+      requestId,
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        requestId,
+        host: req.body?.host,
+      },
+      "Failed to discover PostgreSQL databases",
     );
 
     next(error);

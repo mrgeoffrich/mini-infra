@@ -8,7 +8,9 @@ import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,
   TestDatabaseConnectionRequest,
+  DiscoverDatabasesRequest,
   DatabaseConnectionTestResponse,
+  DatabaseDiscoveryResponse,
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
   DatabaseHealthStatus,
@@ -242,6 +244,35 @@ async function testExistingDatabaseConnection(
   return data;
 }
 
+async function discoverDatabases(
+  request: DiscoverDatabasesRequest,
+  correlationId: string,
+): Promise<DatabaseDiscoveryResponse> {
+  const response = await fetch(`/api/postgres/databases/discover-databases`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to discover databases: ${response.statusText}`,
+    );
+  }
+
+  const data: DatabaseDiscoveryResponse = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to discover databases");
+  }
+
+  return data;
+}
+
 // ====================
 // PostgreSQL Database Hooks
 // ====================
@@ -435,6 +466,15 @@ export function useTestExistingDatabaseConnection() {
       queryClient.invalidateQueries({ queryKey: ["postgresDatabase", id] });
       queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
     },
+  });
+}
+
+export function useDiscoverDatabases() {
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: (request: DiscoverDatabasesRequest) =>
+      discoverDatabases(request, correlationId),
   });
 }
 
