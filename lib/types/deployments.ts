@@ -283,6 +283,7 @@ export interface DeploymentConfigValidationResult {
 // Hostname validation types
 export interface HostnameValidationRequest {
   hostname: string;
+  excludeConfigId?: string;
 }
 
 export interface HostnameValidationResult {

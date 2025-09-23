@@ -172,7 +172,7 @@ export function useHostnameValidationWithDebounce(
  * Provides helpful hostname alternatives when conflicts are detected
  */
 export function useHostnameSuggestions(baseHostname: string, validationResult?: HostnameValidationResult) {
-  const generateSuggestions = useCallback((hostname: string, _conflicts?: HostnameValidationResult["conflictDetails"]) => {
+  const generateSuggestions = useCallback((hostname: string) => {
     if (!hostname) return [];
 
     const parts = hostname.split('.');
@@ -208,7 +208,7 @@ export function useHostnameSuggestions(baseHostname: string, validationResult?: 
     }
 
     if (validationResult?.conflictDetails) {
-      return generateSuggestions(baseHostname, validationResult.conflictDetails);
+      return generateSuggestions(baseHostname);
     }
 
     return [];

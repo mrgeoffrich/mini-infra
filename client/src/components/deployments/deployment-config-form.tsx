@@ -407,7 +407,8 @@ export function DeploymentConfigForm({
                             <HostnameFormField
                               field={field}
                               excludeConfigId={deploymentConfig?.id}
-                              description="Public hostname for accessing your application (e.g., api.example.com). Leave empty if you don't need external access."
+                              showValidateButton={true}
+                              description="Public hostname for accessing your application (e.g., api.example.com). Click 'Validate' to check availability against Cloudflare and existing configurations."
                               placeholder="api.example.com"
                             />
                           )}
