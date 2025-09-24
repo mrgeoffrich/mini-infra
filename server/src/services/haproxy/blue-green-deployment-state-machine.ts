@@ -166,16 +166,37 @@ export const blueGreenDeploymentMachine = setup({
         }),
 
         // Blue decommission actions
-        removeBlueFromLB: () => {
-            removeContainerFromLB.execute();
+        removeBlueFromLB: ({ context, self }) => {
+            removeContainerFromLB.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'BLUE_LB_REMOVAL_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
-        stopBlueApplication: () => {
-            stopApplication.execute();
+        stopBlueApplication: ({ context, self }) => {
+            stopApplication.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'BLUE_APP_STOP_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
-        removeBlueApplication: () => {
-            removeApplication.execute();
+        removeBlueApplication: ({ context, self }) => {
+            removeApplication.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'BLUE_APP_REMOVAL_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
         // Rollback actions
@@ -191,12 +212,26 @@ export const blueGreenDeploymentMachine = setup({
             removeHAProxyConfig.execute();
         },
 
-        stopGreenApplication: () => {
-            stopApplication.execute();
+        stopGreenApplication: ({ context, self }) => {
+            stopApplication.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'ROLLBACK_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
-        removeGreenApplication: () => {
-            removeApplication.execute();
+        removeGreenApplication: ({ context, self }) => {
+            removeApplication.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'ROLLBACK_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
         // Monitoring and completion actions
