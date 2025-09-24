@@ -4,10 +4,9 @@
 
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
-
 * Run this command to display your development API key:
-```powershell
-cd server && npm run show-dev-key -- --recreate
+```bash
+cd server && npm run show-dev-key
 ```
 
 ### Use the API Key

@@ -41,8 +41,67 @@ function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
 router.use(requireSessionOrApiKey);
 
 /**
- * GET /api/user/preferences
- * Get current user preferences
+ * @swagger
+ * /api/user/preferences:
+ *   get:
+ *     summary: Get current user preferences
+ *     description: Retrieve the authenticated user's preferences including timezone, container dashboard settings, and UI customizations
+ *     tags:
+ *       - User Preferences
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: User preferences retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/UserPreferenceInfo'
+ *                 message:
+ *                   type: string
+ *                   example: 'User preferences retrieved successfully'
+ *               required:
+ *                 - success
+ *                 - data
+ *                 - message
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: 'pref123'
+ *                 containerSortField: 'name'
+ *                 containerSortOrder: 'asc'
+ *                 containerFilters:
+ *                   status: 'running'
+ *                   image: ''
+ *                 containerColumns:
+ *                   name: true
+ *                   status: true
+ *                   image: true
+ *                   ports: false
+ *                 timezone: 'America/New_York'
+ *                 createdAt: '2025-09-20T15:00:00.000Z'
+ *                 updatedAt: '2025-09-24T12:00:00.000Z'
+ *               message: 'User preferences retrieved successfully'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/preferences", async (req: Request, res: Response) => {
   try {
@@ -76,8 +135,109 @@ router.get("/preferences", async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/user/preferences
- * Update current user preferences
+ * @swagger
+ * /api/user/preferences:
+ *   put:
+ *     summary: Update current user preferences
+ *     description: Update the authenticated user's preferences. All fields are optional and will only update the provided values.
+ *     tags:
+ *       - User Preferences
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateUserPreferencesRequest'
+ *           example:
+ *             timezone: 'America/New_York'
+ *             containerSortField: 'status'
+ *             containerSortOrder: 'desc'
+ *             containerFilters:
+ *               status: 'running'
+ *               image: 'nginx'
+ *             containerColumns:
+ *               name: true
+ *               status: true
+ *               image: true
+ *               ports: true
+ *               createdAt: false
+ *     responses:
+ *       200:
+ *         description: User preferences updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/UserPreferenceInfo'
+ *                 message:
+ *                   type: string
+ *                   example: 'User preferences updated successfully'
+ *               required:
+ *                 - success
+ *                 - data
+ *                 - message
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: 'pref123'
+ *                 containerSortField: 'status'
+ *                 containerSortOrder: 'desc'
+ *                 containerFilters:
+ *                   status: 'running'
+ *                   image: 'nginx'
+ *                 containerColumns:
+ *                   name: true
+ *                   status: true
+ *                   image: true
+ *                   ports: true
+ *                   createdAt: false
+ *                 timezone: 'America/New_York'
+ *                 createdAt: '2025-09-20T15:00:00.000Z'
+ *                 updatedAt: '2025-09-24T12:00:00.000Z'
+ *               message: 'User preferences updated successfully'
+ *       400:
+ *         description: Validation error or invalid timezone
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *             examples:
+ *               validationError:
+ *                 summary: Request validation failed
+ *                 value:
+ *                   success: false
+ *                   message: 'Invalid request data'
+ *                   error:
+ *                     - code: 'invalid_enum_value'
+ *                       options: ['asc', 'desc']
+ *                       path: ['containerSortOrder']
+ *                       message: 'Invalid enum value'
+ *               timezoneError:
+ *                 summary: Invalid timezone provided
+ *                 value:
+ *                   success: false
+ *                   message: 'Invalid timezone: Invalid/Timezone'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.put("/preferences", async (req: Request, res: Response) => {
   try {
@@ -137,8 +297,70 @@ router.put("/preferences", async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/user/timezones
- * Get list of common timezones for selection
+ * @swagger
+ * /api/user/timezones:
+ *   get:
+ *     summary: Get list of common timezones
+ *     description: Retrieve a list of commonly used timezones for user selection in preference forms. Each timezone includes the identifier, display label, and current UTC offset.
+ *     tags:
+ *       - User Preferences
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Timezones retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/TimezoneInfo'
+ *                 message:
+ *                   type: string
+ *                   example: 'Timezones retrieved successfully'
+ *               required:
+ *                 - success
+ *                 - data
+ *                 - message
+ *             example:
+ *               success: true
+ *               data:
+ *                 - value: 'UTC'
+ *                   label: 'UTC (Coordinated Universal Time)'
+ *                   offset: '+00:00'
+ *                 - value: 'America/New_York'
+ *                   label: 'Eastern Time (US & Canada)'
+ *                   offset: '-05:00'
+ *                 - value: 'America/Los_Angeles'
+ *                   label: 'Pacific Time (US & Canada)'
+ *                   offset: '-08:00'
+ *                 - value: 'Europe/London'
+ *                   label: 'Greenwich Mean Time (London)'
+ *                   offset: '+00:00'
+ *                 - value: 'Asia/Tokyo'
+ *                   label: 'Japan Standard Time (Tokyo)'
+ *                   offset: '+09:00'
+ *               message: 'Timezones retrieved successfully'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/timezones", async (req: Request, res: Response) => {
   try {

@@ -395,7 +395,82 @@ router.get("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
- * GET /api/containers/:id - Get specific container details
+ * @swagger
+ * /api/containers/{id}:
+ *   get:
+ *     summary: Get specific container details
+ *     description: Retrieve detailed information about a specific Docker container by its ID
+ *     tags:
+ *       - Containers
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/ContainerIdParam'
+ *     responses:
+ *       200:
+ *         description: Container details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ContainerInfo'
+ *             example:
+ *               id: 'abc123def456'
+ *               name: 'nginx-web-server'
+ *               image: 'nginx:latest'
+ *               state: 'running'
+ *               status: 'Up 2 hours'
+ *               createdAt: '2025-09-24T10:00:00.000Z'
+ *               startedAt: '2025-09-24T10:00:05.000Z'
+ *               ports:
+ *                 - privatePort: 80
+ *                   publicPort: 8080
+ *                   type: 'tcp'
+ *               labels:
+ *                 'com.docker.compose.service': 'web'
+ *               networks:
+ *                 - 'bridge'
+ *       400:
+ *         description: Invalid container ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               success: false
+ *               error: 'Bad Request'
+ *               message: 'Invalid container ID format'
+ *               timestamp: '2025-09-24T12:00:00.000Z'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Container not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             example:
+ *               success: false
+ *               error: 'Not Found'
+ *               message: 'Container with ID abc123 not found'
+ *               timestamp: '2025-09-24T12:00:00.000Z'
+ *       503:
+ *         description: Docker service unavailable
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       504:
+ *         description: Docker API timeout
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/:id", requireSessionOrApiKey, (async (
   req: Request,
@@ -506,7 +581,57 @@ router.get("/:id", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
- * GET /api/containers/stats/cache - Get cache statistics (for debugging)
+ * @swagger
+ * /api/containers/stats/cache:
+ *   get:
+ *     summary: Get container cache statistics
+ *     description: Retrieve debugging information about the Docker container cache, including cache hit rates and entry counts
+ *     tags:
+ *       - Containers
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Cache statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 cache:
+ *                   $ref: '#/components/schemas/ContainerCacheStats'
+ *                 dockerConnected:
+ *                   type: boolean
+ *                   description: Whether Docker service is connected
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Response timestamp
+ *                 requestId:
+ *                   type: string
+ *                   description: Request correlation ID
+ *               required:
+ *                 - cache
+ *                 - dockerConnected
+ *                 - timestamp
+ *             example:
+ *               cache:
+ *                 totalEntries: 25
+ *                 activeEntries: 23
+ *                 expiredEntries: 2
+ *                 oldestEntry: '2025-09-24T10:30:00.000Z'
+ *                 newestEntry: '2025-09-24T12:00:00.000Z'
+ *               dockerConnected: true
+ *               timestamp: '2025-09-24T12:00:00.000Z'
+ *               requestId: 'req-abc123'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/stats/cache", requireSessionOrApiKey, (async (
   req: Request,
@@ -536,7 +661,48 @@ router.get("/stats/cache", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
- * POST /api/containers/cache/flush - Flush container cache (for debugging)
+ * @swagger
+ * /api/containers/cache/flush:
+ *   post:
+ *     summary: Flush container cache
+ *     description: Clear all cached Docker container data to force fresh retrieval from Docker API on next request. Useful for debugging or when data inconsistency is suspected.
+ *     tags:
+ *       - Containers
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Cache flushed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: 'Container cache flushed successfully'
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   description: Response timestamp
+ *                 requestId:
+ *                   type: string
+ *                   description: Request correlation ID
+ *               required:
+ *                 - message
+ *                 - timestamp
+ *             example:
+ *               message: 'Container cache flushed successfully'
+ *               timestamp: '2025-09-24T12:00:00.000Z'
+ *               requestId: 'req-abc123'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post("/cache/flush", requireSessionOrApiKey, (async (
   req: Request,
