@@ -3,15 +3,11 @@ import { getDevApiKeyInfo, recreateDevApiKey } from "../services/dev-api-key";
 import appConfig from "../lib/config-new";
 
 /**
- * Script to display development API key information
- * Usage: npm run show-dev-key [--recreate]
+ * Script to recreate and display development API key
+ * Usage: npm run show-dev-key
  */
 
-const RECREATE_FLAG = "--recreate";
-
 async function main() {
-  const args = process.argv.slice(2);
-  const shouldRecreate = args.includes(RECREATE_FLAG);
 
   // Check if we're in development mode
   if (appConfig.server.nodeEnv !== "development") {
@@ -20,66 +16,24 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("🔍 Claude Development API Key Information\n");
+  console.log("🔄 Recreating Claude Development API Key...\n");
 
   try {
-    if (shouldRecreate) {
-      console.log("🔄 Recreating development API key...\n");
-
-      const newKeyResult = await recreateDevApiKey();
-      if (!newKeyResult) {
-        console.error("❌ Failed to recreate development API key");
-        process.exit(1);
-      }
-
-      console.log("✅ New development API key created successfully!\n");
-      console.log("🔑 API Key Details:");
-      console.log(`   User ID: ${newKeyResult.userId}`);
-      console.log(`   Key ID: ${newKeyResult.keyId}`);
-      console.log(`   API Key: ${newKeyResult.apiKey}\n`);
-
-      console.log("💡 Usage Instructions:");
-      console.log("   Authorization Header: Bearer " + newKeyResult.apiKey);
-      console.log("   x-api-key Header: " + newKeyResult.apiKey + "\n");
-
-      console.log(
-        "⚠️  Save this API key securely - it won't be displayed again!",
-      );
-    } else {
-      const apiKeyInfo = await getDevApiKeyInfo();
-
-      if (!apiKeyInfo) {
-        console.log("❌ No development API key found");
-        console.log(
-          "💡 Run this script with --recreate flag to create a new key:",
-        );
-        console.log("   npm run show-dev-key -- --recreate\n");
-        process.exit(1);
-      }
-
-      console.log("📋 Current API Key Information:");
-      console.log(`   User: ${apiKeyInfo.userName} (${apiKeyInfo.userEmail})`);
-      console.log(`   User ID: ${apiKeyInfo.userId}`);
-      console.log(`   Key Name: ${apiKeyInfo.keyName}`);
-      console.log(`   Key ID: ${apiKeyInfo.keyId}`);
-      console.log(
-        `   Created: ${new Date(apiKeyInfo.createdAt).toLocaleString()}`,
-      );
-
-      if (apiKeyInfo.lastUsedAt) {
-        console.log(
-          `   Last Used: ${new Date(apiKeyInfo.lastUsedAt).toLocaleString()}`,
-        );
-      } else {
-        console.log("   Last Used: Never");
-      }
-
-      console.log(
-        "\n⚠️  The actual API key value cannot be displayed for security reasons.",
-      );
-      console.log("💡 If you need the key value, recreate it with:");
-      console.log("   npm run show-dev-key -- --recreate\n");
+    const newKeyResult = await recreateDevApiKey();
+    if (!newKeyResult) {
+      console.error("❌ Failed to recreate development API key");
+      process.exit(1);
     }
+
+    console.log("✅ New development API key created successfully!\n");
+    console.log("🔑 API Key Details:");
+    console.log(`   User ID: ${newKeyResult.userId}`);
+    console.log(`   Key ID: ${newKeyResult.keyId}`);
+    console.log(`   API Key: ${newKeyResult.apiKey}\n`);
+
+    console.log("💡 Usage Instructions:");
+    console.log("   Authorization Header: Bearer " + newKeyResult.apiKey);
+    console.log("   x-api-key Header: " + newKeyResult.apiKey + "\n");
 
     console.log("🌐 API Endpoints:");
     console.log(`   Base URL: http://localhost:${appConfig.server.port}`);
