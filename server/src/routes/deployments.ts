@@ -460,7 +460,7 @@ router.put(
 
 /**
  * DELETE /api/deployments/configs/:id
- * Delete a deployment configuration
+ * Delete a deployment configuration using removal state machine
  */
 router.delete(
   "/configs/:id",
@@ -477,11 +477,15 @@ router.delete(
 
       const { id } = req.params;
 
-      await deploymentConfigService.deleteDeploymentConfig(id);
+      const result = await deploymentConfigService.deleteDeploymentConfig(id, user.id);
 
-      res.json({
+      res.status(202).json({
         success: true,
-        message: "Deployment configuration deleted successfully",
+        message: "Deployment configuration removal initiated",
+        data: {
+          removalId: result.removalId,
+          status: "in_progress"
+        },
       });
     } catch (error) {
       logger.error(
@@ -882,6 +886,89 @@ router.post(
           hostname: req.body?.hostname,
         },
         "Failed to validate hostname"
+      );
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+/**
+ * GET /api/deployments/removal/:removalId/status
+ * Get removal operation status
+ */
+router.get(
+  "/removal/:removalId/status",
+  requireSessionOrApiKey as RequestHandler,
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+
+      const { removalId } = req.params;
+
+      // Get removal operation status from orchestrator
+      const status = deploymentOrchestrator.getRemovalOperationStatus(removalId);
+
+      if (!status.isActive && !status.currentState) {
+        return res.status(404).json({
+          success: false,
+          message: "Removal operation not found",
+        });
+      }
+
+      // Calculate progress based on current state
+      let progress = 0;
+      const stateProgressMap: Record<string, number> = {
+        'idle': 0,
+        'removingFromLB': 25,
+        'stoppingApplication': 50,
+        'removingApplication': 75,
+        'cleanup': 90,
+        'completed': 100,
+        'failed': 0,
+      };
+
+      if (status.currentState && stateProgressMap[status.currentState] !== undefined) {
+        progress = stateProgressMap[status.currentState];
+      }
+
+      res.json({
+        success: true,
+        data: {
+          removalId,
+          isActive: status.isActive,
+          currentState: status.currentState,
+          progress,
+          applicationName: status.context?.applicationName,
+          error: status.context?.error,
+          containersToRemove: status.context?.containersToRemove?.length || 0,
+          lbRemovalComplete: status.context?.lbRemovalComplete || false,
+          applicationStopped: status.context?.applicationStopped || false,
+          applicationRemoved: status.context?.applicationRemoved || false,
+        },
+      });
+
+      logger.info(
+        {
+          removalId,
+          userId: user.id,
+          isActive: status.isActive,
+          currentState: status.currentState,
+        },
+        "Removal operation status checked"
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          removalId: req.params?.removalId,
+        },
+        "Failed to get removal operation status"
       );
       next(error);
     }

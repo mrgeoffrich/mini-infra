@@ -22,6 +22,7 @@ import {
   HostnameValidationResult,
 } from "@mini-infra/types";
 import { CloudflareConfigService } from "./cloudflare-config";
+import { DeploymentOrchestrator } from "./deployment-orchestrator";
 
 // ====================
 // Zod Validation Schemas
@@ -129,6 +130,7 @@ export class DeploymentConfigService extends ConfigurationService {
   private dockerService: DockerService;
   private containerManager: ContainerLifecycleManager;
   private cloudflareService: CloudflareConfigService;
+  private deploymentOrchestrator: DeploymentOrchestrator;
 
   constructor(prismaInstance: PrismaClient, encryptionKey?: string) {
     super(prismaInstance, "deployments" as SettingsCategory);
@@ -144,6 +146,7 @@ export class DeploymentConfigService extends ConfigurationService {
     this.dockerService = DockerService.getInstance();
     this.containerManager = new ContainerLifecycleManager();
     this.cloudflareService = new CloudflareConfigService(prismaInstance);
+    this.deploymentOrchestrator = new DeploymentOrchestrator();
   }
 
   // ====================
@@ -565,11 +568,12 @@ export class DeploymentConfigService extends ConfigurationService {
   }
 
   /**
-   * Delete a deployment configuration
+   * Delete a deployment configuration using removal state machine
    */
   async deleteDeploymentConfig(
     configId: string,
-  ): Promise<void> {
+    triggeredBy?: string,
+  ): Promise<{ removalId: string }> {
     try {
       // Verify existence
       const config = await this.prisma.deploymentConfiguration.findFirst({
@@ -590,46 +594,81 @@ export class DeploymentConfigService extends ConfigurationService {
           configId: configId,
           applicationName,
         },
-        "Starting deployment configuration deletion with container cleanup",
+        "Starting deployment configuration deletion with removal state machine",
       );
 
-      // Clean up any running containers for this application before deletion
+      // Execute removal state machine
+      let removalId: string;
       try {
-        await this.cleanupApplicationContainers(applicationName);
+        removalId = await this.deploymentOrchestrator.executeRemovalStateMachine({
+          configurationId: configId,
+          applicationName: applicationName,
+          triggeredBy: triggeredBy,
+        });
+
+        logger.info(
+          {
+            configId: configId,
+            applicationName,
+            removalId,
+          },
+          "Removal state machine started successfully",
+        );
+      } catch (stateMachineError) {
+        logger.warn(
+          {
+            configId: configId,
+            applicationName,
+            error: stateMachineError instanceof Error ? stateMachineError.message : "Unknown state machine error",
+          },
+          "Failed to start removal state machine - falling back to direct cleanup",
+        );
+
+        // Fallback to direct cleanup if state machine fails
+        try {
+          await this.cleanupApplicationContainers(applicationName);
+          logger.info(
+            {
+              configId: configId,
+              applicationName,
+            },
+            "Successfully cleaned up application containers using fallback method",
+          );
+        } catch (cleanupError) {
+          logger.warn(
+            {
+              configId: configId,
+              applicationName,
+              error: cleanupError instanceof Error ? cleanupError.message : "Unknown cleanup error",
+            },
+            "Failed to cleanup containers during deletion - continuing with database deletion",
+          );
+        }
+
+        // Delete configuration immediately on fallback
+        await this.prisma.deploymentConfiguration.delete({
+          where: { id: configId },
+        });
+
+        // Clear cache
+        this.clearCache();
+
         logger.info(
           {
             configId: configId,
             applicationName,
           },
-          "Successfully cleaned up application containers",
+          "Deployment configuration deleted successfully using fallback",
         );
-      } catch (cleanupError) {
-        // Log cleanup error but continue with deletion
-        logger.warn(
-          {
-            configId: configId,
-            applicationName,
-            error: cleanupError instanceof Error ? cleanupError.message : "Unknown cleanup error",
-          },
-          "Failed to cleanup containers during deletion - continuing with database deletion",
-        );
+
+        // Return a fallback removalId
+        return { removalId: `fallback-${configId}-${Date.now()}` };
       }
 
-      // Delete configuration (cascade will handle related deployments)
-      await this.prisma.deploymentConfiguration.delete({
-        where: { id: configId },
-      });
+      // Set up a background process to delete the configuration after state machine completion
+      this.scheduleConfigurationDeletion(configId, removalId, applicationName);
 
-      // Clear cache
-      this.clearCache();
-
-      logger.info(
-        {
-          configId: configId,
-          applicationName,
-        },
-        "Deployment configuration deleted successfully",
-      );
+      return { removalId };
     } catch (error) {
       servicesLogger().error(
         {
@@ -640,6 +679,93 @@ export class DeploymentConfigService extends ConfigurationService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Schedule configuration deletion after successful removal state machine completion
+   */
+  private async scheduleConfigurationDeletion(
+    configId: string,
+    removalId: string,
+    applicationName: string,
+  ): Promise<void> {
+    const logger = servicesLogger();
+
+    // Poll for state machine completion (in a real implementation, you might use events or queues)
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = this.deploymentOrchestrator.getRemovalOperationStatus(removalId);
+
+        if (!status.isActive) {
+          clearInterval(pollInterval);
+
+          if (status.currentState === "completed") {
+            // State machine completed successfully, delete the configuration
+            try {
+              await this.prisma.deploymentConfiguration.delete({
+                where: { id: configId },
+              });
+
+              // Clear cache
+              this.clearCache();
+
+              logger.info(
+                {
+                  configId,
+                  applicationName,
+                  removalId,
+                },
+                "Deployment configuration deleted after successful removal state machine completion",
+              );
+            } catch (deleteError) {
+              logger.error(
+                {
+                  configId,
+                  applicationName,
+                  removalId,
+                  error: deleteError instanceof Error ? deleteError.message : "Unknown delete error",
+                },
+                "Failed to delete deployment configuration after successful removal",
+              );
+            }
+          } else {
+            // State machine failed, log warning but don't delete configuration
+            logger.warn(
+              {
+                configId,
+                applicationName,
+                removalId,
+                finalState: status.currentState,
+                error: status.context?.error,
+              },
+              "Removal state machine failed - configuration not deleted, manual cleanup may be required",
+            );
+          }
+        }
+      } catch (error) {
+        logger.error(
+          {
+            configId,
+            removalId,
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+          "Error while polling for removal state machine completion",
+        );
+      }
+    }, 5000); // Poll every 5 seconds
+
+    // Set a maximum timeout to avoid infinite polling
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      logger.warn(
+        {
+          configId,
+          applicationName,
+          removalId,
+        },
+        "Stopped polling for removal state machine completion due to timeout",
+      );
+    }, 300000); // 5 minutes timeout
   }
 
   /**
