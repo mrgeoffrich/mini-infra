@@ -8,6 +8,7 @@ import {
   UpdateDeploymentConfigRequest,
   DeploymentConfigFilter,
   DeploymentConfigSortOptions,
+  DeleteDeploymentConfigResponse,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -150,7 +151,7 @@ async function updateDeploymentConfig(
 async function deleteDeploymentConfig(
   id: string,
   correlationId: string,
-): Promise<{ success: boolean; message?: string }> {
+): Promise<DeleteDeploymentConfigResponse> {
   const response = await fetch(`/api/deployments/configs/${id}`, {
     method: "DELETE",
     credentials: "include",
@@ -166,7 +167,7 @@ async function deleteDeploymentConfig(
     );
   }
 
-  const data = await response.json();
+  const data: DeleteDeploymentConfigResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to delete deployment configuration");
