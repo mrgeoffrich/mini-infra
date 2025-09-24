@@ -87,8 +87,8 @@ type BlueGreenDeploymentEvent =
     | { type: 'HEALTH_CHECK_TIMEOUT' }
 
     // Traffic management events
-    | { type: 'TRAFFIC_OPENED' }
-    | { type: 'TRAFFIC_OPEN_FAILED'; error: string }
+    | { type: 'TRAFFIC_ENABLED' }
+    | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_VALIDATED' }
     | { type: 'VALIDATION_FAILED'; error: string }
 
@@ -200,7 +200,16 @@ export const blueGreenDeploymentMachine = setup({
 
         // Rollback actions
         restoreBlueTraffic: ({ context, self }) => {
-            enableTraffic.execute(context, (event) => self.send(event)); // Open traffic back to the blue container
+            enableTraffic.execute(context, (event) => {
+                // Map the standard traffic events to rollback events
+                if (event.type === 'TRAFFIC_ENABLED') {
+                    self.send({ type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' });
+                } else if (event.type === 'TRAFFIC_ENABLE_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            });
         },
 
         disableGreenTraffic: ({ context, self }) => {
@@ -454,11 +463,11 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Enabling traffic to green environment alongside blue',
             entry: 'openTrafficToGreen',
             on: {
-                TRAFFIC_OPENED: {
+                TRAFFIC_ENABLED: {
                     target: 'validatingTraffic',
                     actions: assign({ trafficOpenedToGreen: true })
                 },
-                TRAFFIC_OPEN_FAILED: {
+                TRAFFIC_ENABLE_FAILED: {
                     target: 'rollbackDisableGreenTraffic',
                     actions: 'preserveErrorContext'
                 }
