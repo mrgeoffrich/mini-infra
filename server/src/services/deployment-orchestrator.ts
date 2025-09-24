@@ -698,6 +698,7 @@ export class DeploymentOrchestrator {
 
   /**
    * Execute removal state machine for deployment configuration
+   * Creates a deployment record with triggerType "uninstall" and returns the deployment ID
    */
   async executeRemovalStateMachine(params: {
     configurationId: string;
@@ -737,8 +738,30 @@ export class DeploymentOrchestrator {
         throw new Error(validation.errorMessage || "Environment validation failed");
       }
 
-      // Generate unique removal operation ID
-      const removalId = `removal-${params.configurationId}-${Date.now()}`;
+      // Create deployment record for uninstall operation
+      const deployment = await prisma.deployment.create({
+        data: {
+          configurationId: params.configurationId,
+          triggerType: "uninstall",
+          triggeredBy: params.triggeredBy || null,
+          dockerImage: config.dockerImage, // Current image being uninstalled
+          status: "uninstalling",
+          currentState: "removal_pending",
+          startedAt: new Date(),
+          healthCheckPassed: false,
+          downtime: 0,
+        },
+      });
+
+      deploymentLogger().info(
+        {
+          deploymentId: deployment.id,
+          configurationId: params.configurationId,
+          applicationName: params.applicationName,
+          triggerType: "uninstall",
+        },
+        "Created deployment record for uninstall operation"
+      );
 
       // Find containers to remove
       const containers = await this.dockerService.listContainers();
@@ -752,7 +775,7 @@ export class DeploymentOrchestrator {
 
       // Create removal context
       const removalContext: HAProxyRemovalContext = {
-        deploymentId: removalId,
+        deploymentId: deployment.id,
         configurationId: params.configurationId,
         applicationName: params.applicationName,
         environmentId: environmentContext.environmentId,
@@ -778,16 +801,16 @@ export class DeploymentOrchestrator {
         input: removalContext,
       });
 
-      // Store and start removal operation
-      this.activeRemovalOperations.set(removalId, actor);
-      this.setupRemovalActorSubscription(actor, removalId);
+      // Store and start removal operation using deployment ID
+      this.activeRemovalOperations.set(deployment.id, actor);
+      this.setupRemovalActorSubscription(actor, deployment.id);
 
       actor.start();
       actor.send({ type: "START_REMOVAL" });
 
       deploymentLogger().info(
         {
-          removalId,
+          deploymentId: deployment.id,
           configurationId: params.configurationId,
           applicationName: params.applicationName,
           containerCount: appContainers.length,
@@ -795,7 +818,7 @@ export class DeploymentOrchestrator {
         "HAProxy removal state machine started"
       );
 
-      return removalId;
+      return deployment.id;
     } catch (error) {
       deploymentLogger().error(
         {
@@ -805,6 +828,28 @@ export class DeploymentOrchestrator {
         },
         "Failed to start removal state machine"
       );
+
+      // If we created a deployment record, mark it as failed
+      try {
+        await prisma.deployment.updateMany({
+          where: {
+            configurationId: params.configurationId,
+            triggerType: "uninstall",
+            status: "uninstalling",
+          },
+          data: {
+            status: "failed",
+            completedAt: new Date(),
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+      } catch (updateError) {
+        deploymentLogger().error(
+          { error: updateError instanceof Error ? updateError.message : "Unknown error" },
+          "Failed to update deployment status to failed"
+        );
+      }
+
       throw error;
     }
   }
@@ -812,43 +857,87 @@ export class DeploymentOrchestrator {
   /**
    * Setup actor subscription for removal state machine monitoring
    */
-  private setupRemovalActorSubscription(actor: any, removalId: string): void {
+  private setupRemovalActorSubscription(actor: any, deploymentId: string): void {
     actor.subscribe(async (state: any) => {
-      if (state.status === "done") {
-        this.activeRemovalOperations.delete(removalId);
+      // Update deployment status based on state machine progress
+      try {
+        const statusMap: { [key: string]: DeploymentStatus } = {
+          "removing_from_lb": "removing_from_lb",
+          "stopping_application": "stopping_application",
+          "removing_application": "removing_application",
+          "cleanup": "cleanup",
+          "completed": "uninstalled",
+          "failed": "failed"
+        };
 
-        const finalStatus = state.value === "completed" ? "completed" : "failed";
+        const deploymentStatus = statusMap[state.value as string] || "uninstalling";
+
+        await prisma.deployment.update({
+          where: { id: deploymentId },
+          data: {
+            status: deploymentStatus,
+            currentState: state.value as string,
+            ...(state.status === "done" ? {
+              completedAt: new Date(),
+              ...(state.context.error ? { errorMessage: state.context.error } : {})
+            } : {})
+          },
+        });
+
+        deploymentLogger().debug(
+          {
+            deploymentId,
+            status: deploymentStatus,
+            currentState: state.value,
+            applicationName: state.context.applicationName,
+          },
+          "Updated deployment record for uninstall progress"
+        );
+      } catch (error) {
+        deploymentLogger().error(
+          {
+            deploymentId,
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+          "Failed to update deployment status during uninstall"
+        );
+      }
+
+      if (state.status === "done") {
+        this.activeRemovalOperations.delete(deploymentId);
+
+        const finalStatus = state.value === "completed" ? "uninstalled" : "failed";
         const hasError = state.context.error !== undefined && state.context.error !== null;
 
         deploymentLogger().info(
           {
-            removalId,
+            deploymentId,
             finalStatus,
             finalState: state.value,
             hasError,
             applicationName: state.context.applicationName,
             environmentName: state.context.environmentName,
           },
-          "HAProxy removal state machine completed"
+          "HAProxy uninstall deployment completed and database updated"
         );
 
         // Notify completion (could be used for UI updates, etc.)
-        if (finalStatus === "completed") {
+        if (finalStatus === "uninstalled") {
           deploymentLogger().info(
             {
-              removalId,
+              deploymentId,
               applicationName: state.context.applicationName,
             },
-            "Deployment removal completed successfully - configuration can be safely deleted"
+            "Deployment uninstall completed successfully - configuration can be safely deleted"
           );
         } else {
           deploymentLogger().error(
             {
-              removalId,
+              deploymentId,
               applicationName: state.context.applicationName,
               error: state.context.error,
             },
-            "Deployment removal failed - manual intervention may be required"
+            "Deployment uninstall failed - manual intervention may be required"
           );
         }
       }
@@ -856,12 +945,12 @@ export class DeploymentOrchestrator {
       // Log state changes
       deploymentLogger().debug(
         {
-          removalId,
+          deploymentId,
           currentState: state.value,
           applicationName: state.context.applicationName,
           environmentName: state.context.environmentName,
         },
-        "HAProxy removal state transition"
+        "HAProxy uninstall state transition"
       );
     });
   }

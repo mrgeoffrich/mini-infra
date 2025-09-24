@@ -271,8 +271,13 @@ export function getStatusText(status: DeploymentStatus): string {
     completed: "Completed",
     failed: "Failed",
     rolling_back: "Rolling Back",
+    uninstalling: "Uninstalling",
+    removing_from_lb: "Removing from LB",
+    stopping_application: "Stopping Application",
+    removing_application: "Removing Application",
+    uninstalled: "Uninstalled",
   };
-  
+
   return statusMap[status] || status;
 }
 
@@ -290,6 +295,11 @@ export function getStatusColor(status: DeploymentStatus): string {
     completed: "text-green-600",
     failed: "text-red-600",
     rolling_back: "text-orange-600",
+    uninstalling: "text-purple-600",
+    removing_from_lb: "text-purple-600",
+    stopping_application: "text-purple-600",
+    removing_application: "text-purple-600",
+    uninstalled: "text-gray-600",
   };
   
   return colorMap[status] || "text-gray-600";

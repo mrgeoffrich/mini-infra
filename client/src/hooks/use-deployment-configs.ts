@@ -8,7 +8,7 @@ import {
   UpdateDeploymentConfigRequest,
   DeploymentConfigFilter,
   DeploymentConfigSortOptions,
-  DeleteDeploymentConfigResponse,
+  UninstallDeploymentConfigResponse,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -148,11 +148,11 @@ async function updateDeploymentConfig(
   return data;
 }
 
-async function deleteDeploymentConfig(
+async function uninstallDeploymentConfig(
   id: string,
   correlationId: string,
-): Promise<DeleteDeploymentConfigResponse> {
-  const response = await fetch(`/api/deployments/configs/${id}`, {
+): Promise<UninstallDeploymentConfigResponse> {
+  const response = await fetch(`/api/deployments/configs/${id}/uninstall`, {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -163,14 +163,14 @@ async function deleteDeploymentConfig(
 
   if (!response.ok) {
     throw new Error(
-      `Failed to delete deployment configuration: ${response.statusText}`,
+      `Failed to uninstall deployment configuration: ${response.statusText}`,
     );
   }
 
-  const data: DeleteDeploymentConfigResponse = await response.json();
+  const data: UninstallDeploymentConfigResponse = await response.json();
 
   if (!data.success) {
-    throw new Error(data.message || "Failed to delete deployment configuration");
+    throw new Error(data.message || "Failed to uninstall deployment configuration");
   }
 
   return data;
@@ -327,12 +327,12 @@ export function useUpdateDeploymentConfig() {
   });
 }
 
-export function useDeleteDeploymentConfig() {
+export function useUninstallDeploymentConfig() {
   const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteDeploymentConfig(id, correlationId),
+    mutationFn: (id: string) => uninstallDeploymentConfig(id, correlationId),
     onSuccess: (_, id) => {
       // Invalidate and refetch deployment configs list
       queryClient.invalidateQueries({ queryKey: ["deploymentConfigs"] });

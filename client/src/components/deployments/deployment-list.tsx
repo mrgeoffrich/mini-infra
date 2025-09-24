@@ -55,7 +55,7 @@ import type { DeploymentConfigFiltersState } from "@/hooks/use-deployment-config
 
 interface DeploymentListProps {
   onEditConfig?: (config: DeploymentConfigurationInfo) => void;
-  onDeleteConfig?: (config: DeploymentConfigurationInfo) => void;
+  onUninstallConfig?: (config: DeploymentConfigurationInfo) => void;
   onCreateConfig?: () => void;
 }
 
@@ -90,6 +90,13 @@ const LastDeploymentBadge = React.memo(({ deployment }: { deployment?: Deploymen
         return "bg-blue-500 text-white";
       case "rolling_back":
         return "bg-orange-500 text-white";
+      case "uninstalling":
+      case "removing_from_lb":
+      case "stopping_application":
+      case "removing_application":
+        return "bg-purple-500 text-white";
+      case "uninstalled":
+        return "bg-gray-500 text-white";
       default:
         return "";
     }
@@ -113,13 +120,13 @@ const DeploymentActions = React.memo(({
   config,
   onTrigger,
   onEdit,
-  onDelete,
+  onUninstall,
   isTriggering,
 }: {
   config: DeploymentConfigurationInfo;
   onTrigger: (applicationName: string) => void;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
-  onDelete?: (config: DeploymentConfigurationInfo) => void;
+  onUninstall?: (config: DeploymentConfigurationInfo) => void;
   isTriggering: boolean;
 }) => {
   const handleTrigger = useCallback(() => {
@@ -130,9 +137,9 @@ const DeploymentActions = React.memo(({
     onEdit?.(config);
   }, [config, onEdit]);
 
-  const handleDelete = useCallback(() => {
-    onDelete?.(config);
-  }, [config, onDelete]);
+  const handleUninstall = useCallback(() => {
+    onUninstall?.(config);
+  }, [config, onUninstall]);
 
   return (
     <div className="flex items-center gap-2">
@@ -160,8 +167,8 @@ const DeploymentActions = React.memo(({
             Edit Configuration
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleDelete} className="text-destructive">
-            Delete
+          <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
+            Uninstall
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -248,7 +255,7 @@ DeploymentFilters.displayName = "DeploymentFilters";
 
 export const DeploymentList = React.memo(function DeploymentList({
   onEditConfig,
-  onDeleteConfig,
+  onUninstallConfig,
   onCreateConfig,
 }: DeploymentListProps) {
   const { filters, updateFilter, resetFilters } = useDeploymentConfigFilters();
@@ -425,14 +432,14 @@ export const DeploymentList = React.memo(function DeploymentList({
               config={config}
               onTrigger={handleTriggerDeployment}
               onEdit={onEditConfig}
-              onDelete={onDeleteConfig}
+              onUninstall={onUninstallConfig}
               isTriggering={triggerMutation.isPending}
             />
           );
         },
       },
     ],
-    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, onEditConfig, onDeleteConfig, triggerMutation.isPending]
+    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, onEditConfig, onUninstallConfig, triggerMutation.isPending]
   );
 
   const table = useReactTable({

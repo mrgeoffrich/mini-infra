@@ -109,7 +109,7 @@ export interface DeploymentConfigurationInfo {
 // Deployment Types
 // ====================
 
-export type DeploymentTriggerType = 'manual' | 'webhook' | 'scheduled';
+export type DeploymentTriggerType = 'manual' | 'webhook' | 'scheduled' | 'uninstall';
 export type DeploymentStatus =
   | 'pending'
   | 'preparing'
@@ -119,7 +119,12 @@ export type DeploymentStatus =
   | 'cleanup'
   | 'completed'
   | 'failed'
-  | 'rolling_back';
+  | 'rolling_back'
+  | 'uninstalling'
+  | 'removing_from_lb'
+  | 'stopping_application'
+  | 'removing_application'
+  | 'uninstalled';
 
 export type RemovalStatus =
   | 'in_progress'
@@ -377,7 +382,7 @@ export interface RemovalOperationResponse {
   message?: string;
 }
 
-export interface DeleteDeploymentConfigResponse {
+export interface UninstallDeploymentConfigResponse {
   success: boolean;
   message: string;
   data: {

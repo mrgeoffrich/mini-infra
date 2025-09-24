@@ -25,6 +25,7 @@ import {
   DeploymentConfigSortOptions,
   HostnameValidationRequest,
   HostnameValidationResponse,
+  UninstallDeploymentConfigResponse,
 } from "@mini-infra/types";
 
 const logger = appLogger();
@@ -459,11 +460,11 @@ router.put(
 );
 
 /**
- * DELETE /api/deployments/configs/:id
- * Delete a deployment configuration using removal state machine
+ * DELETE /api/deployments/configs/:id/uninstall
+ * Uninstall a deployment configuration using removal state machine
  */
 router.delete(
-  "/configs/:id",
+  "/configs/:id/uninstall",
   requireSessionOrApiKey as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -481,7 +482,7 @@ router.delete(
 
       res.status(202).json({
         success: true,
-        message: "Deployment configuration removal initiated",
+        message: "Deployment configuration uninstall initiated",
         data: {
           removalId: result.removalId,
           status: "in_progress"
@@ -490,7 +491,7 @@ router.delete(
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : String(error) },
-        "Failed to delete deployment configuration",
+        "Failed to uninstall deployment configuration",
       );
 
       if (error instanceof Error && error.message.includes("not found")) {

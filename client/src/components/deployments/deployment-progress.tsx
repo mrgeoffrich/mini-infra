@@ -186,6 +186,11 @@ const OverallProgress = React.memo(({
       completed: "Deployment Complete",
       failed: "Deployment Failed",
       rolling_back: "Rolling Back",
+      uninstalling: "Uninstalling Application",
+      removing_from_lb: "Removing from Load Balancer",
+      stopping_application: "Stopping Application",
+      removing_application: "Removing Application",
+      uninstalled: "Uninstall Complete",
     };
     return statusMap[status] || status;
   }, [status]);

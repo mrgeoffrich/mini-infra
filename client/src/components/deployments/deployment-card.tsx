@@ -8,6 +8,7 @@ import {
   IconCheck,
   IconX,
   IconLoader2,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -30,7 +31,7 @@ interface DeploymentCardProps {
   latestDeployment?: DeploymentInfo;
   environment?: Environment;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
-  onDelete?: (config: DeploymentConfigurationInfo) => void;
+  onUninstall?: (config: DeploymentConfigurationInfo) => void;
 }
 
 // Status icon component
@@ -51,6 +52,13 @@ const DeploymentStatusIcon = React.memo(({ status }: { status: DeploymentStatus 
         return <IconLoader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       case "rolling_back":
         return <IconLoader2 className="h-4 w-4 text-orange-500 animate-spin" />;
+      case "uninstalling":
+      case "removing_from_lb":
+      case "stopping_application":
+      case "removing_application":
+        return <IconLoader2 className="h-4 w-4 text-purple-500 animate-spin" />;
+      case "uninstalled":
+        return <IconTrash className="h-4 w-4 text-gray-500" />;
       default:
         return <IconClock className="h-4 w-4 text-gray-500" />;
     }
@@ -78,6 +86,13 @@ const DeploymentStatusBadge = React.memo(({ status }: { status: DeploymentStatus
         return { variant: "default" as const, className: "bg-blue-500 text-white" };
       case "rolling_back":
         return { variant: "default" as const, className: "bg-orange-500 text-white" };
+      case "uninstalling":
+      case "removing_from_lb":
+      case "stopping_application":
+      case "removing_application":
+        return { variant: "default" as const, className: "bg-purple-500 text-white" };
+      case "uninstalled":
+        return { variant: "secondary" as const, className: "bg-gray-500 text-white" };
       default:
         return { variant: "outline" as const, className: "" };
     }
@@ -99,7 +114,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
   latestDeployment,
   environment,
   onEdit,
-  onDelete,
+  onUninstall,
 }: DeploymentCardProps) {
   const { formatDateTime, formatDate } = useFormattedDate();
   const triggerMutation = useDeploymentTrigger();
@@ -117,9 +132,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
     onEdit?.(config);
   }, [config, onEdit]);
 
-  const handleDelete = useCallback(() => {
-    onDelete?.(config);
-  }, [config, onDelete]);
+  const handleUninstall = useCallback(() => {
+    onUninstall?.(config);
+  }, [config, onUninstall]);
 
   // Calculate deployment statistics
   const deploymentStats = useMemo(() => {
@@ -143,8 +158,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
   const isDeploymentActive = useMemo(() => {
     if (!latestDeployment) return false;
     const activeStatuses: DeploymentStatus[] = [
-      "pending", "preparing", "deploying", "health_checking", 
-      "switching_traffic", "cleanup", "rolling_back"
+      "pending", "preparing", "deploying", "health_checking",
+      "switching_traffic", "cleanup", "rolling_back",
+      "uninstalling", "removing_from_lb", "stopping_application", "removing_application"
     ];
     return activeStatuses.includes(latestDeployment.status as DeploymentStatus);
   }, [latestDeployment]);
@@ -187,8 +203,8 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                 Edit Configuration
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
-                Delete
+              <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
+                Uninstall
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

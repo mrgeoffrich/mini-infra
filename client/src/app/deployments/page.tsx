@@ -8,7 +8,7 @@ import {
 
 import { DeploymentList } from "@/components/deployments/deployment-list";
 import { DeploymentCard } from "@/components/deployments/deployment-card";
-import { DeleteDeploymentConfigDialog } from "@/components/deployments/delete-deployment-config-dialog";
+import { UninstallDeploymentConfigDialog } from "@/components/deployments/uninstall-deployment-config-dialog";
 import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
 import { useEnvironments } from "@/hooks/use-environments";
@@ -20,8 +20,8 @@ import { DeploymentConfigurationInfo, DeploymentInfo } from "@mini-infra/types";
 export function DeploymentsPage() {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [configToDelete, setConfigToDelete] = useState<DeploymentConfigurationInfo | null>(null);
+  const [uninstallDialogOpen, setUninstallDialogOpen] = useState(false);
+  const [configToUninstall, setConfigToUninstall] = useState<DeploymentConfigurationInfo | null>(null);
   const { filters } = useDeploymentConfigFilters();
   
   // Fetch deployment configurations
@@ -100,14 +100,14 @@ export function DeploymentsPage() {
     navigate(`/deployments/new?edit=${config.id}`);
   }, [navigate]);
 
-  const handleDeleteConfig = useCallback((config: DeploymentConfigurationInfo) => {
-    setConfigToDelete(config);
-    setDeleteDialogOpen(true);
+  const handleUninstallConfig = useCallback((config: DeploymentConfigurationInfo) => {
+    setConfigToUninstall(config);
+    setUninstallDialogOpen(true);
   }, []);
 
-  const handleCloseDeleteDialog = useCallback(() => {
-    setDeleteDialogOpen(false);
-    setConfigToDelete(null);
+  const handleCloseUninstallDialog = useCallback(() => {
+    setUninstallDialogOpen(false);
+    setConfigToUninstall(null);
   }, []);
 
   const handleCreateConfig = useCallback(() => {
@@ -165,7 +165,7 @@ export function DeploymentsPage() {
       {viewMode === "list" ? (
         <DeploymentList
           onEditConfig={handleEditConfig}
-          onDeleteConfig={handleDeleteConfig}
+          onUninstallConfig={handleUninstallConfig}
           onCreateConfig={handleCreateConfig}
         />
       ) : (
@@ -186,7 +186,7 @@ export function DeploymentsPage() {
                   latestDeployment={latestDeploymentsByConfig.get(config.id)}
                   environment={environmentsById.get(config.environmentId)}
                   onEdit={handleEditConfig}
-                  onDelete={handleDeleteConfig}
+                  onUninstall={handleUninstallConfig}
                 />
               ))}
             </div>
@@ -208,11 +208,11 @@ export function DeploymentsPage() {
         </div>
       )}
 
-      {/* Delete confirmation dialog */}
-      <DeleteDeploymentConfigDialog
-        config={configToDelete}
-        isOpen={deleteDialogOpen}
-        onClose={handleCloseDeleteDialog}
+      {/* Uninstall confirmation dialog */}
+      <UninstallDeploymentConfigDialog
+        config={configToUninstall}
+        isOpen={uninstallDialogOpen}
+        onClose={handleCloseUninstallDialog}
       />
     </div>
   );
