@@ -25,6 +25,188 @@ const deployInfrastructureSchema = z.object({
 });
 
 /**
+ * @swagger
+ * /api/deployment-infrastructure/deploy:
+ *   post:
+ *     summary: Deploy infrastructure components
+ *     description: Deploy Docker network and HAProxy load balancer for zero-downtime deployments
+ *     tags:
+ *       - Deployment Infrastructure
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - networkName
+ *               - environmentId
+ *             properties:
+ *               networkName:
+ *                 type: string
+ *                 minLength: 1
+ *                 description: Name for the Docker network to create
+ *                 example: "production-network"
+ *               networkDriver:
+ *                 type: string
+ *                 enum: [bridge, overlay, host, none]
+ *                 default: bridge
+ *                 description: Docker network driver type
+ *                 example: "bridge"
+ *               environmentId:
+ *                 type: string
+ *                 minLength: 1
+ *                 description: Environment ID where infrastructure will be deployed
+ *                 example: "env_prod_123"
+ *           examples:
+ *             production:
+ *               summary: Production deployment
+ *               value:
+ *                 networkName: "production-network"
+ *                 networkDriver: "bridge"
+ *                 environmentId: "env_prod_123"
+ *             staging:
+ *               summary: Staging deployment with overlay network
+ *               value:
+ *                 networkName: "staging-overlay"
+ *                 networkDriver: "overlay"
+ *                 environmentId: "env_staging_456"
+ *     responses:
+ *       201:
+ *         description: Infrastructure deployed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     networkName:
+ *                       type: string
+ *                       example: "production-network"
+ *                     networkId:
+ *                       type: string
+ *                       example: "net_abc123def456"
+ *                     networkDriver:
+ *                       type: string
+ *                       example: "bridge"
+ *                     haproxyContainerId:
+ *                       type: string
+ *                       example: "haproxy_container_789"
+ *                     haproxyStatus:
+ *                       type: string
+ *                       example: "running"
+ *                     environmentId:
+ *                       type: string
+ *                       example: "env_prod_123"
+ *                     deployedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                 message:
+ *                   type: string
+ *                   example: "Infrastructure deployed successfully"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_deploy_123"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Bad Request"
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid request data"
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                   example: [{"message": "Network name is required", "path": ["networkName"]}]
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_deploy_123"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *                 message:
+ *                   type: string
+ *                   example: "User authentication required"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_deploy_123"
+ *       409:
+ *         description: Conflict - infrastructure already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Infrastructure already exists"
+ *                 message:
+ *                   type: string
+ *                   example: "Network or HAProxy already deployed for this environment"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_deploy_123"
+ *       500:
+ *         description: Deployment failed - internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Deployment failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to deploy infrastructure components"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_deploy_123"
+ *
  * POST /api/deployment-infrastructure/deploy - Deploy Docker network and HAProxy
  */
 router.post("/deploy", requireSessionOrApiKey, (async (

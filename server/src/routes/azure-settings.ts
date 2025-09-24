@@ -79,6 +79,108 @@ const testContainerAccessSchema = z.object({
 });
 
 /**
+ * @swagger
+ * /api/settings/azure:
+ *   get:
+ *     summary: Get Azure storage settings
+ *     description: Retrieve the current Azure storage configuration settings
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Azure settings retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "azure_setting_123"
+ *                     accountName:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "mystorageaccount"
+ *                     connectionString:
+ *                       type: string
+ *                       description: "Masked connection string for security"
+ *                       example: "DefaultEndpointsProtocol=https;AccountName=***;AccountKey=***;EndpointSuffix=core.windows.net"
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *                     lastValidatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     validationStatus:
+ *                       type: string
+ *                       enum: [valid, invalid, pending]
+ *                       example: "valid"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-01T00:00:00.000Z"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                 message:
+ *                   type: string
+ *                   example: "Azure settings retrieved successfully"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: No Azure settings found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "No Azure settings found"
+ *                 message:
+ *                   type: string
+ *                   example: "Please configure Azure storage settings"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/settings/azure - Get current Azure configuration
  */
 router.get("/", requireSessionOrApiKey, (async (
@@ -169,6 +271,139 @@ router.get("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/settings/azure:
+ *   put:
+ *     summary: Update Azure storage settings
+ *     description: Update the Azure storage configuration with new connection string and account details
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               connectionString:
+ *                 type: string
+ *                 description: Azure Storage connection string (optional if updating existing)
+ *                 example: "DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=abcd1234;EndpointSuffix=core.windows.net"
+ *               accountName:
+ *                 type: string
+ *                 description: Azure Storage account name (optional)
+ *                 example: "mystorageaccount"
+ *           examples:
+ *             updateConnectionString:
+ *               summary: Update connection string
+ *               value:
+ *                 connectionString: "DefaultEndpointsProtocol=https;AccountName=newaccount;AccountKey=newkey123;EndpointSuffix=core.windows.net"
+ *                 accountName: "newaccount"
+ *             updateAccountName:
+ *               summary: Update account name only
+ *               value:
+ *                 accountName: "updatedaccount"
+ *     responses:
+ *       200:
+ *         description: Azure settings updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "azure_setting_123"
+ *                     accountName:
+ *                       type: string
+ *                       example: "mystorageaccount"
+ *                     connectionString:
+ *                       type: string
+ *                       description: "Masked connection string for security"
+ *                       example: "DefaultEndpointsProtocol=https;AccountName=***;AccountKey=***;EndpointSuffix=core.windows.net"
+ *                     isActive:
+ *                       type: boolean
+ *                       example: true
+ *                     lastValidatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     validationStatus:
+ *                       type: string
+ *                       enum: [valid, invalid, pending]
+ *                       example: "pending"
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:35:00.000Z"
+ *                 message:
+ *                   type: string
+ *                   example: "Azure settings updated successfully"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_456"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid connection string format"
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                   example: [{"message": "Invalid connection string format. Must include DefaultEndpointsProtocol, AccountName, and AccountKey"}]
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_456"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: No existing Azure settings found to update
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * PUT /api/settings/azure - Update Azure configuration
  */
 router.put("/", requireSessionOrApiKey, (async (

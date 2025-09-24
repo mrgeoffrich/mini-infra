@@ -487,6 +487,200 @@ async function listAvailableBackups(
 // ====================
 
 /**
+ * @swagger
+ * /api/postgres/restore/{databaseId}:
+ *   post:
+ *     summary: Initiate database restore operation
+ *     description: Start a restore operation for a PostgreSQL database from an Azure Storage backup
+ *     tags:
+ *       - PostgreSQL Restore
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: databaseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the target database for restore
+ *         example: "db123"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - backupUrl
+ *             properties:
+ *               backupUrl:
+ *                 type: string
+ *                 format: uri
+ *                 description: Azure Storage blob URL of the backup file (.dump or .sql)
+ *                 example: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *               confirmRestore:
+ *                 type: boolean
+ *                 description: Confirm that restore operation should proceed
+ *                 default: false
+ *                 example: true
+ *               restoreToNewDatabase:
+ *                 type: boolean
+ *                 description: Whether to restore to a new database instead of overwriting
+ *                 default: false
+ *                 example: false
+ *               newDatabaseName:
+ *                 type: string
+ *                 description: Name for new database (required if restoreToNewDatabase is true)
+ *                 example: "my_restored_db"
+ *           examples:
+ *             restoreOverExisting:
+ *               summary: Restore over existing database
+ *               value:
+ *                 backupUrl: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *                 confirmRestore: true
+ *                 restoreToNewDatabase: false
+ *             restoreToNewDatabase:
+ *               summary: Restore to new database
+ *               value:
+ *                 backupUrl: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *                 confirmRestore: true
+ *                 restoreToNewDatabase: true
+ *                 newDatabaseName: "restored_db_copy"
+ *     responses:
+ *       201:
+ *         description: Restore operation initiated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "restore_789"
+ *                     databaseId:
+ *                       type: string
+ *                       example: "db123"
+ *                     backupUrl:
+ *                       type: string
+ *                       example: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, running, completed, failed]
+ *                       example: "pending"
+ *                     restoreToNewDatabase:
+ *                       type: boolean
+ *                       example: false
+ *                     newDatabaseName:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     progress:
+ *                       type: number
+ *                       example: 0
+ *                 message:
+ *                   type: string
+ *                   example: "Restore operation initiated successfully"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       400:
+ *         description: Bad request - validation error or invalid backup URL
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid backup URL"
+ *                 message:
+ *                   type: string
+ *                   example: "Backup URL must be a valid Azure Storage blob URL ending with .dump or .sql"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Database not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Database not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Database not found or you don't have access to it"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       409:
+ *         description: Conflict - restore operation already running
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Restore operation already running"
+ *                 message:
+ *                   type: string
+ *                   example: "A restore operation is already in progress for this database"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * POST /api/postgres/restore/:databaseId
  * Initiate restore operation for a specific database
  */
@@ -687,6 +881,99 @@ router.post(
 );
 
 /**
+ * @swagger
+ * /api/postgres/restore/{operationId}/status:
+ *   get:
+ *     summary: Get restore operation status
+ *     description: Retrieve the current status and details of a specific restore operation
+ *     tags:
+ *       - PostgreSQL Restore
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: operationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the restore operation
+ *         example: "restore_456"
+ *     responses:
+ *       200:
+ *         description: Restore operation status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "restore_456"
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, running, completed, failed]
+ *                       example: "running"
+ *                     progress:
+ *                       type: number
+ *                       minimum: 0
+ *                       maximum: 100
+ *                       example: 45
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     completedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: null
+ *                     errorMessage:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     backupUrl:
+ *                       type: string
+ *                       example: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *                     databaseName:
+ *                       type: string
+ *                       example: "my_database"
+ *                 message:
+ *                   type: string
+ *                   example: "Restore operation is running"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:32:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_789"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Restore operation not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/postgres/restore/:operationId/status
  * Get status of a specific restore operation
  */
@@ -782,6 +1069,165 @@ router.get(
 );
 
 /**
+ * @swagger
+ * /api/postgres/restore/backups/{containerName}:
+ *   get:
+ *     summary: Browse available backups in Azure container
+ *     description: List all available backup files in an Azure Storage container with filtering and pagination
+ *     tags:
+ *       - PostgreSQL Restore
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: containerName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The name of the Azure Storage container
+ *         example: "postgres-backups"
+ *       - in: query
+ *         name: createdAfter
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter backups created after this date (ISO 8601)
+ *         example: "2024-01-01T00:00:00.000Z"
+ *       - in: query
+ *         name: createdBefore
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter backups created before this date (ISO 8601)
+ *         example: "2024-12-31T23:59:59.999Z"
+ *       - in: query
+ *         name: sizeMin
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Filter backups with minimum size in bytes
+ *         example: 1048576
+ *       - in: query
+ *         name: sizeMax
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Filter backups with maximum size in bytes
+ *         example: 104857600
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of items per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, sizeBytes, name]
+ *           default: createdAt
+ *         description: Field to sort by
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Available backups retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                         example: "db123/backup_456_20240115103000.dump"
+ *                       url:
+ *                         type: string
+ *                         example: "https://storage.blob.core.windows.net/backups/db123/backup_456_20240115103000.dump"
+ *                       sizeBytes:
+ *                         type: number
+ *                         example: 1048576
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       lastModified:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       metadata:
+ *                         type: object
+ *                         properties:
+ *                           databaseName:
+ *                             type: string
+ *                             example: "db123"
+ *                           contentType:
+ *                             type: string
+ *                             example: "application/octet-stream"
+ *                           etag:
+ *                             type: string
+ *                             example: '"0x8DC1E2F3A4B5C6D"'
+ *                 message:
+ *                   type: string
+ *                   example: "Found 5 available backups"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:33:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                       example: 1
+ *                     limit:
+ *                       type: integer
+ *                       example: 20
+ *                     totalCount:
+ *                       type: integer
+ *                       example: 5
+ *                     hasMore:
+ *                       type: boolean
+ *                       example: false
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/postgres/restore/backups/:containerName
  * Browse available backups in Azure container
  */
@@ -865,6 +1311,165 @@ router.get(
 );
 
 /**
+ * @swagger
+ * /api/postgres/restore/{databaseId}/operations:
+ *   get:
+ *     summary: List restore operations for a database
+ *     description: Retrieve all restore operations for a specific PostgreSQL database with filtering, sorting, and pagination
+ *     tags:
+ *       - PostgreSQL Restore
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: databaseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the PostgreSQL database
+ *         example: "db123"
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, running, completed, failed]
+ *         description: Filter by restore operation status
+ *         example: "completed"
+ *       - in: query
+ *         name: startedAfter
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter operations started after this date (ISO 8601)
+ *         example: "2024-01-01T00:00:00.000Z"
+ *       - in: query
+ *         name: startedBefore
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter operations started before this date (ISO 8601)
+ *         example: "2024-12-31T23:59:59.999Z"
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of items per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [id, startedAt, completedAt, status, progress, backupUrl]
+ *           default: startedAt
+ *         description: Field to sort by
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Restore operations retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "restore_123"
+ *                       databaseId:
+ *                         type: string
+ *                         example: "db123"
+ *                       backupUrl:
+ *                         type: string
+ *                         example: "https://storage.blob.core.windows.net/backups/backup_456.dump"
+ *                       status:
+ *                         type: string
+ *                         enum: [pending, running, completed, failed]
+ *                         example: "completed"
+ *                       startedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       completedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                         example: "2024-01-15T10:35:45.000Z"
+ *                       errorMessage:
+ *                         type: string
+ *                         nullable: true
+ *                       progress:
+ *                         type: number
+ *                         minimum: 0
+ *                         maximum: 100
+ *                         example: 100
+ *                 message:
+ *                   type: string
+ *                   example: "Found 3 restore operations"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:33:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                       example: 1
+ *                     limit:
+ *                       type: integer
+ *                       example: 20
+ *                     totalCount:
+ *                       type: integer
+ *                       example: 3
+ *                     hasMore:
+ *                       type: boolean
+ *                       example: false
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Database not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/postgres/restore/:databaseId/operations
  * List restore operations for a specific database
  */
@@ -977,6 +1582,98 @@ router.get(
 );
 
 /**
+ * @swagger
+ * /api/postgres/restore/{operationId}/progress:
+ *   get:
+ *     summary: Get restore operation progress
+ *     description: Retrieve detailed progress information for a restore operation including estimated completion time
+ *     tags:
+ *       - PostgreSQL Restore
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: operationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the restore operation
+ *         example: "restore_456"
+ *     responses:
+ *       200:
+ *         description: Restore operation progress retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "restore_456"
+ *                     databaseId:
+ *                       type: string
+ *                       example: "db123"
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, running, completed, failed]
+ *                       example: "running"
+ *                     progress:
+ *                       type: number
+ *                       minimum: 0
+ *                       maximum: 100
+ *                       example: 67
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     estimatedCompletion:
+ *                       type: string
+ *                       format: date-time
+ *                       description: Estimated completion time (only for running operations with progress > 0)
+ *                       example: "2024-01-15T10:35:30.000Z"
+ *                     errorMessage:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Error message if the operation failed
+ *                       example: null
+ *                     backupUrl:
+ *                       type: string
+ *                       description: The backup URL being restored from
+ *                       example: "https://storage.blob.core.windows.net/backups/backup_123.dump"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:33:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_131415"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Restore operation not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/postgres/restore/:operationId/progress
  * Get detailed progress information for a restore operation
  */

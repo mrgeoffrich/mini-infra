@@ -51,6 +51,77 @@ const historyQuerySchema = z.object({
 });
 
 /**
+ * @swagger
+ * /api/connectivity/cloudflare:
+ *   get:
+ *     summary: Get latest Cloudflare connectivity status
+ *     description: Retrieve the most recent connectivity check result for Cloudflare services
+ *     tags:
+ *       - Connectivity
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Cloudflare connectivity status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "conn_cf_123"
+ *                 service:
+ *                   type: string
+ *                   example: "cloudflare"
+ *                 status:
+ *                   type: string
+ *                   enum: [connected, failed, timeout, unreachable]
+ *                   example: "connected"
+ *                 message:
+ *                   type: string
+ *                   nullable: true
+ *                   example: null
+ *                 metadata:
+ *                   type: object
+ *                   nullable: true
+ *                   example: {"tunnelId": "abcd1234", "endpoint": "api.cloudflare.com"}
+ *                 checkedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 responseTime:
+ *                   type: number
+ *                   nullable: true
+ *                   example: 150
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: No connectivity status found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "No connectivity status found for Cloudflare"
+ *                 service:
+ *                   type: string
+ *                   example: "cloudflare"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/connectivity/cloudflare
  * Get the latest Cloudflare connectivity status
  */
@@ -134,6 +205,119 @@ router.get(
 );
 
 /**
+ * @swagger
+ * /api/connectivity/cloudflare/history:
+ *   get:
+ *     summary: Get Cloudflare connectivity history
+ *     description: Retrieve paginated history of Cloudflare connectivity checks with filtering options
+ *     tags:
+ *       - Connectivity
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of records to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of records to skip
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [connected, failed, timeout, unreachable]
+ *         description: Filter by connectivity status
+ *         example: "connected"
+ *     responses:
+ *       200:
+ *         description: Cloudflare connectivity history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "conn_cf_123"
+ *                       service:
+ *                         type: string
+ *                         example: "cloudflare"
+ *                       status:
+ *                         type: string
+ *                         enum: [connected, failed, timeout, unreachable]
+ *                         example: "connected"
+ *                       message:
+ *                         type: string
+ *                         nullable: true
+ *                         example: null
+ *                       metadata:
+ *                         type: object
+ *                         nullable: true
+ *                         example: {"tunnelId": "abcd1234", "endpoint": "api.cloudflare.com"}
+ *                       checkedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       responseTime:
+ *                         type: number
+ *                         nullable: true
+ *                         example: 150
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       example: 500
+ *                     limit:
+ *                       type: integer
+ *                       example: 20
+ *                     offset:
+ *                       type: integer
+ *                       example: 0
+ *                     hasMore:
+ *                       type: boolean
+ *                       example: true
+ *       400:
+ *         description: Bad request - invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid query parameters"
+ *                 details:
+ *                   type: object
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/connectivity/cloudflare/history
  * Get historical Cloudflare connectivity data with pagination
  */

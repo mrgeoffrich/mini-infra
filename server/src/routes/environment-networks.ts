@@ -25,7 +25,98 @@ const updateNetworkSchema = z.object({
   options: z.record(z.string(), z.any()).optional()
 });
 
-// GET /api/environments/:id/networks - List environment networks
+/**
+ * @swagger
+ * /api/environments/{id}/networks:
+ *   get:
+ *     summary: List environment networks
+ *     description: Retrieve all networks associated with a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *     responses:
+ *       200:
+ *         description: Environment networks retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 networks:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "network_456"
+ *                       name:
+ *                         type: string
+ *                         example: "myenv-frontend"
+ *                       driver:
+ *                         type: string
+ *                         example: "bridge"
+ *                       options:
+ *                         type: object
+ *                         nullable: true
+ *                         example: {"com.docker.network.bridge.name": "myenv-br0"}
+ *                       environmentId:
+ *                         type: string
+ *                         example: "env_123"
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Environment not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Environment with ID env_123 does not exist"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to retrieve environment networks"
+ *
+ * GET /api/environments/:id/networks - List environment networks
+ */
 router.get('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
@@ -49,7 +140,159 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// POST /api/environments/:id/networks - Create environment network
+/**
+ * @swagger
+ * /api/environments/{id}/networks:
+ *   post:
+ *     summary: Create environment network
+ *     description: Create a new Docker network for a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 100
+ *                 pattern: '^[a-zA-Z0-9_-]+$'
+ *                 description: Network name (alphanumeric, underscores, hyphens only)
+ *                 example: "frontend"
+ *               driver:
+ *                 type: string
+ *                 default: "bridge"
+ *                 description: Docker network driver
+ *                 example: "bridge"
+ *               options:
+ *                 type: object
+ *                 additionalProperties: true
+ *                 description: Additional network options
+ *                 example: {"com.docker.network.bridge.name": "custom-br0"}
+ *           examples:
+ *             basicNetwork:
+ *               summary: Basic bridge network
+ *               value:
+ *                 name: "frontend"
+ *                 driver: "bridge"
+ *             customNetwork:
+ *               summary: Network with custom options
+ *               value:
+ *                 name: "backend"
+ *                 driver: "bridge"
+ *                 options:
+ *                   "com.docker.network.bridge.name": "backend-br0"
+ *                   "com.docker.network.driver.mtu": "1450"
+ *     responses:
+ *       201:
+ *         description: Network created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "network_789"
+ *                 name:
+ *                   type: string
+ *                   example: "myenv-frontend"
+ *                 driver:
+ *                   type: string
+ *                   example: "bridge"
+ *                 options:
+ *                   type: object
+ *                   nullable: true
+ *                   example: {"com.docker.network.bridge.name": "custom-br0"}
+ *                 environmentId:
+ *                   type: string
+ *                   example: "env_123"
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Validation error"
+ *                 message:
+ *                   type: string
+ *                   example: "Name must contain only letters, numbers, underscores, and hyphens"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Environment not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Environment with ID env_123 does not exist"
+ *       409:
+ *         description: Conflict - network name already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Network name already exists"
+ *                 message:
+ *                   type: string
+ *                   example: "A network with this name already exists in the environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to create network"
+ *
+ * POST /api/environments/:id/networks - Create environment network
+ */
 router.post('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;

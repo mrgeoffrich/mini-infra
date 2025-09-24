@@ -25,7 +25,97 @@ const updateVolumeSchema = z.object({
   options: z.record(z.string(), z.any()).optional()
 });
 
-// GET /api/environments/:id/volumes - List environment volumes
+/**
+ * @swagger
+ * /api/environments/{id}/volumes:
+ *   get:
+ *     summary: List environment volumes
+ *     description: Retrieve all Docker volumes associated with a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *     responses:
+ *       200:
+ *         description: Environment volumes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 volumes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "volume_456"
+ *                       name:
+ *                         type: string
+ *                         example: "myenv-database-data"
+ *                       driver:
+ *                         type: string
+ *                         example: "local"
+ *                       options:
+ *                         type: object
+ *                         example: {"type": "nfs", "o": "addr=192.168.1.100,rw", "device": ":/path/to/dir"}
+ *                       environmentId:
+ *                         type: string
+ *                         example: "env_123"
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Environment not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Environment with ID env_123 does not exist"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to retrieve environment volumes"
+ *
+ * GET /api/environments/:id/volumes - List environment volumes
+ */
 router.get('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
@@ -49,7 +139,164 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// POST /api/environments/:id/volumes - Create environment volume
+/**
+ * @swagger
+ * /api/environments/{id}/volumes:
+ *   post:
+ *     summary: Create environment volume
+ *     description: Create a new Docker volume for a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 100
+ *                 pattern: '^[a-zA-Z0-9_-]+$'
+ *                 description: Volume name (alphanumeric, underscores, hyphens only)
+ *                 example: "database-data"
+ *               driver:
+ *                 type: string
+ *                 default: "local"
+ *                 description: Docker volume driver
+ *                 example: "local"
+ *               options:
+ *                 type: object
+ *                 additionalProperties: true
+ *                 description: Additional volume driver options
+ *                 example: {"type": "nfs", "o": "addr=192.168.1.100,rw", "device": ":/path/to/dir"}
+ *           examples:
+ *             localVolume:
+ *               summary: Basic local volume
+ *               value:
+ *                 name: "database-data"
+ *                 driver: "local"
+ *             nfsVolume:
+ *               summary: NFS volume with options
+ *               value:
+ *                 name: "shared-storage"
+ *                 driver: "local"
+ *                 options:
+ *                   type: "nfs"
+ *                   o: "addr=192.168.1.100,rw"
+ *                   device: ":/path/to/shared"
+ *     responses:
+ *       201:
+ *         description: Volume created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "volume_789"
+ *                 name:
+ *                   type: string
+ *                   example: "myenv-database-data"
+ *                 driver:
+ *                   type: string
+ *                   example: "local"
+ *                 options:
+ *                   type: object
+ *                   example: {"type": "nfs", "o": "addr=192.168.1.100,rw", "device": ":/path/to/dir"}
+ *                 environmentId:
+ *                   type: string
+ *                   example: "env_123"
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid request data"
+ *                 message:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                   example: [{"message": "Name must contain only letters, numbers, underscores, and hyphens"}]
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Environment not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Environment with ID env_123 does not exist"
+ *       409:
+ *         description: Conflict - volume name already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Volume name already exists"
+ *                 message:
+ *                   type: string
+ *                   example: "A volume with this name already exists in the environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to create volume"
+ *
+ * POST /api/environments/:id/volumes - Create environment volume
+ */
 router.post('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
