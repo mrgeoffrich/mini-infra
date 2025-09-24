@@ -203,8 +203,8 @@ export const blueGreenDeploymentMachine = setup({
             enableTraffic.execute(context, (event) => self.send(event)); // Open traffic back to the blue container
         },
 
-        disableGreenTraffic: () => {
-            disableTraffic.execute();
+        disableGreenTraffic: ({ context, self }) => {
+            disableTraffic.execute(context, (event) => self.send(event));
         },
 
         removeGreenHAProxyConfig: ({ context, self }) => {
