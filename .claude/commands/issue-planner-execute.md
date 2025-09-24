@@ -11,6 +11,6 @@ Follow these steps:
 7. Make sure validation is done and issues are fixed before continuing.
 8. Commit all the changes and push the branch up.
 9. Open a PR and make sure to link back to the original issue, and fill out the change details in the PR description and title.
-10. Notify the user that this is complete by running `.\pushover-cli.exe send "message" -u https://github.com/xxx` and replace the message with a message that should be very short, 10 words maximum, indicating what has been done. After the -u add the link to the github issue.
+10. Notify the user that this is complete by running `pushover-cli send "message" -u https://github.com/xxx` and replace the message with a message that should be very short, 10 words maximum, indicating what has been done. After the -u add the link to the github issue.
 
 Remember to use the GitHub CLI (`gh`) for all GitHub-related tasks.
