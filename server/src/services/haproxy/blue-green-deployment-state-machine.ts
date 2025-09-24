@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate';
+import { deploymentLogger } from '../../lib/logger-factory';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -61,11 +62,16 @@ interface BlueGreenDeploymentContext {
     activeConnections: number;
     oldContainerId?: string;
     newContainerId?: string;
+    containerIpAddress?: string;
+    containerPort?: number;
 
     // Deployment metadata
     triggerType: string;
     triggeredBy?: string;
     startTime: number;
+
+    // Configuration
+    config?: any;
 }
 
 type BlueGreenDeploymentEvent =
@@ -75,7 +81,7 @@ type BlueGreenDeploymentEvent =
     // Green deployment events
     | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING' }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress: string; containerPort: number }
     | { type: 'STARTUP_TIMEOUT' }
 
     // Load balancer configuration events
@@ -125,7 +131,8 @@ type BlueGreenDeploymentEvent =
 export const blueGreenDeploymentMachine = setup({
     types: {
         context: {} as BlueGreenDeploymentContext,
-        events: {} as BlueGreenDeploymentEvent
+        events: {} as BlueGreenDeploymentEvent,
+        input: {} as BlueGreenDeploymentContext
     },
     actions: {
         // Green deployment actions
@@ -139,7 +146,31 @@ export const blueGreenDeploymentMachine = setup({
 
         // Load balancer configuration actions
         initializeGreenLB: ({ context, self }) => {
-            addContainerToLB.execute(context, (event) => self.send(event));
+            const logger = deploymentLogger();
+            logger.info({
+                deploymentId: context.deploymentId,
+                applicationName: context.applicationName,
+                newContainerId: context.newContainerId,
+                containerIpAddress: context.containerIpAddress,
+                containerPort: context.containerPort,
+                currentState: 'initializingGreenLB'
+            }, 'State machine: Entering initializeGreenLB action');
+
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+
+            addContainerToLB.execute(contextWithContainerId, (event) => {
+                logger.info({
+                    deploymentId: context.deploymentId,
+                    applicationName: context.applicationName,
+                    event,
+                    currentState: 'initializingGreenLB'
+                }, 'State machine: Received event from initializeGreenLB action');
+                self.send(event);
+            });
         },
 
         performGreenHealthChecks: ({ context, self }) => {
@@ -298,6 +329,8 @@ export const blueGreenDeploymentMachine = setup({
             activeConnections: 0,
             newContainerId: undefined,
             oldContainerId: undefined,
+            containerIpAddress: undefined,
+            containerPort: undefined,
         }))
     },
     guards: {
@@ -336,20 +369,20 @@ export const blueGreenDeploymentMachine = setup({
 }).createMachine({
     id: 'blueGreenDeployment',
     initial: 'idle',
-    context: {
-        // Deployment identifiers
-        deploymentId: "",
-        configurationId: "",
-        applicationName: "",
-        dockerImage: "",
+    context: ({ input }: { input: BlueGreenDeploymentContext }) => ({
+        // Use input data if provided, otherwise use defaults
+        deploymentId: input?.deploymentId || "",
+        configurationId: input?.configurationId || "",
+        applicationName: input?.applicationName || "",
+        dockerImage: input?.dockerImage || "",
 
         // Environment context
-        environmentId: "",
-        environmentName: "",
-        haproxyContainerId: "",
-        haproxyNetworkName: "",
+        environmentId: input?.environmentId || "",
+        environmentName: input?.environmentName || "",
+        haproxyContainerId: input?.haproxyContainerId || "",
+        haproxyNetworkName: input?.haproxyNetworkName || "",
 
-        // Container state
+        // Container state (always start with defaults)
         blueHealthy: false,
         greenHealthy: false,
         greenBackendConfigured: false,
@@ -362,12 +395,17 @@ export const blueGreenDeploymentMachine = setup({
         activeConnections: 0,
         oldContainerId: undefined,
         newContainerId: undefined,
+        containerIpAddress: undefined,
+        containerPort: undefined,
 
         // Deployment metadata
-        triggerType: "manual",
-        triggeredBy: undefined,
-        startTime: Date.now(),
-    },
+        triggerType: input?.triggerType || "manual",
+        triggeredBy: input?.triggeredBy,
+        startTime: input?.startTime || Date.now(),
+
+        // Configuration
+        config: input?.config,
+    }),
 
     states: {
         idle: {
@@ -382,58 +420,178 @@ export const blueGreenDeploymentMachine = setup({
 
         deployingGreenApp: {
             description: 'Deploying green application containers',
-            entry: 'deployGreenApplicationContainers',
+            entry: [
+                ({ context }) => {
+                    const logger = deploymentLogger();
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        applicationName: context.applicationName,
+                        dockerImage: context.dockerImage,
+                        environmentName: context.environmentName
+                    }, 'State machine: Entering deployingGreenApp state');
+                },
+                'deployGreenApplicationContainers'
+            ],
             on: {
                 DEPLOYMENT_SUCCESS: {
                     target: 'waitingGreenReady',
-                    actions: assign({
-                        newContainerId: ({ event }) => {
-                            if (event.type === 'DEPLOYMENT_SUCCESS') {
-                                return event.containerId;
+                    actions: [
+                        assign({
+                            newContainerId: ({ event }) => {
+                                if (event.type === 'DEPLOYMENT_SUCCESS') {
+                                    return event.containerId;
+                                }
+                                return undefined;
                             }
-                            return undefined;
+                        }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.info({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                containerId: 'containerId' in event ? event.containerId : 'unknown'
+                            }, 'State machine: DEPLOYMENT_SUCCESS - transitioning to waitingGreenReady');
                         }
-                    })
+                    ]
                 },
                 DEPLOYMENT_ERROR: {
                     target: 'failed',
-                    actions: 'preserveErrorContext'
+                    actions: [
+                        'preserveErrorContext',
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.error({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'State machine: DEPLOYMENT_ERROR - transitioning to failed');
+                        }
+                    ]
                 }
             }
         },
 
         waitingGreenReady: {
             description: 'Waiting for green application containers to be ready',
-            entry: 'monitorGreenContainerStartup',
+            entry: [
+                ({ context }) => {
+                    const logger = deploymentLogger();
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        applicationName: context.applicationName,
+                        newContainerId: context.newContainerId
+                    }, 'State machine: Entering waitingGreenReady state');
+                },
+                'monitorGreenContainerStartup'
+            ],
             on: {
                 CONTAINERS_RUNNING: {
                     target: 'initializingGreenLB',
-                    actions: assign({ greenHealthy: true })
+                    actions: [
+                        assign({
+                            greenHealthy: true,
+                            containerIpAddress: ({ event }) => {
+                                if (event.type === 'CONTAINERS_RUNNING' && 'containerIpAddress' in event) {
+                                    return event.containerIpAddress;
+                                }
+                                return undefined;
+                            },
+                            containerPort: ({ event }) => {
+                                if (event.type === 'CONTAINERS_RUNNING' && 'containerPort' in event) {
+                                    return event.containerPort;
+                                }
+                                return undefined;
+                            }
+                        }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.info({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                containerIpAddress: 'containerIpAddress' in event ? event.containerIpAddress : 'unknown',
+                                containerPort: 'containerPort' in event ? event.containerPort : 'unknown'
+                            }, 'State machine: CONTAINERS_RUNNING - transitioning to initializingGreenLB');
+                        }
+                    ]
                 },
                 STARTUP_TIMEOUT: {
                     target: 'rollbackRemovingGreenApp',
-                    actions: assign({ error: 'Green container startup timeout' })
+                    actions: [
+                        assign({ error: 'Green container startup timeout' }),
+                        ({ context }) => {
+                            const logger = deploymentLogger();
+                            logger.error({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName
+                            }, 'State machine: STARTUP_TIMEOUT - transitioning to rollbackRemovingGreenApp');
+                        }
+                    ]
                 }
             },
             after: {
                 120000: { // 2 minute timeout
                     target: 'rollbackRemovingGreenApp',
-                    actions: assign({ error: 'Green application startup timeout' })
+                    actions: [
+                        assign({ error: 'Green application startup timeout' }),
+                        ({ context }) => {
+                            const logger = deploymentLogger();
+                            logger.error({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName
+                            }, 'State machine: Startup timeout (120s) - transitioning to rollbackRemovingGreenApp');
+                        }
+                    ]
                 }
             }
         },
 
         initializingGreenLB: {
             description: 'Preparing HAProxy configuration for green backend and registering servers',
-            entry: 'initializeGreenLB',
+            entry: [
+                ({ context }) => {
+                    const logger = deploymentLogger();
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        applicationName: context.applicationName,
+                        newContainerId: context.newContainerId,
+                        containerIpAddress: context.containerIpAddress,
+                        containerPort: context.containerPort,
+                        environmentName: context.environmentName,
+                        haproxyContainerId: context.haproxyContainerId,
+                        config: context.config ? 'present' : 'missing'
+                    }, 'State machine: Entering initializingGreenLB state');
+                },
+                'initializeGreenLB'
+            ],
             on: {
                 LB_CONFIGURED: {
                     target: 'healthCheckWait',
-                    actions: assign({ greenBackendConfigured: true })
+                    actions: [
+                        assign({ greenBackendConfigured: true }),
+                        ({ context }) => {
+                            const logger = deploymentLogger();
+                            logger.info({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                currentState: 'initializingGreenLB'
+                            }, 'State machine: LB_CONFIGURED - transitioning to healthCheckWait');
+                        }
+                    ]
                 },
                 LB_CONFIG_ERROR: {
                     target: 'rollbackStoppingGreenApp',
-                    actions: 'preserveErrorContext'
+                    actions: [
+                        'preserveErrorContext',
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.error({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                error: 'error' in event ? event.error : 'Unknown error',
+                                currentState: 'initializingGreenLB'
+                            }, 'State machine: LB_CONFIG_ERROR - transitioning to rollbackStoppingGreenApp');
+                        }
+                    ]
                 }
             }
         },

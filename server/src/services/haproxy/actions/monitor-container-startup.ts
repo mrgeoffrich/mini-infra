@@ -17,7 +17,7 @@ export class MonitorContainerStartup {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
-            containerId: context?.containerId?.slice(0, 12),
+            newContainerId: context?.newContainerId?.slice(0, 12),
             environmentId: context?.environmentId,
             environmentName: context?.environmentName,
             haproxyNetworkName: context?.haproxyNetworkName,
@@ -25,12 +25,11 @@ export class MonitorContainerStartup {
         }, 'Action: Monitoring container startup...');
 
         try {
-            // Validate required context
-            if (!context.containerId) {
-                throw new Error('Container ID is required for startup monitoring');
+            // Validate required context - check for newContainerId (green container) or containerId (fallback)
+            const containerId = context.newContainerId || context.containerId;
+            if (!containerId) {
+                throw new Error('Container ID is required for startup monitoring (newContainerId or containerId)');
             }
-
-            const containerId = context.containerId;
             const timeoutMs = 120000; // 2 minutes as defined in state machine
             const pollIntervalMs = 2000; // Poll every 2 seconds
 
