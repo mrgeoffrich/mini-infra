@@ -110,16 +110,25 @@ export interface DeploymentConfigurationInfo {
 // ====================
 
 export type DeploymentTriggerType = 'manual' | 'webhook' | 'scheduled';
-export type DeploymentStatus = 
-  | 'pending' 
-  | 'preparing' 
-  | 'deploying' 
-  | 'health_checking' 
-  | 'switching_traffic' 
-  | 'cleanup' 
-  | 'completed' 
-  | 'failed' 
+export type DeploymentStatus =
+  | 'pending'
+  | 'preparing'
+  | 'deploying'
+  | 'health_checking'
+  | 'switching_traffic'
+  | 'cleanup'
+  | 'completed'
+  | 'failed'
   | 'rolling_back';
+
+export type RemovalStatus =
+  | 'in_progress'
+  | 'removing_from_lb'
+  | 'stopping_application'
+  | 'removing_application'
+  | 'cleanup'
+  | 'completed'
+  | 'failed';
 
 // Database deployment (matches Prisma model)
 export interface Deployment {
@@ -333,4 +342,46 @@ export interface DeploymentConfigSortOptions {
 export interface DeploymentSortOptions {
   field: keyof DeploymentInfo;
   order: 'asc' | 'desc';
+}
+
+// ====================
+// Deployment Removal Types
+// ====================
+
+export interface RemovalOperationStep {
+  id: string;
+  stepName: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startedAt: string | null;
+  completedAt: string | null;
+  duration: number | null;
+  errorMessage: string | null;
+}
+
+export interface RemovalOperationInfo {
+  id: string;
+  configurationId: string;
+  applicationName: string;
+  status: RemovalStatus;
+  currentState: string;
+  progress: number;
+  steps: RemovalOperationStep[];
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface RemovalOperationResponse {
+  success: boolean;
+  data: RemovalOperationInfo;
+  message?: string;
+}
+
+export interface DeleteDeploymentConfigResponse {
+  success: boolean;
+  message: string;
+  data: {
+    removalId: string;
+    status: string;
+  };
 }
