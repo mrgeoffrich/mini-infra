@@ -174,21 +174,41 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         performGreenHealthChecks: ({ context, self }) => {
-            performHealthChecks.execute(context, (event) => self.send(event));
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            performHealthChecks.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         // Traffic management actions
         openTrafficToGreen: ({ context, self }) => {
-            enableTraffic.execute(context, (event) => self.send(event));
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            enableTraffic.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         validateGreenTraffic: ({ context, self }) => {
-            validateTraffic.execute(context, (event) => self.send(event));
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            validateTraffic.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         // Blue draining actions
         initiateBlueDrain: ({ context, self }) => {
-            initiateDrain.execute(context, (event) => self.send(event));
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            initiateDrain.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         monitorBlueDrain: assign({
@@ -244,11 +264,21 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         disableGreenTraffic: ({ context, self }) => {
-            disableTraffic.execute(context, (event) => self.send(event));
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            disableTraffic.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         removeGreenHAProxyConfig: ({ context, self }) => {
-            removeContainerFromLB.execute(context, (event) => {
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            removeContainerFromLB.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
@@ -259,7 +289,12 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         stopGreenApplication: ({ context, self }) => {
-            stopApplication.execute(context, (event) => {
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            stopApplication.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
@@ -270,7 +305,12 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         removeGreenApplication: ({ context, self }) => {
-            removeApplication.execute(context, (event) => {
+            // Map newContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.newContainerId
+            };
+            removeApplication.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
