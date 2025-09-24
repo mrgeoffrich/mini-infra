@@ -146,7 +146,68 @@ router.post("/logout", ((req: Request, res: Response) => {
   }
 }) as RequestHandler);
 
-// Get current user status
+/**
+ * @swagger
+ * /auth/status:
+ *   get:
+ *     summary: Get authentication status
+ *     description: Check if the current user is authenticated and get basic user info
+ *     tags:
+ *       - Authentication
+ *     responses:
+ *       200:
+ *         description: Authentication status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 isAuthenticated:
+ *                   type: boolean
+ *                   description: Whether the user is authenticated
+ *                 user:
+ *                   oneOf:
+ *                     - type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           description: User ID
+ *                         email:
+ *                           type: string
+ *                           format: email
+ *                           description: User email address
+ *                         name:
+ *                           type: string
+ *                           description: User display name
+ *                         image:
+ *                           type: string
+ *                           nullable: true
+ *                           description: User profile image URL
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                           description: Account creation timestamp
+ *                     - type: null
+ *               required:
+ *                 - isAuthenticated
+ *                 - user
+ *             examples:
+ *               authenticated:
+ *                 summary: Authenticated user
+ *                 value:
+ *                   isAuthenticated: true
+ *                   user:
+ *                     id: "123e4567-e89b-12d3-a456-426614174000"
+ *                     email: "user@example.com"
+ *                     name: "John Doe"
+ *                     image: "https://example.com/avatar.jpg"
+ *                     createdAt: "2025-09-24T11:59:00.000Z"
+ *               unauthenticated:
+ *                 summary: Unauthenticated user
+ *                 value:
+ *                   isAuthenticated: false
+ *                   user: null
+ */
 router.get("/status", ((req: Request, res: Response) => {
   if (req.user) {
     logger.debug(

@@ -93,7 +93,27 @@ import { extractJwtUser } from "./lib/jwt-middleware";
 // JWT user extraction middleware
 app.use(extractJwtUser as RequestHandler);
 
-// Health check endpoint
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns the current health status of the API server
+ *     tags:
+ *       - System
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ *             example:
+ *               status: "healthy"
+ *               timestamp: "2025-09-24T11:59:00.000Z"
+ *               environment: "development"
+ *               uptime: 123.456
+ */
 app.get("/health", ((req: Request, res: Response) => {
   res.status(200).json({
     status: "healthy",
@@ -169,6 +189,25 @@ if (appConfig.server.nodeEnv === "production") {
   }) as RequestHandler);
 }
 
+// Swagger documentation (development only)
+if (appConfig.server.nodeEnv === "development") {
+  const swaggerUi = require("swagger-ui-express");
+  const swaggerSpec = require("./lib/swagger").default;
+
+  // Serve swagger spec JSON (must come before the UI route)
+  app.get("/api-docs/swagger.json", ((req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/json");
+    res.send(swaggerSpec);
+  }) as RequestHandler);
+
+  // Serve swagger docs at /api-docs
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: "Mini Infra API Documentation",
+  }));
+}
+
 // Development welcome message
 if (appConfig.server.nodeEnv === "development") {
   app.get("/", ((req: Request, res: Response) => {
@@ -177,6 +216,8 @@ if (appConfig.server.nodeEnv === "development") {
       environment: appConfig.server.nodeEnv,
       timestamp: new Date().toISOString(),
       docs: "/health for health check",
+      apiDocs: "/api-docs for API documentation",
+      swaggerSpec: "/api-docs/swagger.json for OpenAPI specification",
     });
   }) as RequestHandler);
 }

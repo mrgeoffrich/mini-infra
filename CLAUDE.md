@@ -23,6 +23,51 @@ curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/config
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
 
+## 📚 API Documentation & Swagger Specification
+
+### Complete API Documentation (Development Only)
+
+The server provides comprehensive Swagger/OpenAPI documentation when running in development mode:
+
+- **Swagger UI**: [http://localhost:5000/api-docs](http://localhost:5000/api-docs) - Interactive API documentation
+- **OpenAPI JSON Spec**: [http://localhost:5000/api-docs/swagger.json](http://localhost:5000/api-docs/swagger.json) - Machine-readable API specification
+
+### For LLMs and Automated Tools
+
+To discover all available endpoints and their detailed specifications:
+
+```bash
+# Get the complete OpenAPI specification
+curl http://localhost:5000/api-docs/swagger.json
+
+# List all available endpoints
+curl -s http://localhost:5000/api-docs/swagger.json | jq '.paths | keys'
+
+# Get details for a specific endpoint
+curl -s http://localhost:5000/api-docs/swagger.json | jq '.paths."/api/containers"'
+```
+
+### Key Features
+
+- **Authentication Methods**: JWT Bearer tokens, API key headers, and API key bearer tokens
+- **Request/Response Schemas**: Detailed parameter validation and response structures
+- **Error Handling**: Standardized error response formats
+- **Examples**: Sample requests and responses for each endpoint
+- **Security**: Only available in development mode for security
+
+### Quick Reference
+
+```bash
+# Get development welcome message (includes API docs links)
+curl http://localhost:5000/
+
+# Check authentication status
+curl -H "x-api-key: <your-api-key>" http://localhost:5000/auth/status
+
+# List containers with pagination
+curl -H "x-api-key: <your-api-key>" "http://localhost:5000/api/containers?page=1&limit=10"
+```
+
 ## 🧪 HAProxy DataPlane Integration Tests
 
 To run HAProxy DataPlane API integration tests:

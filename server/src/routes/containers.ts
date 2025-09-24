@@ -70,7 +70,114 @@ const containerQuerySchema = z.object({
 });
 
 /**
- * GET /api/containers - List containers with pagination and filtering
+ * @swagger
+ * /api/containers:
+ *   get:
+ *     summary: List Docker containers
+ *     description: Retrieve a paginated list of Docker containers with optional filtering and sorting
+ *     tags:
+ *       - Containers
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - name: page
+ *         in: query
+ *         description: Page number for pagination
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *       - name: limit
+ *         in: query
+ *         description: Number of containers per page (max 50)
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 50
+ *       - name: sortBy
+ *         in: query
+ *         description: Field to sort by
+ *         required: false
+ *         schema:
+ *           type: string
+ *           default: "name"
+ *       - name: sortOrder
+ *         in: query
+ *         description: Sort order
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: "asc"
+ *       - name: status
+ *         in: query
+ *         description: Filter by container status
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: name
+ *         in: query
+ *         description: Filter by container name
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: image
+ *         in: query
+ *         description: Filter by container image
+ *         required: false
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved containers
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     containers:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/ContainerInfo'
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         total:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *       400:
+ *         description: Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/", requireSessionOrApiKey, (async (
   req: Request,
