@@ -2,6 +2,7 @@ import { createActor, fromPromise } from "xstate";
 import { deploymentLogger } from "../lib/logger-factory";
 import { blueGreenDeploymentMachine } from "./haproxy/blue-green-deployment-state-machine";
 import { initialDeploymentMachine } from "./haproxy/initial-deployment-state-machine";
+import { removalDeploymentMachine } from "./haproxy/removal-deployment-state-machine";
 import { EnvironmentValidationService, HAProxyEnvironmentContext } from "./environment-validation";
 import { ContainerLifecycleManager } from "./container-lifecycle-manager";
 import { HealthCheckService } from "./health-check";
@@ -48,6 +49,36 @@ export interface HAProxyDeploymentContext {
   config: DeploymentConfig;
 }
 
+export interface HAProxyRemovalContext {
+  // Deployment identifiers
+  deploymentId: string;
+  configurationId: string;
+  applicationName: string;
+
+  // Environment context
+  environmentId: string;
+  environmentName: string;
+  haproxyContainerId: string;
+  haproxyNetworkName: string;
+
+  // Container state
+  containerId?: string;
+  containersToRemove: string[];
+  lbRemovalComplete: boolean;
+  applicationStopped: boolean;
+  applicationRemoved: boolean;
+  error?: string;
+  retryCount: number;
+
+  // Deployment metadata
+  triggerType: string;
+  triggeredBy?: string;
+  startTime: number;
+
+  // Configuration
+  config?: DeploymentConfig;
+}
+
 // ====================
 // Deployment Orchestrator
 // ====================
@@ -60,6 +91,7 @@ export class DeploymentOrchestrator {
   private dockerExecutor: DockerExecutorService;
   private dockerService: DockerService;
   private activeDeployments: Map<string, any> = new Map();
+  private activeRemovalOperations: Map<string, any> = new Map();
 
   constructor() {
     this.environmentValidationService = new EnvironmentValidationService();
@@ -482,6 +514,46 @@ export class DeploymentOrchestrator {
     return this.activeDeployments.has(deploymentId);
   }
 
+  /**
+   * Get all active removal operations
+   */
+  getActiveRemovalOperations(): string[] {
+    return Array.from(this.activeRemovalOperations.keys());
+  }
+
+  /**
+   * Check if removal operation is active
+   */
+  isRemovalOperationActive(removalId: string): boolean {
+    return this.activeRemovalOperations.has(removalId);
+  }
+
+  /**
+   * Get removal operation status
+   */
+  getRemovalOperationStatus(removalId: string): {
+    isActive: boolean;
+    currentState: string | null;
+    context: any | null;
+  } {
+    const actor = this.activeRemovalOperations.get(removalId);
+
+    if (!actor) {
+      return {
+        isActive: false,
+        currentState: null,
+        context: null,
+      };
+    }
+
+    const snapshot = actor.getSnapshot();
+    return {
+      isActive: snapshot.status !== "done",
+      currentState: snapshot.value as string,
+      context: snapshot.context,
+    };
+  }
+
   // ====================
   // API Interface Methods
   // ====================
@@ -622,6 +694,176 @@ export class DeploymentOrchestrator {
     );
 
     return deployment;
+  }
+
+  /**
+   * Execute removal state machine for deployment configuration
+   */
+  async executeRemovalStateMachine(params: {
+    configurationId: string;
+    applicationName: string;
+    triggeredBy?: string;
+  }): Promise<string> {
+    try {
+      deploymentLogger().info(
+        {
+          configurationId: params.configurationId,
+          applicationName: params.applicationName,
+          triggeredBy: params.triggeredBy,
+        },
+        "Starting deployment removal with HAProxy state machine"
+      );
+
+      // Get configuration with environment information
+      const config = await prisma.deploymentConfiguration.findUnique({
+        where: { id: params.configurationId },
+        include: {
+          environment: true,
+        },
+      });
+
+      if (!config) {
+        throw new Error(`Deployment configuration ${params.configurationId} not found`);
+      }
+
+      // Validate environment and get HAProxy context
+      const environmentContext = await this.environmentValidationService.getHAProxyEnvironmentContext(
+        config.environmentId
+      );
+      if (!environmentContext) {
+        const validation = await this.environmentValidationService.validateEnvironmentForDeployment(
+          config.environmentId
+        );
+        throw new Error(validation.errorMessage || "Environment validation failed");
+      }
+
+      // Generate unique removal operation ID
+      const removalId = `removal-${params.configurationId}-${Date.now()}`;
+
+      // Find containers to remove
+      const containers = await this.dockerService.listContainers();
+      const appContainers = containers.filter((container: any) => {
+        const labels = container.labels || {};
+        return (
+          labels["mini-infra.application"] === params.applicationName &&
+          labels["mini-infra.environment"] === environmentContext.environmentId
+        );
+      });
+
+      // Create removal context
+      const removalContext: HAProxyRemovalContext = {
+        deploymentId: removalId,
+        configurationId: params.configurationId,
+        applicationName: params.applicationName,
+        environmentId: environmentContext.environmentId,
+        environmentName: environmentContext.environmentName,
+        haproxyContainerId: environmentContext.haproxyContainerId,
+        haproxyNetworkName: environmentContext.haproxyNetworkName,
+        containersToRemove: appContainers.map((c: any) => c.id),
+        lbRemovalComplete: false,
+        applicationStopped: false,
+        applicationRemoved: false,
+        retryCount: 0,
+        triggerType: "manual",
+        triggeredBy: params.triggeredBy,
+        startTime: Date.now(),
+      };
+
+      // Create and start removal state machine
+      const removalMachine = removalDeploymentMachine.provide({
+        // Service implementations will be added here when ready
+      });
+
+      const actor = createActor(removalMachine, {
+        input: removalContext,
+      });
+
+      // Store and start removal operation
+      this.activeRemovalOperations.set(removalId, actor);
+      this.setupRemovalActorSubscription(actor, removalId);
+
+      actor.start();
+      actor.send({ type: "START_REMOVAL" });
+
+      deploymentLogger().info(
+        {
+          removalId,
+          configurationId: params.configurationId,
+          applicationName: params.applicationName,
+          containerCount: appContainers.length,
+        },
+        "HAProxy removal state machine started"
+      );
+
+      return removalId;
+    } catch (error) {
+      deploymentLogger().error(
+        {
+          configurationId: params.configurationId,
+          applicationName: params.applicationName,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to start removal state machine"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Setup actor subscription for removal state machine monitoring
+   */
+  private setupRemovalActorSubscription(actor: any, removalId: string): void {
+    actor.subscribe(async (state: any) => {
+      if (state.status === "done") {
+        this.activeRemovalOperations.delete(removalId);
+
+        const finalStatus = state.value === "completed" ? "completed" : "failed";
+        const hasError = state.context.error !== undefined && state.context.error !== null;
+
+        deploymentLogger().info(
+          {
+            removalId,
+            finalStatus,
+            finalState: state.value,
+            hasError,
+            applicationName: state.context.applicationName,
+            environmentName: state.context.environmentName,
+          },
+          "HAProxy removal state machine completed"
+        );
+
+        // Notify completion (could be used for UI updates, etc.)
+        if (finalStatus === "completed") {
+          deploymentLogger().info(
+            {
+              removalId,
+              applicationName: state.context.applicationName,
+            },
+            "Deployment removal completed successfully - configuration can be safely deleted"
+          );
+        } else {
+          deploymentLogger().error(
+            {
+              removalId,
+              applicationName: state.context.applicationName,
+              error: state.context.error,
+            },
+            "Deployment removal failed - manual intervention may be required"
+          );
+        }
+      }
+
+      // Log state changes
+      deploymentLogger().debug(
+        {
+          removalId,
+          currentState: state.value,
+          applicationName: state.context.applicationName,
+          environmentName: state.context.environmentName,
+        },
+        "HAProxy removal state transition"
+      );
+    });
   }
 }
 
