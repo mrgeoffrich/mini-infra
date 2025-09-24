@@ -355,7 +355,140 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// PUT /api/environments/:id/volumes/:volumeId - Update environment volume
+/**
+ * @swagger
+ * /api/environments/{id}/volumes/{volumeId}:
+ *   put:
+ *     summary: Update environment volume
+ *     description: Update configuration of an existing volume in a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *       - in: path
+ *         name: volumeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The volume ID
+ *         example: "volume_789"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               driver:
+ *                 type: string
+ *                 description: Docker volume driver
+ *                 example: "local"
+ *               options:
+ *                 type: object
+ *                 additionalProperties: true
+ *                 description: Additional volume driver options
+ *                 example: {"type": "nfs", "o": "addr=192.168.1.200,rw", "device": ":/new/path"}
+ *           examples:
+ *             updateDriver:
+ *               summary: Update volume driver
+ *               value:
+ *                 driver: "nfs"
+ *             updateOptions:
+ *               summary: Update volume options
+ *               value:
+ *                 options:
+ *                   type: "nfs"
+ *                   o: "addr=192.168.1.200,rw"
+ *                   device: ":/updated/path"
+ *     responses:
+ *       200:
+ *         description: Volume updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "volume_789"
+ *                 name:
+ *                   type: string
+ *                   example: "myenv-database-data"
+ *                 driver:
+ *                   type: string
+ *                   example: "local"
+ *                 options:
+ *                   type: object
+ *                   example: {"type": "nfs", "o": "addr=192.168.1.200,rw", "device": ":/new/path"}
+ *                 environmentId:
+ *                   type: string
+ *                   example: "env_123"
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid request data"
+ *                 message:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment or volume not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Volume not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Volume with ID volume_789 does not exist in this environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to update volume"
+ *
+ * PUT /api/environments/:id/volumes/:volumeId - Update environment volume
+ */
 router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id, volumeId } = req.params;
@@ -417,7 +550,92 @@ router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// DELETE /api/environments/:id/volumes/:volumeId - Delete environment volume
+/**
+ * @swagger
+ * /api/environments/{id}/volumes/{volumeId}:
+ *   delete:
+ *     summary: Delete environment volume
+ *     description: Remove a volume from a specific environment (only if not in use by services)
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *       - in: path
+ *         name: volumeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The volume ID
+ *         example: "volume_789"
+ *     responses:
+ *       204:
+ *         description: Volume deleted successfully (no content)
+ *       400:
+ *         description: Bad request - volume is in use by services
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Volume in use"
+ *                 message:
+ *                   type: string
+ *                   example: "Cannot delete volume that is required by services"
+ *                 details:
+ *                   type: object
+ *                   properties:
+ *                     servicesUsingVolume:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["database-service", "cache-service"]
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment or volume not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Volume not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Volume with ID volume_789 does not exist in this environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to delete volume"
+ *
+ * DELETE /api/environments/:id/volumes/:volumeId - Delete environment volume
+ */
 router.delete('/:volumeId', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id, volumeId } = req.params;

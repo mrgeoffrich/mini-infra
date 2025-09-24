@@ -333,6 +333,119 @@ router.post("/deploy", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/deployment-infrastructure/status:
+ *   get:
+ *     summary: Get infrastructure status
+ *     description: Retrieve the current status of deployed infrastructure components (network and HAProxy)
+ *     tags:
+ *       - Deployment Infrastructure
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: query
+ *         name: networkName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the Docker network to check
+ *         example: "production-network"
+ *       - in: query
+ *         name: environmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Environment ID to check infrastructure for
+ *         example: "env_prod_123"
+ *     responses:
+ *       200:
+ *         description: Infrastructure status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     networkStatus:
+ *                       type: object
+ *                       properties:
+ *                         exists:
+ *                           type: boolean
+ *                           example: true
+ *                         id:
+ *                           type: string
+ *                           example: "production-network"
+ *                         error:
+ *                           type: string
+ *                           nullable: true
+ *                           example: null
+ *                     haproxyStatus:
+ *                       type: object
+ *                       properties:
+ *                         exists:
+ *                           type: boolean
+ *                           example: true
+ *                         running:
+ *                           type: boolean
+ *                           example: true
+ *                         id:
+ *                           type: string
+ *                           nullable: true
+ *                           example: "haproxy_container_789"
+ *                         error:
+ *                           type: string
+ *                           nullable: true
+ *                           example: null
+ *                 message:
+ *                   type: string
+ *                   example: "Infrastructure status retrieved"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_status_456"
+ *       400:
+ *         description: Bad request - missing required parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Bad Request"
+ *                 message:
+ *                   type: string
+ *                   example: "Network name is required as query parameter"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_status_456"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/deployment-infrastructure/status - Get infrastructure status
  */
 router.get("/status", requireSessionOrApiKey, (async (
@@ -450,6 +563,128 @@ router.get("/status", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/deployment-infrastructure/cleanup:
+ *   delete:
+ *     summary: Clean up infrastructure
+ *     description: Remove all deployed infrastructure components (HAProxy containers and Docker networks)
+ *     tags:
+ *       - Deployment Infrastructure
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - networkName
+ *               - environmentId
+ *             properties:
+ *               networkName:
+ *                 type: string
+ *                 description: Name of the Docker network to remove
+ *                 example: "production-network"
+ *               environmentId:
+ *                 type: string
+ *                 description: Environment ID where infrastructure should be cleaned up
+ *                 example: "env_prod_123"
+ *           examples:
+ *             production:
+ *               summary: Cleanup production infrastructure
+ *               value:
+ *                 networkName: "production-network"
+ *                 environmentId: "env_prod_123"
+ *             staging:
+ *               summary: Cleanup staging infrastructure
+ *               value:
+ *                 networkName: "staging-overlay"
+ *                 environmentId: "env_staging_456"
+ *     responses:
+ *       200:
+ *         description: Infrastructure cleaned up successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Infrastructure cleaned up successfully"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_cleanup_789"
+ *       400:
+ *         description: Bad request - missing required parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Bad Request"
+ *                 message:
+ *                   type: string
+ *                   example: "Network name is required in request body"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_cleanup_789"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *                 message:
+ *                   type: string
+ *                   example: "User authentication required"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_cleanup_789"
+ *       500:
+ *         description: Infrastructure cleanup failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Infrastructure Error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to cleanup infrastructure: Container removal failed"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_cleanup_789"
+ *
  * DELETE /api/deployment-infrastructure/cleanup - Clean up infrastructure
  */
 router.delete("/cleanup", requireSessionOrApiKey, (async (

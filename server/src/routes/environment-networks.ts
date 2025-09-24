@@ -351,7 +351,140 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// PUT /api/environments/:id/networks/:networkId - Update environment network
+/**
+ * @swagger
+ * /api/environments/{id}/networks/{networkId}:
+ *   put:
+ *     summary: Update environment network
+ *     description: Update configuration of an existing network in a specific environment
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *       - in: path
+ *         name: networkId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The network ID
+ *         example: "network_789"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               driver:
+ *                 type: string
+ *                 description: Docker network driver
+ *                 example: "bridge"
+ *               options:
+ *                 type: object
+ *                 additionalProperties: true
+ *                 description: Additional network options
+ *                 example: {"com.docker.network.driver.mtu": "1450"}
+ *           examples:
+ *             updateDriver:
+ *               summary: Update network driver
+ *               value:
+ *                 driver: "overlay"
+ *             updateOptions:
+ *               summary: Update network options
+ *               value:
+ *                 options:
+ *                   "com.docker.network.driver.mtu": "1450"
+ *                   "com.docker.network.bridge.enable_icc": "false"
+ *     responses:
+ *       200:
+ *         description: Network updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   example: "network_789"
+ *                 name:
+ *                   type: string
+ *                   example: "myenv-frontend"
+ *                 driver:
+ *                   type: string
+ *                   example: "bridge"
+ *                 options:
+ *                   type: object
+ *                   nullable: true
+ *                   example: {"com.docker.network.driver.mtu": "1450"}
+ *                 environmentId:
+ *                   type: string
+ *                   example: "env_123"
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid request data"
+ *                 message:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 details:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment or network not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Network not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Network with ID network_789 does not exist in this environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to update network"
+ *
+ * PUT /api/environments/:id/networks/:networkId - Update environment network
+ */
 router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id, networkId } = req.params;
@@ -413,7 +546,92 @@ router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
   }
 });
 
-// DELETE /api/environments/:id/networks/:networkId - Delete environment network
+/**
+ * @swagger
+ * /api/environments/{id}/networks/{networkId}:
+ *   delete:
+ *     summary: Delete environment network
+ *     description: Remove a network from a specific environment (only if not in use by services)
+ *     tags:
+ *       - Environment Management
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The environment ID
+ *         example: "env_123"
+ *       - in: path
+ *         name: networkId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The network ID
+ *         example: "network_789"
+ *     responses:
+ *       204:
+ *         description: Network deleted successfully (no content)
+ *       400:
+ *         description: Bad request - network is in use by services
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Network in use"
+ *                 message:
+ *                   type: string
+ *                   example: "Cannot delete network that is required by services"
+ *                 details:
+ *                   type: object
+ *                   properties:
+ *                     servicesUsingNetwork:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: ["web-service", "api-service"]
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Environment or network not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Network not found"
+ *                 message:
+ *                   type: string
+ *                   example: "Network with ID network_789 does not exist in this environment"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal server error"
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to delete network"
+ *
+ * DELETE /api/environments/:id/networks/:networkId - Delete environment network
+ */
 router.delete('/:networkId', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id, networkId } = req.params;

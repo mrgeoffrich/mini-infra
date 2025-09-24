@@ -537,6 +537,146 @@ router.put("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/settings/azure/validate:
+ *   post:
+ *     summary: Validate Azure connection
+ *     description: Test the Azure Storage connection and retrieve account information
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               connectionString:
+ *                 type: string
+ *                 description: Connection string to test (optional - if not provided, uses current configuration)
+ *                 example: "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=testkey123;EndpointSuffix=core.windows.net"
+ *               testContainerAccess:
+ *                 type: boolean
+ *                 description: Whether to test container access
+ *                 default: false
+ *                 example: false
+ *           examples:
+ *             testCurrent:
+ *               summary: Test current configuration
+ *               value: {}
+ *             testNew:
+ *               summary: Test new connection string
+ *               value:
+ *                 connectionString: "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=testkey;EndpointSuffix=core.windows.net"
+ *                 testContainerAccess: true
+ *     responses:
+ *       200:
+ *         description: Connection validation completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     service:
+ *                       type: string
+ *                       example: "azure"
+ *                     isValid:
+ *                       type: boolean
+ *                       example: true
+ *                     responseTimeMs:
+ *                       type: number
+ *                       example: 250
+ *                     accountInfo:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         accountName:
+ *                           type: string
+ *                           example: "mystorageaccount"
+ *                         accountKind:
+ *                           type: string
+ *                           example: "StorageV2"
+ *                         skuName:
+ *                           type: string
+ *                           example: "Standard_LRS"
+ *                         skuTier:
+ *                           type: string
+ *                           example: "Standard"
+ *                         primaryLocation:
+ *                           type: string
+ *                           example: "East US"
+ *                     containerCount:
+ *                       type: number
+ *                       nullable: true
+ *                       example: 5
+ *                     sampleContainers:
+ *                       type: array
+ *                       nullable: true
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             example: "postgres-backups"
+ *                           lastModified:
+ *                             type: string
+ *                             format: date-time
+ *                           leaseStatus:
+ *                             type: string
+ *                             example: "unlocked"
+ *                           leaseState:
+ *                             type: string
+ *                             example: "available"
+ *                           hasImmutabilityPolicy:
+ *                             type: boolean
+ *                           hasLegalHold:
+ *                             type: boolean
+ *                     error:
+ *                       type: string
+ *                       nullable: true
+ *                     errorCode:
+ *                       type: string
+ *                       nullable: true
+ *                     validatedAt:
+ *                       type: string
+ *                       format: date-time
+ *                 message:
+ *                   type: string
+ *                   example: "Azure Storage connection validation successful"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 requestId:
+ *                   type: string
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * POST /api/settings/azure/validate - Validate Azure connection
  */
 router.post("/validate", requireSessionOrApiKey, (async (
@@ -716,6 +856,57 @@ router.post("/validate", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/settings/azure:
+ *   delete:
+ *     summary: Remove Azure configuration
+ *     description: Delete all Azure Storage settings from the system
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Azure configuration removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Azure Storage configuration removed successfully (mystorageaccount)"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:40:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_789"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: No Azure configuration found to remove
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * DELETE /api/settings/azure - Remove Azure configuration
  */
 router.delete("/", requireSessionOrApiKey, (async (
@@ -780,6 +971,99 @@ router.delete("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/settings/azure/containers:
+ *   get:
+ *     summary: List Azure Storage containers
+ *     description: Retrieve a list of all containers in the configured Azure Storage account
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     responses:
+ *       200:
+ *         description: Container list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     accountName:
+ *                       type: string
+ *                       example: "mystorageaccount"
+ *                     containerCount:
+ *                       type: number
+ *                       example: 3
+ *                     containers:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             example: "postgres-backups"
+ *                           lastModified:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2024-01-15T10:30:00.000Z"
+ *                           leaseStatus:
+ *                             type: string
+ *                             example: "unlocked"
+ *                           leaseState:
+ *                             type: string
+ *                             example: "available"
+ *                           hasImmutabilityPolicy:
+ *                             type: boolean
+ *                             example: false
+ *                           hasLegalHold:
+ *                             type: boolean
+ *                             example: false
+ *                           metadata:
+ *                             type: object
+ *                             nullable: true
+ *                     hasMore:
+ *                       type: boolean
+ *                       example: false
+ *                     nextMarker:
+ *                       type: string
+ *                       nullable: true
+ *                 message:
+ *                   type: string
+ *                   example: "Found 3 containers"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_123"
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Azure configuration not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error or Azure connection failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * GET /api/settings/azure/containers - List Azure Storage containers
  */
 router.get("/containers", requireSessionOrApiKey, (async (
@@ -853,6 +1137,119 @@ router.get("/containers", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * @swagger
+ * /api/settings/azure/test-container:
+ *   post:
+ *     summary: Test access to specific container
+ *     description: Test read/write access to a specific Azure Storage container
+ *     tags:
+ *       - Settings
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - containerName
+ *             properties:
+ *               containerName:
+ *                 type: string
+ *                 minLength: 1
+ *                 description: Name of the container to test access to
+ *                 example: "postgres-backups"
+ *           examples:
+ *             testBackupContainer:
+ *               summary: Test backup container access
+ *               value:
+ *                 containerName: "postgres-backups"
+ *             testDataContainer:
+ *               summary: Test data container access
+ *               value:
+ *                 containerName: "app-data"
+ *     responses:
+ *       200:
+ *         description: Container access test completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     containerName:
+ *                       type: string
+ *                       example: "postgres-backups"
+ *                     accessible:
+ *                       type: boolean
+ *                       example: true
+ *                     responseTimeMs:
+ *                       type: number
+ *                       example: 185
+ *                     lastModified:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                       example: "2024-01-15T10:30:00.000Z"
+ *                     leaseStatus:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "unlocked"
+ *                     error:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     errorCode:
+ *                       type: string
+ *                       nullable: true
+ *                       example: null
+ *                     testedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:35:00.000Z"
+ *                 message:
+ *                   type: string
+ *                   example: "Container 'postgres-backups' is accessible"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:35:00.000Z"
+ *                 requestId:
+ *                   type: string
+ *                   example: "req_456"
+ *       400:
+ *         description: Bad request - validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Container not found or Azure configuration missing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *
  * POST /api/settings/azure/test-container - Test access to specific container
  */
 router.post("/test-container", requireSessionOrApiKey, (async (
