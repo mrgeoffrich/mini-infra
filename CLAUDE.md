@@ -4,10 +4,10 @@
 
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
-* Whenever you need to change folders or change directory use the environment variable ROOT_APPLICATION_FOLDER as the root folder of the application. For example to change to the server folder run on linux: `cd $ROOT_APPLICATION_FOLDER/server` or on windows: `cd $env:ROOT_APPLICATION_FOLDER\server`
+
 * Run this command to display your development API key:
 ```powershell
-cd $env:ROOT_APPLICATION_FOLDER\server && npm run show-dev-key -- --recreate
+cd server && npm run show-dev-key -- --recreate
 ```
 
 ### Use the API Key
@@ -37,7 +37,7 @@ RUN_INTEGRATION_TESTS=true npm test -- haproxy-dataplane-client.integration.test
 
 Use docker compose to start haproxy for the integration tests:
 ```bash
-cd $ROOT_APPLICATION_FOLDER/server/docker-compose
+cd server/docker-compose
 docker compose -f docker-compose.haproxy.yml up -d
 ```
 
@@ -365,13 +365,13 @@ The development database can be queried directly using the sqlite3 binary. The d
 
 ### Single Query Mode on Windows (PowerShell)
 ```powershell
-cd $env:ROOT_APPLICATION_FOLDER\server
+cd server
 "SELECT * FROM users;" | .\sqlite3.exe prisma/dev.db
 ```
 
 ### Query with Headers and Formatting on Windows (PowerShell)
 ```powershell
-cd $env:ROOT_APPLICATION_FOLDER\server
+cd server
 @"
 .headers on
 .mode column
@@ -382,26 +382,26 @@ SELECT * FROM users;
 ### File-based Queries on Windows (PowerShell)
 Create a SQL file and run:
 ```powershell
-cd $env:ROOT_APPLICATION_FOLDER\server
+cd server
 Get-Content your_queries.sql | .\sqlite3.exe prisma/dev.db
 ```
 
 ### Single Query Mode on Linux
 ```bash
-cd $ROOT_APPLICATION_FOLDER/server
+cd server
 echo "SELECT * FROM users;" | sqlite3 prisma/dev.db
 ```
 
 ### Query with Headers and Formatting on Linux
 ```bash
-cd $ROOT_APPLICATION_FOLDER/server
+cd server
 printf ".headers on\n.mode column\nSELECT * FROM users;\n" | sqlite3 prisma/dev.db
 ```
 
 ### File-based Queries on Linux
 Create a SQL file and run:
 ```bash
-cd $ROOT_APPLICATION_FOLDER/server
+cd server
 sqlite3 prisma/dev.db < your_queries.sql
 ```
 
