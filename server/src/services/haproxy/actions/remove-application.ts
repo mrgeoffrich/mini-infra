@@ -53,9 +53,10 @@ export class RemoveApplication {
                 // Find all containers for the application (both stopped and running)
                 const allContainers = await this.dockerService.listContainers(true);
                 const applicationContainers = allContainers.filter((container: any) =>
+                    container.labels?.[`mini-infra.application`] === context.applicationName ||
                     container.labels?.[`mini-infra.application-name`] === context.applicationName ||
                     container.labels?.[`application.name`] === context.applicationName ||
-                    container.names.some((name: string) => name.includes(context.applicationName))
+                    (container.names && container.names.some((name: string) => name.includes(context.applicationName)))
                 );
 
                 containersToRemove = applicationContainers.map((container: any) => container.id);
