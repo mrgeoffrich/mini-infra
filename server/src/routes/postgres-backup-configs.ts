@@ -87,7 +87,47 @@ const updateBackupConfigSchema = z.object({
 });
 
 /**
- * GET /api/postgres/backup-configs/:databaseId - Get backup configuration for a database
+ * @swagger
+ * /api/postgres/backup-configs/{databaseId}:
+ *   get:
+ *     summary: Get backup configuration for a database
+ *     description: Retrieve the backup configuration for a specific PostgreSQL database
+ *     tags:
+ *       - PostgreSQL Backup Configs
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/DatabaseIdParam'
+ *     responses:
+ *       200:
+ *         description: Backup configuration retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/BackupConfigurationInfo'
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Backup configuration not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
  */
 router.get("/:databaseId", requireSessionOrApiKey, (async (
   req: Request,
@@ -171,7 +211,88 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
- * POST /api/postgres/backup-configs - Create backup configuration
+ * @swagger
+ * /api/postgres/backup-configs:
+ *   post:
+ *     summary: Create backup configuration
+ *     description: Create a new backup configuration for a PostgreSQL database
+ *     tags:
+ *       - PostgreSQL Backup Configs
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               databaseId:
+ *                 type: string
+ *                 description: Database configuration ID
+ *               schedule:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Cron expression for scheduling
+ *                 example: "0 2 * * *"
+ *               timezone:
+ *                 type: string
+ *                 default: "UTC"
+ *                 description: Timezone for schedule
+ *               azureContainerName:
+ *                 type: string
+ *                 description: Azure Storage container name
+ *               azurePathPrefix:
+ *                 type: string
+ *                 description: Azure Storage path prefix
+ *               retentionDays:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 365
+ *                 default: 30
+ *               backupFormat:
+ *                 type: string
+ *                 enum: ['custom', 'plain', 'directory']
+ *                 default: 'custom'
+ *               compressionLevel:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 9
+ *                 default: 6
+ *               isEnabled:
+ *                 type: boolean
+ *                 default: true
+ *             required: ['databaseId', 'azureContainerName', 'azurePathPrefix']
+ *     responses:
+ *       201:
+ *         description: Backup configuration created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/BackupConfigurationInfo'
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       409:
+ *         description: Backup configuration already exists for this database
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
  */
 router.post("/", requireSessionOrApiKey, (async (
   req: Request,

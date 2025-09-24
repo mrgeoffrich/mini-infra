@@ -2,7 +2,7 @@
   "server": {
     "nodeEnv": "development",
     "port": 5000,
-    "publicUrl": "http://localhost:3000"
+    "publicUrl": "http://localhost:5000"
   },
   "database": {
     "url": "file:./dev.db"
