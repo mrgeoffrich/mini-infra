@@ -156,8 +156,8 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         // Blue draining actions
-        initiateBlueDrain: () => {
-            initiateDrain.execute();
+        initiateBlueDrain: ({ context, self }) => {
+            initiateDrain.execute(context, (event) => self.send(event));
         },
 
         monitorBlueDrain: assign({
