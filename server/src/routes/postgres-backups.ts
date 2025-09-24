@@ -357,9 +357,21 @@ router.get(
   "/backups/:backupId/status",
   requireSessionOrApiKey,
   async (req, res) => {
-    const requestId = res.locals.requestId;
-    const userId = res.locals.user.id;
+    const requestId = req.headers["x-request-id"] as string;
+    const user = getAuthenticatedUser(req);
     const { backupId } = req.params;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+        message: "Authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const userId = user.id;
 
     try {
       logger.debug(

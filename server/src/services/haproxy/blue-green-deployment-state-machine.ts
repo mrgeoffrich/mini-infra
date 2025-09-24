@@ -9,7 +9,6 @@ import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
 import { DisableTraffic } from './actions/disable-traffic';
-import { RemoveHAProxyConfig } from './actions/remove-haproxy-config';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
@@ -26,7 +25,6 @@ const removeContainerFromLB = new RemoveContainerFromLB();
 const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
 const disableTraffic = new DisableTraffic();
-const removeHAProxyConfig = new RemoveHAProxyConfig();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
@@ -116,6 +114,7 @@ type BlueGreenDeploymentEvent =
     | { type: 'ROLLBACK_GREEN_APP_REMOVED' }
     | { type: 'ROLLBACK_COMPLETE' }
     | { type: 'ROLLBACK_ERROR'; error: string }
+    | { type: 'GREEN_LB_REMOVAL_ERROR'; error: string }
 
     // Completion events
     | { type: 'DEPLOYMENT_COMPLETE' }
@@ -208,8 +207,15 @@ export const blueGreenDeploymentMachine = setup({
             disableTraffic.execute();
         },
 
-        removeGreenHAProxyConfig: () => {
-            removeHAProxyConfig.execute();
+        removeGreenHAProxyConfig: ({ context, self }) => {
+            removeContainerFromLB.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'GREEN_LB_REMOVAL_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
         stopGreenApplication: ({ context, self }) => {
