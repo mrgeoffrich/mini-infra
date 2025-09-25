@@ -1161,7 +1161,7 @@ router.get(
 
       const { id } = req.params;
 
-      // Get deployment with steps
+      // Get deployment with steps and containers
       const deployment = await prisma.deployment.findFirst({
         where: {
           id,
@@ -1169,6 +1169,9 @@ router.get(
         include: {
           deploymentSteps: {
             orderBy: { startedAt: "asc" },
+          },
+          containers: {
+            orderBy: { capturedAt: "asc" },
           },
         },
       });
@@ -1207,6 +1210,23 @@ router.get(
         .map((step) => `[${step.stepName}] ${step.output}`)
         .filter(Boolean);
 
+      // Serialize containers
+      const containers = deployment.containers.map((container) => ({
+        id: container.id,
+        deploymentId: container.deploymentId,
+        containerId: container.containerId,
+        containerName: container.containerName,
+        containerRole: container.containerRole,
+        dockerImage: container.dockerImage,
+        imageId: container.imageId,
+        containerConfig: container.containerConfig,
+        status: container.status,
+        ipAddress: container.ipAddress,
+        createdAt: container.createdAt.toISOString(),
+        startedAt: container.startedAt?.toISOString() || null,
+        capturedAt: container.capturedAt.toISOString(),
+      }));
+
       res.json({
         success: true,
         data: {
@@ -1214,6 +1234,7 @@ router.get(
           progress: Math.round(progress),
           steps,
           logs,
+          containers,
         },
       });
     } catch (error) {
@@ -1466,7 +1487,7 @@ router.get(
       // Calculate pagination
       const offset = (page - 1) * limit;
 
-      // Get deployments with configuration info
+      // Get deployments with configuration info and containers
       const deployments = await prisma.deployment.findMany({
         include: {
           configuration: {
@@ -1474,6 +1495,9 @@ router.get(
               applicationName: true,
               dockerImage: true,
             },
+          },
+          containers: {
+            orderBy: { capturedAt: "asc" },
           },
         },
         orderBy: { startedAt: "desc" },
@@ -1484,10 +1508,25 @@ router.get(
       // Get total count
       const totalCount = await prisma.deployment.count();
 
-      // Serialize deployments
+      // Serialize deployments with containers
       const serializedDeployments = deployments.map((deployment) => ({
         ...serializeDeployment(deployment),
         applicationName: deployment.configuration.applicationName,
+        containers: deployment.containers.map((container) => ({
+          id: container.id,
+          deploymentId: container.deploymentId,
+          containerId: container.containerId,
+          containerName: container.containerName,
+          containerRole: container.containerRole,
+          dockerImage: container.dockerImage,
+          imageId: container.imageId,
+          containerConfig: container.containerConfig,
+          status: container.status,
+          ipAddress: container.ipAddress,
+          createdAt: container.createdAt.toISOString(),
+          startedAt: container.startedAt?.toISOString() || null,
+          capturedAt: container.capturedAt.toISOString(),
+        })),
       }));
 
       const response: DeploymentListResponse = {
@@ -1633,6 +1672,129 @@ router.post(
           hostname: req.body?.hostname,
         },
         "Failed to validate hostname"
+      );
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+/**
+ * @swagger
+ * /api/deployments/{id}/containers:
+ *   get:
+ *     summary: Get containers for deployment
+ *     description: Retrieve detailed information about containers that were tracked during a specific deployment
+ *     tags:
+ *       - Deployment Operations
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: Deployment unique identifier
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         example: 'deploy-123'
+ *     responses:
+ *       200:
+ *         description: Deployment containers retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DeploymentContainerInfo'
+ *               required:
+ *                 - success
+ *                 - data
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Deployment not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get(
+  "/:id/containers",
+  requireSessionOrApiKey as RequestHandler,
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+
+      const { id } = req.params;
+
+      // Get deployment with containers
+      const deployment = await prisma.deployment.findFirst({
+        where: {
+          id,
+        },
+        include: {
+          containers: {
+            orderBy: { capturedAt: "asc" },
+          },
+        },
+      });
+
+      if (!deployment) {
+        return res.status(404).json({
+          success: false,
+          message: "Deployment not found",
+        });
+      }
+
+      // Serialize containers
+      const containers = deployment.containers.map((container) => ({
+        id: container.id,
+        deploymentId: container.deploymentId,
+        containerId: container.containerId,
+        containerName: container.containerName,
+        containerRole: container.containerRole,
+        dockerImage: container.dockerImage,
+        imageId: container.imageId,
+        containerConfig: container.containerConfig,
+        status: container.status,
+        ipAddress: container.ipAddress,
+        createdAt: container.createdAt.toISOString(),
+        startedAt: container.startedAt?.toISOString() || null,
+        capturedAt: container.capturedAt.toISOString(),
+      }));
+
+      res.json({
+        success: true,
+        data: containers,
+      });
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : String(error) },
+        "Failed to get deployment containers",
       );
       next(error);
     }

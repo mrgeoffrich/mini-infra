@@ -8,6 +8,7 @@ import { z } from "zod";
 import DockerService from "../services/docker";
 import { appLogger } from "../lib/logger-factory";
 import { trace } from "@opentelemetry/api";
+import prisma from "../lib/prisma";
 
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
@@ -67,6 +68,7 @@ const containerQuerySchema = z.object({
   status: z.string().optional(),
   name: z.string().optional(),
   image: z.string().optional(),
+  deploymentId: z.string().optional(),
 });
 
 /**
@@ -128,6 +130,12 @@ const containerQuerySchema = z.object({
  *       - name: image
  *         in: query
  *         description: Filter by container image
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: deploymentId
+ *         in: query
+ *         description: Filter by deployment ID
  *         required: false
  *         schema:
  *           type: string
@@ -736,6 +744,156 @@ router.post("/cache/flush", requireSessionOrApiKey, (async (
     timestamp: new Date().toISOString(),
     requestId,
   });
+}) as RequestHandler);
+
+/**
+ * @swagger
+ * /api/containers/by-deployment/{deploymentId}:
+ *   get:
+ *     summary: Get containers by deployment ID
+ *     description: Retrieve all containers that were tracked during a specific deployment
+ *     tags:
+ *       - Containers
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *       - ApiKeyAuthBearer: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/DeploymentIdParam'
+ *     responses:
+ *       200:
+ *         description: Deployment containers retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DeploymentContainerInfo'
+ *               required:
+ *                 - success
+ *                 - data
+ *             example:
+ *               success: true
+ *               data:
+ *                 - id: 'container-123'
+ *                   deploymentId: 'deploy-456'
+ *                   containerId: 'abc123def456'
+ *                   containerName: 'my-app-blue'
+ *                   containerRole: 'blue'
+ *                   dockerImage: 'nginx:latest'
+ *                   imageId: 'sha256:abc123...'
+ *                   status: 'running'
+ *                   ipAddress: '172.17.0.2'
+ *                   createdAt: '2025-09-24T10:00:00.000Z'
+ *                   startedAt: '2025-09-24T10:00:05.000Z'
+ *                   capturedAt: '2025-09-24T10:00:10.000Z'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Deployment not found or no containers tracked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/by-deployment/:deploymentId", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const { deploymentId } = req.params;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+      deploymentId,
+    },
+    "Deployment containers requested",
+  );
+
+  try {
+    // Validate deploymentId
+    if (!deploymentId) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Deployment ID is required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get containers for deployment from database
+    const containers = await prisma.deploymentContainer.findMany({
+      where: {
+        deploymentId,
+      },
+      orderBy: { capturedAt: "asc" },
+    });
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        deploymentId,
+        containerCount: containers.length,
+      },
+      "Deployment containers retrieved successfully",
+    );
+
+    // Serialize containers
+    const serializedContainers = containers.map((container) => ({
+      id: container.id,
+      deploymentId: container.deploymentId,
+      containerId: container.containerId,
+      containerName: container.containerName,
+      containerRole: container.containerRole,
+      dockerImage: container.dockerImage,
+      imageId: container.imageId,
+      containerConfig: container.containerConfig,
+      status: container.status,
+      ipAddress: container.ipAddress,
+      createdAt: container.createdAt.toISOString(),
+      startedAt: container.startedAt?.toISOString() || null,
+      capturedAt: container.capturedAt.toISOString(),
+    }));
+
+    res.json({
+      success: true,
+      data: serializedContainers,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        deploymentId,
+      },
+      "Failed to fetch deployment containers",
+    );
+
+    next(error);
+  }
 }) as RequestHandler);
 
 export default router;
