@@ -464,8 +464,8 @@ export const blueGreenDeploymentMachine = setup({
 
                     // Capture existing container (blue/old) for deployment tracking
                     if (context.oldContainerId) {
-                        // Use setImmediate to handle container capture asynchronously
-                        setImmediate(async () => {
+                        // Handle container capture asynchronously without blocking state machine progression
+                        Promise.resolve().then(async () => {
                             try {
                                 const containerManager = new ContainerLifecycleManager();
                                 await containerManager.captureContainerForDeployment({
@@ -485,6 +485,13 @@ export const blueGreenDeploymentMachine = setup({
                                     error: error.message
                                 }, 'Failed to capture existing container (blue) for deployment tracking');
                             }
+                        }).catch((error: any) => {
+                            // Additional catch for any Promise.resolve().then() errors
+                            logger.error({
+                                deploymentId: context.deploymentId,
+                                containerId: context.oldContainerId?.slice(0, 12),
+                                error: error.message
+                            }, 'Unexpected error in container capture promise handling');
                         });
                     }
                 },
