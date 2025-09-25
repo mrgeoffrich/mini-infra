@@ -855,6 +855,116 @@ export class DeploymentConfigService extends ConfigurationService {
   }
 
   // ====================
+  // Deployment Container Methods
+  // ====================
+
+  /**
+   * Retrieve containers for a specific deployment
+   */
+  async getDeploymentContainers(deploymentId: string): Promise<any[]> {
+    try {
+      const containers = await this.prisma.deploymentContainer.findMany({
+        where: {
+          deploymentId: deploymentId,
+        },
+        orderBy: {
+          capturedAt: 'desc',
+        },
+      });
+
+      servicesLogger().debug(
+        {
+          deploymentId,
+          containerCount: containers.length,
+        },
+        "Retrieved containers for deployment",
+      );
+
+      return containers.map(container => this.toDeploymentContainerInfo(container));
+    } catch (error) {
+      servicesLogger().error(
+        {
+          deploymentId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to retrieve deployment containers",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieve containers for a specific configuration
+   */
+  async getConfigurationContainers(configurationId: string): Promise<any[]> {
+    try {
+      const containers = await this.prisma.deploymentContainer.findMany({
+        where: {
+          deployment: {
+            configurationId: configurationId,
+          },
+        },
+        include: {
+          deployment: {
+            select: {
+              id: true,
+              status: true,
+              startedAt: true,
+              completedAt: true,
+            },
+          },
+        },
+        orderBy: {
+          capturedAt: 'desc',
+        },
+      });
+
+      servicesLogger().debug(
+        {
+          configurationId,
+          containerCount: containers.length,
+        },
+        "Retrieved containers for configuration",
+      );
+
+      return containers.map(container => ({
+        ...this.toDeploymentContainerInfo(container),
+        deployment: container.deployment,
+      }));
+    } catch (error) {
+      servicesLogger().error(
+        {
+          configurationId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to retrieve configuration containers",
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Get container configuration serialized for deployment tracking
+   */
+  serializeContainerConfiguration(config: ContainerConfig): any {
+    return {
+      ports: config.ports.map(port => ({
+        containerPort: port.containerPort,
+        hostPort: port.hostPort,
+        protocol: port.protocol || 'tcp',
+      })),
+      volumes: config.volumes.map(volume => ({
+        hostPath: volume.hostPath,
+        containerPath: volume.containerPath,
+        mode: volume.mode || 'rw',
+      })),
+      labels: { ...config.labels }, // Copy labels but exclude sensitive ones if needed
+      networks: [...config.networks],
+      // Note: environment variables are excluded for security
+    };
+  }
+
+  // ====================
   // Hostname Validation Methods
   // ====================
 
@@ -1356,6 +1466,24 @@ export class DeploymentConfigService extends ConfigurationService {
       environmentId: config.environmentId,
       createdAt: config.createdAt.toISOString(),
       updatedAt: config.updatedAt.toISOString(),
+    };
+  }
+
+  private toDeploymentContainerInfo(container: any): any {
+    return {
+      id: container.id,
+      deploymentId: container.deploymentId,
+      containerId: container.containerId,
+      containerName: container.containerName,
+      containerRole: container.containerRole,
+      dockerImage: container.dockerImage,
+      imageId: container.imageId,
+      containerConfig: container.containerConfig,
+      status: container.status,
+      ipAddress: container.ipAddress,
+      createdAt: container.createdAt.toISOString(),
+      startedAt: container.startedAt ? container.startedAt.toISOString() : null,
+      capturedAt: container.capturedAt.toISOString(),
     };
   }
 

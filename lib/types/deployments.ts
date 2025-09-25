@@ -154,6 +154,7 @@ export interface Deployment {
   errorDetails: any; // JSON field
   deploymentTime: number | null; // seconds
   downtime: number; // milliseconds
+  containers?: DeploymentContainer[]; // Optional relation
 }
 
 // Deployment for API responses
@@ -175,6 +176,7 @@ export interface DeploymentInfo {
   errorDetails: any;
   deploymentTime: number | null;
   downtime: number;
+  containers?: DeploymentContainerInfo[]; // Optional relation
 }
 
 // ====================
@@ -347,6 +349,42 @@ export interface DeploymentConfigSortOptions {
 export interface DeploymentSortOptions {
   field: keyof DeploymentInfo;
   order: 'asc' | 'desc';
+}
+
+// ====================
+// Deployment Container Types
+// ====================
+
+export interface DeploymentContainer {
+  id: string;
+  deploymentId: string;
+  containerId: string; // Docker container ID
+  containerName: string; // Container name
+  containerRole: string; // 'old', 'new', 'blue', 'green'
+  dockerImage: string; // Full image:tag
+  imageId: string | null; // Docker image ID (sha256:...)
+  containerConfig: any; // Container config excluding environment variables (JSON)
+  status: string; // Container status when captured
+  ipAddress: string | null; // Container IP address
+  createdAt: Date; // When container was created
+  startedAt: Date | null; // When container started
+  capturedAt: Date; // When this record was created
+}
+
+export interface DeploymentContainerInfo {
+  id: string;
+  deploymentId: string;
+  containerId: string;
+  containerName: string;
+  containerRole: string;
+  dockerImage: string;
+  imageId: string | null;
+  containerConfig: any;
+  status: string;
+  ipAddress: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  capturedAt: string;
 }
 
 // ====================
