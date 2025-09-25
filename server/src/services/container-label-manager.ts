@@ -207,6 +207,18 @@ export class ContainerLabelManager {
       );
       Object.assign(labels, composeLabels);
 
+      // Add deployment tracking specific labels
+      if (options.deploymentId) {
+        labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.deployment.trackable`] = "true";
+      }
+
+      // Add container configuration metadata for deployment tracking
+      if (options.containerConfig) {
+        labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.config.ports-count`] =
+          options.containerConfig.ports.length.toString();
+        labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.config.volumes-count`] =
+          options.containerConfig.volumes.length.toString();
+      }
 
       servicesLogger().debug(
         {
@@ -378,7 +390,12 @@ export class ContainerLabelManager {
     containerPurpose?: string;
     isActive?: boolean;
     isTemporary?: boolean;
+    isTrackable?: boolean;
     createdAt?: Date;
+    configMetadata?: {
+      portsCount?: number;
+      volumesCount?: number;
+    };
   } {
     const prefix = ContainerLabelManager.MINI_INFRA_PREFIX;
 
@@ -393,7 +410,12 @@ export class ContainerLabelManager {
       containerPurpose: labels[`${prefix}.purpose`],
       isActive: labels[`${prefix}.is-active`] === "true",
       isTemporary: labels[`${prefix}.temporary`] === "true",
+      isTrackable: labels[`${prefix}.deployment.trackable`] === "true",
       createdAt: labels[`${prefix}.created`] ? new Date(labels[`${prefix}.created`]) : undefined,
+      configMetadata: {
+        portsCount: labels[`${prefix}.config.ports-count`] ? parseInt(labels[`${prefix}.config.ports-count`]) : undefined,
+        volumesCount: labels[`${prefix}.config.volumes-count`] ? parseInt(labels[`${prefix}.config.volumes-count`]) : undefined,
+      },
     };
   }
 
