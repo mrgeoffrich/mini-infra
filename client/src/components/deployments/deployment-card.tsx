@@ -239,6 +239,38 @@ export const DeploymentCard = React.memo(function DeploymentCard({
           )}
         </div>
 
+        {/* Container Details */}
+        {latestDeployment?.containers && latestDeployment.containers.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Deployed Containers</span>
+              <Badge variant="secondary" className="text-xs">
+                {latestDeployment.containers.length} container{latestDeployment.containers.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
+            <div className="space-y-1">
+              {latestDeployment.containers.slice(0, 2).map((container) => (
+                <div key={container.id} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="px-1.5 py-0.5 text-xs">
+                      {container.containerRole}
+                    </Badge>
+                    <span className="font-mono text-xs truncate max-w-[120px]" title={container.containerName}>
+                      {container.containerName}
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground">{container.status}</span>
+                </div>
+              ))}
+              {latestDeployment.containers.length > 2 && (
+                <div className="text-xs text-muted-foreground text-center py-1">
+                  +{latestDeployment.containers.length - 2} more containers
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-4 pt-2 border-t">
           <div className="text-center">

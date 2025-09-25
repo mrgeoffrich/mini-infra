@@ -32,6 +32,8 @@ async function fetchContainers(
   if (queryParams.status) url.searchParams.set("status", queryParams.status);
   if (queryParams.name) url.searchParams.set("name", queryParams.name);
   if (queryParams.image) url.searchParams.set("image", queryParams.image);
+  if (queryParams.deploymentId) url.searchParams.set("deploymentId", queryParams.deploymentId);
+  if (queryParams.deploymentManaged !== undefined) url.searchParams.set("deploymentManaged", queryParams.deploymentManaged.toString());
 
   const response = await fetch(url.toString(), {
     credentials: "include",
@@ -138,10 +140,10 @@ export function useContainerFilters(initialFilters: ContainerFilters = {}) {
   const [limit, setLimit] = useState<number>(50);
 
   const updateFilter = useCallback(
-    (key: keyof ContainerFilters, value: string | undefined) => {
+    (key: keyof ContainerFilters, value: string | boolean | undefined) => {
       setFilters((prev) => ({
         ...prev,
-        [key]: value || undefined,
+        [key]: value === "" ? undefined : value,
       }));
       // Reset to first page when filters change
       setPage(1);
@@ -174,6 +176,8 @@ export function useContainerFilters(initialFilters: ContainerFilters = {}) {
     sortOrder,
     page,
     limit,
+    deploymentId: filters.deploymentId,
+    deploymentManaged: filters.deploymentManaged,
     filters,
   };
 
