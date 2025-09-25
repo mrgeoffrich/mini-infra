@@ -1,5 +1,6 @@
 import { assign, setup } from 'xstate';
 import { deploymentLogger } from '../../lib/logger-factory';
+import { ContainerLifecycleManager } from '../container-lifecycle-manager';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -457,8 +458,35 @@ export const blueGreenDeploymentMachine = setup({
                         deploymentId: context.deploymentId,
                         applicationName: context.applicationName,
                         dockerImage: context.dockerImage,
-                        environmentName: context.environmentName
+                        environmentName: context.environmentName,
+                        oldContainerId: context.oldContainerId?.slice(0, 12)
                     }, 'State machine: Entering deployingGreenApp state');
+
+                    // Capture existing container (blue/old) for deployment tracking
+                    if (context.oldContainerId) {
+                        // Use setImmediate to handle container capture asynchronously
+                        setImmediate(async () => {
+                            try {
+                                const containerManager = new ContainerLifecycleManager();
+                                await containerManager.captureContainerForDeployment({
+                                    deploymentId: context.deploymentId,
+                                    containerId: context.oldContainerId!,
+                                    containerRole: 'blue'
+                                });
+
+                                logger.info({
+                                    deploymentId: context.deploymentId,
+                                    containerId: context.oldContainerId?.slice(0, 12)
+                                }, 'Existing container (blue) captured for deployment tracking');
+                            } catch (error: any) {
+                                logger.warn({
+                                    deploymentId: context.deploymentId,
+                                    containerId: context.oldContainerId?.slice(0, 12),
+                                    error: error.message
+                                }, 'Failed to capture existing container (blue) for deployment tracking');
+                            }
+                        });
+                    }
                 },
                 'deployGreenApplicationContainers'
             ],

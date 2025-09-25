@@ -145,6 +145,17 @@ export class DeploymentOrchestrator {
 
       const strategy: DeploymentStrategy = existingContainers.length > 0 ? "blue-green" : "initial";
 
+      // Store existing container info for blue-green deployments
+      if (strategy === "blue-green" && existingContainers.length > 0) {
+        deploymentLogger().info(
+          {
+            applicationName,
+            existingContainerIds: existingContainers.map((c: any) => c.id.slice(0, 12)),
+          },
+          "Found existing containers for blue-green deployment"
+        );
+      }
+
       deploymentLogger().info(
         {
           applicationName,
@@ -334,6 +345,17 @@ export class DeploymentOrchestrator {
       "Starting blue-green deployment with HAProxy state machine"
     );
 
+    // Get existing containers for blue-green context
+    const containers = await this.dockerService.listContainers();
+    const existingContainers = containers.filter((container: any) => {
+      const labels = container.labels || {};
+      return (
+        labels["mini-infra.application"] === baseContext.applicationName &&
+        labels["mini-infra.environment"] === baseContext.environmentId &&
+        container.status === "running"
+      );
+    });
+
     // Create blue-green deployment context
     const blueGreenContext = {
       ...baseContext,
@@ -351,8 +373,9 @@ export class DeploymentOrchestrator {
       error: undefined,
       retryCount: 0,
       activeConnections: 0,
-      oldContainerId: undefined,
+      oldContainerId: existingContainers.length > 0 ? existingContainers[0].id : undefined,
       newContainerId: undefined,
+      existingContainers: existingContainers, // Store all existing containers for tracking
     };
 
     // Create state machine with service implementations
