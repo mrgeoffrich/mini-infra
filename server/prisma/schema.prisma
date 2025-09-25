@@ -260,8 +260,9 @@ model Deployment {
   // Metrics
   deploymentTime    Int?     // Seconds
   downtime          Int      @default(0) // Milliseconds
-  
+
   deploymentSteps   DeploymentStep[]
+  containers        DeploymentContainer[]
   
   @@index([configurationId, status])
   @@index([startedAt])
@@ -283,6 +284,39 @@ model DeploymentStep {
 
   @@index([deploymentId])
   @@map("deployment_steps")
+}
+
+// DeploymentContainer model for tracking detailed container information per deployment
+model DeploymentContainer {
+  id              String   @id @default(cuid())
+  deploymentId    String
+  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  // Container identification
+  containerId     String   // Docker container ID
+  containerName   String   // Container name
+  containerRole   String   // 'old', 'new', 'blue', 'green'
+
+  // Image information
+  dockerImage     String   // Full image:tag
+  imageId         String?  // Docker image ID (sha256:...)
+
+  // Container configuration at deployment time
+  containerConfig Json     // Full container config (ports, volumes, env vars, labels, etc.)
+
+  // Runtime information
+  status          String   // Container status when captured
+  ipAddress       String?  // Container IP address
+  createdAt       DateTime // When container was created
+  startedAt       DateTime? // When container started
+
+  // Deployment metadata
+  capturedAt      DateTime @default(now()) // When this record was created
+
+  @@index([deploymentId])
+  @@index([containerId])
+  @@index([deploymentId, containerRole])
+  @@map("deployment_containers")
 }
 
 // Environment Management Models
