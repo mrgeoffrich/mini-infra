@@ -136,6 +136,17 @@ const swaggerDefinition: SwaggerDefinition = {
         },
         example: 'postgres-main-db',
       },
+      DeploymentIdParam: {
+        name: 'deploymentId',
+        in: 'path',
+        description: 'Deployment unique identifier',
+        required: true,
+        schema: {
+          type: 'string',
+          pattern: '^[a-zA-Z0-9_-]+$',
+        },
+        example: 'deploy-123',
+      },
       EnvironmentIdParam: {
         name: 'id',
         in: 'path',
@@ -646,6 +657,74 @@ const swaggerDefinition: SwaggerDefinition = {
           },
         },
         required: ['totalEntries', 'activeEntries', 'expiredEntries'],
+      },
+      // ====================
+      // Deployment Container Schemas
+      // ====================
+      DeploymentContainerInfo: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Deployment container unique identifier',
+          },
+          deploymentId: {
+            type: 'string',
+            description: 'Deployment ID this container belongs to',
+          },
+          containerId: {
+            type: 'string',
+            description: 'Docker container ID',
+          },
+          containerName: {
+            type: 'string',
+            description: 'Container name',
+          },
+          containerRole: {
+            type: 'string',
+            description: 'Container role in deployment',
+            enum: ['old', 'new', 'blue', 'green'],
+          },
+          dockerImage: {
+            type: 'string',
+            description: 'Full Docker image with tag',
+          },
+          imageId: {
+            type: 'string',
+            nullable: true,
+            description: 'Docker image ID (sha256:...)',
+          },
+          containerConfig: {
+            type: 'object',
+            description: 'Container configuration (excluding sensitive environment variables)',
+          },
+          status: {
+            type: 'string',
+            description: 'Container status when captured',
+          },
+          ipAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Container IP address',
+          },
+          createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When container was created',
+          },
+          startedAt: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'When container started',
+          },
+          capturedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'When this record was created',
+          },
+        },
+        required: ['id', 'deploymentId', 'containerId', 'containerName', 'containerRole', 'dockerImage', 'status', 'createdAt', 'capturedAt'],
       },
       // ====================
       // Deployment Schemas
