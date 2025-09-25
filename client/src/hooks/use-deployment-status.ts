@@ -24,6 +24,20 @@ export interface DeploymentStatusResponse {
     errorMessage?: string;
     startedAt: string;
     completedAt: string | null;
+    containers?: Array<{
+      id: string;
+      deploymentId: string;
+      containerId: string;
+      containerName: string;
+      containerRole: string;
+      dockerImage: string;
+      imageId: string | null;
+      status: string;
+      ipAddress: string | null;
+      createdAt: string;
+      startedAt: string | null;
+      capturedAt: string;
+    }>;
   };
   message?: string;
 }

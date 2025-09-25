@@ -13,7 +13,7 @@ import { Search, X } from "lucide-react";
 
 interface ContainerFiltersProps {
   filters: FilterState;
-  updateFilter: (key: keyof FilterState, value: string | undefined) => void;
+  updateFilter: (key: keyof FilterState, value: string | boolean | undefined) => void;
   resetFilters: () => void;
   sortBy: string;
   sortOrder: "asc" | "desc";
@@ -81,7 +81,7 @@ export function ContainerFilters({
   }, [resetFilters]);
 
   const hasActiveFilters = useMemo(() => {
-    return Boolean(filters.status || filters.name || filters.image);
+    return Boolean(filters.status || filters.name || filters.image || filters.deploymentManaged);
   }, [filters]);
 
   return (
@@ -124,6 +124,27 @@ export function ContainerFilters({
             <SelectItem value="exited">Exited</SelectItem>
             <SelectItem value="paused">Paused</SelectItem>
             <SelectItem value="restarting">Restarting</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Deployment Filter */}
+        <Select
+          value={filters.deploymentManaged === undefined ? "all" : filters.deploymentManaged ? "managed" : "unmanaged"}
+          onValueChange={(value) => {
+            if (value === "all") {
+              updateFilter("deploymentManaged", undefined);
+            } else {
+              updateFilter("deploymentManaged", value === "managed");
+            }
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectValue placeholder="Filter by deployment" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Containers</SelectItem>
+            <SelectItem value="managed">Deployment-managed</SelectItem>
+            <SelectItem value="unmanaged">Not managed</SelectItem>
           </SelectContent>
         </Select>
 
@@ -181,6 +202,11 @@ export function ContainerFilters({
           {filters.image && (
             <span className="bg-secondary px-2 py-1 rounded-md">
               Image: "{filters.image}"
+            </span>
+          )}
+          {filters.deploymentManaged !== undefined && (
+            <span className="bg-secondary px-2 py-1 rounded-md">
+              {filters.deploymentManaged ? "Deployment-managed" : "Not managed"}
             </span>
           )}
         </div>

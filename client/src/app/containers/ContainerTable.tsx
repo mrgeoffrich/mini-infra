@@ -199,6 +199,37 @@ const ContainerDateCell = React.memo(
 
 ContainerDateCell.displayName = "ContainerDateCell";
 
+const ContainerDeploymentCell = React.memo(
+  ({ deploymentInfo }: { deploymentInfo?: ContainerInfo["deploymentInfo"] }) => {
+    if (!deploymentInfo) {
+      return (
+        <span className="text-muted-foreground min-h-[2rem] flex items-center">
+          Not managed
+        </span>
+      );
+    }
+
+    return (
+      <div className="min-h-[2rem] flex flex-col justify-center">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="px-1.5 py-0.5 text-xs">
+            {deploymentInfo.containerRole}
+          </Badge>
+        </div>
+        <div className="text-xs text-muted-foreground truncate max-w-[140px]" title={deploymentInfo.applicationName}>
+          {deploymentInfo.applicationName}
+        </div>
+      </div>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.deploymentInfo?.deploymentId === nextProps.deploymentInfo?.deploymentId &&
+    prevProps.deploymentInfo?.applicationName === nextProps.deploymentInfo?.applicationName &&
+    prevProps.deploymentInfo?.containerRole === nextProps.deploymentInfo?.containerRole,
+);
+
+ContainerDeploymentCell.displayName = "ContainerDeploymentCell";
+
 const ContainerRow = React.memo(
   ({
     container,
@@ -234,7 +265,8 @@ const ContainerRow = React.memo(
       prev.imageTag === next.imageTag &&
       prev.ipAddress === next.ipAddress &&
       prev.createdAt === next.createdAt &&
-      JSON.stringify(prev.ports) === JSON.stringify(next.ports)
+      JSON.stringify(prev.ports) === JSON.stringify(next.ports) &&
+      JSON.stringify(prev.deploymentInfo) === JSON.stringify(next.deploymentInfo)
     );
   },
 );
@@ -329,6 +361,13 @@ export const ContainerTable = React.memo(function ContainerTable({
         cell: ({ row }) => <ContainerIPCell ip={row.getValue("ipAddress")} />,
       },
       {
+        accessorKey: "deploymentInfo",
+        header: "Deployment",
+        cell: ({ row }) => (
+          <ContainerDeploymentCell deploymentInfo={row.getValue("deploymentInfo")} />
+        ),
+      },
+      {
         accessorKey: "createdAt",
         header: () => (
           <Button
@@ -378,17 +417,19 @@ export const ContainerTable = React.memo(function ContainerTable({
   const getColumnWidth = React.useCallback((index: number) => {
     switch (index) {
       case 0:
-        return "w-[200px] min-w-[200px] max-w-[200px]"; // Container Name
+        return "w-[180px] min-w-[180px] max-w-[180px]"; // Container Name
       case 1:
-        return "w-[120px] min-w-[120px] max-w-[120px]"; // Status
+        return "w-[100px] min-w-[100px] max-w-[100px]"; // Status
       case 2:
-        return "w-[280px] min-w-[280px] max-w-[280px]"; // Image
+        return "w-[240px] min-w-[240px] max-w-[240px]"; // Image
       case 3:
-        return "w-[180px] min-w-[180px] max-w-[180px]"; // Ports
+        return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
       case 4:
-        return "w-[140px] min-w-[140px] max-w-[140px]"; // IP Address
+        return "w-[120px] min-w-[120px] max-w-[120px]"; // IP Address
       case 5:
-        return "w-[160px] min-w-[160px] max-w-[160px]"; // Created
+        return "w-[150px] min-w-[150px] max-w-[150px]"; // Deployment
+      case 6:
+        return "w-[140px] min-w-[140px] max-w-[140px]"; // Created
       default:
         return "";
     }

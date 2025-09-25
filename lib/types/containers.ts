@@ -33,6 +33,12 @@ export interface ContainerInfo {
   createdAt: string; // ISO string for JSON serialization
   startedAt?: string; // ISO string for JSON serialization
   labels: Record<string, string>;
+  // Deployment association (optional, populated when deploymentId filter is used)
+  deploymentInfo?: {
+    deploymentId: string;
+    applicationName: string;
+    containerRole: string; // 'old', 'new', 'blue', 'green'
+  };
 }
 
 // ====================
@@ -43,6 +49,8 @@ export interface ContainerFilters {
   status?: string;
   name?: string;
   image?: string;
+  deploymentId?: string;
+  deploymentManaged?: boolean; // Filter for containers managed by deployments
 }
 
 export interface ContainerQueryParams {
@@ -53,6 +61,8 @@ export interface ContainerQueryParams {
   status?: string;
   name?: string;
   image?: string;
+  deploymentId?: string;
+  deploymentManaged?: boolean;
   filters?: ContainerFilters;
 }
 
