@@ -301,8 +301,8 @@ model DeploymentContainer {
   dockerImage     String   // Full image:tag
   imageId         String?  // Docker image ID (sha256:...)
 
-  // Container configuration at deployment time
-  containerConfig Json     // Full container config (ports, volumes, env vars, labels, etc.)
+  // Container configuration at deployment time (sanitized)
+  containerConfig Json     // Container config excluding environment variables (ports, volumes, labels, etc.)
 
   // Runtime information
   status          String   // Container status when captured
