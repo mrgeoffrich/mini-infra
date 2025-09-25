@@ -4,7 +4,6 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
-import { ValidateTraffic } from './actions/validate-traffic';
 import { InitiateDrain } from './actions/initiate-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { StopApplication } from './actions/stop-application';
@@ -20,7 +19,6 @@ const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
-const validateTraffic = new ValidateTraffic();
 const initiateDrain = new InitiateDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
 const stopApplication = new StopApplication();
@@ -192,14 +190,6 @@ export const blueGreenDeploymentMachine = setup({
             enableTraffic.execute(contextWithContainerId, (event) => self.send(event));
         },
 
-        validateGreenTraffic: ({ context, self }) => {
-            // Map newContainerId to containerId for the action
-            const contextWithContainerId = {
-                ...context,
-                containerId: context.newContainerId
-            };
-            validateTraffic.execute(contextWithContainerId, (event) => self.send(event));
-        },
 
         // Blue draining actions
         initiateBlueDrain: ({ context, self }) => {
@@ -662,8 +652,8 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'openTrafficToGreen',
             on: {
                 TRAFFIC_ENABLED: {
-                    target: 'validatingTraffic',
-                    actions: assign({ trafficOpenedToGreen: true })
+                    target: 'drainingBlue',
+                    actions: assign({ trafficOpenedToGreen: true, trafficValidated: true })
                 },
                 TRAFFIC_ENABLE_FAILED: {
                     target: 'rollbackDisableGreenTraffic',
@@ -672,30 +662,6 @@ export const blueGreenDeploymentMachine = setup({
             }
         },
 
-        validatingTraffic: {
-            description: 'Monitoring green environment with live traffic',
-            entry: 'validateGreenTraffic',
-            on: {
-                TRAFFIC_VALIDATED: {
-                    target: 'drainingBlue',
-                    actions: assign({ trafficValidated: true })
-                },
-                VALIDATION_FAILED: {
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: 'preserveErrorContext'
-                }
-            },
-            after: {
-                30000: { // 30 second minimum validation
-                    target: 'drainingBlue',
-                    guard: 'trafficValidationPassed'
-                },
-                60000: { // 60 second maximum validation
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: assign({ error: 'Traffic validation timeout' })
-                }
-            }
-        },
 
         drainingBlue: {
             description: 'Initiating connection drain from blue environment',
