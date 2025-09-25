@@ -121,7 +121,7 @@ export class DeploymentOrchestrator {
   async determineDeploymentStrategy(
     applicationName: string,
     environmentContext: HAProxyEnvironmentContext
-  ): Promise<DeploymentStrategy> {
+  ): Promise<{ strategy: DeploymentStrategy; existingContainers: any[] }> {
     try {
       deploymentLogger().debug(
         {
@@ -145,6 +145,17 @@ export class DeploymentOrchestrator {
 
       const strategy: DeploymentStrategy = existingContainers.length > 0 ? "blue-green" : "initial";
 
+      // Store existing container info for blue-green deployments
+      if (strategy === "blue-green" && existingContainers.length > 0) {
+        deploymentLogger().info(
+          {
+            applicationName,
+            existingContainerIds: existingContainers.map((c: any) => c.id.slice(0, 12)),
+          },
+          "Found existing containers for blue-green deployment"
+        );
+      }
+
       deploymentLogger().info(
         {
           applicationName,
@@ -161,7 +172,7 @@ export class DeploymentOrchestrator {
         "Deployment strategy determined"
       );
 
-      return strategy;
+      return { strategy, existingContainers };
     } catch (error) {
       deploymentLogger().error(
         {
@@ -173,7 +184,7 @@ export class DeploymentOrchestrator {
       );
 
       // Default to initial deployment if we can't determine
-      return "initial";
+      return { strategy: "initial", existingContainers: [] };
     }
   }
 
@@ -231,7 +242,7 @@ export class DeploymentOrchestrator {
       }
 
       // Determine deployment strategy
-      const strategy = await this.determineDeploymentStrategy(config.applicationName, environmentContext);
+      const { strategy, existingContainers } = await this.determineDeploymentStrategy(config.applicationName, environmentContext);
 
       // Create base deployment context
       const baseContext: HAProxyDeploymentContext = {
@@ -253,7 +264,7 @@ export class DeploymentOrchestrator {
       if (strategy === "initial") {
         await this.startInitialDeployment(baseContext);
       } else {
-        await this.startBlueGreenDeployment(baseContext);
+        await this.startBlueGreenDeployment(baseContext, existingContainers);
       }
 
     } catch (error) {
@@ -321,7 +332,7 @@ export class DeploymentOrchestrator {
   /**
    * Start blue-green deployment using blue-green state machine
    */
-  private async startBlueGreenDeployment(baseContext: HAProxyDeploymentContext): Promise<void> {
+  private async startBlueGreenDeployment(baseContext: HAProxyDeploymentContext, existingContainers: any[]): Promise<void> {
     const deploymentId = baseContext.deploymentId;
 
     deploymentLogger().info(
@@ -333,6 +344,8 @@ export class DeploymentOrchestrator {
       },
       "Starting blue-green deployment with HAProxy state machine"
     );
+
+    // Use existing containers passed from strategy determination (no duplicate Docker API call)
 
     // Create blue-green deployment context
     const blueGreenContext = {
@@ -351,8 +364,9 @@ export class DeploymentOrchestrator {
       error: undefined,
       retryCount: 0,
       activeConnections: 0,
-      oldContainerId: undefined,
+      oldContainerId: existingContainers.length > 0 ? existingContainers[0].id : undefined,
       newContainerId: undefined,
+      existingContainers: existingContainers, // Store all existing containers for tracking
     };
 
     // Create state machine with service implementations

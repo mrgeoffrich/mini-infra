@@ -95,6 +95,31 @@ export class DeployApplicationContainers {
                 applicationName: context.applicationName
             }, 'Application container deployed and started successfully');
 
+            // Capture container for deployment tracking
+            try {
+                // Determine container role based on deployment type
+                const containerRole = context.oldContainerId ? 'green' : 'new';
+
+                await this.containerManager.captureContainerForDeployment({
+                    deploymentId: context.deploymentId,
+                    containerId: containerId,
+                    containerRole: containerRole
+                });
+
+                logger.info({
+                    deploymentId: context.deploymentId,
+                    containerId: containerId.slice(0, 12),
+                    containerName,
+                    containerRole: containerRole
+                }, 'Container captured for deployment tracking');
+            } catch (captureError) {
+                logger.warn({
+                    deploymentId: context.deploymentId,
+                    containerId: containerId.slice(0, 12),
+                    error: captureError instanceof Error ? captureError.message : 'Unknown capture error'
+                }, 'Failed to capture container for deployment tracking - continuing with deployment');
+            }
+
             // Send success event with container ID
             sendEvent({
                 type: 'DEPLOYMENT_SUCCESS',
