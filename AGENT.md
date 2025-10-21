@@ -80,7 +80,7 @@ The dev key appears when `npm run dev` is running.
 - When touching infrastructure or data scripts, document breaking changes in `docs/` or relevant README files.
 
 ## Quick Reference
-- Root dev server port: backend on 5000, frontend on 3000.
+- Root dev server port: backend on 5000, frontend on 3005.
 - Default credentials rely on Google OAuth in production; dev mode uses API key auth.
 - `.env` loading handled through `dotenv-flow`; keep secrets out of committed files.
 - Backup/restore executors: `server/src/services/backup-executor.ts` and `server/src/services/restore-executor.ts`.
