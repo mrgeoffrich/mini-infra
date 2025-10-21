@@ -71,22 +71,12 @@ Query the database to verify the state of data. Query the API to verify the shap
 
 Tail logs to find backend and queue processing errors.
 
-Database access can done using a command line docker cli command.
-
-List all tables: `docker exec claudette-dev-postgres psql -U postgres -d claudette_dev -c "\dt"`
-Find the columns in the artifacts table: `docker exec claudette-dev-postgres psql -U postgres -d claudette_dev -c "\d artifacts"`
-
-API access requires an API key first, run the following to get the key:
-`node packages/web-backend/scripts/create-api-key.js`
-
-Using the chrome dev tools for front end verification navigate to http://claudette.blingtowers.com:3000/app/ and click on the "Sign in with Github" button to log in. We have already logged in as a user in a previous session, so clicking the Login button should take us straight to a logged in state.
+Using the chrome dev tools for front end verification navigate to http://mini.blingtowers.com:3005/ and click on the "Continue with Google" button to log in. We have already logged in as a user in a previous session, so clicking the Login button should take us straight to a logged in state.
 
 ## Important Application Assumptions
 
 **The backend and frontend are already running, no need to start them.**
 
 **Any code change and rebuild will automatically get picked up and restarted on the web-backend and web-frontend**
-
-**Changes to the queue-processor need a manual restart**
 
 **Always assume that if the build is broken, we broke it, and it needs to be fixed**
