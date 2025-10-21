@@ -1,1 +1,0 @@
-Run a build and look at all the tests that failed. Think about how each one could be fixed then come up with a plan and then execute that plan. Keep doing this till all errors are fixed.

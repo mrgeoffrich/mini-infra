@@ -1,1 +1,0 @@
-Run `npx tsc --noEmit --strict` and fix any typescript linter errors.

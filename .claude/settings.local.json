@@ -32,7 +32,10 @@
       "Read(//c/c/Repos/mini-infra/server/**)",
       "mcp__context7__resolve-library-id",
       "Read(//c/c/Repos/mini-infra/**)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(rm:*)",
+      "Bash(taskkill:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": [],
