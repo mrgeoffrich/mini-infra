@@ -62,6 +62,9 @@ export class RestoreExecutorService {
   // Timeout for restore operations (3 hours)
   private static readonly RESTORE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 
+  // Docker network for restore operations (shared with backup)
+  private static readonly RESTORE_NETWORK_NAME = "mini-infra-postgres-backup";
+
   // Retry configuration
   private static readonly MAX_RETRIES = 2;
   private static readonly RETRY_DELAY_MS = 60000; // 60 seconds
@@ -114,6 +117,22 @@ export class RestoreExecutorService {
       try {
         await this.dockerExecutor.initialize();
         servicesLogger().debug("Docker executor initialized successfully");
+
+        // Create dedicated restore network (shared with backup)
+        servicesLogger().debug(
+          `Ensuring restore network exists: ${RestoreExecutorService.RESTORE_NETWORK_NAME}`,
+        );
+        await this.dockerExecutor.createNetwork(
+          RestoreExecutorService.RESTORE_NETWORK_NAME,
+          undefined,
+          {
+            driver: "bridge",
+            labels: {
+              "mini-infra.purpose": "postgres-backup",
+            },
+          },
+        );
+        servicesLogger().debug("Restore network ready");
       } catch (dockerError) {
         servicesLogger().warn(
           {
@@ -707,6 +726,7 @@ export class RestoreExecutorService {
               AZURE_BLOB_NAME: blobName,
             },
             timeout: RestoreExecutorService.RESTORE_TIMEOUT_MS,
+            networkMode: RestoreExecutorService.RESTORE_NETWORK_NAME,
           },
           (progress) => {
             // Update progress based on container status

@@ -29,13 +29,13 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   async initializeDefaults(userId: string): Promise<void> {
     try {
       // Check if settings already exist
-      const existingBackupSetting = await this.get("backupDockerImage");
-      const existingRestoreSetting = await this.get("restoreDockerImage");
+      const existingBackupSetting = await this.get("backup_docker_image");
+      const existingRestoreSetting = await this.get("restore_docker_image");
 
       // Create default settings if they don't exist
       if (!existingBackupSetting) {
         await this.set(
-          "backupDockerImage",
+          "backup_docker_image",
           PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
           userId,
         );
@@ -43,7 +43,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
       if (!existingRestoreSetting) {
         await this.set(
-          "restoreDockerImage",
+          "restore_docker_image",
           PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
           userId,
         );
@@ -79,8 +79,8 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
     try {
       // Get configured Docker images from settings (use provided settings or fallback to stored)
-      const backupImage = settings?.backupDockerImage || await this.get("backupDockerImage");
-      const restoreImage = settings?.restoreDockerImage || await this.get("restoreDockerImage");
+      const backupImage = settings?.backup_docker_image || await this.get("backup_docker_image");
+      const restoreImage = settings?.restore_docker_image || await this.get("restore_docker_image");
 
       // Use defaults if not configured
       const effectiveBackupImage =
@@ -237,7 +237,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
    * Get backup Docker image setting
    */
   async getBackupDockerImage(): Promise<string> {
-    const configuredImage = await this.get("backupDockerImage");
+    const configuredImage = await this.get("backup_docker_image");
     if (!configuredImage) {
       throw new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system");
     }
@@ -248,7 +248,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
    * Get restore Docker image setting
    */
   async getRestoreDockerImage(): Promise<string> {
-    const configuredImage = await this.get("restoreDockerImage");
+    const configuredImage = await this.get("restore_docker_image");
     if (!configuredImage) {
       throw new Error("Restore Docker image not configured in system settings. Please configure it at /settings/system");
     }
@@ -264,7 +264,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       throw new Error(`Invalid Docker image format: ${validation.message}`);
     }
 
-    await this.set("backupDockerImage", image, userId);
+    await this.set("backup_docker_image", image, userId);
 
     servicesLogger().info(
       {
@@ -284,7 +284,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       throw new Error(`Invalid Docker image format: ${validation.message}`);
     }
 
-    await this.set("restoreDockerImage", image, userId);
+    await this.set("restore_docker_image", image, userId);
 
     servicesLogger().info(
       {
@@ -354,8 +354,8 @@ export class PostgresSettingsConfigService extends ConfigurationService {
    */
   async resetToDefaults(userId: string): Promise<void> {
     await Promise.all([
-      this.delete("backupDockerImage", userId),
-      this.delete("restoreDockerImage", userId),
+      this.delete("backup_docker_image", userId),
+      this.delete("restore_docker_image", userId),
     ]);
 
     servicesLogger().info(

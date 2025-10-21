@@ -54,6 +54,9 @@ export class BackupExecutorService {
   // Timeout for backup operations (2 hours)
   private static readonly BACKUP_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
+  // Docker network for backup operations
+  private static readonly BACKUP_NETWORK_NAME = "mini-infra-postgres-backup";
+
   // Retry configuration
   private static readonly MAX_RETRIES = 3;
   private static readonly RETRY_DELAY_MS = 30000; // 30 seconds
@@ -107,6 +110,22 @@ export class BackupExecutorService {
       try {
         await this.dockerExecutor.initialize();
         servicesLogger().debug("Docker executor initialized successfully");
+
+        // Create dedicated backup network
+        servicesLogger().debug(
+          `Creating backup network: ${BackupExecutorService.BACKUP_NETWORK_NAME}`,
+        );
+        await this.dockerExecutor.createNetwork(
+          BackupExecutorService.BACKUP_NETWORK_NAME,
+          undefined,
+          {
+            driver: "bridge",
+            labels: {
+              "mini-infra.purpose": "postgres-backup",
+            },
+          },
+        );
+        servicesLogger().debug("Backup network ready");
       } catch (dockerError) {
         servicesLogger().warn(
           {
@@ -642,6 +661,7 @@ export class BackupExecutorService {
               COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
             },
             timeout: BackupExecutorService.BACKUP_TIMEOUT_MS,
+            networkMode: BackupExecutorService.BACKUP_NETWORK_NAME,
           },
           (progress) => {
             // Update progress based on container status
