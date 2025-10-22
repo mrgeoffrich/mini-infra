@@ -4,6 +4,8 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
+import { ConfigureFrontend } from './actions/configure-frontend';
+import { ConfigureDNS } from './actions/configure-dns';
 import { EnableTraffic } from './actions/enable-traffic';
 import { ValidateTraffic } from './actions/validate-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
@@ -15,6 +17,8 @@ const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
+const configureFrontend = new ConfigureFrontend();
+const configureDNS = new ConfigureDNS();
 const enableTraffic = new EnableTraffic();
 const validateTraffic = new ValidateTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
@@ -42,6 +46,9 @@ interface InitialDeploymentContext {
     applicationReady: boolean;
     haproxyConfigured: boolean;
     healthChecksPassed: boolean;
+    frontendConfigured: boolean;
+    dnsConfigured: boolean;
+    frontendName?: string;
     trafficEnabled: boolean;
     validationErrors: number;
     error?: string;
@@ -66,6 +73,11 @@ type InitialDeploymentEvent =
     | { type: 'LB_CONFIG_ERROR'; error: string }
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT'; error?: string }
+    | { type: 'FRONTEND_CONFIGURED'; frontendName?: string }
+    | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
+    | { type: 'DNS_CONFIGURED' }
+    | { type: 'DNS_CONFIG_SKIPPED' }
+    | { type: 'DNS_CONFIG_ERROR'; error: string }
     | { type: 'TRAFFIC_ENABLED' }
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }
@@ -124,6 +136,28 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
+        configureFrontendAction: ({ context, self }) => {
+            // Execute async action with event callback
+            configureFrontend.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'FRONTEND_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
+        },
+        configureDNSAction: ({ context, self }) => {
+            // Execute async action with event callback
+            configureDNS.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'DNS_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
+        },
         enableTraffic: ({ context, self }) => {
             // Execute async action with event callback
             enableTraffic.execute(context, (event) => {
@@ -172,6 +206,9 @@ export const initialDeploymentMachine = setup({
             applicationReady: false,
             haproxyConfigured: false,
             healthChecksPassed: false,
+            frontendConfigured: false,
+            dnsConfigured: false,
+            frontendName: undefined,
             trafficEnabled: false,
             validationErrors: 0,
             error: undefined,
@@ -317,7 +354,7 @@ export const initialDeploymentMachine = setup({
             entry: 'performHealthChecks',
             on: {
                 SERVERS_HEALTHY: {
-                    target: 'enablingTraffic',
+                    target: 'configuringFrontend',
                     actions: assign({ healthChecksPassed: true })
                 },
                 HEALTH_CHECK_TIMEOUT: {
@@ -329,6 +366,43 @@ export const initialDeploymentMachine = setup({
                 90000: { // 90 second timeout
                     target: 'failed',
                     actions: assign({ error: 'Health check timeout after 90 seconds' })
+                }
+            }
+        },
+
+        configuringFrontend: {
+            description: 'Configuring HAProxy frontend with hostname routing',
+            entry: 'configureFrontendAction',
+            on: {
+                FRONTEND_CONFIGURED: {
+                    target: 'configuringDNS',
+                    actions: assign({
+                        frontendConfigured: true,
+                        frontendName: ({ event }) => event.frontendName
+                    })
+                },
+                FRONTEND_CONFIG_ERROR: {
+                    target: 'failed',
+                    actions: 'preserveErrorContext'
+                }
+            }
+        },
+
+        configuringDNS: {
+            description: 'Configuring DNS records for deployment',
+            entry: 'configureDNSAction',
+            on: {
+                DNS_CONFIGURED: {
+                    target: 'enablingTraffic',
+                    actions: assign({ dnsConfigured: true })
+                },
+                DNS_CONFIG_SKIPPED: {
+                    target: 'enablingTraffic',
+                    actions: assign({ dnsConfigured: true })
+                },
+                DNS_CONFIG_ERROR: {
+                    target: 'failed',
+                    actions: 'preserveErrorContext'
                 }
             }
         },

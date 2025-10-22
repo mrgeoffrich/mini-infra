@@ -51,6 +51,47 @@ export interface HAProxyConfig {
   ssl: boolean;
 }
 
+// HAProxy Frontend configuration for deployments
+export interface HAProxyFrontendConfig {
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number; // typically 80 or 443
+  bindAddress: string; // typically "*" or "0.0.0.0"
+  useSSL: boolean;
+}
+
+// HAProxy Frontend tracking (matches database model)
+export interface HAProxyFrontend {
+  id: string;
+  deploymentConfigId: string;
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number;
+  bindAddress: string;
+  useSSL: boolean;
+  status: 'active' | 'pending' | 'failed' | 'removed';
+  errorMessage?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// HAProxy Frontend info for API responses
+export interface HAProxyFrontendInfo {
+  id: string;
+  deploymentConfigId: string;
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number;
+  bindAddress: string;
+  useSSL: boolean;
+  status: 'active' | 'pending' | 'failed' | 'removed';
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // Rollback configuration
 export interface RollbackConfig {
