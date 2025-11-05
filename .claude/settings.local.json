@@ -37,11 +37,12 @@
       "Bash(taskkill:*)",
       "Bash(cat:*)",
       "Bash(./sqlite3.exe:*)",
-      "Bash(printf:*)"
+      "Bash(printf:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": [],
     "defaultMode": "acceptEdits"
   },
-  "outputStyle": "default"
+  "outputStyle": "bug-investigator"
 }

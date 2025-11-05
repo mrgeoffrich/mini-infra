@@ -72,6 +72,7 @@ export function ServiceAddDialog({
 
   const { data: serviceMetadata, isLoading: metadataLoading } = useServiceTypeMetadata(
     selectedServiceType,
+    environment.id,
     {
       enabled: !!selectedServiceType,
     }

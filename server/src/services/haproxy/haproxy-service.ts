@@ -53,6 +53,10 @@ export class HAProxyService implements IApplicationService {
         name: 'haproxy_config'
       }
     ],
+    // Note: HTTP/HTTPS port mappings are dynamic and depend on:
+    // 1. Manual port overrides (if configured in system settings)
+    // 2. Environment network type (local: 80/443, internet: 8111/8443)
+    // The values below are defaults for 'internet' network type
     exposedPorts: [
       {
         name: 'http',

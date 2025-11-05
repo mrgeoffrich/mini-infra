@@ -204,3 +204,4 @@ process.on("SIGINT", () => {
 });
 
 export default app;
+// Foreign keys enabled via DATABASE_URL parameter

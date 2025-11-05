@@ -458,6 +458,7 @@ router.get('/services/available', requireSessionOrApiKey, async (req, res) => {
 router.get('/services/available/:serviceType', requireSessionOrApiKey, async (req, res) => {
   try {
     const { serviceType } = req.params;
+    const { environmentId } = req.query;
 
     const definition = serviceRegistry.getServiceDefinition(serviceType);
 
@@ -469,13 +470,45 @@ router.get('/services/available/:serviceType', requireSessionOrApiKey, async (re
       });
     }
 
+    // Clone the metadata to avoid modifying the cached version
+    let exposedPorts = [...definition.metadata.exposedPorts];
+
+    // For HAProxy, calculate dynamic ports based on environment context
+    if (serviceType === 'haproxy' && environmentId && typeof environmentId === 'string') {
+      try {
+        const { portUtils } = await import('../services/port-utils');
+        const portConfig = await portUtils.getHAProxyPortsForEnvironment(environmentId);
+
+        // Update the HTTP and HTTPS port mappings with dynamic values
+        exposedPorts = exposedPorts.map(port => {
+          if (port.name === 'http') {
+            return { ...port, hostPort: portConfig.httpPort };
+          } else if (port.name === 'https') {
+            return { ...port, hostPort: portConfig.httpsPort };
+          }
+          return port;
+        });
+
+        logger.debug({
+          serviceType,
+          environmentId,
+          httpPort: portConfig.httpPort,
+          httpsPort: portConfig.httpsPort,
+          source: portConfig.source
+        }, 'Dynamic HAProxy ports calculated for environment');
+      } catch (error) {
+        logger.warn({ error, environmentId }, 'Failed to get dynamic HAProxy ports, using defaults');
+        // Fall back to default ports if calculation fails
+      }
+    }
+
     res.json({
       serviceType: definition.serviceType,
       description: definition.description,
       version: definition.metadata.version,
       requiredNetworks: definition.metadata.requiredNetworks,
       requiredVolumes: definition.metadata.requiredVolumes,
-      exposedPorts: definition.metadata.exposedPorts,
+      exposedPorts: exposedPorts,
       dependencies: definition.metadata.dependencies,
       tags: definition.metadata.tags
     });

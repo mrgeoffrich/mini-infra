@@ -259,9 +259,17 @@ async function fetchAvailableServices(
 
 async function fetchServiceTypeMetadata(
   serviceType: string,
+  environmentId: string | undefined,
   correlationId: string,
 ): Promise<ServiceTypeMetadata> {
-  const response = await fetch(`/api/environments/services/available/${serviceType}`, {
+  const url = new URL(`/api/environments/services/available/${serviceType}`, window.location.origin);
+
+  // Add environmentId as query parameter if provided
+  if (environmentId) {
+    url.searchParams.set("environmentId", environmentId);
+  }
+
+  const response = await fetch(url.toString(), {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -607,6 +615,7 @@ export function useAvailableServices(options: UseEnvironmentOptions = {}) {
 
 export function useServiceTypeMetadata(
   serviceType: string,
+  environmentId: string | undefined,
   options: UseEnvironmentOptions = {},
 ) {
   const { enabled = true, retry = 3 } = options;
@@ -614,8 +623,8 @@ export function useServiceTypeMetadata(
   const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["serviceTypeMetadata", serviceType],
-    queryFn: () => fetchServiceTypeMetadata(serviceType, correlationId),
+    queryKey: ["serviceTypeMetadata", serviceType, environmentId],
+    queryFn: () => fetchServiceTypeMetadata(serviceType, environmentId, correlationId),
     enabled: enabled && !!serviceType,
     retry:
       typeof retry === "function"
