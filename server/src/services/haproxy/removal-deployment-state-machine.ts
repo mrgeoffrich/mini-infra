@@ -165,16 +165,10 @@ export const removalDeploymentMachine = setup({
         alertOperationsTeam: ({ context }) => {
             alertOperationsTeam.execute(context);
         },
-        cleanupTempResources: ({ context, self }) => {
-            try {
-                cleanupTempResources.execute(context);
-                self.send({ type: 'CLEANUP_SUCCESS' });
-            } catch (error) {
-                self.send({
-                    type: 'CLEANUP_FAILED',
-                    error: error instanceof Error ? error.message : 'Unknown cleanup error'
-                });
-            }
+        cleanupTempResources: ({ context }) => {
+            // Just execute cleanup - the state will automatically transition
+            // CleanupTempResources.execute() never throws, it handles all errors internally
+            cleanupTempResources.execute(context);
         },
         preserveErrorContext: assign({
             error: ({ event }) => {
@@ -410,26 +404,10 @@ export const removalDeploymentMachine = setup({
         cleanup: {
             description: 'Cleaning up temporary resources',
             entry: 'cleanupTempResources',
-            on: {
-                CLEANUP_SUCCESS: {
-                    target: 'completed'
-                },
-                CLEANUP_FAILED: {
-                    // Don't fail the entire process for cleanup failures
-                    target: 'completed',
-                    actions: assign({ error: ({ event }) => {
-                        if ('error' in event) {
-                            return `Cleanup warning: ${event.error}`;
-                        }
-                        return 'Cleanup completed with warnings';
-                    }})
-                }
-            },
-            after: {
-                30000: { // 30 second timeout for cleanup
-                    target: 'completed',
-                    actions: assign({ error: 'Cleanup timeout (non-critical)' })
-                }
+            // Automatically transition to completed after cleanup runs
+            // The cleanup action never throws errors, it handles them internally
+            always: {
+                target: 'completed'
             }
         },
 

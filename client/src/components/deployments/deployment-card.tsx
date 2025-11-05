@@ -211,7 +211,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
-                Uninstall
+                Delete Configuration
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

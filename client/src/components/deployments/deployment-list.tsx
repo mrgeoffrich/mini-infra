@@ -180,7 +180,7 @@ const DeploymentActions = React.memo(({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
-            Uninstall
+            Delete Configuration
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

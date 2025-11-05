@@ -146,7 +146,15 @@ async function deleteEnvironment(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to delete environment: ${response.statusText}`);
+    // Try to parse error response for detailed message
+    let errorMessage = `Failed to delete environment: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorData.error || errorMessage;
+    } catch (parseError) {
+      // If JSON parsing fails, use the default error message
+    }
+    throw new Error(errorMessage);
   }
 }
 

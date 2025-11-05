@@ -46,10 +46,10 @@ export function UninstallDeploymentConfigDialog({
     try {
       const response = await uninstallMutation.mutateAsync(config.id);
       setRemovalId(response.data.removalId);
-      toast.success(`Deployment uninstall initiated for "${config.applicationName}"`);
+      toast.success(`Deployment configuration deletion initiated for "${config.applicationName}"`);
     } catch (error) {
       toast.error(
-        `Failed to uninstall deployment configuration: ${
+        `Failed to delete deployment configuration: ${
           error instanceof Error ? error.message : "Unknown error"
         }`,
       );
@@ -60,9 +60,9 @@ export function UninstallDeploymentConfigDialog({
   const handleClose = () => {
     // Handle cleanup and completion
     if (removalQuery.data?.data.status === "completed") {
-      toast.success(`Deployment configuration "${config?.applicationName}" uninstalled successfully`);
+      toast.success(`Deployment configuration "${config?.applicationName}" deleted successfully`);
     } else if (removalQuery.data?.data.status === "failed") {
-      toast.error(`Deployment uninstall failed: ${removalQuery.data.data.errorMessage || "Unknown error"}`);
+      toast.error(`Deployment configuration deletion failed: ${removalQuery.data.data.errorMessage || "Unknown error"}`);
     }
 
     setRemovalId(null);
@@ -90,19 +90,19 @@ export function UninstallDeploymentConfigDialog({
               <IconAlertTriangle className="h-5 w-5 text-destructive" />
             )}
             {isRemovalInProgress
-              ? "Uninstalling Deployment"
+              ? "Deleting Deployment Configuration"
               : removalCompleted
-              ? "Uninstall Complete"
+              ? "Delete Complete"
               : removalFailed
-              ? "Uninstall Failed"
-              : "Uninstall Deployment Configuration"}
+              ? "Delete Failed"
+              : "Delete Deployment Configuration"}
           </AlertDialogTitle>
           <AlertDialogDescription className="space-y-2">
             {!removalId ? (
               // Initial confirmation
               <>
                 <p>
-                  Are you sure you want to uninstall the deployment configuration for{" "}
+                  Are you sure you want to delete the deployment configuration for{" "}
                   <span className="font-mono font-semibold text-foreground">
                     {config.applicationName}
                   </span>
@@ -114,7 +114,7 @@ export function UninstallDeploymentConfigDialog({
                 <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1 pl-2">
                   <li>Remove containers from the load balancer</li>
                   <li>Stop and remove any running containers</li>
-                  <li>Uninstall the deployment configuration permanently</li>
+                  <li>Delete the deployment configuration permanently</li>
                   <li>Remove all deployment history for this application</li>
                   <li>This action cannot be undone</li>
                 </ul>
@@ -123,7 +123,7 @@ export function UninstallDeploymentConfigDialog({
               // Progress tracking
               <div className="space-y-3">
                 <p>
-                  Uninstalling deployment configuration for{" "}
+                  Deleting deployment configuration for{" "}
                   <span className="font-mono font-semibold text-foreground">
                     {config.applicationName}
                   </span>
@@ -198,7 +198,7 @@ export function UninstallDeploymentConfigDialog({
                 {uninstallMutation.isPending ? (
                   <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : null}
-                {uninstallMutation.isPending ? "Starting Uninstall..." : "Uninstall Configuration"}
+                {uninstallMutation.isPending ? "Deleting..." : "Delete Configuration"}
               </AlertDialogAction>
             </>
           ) : (
@@ -210,7 +210,7 @@ export function UninstallDeploymentConfigDialog({
                 </AlertDialogAction>
               ) : (
                 <AlertDialogCancel onClick={handleClose} disabled={isRemovalInProgress}>
-                  {isRemovalInProgress ? "Uninstalling..." : "Close"}
+                  {isRemovalInProgress ? "Deleting..." : "Close"}
                 </AlertDialogCancel>
               )}
             </>
