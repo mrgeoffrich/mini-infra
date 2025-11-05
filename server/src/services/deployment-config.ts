@@ -417,6 +417,10 @@ export class DeploymentConfigService extends ConfigurationService {
         where: {
           id: configId,
         },
+        include: {
+          dnsRecords: true,
+          haproxyFrontend: true,
+        },
       });
 
       if (!config) {
@@ -455,6 +459,10 @@ export class DeploymentConfigService extends ConfigurationService {
       const config = await this.prisma.deploymentConfiguration.findFirst({
         where: {
           applicationName: applicationName,
+        },
+        include: {
+          dnsRecords: true,
+          haproxyFrontend: true,
         },
       });
 
@@ -548,6 +556,10 @@ export class DeploymentConfigService extends ConfigurationService {
         orderBy,
         take: limit,
         skip: offset,
+        include: {
+          dnsRecords: true,
+          haproxyFrontend: true,
+        },
       });
 
       const result = configs.map((config: any) => this.toConfigurationInfo(config));

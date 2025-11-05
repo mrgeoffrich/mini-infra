@@ -23,6 +23,9 @@ export * from "./postgres";
 // Deployment types
 export * from "./deployments";
 
+// DNS types
+export * from "./dns";
+
 // Service types
 export * from "./services";
 

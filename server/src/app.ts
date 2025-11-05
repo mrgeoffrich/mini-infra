@@ -123,6 +123,8 @@ import deploymentsRoutes from "./routes/deployments";
 import environmentsRoutes from "./routes/environments";
 import environmentNetworksRoutes from "./routes/environment-networks";
 import environmentVolumesRoutes from "./routes/environment-volumes";
+import deploymentDnsRoutes from "./routes/deployment-dns";
+import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -145,6 +147,8 @@ app.use("/api/postgres/progress", postgresProgressRoutes);
 app.use("/api/user", userPreferencesRoutes);
 app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
 app.use("/api/deployments", deploymentsRoutes);
+app.use("/api/deployments", deploymentDnsRoutes);
+app.use("/api/haproxy/frontends", haproxyFrontendsRoutes);
 app.use("/api/environments", environmentsRoutes);
 app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
