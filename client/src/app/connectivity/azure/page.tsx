@@ -49,7 +49,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { AzureContainerList } from "@/components/AzureContainerList";
+import { AzureContainerList } from "@/components/azure";
 
 // Azure settings schema
 const azureSettingsSchema = z.object({
