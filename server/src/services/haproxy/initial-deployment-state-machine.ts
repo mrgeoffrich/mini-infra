@@ -4,6 +4,8 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
+import { ConfigureFrontend } from './actions/configure-frontend';
+import { ConfigureDNS } from './actions/configure-dns';
 import { EnableTraffic } from './actions/enable-traffic';
 import { ValidateTraffic } from './actions/validate-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
@@ -15,6 +17,8 @@ const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
+const configureFrontend = new ConfigureFrontend();
+const configureDNS = new ConfigureDNS();
 const enableTraffic = new EnableTraffic();
 const validateTraffic = new ValidateTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
@@ -26,6 +30,7 @@ interface InitialDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
+    deploymentConfigId: string;
     applicationName: string;
     dockerImage: string;
 
@@ -42,10 +47,14 @@ interface InitialDeploymentContext {
     applicationReady: boolean;
     haproxyConfigured: boolean;
     healthChecksPassed: boolean;
+    frontendConfigured: boolean;
+    dnsConfigured: boolean;
     trafficEnabled: boolean;
     validationErrors: number;
     error?: string;
     retryCount: number;
+    frontendName?: string;
+    dnsRecordId?: string;
 
     // Deployment metadata
     triggerType: string;
@@ -66,6 +75,12 @@ type InitialDeploymentEvent =
     | { type: 'LB_CONFIG_ERROR'; error: string }
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT'; error?: string }
+    | { type: 'FRONTEND_CONFIGURED'; frontendName?: string; hostname?: string; backendName?: string }
+    | { type: 'FRONTEND_CONFIG_SKIPPED'; message?: string }
+    | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
+    | { type: 'DNS_CONFIGURED'; dnsRecordId?: string; hostname?: string }
+    | { type: 'DNS_CONFIG_SKIPPED'; message?: string; networkType?: string }
+    | { type: 'DNS_CONFIG_ERROR'; error: string }
     | { type: 'TRAFFIC_ENABLED' }
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }
@@ -124,6 +139,28 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
+        configureFrontend: ({ context, self }) => {
+            // Execute async action with event callback
+            configureFrontend.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'FRONTEND_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
+        },
+        configureDNS: ({ context, self }) => {
+            // Execute async action with event callback
+            configureDNS.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'DNS_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
+        },
         enableTraffic: ({ context, self }) => {
             // Execute async action with event callback
             enableTraffic.execute(context, (event) => {
@@ -172,10 +209,14 @@ export const initialDeploymentMachine = setup({
             applicationReady: false,
             haproxyConfigured: false,
             healthChecksPassed: false,
+            frontendConfigured: false,
+            dnsConfigured: false,
             trafficEnabled: false,
             validationErrors: 0,
             error: undefined,
-            retryCount: 0
+            retryCount: 0,
+            frontendName: undefined,
+            dnsRecordId: undefined
         }))
     },
     guards: {
@@ -198,6 +239,7 @@ export const initialDeploymentMachine = setup({
         // Use input values if provided, otherwise use defaults
         deploymentId: deploymentInput?.deploymentId || "",
         configurationId: deploymentInput?.configurationId || "",
+        deploymentConfigId: deploymentInput?.deploymentConfigId || deploymentInput?.configurationId || "",
         applicationName: deploymentInput?.applicationName || "",
         dockerImage: deploymentInput?.dockerImage || "",
 
@@ -214,10 +256,14 @@ export const initialDeploymentMachine = setup({
         applicationReady: deploymentInput?.applicationReady || false,
         haproxyConfigured: deploymentInput?.haproxyConfigured || false,
         healthChecksPassed: deploymentInput?.healthChecksPassed || false,
+        frontendConfigured: deploymentInput?.frontendConfigured || false,
+        dnsConfigured: deploymentInput?.dnsConfigured || false,
         trafficEnabled: deploymentInput?.trafficEnabled || false,
         validationErrors: deploymentInput?.validationErrors || 0,
         error: deploymentInput?.error,
         retryCount: deploymentInput?.retryCount || 0,
+        frontendName: deploymentInput?.frontendName,
+        dnsRecordId: deploymentInput?.dnsRecordId,
 
         // Deployment metadata
         triggerType: deploymentInput?.triggerType || "manual",
@@ -317,7 +363,7 @@ export const initialDeploymentMachine = setup({
             entry: 'performHealthChecks',
             on: {
                 SERVERS_HEALTHY: {
-                    target: 'enablingTraffic',
+                    target: 'configuringFrontend',
                     actions: assign({ healthChecksPassed: true })
                 },
                 HEALTH_CHECK_TIMEOUT: {
@@ -329,6 +375,60 @@ export const initialDeploymentMachine = setup({
                 90000: { // 90 second timeout
                     target: 'failed',
                     actions: assign({ error: 'Health check timeout after 90 seconds' })
+                }
+            }
+        },
+
+        configuringFrontend: {
+            description: 'Configuring HAProxy frontend with hostname routing',
+            entry: 'configureFrontend',
+            on: {
+                FRONTEND_CONFIGURED: {
+                    target: 'configuringDNS',
+                    actions: assign({
+                        frontendConfigured: true,
+                        frontendName: ({ event }) => {
+                            if (event.type === 'FRONTEND_CONFIGURED') {
+                                return event.frontendName;
+                            }
+                            return undefined;
+                        }
+                    })
+                },
+                FRONTEND_CONFIG_SKIPPED: {
+                    target: 'configuringDNS',
+                    actions: assign({ frontendConfigured: false })
+                },
+                FRONTEND_CONFIG_ERROR: {
+                    target: 'failed',
+                    actions: 'preserveErrorContext'
+                }
+            }
+        },
+
+        configuringDNS: {
+            description: 'Configuring DNS records for deployment',
+            entry: 'configureDNS',
+            on: {
+                DNS_CONFIGURED: {
+                    target: 'enablingTraffic',
+                    actions: assign({
+                        dnsConfigured: true,
+                        dnsRecordId: ({ event }) => {
+                            if (event.type === 'DNS_CONFIGURED') {
+                                return event.dnsRecordId;
+                            }
+                            return undefined;
+                        }
+                    })
+                },
+                DNS_CONFIG_SKIPPED: {
+                    target: 'enablingTraffic',
+                    actions: assign({ dnsConfigured: false })
+                },
+                DNS_CONFIG_ERROR: {
+                    target: 'failed',
+                    actions: 'preserveErrorContext'
                 }
             }
         },
