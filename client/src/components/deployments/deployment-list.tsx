@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ColumnDef,
   flexRender,
@@ -15,6 +16,7 @@ import {
   IconPlus,
   IconFilter,
   IconX,
+  IconEye,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -121,12 +123,14 @@ const DeploymentActions = React.memo(({
   onTrigger,
   onEdit,
   onUninstall,
+  onViewDetails,
   isTriggering,
 }: {
   config: DeploymentConfigurationInfo;
   onTrigger: (applicationName: string) => void;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
   onUninstall?: (config: DeploymentConfigurationInfo) => void;
+  onViewDetails?: (config: DeploymentConfigurationInfo) => void;
   isTriggering: boolean;
 }) => {
   const handleTrigger = useCallback(() => {
@@ -141,6 +145,10 @@ const DeploymentActions = React.memo(({
     onUninstall?.(config);
   }, [config, onUninstall]);
 
+  const handleViewDetails = useCallback(() => {
+    onViewDetails?.(config);
+  }, [config, onViewDetails]);
+
   return (
     <div className="flex items-center gap-2">
       <Button
@@ -153,7 +161,7 @@ const DeploymentActions = React.memo(({
         <IconPlayerPlay className="h-3 w-3 mr-1" />
         Deploy
       </Button>
-      
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -162,6 +170,10 @@ const DeploymentActions = React.memo(({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handleViewDetails}>
+            <IconEye className="h-3 w-3 mr-2" />
+            View Details
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleEdit}>
             <IconEdit className="h-3 w-3 mr-2" />
             Edit Configuration
@@ -260,6 +272,7 @@ export const DeploymentList = React.memo(function DeploymentList({
 }: DeploymentListProps) {
   const { filters, updateFilter, resetFilters } = useDeploymentConfigFilters();
   const triggerMutation = useDeploymentTrigger();
+  const navigate = useNavigate();
   
   const {
     data: configsResponse,
@@ -344,6 +357,10 @@ export const DeploymentList = React.memo(function DeploymentList({
       toast.error(`Failed to trigger deployment: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   }, [triggerMutation]);
+
+  const handleViewDetails = useCallback((config: DeploymentConfigurationInfo) => {
+    navigate(`/deployments/${config.id}`);
+  }, [navigate]);
 
   const columns: ColumnDef<DeploymentConfigurationInfo>[] = useMemo(
     () => [
@@ -433,13 +450,14 @@ export const DeploymentList = React.memo(function DeploymentList({
               onTrigger={handleTriggerDeployment}
               onEdit={onEditConfig}
               onUninstall={onUninstallConfig}
+              onViewDetails={handleViewDetails}
               isTriggering={triggerMutation.isPending}
             />
           );
         },
       },
     ],
-    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, onEditConfig, onUninstallConfig, triggerMutation.isPending]
+    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, handleViewDetails, onEditConfig, onUninstallConfig, triggerMutation.isPending]
   );
 
   const table = useReactTable({

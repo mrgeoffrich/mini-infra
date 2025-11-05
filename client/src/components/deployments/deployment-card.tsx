@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   IconPlayerPlay,
   IconEdit,
@@ -9,6 +10,7 @@ import {
   IconX,
   IconLoader2,
   IconTrash,
+  IconEye,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -118,6 +120,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
 }: DeploymentCardProps) {
   const { formatDateTime, formatDate } = useFormattedDate();
   const triggerMutation = useDeploymentTrigger();
+  const navigate = useNavigate();
 
   const handleTriggerDeployment = useCallback(async () => {
     try {
@@ -135,6 +138,10 @@ export const DeploymentCard = React.memo(function DeploymentCard({
   const handleUninstall = useCallback(() => {
     onUninstall?.(config);
   }, [config, onUninstall]);
+
+  const handleViewDetails = useCallback(() => {
+    navigate(`/deployments/${config.id}`);
+  }, [config.id, navigate]);
 
   // Calculate deployment statistics
   const deploymentStats = useMemo(() => {
@@ -291,6 +298,14 @@ export const DeploymentCard = React.memo(function DeploymentCard({
 
         {/* Actions */}
         <div className="flex items-center gap-2 pt-2">
+          <Button
+            onClick={handleViewDetails}
+            variant="outline"
+            size="sm"
+          >
+            <IconEye className="h-4 w-4 mr-2" />
+            Details
+          </Button>
           <Button
             onClick={handleTriggerDeployment}
             disabled={triggerMutation.isPending || !config.isActive || isDeploymentActive}
