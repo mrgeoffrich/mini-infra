@@ -51,6 +51,15 @@ export interface HAProxyConfig {
   ssl: boolean;
 }
 
+// HAProxy Frontend configuration for deployments
+export interface HAProxyFrontendConfig {
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number; // typically 80 or 443
+  bindAddress: string; // typically "*" or "0.0.0.0"
+  useSSL: boolean;
+}
 
 // Rollback configuration
 export interface RollbackConfig {
