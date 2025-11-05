@@ -5,6 +5,8 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
+import { ConfigureFrontend } from './actions/configure-frontend';
+import { ConfigureDNS } from './actions/configure-dns';
 import { InitiateDrain } from './actions/initiate-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { StopApplication } from './actions/stop-application';
@@ -20,6 +22,8 @@ const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
+const configureFrontend = new ConfigureFrontend();
+const configureDNS = new ConfigureDNS();
 const initiateDrain = new InitiateDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
 const stopApplication = new StopApplication();
@@ -36,6 +40,7 @@ interface BlueGreenDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
+    deploymentConfigId: string;
     applicationName: string;
     dockerImage: string;
 
@@ -49,6 +54,8 @@ interface BlueGreenDeploymentContext {
     blueHealthy: boolean;
     greenHealthy: boolean;
     greenBackendConfigured: boolean;
+    frontendConfigured: boolean;
+    dnsConfigured: boolean;
     trafficOpenedToGreen: boolean;
     trafficValidated: boolean;
     blueDraining: boolean;
@@ -63,6 +70,8 @@ interface BlueGreenDeploymentContext {
     newContainerId?: string;
     containerIpAddress?: string;
     containerPort?: number;
+    frontendName?: string;
+    dnsRecordId?: string;
 
     // Deployment metadata
     triggerType: string;
@@ -90,6 +99,14 @@ type BlueGreenDeploymentEvent =
     // Health check events
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT' }
+
+    // Frontend and DNS configuration events
+    | { type: 'FRONTEND_CONFIGURED'; frontendName?: string; hostname?: string; backendName?: string }
+    | { type: 'FRONTEND_CONFIG_SKIPPED'; message?: string }
+    | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
+    | { type: 'DNS_CONFIGURED'; dnsRecordId?: string; hostname?: string }
+    | { type: 'DNS_CONFIG_SKIPPED'; message?: string; networkType?: string }
+    | { type: 'DNS_CONFIG_ERROR'; error: string }
 
     // Traffic management events
     | { type: 'TRAFFIC_ENABLED' }
@@ -179,6 +196,29 @@ export const blueGreenDeploymentMachine = setup({
                 containerId: context.newContainerId
             };
             performHealthChecks.execute(contextWithContainerId, (event) => self.send(event));
+        },
+
+        // Frontend and DNS configuration actions
+        configureGreenFrontend: ({ context, self }) => {
+            configureFrontend.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'FRONTEND_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
+        },
+
+        configureGreenDNS: ({ context, self }) => {
+            configureDNS.execute(context, (event) => {
+                self.send(event);
+            }).catch((error) => {
+                self.send({
+                    type: 'DNS_CONFIG_ERROR',
+                    error: error.message || 'Unknown error'
+                });
+            });
         },
 
         // Traffic management actions
@@ -348,6 +388,8 @@ export const blueGreenDeploymentMachine = setup({
             blueHealthy: false,
             greenHealthy: false,
             greenBackendConfigured: false,
+            frontendConfigured: false,
+            dnsConfigured: false,
             trafficOpenedToGreen: false,
             trafficValidated: false,
             blueDraining: false,
@@ -362,6 +404,8 @@ export const blueGreenDeploymentMachine = setup({
             oldContainerId: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
+            frontendName: undefined,
+            dnsRecordId: undefined,
         }))
     },
     guards: {
@@ -404,6 +448,7 @@ export const blueGreenDeploymentMachine = setup({
         // Use input data if provided, otherwise use defaults
         deploymentId: input?.deploymentId || "",
         configurationId: input?.configurationId || "",
+        deploymentConfigId: input?.deploymentConfigId || input?.configurationId || "",
         applicationName: input?.applicationName || "",
         dockerImage: input?.dockerImage || "",
 
@@ -417,6 +462,8 @@ export const blueGreenDeploymentMachine = setup({
         blueHealthy: false,
         greenHealthy: false,
         greenBackendConfigured: false,
+        frontendConfigured: false,
+        dnsConfigured: false,
         trafficOpenedToGreen: false,
         trafficValidated: false,
         blueDraining: false,
@@ -428,6 +475,8 @@ export const blueGreenDeploymentMachine = setup({
         newContainerId: undefined,
         containerIpAddress: undefined,
         containerPort: undefined,
+        frontendName: undefined,
+        dnsRecordId: undefined,
 
         // Deployment metadata
         triggerType: input?.triggerType || "manual",
@@ -666,7 +715,7 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'performGreenHealthChecks',
             on: {
                 SERVERS_HEALTHY: {
-                    target: 'openingTraffic',
+                    target: 'configuringFrontend',
                     actions: assign({ greenHealthy: true })
                 },
                 HEALTH_CHECK_TIMEOUT: {
@@ -678,6 +727,60 @@ export const blueGreenDeploymentMachine = setup({
                 90000: { // 90 second timeout
                     target: 'rollbackRemoveGreenHaproxyConfig',
                     actions: assign({ error: 'Health check timeout after 90 seconds' })
+                }
+            }
+        },
+
+        configuringFrontend: {
+            description: 'Configuring HAProxy frontend with hostname routing for green deployment',
+            entry: 'configureGreenFrontend',
+            on: {
+                FRONTEND_CONFIGURED: {
+                    target: 'configuringDNS',
+                    actions: assign({
+                        frontendConfigured: true,
+                        frontendName: ({ event }) => {
+                            if (event.type === 'FRONTEND_CONFIGURED') {
+                                return event.frontendName;
+                            }
+                            return undefined;
+                        }
+                    })
+                },
+                FRONTEND_CONFIG_SKIPPED: {
+                    target: 'configuringDNS',
+                    actions: assign({ frontendConfigured: false })
+                },
+                FRONTEND_CONFIG_ERROR: {
+                    target: 'rollbackRemoveGreenHaproxyConfig',
+                    actions: 'preserveErrorContext'
+                }
+            }
+        },
+
+        configuringDNS: {
+            description: 'Configuring DNS records for green deployment',
+            entry: 'configureGreenDNS',
+            on: {
+                DNS_CONFIGURED: {
+                    target: 'openingTraffic',
+                    actions: assign({
+                        dnsConfigured: true,
+                        dnsRecordId: ({ event }) => {
+                            if (event.type === 'DNS_CONFIGURED') {
+                                return event.dnsRecordId;
+                            }
+                            return undefined;
+                        }
+                    })
+                },
+                DNS_CONFIG_SKIPPED: {
+                    target: 'openingTraffic',
+                    actions: assign({ dnsConfigured: false })
+                },
+                DNS_CONFIG_ERROR: {
+                    target: 'rollbackRemoveGreenHaproxyConfig',
+                    actions: 'preserveErrorContext'
                 }
             }
         },

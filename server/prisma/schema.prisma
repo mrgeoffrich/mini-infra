@@ -226,6 +226,8 @@ model DeploymentConfiguration {
   updatedAt         DateTime @updatedAt
 
   deployments       Deployment[]
+  dnsRecords        DeploymentDNSRecord[]
+  haproxyFrontend   HAProxyFrontend?
 
   @@index([environmentId])
   @@index([hostname])
@@ -397,4 +399,49 @@ model EnvironmentVolume {
   @@unique([environmentId, name])
   @@index([environmentId])
   @@map("environment_volumes")
+}
+
+// DeploymentDNSRecord model for tracking DNS records created for deployments
+model DeploymentDNSRecord {
+  id                    String   @id @default(cuid())
+  deploymentConfigId    String
+  deploymentConfig      DeploymentConfiguration @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+  hostname              String
+  dnsProvider           String   // 'cloudflare', 'external'
+  dnsRecordId           String?  // Provider's record ID (e.g., CloudFlare record ID)
+  ipAddress             String?  // IP address set in DNS
+  zoneId                String?  // CloudFlare zone ID
+  zoneName              String?  // CloudFlare zone name
+  status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
+  errorMessage          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([deploymentConfigId])
+  @@index([hostname])
+  @@index([status])
+  @@map("deployment_dns_records")
+}
+
+// HAProxyFrontend model for tracking HAProxy frontends created for deployments
+model HAProxyFrontend {
+  id                    String   @id @default(cuid())
+  deploymentConfigId    String   @unique
+  deploymentConfig      DeploymentConfiguration @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+  frontendName          String   @unique
+  backendName           String
+  hostname              String
+  bindPort              Int      @default(80)
+  bindAddress           String   @default("*")
+  useSSL                Boolean  @default(false)
+  status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
+  errorMessage          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([deploymentConfigId])
+  @@index([frontendName])
+  @@index([hostname])
+  @@index([status])
+  @@map("haproxy_frontends")
 }

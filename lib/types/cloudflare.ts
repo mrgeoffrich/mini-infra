@@ -325,3 +325,59 @@ export interface CloudflareConnectivityFilter {
   startDate?: Date;
   endDate?: Date;
 }
+
+// ====================
+// Cloudflare DNS Types
+// ====================
+
+export interface CloudflareDNSZone {
+  id: string;
+  name: string;
+  status: 'active' | 'pending' | 'initializing' | 'moved' | 'deleted';
+  paused: boolean;
+  type: 'full' | 'partial';
+  development_mode: number;
+  name_servers: string[];
+  original_name_servers?: string[];
+  original_registrar?: string;
+  original_dnshost?: string;
+  created_on: string;
+  modified_on: string;
+}
+
+export interface CloudflareDNSRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  proxiable: boolean;
+  proxied: boolean;
+  ttl: number;
+  locked: boolean;
+  zone_id: string;
+  zone_name: string;
+  created_on: string;
+  modified_on: string;
+  data?: Record<string, any>;
+  meta?: {
+    auto_added?: boolean;
+    managed_by_apps?: boolean;
+    managed_by_argo_tunnel?: boolean;
+  };
+}
+
+export interface CreateCloudflareDNSRecordRequest {
+  type: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT';
+  name: string;
+  content: string;
+  ttl?: number;
+  proxied?: boolean;
+}
+
+export interface UpdateCloudflareDNSRecordRequest {
+  type?: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT';
+  name?: string;
+  content?: string;
+  ttl?: number;
+  proxied?: boolean;
+}

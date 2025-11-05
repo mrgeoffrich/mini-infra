@@ -17,6 +17,7 @@ import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/page";
+import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { EnvironmentsPage } from "@/app/environments/page";
 import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
@@ -69,6 +70,10 @@ export const router = createBrowserRouter([
       {
         path: "deployments/new",
         element: <NewDeploymentConfigPage />,
+      },
+      {
+        path: "deployments/:id",
+        element: <DeploymentConfigDetailsPage />,
       },
       {
         path: "tunnels",

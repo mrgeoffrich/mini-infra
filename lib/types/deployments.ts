@@ -2,6 +2,8 @@
 // Deployment Configuration Types
 // ====================
 
+import { DeploymentDNSRecordInfo } from './dns';
+
 // Port configuration for containers
 export interface DeploymentPort {
   containerPort: number;
@@ -51,6 +53,15 @@ export interface HAProxyConfig {
   ssl: boolean;
 }
 
+// HAProxy Frontend configuration for deployments
+export interface HAProxyFrontendConfig {
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number; // typically 80 or 443
+  bindAddress: string; // typically "*" or "0.0.0.0"
+  useSSL: boolean;
+}
 
 // Rollback configuration
 export interface RollbackConfig {
@@ -427,4 +438,86 @@ export interface UninstallDeploymentConfigResponse {
     removalId: string;
     status: string;
   };
+}
+
+// ====================
+// HAProxy Frontend Types
+// ====================
+
+export interface HAProxyFrontend {
+  id: string;
+  deploymentConfigId: string;
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number;
+  bindAddress: string;
+  useSSL: boolean;
+  status: 'active' | 'pending' | 'failed' | 'removed';
+  errorMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface HAProxyFrontendInfo {
+  id: string;
+  deploymentConfigId: string;
+  frontendName: string;
+  backendName: string;
+  hostname: string;
+  bindPort: number;
+  bindAddress: string;
+  useSSL: boolean;
+  status: 'active' | 'pending' | 'failed' | 'removed';
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HAProxyFrontendResponse {
+  success: boolean;
+  data: HAProxyFrontendInfo;
+  message?: string;
+}
+
+export interface HAProxyFrontendListResponse {
+  success: boolean;
+  data: HAProxyFrontendInfo[];
+  message?: string;
+}
+
+export interface SyncFrontendRequest {
+  deploymentConfigId: string;
+}
+
+export interface SyncFrontendResponse {
+  success: boolean;
+  message: string;
+  data?: HAProxyFrontendInfo;
+}
+
+// ====================
+// DNS Sync Types
+// ====================
+
+export interface SyncDNSRequest {
+  deploymentConfigId: string;
+}
+
+export interface SyncDNSResponse {
+  success: boolean;
+  message: string;
+  data?: DeploymentDNSRecordInfo;
+}
+
+export interface DeploymentDNSRecordListResponse {
+  success: boolean;
+  data: DeploymentDNSRecordInfo[];
+  message?: string;
+}
+
+export interface DeploymentDNSRecordResponse {
+  success: boolean;
+  data: DeploymentDNSRecordInfo;
+  message?: string;
 }
