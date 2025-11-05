@@ -788,13 +788,32 @@ export class EnvironmentManager {
 
   private async stopEnvironmentService(envService: any): Promise<void> {
     try {
-      // Get environment to construct prefixed service name
+      // Check if service is already stopped or uninitialized
+      if (envService.status === ServiceStatusValues.STOPPED ||
+          envService.status === ServiceStatusValues.UNINITIALIZED) {
+        this.logger.debug({
+          serviceName: envService.serviceName,
+          currentStatus: envService.status
+        }, 'Service already in stopped/uninitialized state, skipping stop operation');
+
+        // Ensure status is set to stopped
+        await this.updateServiceStatus(
+          envService.id,
+          ServiceStatusValues.STOPPED,
+          ApplicationServiceHealthStatusValues.UNKNOWN
+        );
+
+        return;
+      }
+
+      // Get environment to pass ID to factory
       const environment = await this.getEnvironmentById(envService.environmentId);
       if (!environment) {
         throw new Error(`Environment not found: ${envService.environmentId}`);
       }
 
-      await this.serviceFactory.stopService(envService.serviceName);
+      // Attempt to stop service (factory will handle missing service instances gracefully)
+      await this.serviceFactory.stopService(envService.serviceName, environment.id);
 
       // Update service status
       await this.updateServiceStatus(
@@ -803,19 +822,45 @@ export class EnvironmentManager {
         ApplicationServiceHealthStatusValues.UNKNOWN
       );
 
+      // Update stopped timestamp
+      await this.prisma.environmentService.update({
+        where: { id: envService.id },
+        data: {
+          stoppedAt: new Date()
+        }
+      });
+
       this.logger.info({
-        serviceName: envService.serviceName
+        serviceName: envService.serviceName,
+        environmentId: environment.id
       }, 'Environment service stopped successfully');
 
     } catch (error) {
-      await this.updateServiceStatus(
-        envService.id,
-        ServiceStatusValues.FAILED,
-        ApplicationServiceHealthStatusValues.UNHEALTHY
-      );
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Only mark as failed if it's a real error, not just "service not found"
+      if (!errorMessage.includes('Service not found')) {
+        await this.updateServiceStatus(
+          envService.id,
+          ServiceStatusValues.FAILED,
+          ApplicationServiceHealthStatusValues.UNHEALTHY
+        );
+      } else {
+        // If service wasn't found, mark as stopped since it's not running anyway
+        this.logger.warn({
+          serviceName: envService.serviceName,
+          error: errorMessage
+        }, 'Service not found, marking as stopped');
+
+        await this.updateServiceStatus(
+          envService.id,
+          ServiceStatusValues.STOPPED,
+          ApplicationServiceHealthStatusValues.UNKNOWN
+        );
+      }
 
       this.logger.error({
-        error,
+        error: errorMessage,
         serviceName: envService.serviceName
       }, 'Failed to stop environment service');
 

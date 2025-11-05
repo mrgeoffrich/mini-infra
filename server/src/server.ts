@@ -22,6 +22,9 @@ import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres-database-health-scheduler";
+import { ServiceRecoveryManager } from "./services/service-recovery";
+import { EnvironmentHealthScheduler } from "./services/environment-health-scheduler";
+import { ApplicationServiceFactory } from "./services/application-service-factory";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
@@ -29,6 +32,7 @@ let connectivityScheduler: ConnectivityScheduler | null = null;
 let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
+let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -61,6 +65,25 @@ const initializeServices = async () => {
     );
     postgresDatabaseHealthScheduler.start();
     logger.info("PostgreSQL database health scheduler initialized successfully");
+
+    // Configure ApplicationServiceFactory with DockerService for enhanced stop operations
+    const serviceFactory = ApplicationServiceFactory.getInstance();
+    serviceFactory.setDockerService(dockerService);
+    logger.info("ApplicationServiceFactory configured with Docker service");
+
+    // Perform service recovery to restore running environments after restart
+    const serviceRecoveryManager = new ServiceRecoveryManager(dockerService, serviceFactory);
+    await serviceRecoveryManager.performRecovery();
+    logger.info("Service recovery completed successfully");
+
+    // Initialize environment health scheduler (monitors service state every 5 minutes)
+    environmentHealthScheduler = new EnvironmentHealthScheduler(
+      dockerService,
+      serviceFactory,
+      5 * 60 * 1000 // 5 minutes
+    );
+    environmentHealthScheduler.start();
+    logger.info("Environment health scheduler initialized successfully");
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -158,6 +181,11 @@ startServer()
       if (postgresDatabaseHealthScheduler) {
         postgresDatabaseHealthScheduler.stop();
         logger.info("PostgreSQL database health scheduler stopped");
+      }
+
+      if (environmentHealthScheduler) {
+        environmentHealthScheduler.stop();
+        logger.info("Environment health scheduler stopped");
       }
 
       if (backupScheduler) {

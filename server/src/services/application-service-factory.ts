@@ -5,6 +5,7 @@ import {
 } from './interfaces/application-service';
 import { ServiceRegistry } from './service-registry';
 import { servicesLogger } from '../lib/logger-factory';
+import DockerService from './docker';
 
 export interface ServiceCreationOptions {
   serviceName: string;
@@ -26,6 +27,7 @@ export class ApplicationServiceFactory {
   private readonly logger = servicesLogger();
   private readonly serviceRegistry: ServiceRegistry;
   private readonly activeServices = new Map<string, IApplicationService>();
+  private dockerService?: DockerService;
 
   private constructor() {
     this.serviceRegistry = ServiceRegistry.getInstance();
@@ -36,6 +38,14 @@ export class ApplicationServiceFactory {
       ApplicationServiceFactory.instance = new ApplicationServiceFactory();
     }
     return ApplicationServiceFactory.instance;
+  }
+
+  /**
+   * Set the Docker service for enhanced stop operations
+   * This allows the factory to stop containers directly when service instances are missing
+   */
+  public setDockerService(dockerService: DockerService): void {
+    this.dockerService = dockerService;
   }
 
   public async createService(options: ServiceCreationOptions): Promise<ServiceCreationResult> {
@@ -262,21 +272,117 @@ export class ApplicationServiceFactory {
     }
   }
 
-  public async stopService(serviceName: string): Promise<void> {
+  public async stopService(serviceName: string, environmentId?: string): Promise<void> {
     const service = this.getService(serviceName);
-    if (!service) {
-      throw new Error(`Service not found: ${serviceName}`);
+
+    if (service) {
+      // Service exists in factory - use normal stop process
+      try {
+        await service.stopAndCleanup();
+        this.activeServices.delete(serviceName);
+        this.logger.info({ serviceName }, 'Service stopped successfully');
+        return;
+      } catch (error) {
+        this.logger.error({
+          error,
+          serviceName
+        }, 'Failed to stop service');
+        throw error;
+      }
+    }
+
+    // Service not in factory - try to stop container directly via Docker
+    this.logger.warn(
+      { serviceName, environmentId },
+      'Service not found in factory, attempting to stop container directly'
+    );
+
+    if (!this.dockerService) {
+      this.logger.error(
+        { serviceName },
+        'Cannot stop container directly - Docker service not configured'
+      );
+      // Don't throw error - service already not in factory, consider it stopped
+      this.logger.info(
+        { serviceName },
+        'Service not in factory and Docker unavailable - treating as already stopped'
+      );
+      return;
     }
 
     try {
-      await service.stopAndCleanup();
-      this.logger.info({ serviceName }, 'Service stopped successfully');
+      await this.dockerService.initialize();
+      const containers = await this.dockerService.listContainers();
+
+      // Find container by service name or environment labels
+      const container = containers.find((c: any) => {
+        const labels = c.labels || {};
+        const name = c.name || '';
+
+        // Match by name or by environment ID label
+        if (environmentId) {
+          return labels["mini-infra.environment"] === environmentId &&
+                 (name.includes(serviceName) || labels["mini-infra.service"]);
+        }
+
+        return name.includes(serviceName);
+      });
+
+      if (!container) {
+        this.logger.info(
+          { serviceName, environmentId },
+          'No container found - treating as already stopped'
+        );
+        return;
+      }
+
+      this.logger.info(
+        {
+          serviceName,
+          containerId: container.id.slice(0, 12),
+          containerName: container.name
+        },
+        'Found container, stopping directly via Docker'
+      );
+
+      // Stop and remove container
+      const docker = await this.dockerService.getDockerInstance();
+      const dockerContainer = docker.getContainer(container.id);
+
+      if (container.status === 'running') {
+        await dockerContainer.stop();
+        this.logger.debug({ containerId: container.id.slice(0, 12) }, 'Container stopped');
+      }
+
+      await dockerContainer.remove();
+      this.logger.info(
+        { serviceName, containerId: container.id.slice(0, 12) },
+        'Container stopped and removed successfully'
+      );
+
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Check if error is because container doesn't exist (404)
+      if (errorMessage.includes('404') || errorMessage.includes('no such container')) {
+        this.logger.info(
+          { serviceName },
+          'Container does not exist - treating as already stopped'
+        );
+        return;
+      }
+
       this.logger.error({
-        error,
-        serviceName
-      }, 'Failed to stop service');
-      throw error;
+        error: errorMessage,
+        serviceName,
+        environmentId
+      }, 'Failed to stop container directly via Docker');
+
+      // Don't throw - we did our best, and service is not in factory anyway
+      this.logger.warn(
+        { serviceName },
+        'Could not stop container, but service already removed from factory'
+      );
     }
   }
 }
