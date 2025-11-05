@@ -92,6 +92,14 @@ export function EnvironmentCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* IP Address for local environments */}
+        {environment.networkType === "local" && environment.ipAddress && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Network className="h-4 w-4" />
+            <span className="font-mono font-medium">{environment.ipAddress}</span>
+          </div>
+        )}
+
         {/* Services Summary */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

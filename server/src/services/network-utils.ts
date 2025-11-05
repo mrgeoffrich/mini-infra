@@ -55,8 +55,8 @@ export class NetworkUtils {
 
   /**
    * Get the appropriate IP address to use based on environment network type
-   * For 'local' environments, this returns the private/local IP
-   * For 'internet' environments, this returns the public IP
+   * For 'local' environments with an ipAddress set, this returns the environment-specific IP
+   * Otherwise, this falls back to the global Docker host IP
    *
    * @param environmentId The environment ID to check
    * @returns The appropriate IP address for the environment
@@ -71,9 +71,15 @@ export class NetworkUtils {
     );
 
     try {
-      // Get the environment to check networkType
+      // Get the environment to check networkType and ipAddress
       const environment = await prisma.environment.findUnique({
         where: { id: environmentId },
+        select: {
+          id: true,
+          name: true,
+          networkType: true,
+          ipAddress: true,
+        },
       });
 
       if (!environment) {
@@ -84,24 +90,47 @@ export class NetworkUtils {
         {
           environmentId,
           networkType: environment.networkType,
+          hasIpAddress: !!environment.ipAddress,
         },
-        "Retrieved environment network type"
+        "Retrieved environment network configuration"
       );
 
-      // For now, we'll use the same Docker host IP regardless of network type
-      // In the future, we could have separate public_ip and private_ip settings
-      const ip = await this.getDockerHostIP();
+      // For local environments, prefer the environment-specific IP if set
+      if (environment.networkType === "local" && environment.ipAddress) {
+        // Validate the IP format
+        if (!this.isValidIPAddress(environment.ipAddress)) {
+          logger.warn(
+            {
+              environmentId,
+              ipAddress: environment.ipAddress,
+            },
+            "Environment has invalid IP address, falling back to Docker host IP"
+          );
+        } else {
+          logger.info(
+            {
+              environmentId,
+              ipAddress: environment.ipAddress,
+            },
+            "Using environment-specific IP address"
+          );
+          return environment.ipAddress;
+        }
+      }
+
+      // Fall back to global Docker host IP from settings
+      const dockerHostIp = await this.getDockerHostIP();
 
       logger.info(
         {
           environmentId,
+          dockerHostIp,
           networkType: environment.networkType,
-          ip,
         },
-        "Determined appropriate IP for environment"
+        "Using global Docker host IP"
       );
 
-      return ip;
+      return dockerHostIp;
     } catch (error) {
       logger.error(
         { error, environmentId },

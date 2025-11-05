@@ -50,6 +50,17 @@ const createEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const),
   networkType: z.enum(["local", "internet"] as const).optional(),
+  ipAddress: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val) return true;
+      // IPv4 validation
+      const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      return ipv4Regex.test(val);
+    }, {
+      message: "Must be a valid IPv4 address",
+    }),
   services: z
     .array(
       z.object({
@@ -91,6 +102,7 @@ export function EnvironmentCreateDialog({
       description: "",
       type: "nonproduction",
       networkType: "local",
+      ipAddress: "",
       services: [],
     },
   });
@@ -270,6 +282,29 @@ export function EnvironmentCreateDialog({
                     </FormItem>
                   )}
                 />
+
+                {form.watch("networkType") === "local" && (
+                  <FormField
+                    control={form.control}
+                    name="ipAddress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>IP Address *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., 192.168.1.100"
+                            {...field}
+                            disabled={createMutation.isPending}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          The IP address of the local server. This will be used for DNS records.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
               </div>
 
               {/* Services Section */}

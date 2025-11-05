@@ -9,6 +9,7 @@ export interface Environment {
   description?: string;
   type: EnvironmentType;
   networkType: EnvironmentNetworkType;
+  ipAddress?: string;  // IP address for local environments
   status: ServiceStatus;
   isActive: boolean;
   services: EnvironmentService[];
@@ -63,6 +64,7 @@ export interface CreateEnvironmentRequest {
   description?: string;
   type: EnvironmentType;
   networkType?: EnvironmentNetworkType;
+  ipAddress?: string;  // IP address for local environments
   services?: ServiceConfiguration[];
 }
 
@@ -70,6 +72,7 @@ export interface UpdateEnvironmentRequest {
   description?: string;
   type?: EnvironmentType;
   networkType?: EnvironmentNetworkType;
+  ipAddress?: string;  // IP address for local environments
   isActive?: boolean;
 }
 

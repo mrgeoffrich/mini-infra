@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -36,6 +37,17 @@ import { Loader2 } from "lucide-react";
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const).optional(),
+  ipAddress: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val) return true;
+      // IPv4 validation
+      const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      return ipv4Regex.test(val);
+    }, {
+      message: "Must be a valid IPv4 address",
+    }),
 });
 
 type UpdateEnvironmentFormData = z.infer<typeof updateEnvironmentSchema>;
@@ -60,6 +72,7 @@ export function EnvironmentEditDialog({
     defaultValues: {
       description: environment.description || "",
       type: environment.type,
+      ipAddress: environment.ipAddress || "",
     },
   });
 
@@ -73,6 +86,9 @@ export function EnvironmentEditDialog({
       }
       if (data.type && data.type !== environment.type) {
         changes.type = data.type;
+      }
+      if (data.ipAddress !== environment.ipAddress) {
+        changes.ipAddress = data.ipAddress;
       }
 
       // If no changes, just close the dialog
@@ -104,6 +120,7 @@ export function EnvironmentEditDialog({
       form.reset({
         description: environment.description || "",
         type: environment.type,
+        ipAddress: environment.ipAddress || "",
       });
     }
   }, [environment, open, form]);
@@ -177,6 +194,29 @@ export function EnvironmentEditDialog({
                 </FormItem>
               )}
             />
+
+            {environment.networkType === "local" && (
+              <FormField
+                control={form.control}
+                name="ipAddress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>IP Address</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="e.g., 192.168.1.100"
+                        {...field}
+                        disabled={updateMutation.isPending}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      The IP address of the local server. Used for DNS records.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <div className="p-4 bg-muted rounded-md">
               <div className="flex items-center gap-2 text-sm">

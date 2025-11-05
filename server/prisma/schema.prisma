@@ -330,6 +330,7 @@ model Environment {
   description String?
   type        String   // 'production', 'nonproduction'
   networkType String   @default("local") // 'local', 'internet'
+  ipAddress   String?  // IP address for local environments
   status      String   @default("uninitialized") // Maps to ServiceStatus enum
   isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())

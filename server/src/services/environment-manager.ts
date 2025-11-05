@@ -63,6 +63,7 @@ export class EnvironmentManager {
           description: request.description,
           type: request.type,
           networkType: request.networkType || 'local',
+          ipAddress: request.ipAddress,
           status: 'uninitialized',
           isActive: false
         },
@@ -189,6 +190,7 @@ export class EnvironmentManager {
           description: request.description,
           type: request.type,
           networkType: request.networkType,
+          ipAddress: request.ipAddress,
           isActive: request.isActive
         },
         include: {
@@ -909,6 +911,7 @@ export class EnvironmentManager {
       description: prismaEnv.description,
       type: prismaEnv.type as EnvironmentType,
       networkType: prismaEnv.networkType as EnvironmentNetworkType,
+      ipAddress: prismaEnv.ipAddress,
       status: prismaEnv.status as ServiceStatus,
       isActive: prismaEnv.isActive,
       services: prismaEnv.services.map((s: any) => ({

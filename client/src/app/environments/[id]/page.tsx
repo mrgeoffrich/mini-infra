@@ -241,6 +241,13 @@ export function EnvironmentDetailPage() {
                   {environment.description}
                 </p>
               )}
+              {environment.networkType === "local" && environment.ipAddress && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                  <Network className="h-4 w-4" />
+                  <span className="font-mono font-medium">{environment.ipAddress}</span>
+                  <Badge variant="outline" className="text-xs">Local IP</Badge>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">

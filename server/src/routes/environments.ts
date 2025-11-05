@@ -30,6 +30,16 @@ const createEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']),
   networkType: z.enum(['local', 'internet']).optional(),
+  ipAddress: z.string()
+    .optional()
+    .refine((val) => {
+      if (!val) return true;
+      // IPv4 validation
+      const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      return ipv4Regex.test(val);
+    }, {
+      message: 'Must be a valid IPv4 address'
+    }),
   services: z.array(z.object({
     serviceName: z.string().min(1).max(100),
     serviceType: z.string().min(1),
@@ -42,6 +52,16 @@ const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
   networkType: z.enum(['local', 'internet']).optional(),
+  ipAddress: z.string()
+    .optional()
+    .refine((val) => {
+      if (!val) return true;
+      // IPv4 validation
+      const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      return ipv4Regex.test(val);
+    }, {
+      message: 'Must be a valid IPv4 address'
+    }),
   isActive: z.boolean().optional()
 });
 
