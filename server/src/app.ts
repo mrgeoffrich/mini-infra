@@ -148,7 +148,8 @@ app.use("/api/user", userPreferencesRoutes);
 app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
 app.use("/api/deployments", deploymentsRoutes);
 app.use("/api/deployments", deploymentDnsRoutes);
-app.use("/api/haproxy/frontends", haproxyFrontendsRoutes);
+app.use("/api/deployments", haproxyFrontendsRoutes); // Mount for deployment config-specific routes
+app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic HAProxy management
 app.use("/api/environments", environmentsRoutes);
 app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);

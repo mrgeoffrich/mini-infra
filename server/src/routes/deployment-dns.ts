@@ -18,7 +18,7 @@ const router = express.Router();
 // ====================
 
 const syncDNSSchema = z.object({
-  deploymentConfigId: z.string().uuid("Invalid deployment configuration ID"),
+  deploymentConfigId: z.string().cuid("Invalid deployment configuration ID"),
 });
 
 // ====================
@@ -55,8 +55,8 @@ router.get(
     try {
       const { configId } = req.params;
 
-      // Validate UUID format
-      if (!z.string().uuid().safeParse(configId).success) {
+      // Validate CUID format
+      if (!z.string().cuid().safeParse(configId).success) {
         return res.status(400).json({
           success: false,
           error: "Invalid deployment configuration ID format",
@@ -112,8 +112,8 @@ router.post(
     try {
       const { configId } = req.params;
 
-      // Validate UUID format
-      if (!z.string().uuid().safeParse(configId).success) {
+      // Validate CUID format
+      if (!z.string().cuid().safeParse(configId).success) {
         return res.status(400).json({
           success: false,
           error: "Invalid deployment configuration ID format",
@@ -191,8 +191,8 @@ router.delete(
     try {
       const { configId } = req.params;
 
-      // Validate UUID format
-      if (!z.string().uuid().safeParse(configId).success) {
+      // Validate CUID format
+      if (!z.string().cuid().safeParse(configId).success) {
         return res.status(400).json({
           success: false,
           error: "Invalid deployment configuration ID format",
