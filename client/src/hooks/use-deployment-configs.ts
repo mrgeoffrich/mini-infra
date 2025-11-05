@@ -148,11 +148,38 @@ async function updateDeploymentConfig(
   return data;
 }
 
-async function uninstallDeploymentConfig(
+async function deleteDeploymentConfig(
+  id: string,
+  correlationId: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/deployments/configs/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || `Failed to delete deployment configuration: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to delete deployment configuration");
+  }
+
+  return data;
+}
+
+async function removeDeploymentContainers(
   id: string,
   correlationId: string,
 ): Promise<UninstallDeploymentConfigResponse> {
-  const response = await fetch(`/api/deployments/configs/${id}/uninstall`, {
+  const response = await fetch(`/api/deployments/configs/${id}/remove-containers`, {
     method: "DELETE",
     credentials: "include",
     headers: {
@@ -163,14 +190,14 @@ async function uninstallDeploymentConfig(
 
   if (!response.ok) {
     throw new Error(
-      `Failed to uninstall deployment configuration: ${response.statusText}`,
+      `Failed to remove deployment containers: ${response.statusText}`,
     );
   }
 
   const data: UninstallDeploymentConfigResponse = await response.json();
 
   if (!data.success) {
-    throw new Error(data.message || "Failed to uninstall deployment configuration");
+    throw new Error(data.message || "Failed to remove deployment containers");
   }
 
   return data;
@@ -327,20 +354,40 @@ export function useUpdateDeploymentConfig() {
   });
 }
 
-export function useUninstallDeploymentConfig() {
+export function useDeleteDeploymentConfig() {
   const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => uninstallDeploymentConfig(id, correlationId),
-    onSuccess: (_, id) => {
+    mutationFn: (id: string) => deleteDeploymentConfig(id, correlationId),
+    onSuccess: async (_, id) => {
       // Invalidate and refetch deployment configs list
-      queryClient.invalidateQueries({ queryKey: ["deploymentConfigs"] });
+      await queryClient.invalidateQueries({ queryKey: ["deploymentConfigs"] });
       // Remove specific deployment config from cache
       queryClient.removeQueries({ queryKey: ["deploymentConfig", id] });
       // Remove related deployment data
       queryClient.removeQueries({ queryKey: ["deploymentHistory", id] });
       queryClient.removeQueries({ queryKey: ["deploymentStatus", id] });
+      // Invalidate deployment history queries
+      await queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
+      await queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
+    },
+  });
+}
+
+export function useRemoveDeploymentContainers() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: (id: string) => removeDeploymentContainers(id, correlationId),
+    onSuccess: () => {
+      // Invalidate deployment data to reflect removal
+      queryClient.invalidateQueries({ queryKey: ["deploymentHistory"] });
+      queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
+      queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
+      // Invalidate containers list
+      queryClient.invalidateQueries({ queryKey: ["containers"] });
     },
   });
 }

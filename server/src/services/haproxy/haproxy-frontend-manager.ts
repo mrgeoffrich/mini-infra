@@ -164,31 +164,28 @@ export class HAProxyFrontendManager {
    *
    * @param frontendName The frontend to add ACL to
    * @param aclName The name of the ACL
-   * @param criterion The ACL criterion (e.g., "hdr(host) -i example.com")
+   * @param fullCriterion The full ACL criterion (e.g., "hdr(host) -i example.com")
    * @param haproxyClient The HAProxy DataPlane client instance
    */
   private async addACL(
     frontendName: string,
     aclName: string,
-    criterion: string,
+    fullCriterion: string,
     haproxyClient: HAProxyDataPlaneClient
   ): Promise<void> {
     logger.info(
-      { frontendName, aclName, criterion },
+      { frontendName, aclName, fullCriterion },
       "Adding ACL to frontend"
     );
 
     try {
-      const version = await haproxyClient.getVersion();
-      const aclData = {
-        acl_name: aclName,
-        criterion: criterion,
-      };
+      // Split criterion into fetch method and value
+      // e.g., "hdr(host) -i example.com" -> criterion: "hdr(host)", value: "-i example.com"
+      const parts = fullCriterion.split(/\s+/, 2);
+      const criterion = parts[0]; // e.g., "hdr(host)"
+      const value = parts.slice(1).join(' ') || ''; // e.g., "-i example.com"
 
-      await haproxyClient["axiosInstance"].post(
-        `/services/haproxy/configuration/frontends/${frontendName}/acls?version=${version}`,
-        aclData
-      );
+      await haproxyClient.addACL(frontendName, aclName, criterion, value);
 
       logger.info(
         { frontendName, aclName },
@@ -232,25 +229,11 @@ export class HAProxyFrontendManager {
     );
 
     try {
-      const version = await haproxyClient.getVersion();
-
-      // Get existing rules to determine the next index
-      const existingRules = await this.getBackendSwitchingRules(
+      await haproxyClient.addBackendSwitchingRule(
         frontendName,
-        haproxyClient
-      );
-      const nextIndex = existingRules.length;
-
-      const ruleData = {
-        index: nextIndex,
-        name: backendName,
-        cond: "if",
-        cond_test: aclName,
-      };
-
-      await haproxyClient["axiosInstance"].post(
-        `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules?version=${version}`,
-        ruleData
+        backendName,
+        aclName,
+        'if'
       );
 
       logger.info(
@@ -275,36 +258,6 @@ export class HAProxyFrontendManager {
         "Failed to add backend switching rule"
       );
       throw new Error(`Failed to add backend switching rule: ${error}`);
-    }
-  }
-
-  /**
-   * Get existing backend switching rules for a frontend
-   *
-   * @param frontendName The frontend to get rules for
-   * @param haproxyClient The HAProxy DataPlane client instance
-   * @returns Array of backend switching rules
-   */
-  private async getBackendSwitchingRules(
-    frontendName: string,
-    haproxyClient: HAProxyDataPlaneClient
-  ): Promise<any[]> {
-    try {
-      const response = await haproxyClient["axiosInstance"].get(
-        `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules`
-      );
-
-      return response.data.data || [];
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        // No rules exist yet
-        return [];
-      }
-      logger.error(
-        { error, frontendName },
-        "Failed to get backend switching rules"
-      );
-      throw error;
     }
   }
 
@@ -366,9 +319,8 @@ export class HAProxyFrontendManager {
       const aclName = this.generateACLName(hostname);
 
       // Get existing rules
-      const existingRules = await this.getBackendSwitchingRules(
-        frontendName,
-        haproxyClient
+      const existingRules = await haproxyClient.getBackendSwitchingRules(
+        frontendName
       );
 
       // Find the rule that matches our ACL

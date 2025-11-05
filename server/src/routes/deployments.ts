@@ -9,6 +9,7 @@ import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { DeploymentConfigService } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
+import DockerService from "../services/docker";
 import prisma from "../lib/prisma";
 import {
   CreateDeploymentConfigRequest,
@@ -93,6 +94,15 @@ const createConfigSchema = z.object({
     keepOldContainer: z.boolean(),
   }),
   listeningPort: z.number().int().min(1).max(65535).optional(),
+  hostname: z
+    .string()
+    .min(1, "Hostname cannot be empty")
+    .max(253, "Hostname must be 253 characters or less")
+    .regex(
+      /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/,
+      "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
+    )
+    .optional(),
   environmentId: z.string().min(1, "Environment ID is required"),
 });
 
@@ -449,7 +459,7 @@ router.put(
 
 
 router.delete(
-  "/configs/:id/uninstall",
+  "/configs/:id",
   requireSessionOrApiKey as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -463,20 +473,92 @@ router.delete(
 
       const { id } = req.params;
 
-      const result = await deploymentConfigService.deleteDeploymentConfig(id, user.id);
+      // Get deployment configuration
+      const config = await deploymentConfigService.getDeploymentConfig(id);
 
-      res.status(202).json({
-        success: true,
-        message: "Deployment configuration uninstall initiated",
-        data: {
-          removalId: result.removalId,
-          status: "in_progress"
+      if (!config) {
+        return res.status(404).json({
+          success: false,
+          message: "Deployment configuration not found",
+        });
+      }
+
+      // Check if there are any running containers (check actual Docker, not just DB records)
+      const latestDeployment = await prisma.deployment.findFirst({
+        where: {
+          configurationId: id,
+          status: "completed",
+        },
+        orderBy: {
+          startedAt: "desc",
+        },
+        include: {
+          containers: true,
         },
       });
+
+      // Verify actual container status in Docker
+      if (latestDeployment?.containers && latestDeployment.containers.length > 0) {
+        const dockerService = DockerService.getInstance();
+        const runningContainers = [];
+
+        for (const container of latestDeployment.containers) {
+          try {
+            const containerInfo = await dockerService.getContainer(container.containerId);
+            if (containerInfo && containerInfo.status === "running") {
+              runningContainers.push(container.containerName);
+            }
+          } catch (error) {
+            // Container doesn't exist in Docker, skip it
+            logger.debug(
+              { containerId: container.containerId, error: error instanceof Error ? error.message : String(error) },
+              "Container not found in Docker (likely already removed)"
+            );
+          }
+        }
+
+        if (runningContainers.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot delete configuration while containers are still running: ${runningContainers.join(", ")}. Please remove the deployment first.`,
+          });
+        }
+      }
+
+      // Check for HAProxy frontend
+      const frontend = await prisma.hAProxyFrontend.findUnique({
+        where: { deploymentConfigId: id },
+      });
+
+      if (frontend && frontend.status === "active") {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot delete configuration while HAProxy frontend is active. Please remove the deployment first.",
+        });
+      }
+
+      // Delete the configuration (will cascade delete related records)
+      await prisma.deploymentConfiguration.delete({
+        where: { id },
+      });
+
+      res.json({
+        success: true,
+        message: "Deployment configuration deleted successfully",
+      });
+
+      logger.info(
+        {
+          configId: id,
+          userId: user.id,
+          applicationName: config.applicationName,
+        },
+        "Deployment configuration deleted"
+      );
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : String(error) },
-        "Failed to uninstall deployment configuration",
+        "Failed to delete deployment configuration",
       );
 
       if (error instanceof Error && error.message.includes("not found")) {
@@ -1043,6 +1125,96 @@ router.get(
         },
         "Failed to get removal operation status"
       );
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+
+router.delete(
+  "/configs/:id/remove-containers",
+  requireSessionOrApiKey as RequestHandler,
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Authentication required",
+        });
+      }
+
+      const { id } = req.params;
+
+      // Get deployment configuration
+      const config = await deploymentConfigService.getDeploymentConfig(id);
+
+      if (!config) {
+        return res.status(404).json({
+          success: false,
+          message: "Deployment configuration not found",
+        });
+      }
+
+      // Get the latest deployment for this configuration
+      const latestDeployment = await prisma.deployment.findFirst({
+        where: {
+          configurationId: id,
+          status: "completed",
+        },
+        orderBy: {
+          startedAt: "desc",
+        },
+        include: {
+          containers: true,
+        },
+      });
+
+      if (!latestDeployment || !latestDeployment.containers.length) {
+        return res.status(404).json({
+          success: false,
+          message: "No deployed containers found for this configuration",
+        });
+      }
+
+      // Trigger container removal through the orchestrator
+      const result = await deploymentConfigService.deleteDeploymentConfig(id, user.id);
+
+      res.status(202).json({
+        success: true,
+        message: "Container removal initiated",
+        data: {
+          removalId: result.removalId,
+          status: "in_progress",
+          containersToRemove: latestDeployment.containers.length,
+        },
+      });
+
+      logger.info(
+        {
+          configId: id,
+          userId: user.id,
+          removalId: result.removalId,
+          containersCount: latestDeployment.containers.length,
+        },
+        "Container removal initiated"
+      );
+    } catch (error) {
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          configId: req.params?.id,
+        },
+        "Failed to remove containers"
+      );
+
+      if (error instanceof Error && error.message.includes("not found")) {
+        return res.status(404).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
       next(error);
     }
   }) as RequestHandler,

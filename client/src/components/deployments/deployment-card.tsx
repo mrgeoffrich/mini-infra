@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconPlayerPlay,
@@ -11,10 +11,14 @@ import {
   IconLoader2,
   IconTrash,
   IconEye,
+  IconRocket,
+  IconPlayerStop,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentTrigger } from "@/hooks/use-deployment-trigger";
+import { useRemoveDeploymentContainers } from "@/hooks/use-deployment-configs";
+import { NewDeploymentDialog } from "@/components/deployments/new-deployment-dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +124,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
 }: DeploymentCardProps) {
   const { formatDateTime, formatDate } = useFormattedDate();
   const triggerMutation = useDeploymentTrigger();
+  const removeContainersMutation = useRemoveDeploymentContainers();
   const navigate = useNavigate();
+  const [newDeploymentDialogOpen, setNewDeploymentDialogOpen] = useState(false);
 
   const handleTriggerDeployment = useCallback(async () => {
     try {
@@ -130,6 +136,19 @@ export const DeploymentCard = React.memo(function DeploymentCard({
       toast.error(`Failed to trigger deployment: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   }, [config.applicationName, triggerMutation]);
+
+  const handleNewDeployment = useCallback(() => {
+    setNewDeploymentDialogOpen(true);
+  }, []);
+
+  const handleRemoveContainers = useCallback(async () => {
+    try {
+      await removeContainersMutation.mutateAsync(config.id);
+      toast.success(`Container removal initiated for ${config.applicationName}`);
+    } catch (error) {
+      toast.error(`Failed to remove containers: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }, [config.id, config.applicationName, removeContainersMutation]);
 
   const handleEdit = useCallback(() => {
     onEdit?.(config);
@@ -172,6 +191,21 @@ export const DeploymentCard = React.memo(function DeploymentCard({
     return activeStatuses.includes(latestDeployment.status as DeploymentStatus);
   }, [latestDeployment]);
 
+  const isDeploymentCompleted = useMemo(() => {
+    if (!latestDeployment) return false;
+    return latestDeployment.status === "completed" || latestDeployment.status === "failed";
+  }, [latestDeployment]);
+
+  const hasRunningContainers = useMemo(() => {
+    if (!latestDeployment?.containers) return false;
+    return latestDeployment.containers.some(
+      container => container.status === "running"
+    );
+  }, [latestDeployment]);
+
+  const showNewDeploymentButton = config.isActive && isDeploymentCompleted;
+  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && hasRunningContainers;
+
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardHeader className="pb-3">
@@ -210,8 +244,16 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                 Edit Configuration
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
+              <DropdownMenuItem
+                onClick={handleUninstall}
+                className="text-destructive"
+                disabled={hasRunningContainers}
+              >
+                <IconTrash className="h-4 w-4 mr-2" />
                 Delete Configuration
+                {hasRunningContainers && (
+                  <span className="text-xs ml-2">(containers running)</span>
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -297,30 +339,63 @@ export const DeploymentCard = React.memo(function DeploymentCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 pt-2">
-          <Button
-            onClick={handleViewDetails}
-            variant="outline"
-            size="sm"
-          >
-            <IconEye className="h-4 w-4 mr-2" />
-            Details
-          </Button>
-          <Button
-            onClick={handleTriggerDeployment}
-            disabled={triggerMutation.isPending || !config.isActive || isDeploymentActive}
-            className="flex-1"
-            size="sm"
-          >
-            {triggerMutation.isPending ? (
-              <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <IconPlayerPlay className="h-4 w-4 mr-2" />
-            )}
-            {isDeploymentActive ? "Deploying..." : "Deploy"}
-          </Button>
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleViewDetails}
+              variant="outline"
+              size="sm"
+            >
+              <IconEye className="h-4 w-4 mr-2" />
+              Details
+            </Button>
+            <Button
+              onClick={handleTriggerDeployment}
+              disabled={triggerMutation.isPending || !config.isActive || isDeploymentActive}
+              className="flex-1"
+              size="sm"
+            >
+              {triggerMutation.isPending ? (
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <IconPlayerPlay className="h-4 w-4 mr-2" />
+              )}
+              {isDeploymentActive ? "Deploying..." : "Deploy"}
+            </Button>
+          </div>
+
+          {showNewDeploymentButton && (
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleNewDeployment}
+                variant="default"
+                size="sm"
+                className="flex-1"
+                disabled={isDeploymentActive}
+              >
+                <IconRocket className="h-4 w-4 mr-2" />
+                New Deployment
+              </Button>
+              {showRemoveDeploymentButton && (
+                <Button
+                  onClick={handleRemoveContainers}
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1"
+                  disabled={removeContainersMutation.isPending || isDeploymentActive}
+                >
+                  {removeContainersMutation.isPending ? (
+                    <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <IconPlayerStop className="h-4 w-4 mr-2" />
+                  )}
+                  Remove Deployment
+                </Button>
+              )}
+            </div>
+          )}
         </div>
-        
+
         {isDeploymentActive && (
           <div className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
             <div className="flex items-center gap-2">
@@ -330,6 +405,12 @@ export const DeploymentCard = React.memo(function DeploymentCard({
           </div>
         )}
       </CardContent>
+
+      <NewDeploymentDialog
+        config={config}
+        isOpen={newDeploymentDialogOpen}
+        onClose={() => setNewDeploymentDialogOpen(false)}
+      />
     </Card>
   );
 });

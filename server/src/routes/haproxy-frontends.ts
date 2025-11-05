@@ -150,7 +150,7 @@ router.get(
  * Get HAProxy frontend for a specific deployment configuration
  */
 router.get(
-  "/deployments/configs/:configId/frontend",
+  "/configs/:configId/frontend",
   requireSessionOrApiKey as RequestHandler,
   async (req: Request, res: Response) => {
     try {
@@ -181,16 +181,10 @@ router.get(
         where: { deploymentConfigId: configId },
       });
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "HAProxy frontend not found for this deployment configuration",
-        });
-      }
-
-      const response: HAProxyFrontendResponse = {
+      // Return empty data if no frontend exists (not an error, just not configured yet)
+      const response = {
         success: true,
-        data: serializeFrontend(frontend),
+        data: frontend ? serializeFrontend(frontend) : null,
       };
 
       res.json(response);
@@ -213,7 +207,7 @@ router.get(
  * Manually sync HAProxy frontend for a deployment configuration
  */
 router.post(
-  "/deployments/configs/:configId/frontend/sync",
+  "/configs/:configId/frontend/sync",
   requireSessionOrApiKey as RequestHandler,
   async (req: Request, res: Response) => {
     try {

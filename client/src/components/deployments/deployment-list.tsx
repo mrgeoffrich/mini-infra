@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ColumnDef,
@@ -17,13 +17,17 @@ import {
   IconFilter,
   IconX,
   IconEye,
+  IconRocket,
+  IconPlayerStop,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
-import { useDeploymentConfigs, useDeploymentConfigFilters } from "@/hooks/use-deployment-configs";
+import { useDeploymentConfigs, useDeploymentConfigFilters, useRemoveDeploymentContainers } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments, useLatestDeployments } from "@/hooks/use-deployment-history";
 import { useDeploymentTrigger } from "@/hooks/use-deployment-trigger";
 import { useEnvironments } from "@/hooks/use-environments";
+import { NewDeploymentDialog } from "@/components/deployments/new-deployment-dialog";
 import {
   Table,
   TableBody,
@@ -120,22 +124,38 @@ LastDeploymentBadge.displayName = "LastDeploymentBadge";
 // Action buttons component
 const DeploymentActions = React.memo(({
   config,
+  latestDeployment,
   onTrigger,
+  onNewDeployment,
+  onRemoveContainers,
   onEdit,
   onUninstall,
   onViewDetails,
   isTriggering,
+  isRemovingContainers,
 }: {
   config: DeploymentConfigurationInfo;
+  latestDeployment?: DeploymentInfo;
   onTrigger: (applicationName: string) => void;
+  onNewDeployment: (config: DeploymentConfigurationInfo) => void;
+  onRemoveContainers: (configId: string) => void;
   onEdit?: (config: DeploymentConfigurationInfo) => void;
   onUninstall?: (config: DeploymentConfigurationInfo) => void;
   onViewDetails?: (config: DeploymentConfigurationInfo) => void;
   isTriggering: boolean;
+  isRemovingContainers: boolean;
 }) => {
   const handleTrigger = useCallback(() => {
     onTrigger(config.applicationName);
   }, [config.applicationName, onTrigger]);
+
+  const handleNewDeployment = useCallback(() => {
+    onNewDeployment(config);
+  }, [config, onNewDeployment]);
+
+  const handleRemoveContainers = useCallback(() => {
+    onRemoveContainers(config.id);
+  }, [config.id, onRemoveContainers]);
 
   const handleEdit = useCallback(() => {
     onEdit?.(config);
@@ -149,6 +169,21 @@ const DeploymentActions = React.memo(({
     onViewDetails?.(config);
   }, [config, onViewDetails]);
 
+  const isDeploymentCompleted = useMemo(() => {
+    if (!latestDeployment) return false;
+    return latestDeployment.status === "completed" || latestDeployment.status === "failed";
+  }, [latestDeployment]);
+
+  const hasRunningContainers = useMemo(() => {
+    if (!latestDeployment?.containers) return false;
+    return latestDeployment.containers.some(
+      container => container.status === "running"
+    );
+  }, [latestDeployment]);
+
+  const showNewDeploymentButton = config.isActive && isDeploymentCompleted;
+  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && hasRunningContainers;
+
   return (
     <div className="flex items-center gap-2">
       <Button
@@ -161,6 +196,32 @@ const DeploymentActions = React.memo(({
         <IconPlayerPlay className="h-3 w-3 mr-1" />
         Deploy
       </Button>
+
+      {showNewDeploymentButton && (
+        <Button
+          variant="default"
+          size="sm"
+          onClick={handleNewDeployment}
+          disabled={isTriggering}
+          className="h-8"
+        >
+          <IconRocket className="h-3 w-3 mr-1" />
+          New
+        </Button>
+      )}
+
+      {showRemoveDeploymentButton && (
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={handleRemoveContainers}
+          disabled={isRemovingContainers || isTriggering}
+          className="h-8"
+        >
+          <IconPlayerStop className="h-3 w-3 mr-1" />
+          Remove
+        </Button>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -179,8 +240,16 @@ const DeploymentActions = React.memo(({
             Edit Configuration
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleUninstall} className="text-destructive">
+          <DropdownMenuItem
+            onClick={handleUninstall}
+            className="text-destructive"
+            disabled={hasRunningContainers}
+          >
+            <IconTrash className="h-3 w-3 mr-2" />
             Delete Configuration
+            {hasRunningContainers && (
+              <span className="text-xs ml-2">(running)</span>
+            )}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -272,7 +341,10 @@ export const DeploymentList = React.memo(function DeploymentList({
 }: DeploymentListProps) {
   const { filters, updateFilter, resetFilters } = useDeploymentConfigFilters();
   const triggerMutation = useDeploymentTrigger();
+  const removeContainersMutation = useRemoveDeploymentContainers();
   const navigate = useNavigate();
+  const [newDeploymentDialogOpen, setNewDeploymentDialogOpen] = useState(false);
+  const [selectedConfigForNewDeployment, setSelectedConfigForNewDeployment] = useState<DeploymentConfigurationInfo | null>(null);
   
   const {
     data: configsResponse,
@@ -357,6 +429,20 @@ export const DeploymentList = React.memo(function DeploymentList({
       toast.error(`Failed to trigger deployment: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   }, [triggerMutation]);
+
+  const handleNewDeployment = useCallback((config: DeploymentConfigurationInfo) => {
+    setSelectedConfigForNewDeployment(config);
+    setNewDeploymentDialogOpen(true);
+  }, []);
+
+  const handleRemoveContainers = useCallback(async (configId: string) => {
+    try {
+      await removeContainersMutation.mutateAsync(configId);
+      toast.success("Container removal initiated");
+    } catch (error) {
+      toast.error(`Failed to remove containers: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }, [removeContainersMutation]);
 
   const handleViewDetails = useCallback((config: DeploymentConfigurationInfo) => {
     navigate(`/deployments/${config.id}`);
@@ -444,20 +530,25 @@ export const DeploymentList = React.memo(function DeploymentList({
         header: "Actions",
         cell: ({ row }) => {
           const config = row.original;
+          const latestDeployment = latestDeploymentsByConfig.get(config.id);
           return (
             <DeploymentActions
               config={config}
+              latestDeployment={latestDeployment}
               onTrigger={handleTriggerDeployment}
+              onNewDeployment={handleNewDeployment}
+              onRemoveContainers={handleRemoveContainers}
               onEdit={onEditConfig}
               onUninstall={onUninstallConfig}
               onViewDetails={handleViewDetails}
               isTriggering={triggerMutation.isPending}
+              isRemovingContainers={removeContainersMutation.isPending}
             />
           );
         },
       },
     ],
-    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, handleViewDetails, onEditConfig, onUninstallConfig, triggerMutation.isPending]
+    [handleSort, latestDeploymentsByConfig, environmentsById, handleTriggerDeployment, handleNewDeployment, handleRemoveContainers, handleViewDetails, onEditConfig, onUninstallConfig, triggerMutation.isPending, removeContainersMutation.isPending]
   );
 
   const table = useReactTable({
@@ -635,6 +726,15 @@ export const DeploymentList = React.memo(function DeploymentList({
           )}
         </div>
       ) : null}
+
+      <NewDeploymentDialog
+        config={selectedConfigForNewDeployment}
+        isOpen={newDeploymentDialogOpen}
+        onClose={() => {
+          setNewDeploymentDialogOpen(false);
+          setSelectedConfigForNewDeployment(null);
+        }}
+      />
     </div>
   );
 });
