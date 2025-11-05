@@ -31,6 +31,7 @@ export interface HAProxyDeploymentContext {
   // Deployment identifiers
   deploymentId: string;
   configurationId: string;
+  deploymentConfigId: string;
   applicationName: string;
   dockerImage: string;
 
@@ -53,6 +54,7 @@ export interface HAProxyRemovalContext {
   // Deployment identifiers
   deploymentId: string;
   configurationId: string;
+  deploymentConfigId: string;
   applicationName: string;
 
   // Environment context
@@ -65,6 +67,8 @@ export interface HAProxyRemovalContext {
   containerId?: string;
   containersToRemove: string[];
   lbRemovalComplete: boolean;
+  frontendRemoved: boolean;
+  dnsRemoved: boolean;
   applicationStopped: boolean;
   applicationRemoved: boolean;
   error?: string;
@@ -248,6 +252,7 @@ export class DeploymentOrchestrator {
       const baseContext: HAProxyDeploymentContext = {
         deploymentId,
         configurationId: deploymentRecord.configurationId,
+        deploymentConfigId: deploymentRecord.configurationId,
         applicationName: config.applicationName,
         dockerImage: `${config.dockerImage}:${config.dockerTag}`,
         environmentId: environmentContext.environmentId,
@@ -304,11 +309,15 @@ export class DeploymentOrchestrator {
       applicationReady: false,
       haproxyConfigured: false,
       healthChecksPassed: false,
+      frontendConfigured: false,
+      dnsConfigured: false,
       trafficEnabled: false,
       validationErrors: 0,
       monitoringStartTime: undefined,
       error: undefined,
       retryCount: 0,
+      frontendName: undefined,
+      dnsRecordId: undefined,
     };
 
     // Create state machine with service implementations
@@ -354,6 +363,8 @@ export class DeploymentOrchestrator {
       blueHealthy: false,
       greenHealthy: false,
       greenBackendConfigured: false,
+      frontendConfigured: false,
+      dnsConfigured: false,
       trafficOpenedToGreen: false,
       trafficValidated: false,
       blueDraining: false,
@@ -366,6 +377,10 @@ export class DeploymentOrchestrator {
       activeConnections: 0,
       oldContainerId: existingContainers.length > 0 ? existingContainers[0].id : undefined,
       newContainerId: undefined,
+      containerIpAddress: undefined,
+      containerPort: undefined,
+      frontendName: undefined,
+      dnsRecordId: undefined,
       existingContainers: existingContainers, // Store all existing containers for tracking
     };
 
@@ -791,6 +806,7 @@ export class DeploymentOrchestrator {
       const removalContext: HAProxyRemovalContext = {
         deploymentId: deployment.id,
         configurationId: params.configurationId,
+        deploymentConfigId: params.configurationId,
         applicationName: params.applicationName,
         environmentId: environmentContext.environmentId,
         environmentName: environmentContext.environmentName,
@@ -798,6 +814,8 @@ export class DeploymentOrchestrator {
         haproxyNetworkName: environmentContext.haproxyNetworkName,
         containersToRemove: appContainers.map((c: any) => c.id),
         lbRemovalComplete: false,
+        frontendRemoved: false,
+        dnsRemoved: false,
         applicationStopped: false,
         applicationRemoved: false,
         retryCount: 0,
