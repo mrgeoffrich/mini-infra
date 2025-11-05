@@ -1,6 +1,7 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
 import ContainerLabelManager from '../container-label-manager';
+import { portUtils } from '../port-utils';
 import * as path from 'path';
 import {
   IApplicationService,
@@ -324,6 +325,32 @@ export class HAProxyService implements IApplicationService {
   private async deployHAProxyContainer(): Promise<void> {
     await this.dockerExecutor.pullImageWithAuth('haproxytech/haproxy-alpine:3.2');
 
+    // Get dynamic port configuration based on environment
+    let httpPort = 8111; // Default for internet/no environment
+    let httpsPort = 8443;
+
+    if (this.environmentId) {
+      try {
+        const portConfig = await portUtils.getHAProxyPortsForEnvironment(this.environmentId);
+        httpPort = portConfig.httpPort;
+        httpsPort = portConfig.httpsPort;
+        this.logger.info(
+          {
+            environmentId: this.environmentId,
+            httpPort,
+            httpsPort,
+            source: portConfig.source
+          },
+          'Using dynamic port configuration for HAProxy'
+        );
+      } catch (error) {
+        this.logger.warn(
+          { error, environmentId: this.environmentId },
+          'Failed to get dynamic ports, using defaults'
+        );
+      }
+    }
+
     const container = await this.dockerExecutor.createLongRunningContainer({
       image: 'haproxytech/haproxy-alpine:3.2',
       name: this.mainContainerName,
@@ -340,8 +367,8 @@ export class HAProxyService implements IApplicationService {
         serviceName: 'haproxy'
       }) : undefined,
       ports: {
-        '80/tcp': [{ HostPort: '8111' }],
-        '443/tcp': [{ HostPort: '8443' }],
+        '80/tcp': [{ HostPort: httpPort.toString() }],
+        '443/tcp': [{ HostPort: httpsPort.toString() }],
         '8404/tcp': [{ HostPort: '8404' }],
         '5555/tcp': [{ HostPort: '5555' }]
       },

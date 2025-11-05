@@ -35,7 +35,8 @@
       "Bash(npx jest:*)",
       "Bash(rm:*)",
       "Bash(taskkill:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(./sqlite3.exe:*)"
     ],
     "deny": [],
     "ask": [],

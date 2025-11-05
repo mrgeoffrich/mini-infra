@@ -521,3 +521,35 @@ export interface DeploymentDNSRecordResponse {
   data: DeploymentDNSRecordInfo;
   message?: string;
 }
+
+// ====================
+// HAProxy Port Configuration Types
+// ====================
+
+export interface HAProxyPortConfig {
+  httpPort: number;
+  httpsPort: number;
+  source: 'override' | 'network-type'; // Whether from manual override or network type
+  networkType?: 'local' | 'internet'; // Network type if from environment
+}
+
+export interface HAProxyPortValidationResult {
+  isValid: boolean;
+  httpPortAvailable: boolean;
+  httpsPortAvailable: boolean;
+  conflicts: {
+    httpPort?: string; // Description of conflict
+    httpsPort?: string; // Description of conflict
+  };
+  suggestedPorts?: {
+    httpPort: number;
+    httpsPort: number;
+  };
+  message: string;
+}
+
+export interface HAProxyPortValidationResponse {
+  success: boolean;
+  data: HAProxyPortValidationResult;
+  message?: string;
+}

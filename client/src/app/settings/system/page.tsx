@@ -66,6 +66,22 @@ const systemSettingsSchema = z.object({
     ),
   restoreRegistryUsername: z.string().optional(),
   restoreRegistryPassword: z.string().optional(),
+
+  // HAProxy port configuration (optional overrides)
+  haproxyHttpPort: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || (Number(val) >= 1 && Number(val) <= 65535),
+      "Port must be between 1 and 65535"
+    ),
+  haproxyHttpsPort: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || (Number(val) >= 1 && Number(val) <= 65535),
+      "Port must be between 1 and 65535"
+    ),
 });
 
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
@@ -84,7 +100,7 @@ export default function SystemSettingsPage() {
   const [testingBackup, setTestingBackup] = useState(false);
   const [testingRestore, setTestingRestore] = useState(false);
 
-  // Fetch existing system settings for dockerexecutor category
+  // Fetch existing system settings for system category
   const {
     data: settingsData,
     isLoading: settingsLoading,
@@ -93,6 +109,16 @@ export default function SystemSettingsPage() {
   } = useSystemSettings({
     filters: { category: "system", isActive: true },
     limit: 50,
+  });
+
+  // Fetch HAProxy settings
+  const {
+    data: haproxySettingsData,
+    isLoading: haproxyLoading,
+    refetch: refetchHAProxySettings,
+  } = useSystemSettings({
+    filters: { category: "haproxy", isActive: true },
+    limit: 10,
   });
 
   // Mutations for saving settings
@@ -110,6 +136,8 @@ export default function SystemSettingsPage() {
       restoreDockerImage: DEFAULT_RESTORE_IMAGE,
       restoreRegistryUsername: "",
       restoreRegistryPassword: "",
+      haproxyHttpPort: "",
+      haproxyHttpsPort: "",
     },
     mode: "onChange",
   });
@@ -153,46 +181,98 @@ export default function SystemSettingsPage() {
         settingsMap.restore_registry_password?.value || "",
       );
     }
-  }, [settingsData, form]);
+
+    if (haproxySettingsData?.data) {
+      const haproxyMap = haproxySettingsData.data.reduce(
+        (acc, setting) => {
+          acc[setting.key] = setting;
+          return acc;
+        },
+        {} as Record<string, SystemSettingsInfo>,
+      );
+
+      // Merge HAProxy settings into settings map
+      setSettings(prev => ({ ...prev, ...haproxyMap }));
+
+      // Update form with HAProxy port values
+      form.setValue(
+        "haproxyHttpPort",
+        haproxyMap.haproxy_http_port?.value || "",
+      );
+      form.setValue(
+        "haproxyHttpsPort",
+        haproxyMap.haproxy_https_port?.value || "",
+      );
+    }
+  }, [settingsData, haproxySettingsData, form]);
 
   const handleSubmit = async (data: SystemSettingsFormData) => {
     setIsSaving(true);
     try {
-      const settingsToSave = [
+      const systemSettingsToSave = [
         {
+          category: "system" as const,
           key: "backup_docker_image",
           value: data.backupDockerImage,
           isEncrypted: false,
         },
         {
+          category: "system" as const,
           key: "backup_registry_username",
           value: data.backupRegistryUsername || "",
           isEncrypted: false,
         },
         {
+          category: "system" as const,
           key: "backup_registry_password",
           value: data.backupRegistryPassword || "",
           isEncrypted: true,
         },
         {
+          category: "system" as const,
           key: "restore_docker_image",
           value: data.restoreDockerImage,
           isEncrypted: false,
         },
         {
+          category: "system" as const,
           key: "restore_registry_username",
           value: data.restoreRegistryUsername || "",
           isEncrypted: false,
         },
         {
+          category: "system" as const,
           key: "restore_registry_password",
           value: data.restoreRegistryPassword || "",
           isEncrypted: true,
         },
       ];
 
-      const promises = settingsToSave.map(
-        async ({ key, value, isEncrypted }) => {
+      // Add HAProxy settings if provided
+      const haproxySettingsToSave: Array<{category: "haproxy"; key: string; value: string; isEncrypted: boolean}> = [];
+
+      if (data.haproxyHttpPort) {
+        haproxySettingsToSave.push({
+          category: "haproxy",
+          key: "haproxy_http_port",
+          value: data.haproxyHttpPort,
+          isEncrypted: false,
+        });
+      }
+
+      if (data.haproxyHttpsPort) {
+        haproxySettingsToSave.push({
+          category: "haproxy",
+          key: "haproxy_https_port",
+          value: data.haproxyHttpsPort,
+          isEncrypted: false,
+        });
+      }
+
+      const allSettings = [...systemSettingsToSave, ...haproxySettingsToSave];
+
+      const promises = allSettings.map(
+        async ({ category, key, value, isEncrypted }) => {
           const existingSetting = settings[key];
 
           if (existingSetting) {
@@ -204,7 +284,7 @@ export default function SystemSettingsPage() {
           } else {
             // Create new setting
             return createSetting.mutateAsync({
-              category: "system",
+              category,
               key,
               value,
               isEncrypted,
@@ -219,6 +299,7 @@ export default function SystemSettingsPage() {
 
       // Refetch settings to get updated data
       refetchSettings();
+      refetchHAProxySettings();
     } catch (error) {
       console.error("Failed to save system settings:", error);
       toastWithCopy.error("Failed to save system settings");
@@ -318,8 +399,9 @@ export default function SystemSettingsPage() {
             </p>
           </div>
 
-          {settingsLoading ? (
+          {(settingsLoading || haproxyLoading) ? (
             <div className="space-y-4">
+              <Skeleton className="h-48 w-full" />
               <Skeleton className="h-48 w-full" />
               <Skeleton className="h-48 w-full" />
             </div>
@@ -563,8 +645,79 @@ export default function SystemSettingsPage() {
                   </CardContent>
                 </Card>
 
+                {/* HAProxy Port Configuration */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Settings className="h-5 w-5" />
+                      <span>HAProxy Port Configuration</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure custom port mappings for HAProxy load balancer (optional)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-md bg-muted p-4 space-y-2">
+                      <h4 className="text-sm font-medium">Default Port Behavior</h4>
+                      <ul className="text-sm text-muted-foreground space-y-1">
+                        <li>• <strong>Local network</strong> environments: Ports 80 (HTTP) and 443 (HTTPS)</li>
+                        <li>• <strong>Internet</strong> environments: Ports 8111 (HTTP) and 8443 (HTTPS)</li>
+                      </ul>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Override these defaults by specifying custom ports below. Leave empty to use network type defaults.
+                      </p>
+                    </div>
 
+                    <FormField
+                      control={form.control}
+                      name="haproxyHttpPort"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>HTTP Port (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="Leave empty for default (80 or 8111)"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Custom port for HTTP traffic (1-65535). Overrides network type default.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
+                    <FormField
+                      control={form.control}
+                      name="haproxyHttpsPort"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>HTTPS Port (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="Leave empty for default (443 or 8443)"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Custom port for HTTPS traffic (1-65535). Overrides network type default.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Alert>
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Port overrides apply to all HAProxy deployments. Ensure chosen ports are available on the host system.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
 
                 {/* Actions */}
                 <div className="flex justify-end space-x-2">
