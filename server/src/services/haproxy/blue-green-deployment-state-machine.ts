@@ -8,6 +8,7 @@ import { PerformHealthChecks } from './actions/perform-health-checks';
 import { ConfigureFrontend } from './actions/configure-frontend';
 import { ConfigureDNS } from './actions/configure-dns';
 import { InitiateDrain } from './actions/initiate-drain';
+import { MonitorDrain } from './actions/monitor-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
@@ -25,6 +26,7 @@ const performHealthChecks = new PerformHealthChecks();
 const configureFrontend = new ConfigureFrontend();
 const configureDNS = new ConfigureDNS();
 const initiateDrain = new InitiateDrain();
+const monitorDrain = new MonitorDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
 const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
@@ -242,9 +244,14 @@ export const blueGreenDeploymentMachine = setup({
             initiateDrain.execute(contextWithContainerId, (event) => self.send(event));
         },
 
-        monitorBlueDrain: assign({
+        setDrainStartTime: assign({
             drainStartTime: () => Date.now()
         }),
+
+        monitorBlueDrain: ({ context, self }) => {
+            // Start monitoring the drain status
+            monitorDrain.execute(context, (event) => self.send(event));
+        },
 
         // Blue decommission actions
         removeBlueFromLB: ({ context, self }) => {
@@ -282,7 +289,12 @@ export const blueGreenDeploymentMachine = setup({
 
         // Rollback actions
         restoreBlueTraffic: ({ context, self }) => {
-            enableTraffic.execute(context, (event) => {
+            // Map oldContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.oldContainerId
+            };
+            enableTraffic.execute(contextWithContainerId, (event) => {
                 // Map the standard traffic events to rollback events
                 if (event.type === 'TRAFFIC_ENABLED') {
                     self.send({ type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' });
@@ -577,8 +589,9 @@ export const blueGreenDeploymentMachine = setup({
             description: 'System is ready for deployment, no active deployment in progress',
             on: {
                 START_DEPLOYMENT: {
-                    target: 'deployingGreenApp',
-                    actions: 'resetState'
+                    target: 'deployingGreenApp'
+                    // NOTE: Do NOT call resetState here - it would clear oldContainerId and other container tracking fields
+                    // The context is already properly initialized from input when the actor is created
                 }
             }
         },
@@ -888,7 +901,7 @@ export const blueGreenDeploymentMachine = setup({
 
         drainingBlue: {
             description: 'Initiating connection drain from blue environment',
-            entry: ['initiateBlueDrain', 'monitorBlueDrain'],
+            entry: ['initiateBlueDrain', 'setDrainStartTime'],
             on: {
                 DRAIN_INITIATED: {
                     target: 'waitingForDrain',
@@ -903,6 +916,7 @@ export const blueGreenDeploymentMachine = setup({
 
         waitingForDrain: {
             description: 'Waiting for all blue connections to close',
+            entry: 'monitorBlueDrain',
             on: {
                 DRAIN_COMPLETE: {
                     target: 'decommissioningBlueLB',

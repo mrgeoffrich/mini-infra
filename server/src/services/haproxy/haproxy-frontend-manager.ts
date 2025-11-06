@@ -181,9 +181,12 @@ export class HAProxyFrontendManager {
     try {
       // Split criterion into fetch method and value
       // e.g., "hdr(host) -i example.com" -> criterion: "hdr(host)", value: "-i example.com"
-      const parts = fullCriterion.split(/\s+/, 2);
-      const criterion = parts[0]; // e.g., "hdr(host)"
-      const value = parts.slice(1).join(' ') || ''; // e.g., "-i example.com"
+      const firstSpaceIndex = fullCriterion.indexOf(' ');
+      if (firstSpaceIndex === -1) {
+        throw new Error(`Invalid ACL criterion format: ${fullCriterion}`);
+      }
+      const criterion = fullCriterion.substring(0, firstSpaceIndex).trim();
+      const value = fullCriterion.substring(firstSpaceIndex + 1).trim();
 
       await haproxyClient.addACL(frontendName, aclName, criterion, value);
 
