@@ -389,7 +389,7 @@ export class HAProxyService implements IApplicationService {
       networks: this.availableNetworks.map(net => net.name),
       restartPolicy: 'unless-stopped',
       healthcheck: {
-        Test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:8404/stats'],
+        Test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://admin:admin@127.0.0.1:8404/stats'],
         Interval: 30000000000, // 30s in nanoseconds
         Timeout: 5000000000,   // 5s in nanoseconds
         Retries: 3,
