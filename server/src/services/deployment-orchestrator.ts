@@ -415,16 +415,33 @@ export class DeploymentOrchestrator {
           const finalStatus = state.value === "completed" ? "completed" : "failed";
           const hasError = state.context.error !== undefined && state.context.error !== null;
 
+          // Build update data object with container IDs based on deployment strategy
+          const updateData: any = {
+            status: finalStatus,
+            currentState: state.value as string,
+            completedAt: new Date(),
+            errorMessage: state.context.error || null,
+            deploymentTime: state.context.startTime ?
+              (Date.now() - state.context.startTime) / 1000 : null,
+          };
+
+          // Add container IDs based on deployment strategy
+          if (strategy === 'initial' && state.context.containerId) {
+            // For initial deployments, containerId is the new container being deployed
+            updateData.newContainerId = state.context.containerId;
+          } else if (strategy === 'blue-green') {
+            // For blue-green deployments, track both old and new containers
+            if (state.context.oldContainerId) {
+              updateData.oldContainerId = state.context.oldContainerId;
+            }
+            if (state.context.newContainerId) {
+              updateData.newContainerId = state.context.newContainerId;
+            }
+          }
+
           await prisma.deployment.update({
             where: { id: deploymentId },
-            data: {
-              status: finalStatus,
-              currentState: state.value as string,
-              completedAt: new Date(),
-              errorMessage: state.context.error || null,
-              deploymentTime: state.context.startTime ?
-                (Date.now() - state.context.startTime) / 1000 : null,
-            },
+            data: updateData,
           });
 
           deploymentLogger().info(
@@ -767,6 +784,16 @@ export class DeploymentOrchestrator {
         throw new Error(validation.errorMessage || "Environment validation failed");
       }
 
+      // Find containers to remove BEFORE creating deployment record
+      const containers = await this.dockerService.listContainers();
+      const appContainers = containers.filter((container: any) => {
+        const labels = container.labels || {};
+        return (
+          labels["mini-infra.application"] === params.applicationName &&
+          labels["mini-infra.environment"] === environmentContext.environmentId
+        );
+      });
+
       // Create deployment record for uninstall operation
       const deployment = await prisma.deployment.create({
         data: {
@@ -779,6 +806,8 @@ export class DeploymentOrchestrator {
           startedAt: new Date(),
           healthCheckPassed: false,
           downtime: 0,
+          // Set oldContainerId to the first container being removed (if any)
+          oldContainerId: appContainers.length > 0 ? appContainers[0].id : null,
         },
       });
 
@@ -788,19 +817,10 @@ export class DeploymentOrchestrator {
           configurationId: params.configurationId,
           applicationName: params.applicationName,
           triggerType: "uninstall",
+          oldContainerId: appContainers.length > 0 ? appContainers[0].id.slice(0, 12) : null,
         },
         "Created deployment record for uninstall operation"
       );
-
-      // Find containers to remove
-      const containers = await this.dockerService.listContainers();
-      const appContainers = containers.filter((container: any) => {
-        const labels = container.labels || {};
-        return (
-          labels["mini-infra.application"] === params.applicationName &&
-          labels["mini-infra.environment"] === environmentContext.environmentId
-        );
-      });
 
       // Create removal context
       const removalContext: HAProxyRemovalContext = {
