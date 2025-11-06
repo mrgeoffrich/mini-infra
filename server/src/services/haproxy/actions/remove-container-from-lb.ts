@@ -89,13 +89,7 @@ export class RemoveContainerFromLB {
                 logger.info({
                     deploymentId: context.deploymentId,
                     backendName
-                }, 'Backend has no remaining servers, removing backend');
-
-                await this.haproxyClient.deleteBackend(backendName);
-                logger.info({
-                    deploymentId: context.deploymentId,
-                    backendName
-                }, 'HAProxy backend successfully removed');
+                }, 'Backend has no remaining servers - backend will be removed after frontend cleanup');
             } else {
                 logger.info({
                     deploymentId: context.deploymentId,

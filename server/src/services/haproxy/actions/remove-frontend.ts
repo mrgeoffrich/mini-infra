@@ -122,6 +122,51 @@ export class RemoveFrontend {
         "Frontend removed from HAProxy successfully"
       );
 
+      // Now that frontend is removed, remove the backend if it exists
+      const backendName = context.applicationName;
+      if (backendName) {
+        try {
+          const existingBackend = await this.haproxyClient.getBackend(backendName);
+          if (existingBackend) {
+            logger.info(
+              {
+                deploymentId: context.deploymentId,
+                backendName,
+              },
+              "Removing HAProxy backend after frontend removal"
+            );
+
+            await this.haproxyClient.deleteBackend(backendName);
+
+            logger.info(
+              {
+                deploymentId: context.deploymentId,
+                backendName,
+              },
+              "HAProxy backend removed successfully"
+            );
+          } else {
+            logger.info(
+              {
+                deploymentId: context.deploymentId,
+                backendName,
+              },
+              "Backend does not exist, skipping backend removal"
+            );
+          }
+        } catch (backendError) {
+          // Log warning but don't fail the removal if backend cleanup fails
+          logger.warn(
+            {
+              deploymentId: context.deploymentId,
+              backendName,
+              error: backendError instanceof Error ? backendError.message : "Unknown error",
+            },
+            "Failed to remove backend after frontend removal (non-critical)"
+          );
+        }
+      }
+
       // Update database record status
       await prisma.hAProxyFrontend.update({
         where: { id: frontendRecord.id },
