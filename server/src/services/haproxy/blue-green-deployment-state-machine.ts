@@ -471,10 +471,10 @@ export const blueGreenDeploymentMachine = setup({
         validationErrors: 0,
         retryCount: 0,
         activeConnections: 0,
-        oldContainerId: undefined,
-        newContainerId: undefined,
-        containerIpAddress: undefined,
-        containerPort: undefined,
+        oldContainerId: input?.oldContainerId,
+        newContainerId: input?.newContainerId,
+        containerIpAddress: input?.containerIpAddress,
+        containerPort: input?.containerPort,
         frontendName: undefined,
         dnsRecordId: undefined,
 
@@ -808,6 +808,10 @@ export const blueGreenDeploymentMachine = setup({
                 DRAIN_INITIATED: {
                     target: 'waitingForDrain',
                     actions: assign({ blueDraining: true })
+                },
+                DRAIN_ISSUES: {
+                    target: 'rollbackRestoreBlueTraffic',
+                    actions: 'preserveErrorContext'
                 }
             }
         },

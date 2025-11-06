@@ -38,6 +38,7 @@ import {
   EyeOff,
   Container,
   TestTube,
+  Network,
 } from "lucide-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
@@ -81,6 +82,15 @@ const systemSettingsSchema = z.object({
     .refine(
       (val) => !val || (Number(val) >= 1 && Number(val) <= 65535),
       "Port must be between 1 and 65535"
+    ),
+
+  // Docker Host IP Configuration
+  dockerHostIp: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(val),
+      "Must be a valid IPv4 address (e.g., 192.168.1.100)"
     ),
 });
 
@@ -138,6 +148,7 @@ export default function SystemSettingsPage() {
       restoreRegistryPassword: "",
       haproxyHttpPort: "",
       haproxyHttpsPort: "",
+      dockerHostIp: "",
     },
     mode: "onChange",
   });
@@ -179,6 +190,10 @@ export default function SystemSettingsPage() {
       form.setValue(
         "restoreRegistryPassword",
         settingsMap.restore_registry_password?.value || "",
+      );
+      form.setValue(
+        "dockerHostIp",
+        settingsMap.docker_host_ip?.value || "",
       );
     }
 
@@ -245,6 +260,12 @@ export default function SystemSettingsPage() {
           key: "restore_registry_password",
           value: data.restoreRegistryPassword || "",
           isEncrypted: true,
+        },
+        {
+          category: "system" as const,
+          key: "docker_host_ip",
+          value: data.dockerHostIp || "",
+          isEncrypted: false,
         },
       ];
 
@@ -714,6 +735,59 @@ export default function SystemSettingsPage() {
                       <AlertCircle className="h-4 w-4" />
                       <AlertDescription>
                         Port overrides apply to all HAProxy deployments. Ensure chosen ports are available on the host system.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+
+                {/* Docker Host Network Configuration */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <Network className="h-5 w-5" />
+                      <span>Docker Host Network Configuration</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure the Docker host IP address for DNS record creation
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-md bg-muted p-4 space-y-2">
+                      <h4 className="text-sm font-medium">What is this?</h4>
+                      <p className="text-sm text-muted-foreground">
+                        When deploying applications with DNS records, the system needs to know the public IP address
+                        of your Docker host to create proper DNS A records in Cloudflare.
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        This is typically your server's public IP address or the IP where HAProxy is accessible.
+                      </p>
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="dockerHostIp"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Docker Host IP Address</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., 192.168.1.100 or 203.0.113.1"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            IPv4 address of your Docker host (required for DNS record creation)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Alert>
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        This IP address will be used to create DNS A records for deployed applications.
+                        Make sure it's accessible from the internet if you're deploying public-facing services.
                       </AlertDescription>
                     </Alert>
                   </CardContent>

@@ -60,17 +60,6 @@ export class DeploymentDNSManager {
         },
       });
 
-      if (existingDNSRecord) {
-        logger.info(
-          { deploymentConfigId, recordId: existingDNSRecord.id },
-          "DNS record already exists for deployment"
-        );
-        return {
-          id: existingDNSRecord.id,
-          hostname: existingDNSRecord.hostname,
-        };
-      }
-
       // Check network type
       if (environment.networkType === "internet") {
         logger.info(
@@ -81,6 +70,11 @@ export class DeploymentDNSManager {
           },
           "Network type is 'internet', skipping DNS creation (external DNS assumed)"
         );
+
+        // If existing record is external, return it
+        if (existingDNSRecord?.dnsProvider === "external") {
+          return null;
+        }
 
         // Create a tracking record with status 'external'
         const dnsRecord = await prisma.deploymentDNSRecord.create({
@@ -95,7 +89,7 @@ export class DeploymentDNSManager {
         return null; // Return null to indicate DNS was skipped
       }
 
-      // For 'local' network type, create CloudFlare DNS record
+      // For 'local' network type, create or update CloudFlare DNS record
       logger.info(
         {
           deploymentConfigId,
@@ -105,21 +99,82 @@ export class DeploymentDNSManager {
         "Network type is 'local', creating CloudFlare DNS record"
       );
 
-      // Create pending DNS record in database
-      const pendingDNSRecord = await prisma.deploymentDNSRecord.create({
-        data: {
+      // Get the IP address we need to set
+      const ipAddress =
+        await networkUtils.getAppropriateIPForEnvironment(environment.id);
+
+      // If we have an existing active record with Cloudflare details, check if IP needs updating
+      if (
+        existingDNSRecord &&
+        existingDNSRecord.status === "active" &&
+        existingDNSRecord.dnsRecordId &&
+        existingDNSRecord.zoneId
+      ) {
+        // Check if IP has changed
+        if (existingDNSRecord.ipAddress === ipAddress) {
+          logger.info(
+            {
+              deploymentConfigId,
+              recordId: existingDNSRecord.id,
+              ipAddress,
+            },
+            "DNS record already exists and is up to date"
+          );
+          return {
+            id: existingDNSRecord.id,
+            hostname: existingDNSRecord.hostname,
+          };
+        }
+
+        // IP has changed, update it
+        logger.info(
+          {
+            deploymentConfigId,
+            recordId: existingDNSRecord.id,
+            oldIP: existingDNSRecord.ipAddress,
+            newIP: ipAddress,
+          },
+          "DNS record exists but IP has changed, updating"
+        );
+
+        await this.updateDNSRecordIP(deploymentConfigId, ipAddress);
+
+        return {
+          id: existingDNSRecord.id,
+          hostname: existingDNSRecord.hostname,
+        };
+      }
+
+      // Create pending DNS record in database (or update existing failed/pending record)
+      const pendingDNSRecord = existingDNSRecord
+        ? await prisma.deploymentDNSRecord.update({
+            where: { id: existingDNSRecord.id },
+            data: {
+              status: "pending",
+              errorMessage: null,
+            },
+          })
+        : await prisma.deploymentDNSRecord.create({
+            data: {
+              deploymentConfigId,
+              hostname,
+              dnsProvider: "cloudflare",
+              status: "pending",
+            },
+          });
+
+      logger.info(
+        {
           deploymentConfigId,
-          hostname,
-          dnsProvider: "cloudflare",
-          status: "pending",
+          recordId: pendingDNSRecord.id,
+          isRetry: !!existingDNSRecord,
         },
-      });
+        existingDNSRecord
+          ? "Retrying DNS record creation for failed/incomplete record"
+          : "Creating new DNS record"
+      );
 
       try {
-        // Get Docker host IP
-        const ipAddress =
-          await networkUtils.getAppropriateIPForEnvironment(environment.id);
-
         logger.info(
           { deploymentConfigId, hostname, ipAddress },
           "Creating DNS A record in CloudFlare"
