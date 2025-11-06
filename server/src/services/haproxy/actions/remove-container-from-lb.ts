@@ -1,13 +1,43 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import DockerService from '../../docker';
 
 const logger = loadbalancerLogger();
 
 export class RemoveContainerFromLB {
     private haproxyClient: HAProxyDataPlaneClient;
+    private dockerService: DockerService;
 
     constructor() {
         this.haproxyClient = new HAProxyDataPlaneClient();
+        this.dockerService = DockerService.getInstance();
+    }
+
+    /**
+     * Check if a container exists in Docker by extracting the container ID from the server name
+     * Server names follow the pattern: {applicationName}-{containerId-first-8-chars}
+     */
+    private async containerExists(serverName: string, applicationName: string): Promise<boolean> {
+        try {
+            // Extract container ID prefix from server name (e.g., "geoffsnginx-ac4d64b7" -> "ac4d64b7")
+            const containerIdPrefix = serverName.replace(`${applicationName}-`, '');
+
+            // Initialize Docker service
+            await this.dockerService.initialize();
+            const docker = await this.dockerService.getDockerInstance();
+
+            // List all containers (including stopped ones) that match the prefix
+            const containers = await docker.listContainers({ all: true });
+            const matchingContainer = containers.find(c => c.Id.startsWith(containerIdPrefix));
+
+            return !!matchingContainer;
+        } catch (error) {
+            logger.warn({
+                serverName,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            }, 'Failed to check if container exists, assuming it does not exist');
+            return false;
+        }
     }
 
     async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
@@ -83,9 +113,63 @@ export class RemoveContainerFromLB {
                 }
             }
 
+            // Clean up any stale servers (servers whose containers no longer exist)
+            logger.info({
+                deploymentId: context.deploymentId,
+                backendName
+            }, 'Checking for stale servers in HAProxy backend');
+
+            const servers = await this.haproxyClient.listServers(backendName);
+            if (servers && servers.length > 0) {
+                const staleServers: string[] = [];
+
+                for (const server of servers) {
+                    const exists = await this.containerExists(server.name, context.applicationName);
+                    if (!exists) {
+                        staleServers.push(server.name);
+                    }
+                }
+
+                if (staleServers.length > 0) {
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        backendName,
+                        staleServers,
+                        count: staleServers.length
+                    }, 'Found stale servers to remove from HAProxy backend');
+
+                    for (const serverName of staleServers) {
+                        try {
+                            const serverInRuntime = await this.haproxyClient.isServerInRuntime(backendName, serverName);
+                            if (serverInRuntime) {
+                                await this.haproxyClient.deleteServer(backendName, serverName);
+                                logger.info({
+                                    deploymentId: context.deploymentId,
+                                    backendName,
+                                    serverName
+                                }, 'Stale server successfully removed from HAProxy backend');
+                            }
+                        } catch (error) {
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                backendName,
+                                serverName,
+                                error: error instanceof Error ? error.message : 'Unknown error'
+                            }, 'Failed to remove stale server, continuing with cleanup');
+                        }
+                    }
+                } else {
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        backendName,
+                        totalServers: servers.length
+                    }, 'No stale servers found in HAProxy backend');
+                }
+            }
+
             // Check if backend has any remaining servers
-            const backend = await this.haproxyClient.getBackend(backendName);
-            if (backend && (!backend.servers || backend.servers.length === 0)) {
+            const remainingServers = await this.haproxyClient.listServers(backendName);
+            if (!remainingServers || remainingServers.length === 0) {
                 logger.info({
                     deploymentId: context.deploymentId,
                     backendName
@@ -94,7 +178,7 @@ export class RemoveContainerFromLB {
                 logger.info({
                     deploymentId: context.deploymentId,
                     backendName,
-                    remainingServers: backend?.servers?.length || 0
+                    remainingServers: remainingServers.length
                 }, 'Backend still has servers, keeping backend configuration');
             }
 

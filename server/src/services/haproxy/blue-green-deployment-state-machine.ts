@@ -266,7 +266,12 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         stopBlueApplication: ({ context, self }) => {
-            stopApplication.execute(context, (event) => {
+            // Map oldContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.oldContainerId
+            };
+            stopApplication.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
@@ -277,7 +282,12 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         removeBlueApplication: ({ context, self }) => {
-            removeApplication.execute(context, (event) => {
+            // Map oldContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.oldContainerId
+            };
+            removeApplication.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
@@ -960,10 +970,14 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Stopping blue application containers',
             entry: 'stopBlueApplication',
             on: {
-                BLUE_APP_STOPPED: {
+                STOP_SUCCESS: {
                     target: 'removingBlueApp'
                 },
                 BLUE_APP_STOP_ERROR: {
+                    target: 'failed',
+                    actions: assign({ error: 'Blue app stop failed (Non-Critical)' })
+                },
+                STOP_FAILED: {
                     target: 'failed',
                     actions: assign({ error: 'Blue app stop failed (Non-Critical)' })
                 }
@@ -974,10 +988,14 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Removing blue application resources',
             entry: 'removeBlueApplication',
             on: {
-                BLUE_APP_REMOVED: {
+                REMOVAL_SUCCESS: {
                     target: 'completed'
                 },
                 BLUE_APP_REMOVAL_ERROR: {
+                    target: 'failed',
+                    actions: assign({ error: 'Blue app removal failed (Non-Critical)' })
+                },
+                REMOVAL_FAILED: {
                     target: 'failed',
                     actions: assign({ error: 'Blue app removal failed (Non-Critical)' })
                 }

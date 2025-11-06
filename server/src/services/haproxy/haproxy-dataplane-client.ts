@@ -571,6 +571,24 @@ export class HAProxyDataPlaneClient {
   }
 
   /**
+   * List all servers in a backend
+   */
+  async listServers(backendName: string): Promise<Server[]> {
+    try {
+      const response = await this.axiosInstance.get(
+        `/services/haproxy/configuration/backends/${backendName}/servers`
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return [];
+      }
+      this.handleApiError(error, 'list servers', { backendName });
+      return [];
+    }
+  }
+
+  /**
    * Delete server from backend
    */
   async deleteServer(backendName: string, serverName: string): Promise<void> {
