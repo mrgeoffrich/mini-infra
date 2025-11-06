@@ -326,7 +326,14 @@ export const blueGreenDeploymentMachine = setup({
                 containerId: context.newContainerId
             };
             stopApplication.execute(contextWithContainerId, (event) => {
-                self.send(event);
+                // Map stop events to rollback events
+                if (event.type === 'STOP_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_GREEN_APP_STOPPED' });
+                } else if (event.type === 'STOP_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
@@ -342,7 +349,14 @@ export const blueGreenDeploymentMachine = setup({
                 containerId: context.newContainerId
             };
             removeApplication.execute(contextWithContainerId, (event) => {
-                self.send(event);
+                // Map removal events to rollback events
+                if (event.type === 'REMOVAL_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_GREEN_APP_REMOVED' });
+                } else if (event.type === 'REMOVAL_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
@@ -366,6 +380,77 @@ export const blueGreenDeploymentMachine = setup({
 
         cleanupTempResources: ({ context }) => {
             cleanupTempResources.execute(context);
+        },
+
+        cleanupFailedDeployment: async ({ context }) => {
+            const logger = deploymentLogger();
+            logger.warn({
+                deploymentId: context.deploymentId,
+                applicationName: context.applicationName,
+                newContainerId: context.newContainerId?.slice(0, 12),
+                error: context.error
+            }, 'Attempting best-effort cleanup of failed deployment');
+
+            // Best-effort cleanup - don't fail if any step fails
+            try {
+                // If we have a green container, try to remove it and its HAProxy config
+                if (context.newContainerId) {
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        containerId: context.newContainerId.slice(0, 12)
+                    }, 'Attempting to clean up green container from failed deployment');
+
+                    // Try to remove from HAProxy first
+                    try {
+                        const contextWithContainerId = {
+                            ...context,
+                            containerId: context.newContainerId
+                        };
+                        await removeContainerFromLB.execute(contextWithContainerId, () => {});
+                        logger.info({
+                            deploymentId: context.deploymentId,
+                            containerId: context.newContainerId.slice(0, 12)
+                        }, 'Removed green container from HAProxy');
+                    } catch (lbError) {
+                        logger.warn({
+                            deploymentId: context.deploymentId,
+                            containerId: context.newContainerId.slice(0, 12),
+                            error: lbError instanceof Error ? lbError.message : 'Unknown error'
+                        }, 'Failed to remove container from HAProxy during cleanup');
+                    }
+
+                    // Try to stop and remove the container
+                    try {
+                        const contextWithContainerId = {
+                            ...context,
+                            containerId: context.newContainerId
+                        };
+                        await stopApplication.execute(contextWithContainerId, () => {});
+                        await removeApplication.execute(contextWithContainerId, () => {});
+                        logger.info({
+                            deploymentId: context.deploymentId,
+                            containerId: context.newContainerId.slice(0, 12)
+                        }, 'Stopped and removed green container');
+                    } catch (containerError) {
+                        logger.warn({
+                            deploymentId: context.deploymentId,
+                            containerId: context.newContainerId.slice(0, 12),
+                            error: containerError instanceof Error ? containerError.message : 'Unknown error'
+                        }, 'Failed to stop/remove container during cleanup');
+                    }
+                }
+
+                logger.info({
+                    deploymentId: context.deploymentId,
+                    applicationName: context.applicationName
+                }, 'Failed deployment cleanup completed (best-effort)');
+            } catch (error) {
+                logger.error({
+                    deploymentId: context.deploymentId,
+                    applicationName: context.applicationName,
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                }, 'Unexpected error during failed deployment cleanup');
+            }
         },
 
         // Context management actions
@@ -894,7 +979,7 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'rollbackDisableGreenTraffic'
                 },
                 ROLLBACK_ERROR: {
-                    target: 'failed',
+                    target: 'rollbackDisableGreenTraffic',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -908,7 +993,7 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'rollbackStoppingGreenApp'
                 },
                 ROLLBACK_ERROR: {
-                    target: 'failed',
+                    target: 'rollbackStoppingGreenApp',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -936,8 +1021,8 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'rollbackRemovingGreenApp'
                 },
                 ROLLBACK_ERROR: {
-                    target: 'failed',
-                    actions: assign({ error: 'Green app stop failed (Continue)' })
+                    target: 'rollbackRemovingGreenApp',
+                    actions: assign({ error: 'Green app stop failed - continuing cleanup' })
                 }
             }
         },
@@ -950,21 +1035,16 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'rollbackComplete'
                 },
                 ROLLBACK_ERROR: {
-                    target: 'failed',
-                    actions: assign({ error: 'Green app removal failed (Continue)' })
+                    target: 'rollbackComplete',
+                    actions: assign({ error: 'Green app removal had errors - rollback completed with warnings' })
                 }
             }
         },
 
         rollbackComplete: {
-            description: 'Rollback successfully completed',
-            entry: ['logDeploymentSuccess', 'cleanupTempResources'],
-            on: {
-                RESET: {
-                    target: 'idle',
-                    actions: 'resetState'
-                }
-            }
+            type: 'final' as const,
+            description: 'Rollback successfully completed - deployment failed but cleaned up',
+            entry: ['alertOperationsTeam', 'cleanupTempResources']
         },
 
         completed: {
@@ -980,14 +1060,12 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         failed: {
-            description: 'Deployment failed, manual intervention required',
-            entry: 'alertOperationsTeam',
-            on: {
-                MANUAL_INTERVENTION_COMPLETE: {
-                    target: 'idle',
-                    actions: 'resetState'
-                }
-            }
+            type: 'final' as const,
+            description: 'Deployment failed - attempting best-effort cleanup',
+            entry: [
+                'alertOperationsTeam',
+                'cleanupFailedDeployment'
+            ]
         }
     }
 });
