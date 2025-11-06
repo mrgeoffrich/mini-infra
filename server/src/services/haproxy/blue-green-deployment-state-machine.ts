@@ -123,8 +123,8 @@ type BlueGreenDeploymentEvent =
     | { type: 'DRAIN_ISSUES'; error: string }
 
     // Blue decommission events
-    | { type: 'BLUE_LB_REMOVED' }
-    | { type: 'BLUE_LB_REMOVAL_ERROR'; error: string }
+    | { type: 'LB_REMOVAL_SUCCESS' }
+    | { type: 'LB_REMOVAL_FAILED'; error: string }
     | { type: 'BLUE_APP_STOPPED' }
     | { type: 'BLUE_APP_STOP_ERROR'; error: string }
     | { type: 'BLUE_APP_REMOVED' }
@@ -259,7 +259,7 @@ export const blueGreenDeploymentMachine = setup({
                 self.send(event);
             }).catch((error) => {
                 self.send({
-                    type: 'BLUE_LB_REMOVAL_ERROR',
+                    type: 'LB_REMOVAL_FAILED',
                     error: error.message || 'Unknown error'
                 });
             });
@@ -946,10 +946,10 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Removing blue backend from HAProxy configuration',
             entry: 'removeBlueFromLB',
             on: {
-                BLUE_LB_REMOVED: {
+                LB_REMOVAL_SUCCESS: {
                     target: 'stoppingBlueApp'
                 },
-                BLUE_LB_REMOVAL_ERROR: {
+                LB_REMOVAL_FAILED: {
                     target: 'failed',
                     actions: assign({ error: 'Unable to remove blue backend (Non-Critical)' })
                 }
