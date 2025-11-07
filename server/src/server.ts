@@ -25,6 +25,7 @@ import { PostgresDatabaseHealthScheduler } from "./services/postgres-database-he
 import { ServiceRecoveryManager } from "./services/service-recovery";
 import { EnvironmentHealthScheduler } from "./services/environment-health-scheduler";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
+import { SelfBackupScheduler } from "./services/self-backup-scheduler";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
@@ -33,6 +34,7 @@ let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
+let selfBackupScheduler: SelfBackupScheduler | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -84,6 +86,12 @@ const initializeServices = async () => {
     );
     environmentHealthScheduler.start();
     logger.info("Environment health scheduler initialized successfully");
+
+    // Initialize self-backup scheduler
+    selfBackupScheduler = new SelfBackupScheduler(prisma);
+    SelfBackupScheduler.setInstance(selfBackupScheduler);
+    await selfBackupScheduler.initialize();
+    logger.info("Self-backup scheduler initialized successfully");
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -196,6 +204,11 @@ startServer()
       if (restoreExecutorService) {
         await restoreExecutorService.shutdown();
         logger.info("Restore executor service stopped");
+      }
+
+      if (selfBackupScheduler) {
+        await selfBackupScheduler.shutdown();
+        logger.info("Self-backup scheduler stopped");
       }
 
       // Shutdown OpenTelemetry

@@ -206,6 +206,32 @@ model RestoreOperation {
   @@map("restore_operations")
 }
 
+// Self-Backup Model for Mini Infra database backups
+model SelfBackup {
+  id                String   @id @default(cuid())
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  status            String   // 'in_progress', 'completed', 'failed'
+  filePath          String?  // Temp file path during backup
+  azureBlobUrl      String?  // URL after successful upload
+  azureContainerName String
+  fileName          String   // mini-infra-{timestamp}.db.zip
+  fileSize          Int?     // Bytes
+  errorMessage      String?
+  errorCode         String?
+  triggeredBy       String   // 'scheduled' or 'manual'
+  userId            String?  // If manual trigger
+  durationMs        Int?     // Backup duration in milliseconds
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([azureContainerName])
+  @@map("self_backups")
+}
+
 // Zero-Downtime Deployment System Models
 
 // DeploymentConfiguration model for managing per-application deployment settings

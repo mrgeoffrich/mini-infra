@@ -125,6 +125,8 @@ import environmentNetworksRoutes from "./routes/environment-networks";
 import environmentVolumesRoutes from "./routes/environment-volumes";
 import deploymentDnsRoutes from "./routes/deployment-dns";
 import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
+import selfBackupSettingsRoutes from "./routes/settings-self-backup";
+import selfBackupsRoutes from "./routes/self-backups";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -153,6 +155,8 @@ app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic 
 app.use("/api/environments", environmentsRoutes);
 app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
+app.use("/api/settings/self-backup", selfBackupSettingsRoutes);
+app.use("/api/self-backups", selfBackupsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
