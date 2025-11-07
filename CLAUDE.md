@@ -269,6 +269,295 @@ The backend implements a sophisticated service layer with dependency injection, 
 - `npx prisma generate` - Generate Prisma client
 - `npx prisma migrate dev` - Create and apply new migration
 
+## Docker Deployment
+
+The application includes a production-ready Docker build that containerizes both the Express.js server and the built frontend application. The Docker image is automatically built and published to GitHub Container Registry on every push to the main branch.
+
+### Building the Docker Image
+
+#### Local Build
+
+Build the Docker image locally:
+
+```bash
+# Build the image
+docker build -t mini-infra:latest .
+
+# The build process uses multi-stage builds:
+# Stage 1: Build shared types library (lib)
+# Stage 2: Build frontend application (client)
+# Stage 3: Build backend application (server)
+# Stage 4: Create production runtime image
+```
+
+#### Automated Builds (CI/CD)
+
+GitHub Actions automatically builds and pushes images on:
+- **Push to main branch**: Builds and pushes to ghcr.io with tags: `latest`, `main-<sha>`
+- **Pull requests**: Builds only (validates Docker build without pushing)
+- **Manual dispatch**: Can trigger builds manually from GitHub Actions UI
+
+### Running the Container
+
+#### Basic Usage
+
+```bash
+# Run with minimal configuration
+docker run -d \
+  --name mini-infra \
+  -p 5000:5000 \
+  -v mini-infra-data:/app/data \
+  -e SESSION_SECRET=your_session_secret_here \
+  -e API_KEY_SECRET=your_api_key_secret_here \
+  ghcr.io/mrgeoffrich/mini-infra:latest
+```
+
+#### Production Usage with Docker Socket Access
+
+Since Mini Infra manages Docker containers, it needs access to the Docker daemon:
+
+```bash
+docker run -d \
+  --name mini-infra \
+  -p 5000:5000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v mini-infra-data:/app/data \
+  -v mini-infra-logs:/app/server/logs \
+  -e SESSION_SECRET=your_session_secret \
+  -e API_KEY_SECRET=your_api_key_secret \
+  -e GOOGLE_CLIENT_ID=your_google_client_id \
+  -e GOOGLE_CLIENT_SECRET=your_google_client_secret \
+  ghcr.io/mrgeoffrich/mini-infra:latest
+```
+
+**Security Warning**: Mounting the Docker socket (`/var/run/docker.sock`) gives the container full control over the host Docker daemon. Only run in trusted environments.
+
+### Required Environment Variables
+
+#### Critical (Must Configure)
+
+These environment variables are required for the application to function:
+
+- **`SESSION_SECRET`** - Secret key for JWT session token signing (must be unique per deployment)
+- **`API_KEY_SECRET`** - Secret key for API key hashing (must be unique per deployment)
+- **`DATABASE_URL`** - Database connection string (default: `file:/app/data/production.db`)
+
+#### Authentication (Optional - for Google OAuth)
+
+- **`GOOGLE_CLIENT_ID`** - Google OAuth 2.0 client ID
+- **`GOOGLE_CLIENT_SECRET`** - Google OAuth 2.0 client secret
+- **`GOOGLE_CALLBACK_URL`** - OAuth callback URL (default: `http://localhost:5000/auth/google/callback`)
+
+#### External Services (Optional - configured via UI)
+
+These services can be configured through the application UI after deployment:
+- Docker host connection settings
+- Azure Blob Storage credentials
+- Cloudflare API credentials
+
+#### Observability (Optional)
+
+- **`LOG_LEVEL`** - Logging verbosity level (default: `info`, options: `trace`, `debug`, `info`, `warn`, `error`, `fatal`)
+- **`OTEL_ENABLED`** - Enable OpenTelemetry tracing (default: `false`)
+- **`OPENOBSERVE_URL`** - OpenObserve instance URL for observability
+
+### Volume Mounts
+
+#### Required Volumes
+
+- **`/app/data`** - Database persistence (SQLite database file stored here)
+  - Contains the production database file
+  - Must be persisted across container restarts
+  - Prisma migrations are automatically applied on startup
+
+#### Recommended Volumes
+
+- **`/app/server/logs`** - Application logs persistence
+  - Contains structured Pino logs organized by domain
+  - Useful for debugging and monitoring
+  - Log rotation handled automatically
+
+### Health Checks
+
+The container includes a built-in health check:
+
+- **Endpoint**: `http://localhost:5000/health`
+- **Interval**: 30 seconds
+- **Timeout**: 3 seconds
+- **Start Period**: 40 seconds (allows for initialization and migrations)
+- **Retries**: 3 attempts before marking unhealthy
+
+The health check uses Node.js built-in HTTP module (no extra dependencies) and validates that the Express server is responding correctly.
+
+### GitHub Container Registry
+
+Production images are automatically built and published to GitHub Container Registry (ghcr.io):
+
+#### Pulling Images
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/mrgeoffrich/mini-infra:latest
+
+# Pull a specific commit SHA
+docker pull ghcr.io/mrgeoffrich/mini-infra:main-abc1234
+
+# Pull a specific version (if tagged)
+docker pull ghcr.io/mrgeoffrich/mini-infra:1.0.0
+```
+
+#### Image Tags
+
+The CI/CD pipeline creates multiple tags:
+- **`latest`** - Latest build from main branch
+- **`main-<sha>`** - Specific commit SHA from main branch
+- **`<version>`** - Semantic version tags (if releases are tagged)
+
+### Container Startup Process
+
+When the container starts, it automatically:
+
+1. **Runs Prisma Migrations**: `npx prisma migrate deploy`
+   - Applies any pending database migrations
+   - Safe for production (only applies committed migrations)
+   - Idempotent (safe to run multiple times)
+
+2. **Starts the Server**: `node dist/server.js`
+   - Initializes Express.js application
+   - Serves frontend from `/app/server/public`
+   - Handles API requests at `/api/*`
+   - Starts background schedulers and health monitors
+
+### Database Considerations
+
+#### Default: SQLite
+
+- Uses file-based SQLite database at `/app/data/production.db`
+- Requires volume mount at `/app/data` for persistence
+- Good for single-instance deployments
+- Automatic migrations on container startup
+
+#### Alternative: PostgreSQL
+
+The application supports PostgreSQL via Prisma:
+- Set `DATABASE_URL` to PostgreSQL connection string
+- Example: `postgresql://user:password@host:5432/database`
+- Requires external PostgreSQL server or container
+
+### Docker Socket Access
+
+Since Mini Infra manages Docker containers on the host, it needs Docker daemon access:
+
+#### Host Docker Socket Mount (Recommended)
+
+```bash
+-v /var/run/docker.sock:/var/run/docker.sock
+```
+
+**Pros**: Simple, direct access to host Docker daemon
+**Cons**: Security risk - container has full Docker control
+**Use Case**: Trusted environments, development, single-host deployments
+
+#### Docker-in-Docker (Alternative)
+
+For isolated environments, consider Docker-in-Docker (DinD):
+- Run Docker daemon inside container
+- Better isolation but more complex
+- Higher resource usage
+
+**Recommendation**: Only deploy with Docker socket access in trusted environments where container security is ensured through other means (network isolation, access controls, etc.).
+
+### Image Optimization
+
+The Docker image is optimized for size and security:
+
+- **Base Image**: `node:20-alpine` (minimal footprint)
+- **Multi-Stage Build**: Only runtime dependencies in final image
+- **Size**: Approximately 300-400MB
+- **Security**: Runs as non-root `node` user
+- **No Source Code**: Only compiled JavaScript in production image
+- **Layer Caching**: Optimized for fast rebuilds in CI/CD
+
+### Example docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  mini-infra:
+    image: ghcr.io/mrgeoffrich/mini-infra:latest
+    container_name: mini-infra
+    ports:
+      - "5000:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - mini-infra-data:/app/data
+      - mini-infra-logs:/app/server/logs
+    environment:
+      - NODE_ENV=production
+      - SESSION_SECRET=${SESSION_SECRET}
+      - API_KEY_SECRET=${API_KEY_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  mini-infra-data:
+  mini-infra-logs:
+```
+
+### Graceful Shutdown
+
+The application handles graceful shutdown properly:
+
+- Listens for `SIGTERM` and `SIGINT` signals
+- Stops schedulers and background services
+- Closes database connections cleanly
+- Shuts down OpenTelemetry exporters
+- 30-second timeout before force termination
+
+Docker respects this behavior:
+- `docker stop` sends `SIGTERM`
+- 10-second grace period (default)
+- Container shuts down cleanly
+
+### Troubleshooting
+
+#### Container Won't Start
+
+Check logs:
+```bash
+docker logs mini-infra
+```
+
+Common issues:
+- Missing required environment variables (SESSION_SECRET, API_KEY_SECRET)
+- Database migration failures
+- Port 5000 already in use
+
+#### Database Issues
+
+Check database permissions:
+```bash
+docker exec mini-infra ls -la /app/data
+```
+
+Ensure volume is mounted and writable.
+
+#### Health Check Failing
+
+Check application health:
+```bash
+docker exec mini-infra node -e "require('http').get('http://localhost:5000/health', (r) => {r.on('data', d => console.log(d.toString()))})"
+```
+
 ## API Route Development Guide
 
 ### Creating New Routes
