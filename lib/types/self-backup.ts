@@ -91,6 +91,7 @@ export interface SelfBackupConfigResponse {
   success: boolean;
   config: SelfBackupConfig | null;
   scheduleInfo: ScheduleInfo | null;
+  error?: string;
 }
 
 export interface TriggerBackupResponse {
@@ -108,9 +109,11 @@ export interface BackupHistoryResponse {
     limit: number;
     totalPages: number;
   };
+  error?: string;
 }
 
 export interface BackupHealthResponse {
   success: boolean;
   health: BackupHealthStatus;
+  error?: string;
 }

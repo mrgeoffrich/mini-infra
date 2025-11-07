@@ -5,14 +5,72 @@ import {
   IconBrandDocker,
   IconCloud,
   IconBrandAzure,
+  IconDatabase,
 } from "@tabler/icons-react";
 import {
   useConnectivityStatus,
   ConnectivityService,
 } from "@/hooks/use-settings";
+import { useBackupHealth } from "@/hooks/use-self-backup";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useCurrentPageTitle, usePageTitle } from "@/hooks/use-page-title";
 
+
+// Backup health indicator component
+function BackupHealthIndicator() {
+  const { data: healthData } = useBackupHealth({
+    refetchInterval: 60000, // Refresh every minute
+  });
+
+  if (!healthData?.health) {
+    return null;
+  }
+
+  const { status, message } = healthData.health;
+
+  // Determine color and icon based on status
+  const getStatusColor = () => {
+    switch (status) {
+      case "healthy":
+        return "bg-green-500";
+      case "warning":
+        return "bg-yellow-500";
+      case "error":
+        return "bg-red-500";
+      case "not_configured":
+        return "bg-gray-400";
+      default:
+        return "bg-gray-400";
+    }
+  };
+
+  const content = (
+    <div className="flex items-center gap-1.5">
+      <IconDatabase size={16} className="text-muted-foreground" />
+      <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
+    </div>
+  );
+
+  // If there's an issue, make it clickable
+  if (status !== "healthy") {
+    return (
+      <Link
+        to="/settings/self-backup"
+        className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
+        title={`Self-Backup: ${message} - Click to configure`}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  // If healthy, just show the status without link
+  return (
+    <div className="flex items-center gap-1.5" title={`Self-Backup: ${message}`}>
+      {content}
+    </div>
+  );
+}
 
 // Connectivity status indicator component
 function ConnectivityIndicator({
@@ -118,6 +176,7 @@ export function SiteHeader() {
               icon={IconBrandAzure}
               label="Azure"
             />
+            <BackupHealthIndicator />
           </div>
         </div>
       </header>
