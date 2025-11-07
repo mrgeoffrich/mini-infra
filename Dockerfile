@@ -7,7 +7,7 @@
 # ============================================
 # Stage 1: Build shared types library
 # ============================================
-FROM node:20-alpine AS lib-builder
+FROM node:24-alpine AS lib-builder
 
 WORKDIR /app
 
@@ -17,16 +17,14 @@ COPY package*.json ./
 # Copy lib package
 COPY lib ./lib
 
-# Install dependencies for lib workspace only
-RUN npm install --workspace=lib
-
-# Build shared types
-RUN npm run build:lib
+# Install dependencies and build shared types
+RUN npm install --workspace=lib && \
+    npm run build:lib
 
 # ============================================
 # Stage 2: Build frontend application
 # ============================================
-FROM node:20-alpine AS client-builder
+FROM node:24-alpine AS client-builder
 
 WORKDIR /app
 
@@ -43,12 +41,15 @@ COPY client ./client
 RUN npm install --workspace=client
 
 # Build frontend (outputs to server/public via vite.config.ts)
-RUN cd client && npm run build
+WORKDIR /app/client
+RUN npm run build
+
+WORKDIR /app
 
 # ============================================
 # Stage 3: Build backend application
 # ============================================
-FROM node:20-alpine AS server-builder
+FROM node:24-alpine AS server-builder
 
 WORKDIR /app
 
@@ -64,19 +65,20 @@ COPY server ./server
 # Install all dependencies (including dev dependencies for build)
 RUN npm install --workspace=server --production=false
 
-# Generate Prisma client
-RUN cd server && npx prisma generate
+# Generate Prisma client and build backend
+WORKDIR /app/server
+RUN npx prisma generate && \
+    npm run build
 
-# Build backend TypeScript to JavaScript
-RUN cd server && npm run build
+WORKDIR /app
 
 # ============================================
 # Stage 4: Production runtime image
 # ============================================
-FROM node:20-alpine AS production
+FROM node:24-alpine AS production
 
 # Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init=1.2.5-r3
 
 WORKDIR /app
 
@@ -98,14 +100,14 @@ COPY --from=client-builder /app/server/public ./server/public
 # Copy built backend JavaScript
 COPY --from=server-builder /app/server/dist ./server/dist
 
-# Copy production node_modules from server build stage
-COPY --from=server-builder /app/server/node_modules ./server/node_modules
-
 # Copy Prisma schema and migrations for runtime
 COPY server/prisma ./server/prisma
 
 # Copy configuration files
 COPY server/config ./server/config
+
+# Install production dependencies only (after copying package files)
+RUN npm install --workspace=lib --workspace=server --omit=dev
 
 # Create directories for data and logs with proper permissions
 RUN mkdir -p /app/data /app/server/logs && \

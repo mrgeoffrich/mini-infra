@@ -53,7 +53,11 @@
       "Bash(docker logs:*)",
       "Bash(docker exec:*)",
       "Bash(docker stop:*)",
-      "Bash(docker rm:*)"
+      "Bash(docker rm:*)",
+      "Bash(docker run:*)",
+      "Bash(docker scout:*)",
+      "Bash(docker pull:*)",
+      "Bash(docker build:*)"
     ],
     "deny": [],
     "ask": [],
