@@ -118,7 +118,7 @@ USER node
 ENV NODE_ENV=production
 
 # Default database location (can be overridden)
-ENV DATABASE_URL=file:/app/data/production.db
+ENV DATABASE_URL=file:/app/data/production.db?foreign_keys=true
 
 WORKDIR /app/server
 
