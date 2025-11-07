@@ -60,6 +60,15 @@
       "rotation": {
         "enabled": false
       }
+    },
+    "self-backup": {
+      "level": "info",
+      "destination": "logs/app-self-backup.log",
+      "prettyPrint": false,
+      "includeCaller": true,
+      "rotation": {
+        "enabled": false
+      }
     }
   },
   "production": {
@@ -132,6 +141,16 @@
         "maxFiles": "14d",
         "maxSize": "10m"
       }
+    },
+    "self-backup": {
+      "level": "info",
+      "destination": "logs/app-self-backup.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
     }
   },
   "test": {
@@ -154,6 +173,9 @@
       "level": "silent"
     },
     "loadbalancer": {
+      "level": "silent"
+    },
+    "self-backup": {
       "level": "silent"
     }
   },

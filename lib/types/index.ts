@@ -32,6 +32,9 @@ export * from "./services";
 // Environment types
 export * from "./environments";
 
+// Self-backup types
+export * from "./self-backup";
+
 // API response types
 export * from "./api";
 
