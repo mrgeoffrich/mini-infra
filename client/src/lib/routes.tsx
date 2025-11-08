@@ -12,6 +12,7 @@ import AzureSettingsPage from "@/app/connectivity/azure/page";
 import { ConnectivityPage } from "@/app/connectivity/page";
 import SystemSettingsPage from "@/app/settings/system/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
+import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
 import PostgresPage from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import { TunnelsPage } from "@/app/tunnels/page";
@@ -131,6 +132,10 @@ export const router = createBrowserRouter([
       {
         path: "settings/registry-credentials",
         element: <RegistryCredentialsPage />,
+      },
+      {
+        path: "settings/self-backup",
+        element: <SelfBackupSettingsPage />,
       },
       {
         path: "user/settings",

@@ -136,10 +136,11 @@ import registryCredentialsRoutes from "./routes/registry-credentials";
 app.use("/auth", authRoutes);
 app.use("/api/keys", apiKeyRoutes);
 app.use("/api/containers", containerRoutes);
-app.use("/api/settings", settingsRoutes);
+app.use("/api/settings/self-backup", selfBackupSettingsRoutes);
 app.use("/api/settings/system", systemSettingsRoutes);
 app.use("/api/settings/azure", azureSettingsRoutes);
 app.use("/api/settings/cloudflare", cloudflareSettingsRoutes);
+app.use("/api/settings", settingsRoutes);
 app.use("/api/connectivity/azure", azureConnectivityRoutes);
 app.use("/api/connectivity", cloudflareConnectivityRoutes);
 app.use("/api/postgres/databases", postgresDatabasesRoutes);
@@ -156,7 +157,6 @@ app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic 
 app.use("/api/environments", environmentsRoutes);
 app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
-app.use("/api/settings/self-backup", selfBackupSettingsRoutes);
 app.use("/api/self-backups", selfBackupsRoutes);
 app.use("/api/registry-credentials", registryCredentialsRoutes);
 
