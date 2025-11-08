@@ -114,109 +114,6 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
 });
 
 /**
- * GET /:id - Get specific backup details
- */
-router.get("/:id", requireSessionOrApiKey, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const backup = await prisma.selfBackup.findUnique({
-      where: { id },
-    });
-
-    if (!backup) {
-      return res.status(404).json({
-        success: false,
-        error: "Backup not found",
-      });
-    }
-
-    const backupInfo: SelfBackupInfo = {
-      id: backup.id,
-      startedAt: backup.startedAt.toISOString(),
-      completedAt: backup.completedAt?.toISOString() || null,
-      status: backup.status as 'in_progress' | 'completed' | 'failed',
-      filePath: backup.filePath,
-      azureBlobUrl: backup.azureBlobUrl,
-      azureContainerName: backup.azureContainerName,
-      fileName: backup.fileName,
-      fileSize: backup.fileSize,
-      errorMessage: backup.errorMessage,
-      errorCode: backup.errorCode,
-      triggeredBy: backup.triggeredBy as 'scheduled' | 'manual',
-      userId: backup.userId,
-      durationMs: backup.durationMs,
-      createdAt: backup.createdAt.toISOString(),
-      updatedAt: backup.updatedAt.toISOString(),
-    };
-
-    res.json({
-      success: true,
-      backup: backupInfo,
-    });
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logger.error({
-      error: errorMessage,
-      backupId: req.params.id,
-    }, "Failed to get backup details");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to get backup details",
-    });
-  }
-});
-
-/**
- * DELETE /:id - Delete backup record (not blob itself)
- */
-router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Check if backup exists
-    const backup = await prisma.selfBackup.findUnique({
-      where: { id },
-    });
-
-    if (!backup) {
-      return res.status(404).json({
-        success: false,
-        error: "Backup not found",
-      });
-    }
-
-    // Delete the record
-    await prisma.selfBackup.delete({
-      where: { id },
-    });
-
-    logger.info({
-      backupId: id,
-    }, "Backup record deleted");
-
-    res.json({
-      success: true,
-      message: "Backup record deleted",
-    });
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logger.error({
-      error: errorMessage,
-      backupId: req.params.id,
-    }, "Failed to delete backup record");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete backup record",
-    });
-  }
-});
-
-/**
  * GET /health - Get backup health status
  */
 router.get("/health", requireSessionOrApiKey, async (req, res) => {
@@ -333,6 +230,109 @@ router.get("/health", requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to get health status",
+    });
+  }
+});
+
+/**
+ * GET /:id - Get specific backup details
+ */
+router.get("/:id", requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const backup = await prisma.selfBackup.findUnique({
+      where: { id },
+    });
+
+    if (!backup) {
+      return res.status(404).json({
+        success: false,
+        error: "Backup not found",
+      });
+    }
+
+    const backupInfo: SelfBackupInfo = {
+      id: backup.id,
+      startedAt: backup.startedAt.toISOString(),
+      completedAt: backup.completedAt?.toISOString() || null,
+      status: backup.status as 'in_progress' | 'completed' | 'failed',
+      filePath: backup.filePath,
+      azureBlobUrl: backup.azureBlobUrl,
+      azureContainerName: backup.azureContainerName,
+      fileName: backup.fileName,
+      fileSize: backup.fileSize,
+      errorMessage: backup.errorMessage,
+      errorCode: backup.errorCode,
+      triggeredBy: backup.triggeredBy as 'scheduled' | 'manual',
+      userId: backup.userId,
+      durationMs: backup.durationMs,
+      createdAt: backup.createdAt.toISOString(),
+      updatedAt: backup.updatedAt.toISOString(),
+    };
+
+    res.json({
+      success: true,
+      backup: backupInfo,
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logger.error({
+      error: errorMessage,
+      backupId: req.params.id,
+    }, "Failed to get backup details");
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to get backup details",
+    });
+  }
+});
+
+/**
+ * DELETE /:id - Delete backup record (not blob itself)
+ */
+router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if backup exists
+    const backup = await prisma.selfBackup.findUnique({
+      where: { id },
+    });
+
+    if (!backup) {
+      return res.status(404).json({
+        success: false,
+        error: "Backup not found",
+      });
+    }
+
+    // Delete the record
+    await prisma.selfBackup.delete({
+      where: { id },
+    });
+
+    logger.info({
+      backupId: id,
+    }, "Backup record deleted");
+
+    res.json({
+      success: true,
+      message: "Backup record deleted",
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logger.error({
+      error: errorMessage,
+      backupId: req.params.id,
+    }, "Failed to delete backup record");
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete backup record",
     });
   }
 });
