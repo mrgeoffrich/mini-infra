@@ -1,4 +1,4 @@
-import { type Icon } from "@tabler/icons-react";
+import { type LucideIcon as Icon } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 import {

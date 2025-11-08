@@ -1,16 +1,16 @@
 import {
-  type Icon,
-  IconBrandDocker,
-  IconCloud,
-  IconCloudComputing,
-  IconDashboard,
-  IconDatabase,
-  IconKey,
-  IconNetwork,
-  IconRocket,
-  IconServer,
-  IconSettings,
-} from "@tabler/icons-react";
+  type LucideIcon as Icon,
+  Container,
+  Cloud,
+  CloudCog,
+  LayoutDashboard,
+  Database,
+  Key,
+  Network,
+  Rocket,
+  Server,
+  Settings,
+} from "lucide-react";
 
 export interface RouteMetadata {
   title: string;
@@ -32,7 +32,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/dashboard': {
     path: '/dashboard',
     title: 'Dashboard',
-    icon: IconDashboard,
+    icon: LayoutDashboard,
     showInNav: true,
     navGroup: 'main',
     description: 'System overview and status'
@@ -41,7 +41,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/containers': {
     path: '/containers',
     title: 'Containers',
-    icon: IconBrandDocker,
+    icon: Container,
     showInNav: true,
     navGroup: 'main',
     description: 'Docker container management'
@@ -50,7 +50,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/postgres': {
     path: '/postgres',
     title: 'PostgreSQL',
-    icon: IconDatabase,
+    icon: Database,
     showInNav: true,
     navGroup: 'main',
     description: 'Database management and backups',
@@ -68,7 +68,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/deployments': {
     path: '/deployments',
     title: 'Deployments',
-    icon: IconRocket,
+    icon: Rocket,
     showInNav: true,
     navGroup: 'main',
     description: 'Zero-downtime deployment management',
@@ -86,7 +86,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/environments': {
     path: '/environments',
     title: 'Environments',
-    icon: IconServer,
+    icon: Server,
     showInNav: true,
     navGroup: 'main',
     description: 'Environment configuration management',
@@ -104,7 +104,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/tunnels': {
     path: '/tunnels',
     title: 'Cloudflare Tunnels',
-    icon: IconCloud,
+    icon: Cloud,
     showInNav: true,
     navGroup: 'main',
     description: 'Cloudflare tunnel monitoring'
@@ -113,7 +113,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/api-keys': {
     path: '/api-keys',
     title: 'API Keys',
-    icon: IconKey,
+    icon: Key,
     showInNav: true,
     navGroup: 'main',
     description: 'API key management'
@@ -122,7 +122,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/connectivity': {
     path: '/connectivity',
     title: 'Connectivity',
-    icon: IconNetwork,
+    icon: Network,
     showInNav: true,
     navGroup: 'main',
     description: 'Service connectivity and configuration',
@@ -138,7 +138,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/connectivity/docker',
         title: 'Docker Configuration',
         breadcrumbLabel: 'Docker',
-        icon: IconBrandDocker,
+        icon: Container,
         parent: '/connectivity',
         showInNav: true
       },
@@ -146,7 +146,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/connectivity/cloudflare',
         title: 'Cloudflare Settings',
         breadcrumbLabel: 'Cloudflare',
-        icon: IconCloudComputing,
+        icon: CloudCog,
         parent: '/connectivity',
         showInNav: true
       },
@@ -154,7 +154,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/connectivity/azure',
         title: 'Azure Storage',
         breadcrumbLabel: 'Azure',
-        icon: IconCloud,
+        icon: Cloud,
         parent: '/connectivity',
         showInNav: true
       }
@@ -164,7 +164,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/settings': {
     path: '/settings',
     title: 'Settings',
-    icon: IconSettings,
+    icon: Settings,
     showInNav: false,
     navGroup: 'secondary',
     children: {
@@ -172,7 +172,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/settings/system',
         title: 'System Settings',
         breadcrumbLabel: 'System',
-        icon: IconSettings,
+        icon: Settings,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'
@@ -181,7 +181,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/settings/registry-credentials',
         title: 'Registry Credentials',
         breadcrumbLabel: 'Registry Credentials',
-        icon: IconKey,
+        icon: Key,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'
@@ -190,7 +190,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/settings/self-backup',
         title: 'Self-Backup',
         breadcrumbLabel: 'Self-Backup',
-        icon: IconDatabase,
+        icon: Database,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'

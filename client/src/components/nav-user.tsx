@@ -1,5 +1,3 @@
-import { IconDotsVertical, IconSettings } from "@tabler/icons-react";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -18,7 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useUser } from "@/hooks/use-user";
 import { useLogout } from "@/hooks/use-logout";
-import { Loader2, LogOut } from "lucide-react";
+import { Loader2, LogOut, MoreVertical, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function NavUser() {
@@ -87,7 +85,7 @@ export function NavUser() {
                   {user.email}
                 </span>
               </div>
-              <IconDotsVertical className="ml-auto size-4" />
+              <MoreVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -123,7 +121,7 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
                 <Link to="/user/settings" className="flex items-center">
-                  <IconSettings className="mr-2 h-4 w-4" />
+                  <Settings className="mr-2 h-4 w-4" />
                   Settings
                 </Link>
               </DropdownMenuItem>

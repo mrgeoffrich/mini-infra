@@ -1,12 +1,12 @@
 import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  IconLayoutGrid,
-  IconList,
-  IconPlus,
-  IconRocket,
-  IconAlertCircle,
-} from "@tabler/icons-react";
+  LayoutGrid,
+  List,
+  Plus,
+  Rocket,
+  AlertCircle,
+} from "lucide-react";
 
 import { DeploymentList } from "@/components/deployments/deployment-list";
 import { DeploymentCard } from "@/components/deployments/deployment-card";
@@ -122,7 +122,7 @@ export function DeploymentsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
-              <IconRocket className="h-6 w-6" />
+              <Rocket className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Deployments</h1>
@@ -133,7 +133,7 @@ export function DeploymentsPage() {
           </div>
 
           <div className="mt-6 p-4 border border-destructive/50 bg-destructive/10 rounded-md flex items-start gap-3">
-            <IconAlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div>
               <p className="font-medium text-destructive">Failed to load deployment configurations</p>
               <p className="text-sm text-muted-foreground mt-1">
@@ -153,7 +153,7 @@ export function DeploymentsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
-              <IconRocket className="h-6 w-6" />
+              <Rocket className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Deployments</h1>
@@ -168,18 +168,18 @@ export function DeploymentsPage() {
             <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as "list" | "cards")}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="list" className="flex items-center gap-2">
-                  <IconList className="h-4 w-4" />
+                  <List className="h-4 w-4" />
                   List
                 </TabsTrigger>
                 <TabsTrigger value="cards" className="flex items-center gap-2">
-                  <IconLayoutGrid className="h-4 w-4" />
+                  <LayoutGrid className="h-4 w-4" />
                   Cards
                 </TabsTrigger>
               </TabsList>
             </Tabs>
 
             <Button onClick={handleCreateConfig}>
-              <IconPlus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4 mr-2" />
               New Configuration
             </Button>
           </div>
@@ -219,13 +219,13 @@ export function DeploymentsPage() {
             ) : (
               <div className="text-center py-12">
                 <div className="mx-auto max-w-md">
-                  <IconLayoutGrid className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <LayoutGrid className="mx-auto h-12 w-12 text-muted-foreground/50" />
                   <h3 className="mt-4 text-lg font-semibold">No deployment configurations</h3>
                   <p className="mt-2 text-muted-foreground">
                     Get started by creating your first deployment configuration.
                   </p>
                   <Button onClick={handleCreateConfig} className="mt-4">
-                    <IconPlus className="h-4 w-4 mr-2" />
+                    <Plus className="h-4 w-4 mr-2" />
                     Create Configuration
                   </Button>
                 </div>

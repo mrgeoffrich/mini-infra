@@ -2,11 +2,10 @@ import { Link, useLocation } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
-  IconBrandDocker,
-  IconCloud,
-  IconBrandAzure,
-  IconDatabase,
-} from "@tabler/icons-react";
+  Container,
+  Cloud,
+  Database,
+} from "lucide-react";
 import {
   useConnectivityStatus,
   ConnectivityService,
@@ -46,7 +45,7 @@ function BackupHealthIndicator() {
 
   const content = (
     <div className="flex items-center gap-1.5">
-      <IconDatabase size={16} className="text-muted-foreground" />
+      <Database size={16} className="text-muted-foreground" />
       <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
     </div>
   );
@@ -163,17 +162,17 @@ export function SiteHeader() {
           <div className="ml-auto flex items-center gap-3">
             <ConnectivityIndicator
               service="docker"
-              icon={IconBrandDocker}
+              icon={Container}
               label="Docker"
             />
             <ConnectivityIndicator
               service="cloudflare"
-              icon={IconCloud}
+              icon={Cloud}
               label="Cloudflare"
             />
             <ConnectivityIndicator
               service="azure"
-              icon={IconBrandAzure}
+              icon={Cloud}
               label="Azure"
             />
             <BackupHealthIndicator />

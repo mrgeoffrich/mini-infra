@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDeleteDeploymentConfig } from "@/hooks/use-deployment-configs";
-import { IconLoader2, IconAlertTriangle } from "@tabler/icons-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import type { DeploymentConfigurationInfo } from "@mini-infra/types";
 
@@ -49,7 +49,7 @@ export function UninstallDeploymentConfigDialog({
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <IconAlertTriangle className="h-5 w-5 text-destructive" />
+            <AlertTriangle className="h-5 w-5 text-destructive" />
             Delete Deployment Configuration
           </AlertDialogTitle>
           <AlertDialogDescription className="space-y-2">
@@ -81,7 +81,7 @@ export function UninstallDeploymentConfigDialog({
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             {deleteMutation.isPending ? (
-              <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : null}
             {deleteMutation.isPending ? "Deleting..." : "Delete Configuration"}
           </AlertDialogAction>

@@ -23,6 +23,7 @@ import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { EnvironmentsPage } from "@/app/environments/page";
 import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
+import { IconShowcasePage } from "@/app/design/icons/page";
 
 export const router = createBrowserRouter([
   {
@@ -141,6 +142,15 @@ export const router = createBrowserRouter([
         path: "user/settings",
         element: <UserSettingsPage />,
       },
+      // Development-only routes
+      ...(import.meta.env.DEV
+        ? [
+            {
+              path: "design/icons",
+              element: <IconShowcasePage />,
+            },
+          ]
+        : []),
     ],
   },
   {

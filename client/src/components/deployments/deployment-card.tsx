@@ -1,19 +1,19 @@
 import React, { useMemo, useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  IconPlayerPlay,
-  IconEdit,
-  IconDotsVertical,
-  IconClock,
-  IconContainer,
-  IconCheck,
-  IconX,
-  IconLoader2,
-  IconTrash,
-  IconEye,
-  IconRocket,
-  IconPlayerStop,
-} from "@tabler/icons-react";
+  Play,
+  Edit,
+  MoreVertical,
+  Clock,
+  Container,
+  Check,
+  X,
+  Loader2,
+  Trash,
+  Eye,
+  Rocket,
+  Square,
+} from "lucide-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentTrigger } from "@/hooks/use-deployment-trigger";
@@ -45,28 +45,28 @@ const DeploymentStatusIcon = React.memo(({ status }: { status: DeploymentStatus 
   const getIcon = () => {
     switch (status) {
       case "completed":
-        return <IconCheck className="h-4 w-4 text-green-500" />;
+        return <Check className="h-4 w-4 text-green-500" />;
       case "failed":
-        return <IconX className="h-4 w-4 text-red-500" />;
+        return <X className="h-4 w-4 text-red-500" />;
       case "pending":
-        return <IconClock className="h-4 w-4 text-yellow-500" />;
+        return <Clock className="h-4 w-4 text-yellow-500" />;
       case "preparing":
       case "deploying":
       case "health_checking":
       case "switching_traffic":
       case "cleanup":
-        return <IconLoader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       case "rolling_back":
-        return <IconLoader2 className="h-4 w-4 text-orange-500 animate-spin" />;
+        return <Loader2 className="h-4 w-4 text-orange-500 animate-spin" />;
       case "uninstalling":
       case "removing_from_lb":
       case "stopping_application":
       case "removing_application":
-        return <IconLoader2 className="h-4 w-4 text-purple-500 animate-spin" />;
+        return <Loader2 className="h-4 w-4 text-purple-500 animate-spin" />;
       case "uninstalled":
-        return <IconTrash className="h-4 w-4 text-gray-500" />;
+        return <Trash className="h-4 w-4 text-gray-500" />;
       default:
-        return <IconClock className="h-4 w-4 text-gray-500" />;
+        return <Clock className="h-4 w-4 text-gray-500" />;
     }
   };
 
@@ -212,7 +212,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
         <div className="flex items-start justify-between">
           <div className="space-y-1 flex-1">
             <div className="flex items-center gap-2">
-              <IconContainer className="h-4 w-4 text-muted-foreground" />
+              <Container className="h-4 w-4 text-muted-foreground" />
               <h3 className="font-semibold text-lg">{config.applicationName}</h3>
               <Badge variant={config.isActive ? "default" : "secondary"} className="ml-auto">
                 {config.isActive ? "Active" : "Inactive"}
@@ -234,13 +234,13 @@ export const DeploymentCard = React.memo(function DeploymentCard({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <IconDotsVertical className="h-4 w-4" />
+                <MoreVertical className="h-4 w-4" />
                 <span className="sr-only">Open menu</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleEdit}>
-                <IconEdit className="h-4 w-4 mr-2" />
+                <Edit className="h-4 w-4 mr-2" />
                 Edit Configuration
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -249,7 +249,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                 className="text-destructive"
                 disabled={hasRunningContainers}
               >
-                <IconTrash className="h-4 w-4 mr-2" />
+                <Trash className="h-4 w-4 mr-2" />
                 Delete Configuration
                 {hasRunningContainers && (
                   <span className="text-xs ml-2">(containers running)</span>
@@ -346,7 +346,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
               variant="outline"
               size="sm"
             >
-              <IconEye className="h-4 w-4 mr-2" />
+              <Eye className="h-4 w-4 mr-2" />
               Details
             </Button>
             <Button
@@ -356,9 +356,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
               size="sm"
             >
               {triggerMutation.isPending ? (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <IconPlayerPlay className="h-4 w-4 mr-2" />
+                <Play className="h-4 w-4 mr-2" />
               )}
               {isDeploymentActive ? "Deploying..." : "Deploy"}
             </Button>
@@ -373,7 +373,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                 className="flex-1"
                 disabled={isDeploymentActive}
               >
-                <IconRocket className="h-4 w-4 mr-2" />
+                <Rocket className="h-4 w-4 mr-2" />
                 New Deployment
               </Button>
               {showRemoveDeploymentButton && (
@@ -385,9 +385,9 @@ export const DeploymentCard = React.memo(function DeploymentCard({
                   disabled={removeContainersMutation.isPending || isDeploymentActive}
                 >
                   {removeContainersMutation.isPending ? (
-                    <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <IconPlayerStop className="h-4 w-4 mr-2" />
+                    <Square className="h-4 w-4 mr-2" />
                   )}
                   Remove Deployment
                 </Button>
@@ -399,7 +399,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
         {isDeploymentActive && (
           <div className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
             <div className="flex items-center gap-2">
-              <IconLoader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
               Deployment in progress. Updates will appear in real-time.
             </div>
           </div>
