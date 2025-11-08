@@ -374,19 +374,106 @@ export class RegistryCredentialService {
   ): Promise<RegistryTestResult> {
     servicesLogger().info({ registryUrl }, "Testing registry credentials");
 
-    // This is a placeholder implementation
-    // In the real implementation, this would:
-    // 1. Attempt to authenticate with the registry
-    // 2. Try to pull a small test image or check catalog
-    // 3. Measure response time
-    // 4. Return results
+    try {
+      // Determine the test image to use
+      const image = testImage || this.getDefaultTestImage(registryUrl);
 
-    // For now, we'll return a success result
-    // This will be properly implemented when we integrate with DockerExecutorService
-    return {
-      success: true,
-      message: "Credential test not yet implemented",
-      registryUrl,
-    };
+      servicesLogger().debug(
+        { registryUrl, image },
+        "Using test image for registry validation",
+      );
+
+      // Initialize DockerExecutorService to test the connection
+      const dockerExecutor = new (await import("./docker-executor"))
+        .DockerExecutorService();
+      await dockerExecutor.initialize();
+
+      // Attempt to pull the test image with credentials
+      const dockerResult = await dockerExecutor.testDockerRegistryConnection({
+        image,
+        registryUsername: username,
+        registryPassword: password,
+      });
+
+      servicesLogger().info(
+        {
+          registryUrl,
+          success: dockerResult.success,
+          pullTimeMs: dockerResult.details.pullTimeMs,
+        },
+        "Registry credential test completed",
+      );
+
+      // Map DockerRegistryTestResult to RegistryTestResult
+      return {
+        success: dockerResult.success,
+        message: dockerResult.message,
+        registryUrl,
+        pullTimeMs: dockerResult.details.pullTimeMs,
+        error: dockerResult.details.errorCode,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      servicesLogger().error(
+        {
+          error: errorMessage,
+          registryUrl,
+        },
+        "Failed to test registry credentials",
+      );
+
+      return {
+        success: false,
+        message: `Failed to test registry credentials: ${errorMessage}`,
+        registryUrl,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Get default test image for a registry
+   * Returns a small, commonly available image based on the registry
+   */
+  private getDefaultTestImage(registryUrl: string): string {
+    // Docker Hub - use official alpine image (smallest)
+    if (
+      registryUrl === "registry.hub.docker.com" ||
+      registryUrl === "docker.io" ||
+      registryUrl.includes("hub.docker.com")
+    ) {
+      return "alpine:latest";
+    }
+
+    // GitHub Container Registry - use a common public image
+    if (registryUrl === "ghcr.io" || registryUrl.includes("github")) {
+      return "ghcr.io/linuxserver/alpine:latest";
+    }
+
+    // GitLab Container Registry
+    if (registryUrl.includes("gitlab")) {
+      return "registry.gitlab.com/gitlab-org/gitlab-runner/alpine:latest";
+    }
+
+    // AWS ECR Public Gallery
+    if (registryUrl.includes("public.ecr.aws")) {
+      return "public.ecr.aws/docker/library/alpine:latest";
+    }
+
+    // Google Container Registry / Artifact Registry
+    if (registryUrl.includes("gcr.io") || registryUrl.includes("pkg.dev")) {
+      return "gcr.io/google-containers/pause:latest";
+    }
+
+    // For unknown/private registries, we need the user to provide a test image
+    // Return a generic format that will likely fail with a helpful error
+    servicesLogger().warn(
+      { registryUrl },
+      "Unknown registry, user should provide testImage parameter",
+    );
+
+    return `${registryUrl}/library/alpine:latest`;
   }
 }
