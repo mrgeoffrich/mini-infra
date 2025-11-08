@@ -175,6 +175,15 @@ export const routeConfig: Record<string, RouteConfig> = {
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'
+      },
+      'self-backup': {
+        path: '/settings/self-backup',
+        title: 'Self-Backup',
+        breadcrumbLabel: 'Self-Backup',
+        icon: IconDatabase,
+        parent: '/settings',
+        showInNav: true,
+        navGroup: 'secondary'
       }
     }
   },
