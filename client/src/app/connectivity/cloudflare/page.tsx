@@ -206,7 +206,7 @@ export default function CloudflareSettingsPage() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/connectivity/overview">
                 <ArrowLeft className="h-4 w-4" />
@@ -214,12 +214,21 @@ export default function CloudflareSettingsPage() {
               </Link>
             </Button>
           </div>
-          <h1 className="text-3xl font-bold mb-2">Cloudflare Configuration</h1>
-          <p className="text-muted-foreground">
-            Configure Cloudflare API access and tunnel settings
-          </p>
         </div>
+
         <div className="px-4 lg:px-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
+              <Cloud className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Cloudflare Configuration</h1>
+              <p className="text-muted-foreground">
+                Configure Cloudflare API access and tunnel settings
+              </p>
+            </div>
+          </div>
+
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -234,7 +243,7 @@ export default function CloudflareSettingsPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
               <ArrowLeft className="h-4 w-4" />
@@ -242,7 +251,10 @@ export default function CloudflareSettingsPage() {
             </Link>
           </Button>
         </div>
-        <div className="flex items-center gap-3 mb-6">
+      </div>
+
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
             <Cloud className="h-6 w-6" />
           </div>

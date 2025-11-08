@@ -15,6 +15,7 @@ import {
   Container,
   Cloud,
   Database,
+  Activity,
 } from "lucide-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
 
@@ -95,12 +96,18 @@ export function ConnectivityOverview() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
-          <p className="text-muted-foreground mb-6">
-            Infrastructure and service connectivity overview
-          </p>
-        </div>
-        <div className="px-4 lg:px-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+              <Activity className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Connectivity</h1>
+              <p className="text-muted-foreground">
+                Infrastructure and service connectivity overview
+              </p>
+            </div>
+          </div>
+
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -117,20 +124,19 @@ export function ConnectivityOverview() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
-          <p className="text-muted-foreground mb-6">
-            Infrastructure and service connectivity overview
-          </p>
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-12 w-12 rounded-md" />
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-4 w-96" />
+            </div>
+          </div>
         </div>
         <div className="px-4 lg:px-6 space-y-6">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Skeleton className="h-48" />
             <Skeleton className="h-48" />
             <Skeleton className="h-48" />
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
           </div>
         </div>
       </div>
@@ -157,11 +163,16 @@ export function ConnectivityOverview() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Connectivity</h1>
-          <p className="text-muted-foreground mb-6">
-            Infrastructure and service connectivity overview
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+            <Activity className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Connectivity</h1>
+            <p className="text-muted-foreground">
+              Infrastructure and service connectivity overview
+            </p>
+          </div>
         </div>
       </div>
 

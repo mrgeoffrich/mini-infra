@@ -1,17 +1,25 @@
+import { LayoutDashboard } from "lucide-react";
 import { ContainerSummary } from "./ContainerSummary";
-import { DeploymentSummary } from "./DeploymentSummary";
 
 export function DashboardPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      {/* Header */}
       <div className="px-4 lg:px-6">
-        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-        <p className="text-muted-foreground mb-6">
-          Overview of your Docker infrastructure and deployments
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            <LayoutDashboard className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground">
+              Overview of your Docker infrastructure
+            </p>
+          </div>
+        </div>
       </div>
+
       <ContainerSummary />
-      <DeploymentSummary />
     </div>
   );
 }

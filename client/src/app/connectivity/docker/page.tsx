@@ -210,7 +210,7 @@ export default function DockerSettingsPage() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/connectivity/overview">
                 <ArrowLeft className="h-4 w-4" />
@@ -218,12 +218,21 @@ export default function DockerSettingsPage() {
               </Link>
             </Button>
           </div>
-          <h1 className="text-3xl font-bold mb-2">Docker Configuration</h1>
-          <p className="text-muted-foreground">
-            Configure Docker host connection settings
-          </p>
         </div>
+
         <div className="px-4 lg:px-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Container className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Docker Configuration</h1>
+              <p className="text-muted-foreground">
+                Configure Docker host connection settings
+              </p>
+            </div>
+          </div>
+
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -238,7 +247,7 @@ export default function DockerSettingsPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
               <ArrowLeft className="h-4 w-4" />
@@ -246,7 +255,10 @@ export default function DockerSettingsPage() {
             </Link>
           </Button>
         </div>
-        <div className="flex items-center gap-3 mb-6">
+      </div>
+
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
             <Container className="h-6 w-6" />
           </div>
