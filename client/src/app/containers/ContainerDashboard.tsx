@@ -15,7 +15,14 @@ import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { ContainerTable } from "./ContainerTable";
 import { ContainerFilters } from "./ContainerFilters";
-import { AlertCircle, Settings } from "lucide-react";
+import { AlertCircle, Settings, Container } from "lucide-react";
+
+interface ContainerGroup {
+  environmentId: string | null;
+  environmentName: string;
+  environmentType?: string;
+  containers: any[];
+}
 
 export function ContainerDashboard() {
   const { formatDateTime } = useFormattedDate();
@@ -49,6 +56,44 @@ export function ContainerDashboard() {
     enabled: isDockerConnected === true, // Only fetch when explicitly connected
   });
 
+  // Group containers by environment
+  const containerGroups = React.useMemo((): ContainerGroup[] => {
+    if (!containerData?.containers) return [];
+
+    const groups = new Map<string, ContainerGroup>();
+    const unmanagedContainers: any[] = [];
+
+    containerData.containers.forEach((container) => {
+      if (container.environmentInfo) {
+        const envId = container.environmentInfo.id;
+        if (!groups.has(envId)) {
+          groups.set(envId, {
+            environmentId: envId,
+            environmentName: container.environmentInfo.name,
+            environmentType: container.environmentInfo.type,
+            containers: [],
+          });
+        }
+        groups.get(envId)!.containers.push(container);
+      } else {
+        unmanagedContainers.push(container);
+      }
+    });
+
+    const result: ContainerGroup[] = Array.from(groups.values());
+
+    // Add unmanaged containers group if there are any
+    if (unmanagedContainers.length > 0) {
+      result.push({
+        environmentId: null,
+        environmentName: "Unmanaged",
+        containers: unmanagedContainers,
+      });
+    }
+
+    return result;
+  }, [containerData]);
+
   // Log business event when container list is viewed
   React.useEffect(() => {
     if (containerData && containerData.containers.length > 0) {
@@ -70,26 +115,17 @@ export function ContainerDashboard() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold">Container Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Monitor and manage your Docker containers
-          </p>
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-12 w-12 rounded-md" />
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-4 w-96" />
+            </div>
+          </div>
         </div>
 
         <div className="px-4 lg:px-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Containers</CardTitle>
-              <CardDescription>Checking Docker connectivity...</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            </CardContent>
-          </Card>
+          <Skeleton className="h-[400px] w-full" />
         </div>
       </div>
     );
@@ -100,13 +136,18 @@ export function ContainerDashboard() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold">Container Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Monitor and manage your Docker containers
-          </p>
-        </div>
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Container className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Container Dashboard</h1>
+              <p className="text-muted-foreground">
+                Monitor and manage your Docker containers
+              </p>
+            </div>
+          </div>
 
-        <div className="px-4 lg:px-6">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -145,10 +186,17 @@ export function ContainerDashboard() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold">Container Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Monitor and manage your Docker containers
-          </p>
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Container className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Container Dashboard</h1>
+              <p className="text-muted-foreground">
+                Monitor and manage your Docker containers
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="px-4 lg:px-6">
@@ -181,13 +229,18 @@ export function ContainerDashboard() {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
-          <h1 className="text-3xl font-bold">Container Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Monitor and manage your Docker containers
-          </p>
-        </div>
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Container className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Container Dashboard</h1>
+              <p className="text-muted-foreground">
+                Monitor and manage your Docker containers
+              </p>
+            </div>
+          </div>
 
-        <div className="px-4 lg:px-6">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -208,20 +261,47 @@ export function ContainerDashboard() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <h1 className="text-3xl font-bold">Container Dashboard</h1>
-        <p className="text-muted-foreground mt-2">
-          Monitor and manage your Docker containers
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            <Container className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Container Dashboard</h1>
+            <p className="text-muted-foreground">
+              Monitor and manage your Docker containers
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="px-4 lg:px-6">
         <Card>
           <CardHeader>
-            <CardTitle>Containers</CardTitle>
-            <CardDescription>
-              View and filter your Docker containers. Data updates every 5
-              seconds.
-            </CardDescription>
+            <div className="flex items-start justify-between">
+              <div>
+                <CardTitle>Containers</CardTitle>
+                <CardDescription>
+                  View and filter your Docker containers. Data updates every 5
+                  seconds.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={filterState.filters.status === 'running' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => filterState.updateFilter('status', 'running')}
+                >
+                  Running Only
+                </Button>
+                <Button
+                  variant={!filterState.filters.status ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => filterState.updateFilter('status', undefined)}
+                >
+                  All
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <ContainerFilters {...filterState} />
@@ -232,13 +312,41 @@ export function ContainerDashboard() {
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
+            ) : containerGroups.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No containers found
+              </div>
             ) : (
-              <ContainerTable
-                containers={containerData?.containers || []}
-                totalCount={containerData?.totalCount || 0}
-                isLoading={isLoading || isFetching}
-                filterState={filterState}
-              />
+              <div className="space-y-6">
+                {containerGroups.map((group) => (
+                  <div key={group.environmentId || 'unmanaged'} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold">
+                        {group.environmentName}
+                      </h3>
+                      {group.environmentType && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          group.environmentType === 'production'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                            : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                        }`}>
+                          {group.environmentType}
+                        </span>
+                      )}
+                      <span className="text-sm text-muted-foreground">
+                        ({group.containers.length} {group.containers.length === 1 ? 'container' : 'containers'})
+                      </span>
+                    </div>
+                    <ContainerTable
+                      containers={group.containers}
+                      totalCount={group.containers.length}
+                      isLoading={isLoading || isFetching}
+                      filterState={filterState}
+                      showPagination={false}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

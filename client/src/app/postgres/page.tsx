@@ -109,20 +109,54 @@ export default function PostgresPage() {
 
   if (error) {
     return (
-      <div className="container mx-auto px-6 py-8">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Failed to load PostgreSQL databases: {error.message}
-          </AlertDescription>
-        </Alert>
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Database className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
+              <p className="text-muted-foreground">
+                Configure and manage PostgreSQL database connections
+              </p>
+            </div>
+          </div>
+
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Failed to load PostgreSQL databases: {error.message}
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-6 py-8">
-      <div className="space-y-6">
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      {/* Header */}
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+              <Database className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
+              <p className="text-muted-foreground">
+                Configure and manage PostgreSQL database connections
+              </p>
+            </div>
+          </div>
+
+          <Button onClick={openCreateModal}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Database
+          </Button>
+        </div>
+
         {/* PostgreSQL Settings Warning */}
         {postgresSettings && !postgresSettings.isConfigured && (
           <Alert variant="destructive">
@@ -143,19 +177,10 @@ export default function PostgresPage() {
             </AlertDescription>
           </Alert>
         )}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
-            <p className="text-muted-foreground">
-              Configure and manage PostgreSQL database connections
-            </p>
-          </div>
-          <Button onClick={openCreateModal}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Database
-          </Button>
-        </div>
+      </div>
 
+      {/* Database Connections */}
+      <div className="px-4 lg:px-6 max-w-7xl">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -206,8 +231,10 @@ export default function PostgresPage() {
             )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* Progress Indicators for Active Operations and History */}
+      {/* Progress Indicators for Active Operations and History */}
+      <div className="px-4 lg:px-6 max-w-7xl">
         <ProgressIndicators showDatabaseSelector={true} defaultTab="active" />
       </div>
 

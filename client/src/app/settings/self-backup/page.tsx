@@ -27,6 +27,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Table,
   TableBody,
   TableCell,
@@ -58,6 +71,7 @@ import {
   IconDownload,
   IconRefresh,
 } from "@tabler/icons-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   useSelfBackupConfig,
@@ -71,7 +85,8 @@ import {
 import { useAzureContainers } from "@/hooks/use-azure-settings";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useFormattedDateTime } from "@/hooks/use-formatted-date";
-import { formatBytes, formatDuration } from "@/lib/utils";
+import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
+import { formatBytes, formatDuration, cn } from "@/lib/utils";
 
 // Configuration form schema
 const configSchema = z.object({
@@ -106,19 +121,6 @@ const cronPresets = [
   },
 ];
 
-// Common timezones
-const commonTimezones = [
-  { value: "UTC", label: "UTC" },
-  { value: "America/New_York", label: "Eastern Time (ET)" },
-  { value: "America/Chicago", label: "Central Time (CT)" },
-  { value: "America/Denver", label: "Mountain Time (MT)" },
-  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
-  { value: "Europe/London", label: "London (GMT/BST)" },
-  { value: "Europe/Paris", label: "Paris (CET/CEST)" },
-  { value: "Asia/Tokyo", label: "Tokyo (JST)" },
-  { value: "Asia/Shanghai", label: "Shanghai (CST)" },
-  { value: "Australia/Sydney", label: "Sydney (AEDT/AEST)" },
-];
 
 // Error details dialog component
 function ErrorDetailsDialog({
@@ -190,6 +192,7 @@ export default function SelfBackupSettingsPage() {
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
 
   // API hooks
   const { data: configData, isLoading: isLoadingConfig } =
@@ -200,6 +203,8 @@ export default function SelfBackupSettingsPage() {
     filters: { service: "azure" },
     limit: 1,
   });
+  const { data: userPreferences } = useUserPreferences();
+  const { data: timezones } = useTimezones();
   const updateConfig = useUpdateSelfBackupConfig();
   const enableBackup = useEnableSelfBackup();
   const disableBackup = useDisableSelfBackup();
@@ -228,7 +233,7 @@ export default function SelfBackupSettingsPage() {
     defaultValues: {
       cronSchedule: configData?.config?.cronSchedule || "0 * * * *",
       azureContainerName: configData?.config?.azureContainerName || "",
-      timezone: configData?.config?.timezone || "UTC",
+      timezone: configData?.config?.timezone || userPreferences?.timezone || "UTC",
     },
   });
 
@@ -238,10 +243,10 @@ export default function SelfBackupSettingsPage() {
       form.reset({
         cronSchedule: configData.config.cronSchedule,
         azureContainerName: configData.config.azureContainerName,
-        timezone: configData.config.timezone,
+        timezone: configData.config.timezone || userPreferences?.timezone || "UTC",
       });
     }
-  }, [configData, form]);
+  }, [configData, form, userPreferences]);
 
   // Handle configuration save
   const onSubmit = async (data: ConfigFormData) => {
@@ -298,12 +303,19 @@ export default function SelfBackupSettingsPage() {
   // Loading state
   if (isLoadingConfig || isLoadingContainers) {
     return (
-      <div className="container max-w-6xl py-6 space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Skeleton className="h-12 w-12 rounded-md" />
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-4 w-96" />
+            </div>
+          </div>
         </div>
-        <Skeleton className="h-[400px] w-full" />
+        <div className="px-4 lg:px-6 max-w-7xl">
+          <Skeleton className="h-[400px] w-full" />
+        </div>
       </div>
     );
   }
@@ -313,37 +325,41 @@ export default function SelfBackupSettingsPage() {
   const containers = azureData?.data?.containers || [];
 
   return (
-    <div className="container max-w-6xl py-6 space-y-6">
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       {/* Header */}
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <IconDatabase className="h-8 w-8" />
-          Self-Backup Settings
-        </h1>
-        <p className="text-muted-foreground">
-          Configure automated backups of the Mini Infra database to Azure Blob
-          Storage
-        </p>
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            <IconDatabase className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Self-Backup Settings</h1>
+            <p className="text-muted-foreground">
+              Configure automated backups of the Mini Infra database to Azure Blob Storage
+            </p>
+          </div>
+        </div>
+
+        {/* Azure Storage Check */}
+        {!isAzureConnected && (
+          <Alert>
+            <IconAlertTriangle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>
+                Azure Blob Storage is required for self-backups. Please configure
+                Azure Storage settings first.
+              </span>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/connectivity/azure">Configure Azure</Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
 
-      {/* Azure Storage Check */}
-      {!isAzureConnected && (
-        <Alert>
-          <IconAlertTriangle className="h-4 w-4" />
-          <AlertDescription className="flex items-center justify-between">
-            <span>
-              Azure Blob Storage is required for self-backups. Please configure
-              Azure Storage settings first.
-            </span>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/connectivity/azure">Configure Azure</Link>
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {/* Configuration Form */}
-      <Card>
+      <div className="px-4 lg:px-6 max-w-7xl">
+        <Card>
         <CardHeader>
           <CardTitle>Backup Configuration</CardTitle>
           <CardDescription>
@@ -430,28 +446,74 @@ export default function SelfBackupSettingsPage() {
                 control={form.control}
                 name="timezone"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="flex flex-col">
                     <FormLabel>Timezone</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      disabled={!isAzureConnected}
+                    <Popover
+                      open={timezonePopoverOpen}
+                      onOpenChange={setTimezonePopoverOpen}
                     >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {commonTimezones.map((tz) => (
-                          <SelectItem key={tz.value} value={tz.value}>
-                            {tz.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            disabled={!isAzureConnected}
+                            className={cn(
+                              "w-full justify-between",
+                              !field.value && "text-muted-foreground",
+                            )}
+                          >
+                            {field.value
+                              ? timezones?.find(
+                                  (timezone) => timezone.value === field.value,
+                                )?.label
+                              : "Select a timezone"}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[400px] max-w-[400px] p-0"
+                        align="start"
+                      >
+                        <Command>
+                          <CommandInput placeholder="Search timezones..." />
+                          <CommandList>
+                            <CommandEmpty>No timezone found.</CommandEmpty>
+                            <CommandGroup>
+                              {(timezones || []).map((timezone) => (
+                                <CommandItem
+                                  value={timezone.label}
+                                  key={timezone.value}
+                                  onSelect={() => {
+                                    field.onChange(timezone.value);
+                                    setTimezonePopoverOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      timezone.value === field.value
+                                        ? "opacity-100"
+                                        : "opacity-0",
+                                    )}
+                                  />
+                                  {timezone.label}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     <FormDescription>
-                      Timezone for the backup schedule
+                      Timezone for the backup schedule. Current time:{" "}
+                      {form.watch("timezone") &&
+                        new Date().toLocaleString("en-US", {
+                          timeZone: form.watch("timezone") || "UTC",
+                          dateStyle: "short",
+                          timeStyle: "medium",
+                        })}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -537,9 +599,11 @@ export default function SelfBackupSettingsPage() {
           </Form>
         </CardContent>
       </Card>
+      </div>
 
       {/* Backup History */}
-      <Card>
+      <div className="px-4 lg:px-6 max-w-7xl">
+        <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -649,6 +713,7 @@ export default function SelfBackupSettingsPage() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* Error Details Dialog */}
       <ErrorDetailsDialog

@@ -6,7 +6,6 @@ import {
   useReactTable,
   Cell,
 } from "@tanstack/react-table";
-import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   Table,
   TableBody,
@@ -18,9 +17,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -36,47 +40,13 @@ interface ContainerTableProps {
     setPage: (page: number) => void;
     setLimit: (limit: number) => void;
   };
+  showPagination?: boolean;
 }
-
-const CopyButton = React.memo(
-  ({
-    text,
-    className = "h-6 w-6 p-0",
-  }: {
-    text: string;
-    className?: string;
-  }) => {
-    const handleCopy = React.useCallback(async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (err) {
-        console.error("Failed to copy text: ", err);
-      }
-    }, [text]);
-
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleCopy}
-        className={className}
-      >
-        <Copy className="h-3 w-3" />
-      </Button>
-    );
-  },
-  (prevProps, nextProps) =>
-    prevProps.text === nextProps.text &&
-    prevProps.className === nextProps.className,
-);
-
-CopyButton.displayName = "CopyButton";
 
 const ContainerNameCell = React.memo(
   ({ name }: { name: string }) => (
-    <div className="flex items-center gap-2 min-h-[2rem]">
-      <span className="font-medium truncate flex-1">{name}</span>
-      <CopyButton text={name} />
+    <div className="flex items-center min-h-[2rem]">
+      <span className="font-medium truncate">{name}</span>
     </div>
   ),
   (prevProps, nextProps) => prevProps.name === nextProps.name,
@@ -91,14 +61,11 @@ const ContainerImageCell = React.memo(
       [image, imageTag],
     );
     return (
-      <div className="flex items-center gap-2">
-        <div className="max-w-xs">
-          <div className="font-mono text-sm truncate" title={fullImage}>
-            {image}
-          </div>
-          <div className="text-xs text-muted-foreground">{imageTag}</div>
+      <div className="max-w-xs">
+        <div className="font-mono text-sm truncate" title={fullImage}>
+          {image}
         </div>
-        <CopyButton text={fullImage} className="h-6 w-6 p-0 shrink-0" />
+        <div className="text-xs text-muted-foreground">{imageTag}</div>
       </div>
     );
   },
@@ -119,9 +86,8 @@ const ContainerIPCell = React.memo(
       );
     }
     return (
-      <div className="flex items-center gap-2 min-h-[2rem]">
-        <span className="font-mono text-sm truncate flex-1">{ip}</span>
-        <CopyButton text={ip} />
+      <div className="flex items-center min-h-[2rem]">
+        <span className="font-mono text-sm truncate">{ip}</span>
       </div>
     );
   },
@@ -139,23 +105,62 @@ const ContainerPortsCell = React.memo(
         </span>
       );
     }
-    return (
-      <div className="flex flex-wrap gap-1 min-h-[2rem] items-center">
-        {ports.slice(0, 2).map((port, index) => (
-          <Badge
-            key={index}
-            variant="outline"
-            className="text-xs whitespace-nowrap"
-          >
+
+    // If only one port, display it directly
+    if (ports.length === 1) {
+      const port = ports[0];
+      return (
+        <div className="flex items-center min-h-[2rem]">
+          <Badge variant="outline" className="text-xs whitespace-nowrap">
             {port.public ? `${port.public}:${port.private}` : port.private}/
             {port.type}
           </Badge>
-        ))}
-        {ports.length > 2 && (
-          <Badge variant="outline" className="text-xs whitespace-nowrap">
-            +{ports.length - 2} more
-          </Badge>
-        )}
+        </div>
+      );
+    }
+
+    // For multiple ports, show first port and a popover with all ports
+    const firstPort = ports[0];
+    return (
+      <div className="flex flex-wrap gap-1 min-h-[2rem] items-center">
+        <Badge variant="outline" className="text-xs whitespace-nowrap">
+          {firstPort.public
+            ? `${firstPort.public}:${firstPort.private}`
+            : firstPort.private}
+          /{firstPort.type}
+        </Badge>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Badge
+              variant="secondary"
+              className="text-xs whitespace-nowrap cursor-pointer hover:bg-secondary/80"
+            >
+              +{ports.length - 1} more
+            </Badge>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="start">
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm">All Ports</h4>
+              <div className="grid gap-2">
+                {ports.map((port, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="font-mono">
+                      {port.public
+                        ? `${port.public}:${port.private}`
+                        : port.private}
+                    </span>
+                    <Badge variant="outline" className="text-xs">
+                      {port.type}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     );
   },
@@ -174,61 +179,6 @@ const ContainerPortsCell = React.memo(
 );
 
 ContainerPortsCell.displayName = "ContainerPortsCell";
-
-const ContainerDateCell = React.memo(
-  ({ createdAt }: { createdAt: string }) => {
-    const { formatDate, formatTime } = useFormattedDate();
-    const formattedDate = React.useMemo(
-      () => formatDate(createdAt),
-      [createdAt, formatDate],
-    );
-    const formattedTime = React.useMemo(
-      () => formatTime(createdAt),
-      [createdAt, formatTime],
-    );
-
-    return (
-      <div className="text-sm">
-        <div>{formattedDate}</div>
-        <div className="text-muted-foreground">{formattedTime}</div>
-      </div>
-    );
-  },
-  (prevProps, nextProps) => prevProps.createdAt === nextProps.createdAt,
-);
-
-ContainerDateCell.displayName = "ContainerDateCell";
-
-const ContainerDeploymentCell = React.memo(
-  ({ deploymentInfo }: { deploymentInfo?: ContainerInfo["deploymentInfo"] }) => {
-    if (!deploymentInfo) {
-      return (
-        <span className="text-muted-foreground min-h-[2rem] flex items-center">
-          Not managed
-        </span>
-      );
-    }
-
-    return (
-      <div className="min-h-[2rem] flex flex-col justify-center">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="px-1.5 py-0.5 text-xs">
-            {deploymentInfo.containerRole}
-          </Badge>
-        </div>
-        <div className="text-xs text-muted-foreground truncate max-w-[140px]" title={deploymentInfo.applicationName}>
-          {deploymentInfo.applicationName}
-        </div>
-      </div>
-    );
-  },
-  (prevProps, nextProps) =>
-    prevProps.deploymentInfo?.deploymentId === nextProps.deploymentInfo?.deploymentId &&
-    prevProps.deploymentInfo?.applicationName === nextProps.deploymentInfo?.applicationName &&
-    prevProps.deploymentInfo?.containerRole === nextProps.deploymentInfo?.containerRole,
-);
-
-ContainerDeploymentCell.displayName = "ContainerDeploymentCell";
 
 const ContainerRow = React.memo(
   ({
@@ -264,9 +214,7 @@ const ContainerRow = React.memo(
       prev.image === next.image &&
       prev.imageTag === next.imageTag &&
       prev.ipAddress === next.ipAddress &&
-      prev.createdAt === next.createdAt &&
-      JSON.stringify(prev.ports) === JSON.stringify(next.ports) &&
-      JSON.stringify(prev.deploymentInfo) === JSON.stringify(next.deploymentInfo)
+      JSON.stringify(prev.ports) === JSON.stringify(next.ports)
     );
   },
 );
@@ -278,6 +226,7 @@ export const ContainerTable = React.memo(function ContainerTable({
   totalCount,
   isLoading,
   filterState,
+  showPagination = true,
 }: ContainerTableProps) {
   const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
 
@@ -292,10 +241,6 @@ export const ContainerTable = React.memo(function ContainerTable({
   );
   const handleImageSort = React.useCallback(
     () => updateSort("image"),
-    [updateSort],
-  );
-  const handleCreatedSort = React.useCallback(
-    () => updateSort("createdAt"),
     [updateSort],
   );
 
@@ -360,31 +305,8 @@ export const ContainerTable = React.memo(function ContainerTable({
         header: "IP Address",
         cell: ({ row }) => <ContainerIPCell ip={row.getValue("ipAddress")} />,
       },
-      {
-        accessorKey: "deploymentInfo",
-        header: "Deployment",
-        cell: ({ row }) => (
-          <ContainerDeploymentCell deploymentInfo={row.getValue("deploymentInfo")} />
-        ),
-      },
-      {
-        accessorKey: "createdAt",
-        header: () => (
-          <Button
-            variant="ghost"
-            onClick={handleCreatedSort}
-            className="h-auto p-0 font-medium"
-          >
-            Created
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        ),
-        cell: ({ row }) => (
-          <ContainerDateCell createdAt={row.getValue("createdAt")} />
-        ),
-      },
     ],
-    [handleNameSort, handleStatusSort, handleImageSort, handleCreatedSort],
+    [handleNameSort, handleStatusSort, handleImageSort],
   );
 
   const sortingState = React.useMemo(
@@ -426,10 +348,6 @@ export const ContainerTable = React.memo(function ContainerTable({
         return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
       case 4:
         return "w-[120px] min-w-[120px] max-w-[120px]"; // IP Address
-      case 5:
-        return "w-[150px] min-w-[150px] max-w-[150px]"; // Deployment
-      case 6:
-        return "w-[140px] min-w-[140px] max-w-[140px]"; // Created
       default:
         return "";
     }
@@ -508,63 +426,28 @@ export const ContainerTable = React.memo(function ContainerTable({
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Showing {startItem} to {endItem} of {totalCount} containers
-        </div>
+      {showPagination && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {startItem} to {endItem} of {totalCount} containers
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePrevPage}
-            disabled={page <= 1}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrevPage}
+              disabled={page <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
 
-          <div className="flex items-center gap-1">
-            {totalPages <= 7 ? (
-              // Show all pages if there are 7 or fewer
-              Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                (pageNum) => (
-                  <Button
-                    key={pageNum}
-                    variant={page === pageNum ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPage(pageNum)}
-                    className="w-8"
-                  >
-                    {pageNum}
-                  </Button>
-                ),
-              )
-            ) : (
-              // Show abbreviated pagination for more than 7 pages
-              <>
-                {page > 3 && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(1)}
-                      className="w-8"
-                    >
-                      1
-                    </Button>
-                    {page > 4 && (
-                      <span className="text-muted-foreground">...</span>
-                    )}
-                  </>
-                )}
-
-                {Array.from(
-                  { length: Math.min(5, totalPages) },
-                  (_, i) => Math.max(1, Math.min(page - 2, totalPages - 4)) + i,
-                )
-                  .filter((pageNum) => pageNum <= totalPages)
-                  .map((pageNum) => (
+            <div className="flex items-center gap-1">
+              {totalPages <= 7 ? (
+                // Show all pages if there are 7 or fewer
+                Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (pageNum) => (
                     <Button
                       key={pageNum}
                       variant={page === pageNum ? "default" : "outline"}
@@ -574,38 +457,75 @@ export const ContainerTable = React.memo(function ContainerTable({
                     >
                       {pageNum}
                     </Button>
-                  ))}
+                  ),
+                )
+              ) : (
+                // Show abbreviated pagination for more than 7 pages
+                <>
+                  {page > 3 && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(1)}
+                        className="w-8"
+                      >
+                        1
+                      </Button>
+                      {page > 4 && (
+                        <span className="text-muted-foreground">...</span>
+                      )}
+                    </>
+                  )}
 
-                {page < totalPages - 2 && (
-                  <>
-                    {page < totalPages - 3 && (
-                      <span className="text-muted-foreground">...</span>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(totalPages)}
-                      className="w-8"
-                    >
-                      {totalPages}
-                    </Button>
-                  </>
-                )}
-              </>
-            )}
+                  {Array.from(
+                    { length: Math.min(5, totalPages) },
+                    (_, i) => Math.max(1, Math.min(page - 2, totalPages - 4)) + i,
+                  )
+                    .filter((pageNum) => pageNum <= totalPages)
+                    .map((pageNum) => (
+                      <Button
+                        key={pageNum}
+                        variant={page === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setPage(pageNum)}
+                        className="w-8"
+                      >
+                        {pageNum}
+                      </Button>
+                    ))}
+
+                  {page < totalPages - 2 && (
+                    <>
+                      {page < totalPages - 3 && (
+                        <span className="text-muted-foreground">...</span>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(totalPages)}
+                        className="w-8"
+                      >
+                        {totalPages}
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNextPage}
+              disabled={page >= totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleNextPage}
-            disabled={page >= totalPages}
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 });

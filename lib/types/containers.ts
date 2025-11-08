@@ -39,6 +39,12 @@ export interface ContainerInfo {
     applicationName: string;
     containerRole: string; // 'old', 'new', 'blue', 'green'
   };
+  // Environment association (optional, populated from container labels)
+  environmentInfo?: {
+    id: string;
+    name: string;
+    type: string; // 'production' | 'nonproduction'
+  };
 }
 
 // ====================

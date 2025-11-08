@@ -518,11 +518,34 @@ class DockerService {
   }
 
   private transformPorts(ports: any[]): DockerContainerInfo["ports"] {
-    return ports.map((port) => ({
-      private: port.PrivatePort,
-      public: port.PublicPort || undefined,
-      type: port.Type === "tcp" ? "tcp" : "udp",
-    }));
+    // Docker API can return duplicate entries for ports bound to multiple IPs (IPv4 and IPv6)
+    // We need to deduplicate based on private port, public port, and type
+    const uniquePorts = new Map<string, DockerContainerInfo["ports"][0]>();
+
+    ports.forEach((port) => {
+      // Only include ports that have a public port mapping (exposed ports)
+      if (!port.PublicPort) {
+        return;
+      }
+
+      const key = `${port.PrivatePort}-${port.PublicPort}-${port.Type}`;
+      if (!uniquePorts.has(key)) {
+        uniquePorts.set(key, {
+          private: port.PrivatePort,
+          public: port.PublicPort,
+          type: port.Type === "tcp" ? "tcp" : "udp",
+        });
+      }
+    });
+
+    // Sort ports for consistent display: by private port ascending, then by type (tcp before udp)
+    return Array.from(uniquePorts.values()).sort((a, b) => {
+      if (a.private !== b.private) {
+        return a.private - b.private;
+      }
+      // tcp comes before udp
+      return a.type === "tcp" ? -1 : 1;
+    });
   }
 
   private transformDetailedPorts(ports: any): DockerContainerInfo["ports"] {

@@ -23,12 +23,43 @@ import {
 const router = express.Router();
 
 // Helper function to convert DockerContainerInfo to ContainerInfo for API responses
-function serializeContainer(container: DockerContainerInfo): ContainerInfo {
-  return {
+async function serializeContainer(container: DockerContainerInfo): Promise<ContainerInfo> {
+  const serialized: ContainerInfo = {
     ...container,
     createdAt: container.createdAt.toISOString(),
     startedAt: container.startedAt?.toISOString(),
   };
+
+  // Check if container has environment label
+  const environmentId = container.labels['mini-infra.environment'];
+  if (environmentId) {
+    try {
+      // Look up environment from database
+      const environment = await prisma.environment.findUnique({
+        where: { id: environmentId },
+        select: { id: true, name: true, type: true },
+      });
+
+      if (environment) {
+        serialized.environmentInfo = {
+          id: environment.id,
+          name: environment.name,
+          type: environment.type,
+        };
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          environmentId,
+          containerId: container.id,
+        },
+        "Failed to look up environment for container",
+      );
+    }
+  }
+
+  return serialized;
 }
 
 // Query parameter validation schema
@@ -145,7 +176,7 @@ router.get("/", requireSessionOrApiKey, (async (
 
     // Fetch containers from Docker service
     let dockerContainers = await dockerService.listContainers(true);
-    let containers = dockerContainers.map(serializeContainer);
+    let containers = await Promise.all(dockerContainers.map(serializeContainer));
 
     // Apply filtering
     if (queryParams.status) {
@@ -370,7 +401,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
       "Container details returned successfully",
     );
 
-    res.json(serializeContainer(dockerContainer));
+    res.json(await serializeContainer(dockerContainer));
   } catch (error) {
     logger.error(
       {

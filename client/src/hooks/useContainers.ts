@@ -132,7 +132,7 @@ export function useContainers(options: UseContainersOptions = {}) {
 }
 
 // Hook for managing container filter state
-export function useContainerFilters(initialFilters: ContainerFilters = {}) {
+export function useContainerFilters(initialFilters: ContainerFilters = { status: 'running' }) {
   const [filters, setFilters] = useState<ContainerFilters>(initialFilters);
   const [sortBy, setSortBy] = useState<string>("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -164,11 +164,11 @@ export function useContainerFilters(initialFilters: ContainerFilters = {}) {
   );
 
   const resetFilters = useCallback(() => {
-    setFilters(initialFilters);
+    setFilters({ status: 'running' });
     setSortBy("name");
     setSortOrder("asc");
     setPage(1);
-  }, [initialFilters]);
+  }, []);
 
   const queryParams: ContainerQueryParams = {
     ...filters,
