@@ -410,12 +410,12 @@ export class EnvironmentHealthScheduler {
           const currentDbStatus = service.status;
           const currentDbHealth = service.health;
 
-          if (currentDbStatus !== status.status || currentDbHealth !== status.health) {
+          if (currentDbStatus !== status.status || currentDbHealth !== status.health.status) {
             await prisma.environmentService.update({
               where: { id: service.id },
               data: {
                 status: String(status.status),
-                health: String(status.health)
+                health: String(status.health.status)
               }
             });
 
@@ -431,7 +431,7 @@ export class EnvironmentHealthScheduler {
             );
           }
 
-          result.healthy = String(status.health) === ApplicationServiceHealthStatusValues.HEALTHY;
+          result.healthy = String(status.health.status) === ApplicationServiceHealthStatusValues.HEALTHY;
 
         } catch (statusError) {
           this.logger.warn(

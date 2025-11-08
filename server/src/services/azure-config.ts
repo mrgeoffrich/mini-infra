@@ -11,6 +11,9 @@ import {
   BlobServiceClient,
   BlobItem,
   BlockBlobClient,
+  generateBlobSASQueryParameters,
+  BlobSASPermissions,
+  StorageSharedKeyCredential,
 } from "@azure/storage-blob";
 import NodeCache from "node-cache";
 import { createAzureSpan } from "../lib/http-instrumentation";
@@ -1121,6 +1124,95 @@ export class AzureConfigService extends ConfigurationService {
         actualSize: 0,
         errors,
       };
+    }
+  }
+
+  /**
+   * Generate a time-limited SAS URL for blob download
+   * @param containerName - Name of the Azure container
+   * @param blobName - Name of the blob
+   * @param expiryMinutes - Number of minutes until the SAS token expires (default: 15)
+   * @returns Full blob URL with SAS token appended
+   */
+  async generateBlobSasUrl(
+    containerName: string,
+    blobName: string,
+    expiryMinutes: number = 15,
+  ): Promise<string> {
+    try {
+      const connectionString = await this.getConnectionString();
+      if (!connectionString) {
+        throw new Error("Azure connection string not configured");
+      }
+
+      // Parse connection string to extract account name and account key
+      const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
+      const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
+
+      if (!accountNameMatch || !accountKeyMatch) {
+        throw new Error(
+          "Invalid connection string: missing AccountName or AccountKey",
+        );
+      }
+
+      const accountName = accountNameMatch[1];
+      const accountKey = accountKeyMatch[1];
+
+      // Create shared key credential
+      const sharedKeyCredential = new StorageSharedKeyCredential(
+        accountName,
+        accountKey,
+      );
+
+      // Set SAS token permissions (read-only)
+      const permissions = new BlobSASPermissions();
+      permissions.read = true;
+
+      // Calculate expiry time
+      const startsOn = new Date();
+      const expiresOn = new Date(startsOn.getTime() + expiryMinutes * 60 * 1000);
+
+      // Generate SAS query parameters
+      const sasToken = generateBlobSASQueryParameters(
+        {
+          containerName,
+          blobName,
+          permissions,
+          startsOn,
+          expiresOn,
+        },
+        sharedKeyCredential,
+      ).toString();
+
+      // Construct full URL with SAS token
+      const blobUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}?${sasToken}`;
+
+      servicesLogger().info(
+        {
+          containerName,
+          blobName,
+          expiryMinutes,
+          expiresOn: expiresOn.toISOString(),
+        },
+        "Generated SAS URL for blob download",
+      );
+
+      return blobUrl;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      servicesLogger().error(
+        {
+          error: errorMessage,
+          containerName,
+          blobName,
+          expiryMinutes,
+        },
+        "Failed to generate SAS URL",
+      );
+
+      throw error;
     }
   }
 

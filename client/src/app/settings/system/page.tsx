@@ -36,7 +36,6 @@ import {
   Settings,
   Container,
   Network,
-  Info,
 } from "lucide-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
@@ -314,24 +313,6 @@ export default function SystemSettingsPage() {
 
       <div className="px-4 lg:px-6 max-w-6xl">
         <div className="grid gap-6">
-          {/* Migration Notice */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Registry credentials have moved!</strong> Docker registry
-              authentication is now managed in a dedicated{" "}
-              <Link
-                to="/settings/registry-credentials"
-                className="underline font-medium hover:text-primary"
-              >
-                Registry Credentials
-              </Link>{" "}
-              page. Configure your registry credentials there to enable
-              authentication for all Docker operations including pulls, deployments,
-              backups, and restores.
-            </AlertDescription>
-          </Alert>
-
           {/* Description */}
           <div className="space-y-2">
             <p className="text-muted-foreground">

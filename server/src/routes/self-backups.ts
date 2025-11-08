@@ -2,6 +2,7 @@ import express from "express";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../middleware/auth";
+import { AzureConfigService } from "../services/azure-config";
 import type {
   BackupHistoryResponse,
   BackupHealthResponse,
@@ -11,6 +12,7 @@ import type {
 
 const logger = appLogger();
 const router = express.Router();
+const azureConfigService = new AzureConfigService(prisma);
 
 /**
  * GET / - List backup history (paginated, filterable)
@@ -286,6 +288,93 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to get backup details",
+    });
+  }
+});
+
+/**
+ * GET /:id/download - Generate SAS URL and redirect to download
+ */
+router.get("/:id/download", requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Fetch backup from database
+    const backup = await prisma.selfBackup.findUnique({
+      where: { id },
+    });
+
+    if (!backup) {
+      return res.status(404).json({
+        success: false,
+        error: "Backup not found",
+      });
+    }
+
+    // Validate backup is completed
+    if (backup.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: `Cannot download backup with status: ${backup.status}`,
+      });
+    }
+
+    // Validate Azure blob URL exists
+    if (!backup.azureBlobUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "Backup has no Azure blob URL",
+      });
+    }
+
+    // Validate container name exists
+    if (!backup.azureContainerName) {
+      return res.status(400).json({
+        success: false,
+        error: "Backup has no Azure container name",
+      });
+    }
+
+    // Extract blob name from URL
+    // URL format: https://{accountName}.blob.core.windows.net/{containerName}/{blobName}
+    const urlParts = backup.azureBlobUrl.split('/');
+    const blobName = urlParts.slice(4).join('/'); // Everything after container name
+
+    if (!blobName) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid Azure blob URL format",
+      });
+    }
+
+    // Generate SAS URL (15-minute expiration)
+    const sasUrl = await azureConfigService.generateBlobSasUrl(
+      backup.azureContainerName,
+      blobName,
+      15
+    );
+
+    logger.info({
+      backupId: id,
+      fileName: backup.fileName,
+      containerName: backup.azureContainerName,
+      blobName,
+    }, "Redirecting to SAS URL for backup download");
+
+    // Redirect to SAS URL
+    res.redirect(302, sasUrl);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logger.error({
+      error: errorMessage,
+      backupId: req.params.id,
+    }, "Failed to generate download URL");
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to generate download URL",
+      details: errorMessage,
     });
   }
 });

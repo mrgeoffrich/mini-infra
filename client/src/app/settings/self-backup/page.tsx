@@ -55,7 +55,7 @@ import {
   IconAlertTriangle,
   IconCircleCheck,
   IconCircleX,
-  IconCloudUpload,
+  IconDownload,
   IconRefresh,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -720,13 +720,9 @@ function BackupHistoryRow({
         )}
         {backup.status === "completed" && backup.azureBlobUrl && (
           <Button variant="ghost" size="sm" asChild>
-            <a
-              href={backup.azureBlobUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <IconCloudUpload className="mr-1 h-3 w-3" />
-              View in Azure
+            <a href={`/api/self-backups/${backup.id}/download`}>
+              <IconDownload className="mr-1 h-3 w-3" />
+              Download
             </a>
           </Button>
         )}

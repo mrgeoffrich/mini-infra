@@ -257,8 +257,8 @@ export class SelfBackupExecutor {
         blobContentType: 'application/zip',
       },
       metadata: {
-        'backup-type': 'self-backup',
-        'created-at': new Date().toISOString(),
+        'backuptype': 'self-backup',
+        'createdat': new Date().toISOString(),
       },
     });
 
