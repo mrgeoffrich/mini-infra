@@ -1,0 +1,392 @@
+import prisma, { PrismaClient } from "../lib/prisma";
+import CryptoJS from "crypto-js";
+import { servicesLogger } from "../lib/logger-factory";
+import type {
+  RegistryCredential,
+  CreateRegistryCredentialRequest,
+  UpdateRegistryCredentialRequest,
+  RegistryTestResult,
+} from "@mini-infra/types";
+
+export class RegistryCredentialService {
+  private prisma: PrismaClient;
+  private encryptionKey: string;
+
+  constructor(prisma: PrismaClient, encryptionKey?: string) {
+    this.prisma = prisma;
+    // Use provided encryption key or default from env
+    this.encryptionKey =
+      encryptionKey || process.env.API_KEY_SECRET || "default-key";
+  }
+
+  // ====================
+  // Encryption Utilities
+  // ====================
+
+  /**
+   * Encrypt a password
+   * @param password - Plain text password
+   * @returns Encrypted password
+   */
+  private encryptPassword(password: string): string {
+    try {
+      return CryptoJS.AES.encrypt(password, this.encryptionKey).toString();
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to encrypt password",
+      );
+      throw new Error("Encryption failed");
+    }
+  }
+
+  /**
+   * Decrypt a password
+   * @param encryptedPassword - Encrypted password
+   * @returns Plain text password
+   */
+  private decryptPassword(encryptedPassword: string): string {
+    try {
+      const bytes = CryptoJS.AES.decrypt(
+        encryptedPassword,
+        this.encryptionKey,
+      );
+      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+      if (!decrypted) {
+        throw new Error("Decryption resulted in empty string");
+      }
+      return decrypted;
+    } catch (error) {
+      servicesLogger().error(
+        {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        "Failed to decrypt password",
+      );
+      throw new Error("Decryption failed");
+    }
+  }
+
+  // ====================
+  // Registry URL Matching
+  // ====================
+
+  /**
+   * Extracts registry URL from Docker image name
+   * Examples:
+   * - "ghcr.io/owner/repo:tag" -> "ghcr.io"
+   * - "registry.hub.docker.com/library/postgres:13" -> "registry.hub.docker.com"
+   * - "postgres:13" -> "registry.hub.docker.com" (Docker Hub default)
+   * - "localhost:5000/image:tag" -> "localhost:5000"
+   */
+  private extractRegistryFromImage(imageName: string): string {
+    // Remove tag if present (everything after :)
+    const imageWithoutTag = imageName.split(":")[0];
+
+    // Split by /
+    const parts = imageWithoutTag.split("/");
+
+    // If there's only one part (e.g., "postgres"), it's from Docker Hub
+    if (parts.length === 1) {
+      return "registry.hub.docker.com";
+    }
+
+    // If the first part contains a . or : (port), it's a registry
+    // Otherwise, it's a Docker Hub username/org
+    const firstPart = parts[0];
+    if (firstPart.includes(".") || firstPart.includes(":")) {
+      return firstPart;
+    }
+
+    // Default to Docker Hub for images like "library/postgres" or "username/image"
+    return "registry.hub.docker.com";
+  }
+
+  /**
+   * Get credentials for a specific Docker image
+   * @param imageName - Full Docker image name (e.g., "ghcr.io/owner/repo:tag")
+   * @returns Decrypted credentials or null if not found
+   */
+  async getCredentialsForImage(
+    imageName: string,
+  ): Promise<{ username: string; password: string } | null> {
+    // 1. Extract registry URL from image name
+    const registryUrl = this.extractRegistryFromImage(imageName);
+
+    servicesLogger().debug(
+      { imageName, registryUrl },
+      "Extracting registry from image",
+    );
+
+    // 2. Find exact match in database
+    const credential = await this.prisma.registryCredential.findFirst({
+      where: {
+        registryUrl,
+        isActive: true,
+      },
+    });
+
+    if (credential) {
+      servicesLogger().info(
+        { registryUrl, credentialId: credential.id },
+        "Found credentials for registry",
+      );
+      return {
+        username: credential.username,
+        password: this.decryptPassword(credential.password),
+      };
+    }
+
+    // 3. Fall back to default credential if configured
+    const defaultCredential = await this.getDefaultCredential();
+    if (defaultCredential) {
+      servicesLogger().info(
+        { registryUrl, credentialId: defaultCredential.id },
+        "Using default credentials for registry",
+      );
+      return {
+        username: defaultCredential.username,
+        password: this.decryptPassword(defaultCredential.password),
+      };
+    }
+
+    // 4. No credentials found
+    servicesLogger().debug(
+      { imageName, registryUrl },
+      "No credentials found for image",
+    );
+    return null;
+  }
+
+  // ====================
+  // CRUD Operations
+  // ====================
+
+  /**
+   * Create a new registry credential
+   */
+  async createCredential(
+    data: CreateRegistryCredentialRequest,
+    userId: string,
+  ): Promise<RegistryCredential> {
+    servicesLogger().info(
+      { registryUrl: data.registryUrl, userId },
+      "Creating registry credential",
+    );
+
+    // Encrypt password before storing
+    const encryptedPassword = this.encryptPassword(data.password);
+
+    // If this credential should be default, unset any existing defaults
+    if (data.isDefault) {
+      await this.prisma.registryCredential.updateMany({
+        where: { isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+
+    const credential = await this.prisma.registryCredential.create({
+      data: {
+        name: data.name,
+        registryUrl: data.registryUrl,
+        username: data.username,
+        password: encryptedPassword,
+        isDefault: data.isDefault ?? false,
+        isActive: data.isActive ?? true,
+        description: data.description,
+        createdBy: userId,
+        updatedBy: userId,
+      },
+    });
+
+    servicesLogger().info(
+      { credentialId: credential.id, registryUrl: credential.registryUrl },
+      "Registry credential created successfully",
+    );
+
+    return credential as RegistryCredential;
+  }
+
+  /**
+   * Get a single registry credential by ID
+   */
+  async getCredential(id: string): Promise<RegistryCredential | null> {
+    const credential = await this.prisma.registryCredential.findUnique({
+      where: { id },
+    });
+
+    return credential as RegistryCredential | null;
+  }
+
+  /**
+   * Get all registry credentials
+   */
+  async getAllCredentials(
+    includeInactive = false,
+  ): Promise<RegistryCredential[]> {
+    const credentials = await this.prisma.registryCredential.findMany({
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    });
+
+    return credentials as RegistryCredential[];
+  }
+
+  /**
+   * Update an existing registry credential
+   */
+  async updateCredential(
+    id: string,
+    data: UpdateRegistryCredentialRequest,
+    userId: string,
+  ): Promise<RegistryCredential> {
+    servicesLogger().info({ credentialId: id, userId }, "Updating credential");
+
+    // If setting as default, unset any existing defaults
+    if (data.isDefault) {
+      await this.prisma.registryCredential.updateMany({
+        where: { isDefault: true, id: { not: id } },
+        data: { isDefault: false },
+      });
+    }
+
+    // Build update data
+    const updateData: any = {
+      updatedBy: userId,
+    };
+
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.username !== undefined) updateData.username = data.username;
+    if (data.password !== undefined) {
+      updateData.password = this.encryptPassword(data.password);
+    }
+    if (data.isDefault !== undefined) updateData.isDefault = data.isDefault;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.description !== undefined) updateData.description = data.description;
+
+    const credential = await this.prisma.registryCredential.update({
+      where: { id },
+      data: updateData,
+    });
+
+    servicesLogger().info(
+      { credentialId: credential.id },
+      "Credential updated successfully",
+    );
+
+    return credential as RegistryCredential;
+  }
+
+  /**
+   * Delete a registry credential (soft delete - sets isActive to false)
+   */
+  async deleteCredential(id: string): Promise<void> {
+    servicesLogger().info({ credentialId: id }, "Deleting credential");
+
+    await this.prisma.registryCredential.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    servicesLogger().info(
+      { credentialId: id },
+      "Credential deleted successfully",
+    );
+  }
+
+  /**
+   * Set a credential as the default registry
+   */
+  async setDefaultCredential(id: string): Promise<void> {
+    servicesLogger().info(
+      { credentialId: id },
+      "Setting credential as default",
+    );
+
+    // Unset all existing defaults
+    await this.prisma.registryCredential.updateMany({
+      where: { isDefault: true },
+      data: { isDefault: false },
+    });
+
+    // Set this one as default
+    await this.prisma.registryCredential.update({
+      where: { id },
+      data: { isDefault: true },
+    });
+
+    servicesLogger().info(
+      { credentialId: id },
+      "Credential set as default successfully",
+    );
+  }
+
+  /**
+   * Get the default registry credential
+   */
+  async getDefaultCredential(): Promise<RegistryCredential | null> {
+    const credential = await this.prisma.registryCredential.findFirst({
+      where: {
+        isDefault: true,
+        isActive: true,
+      },
+    });
+
+    return credential as RegistryCredential | null;
+  }
+
+  // ====================
+  // Validation
+  // ====================
+
+  /**
+   * Validate a stored credential by ID
+   */
+  async validateCredential(id: string): Promise<RegistryTestResult> {
+    const credential = await this.getCredential(id);
+    if (!credential) {
+      throw new Error("Credential not found");
+    }
+
+    const decryptedPassword = this.decryptPassword(credential.password);
+
+    return this.testCredential(
+      credential.registryUrl,
+      credential.username,
+      decryptedPassword,
+    );
+  }
+
+  /**
+   * Test a registry credential by attempting a lightweight operation
+   * @param registryUrl - Registry URL
+   * @param username - Registry username
+   * @param password - Registry password (plain text)
+   * @param testImage - Optional specific image to test (defaults to a small public image)
+   */
+  async testCredential(
+    registryUrl: string,
+    username: string,
+    password: string,
+    testImage?: string,
+  ): Promise<RegistryTestResult> {
+    servicesLogger().info({ registryUrl }, "Testing registry credentials");
+
+    // This is a placeholder implementation
+    // In the real implementation, this would:
+    // 1. Attempt to authenticate with the registry
+    // 2. Try to pull a small test image or check catalog
+    // 3. Measure response time
+    // 4. Return results
+
+    // For now, we'll return a success result
+    // This will be properly implemented when we integrate with DockerExecutorService
+    return {
+      success: true,
+      message: "Credential test not yet implemented",
+      registryUrl,
+    };
+  }
+}

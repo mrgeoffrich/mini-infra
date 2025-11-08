@@ -531,33 +531,23 @@ export class RestoreExecutorService {
         "Retrieving registry credentials configuration",
       );
 
-      // Get registry credentials for Docker image
-      const registryCredentials = await this.getRestoreRegistryCredentials();
-
       await this.updateRestoreProgress(operationId, {
         status: "running",
         progress: 25,
         message: "Pulling Docker image",
       });
 
-      // Pull Docker image with authentication if credentials are provided
+      // Pull Docker image with automatic authentication
       dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
-          hasRegistryAuth: !!(
-            registryCredentials.username && registryCredentials.password
-          ),
         },
-        "Starting Docker image pull",
+        "Pulling Docker image for restore with auto-auth",
       );
 
       const pullStartTime = Date.now();
-      await this.dockerExecutor.pullImageWithAuth(
-        dockerImage,
-        registryCredentials.username,
-        registryCredentials.password,
-      );
+      await this.dockerExecutor.pullImageWithAutoAuth(dockerImage);
 
       dockerExecutorLogger().info(
         {
@@ -1617,39 +1607,6 @@ export class RestoreExecutorService {
         "Failed to get restore Docker image from PostgreSQL settings",
       );
       throw new Error(`Restore Docker image not configured in system settings. Please configure PostgreSQL restore settings at /settings/system before running restore operations. Error: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Get restore registry credentials from system settings
-   */
-  private async getRestoreRegistryCredentials(): Promise<{
-    username?: string;
-    password?: string;
-  }> {
-    try {
-      const credentials = await this.postgresSettingsConfigService.getRestoreRegistryCredentials();
-
-      servicesLogger().info(
-        {
-          hasUsername: !!credentials.username,
-          hasPassword: !!credentials.password,
-        },
-        "Retrieved restore registry credentials from PostgreSQL settings",
-      );
-
-      return credentials;
-    } catch (error) {
-      servicesLogger().warn(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to get restore registry credentials from PostgreSQL settings",
-      );
-      return {
-        username: undefined,
-        password: undefined,
-      };
     }
   }
 

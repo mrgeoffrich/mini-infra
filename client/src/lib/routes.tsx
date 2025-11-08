@@ -11,6 +11,7 @@ import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
 import AzureSettingsPage from "@/app/connectivity/azure/page";
 import { ConnectivityPage } from "@/app/connectivity/page";
 import SystemSettingsPage from "@/app/settings/system/page";
+import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
 import PostgresPage from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import { TunnelsPage } from "@/app/tunnels/page";
@@ -126,6 +127,10 @@ export const router = createBrowserRouter([
       {
         path: "settings/system",
         element: <SystemSettingsPage />,
+      },
+      {
+        path: "settings/registry-credentials",
+        element: <RegistryCredentialsPage />,
       },
       {
         path: "user/settings",

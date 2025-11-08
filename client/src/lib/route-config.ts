@@ -175,6 +175,15 @@ export const routeConfig: Record<string, RouteConfig> = {
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'
+      },
+      'registry-credentials': {
+        path: '/settings/registry-credentials',
+        title: 'Registry Credentials',
+        breadcrumbLabel: 'Registry Credentials',
+        icon: IconKey,
+        parent: '/settings',
+        showInNav: true,
+        navGroup: 'secondary'
       }
     }
   },

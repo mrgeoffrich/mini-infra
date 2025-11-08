@@ -2,6 +2,7 @@ import Docker from "dockerode";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import ContainerLabelManager from "./container-label-manager";
+import { DockerExecutorService } from "./docker-executor";
 import prisma from "../lib/prisma";
 import {
   ContainerConfig,
@@ -83,10 +84,12 @@ export interface OrphanedContainer {
 export class ContainerLifecycleManager {
   private dockerService: DockerService;
   private labelManager: ContainerLabelManager;
+  private dockerExecutor: DockerExecutorService;
 
   constructor() {
     this.dockerService = DockerService.getInstance();
     this.labelManager = new ContainerLabelManager();
+    this.dockerExecutor = new DockerExecutorService();
   }
 
 
@@ -149,9 +152,21 @@ export class ContainerLifecycleManager {
 
       // Build full image name
       // If image already includes a tag, use it as-is, otherwise add the tag
-      const fullImage = options.image.includes(':') 
-        ? options.image 
+      const fullImage = options.image.includes(':')
+        ? options.image
         : `${options.image}:${options.tag || "latest"}`;
+
+      // Pull image with automatic authentication
+      servicesLogger().info(
+        { image: fullImage },
+        "Pulling image with automatic registry authentication",
+      );
+
+      // Initialize docker executor if needed
+      await this.dockerExecutor.initialize();
+
+      // Pull the image with auto-auth (will use registry credentials if available)
+      await this.dockerExecutor.pullImageWithAutoAuth(fullImage);
 
       // Generate deployment labels using the centralized label manager
       const labels = this.labelManager.generateDeploymentLabels({

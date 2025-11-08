@@ -3,6 +3,7 @@ import { Readable, Writable } from "stream";
 import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import ContainerLabelManager from "./container-label-manager";
+import { RegistryCredentialService } from "./registry-credential";
 import prisma from "../lib/prisma";
 
 export interface ContainerExecutionOptions {
@@ -82,11 +83,13 @@ export class DockerExecutorService {
   private docker: Docker;
   private dockerConfigService: DockerConfigService;
   private labelManager: ContainerLabelManager;
+  private registryCredentialService: RegistryCredentialService;
   private static readonly DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
   constructor() {
     this.dockerConfigService = new DockerConfigService(prisma);
     this.labelManager = new ContainerLabelManager();
+    this.registryCredentialService = new RegistryCredentialService(prisma);
     // Initialize Docker client - will be set up asynchronously
     this.docker = {} as Docker;
   }
@@ -710,6 +713,45 @@ export class DockerExecutorService {
       }
 
       throw new Error(`Failed to pull image '${image}': ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Pull Docker image with automatic credential resolution
+   * Automatically finds and applies registry credentials from the database
+   */
+  public async pullImageWithAutoAuth(image: string): Promise<void> {
+    servicesLogger().info({ image }, "Pulling image with automatic authentication");
+
+    try {
+      // Attempt to find credentials for this image's registry
+      const credentials = await this.registryCredentialService.getCredentialsForImage(image);
+
+      if (credentials) {
+        servicesLogger().info(
+          { image, hasCredentials: true },
+          "Found registry credentials for image",
+        );
+        // Pull with credentials
+        return this.pullImageWithAuth(
+          image,
+          credentials.username,
+          credentials.password,
+        );
+      } else {
+        servicesLogger().info(
+          { image, hasCredentials: false },
+          "No registry credentials found, attempting anonymous pull",
+        );
+        // No credentials - attempt anonymous pull
+        return this.pullImageWithAuth(image);
+      }
+    } catch (error) {
+      servicesLogger().error(
+        { error, image },
+        "Failed to pull image with auto-auth",
+      );
+      throw error;
     }
   }
 

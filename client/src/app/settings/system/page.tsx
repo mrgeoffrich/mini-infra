@@ -34,15 +34,12 @@ import {
   Save,
   Loader2,
   Settings,
-  Eye,
-  EyeOff,
   Container,
-  TestTube,
   Network,
+  Info,
 } from "lucide-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { useTestDockerRegistry } from "@/hooks/use-system-settings";
 
 // System settings schema
 const systemSettingsSchema = z.object({
@@ -54,8 +51,6 @@ const systemSettingsSchema = z.object({
       /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
       "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
     ),
-  backupRegistryUsername: z.string().optional(),
-  backupRegistryPassword: z.string().optional(),
 
   // Restore container settings
   restoreDockerImage: z
@@ -65,8 +60,6 @@ const systemSettingsSchema = z.object({
       /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
       "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
     ),
-  restoreRegistryUsername: z.string().optional(),
-  restoreRegistryPassword: z.string().optional(),
 
   // HAProxy port configuration (optional overrides)
   haproxyHttpPort: z
@@ -104,11 +97,7 @@ export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {},
   );
-  const [showBackupPassword, setShowBackupPassword] = useState(false);
-  const [showRestorePassword, setShowRestorePassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [testingBackup, setTestingBackup] = useState(false);
-  const [testingRestore, setTestingRestore] = useState(false);
 
   // Fetch existing system settings for system category
   const {
@@ -134,18 +123,13 @@ export default function SystemSettingsPage() {
   // Mutations for saving settings
   const createSetting = useCreateSystemSetting();
   const updateSetting = useUpdateSystemSetting();
-  const testDockerRegistry = useTestDockerRegistry();
 
   // Form setup
   const form = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
       backupDockerImage: DEFAULT_BACKUP_IMAGE,
-      backupRegistryUsername: "",
-      backupRegistryPassword: "",
       restoreDockerImage: DEFAULT_RESTORE_IMAGE,
-      restoreRegistryUsername: "",
-      restoreRegistryPassword: "",
       haproxyHttpPort: "",
       haproxyHttpsPort: "",
       dockerHostIp: "",
@@ -172,24 +156,8 @@ export default function SystemSettingsPage() {
         settingsMap.backup_docker_image?.value || DEFAULT_BACKUP_IMAGE,
       );
       form.setValue(
-        "backupRegistryUsername",
-        settingsMap.backup_registry_username?.value || "",
-      );
-      form.setValue(
-        "backupRegistryPassword",
-        settingsMap.backup_registry_password?.value || "",
-      );
-      form.setValue(
         "restoreDockerImage",
         settingsMap.restore_docker_image?.value || DEFAULT_RESTORE_IMAGE,
-      );
-      form.setValue(
-        "restoreRegistryUsername",
-        settingsMap.restore_registry_username?.value || "",
-      );
-      form.setValue(
-        "restoreRegistryPassword",
-        settingsMap.restore_registry_password?.value || "",
       );
       form.setValue(
         "dockerHostIp",
@@ -233,33 +201,9 @@ export default function SystemSettingsPage() {
         },
         {
           category: "system" as const,
-          key: "backup_registry_username",
-          value: data.backupRegistryUsername || "",
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "backup_registry_password",
-          value: data.backupRegistryPassword || "",
-          isEncrypted: true,
-        },
-        {
-          category: "system" as const,
           key: "restore_docker_image",
           value: data.restoreDockerImage,
           isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "restore_registry_username",
-          value: data.restoreRegistryUsername || "",
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "restore_registry_password",
-          value: data.restoreRegistryPassword || "",
-          isEncrypted: true,
         },
         {
           category: "system" as const,
@@ -329,48 +273,6 @@ export default function SystemSettingsPage() {
     }
   };
 
-  const handleTestDockerRegistry = async (type: "backup" | "restore") => {
-    const isBackup = type === "backup";
-    const setter = isBackup ? setTestingBackup : setTestingRestore;
-
-    setter(true);
-    try {
-      const formValues = form.getValues();
-
-      const testData = {
-        type,
-        image: isBackup
-          ? formValues.backupDockerImage
-          : formValues.restoreDockerImage,
-        registryUsername: isBackup
-          ? formValues.backupRegistryUsername
-          : formValues.restoreRegistryUsername,
-        registryPassword: isBackup
-          ? formValues.backupRegistryPassword
-          : formValues.restoreRegistryPassword,
-      };
-
-      const result = await testDockerRegistry.mutateAsync(testData);
-
-      const successMessage = `${result.message} - Image: ${result.details.image}${result.details.pullTimeMs ? ` (${result.details.pullTimeMs}ms)` : ""}`;
-      toastWithCopy.success(successMessage, {
-        title: "Registry Connection Successful",
-        description: `Image pulled successfully in ${result.details.pullTimeMs || 0}ms`,
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Failed to test Docker registry connection";
-      toastWithCopy.error(errorMessage, {
-        title: "Registry Connection Failed",
-        description: "Copy the error details for troubleshooting",
-      });
-    } finally {
-      setter(false);
-    }
-  };
-
 
   if (settingsError) {
     return (
@@ -412,6 +314,24 @@ export default function SystemSettingsPage() {
 
       <div className="px-4 lg:px-6 max-w-6xl">
         <div className="grid gap-6">
+          {/* Migration Notice */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Registry credentials have moved!</strong> Docker registry
+              authentication is now managed in a dedicated{" "}
+              <Link
+                to="/settings/registry-credentials"
+                className="underline font-medium hover:text-primary"
+              >
+                Registry Credentials
+              </Link>{" "}
+              page. Configure your registry credentials there to enable
+              authentication for all Docker operations including pulls, deployments,
+              backups, and restores.
+            </AlertDescription>
+          </Alert>
+
           {/* Description */}
           <div className="space-y-2">
             <p className="text-muted-foreground">
@@ -465,87 +385,6 @@ export default function SystemSettingsPage() {
                         </FormItem>
                       )}
                     />
-
-                    <FormField
-                      control={form.control}
-                      name="backupRegistryUsername"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registry Username (Optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="username" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Username for private Docker registry authentication
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="backupRegistryPassword"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registry Password (Optional)</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type={showBackupPassword ? "text" : "password"}
-                                placeholder="password"
-                                {...field}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="absolute right-0 top-0 h-full px-3"
-                                onClick={() =>
-                                  setShowBackupPassword(!showBackupPassword)
-                                }
-                              >
-                                {showBackupPassword ? (
-                                  <EyeOff className="h-4 w-4" />
-                                ) : (
-                                  <Eye className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormDescription>
-                            Password for private Docker registry authentication
-                            (encrypted when stored)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Test Connection Button */}
-                    <div className="pt-4 border-t">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => handleTestDockerRegistry("backup")}
-                        disabled={
-                          testingBackup || !form.watch("backupDockerImage")
-                        }
-                        className="w-full"
-                      >
-                        {testingBackup ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Testing Connection...
-                          </>
-                        ) : (
-                          <>
-                            <TestTube className="h-4 w-4 mr-2" />
-                            Test Connection
-                          </>
-                        )}
-                      </Button>
-                    </div>
                   </CardContent>
                 </Card>
 
@@ -582,87 +421,6 @@ export default function SystemSettingsPage() {
                         </FormItem>
                       )}
                     />
-
-                    <FormField
-                      control={form.control}
-                      name="restoreRegistryUsername"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registry Username (Optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="username" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Username for private Docker registry authentication
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="restoreRegistryPassword"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registry Password (Optional)</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type={showRestorePassword ? "text" : "password"}
-                                placeholder="password"
-                                {...field}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="absolute right-0 top-0 h-full px-3"
-                                onClick={() =>
-                                  setShowRestorePassword(!showRestorePassword)
-                                }
-                              >
-                                {showRestorePassword ? (
-                                  <EyeOff className="h-4 w-4" />
-                                ) : (
-                                  <Eye className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </FormControl>
-                          <FormDescription>
-                            Password for private Docker registry authentication
-                            (encrypted when stored)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Test Connection Button */}
-                    <div className="pt-4 border-t">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => handleTestDockerRegistry("restore")}
-                        disabled={
-                          testingRestore || !form.watch("restoreDockerImage")
-                        }
-                        className="w-full"
-                      >
-                        {testingRestore ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Testing Connection...
-                          </>
-                        ) : (
-                          <>
-                            <TestTube className="h-4 w-4 mr-2" />
-                            Test Connection
-                          </>
-                        )}
-                      </Button>
-                    </div>
                   </CardContent>
                 </Card>
 
