@@ -26,6 +26,7 @@ const environmentLogConfigSchema = z.object({
   dockerexecutor: loggerConfigSchema,
   deployments: loggerConfigSchema,
   loadbalancer: loggerConfigSchema,
+  "self-backup": loggerConfigSchema,
 });
 
 const openobserveConfigSchema = z.object({
@@ -75,6 +76,7 @@ export function loadLoggingConfig(): LoggingConfig {
         dockerexecutor: { level: "debug" },
         deployments: { level: "debug" },
         loadbalancer: { level: "debug" },
+        "self-backup": { level: "info" },
       },
       production: {
         app: { level: "info" },
@@ -84,6 +86,7 @@ export function loadLoggingConfig(): LoggingConfig {
         dockerexecutor: { level: "info" },
         deployments: { level: "info" },
         loadbalancer: { level: "info" },
+        "self-backup": { level: "info" },
       },
       test: {
         app: { level: "silent" },
@@ -93,6 +96,7 @@ export function loadLoggingConfig(): LoggingConfig {
         dockerexecutor: { level: "silent" },
         deployments: { level: "silent" },
         loadbalancer: { level: "silent" },
+        "self-backup": { level: "silent" },
       },
       redactionPaths: [
         "password",

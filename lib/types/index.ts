@@ -35,6 +35,9 @@ export * from "./environments";
 // Self-backup types
 export * from "./self-backup";
 
+// Registry types
+export * from "./registry";
+
 // API response types
 export * from "./api";
 

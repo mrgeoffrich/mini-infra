@@ -471,3 +471,31 @@ model HAProxyFrontend {
   @@index([status])
   @@map("haproxy_frontends")
 }
+
+// Registry Credentials Management
+
+// RegistryCredential model for managing Docker registry authentication
+model RegistryCredential {
+  id                    String   @id @default(cuid())
+  name                  String   // Friendly name (e.g., "GitHub Container Registry", "Docker Hub Production")
+  registryUrl           String   // Registry address (e.g., "ghcr.io", "registry.hub.docker.com")
+  username              String   // Registry username
+  password              String   // Encrypted password
+  isDefault             Boolean  @default(false) // Default registry for unmatched images
+  isActive              Boolean  @default(true)  // Enable/disable without deletion
+
+  // Metadata
+  description           String?  // Optional description
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdBy             String   // User ID
+  updatedBy             String   // User ID
+
+  // Validation tracking
+  lastValidatedAt       DateTime?
+  validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'
+  validationMessage     String?
+
+  @@unique([registryUrl])
+  @@map("registry_credentials")
+}

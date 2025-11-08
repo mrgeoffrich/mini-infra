@@ -6,6 +6,7 @@ import {
   IconDashboard,
   IconDatabase,
   IconKey,
+  IconNetwork,
   IconRocket,
   IconServer,
   IconSettings,
@@ -121,7 +122,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/connectivity': {
     path: '/connectivity',
     title: 'Connectivity',
-    icon: IconSettings,
+    icon: IconNetwork,
     showInNav: true,
     navGroup: 'main',
     description: 'Service connectivity and configuration',
@@ -172,6 +173,15 @@ export const routeConfig: Record<string, RouteConfig> = {
         title: 'System Settings',
         breadcrumbLabel: 'System',
         icon: IconSettings,
+        parent: '/settings',
+        showInNav: true,
+        navGroup: 'secondary'
+      },
+      'registry-credentials': {
+        path: '/settings/registry-credentials',
+        title: 'Registry Credentials',
+        breadcrumbLabel: 'Registry Credentials',
+        icon: IconKey,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'

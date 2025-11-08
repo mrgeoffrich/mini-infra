@@ -493,34 +493,24 @@ export class BackupExecutorService {
         "Retrieving registry credentials configuration",
       );
 
-      // Get registry credentials for Docker image
-      const registryCredentials = await this.getBackupRegistryCredentials();
-
       await this.updateBackupProgress(operationId, {
         status: "running",
         progress: 25,
         message: "Pulling Docker image",
       });
 
-      // Pull Docker image with authentication if credentials are provided
+      // Pull Docker image with automatic authentication
       dockerExecutorLogger().info(
         {
           operationId,
           dockerImage,
-          hasRegistryAuth: !!(
-            registryCredentials.username && registryCredentials.password
-          ),
         },
-        "Starting Docker image pull",
+        "Pulling Docker image for backup with auto-auth",
       );
 
       const pullStartTime = Date.now();
       try {
-        await this.dockerExecutor.pullImageWithAuth(
-          dockerImage,
-          registryCredentials.username,
-          registryCredentials.password,
-        );
+        await this.dockerExecutor.pullImageWithAutoAuth(dockerImage);
 
         dockerExecutorLogger().info(
           {
@@ -918,39 +908,6 @@ export class BackupExecutorService {
         "Failed to get backup Docker image from PostgreSQL settings",
       );
       throw new Error(`Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations. Error: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Get backup registry credentials from system settings
-   */
-  private async getBackupRegistryCredentials(): Promise<{
-    username?: string;
-    password?: string;
-  }> {
-    try {
-      const credentials = await this.postgresSettingsConfigService.getBackupRegistryCredentials();
-
-      servicesLogger().info(
-        {
-          hasUsername: !!credentials.username,
-          hasPassword: !!credentials.password,
-        },
-        "Retrieved backup registry credentials from PostgreSQL settings",
-      );
-
-      return credentials;
-    } catch (error) {
-      servicesLogger().warn(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to get backup registry credentials from PostgreSQL settings",
-      );
-      return {
-        username: undefined,
-        password: undefined,
-      };
     }
   }
 
