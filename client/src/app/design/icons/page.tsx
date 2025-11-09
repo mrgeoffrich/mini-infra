@@ -3,574 +3,721 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search } from "lucide-react";
+import { IconSearch } from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
 import { IconCard } from "./IconCard";
 
-// Import all icons from Lucide React
+// Import brand icons
 import {
-  // Navigation icons
-  LayoutDashboard,
-  Container,
-  Database,
-  Rocket,
-  Server,
-  Cloud,
-  CloudCog,
-  Key,
-  Network,
-  Settings,
-  Boxes,
-  // Action and UI icons
-  Plus,
-  RefreshCw,
-  Play,
-  Trash2,
-  Edit,
-  Pencil,
-  Download,
-  ArrowLeft,
-  ArrowRight,
-  Home,
-  MoreHorizontal,
-  X,
-  Copy,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  AlertTriangle,
-  CheckIcon,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Info,
-  Loader2,
-  TrendingUp,
-  TrendingDown,
-  HardDrive,
-  Globe,
-  Shield,
-  Ban,
-  LogIn,
-  LogOut,
-  Activity,
-  History,
-  Zap,
-  Calendar,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpDown,
-  Filter,
-  CircleIcon,
-  XIcon,
-  User,
-  TestTube,
-  MoreVertical,
-} from "lucide-react";
+  IconBrandDocker,
+  IconBrandAzure,
+  IconBrandCloudflare,
+} from "@tabler/icons-react";
+
+// Import navigation icons
+import {
+  IconInnerShadowTop,
+  IconAppWindow,
+  IconDashboard,
+  IconDatabase,
+  IconRocket,
+  IconServer,
+  IconCloud,
+  IconCloudComputing,
+  IconKey,
+  IconNetwork,
+  IconSettings,
+} from "@tabler/icons-react";
+
+// Import action icons
+import {
+  IconPlus,
+  IconRefresh,
+  IconPlayerPlay,
+  IconTrash,
+  IconEdit,
+  IconPencil,
+  IconDownload,
+  IconArrowLeft,
+  IconArrowRight,
+  IconHome,
+  IconDots,
+  IconDotsVertical,
+  IconX,
+  IconCopy,
+  IconEye,
+  IconEyeOff,
+} from "@tabler/icons-react";
+
+// Import status icons
+import {
+  IconAlertCircle,
+  IconAlertTriangle,
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconCheck,
+  IconInfoCircle,
+  IconLoader2,
+  IconLoader,
+  IconTrendingUp,
+  IconTrendingDown,
+} from "@tabler/icons-react";
+
+// Import resource icons
+import {
+  IconServer2,
+  IconWorld,
+  IconGlobe,
+  IconShield,
+  IconBan,
+  IconLogin,
+  IconLogout,
+  IconActivity,
+  IconHistory,
+  IconBolt,
+  IconCalendar,
+} from "@tabler/icons-react";
+
+// Import UI component icons
+import {
+  IconChevronDown,
+  IconChevronUp,
+  IconChevronsDown,
+  IconChevronsUp,
+  IconArrowsSort,
+  IconChevronLeft,
+  IconChevronRight,
+  IconSelector,
+  IconFilter,
+  IconCircle,
+  IconUser,
+} from "@tabler/icons-react";
+
+// Import testing & validation icons
+import {
+  IconCloudQuestion,
+  IconSettingsQuestion,
+  IconDatabaseSearch,
+  IconQuestionMark,
+  IconHelpCircle,
+} from "@tabler/icons-react";
 
 interface IconDefinition {
   name: string;
-  component: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  library: "lucide";
+  component: Icon;
+  library: "tabler";
   usage: string;
   importPath: string;
   sizes?: string[];
+  isBrand?: boolean;
 }
+
+const brandIcons: IconDefinition[] = [
+  {
+    name: "IconBrandDocker",
+    component: IconBrandDocker,
+    library: "tabler",
+    usage: "Docker containers and containerization - Official Docker whale logo",
+    importPath: 'import { IconBrandDocker } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-6"],
+    isBrand: true,
+  },
+  {
+    name: "IconBrandAzure",
+    component: IconBrandAzure,
+    library: "tabler",
+    usage: "Microsoft Azure cloud services - Official Microsoft Azure logo",
+    importPath: 'import { IconBrandAzure } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-6"],
+    isBrand: true,
+  },
+  {
+    name: "IconBrandCloudflare",
+    component: IconBrandCloudflare,
+    library: "tabler",
+    usage: "Cloudflare services, tunnels, CDN - Official Cloudflare logo",
+    importPath: 'import { IconBrandCloudflare } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-6"],
+    isBrand: true,
+  },
+];
 
 const navigationIcons: IconDefinition[] = [
   {
-    name: "Boxes",
-    component: Boxes,
-    library: "lucide",
+    name: "IconInnerShadowTop",
+    component: IconInnerShadowTop,
+    library: "tabler",
     usage: "Application logo and brand mark",
-    importPath: 'import { Boxes } from "lucide-react"',
-    sizes: ["!size-5"],
+    importPath: 'import { IconInnerShadowTop } from "@tabler/icons-react"',
+    sizes: ["size-5"],
   },
   {
-    name: "LayoutDashboard",
-    component: LayoutDashboard,
-    library: "lucide",
-    usage: "Dashboard / Overview",
-    importPath: 'import { LayoutDashboard } from "lucide-react"',
+    name: "IconAppWindow",
+    component: IconAppWindow,
+    library: "tabler",
+    usage: "Application logo alternative",
+    importPath: 'import { IconAppWindow } from "@tabler/icons-react"',
+    sizes: ["size-5"],
   },
   {
-    name: "Container",
-    component: Container,
-    library: "lucide",
-    usage: "Docker Containers (Docker whale icon)",
-    importPath: 'import { Container } from "lucide-react"',
+    name: "IconDashboard",
+    component: IconDashboard,
+    library: "tabler",
+    usage: "Dashboard / System Overview",
+    importPath: 'import { IconDashboard } from "@tabler/icons-react"',
   },
   {
-    name: "Database",
-    component: Database,
-    library: "lucide",
-    usage: "PostgreSQL / Database",
-    importPath: 'import { Database } from "lucide-react"',
+    name: "IconBrandDocker",
+    component: IconBrandDocker,
+    library: "tabler",
+    usage: "Docker Containers (Brand Icon - Use in navigation)",
+    importPath: 'import { IconBrandDocker } from "@tabler/icons-react"',
+    isBrand: true,
   },
   {
-    name: "Rocket",
-    component: Rocket,
-    library: "lucide",
+    name: "IconDatabase",
+    component: IconDatabase,
+    library: "tabler",
+    usage: "Database / PostgreSQL (generic database icon)",
+    importPath: 'import { IconDatabase } from "@tabler/icons-react"',
+  },
+  {
+    name: "IconRocket",
+    component: IconRocket,
+    library: "tabler",
     usage: "Deployments",
-    importPath: 'import { Rocket } from "lucide-react"',
+    importPath: 'import { IconRocket } from "@tabler/icons-react"',
   },
   {
-    name: "Server",
-    component: Server,
-    library: "lucide",
-    usage: "Environments",
-    importPath: 'import { Server } from "lucide-react"',
+    name: "IconServer",
+    component: IconServer,
+    library: "tabler",
+    usage: "Environments / Infrastructure",
+    importPath: 'import { IconServer } from "@tabler/icons-react"',
   },
   {
-    name: "Cloud",
-    component: Cloud,
-    library: "lucide",
-    usage: "Cloudflare Tunnels / Cloud Services / Azure",
-    importPath: 'import { Cloud } from "lucide-react"',
+    name: "IconCloud",
+    component: IconCloud,
+    library: "tabler",
+    usage: "Cloud Services / Generic cloud",
+    importPath: 'import { IconCloud } from "@tabler/icons-react"',
   },
   {
-    name: "CloudCog",
-    component: CloudCog,
-    library: "lucide",
-    usage: "Cloudflare Settings (sub-navigation)",
-    importPath: 'import { CloudCog } from "lucide-react"',
+    name: "IconBrandCloudflare",
+    component: IconBrandCloudflare,
+    library: "tabler",
+    usage: "Cloudflare Tunnels (Brand Icon - Use for Cloudflare pages)",
+    importPath: 'import { IconBrandCloudflare } from "@tabler/icons-react"',
+    isBrand: true,
   },
   {
-    name: "Key",
-    component: Key,
-    library: "lucide",
+    name: "IconCloudComputing",
+    component: IconCloudComputing,
+    library: "tabler",
+    usage: "Cloud Settings / Configuration",
+    importPath: 'import { IconCloudComputing } from "@tabler/icons-react"',
+  },
+  {
+    name: "IconKey",
+    component: IconKey,
+    library: "tabler",
     usage: "API Keys / Credentials",
-    importPath: 'import { Key } from "lucide-react"',
+    importPath: 'import { IconKey } from "@tabler/icons-react"',
   },
   {
-    name: "Network",
-    component: Network,
-    library: "lucide",
+    name: "IconNetwork",
+    component: IconNetwork,
+    library: "tabler",
     usage: "Connectivity / Networking",
-    importPath: 'import { Network } from "lucide-react"',
+    importPath: 'import { IconNetwork } from "@tabler/icons-react"',
   },
   {
-    name: "Settings",
-    component: Settings,
-    library: "lucide",
-    usage: "Settings",
-    importPath: 'import { Settings } from "lucide-react"',
+    name: "IconSettings",
+    component: IconSettings,
+    library: "tabler",
+    usage: "Settings / Configuration",
+    importPath: 'import { IconSettings } from "@tabler/icons-react"',
   },
 ];
 
 const actionIcons: IconDefinition[] = [
   {
-    name: "Plus",
-    component: Plus,
-    library: "lucide",
+    name: "IconPlus",
+    component: IconPlus,
+    library: "tabler",
     usage: "Add / Create new resource",
-    importPath: 'import { Plus } from "lucide-react"',
-    sizes: ["h-4 w-4", "h-5 w-5"],
+    importPath: 'import { IconPlus } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-5"],
   },
   {
-    name: "RefreshCw",
-    component: RefreshCw,
-    library: "lucide",
+    name: "IconRefresh",
+    component: IconRefresh,
+    library: "tabler",
     usage: "Refresh / Reload data",
-    importPath: 'import { RefreshCw } from "lucide-react"',
-    sizes: ["h-4 w-4", "h-5 w-5"],
+    importPath: 'import { IconRefresh } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-5"],
   },
   {
-    name: "Play",
-    component: Play,
-    library: "lucide",
+    name: "IconPlayerPlay",
+    component: IconPlayerPlay,
+    library: "tabler",
     usage: "Execute / Start operation",
-    importPath: 'import { Play } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconPlayerPlay } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Trash2",
-    component: Trash2,
-    library: "lucide",
+    name: "IconTrash",
+    component: IconTrash,
+    library: "tabler",
     usage: "Delete / Remove",
-    importPath: 'import { Trash2 } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconTrash } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Edit",
-    component: Edit,
-    library: "lucide",
+    name: "IconEdit",
+    component: IconEdit,
+    library: "tabler",
     usage: "Edit / Modify",
-    importPath: 'import { Edit } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconEdit } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Pencil",
-    component: Pencil,
-    library: "lucide",
+    name: "IconPencil",
+    component: IconPencil,
+    library: "tabler",
     usage: "Edit / Modify (alternative)",
-    importPath: 'import { Pencil } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconPencil } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Download",
-    component: Download,
-    library: "lucide",
+    name: "IconDownload",
+    component: IconDownload,
+    library: "tabler",
     usage: "Download / Export",
-    importPath: 'import { Download } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconDownload } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ArrowLeft",
-    component: ArrowLeft,
-    library: "lucide",
+    name: "IconArrowLeft",
+    component: IconArrowLeft,
+    library: "tabler",
     usage: "Back / Return",
-    importPath: 'import { ArrowLeft } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconArrowLeft } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ArrowRight",
-    component: ArrowRight,
-    library: "lucide",
+    name: "IconArrowRight",
+    component: IconArrowRight,
+    library: "tabler",
     usage: "Forward / Next step",
-    importPath: 'import { ArrowRight } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconArrowRight } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Home",
-    component: Home,
-    library: "lucide",
+    name: "IconHome",
+    component: IconHome,
+    library: "tabler",
     usage: "Navigate to home/dashboard",
-    importPath: 'import { Home } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconHome } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "MoreHorizontal",
-    component: MoreHorizontal,
-    library: "lucide",
+    name: "IconDots",
+    component: IconDots,
+    library: "tabler",
     usage: "More options / Context menu",
-    importPath: 'import { MoreHorizontal } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconDots } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "X",
-    component: X,
-    library: "lucide",
+    name: "IconDotsVertical",
+    component: IconDotsVertical,
+    library: "tabler",
+    usage: "More options / User menu (vertical)",
+    importPath: 'import { IconDotsVertical } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconX",
+    component: IconX,
+    library: "tabler",
     usage: "Close / Cancel / Clear",
-    importPath: 'import { X } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconX } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Copy",
-    component: Copy,
-    library: "lucide",
+    name: "IconCopy",
+    component: IconCopy,
+    library: "tabler",
     usage: "Copy to clipboard",
-    importPath: 'import { Copy } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconCopy } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Eye",
-    component: Eye,
-    library: "lucide",
+    name: "IconEye",
+    component: IconEye,
+    library: "tabler",
     usage: "Show sensitive data",
-    importPath: 'import { Eye } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconEye } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "EyeOff",
-    component: EyeOff,
-    library: "lucide",
+    name: "IconEyeOff",
+    component: IconEyeOff,
+    library: "tabler",
     usage: "Hide sensitive data",
-    importPath: 'import { EyeOff } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconEyeOff } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
 ];
 
 const statusIcons: IconDefinition[] = [
   {
-    name: "CheckCircle",
-    component: CheckCircle,
-    library: "lucide",
-    usage: "Connected / Success status (site header connectivity)",
-    importPath: 'import { CheckCircle } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconCircleCheck",
+    component: IconCircleCheck,
+    library: "tabler",
+    usage: "Connected / Success status",
+    importPath: 'import { IconCircleCheck } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "XCircle",
-    component: XCircle,
-    library: "lucide",
-    usage: "Failed / Disconnected status (site header connectivity)",
-    importPath: 'import { XCircle } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconCircleX",
+    component: IconCircleX,
+    library: "tabler",
+    usage: "Failed / Disconnected status",
+    importPath: 'import { IconCircleX } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Clock",
-    component: Clock,
-    library: "lucide",
-    usage: "Timeout status (site header connectivity)",
-    importPath: 'import { Clock } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconClock",
+    component: IconClock,
+    library: "tabler",
+    usage: "Timeout / Pending status",
+    importPath: 'import { IconClock } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "AlertCircle",
-    component: AlertCircle,
-    library: "lucide",
-    usage: "Warning / Attention needed / Unreachable status",
-    importPath: 'import { AlertCircle } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconAlertCircle",
+    component: IconAlertCircle,
+    library: "tabler",
+    usage: "Warning / Attention needed / Unreachable",
+    importPath: 'import { IconAlertCircle } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "AlertTriangle",
-    component: AlertTriangle,
-    library: "lucide",
+    name: "IconAlertTriangle",
+    component: IconAlertTriangle,
+    library: "tabler",
     usage: "Critical alert / Danger",
-    importPath: 'import { AlertTriangle } from "lucide-react"',
-    sizes: ["h-4 w-4", "h-6 w-6"],
+    importPath: 'import { IconAlertTriangle } from "@tabler/icons-react"',
+    sizes: ["size-4", "size-6"],
   },
   {
-    name: "Check",
-    component: CheckIcon,
-    library: "lucide",
-    usage: "Success / Confirmed",
-    importPath: 'import { Check, CheckIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconCheck",
+    component: IconCheck,
+    library: "tabler",
+    usage: "Success / Confirmed / Checkbox",
+    importPath: 'import { IconCheck } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Info",
-    component: Info,
-    library: "lucide",
+    name: "IconInfoCircle",
+    component: IconInfoCircle,
+    library: "tabler",
     usage: "Information / Help",
-    importPath: 'import { Info } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconInfoCircle } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Loader2",
-    component: Loader2,
-    library: "lucide",
+    name: "IconLoader2",
+    component: IconLoader2,
+    library: "tabler",
     usage: "Loading / Processing (with spin animation)",
-    importPath: 'import { Loader2 } from "lucide-react"',
-    sizes: ["h-4 w-4 animate-spin", "h-8 w-8 animate-spin"],
+    importPath: 'import { IconLoader2 } from "@tabler/icons-react"',
+    sizes: ["size-4 animate-spin", "size-8 animate-spin"],
   },
   {
-    name: "TrendingUp",
-    component: TrendingUp,
-    library: "lucide",
-    usage: "Positive trend / Increase / Growth indicator",
-    importPath: 'import { TrendingUp } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconLoader",
+    component: IconLoader,
+    library: "tabler",
+    usage: "Loading / Processing (alternative)",
+    importPath: 'import { IconLoader } from "@tabler/icons-react"',
+    sizes: ["size-4 animate-spin", "size-8 animate-spin"],
   },
   {
-    name: "TrendingDown",
-    component: TrendingDown,
-    library: "lucide",
+    name: "IconTrendingUp",
+    component: IconTrendingUp,
+    library: "tabler",
+    usage: "Positive trend / Increase / Growth",
+    importPath: 'import { IconTrendingUp } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconTrendingDown",
+    component: IconTrendingDown,
+    library: "tabler",
     usage: "Negative trend / Decrease",
-    importPath: 'import { TrendingDown } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconTrendingDown } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
 ];
 
 const resourceIcons: IconDefinition[] = [
   {
-    name: "Server",
-    component: Server,
-    library: "lucide",
+    name: "IconServer",
+    component: IconServer,
+    library: "tabler",
     usage: "Physical/virtual server, environment",
-    importPath: 'import { Server } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconServer } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Container",
-    component: Container,
-    library: "lucide",
-    usage: "Docker container",
-    importPath: 'import { Container } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconServer2",
+    component: IconServer2,
+    library: "tabler",
+    usage: "Storage volume / Secondary server",
+    importPath: 'import { IconServer2 } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Database",
-    component: Database,
-    library: "lucide",
-    usage: "Database instance",
-    importPath: 'import { Database } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconBrandDocker",
+    component: IconBrandDocker,
+    library: "tabler",
+    usage: "Docker container (Brand Icon)",
+    importPath: 'import { IconBrandDocker } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+    isBrand: true,
   },
   {
-    name: "HardDrive",
-    component: HardDrive,
-    library: "lucide",
-    usage: "Storage volume",
-    importPath: 'import { HardDrive } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconDatabase",
+    component: IconDatabase,
+    library: "tabler",
+    usage: "Database instance (generic)",
+    importPath: 'import { IconDatabase } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Globe",
-    component: Globe,
-    library: "lucide",
+    name: "IconWorld",
+    component: IconWorld,
+    library: "tabler",
     usage: "Public endpoint, web access",
-    importPath: 'import { Globe } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconWorld } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Shield",
-    component: Shield,
-    library: "lucide",
+    name: "IconGlobe",
+    component: IconGlobe,
+    library: "tabler",
+    usage: "Public endpoint (alternative)",
+    importPath: 'import { IconGlobe } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconShield",
+    component: IconShield,
+    library: "tabler",
     usage: "Security, protection, authentication",
-    importPath: 'import { Shield } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconShield } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Ban",
-    component: Ban,
-    library: "lucide",
+    name: "IconBan",
+    component: IconBan,
+    library: "tabler",
     usage: "Blocked, denied access",
-    importPath: 'import { Ban } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconBan } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "LogIn",
-    component: LogIn,
-    library: "lucide",
+    name: "IconLogin",
+    component: IconLogin,
+    library: "tabler",
     usage: "Login action",
-    importPath: 'import { LogIn } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconLogin } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "LogOut",
-    component: LogOut,
-    library: "lucide",
+    name: "IconLogout",
+    component: IconLogout,
+    library: "tabler",
     usage: "Logout action",
-    importPath: 'import { LogOut } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconLogout } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Activity",
-    component: Activity,
-    library: "lucide",
+    name: "IconActivity",
+    component: IconActivity,
+    library: "tabler",
     usage: "Real-time activity, monitoring",
-    importPath: 'import { Activity } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconActivity } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "History",
-    component: History,
-    library: "lucide",
+    name: "IconHistory",
+    component: IconHistory,
+    library: "tabler",
     usage: "Historical data, logs",
-    importPath: 'import { History } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconHistory } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Zap",
-    component: Zap,
-    library: "lucide",
+    name: "IconBolt",
+    component: IconBolt,
+    library: "tabler",
     usage: "Fast operation, performance",
-    importPath: 'import { Zap } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconBolt } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Calendar",
-    component: Calendar,
-    library: "lucide",
+    name: "IconCalendar",
+    component: IconCalendar,
+    library: "tabler",
     usage: "Date/time information",
-    importPath: 'import { Calendar } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconCalendar } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
 ];
 
 const uiComponentIcons: IconDefinition[] = [
   {
-    name: "ChevronDown",
-    component: ChevronDown,
-    library: "lucide",
+    name: "IconChevronDown",
+    component: IconChevronDown,
+    library: "tabler",
     usage: "Expand dropdown",
-    importPath: 'import { ChevronDown, ChevronDownIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconChevronDown } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ChevronsUpDown",
-    component: ChevronsUpDown,
-    library: "lucide",
-    usage: "Combo box, sortable",
-    importPath: 'import { ChevronsUpDown, ChevronsUpDownIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconChevronUp",
+    component: IconChevronUp,
+    library: "tabler",
+    usage: "Collapse dropdown",
+    importPath: 'import { IconChevronUp } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ChevronLeft",
-    component: ChevronLeft,
-    library: "lucide",
-    usage: "Pagination, navigation left",
-    importPath: 'import { ChevronLeft } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconChevronsDown",
+    component: IconChevronsDown,
+    library: "tabler",
+    usage: "Combo box / Collapse all",
+    importPath: 'import { IconChevronsDown } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ChevronRight",
-    component: ChevronRight,
-    library: "lucide",
-    usage: "Pagination, navigation right",
-    importPath: 'import { ChevronRight, ChevronRightIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconChevronsUp",
+    component: IconChevronsUp,
+    library: "tabler",
+    usage: "Combo box / Expand all",
+    importPath: 'import { IconChevronsUp } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "ArrowUpDown",
-    component: ArrowUpDown,
-    library: "lucide",
+    name: "IconArrowsSort",
+    component: IconArrowsSort,
+    library: "tabler",
     usage: "Sortable column",
-    importPath: 'import { ArrowUpDown } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconArrowsSort } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Search",
-    component: Search,
-    library: "lucide",
+    name: "IconChevronLeft",
+    component: IconChevronLeft,
+    library: "tabler",
+    usage: "Pagination left, navigation",
+    importPath: 'import { IconChevronLeft } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconChevronRight",
+    component: IconChevronRight,
+    library: "tabler",
+    usage: "Pagination right, navigation",
+    importPath: 'import { IconChevronRight } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconSelector",
+    component: IconSelector,
+    library: "tabler",
+    usage: "Breadcrumb separator, submenu",
+    importPath: 'import { IconSelector } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconSearch",
+    component: IconSearch,
+    library: "tabler",
     usage: "Search input",
-    importPath: 'import { Search, SearchIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconSearch } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "Filter",
-    component: Filter,
-    library: "lucide",
+    name: "IconFilter",
+    component: IconFilter,
+    library: "tabler",
     usage: "Filter controls",
-    importPath: 'import { Filter } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconFilter } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "CircleIcon",
-    component: CircleIcon,
-    library: "lucide",
+    name: "IconCircle",
+    component: IconCircle,
+    library: "tabler",
     usage: "Radio button indicator",
-    importPath: 'import { CircleIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconCircle } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
   {
-    name: "XIcon",
-    component: XIcon,
-    library: "lucide",
-    usage: "Close dialog, remove item",
-    importPath: 'import { XIcon } from "lucide-react"',
-    sizes: ["h-4 w-4"],
-  },
-  {
-    name: "User",
-    component: User,
-    library: "lucide",
+    name: "IconUser",
+    component: IconUser,
+    library: "tabler",
     usage: "User profile, account",
-    importPath: 'import { User } from "lucide-react"',
-    sizes: ["h-4 w-4"],
-  },
-  {
-    name: "MoreVertical",
-    component: MoreVertical,
-    library: "lucide",
-    usage: "User menu, more options (vertical)",
-    importPath: 'import { MoreVertical } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    importPath: 'import { IconUser } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
 ];
 
-const utilityIcons: IconDefinition[] = [
+const testingIcons: IconDefinition[] = [
   {
-    name: "TestTube",
-    component: TestTube,
-    library: "lucide",
-    usage: "Test connection, validation",
-    importPath: 'import { TestTube } from "lucide-react"',
-    sizes: ["h-4 w-4"],
+    name: "IconCloudQuestion",
+    component: IconCloudQuestion,
+    library: "tabler",
+    usage: "Test cloud service connections (Azure, Cloudflare)",
+    importPath: 'import { IconCloudQuestion } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconSettingsQuestion",
+    component: IconSettingsQuestion,
+    library: "tabler",
+    usage: "Test configuration settings, connection strings",
+    importPath: 'import { IconSettingsQuestion } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconDatabaseSearch",
+    component: IconDatabaseSearch,
+    library: "tabler",
+    usage: "Test database connections (PostgreSQL)",
+    importPath: 'import { IconDatabaseSearch } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconQuestionMark",
+    component: IconQuestionMark,
+    library: "tabler",
+    usage: "Generic testing/validation",
+    importPath: 'import { IconQuestionMark } from "@tabler/icons-react"',
+    sizes: ["size-4"],
+  },
+  {
+    name: "IconHelpCircle",
+    component: IconHelpCircle,
+    library: "tabler",
+    usage: "Generic validation (alternative)",
+    importPath: 'import { IconHelpCircle } from "@tabler/icons-react"',
+    sizes: ["size-4"],
   },
 ];
 
@@ -604,11 +751,12 @@ export function IconShowcasePage() {
           </Badge>
         </div>
         <p className="text-muted-foreground mb-6">
-          Visual reference for the Mini Infra iconography system using Lucide React
+          Visual reference for the Mini Infra iconography system using Tabler Icons exclusively.
+          Features 5,800+ icons including comprehensive brand logos for infrastructure services.
         </p>
 
         <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Search icons by name or usage..."
             value={searchQuery}
@@ -619,22 +767,51 @@ export function IconShowcasePage() {
       </div>
 
       <div className="px-4 lg:px-6">
-        <Tabs defaultValue="navigation" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
+        <Tabs defaultValue="brand" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 lg:grid-cols-7">
+            <TabsTrigger value="brand">Brand ⭐</TabsTrigger>
             <TabsTrigger value="navigation">Navigation</TabsTrigger>
             <TabsTrigger value="actions">Actions</TabsTrigger>
             <TabsTrigger value="status">Status</TabsTrigger>
             <TabsTrigger value="resources">Resources</TabsTrigger>
-            <TabsTrigger value="ui">UI Components</TabsTrigger>
+            <TabsTrigger value="ui">UI</TabsTrigger>
             <TabsTrigger value="utility">Utility</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="brand" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Brand Icons ⭐ NEW</CardTitle>
+                <CardDescription>
+                  Official brand logos for infrastructure services and technologies. Use these for better recognition and professional appearance.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filterIcons(brandIcons).map((icon) => (
+                    <IconCard
+                      key={icon.name}
+                      icon={icon}
+                      onCopy={copyToClipboard}
+                      isCopied={copiedImport === icon.name}
+                    />
+                  ))}
+                </div>
+                {filterIcons(brandIcons).length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">
+                    No icons found matching "{searchQuery}"
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="navigation" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle>Navigation Icons</CardTitle>
                 <CardDescription>
-                  Lucide icons used for navigation, branding, and major feature representation
+                  Tabler icons used for navigation, branding, and major feature representation
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -662,7 +839,7 @@ export function IconShowcasePage() {
               <CardHeader>
                 <CardTitle>Action Icons</CardTitle>
                 <CardDescription>
-                  Lucide icons for primary and secondary actions throughout the application
+                  Tabler icons for primary and secondary actions throughout the application
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -772,14 +949,15 @@ export function IconShowcasePage() {
           <TabsContent value="utility" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Testing & Utility Icons</CardTitle>
+                <CardTitle>Testing & Validation Icons</CardTitle>
                 <CardDescription>
-                  Icons for testing, validation, and utility functions
+                  Context-specific question icons for testing connections and validating configurations.
+                  Choose the icon that matches what you're testing (cloud, settings, database, etc.)
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filterIcons(utilityIcons).map((icon) => (
+                  {filterIcons(testingIcons).map((icon) => (
                     <IconCard
                       key={icon.name}
                       icon={icon}
@@ -788,7 +966,7 @@ export function IconShowcasePage() {
                     />
                   ))}
                 </div>
-                {filterIcons(utilityIcons).length === 0 && (
+                {filterIcons(testingIcons).length === 0 && (
                   <p className="text-center text-muted-foreground py-8">
                     No icons found matching "{searchQuery}"
                   </p>

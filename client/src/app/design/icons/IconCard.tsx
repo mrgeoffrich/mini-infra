@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Check } from "lucide-react";
+import { IconCopy, IconCheck, type Icon } from "@tabler/icons-react";
 import {
   Tooltip,
   TooltipContent,
@@ -11,11 +11,12 @@ import {
 
 interface IconDefinition {
   name: string;
-  component: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  library: "lucide";
+  component: Icon;
+  library: "tabler";
   usage: string;
   importPath: string;
   sizes?: string[];
+  isBrand?: boolean;
 }
 
 interface IconCardProps {
@@ -33,21 +34,35 @@ export function IconCard({ icon, onCopy, isCopied }: IconCardProps) {
         {/* Icon Display */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-lg bg-primary/10 flex items-center justify-center">
+            <div className={`p-3 rounded-lg flex items-center justify-center ${
+              icon.isBrand
+                ? "bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20"
+                : "bg-primary/10"
+            }`}>
               <IconComponent
-                className="h-6 w-6"
+                className="size-6"
               />
             </div>
             <div className="flex-1">
               <div className="font-mono text-sm font-semibold">
                 {icon.name}
               </div>
-              <Badge
-                variant="outline"
-                className="mt-1 text-xs"
-              >
-                Lucide
-              </Badge>
+              <div className="flex items-center gap-1 mt-1">
+                <Badge
+                  variant="outline"
+                  className="text-xs"
+                >
+                  Tabler
+                </Badge>
+                {icon.isBrand && (
+                  <Badge
+                    variant="default"
+                    className="text-xs bg-gradient-to-r from-blue-500 to-purple-500"
+                  >
+                    ⭐ Brand
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -92,9 +107,9 @@ export function IconCard({ icon, onCopy, isCopied }: IconCardProps) {
             onClick={() => onCopy(icon.importPath, icon.name)}
           >
             {isCopied ? (
-              <Check className="h-3 w-3 text-green-600" />
+              <IconCheck className="size-3 text-green-600" />
             ) : (
-              <Copy className="h-3 w-3" />
+              <IconCopy className="size-3" />
             )}
           </Button>
         </div>
@@ -102,7 +117,7 @@ export function IconCard({ icon, onCopy, isCopied }: IconCardProps) {
         {/* Usage Example */}
         <div className="mt-2 pt-2 border-t">
           <code className="text-xs text-muted-foreground font-mono block">
-            {`<${icon.name} className="${icon.sizes?.[0] || "h-6 w-6"}" />`}
+            {`<${icon.name} className="${icon.sizes?.[0] || "size-6"}" />`}
           </code>
         </div>
       </div>

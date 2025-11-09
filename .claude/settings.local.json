@@ -57,7 +57,8 @@
       "Bash(docker run:*)",
       "Bash(docker scout:*)",
       "Bash(docker pull:*)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(node -e:*)"
     ],
     "deny": [],
     "ask": [],

@@ -2,319 +2,455 @@
 
 This document defines the icon system used throughout the Mini Infra application to ensure consistent visual language and user experience.
 
-## Icon Libraries
+## Icon Library
 
-The application uses two complementary icon libraries:
+The application uses **Tabler Icons** (`@tabler/icons-react`) exclusively for all iconography needs.
 
-### Primary: Tabler Icons (`@tabler/icons-react`)
-- **Usage**: Navigation, branding, and major feature representation
-- **Style**: Consistent stroke width, modern, clean design
+### Tabler Icons (`@tabler/icons-react`)
+- **Usage**: All icons throughout the application
+- **Style**: Consistent stroke width, modern, clean design optimized for technical/infrastructure applications
 - **Import**: `import { IconName } from "@tabler/icons-react"`
 - **Documentation**: https://tabler.io/icons
+- **Count**: 5,800+ free MIT-licensed icons
+- **Advantages**:
+  - Comprehensive brand icon library (Docker, Azure, Cloudflare, PostgreSQL, etc.)
+  - Designed for developer tools and infrastructure applications
+  - Consistent visual language across all icon types
+  - Excellent tree-shaking support (import only what you use)
+  - Fully compatible with React 19+
 
-### Secondary: Lucide React (`lucide-react`)
-- **Usage**: UI actions, inline controls, status indicators, and UI components
-- **Style**: Lightweight, consistent with modern UI patterns
-- **Import**: `import { IconName } from "lucide-react"`
-- **Documentation**: https://lucide.dev
+## Icon Categories
 
-## Icon Usage by Context
+### 1. Brand Icons ⭐ NEW
 
-### 1. Navigation Icons (Tabler Icons)
+Brand icons provide official logo representations for third-party services and technologies.
 
-All navigation icons use Tabler Icons for visual consistency in the sidebar.
+#### Infrastructure & Cloud Services
+- **`IconBrandDocker`** - Docker containers and containerization
+  - Context: Container management, Docker-related features
+  - Official Docker whale logo
+- **`IconBrandAzure`** - Microsoft Azure cloud services
+  - Context: Azure Blob Storage, Azure services integration
+  - Official Microsoft Azure logo
+- **`IconBrandCloudflare`** - Cloudflare services
+  - Context: Cloudflare Tunnels, CDN, cloud connectivity
+  - Official Cloudflare logo
+- **`IconBrandPostgresql`** - PostgreSQL database
+  - Context: Database management, PostgreSQL operations
+  - Official PostgreSQL elephant logo
 
-#### Brand Identity
-- **`IconInnerShadowTop`** - Application logo and brand mark
+**Usage Example:**
+```tsx
+import { IconBrandDocker, IconBrandAzure, IconBrandCloudflare, IconBrandPostgresql } from "@tabler/icons-react";
+
+// In route config
+{
+  '/containers': {
+    icon: IconBrandDocker,
+    title: 'Docker Containers'
+  },
+  '/postgres': {
+    icon: IconBrandPostgresql,
+    title: 'PostgreSQL'
+  }
+}
+```
+
+### 2. Navigation Icons
+
+Main navigation icons used in the sidebar and routing configuration.
+
+#### Application Navigation
+- **`IconInnerShadowTop`** or **`IconAppWindow`** - Application logo and brand mark
   - Used in: Sidebar header, branding
+  - Size: `className="size-5"`
 
-#### Main Navigation
-- **`IconDashboard`** - Dashboard / Overview
+- **`IconDashboard`** - Dashboard / System Overview
   - Context: Main system overview and status page
-- **`IconBrandDocker`** - Docker Containers
+
+- **`IconBrandDocker`** - Docker Containers *(Brand Icon)*
   - Context: Container management and monitoring
-- **`IconDatabase`** - PostgreSQL / Database
+
+- **`IconBrandPostgresql`** or **`IconDatabase`** - PostgreSQL / Database
   - Context: Database management, backups, and restoration
+  - Prefer brand icon for PostgreSQL-specific pages
+
 - **`IconRocket`** - Deployments
   - Context: Zero-downtime deployment orchestration
+
 - **`IconServer`** - Environments
   - Context: Environment and infrastructure configuration
+
 - **`IconCloud`** - Cloudflare Tunnels / Cloud Services
   - Context: Tunnel monitoring and cloud connectivity
+  - Alternative: `IconBrandCloudflare` for Cloudflare-specific sections
+
 - **`IconKey`** - API Keys / Credentials
   - Context: Authentication and credential management
+
 - **`IconNetwork`** - Connectivity / Networking
   - Context: Service connectivity and network configuration
+
 - **`IconSettings`** - Settings
   - Context: System and user configuration
 
 #### Contextual Navigation Variants
-- **`IconCloudComputing`** - Cloudflare Settings (sub-navigation)
-  - Context: Specific cloud service configuration
-- **`IconCloud`** - Azure Storage (sub-navigation)
-  - Context: Cloud storage configuration
+- **`IconCloudComputing`** - Cloud service configuration
+  - Context: Cloudflare settings (sub-navigation)
 
-### 2. Action Icons (Lucide React)
+- **`IconBrandAzure`** - Azure Storage *(Brand Icon)*
+  - Context: Azure-specific configuration pages
 
-Common actions throughout the application using Lucide icons.
+### 3. Action Icons
+
+Common actions and CRUD operations throughout the application.
 
 #### Primary Actions
-- **`Plus`** - Add / Create new resource
+- **`IconPlus`** - Add / Create new resource
   - Context: Create database, add API key, new deployment
-- **`RefreshCw`** - Refresh / Reload data
+
+- **`IconRefresh`** - Refresh / Reload data
   - Context: Refresh lists, retry operations
-- **`Play`** - Execute / Start operation
+
+- **`IconPlayerPlay`** - Execute / Start operation
   - Context: Run backup, start deployment
-- **`Trash2`** - Delete / Remove
+
+- **`IconTrash`** - Delete / Remove
   - Context: Delete resources, remove items
-- **`Edit` / `Pencil`** - Edit / Modify
+
+- **`IconEdit`** or **`IconPencil`** - Edit / Modify
   - Context: Edit configurations, modify settings
-- **`Download`** - Download / Export
+
+- **`IconDownload`** - Download / Export
   - Context: Download backups, export data
 
 #### Navigation Actions
-- **`ArrowLeft`** - Back / Return
+- **`IconArrowLeft`** - Back / Return
   - Context: Navigate to previous page
-- **`ArrowRight`** - Forward / Next step
+
+- **`IconArrowRight`** - Forward / Next step
   - Context: Multi-step forms, wizards
-- **`Home`** - Navigate to home/dashboard
+
+- **`IconHome`** - Navigate to home/dashboard
   - Context: Breadcrumb navigation
 
 #### Secondary Actions
-- **`Settings`** - Configure / Settings
+- **`IconSettings`** - Configure / Settings
   - Context: Item-specific settings, configuration dialogs
-- **`MoreHorizontal`** - More options / Context menu
+
+- **`IconDots`** or **`IconDotsHorizontal`** - More options / Context menu
   - Context: Dropdown menus, additional actions
-- **`X`** - Close / Cancel / Clear
+
+- **`IconX`** - Close / Cancel / Clear
   - Context: Close dialogs, clear filters, cancel operations
-- **`Copy`** - Copy to clipboard
+
+- **`IconCopy`** - Copy to clipboard
   - Context: Copy API keys, connection strings
-- **`Eye`** / **`EyeOff`** - Show / Hide sensitive data
+
+- **`IconEye`** / **`IconEyeOff`** - Show / Hide sensitive data
   - Context: Toggle password visibility, hide credentials
 
-### 3. Status & Indicator Icons (Lucide React)
+### 4. Status & Indicator Icons
 
 Visual feedback and state indicators.
 
 #### Status Indicators
-- **`AlertCircle`** - Warning / Attention needed
-  - Context: Validation errors, warnings
-- **`AlertTriangle`** - Critical alert / Danger
+- **`IconAlertCircle`** - Warning / Attention needed
+  - Context: Validation errors, warnings, unreachable status
+
+- **`IconAlertTriangle`** - Critical alert / Danger
   - Context: Destructive actions, critical errors
-- **`Check`** / **`CheckIcon`** - Success / Confirmed
-  - Context: Successful operations, selected items
-- **`Info`** - Information / Help
+
+- **`IconCircleCheck`** - Success / Connected
+  - Context: Successful operations, connected status
+
+- **`IconCircleX`** - Failed / Disconnected
+  - Context: Failed operations, disconnected status
+
+- **`IconClock`** - Timeout / Pending
+  - Context: Timeout status, pending operations
+
+- **`IconCheck`** - Success / Confirmed
+  - Context: Checkboxes, confirmations, selected items
+
+- **`IconInfoCircle`** - Information / Help
   - Context: Informational messages, help text
 
 #### Loading States
-- **`Loader2`** - Loading / Processing (with spin animation)
+- **`IconLoader2`** or **`IconLoader`** - Loading / Processing
   - Context: Async operations, data fetching
-- **`IconLoader2`** - Loading (Tabler variant)
-  - Context: Alternative loading indicator
+  - Animation: Always use `animate-spin` class
+  - Example: `<IconLoader2 className="size-4 animate-spin" />`
 
 #### Trend Indicators
 - **`IconTrendingUp`** - Positive trend / Increase
-  - Context: Metrics, statistics
+  - Context: Metrics, statistics, growth indicators
+
 - **`IconTrendingDown`** - Negative trend / Decrease
-  - Context: Metrics, statistics
-- **`TrendingUp`** - Growth indicator (Lucide variant)
-  - Context: Statistics cards
+  - Context: Metrics, statistics, decline indicators
 
-### 4. Resource Type Icons
+### 5. Resource Type Icons
 
-Icons representing specific resource types.
+Icons representing specific infrastructure resource types.
 
-#### Infrastructure Resources (Mixed)
-- **`Server`** - Physical/virtual server, environment
+#### Infrastructure Resources
+- **`IconServer`** - Physical/virtual server, environment
   - Context: Environment management, server configuration
-- **`Container`** - Docker container
+
+- **`IconBrandDocker`** - Docker container *(Brand Icon)*
   - Context: Container-specific actions
-- **`Database`** - Database instance
+
+- **`IconDatabase`** or **`IconBrandPostgresql`** - Database instance
   - Context: Database operations
-- **`Network`** - Network resource
+
+- **`IconNetwork`** - Network resource
   - Context: Network configuration, connectivity
-- **`HardDrive`** - Storage volume
-  - Context: Volume management
-- **`Globe`** - Public endpoint, web access
+
+- **`IconDeviceHardDrive`** - Storage volume
+  - Context: Volume management, storage
+
+- **`IconWorld`** or **`IconGlobe`** - Public endpoint, web access
   - Context: Public-facing services
 
 #### Security & Access
-- **`Key`** - API key, credential
+- **`IconKey`** - API key, credential
   - Context: API key management
-- **`Shield`** - Security, protection, authentication
+
+- **`IconShield`** - Security, protection, authentication
   - Context: Auth guards, security features
-- **`Ban`** - Blocked, denied access
+
+- **`IconBan`** - Blocked, denied access
   - Context: Disabled features, revoked access
-- **`LogIn`** / **`LogOut`** - Authentication actions
+
+- **`IconLogin`** / **`IconLogout`** - Authentication actions
   - Context: User login/logout
 
 #### Data & Activity
-- **`Activity`** - Real-time activity, monitoring
-  - Context: Progress indicators, monitoring
-- **`History`** - Historical data, logs
+- **`IconActivity`** - Real-time activity, monitoring
+  - Context: Progress indicators, monitoring dashboards
+
+- **`IconHistory`** - Historical data, logs
   - Context: Backup history, audit logs
-- **`Zap`** - Fast operation, performance
-  - Context: Performance metrics
-- **`Calendar`** - Date/time information
+
+- **`IconBolt`** - Fast operation, performance
+  - Context: Performance metrics, quick actions
+
+- **`IconCalendar`** - Date/time information
   - Context: Timestamps, scheduling
 
-### 5. UI Component Icons (Lucide React)
+### 6. UI Component Icons
 
 Icons used within UI components and controls.
 
 #### Dropdown & Selection
-- **`ChevronDown`** / **`ChevronDownIcon`** - Expand dropdown
-- **`ChevronsUpDown`** / **`ChevronsUpDownIcon`** - Combo box, sortable
-- **`ChevronLeft`** / **`ChevronRight`** - Pagination, navigation
-- **`ChevronRightIcon`** - Breadcrumb separator, submenu indicator
-- **`ArrowUpDown`** - Sortable column
+- **`IconChevronDown`** - Expand dropdown
+- **`IconChevronUp`** - Collapse dropdown
+- **`IconChevronsUpDown`** or **`IconArrowsSort`** - Combo box, sortable
+- **`IconChevronLeft`** / **`IconChevronRight`** - Pagination, navigation
+- **`IconSelector`** - Breadcrumb separator, submenu indicator
 
 #### Search & Filtering
-- **`Search`** / **`SearchIcon`** - Search input
-- **`Filter`** - Filter controls
-- **`X`** - Clear search/filter
+- **`IconSearch`** - Search input
+- **`IconFilter`** - Filter controls
+- **`IconX`** - Clear search/filter
 
 #### Forms & Input
-- **`CircleIcon`** - Radio button indicator
-- **`CheckIcon`** - Checkbox indicator
-- **`XIcon`** - Close dialog, remove item
+- **`IconCircle`** - Radio button indicator
+- **`IconCheck`** - Checkbox indicator
+- **`IconX`** - Close dialog, remove item
 
 #### User & Profile
-- **`User`** - User profile, account
-- **`IconDotsVertical`** - User menu, more options
+- **`IconUser`** - User profile, account
+- **`IconDotsVertical`** - User menu, more options (vertical)
 
-### 6. Testing & Utility Icons
+### 7. Testing & Validation Icons
 
-- **`TestTube`** - Test connection, validation
-  - Context: Connection testing, validation checks
+Testing icons use context-specific question mark variants to indicate validation and connection testing based on what's being tested.
+
+#### Cloud & Infrastructure Testing
+- **`IconCloudQuestion`** - Test cloud service connections
+  - Context: Azure Blob Storage testing, Cloudflare API validation
+  - Example: "Test Azure Connection", "Validate Cloudflare Token"
+
+#### Settings & Configuration Testing
+- **`IconSettingsQuestion`** - Test configuration settings
+  - Context: Connection string validation, API endpoint testing
+  - Example: "Test Connection String", "Validate Configuration"
+
+#### Database Testing
+- **`IconDatabaseSearch`** - Test database connections
+  - Context: PostgreSQL connection validation, database credential testing
+  - Example: "Test Database Connection"
+  - Note: Uses search metaphor (probing/validating connection)
+
+#### General Validation
+- **`IconQuestionMark`** or **`IconHelpCircle`** - Generic testing/validation
+  - Context: General validation, help prompts, unknown test contexts
+  - Example: Generic "Test" buttons when context is unclear
+
+**Usage Guidelines:**
+- Always choose the most specific icon based on what's being tested
+- Cloud services (Azure, Cloudflare) → `IconCloudQuestion`
+- Settings, configs, connection strings → `IconSettingsQuestion`
+- Database connections → `IconDatabaseSearch`
+- When context is unclear → `IconQuestionMark` or `IconHelpCircle`
+
+---
 
 ## Icon Size Guidelines
 
-### Navigation Icons
+Tabler Icons use a consistent sizing system. Always use Tailwind's sizing utilities.
+
+### Size Classes
+
 ```tsx
-// Sidebar main items (default)
+// Navigation icons (sidebar) - default size
 <IconDashboard />
 
 // Sidebar header (larger)
-<IconInnerShadowTop className="!size-5" />
+<IconInnerShadowTop className="size-5" />
+
+// Standard button icon (16x16px)
+<IconPlus className="size-4" />
+
+// Large action button (20x20px)
+<IconRefresh className="size-5" />
+
+// Page header icon (24x24px)
+<IconDashboard className="size-6" />
+
+// Status badge icon (16x16px)
+<IconAlertCircle className="size-4" />
+
+// Large loading spinner (32x32px with animation)
+<IconLoader2 className="size-8 animate-spin" />
+
+// Inline with text (16x16px)
+<IconCheck className="size-4" />
 ```
 
-### Action Icons
-```tsx
-// Standard button icon (16x16)
-<Plus className="h-4 w-4" />
+### Size Reference Table
 
-// Large action button
-<RefreshCw className="h-5 w-5" />
+| Context | Size Class | Pixels | Usage |
+|---------|-----------|--------|-------|
+| Navigation (default) | *(none)* | 16x16 | Sidebar navigation items |
+| Sidebar header | `size-5` | 20x20 | App logo, brand mark |
+| Button icon | `size-4` | 16x16 | Action buttons, controls |
+| Large action | `size-5` | 20x20 | Prominent buttons |
+| Page header | `size-6` | 24x24 | Page title sections |
+| Status badge | `size-4` | 16x16 | Status indicators |
+| Large loader | `size-8` | 32x32 | Loading states |
+| Inline icon | `size-4` | 16x16 | Inline with text |
 
-// Icon-only button (with proper accessibility)
-<Settings className="h-4 w-4" />
-```
-
-### Status Icons
-```tsx
-// Inline with text
-<AlertCircle className="h-4 w-4" />
-
-// Large status indicator
-<AlertTriangle className="h-6 w-6" />
-```
-
-### Loading Icons
-```tsx
-// Standard loading spinner
-<Loader2 className="h-4 w-4 animate-spin" />
-
-// Large loading state
-<Loader2 className="h-8 w-8 animate-spin" />
-```
+---
 
 ## Animation Guidelines
 
 ### Spinning Loaders
+
 Always use the `animate-spin` utility class for loading indicators:
+
 ```tsx
-<Loader2 className="h-4 w-4 animate-spin" />
+// Standard loading spinner
 <IconLoader2 className="size-4 animate-spin" />
+
+// Large loading state
+<IconLoader className="size-8 animate-spin" />
 ```
 
 ### Hover States
+
 Icons in interactive elements should use transition utilities:
+
 ```tsx
 className="transition-colors hover:text-primary"
 ```
 
+---
+
 ## Consistency Rules
 
-### 1. Library Selection
-- **DO** use Tabler Icons for all navigation items
-- **DO** use Lucide React for all action buttons and UI controls
-- **DON'T** mix icon libraries within the same component group
+### 1. Single Library Policy
+- **DO** use Tabler Icons exclusively for all icon needs
+- **DON'T** mix icon libraries (no Lucide, Font Awesome, etc.)
+- **REASON**: Ensures consistent visual language, smaller bundle size, better maintenance
 
-### 2. Semantic Consistency
-- **Always** use the same icon for the same action across the app
-  - Example: `Plus` for all "create" actions
-  - Example: `Trash2` for all delete operations
+### 2. Brand Icons Priority
+- **DO** use brand icons when representing specific technologies:
+  - `IconBrandDocker` for Docker containers
+  - `IconBrandPostgresql` for PostgreSQL databases
+  - `IconBrandAzure` for Azure services
+  - `IconBrandCloudflare` for Cloudflare features
+- **DON'T** use generic icons when brand icons exist
+- **REASON**: Better recognition, professional appearance
+
+### 3. Semantic Consistency
+- **Always** use the same icon for the same action across the app:
+  - `IconPlus` for all "create" actions
+  - `IconTrash` for all delete operations
+  - `IconRefresh` for all reload/refresh actions
+  - `IconEdit` or `IconPencil` for edit operations (choose one and stick with it)
 - **Don't** use different icons for the same semantic meaning
 
-### 3. Size Consistency
+### 4. Size Consistency
+Follow the size guidelines table above. Key rules:
 - **Navigation icons**: Default size (no custom class needed)
-- **Button icons**: `h-4 w-4` (16x16px)
-- **Large actions**: `h-5 w-5` (20x20px)
-- **Status badges**: `h-4 w-4` (16x16px)
+- **Button icons**: `size-4` (16x16px)
+- **Large actions**: `size-5` (20x20px)
+- **Status badges**: `size-4` (16x16px)
+- **Page headers**: `size-6` (24x24px)
 
-### 4. Color Guidelines
+### 5. Color Guidelines
+
 Icons should inherit text color by default:
+
 ```tsx
 // Good - inherits context color
-<Plus className="h-4 w-4" />
+<IconPlus className="size-4" />
 
 // Good - explicit color when needed
-<AlertTriangle className="h-4 w-4 text-destructive" />
+<IconAlertTriangle className="size-4 text-destructive" />
+
+// Good - status colors
+<IconCircleCheck className="size-4 text-green-600" />
+<IconCircleX className="size-4 text-red-600" />
 ```
 
-### 5. Accessibility
+### 6. Accessibility
+
 Always provide context for icon-only buttons:
+
 ```tsx
 // Good - includes accessible label
 <Button aria-label="Add new item">
-  <Plus className="h-4 w-4" />
+  <IconPlus className="size-4" />
 </Button>
 
 // Better - includes tooltip
 <Button aria-label="Add new item" title="Add new item">
-  <Plus className="h-4 w-4" />
+  <IconPlus className="size-4" />
 </Button>
 
 // Best - icon with visible text
 <Button>
-  <Plus className="h-4 w-4" />
+  <IconPlus className="size-4" />
   <span>Add Item</span>
 </Button>
 ```
 
-## Adding New Icons
+---
 
-When adding new functionality:
-
-1. **Check existing icons first** - Reuse established patterns
-2. **Choose the appropriate library**:
-   - Navigation feature? → Tabler Icons
-   - Action or UI control? → Lucide React
-3. **Follow naming conventions**:
-   - Tabler: `Icon` prefix (e.g., `IconDatabase`)
-   - Lucide: PascalCase (e.g., `Database`)
-4. **Update this guide** with the new icon and its usage context
-5. **Use consistent sizing** based on the context guidelines above
-
-## Icon Import Patterns
+## Import Patterns
 
 ### Centralized Navigation Imports
+
 Navigation icons are imported in `client/src/lib/route-config.ts`:
+
 ```tsx
 import {
   type Icon,
   IconBrandDocker,
+  IconBrandPostgresql,
   IconCloud,
   IconCloudComputing,
   IconDashboard,
@@ -328,18 +464,131 @@ import {
 ```
 
 ### Component-Level Imports
+
 Action and UI icons are imported per component as needed:
+
 ```tsx
 // Action icons
-import { Plus, Trash2, Edit, RefreshCw } from "lucide-react";
+import { IconPlus, IconTrash, IconEdit, IconRefresh } from "@tabler/icons-react";
 
 // Status icons
-import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { IconAlertCircle, IconCheck, IconLoader2 } from "@tabler/icons-react";
+
+// Brand icons
+import { IconBrandDocker, IconBrandAzure } from "@tabler/icons-react";
 ```
+
+---
+
+## Migration from Lucide React
+
+If you're migrating from Lucide React to Tabler Icons, use this mapping:
+
+### Navigation Icons
+| Lucide | Tabler | Notes |
+|--------|--------|-------|
+| `Boxes` | `IconInnerShadowTop` or `IconAppWindow` | Brand/logo |
+| `LayoutDashboard` | `IconDashboard` | Dashboard |
+| `Container` | `IconBrandDocker` | ⭐ Use brand icon |
+| `Database` | `IconBrandPostgresql` or `IconDatabase` | ⭐ Prefer brand icon |
+| `Rocket` | `IconRocket` | Deployments |
+| `Server` | `IconServer` | Environments |
+| `Cloud` | `IconCloud` or `IconBrandCloudflare` | ⭐ Use brand icon for Cloudflare |
+| `CloudCog` | `IconCloudComputing` | Cloud settings |
+| `Key` | `IconKey` | API keys |
+| `Network` | `IconNetwork` | Connectivity |
+| `Settings` | `IconSettings` | Settings |
+
+### Action Icons
+| Lucide | Tabler |
+|--------|--------|
+| `Plus` | `IconPlus` |
+| `RefreshCw` | `IconRefresh` |
+| `Play` | `IconPlayerPlay` |
+| `Trash2` | `IconTrash` |
+| `Edit` | `IconEdit` |
+| `Pencil` | `IconPencil` |
+| `Download` | `IconDownload` |
+| `ArrowLeft` | `IconArrowLeft` |
+| `ArrowRight` | `IconArrowRight` |
+| `Home` | `IconHome` |
+| `MoreHorizontal` | `IconDots` or `IconDotsHorizontal` |
+| `MoreVertical` | `IconDotsVertical` |
+| `X` | `IconX` |
+| `Copy` | `IconCopy` |
+| `Eye` | `IconEye` |
+| `EyeOff` | `IconEyeOff` |
+
+### Status Icons
+| Lucide | Tabler |
+|--------|--------|
+| `CheckCircle` | `IconCircleCheck` |
+| `XCircle` | `IconCircleX` |
+| `Clock` | `IconClock` |
+| `AlertCircle` | `IconAlertCircle` |
+| `AlertTriangle` | `IconAlertTriangle` |
+| `Check` / `CheckIcon` | `IconCheck` |
+| `Info` | `IconInfoCircle` |
+| `Loader2` | `IconLoader2` or `IconLoader` |
+| `TrendingUp` | `IconTrendingUp` |
+| `TrendingDown` | `IconTrendingDown` |
+
+### UI Component Icons
+| Lucide | Tabler |
+|--------|--------|
+| `ChevronDown` | `IconChevronDown` |
+| `ChevronUp` | `IconChevronUp` |
+| `ChevronsUpDown` | `IconChevronsUpDown` or `IconArrowsSort` |
+| `ChevronLeft` | `IconChevronLeft` |
+| `ChevronRight` | `IconChevronRight` |
+| `ArrowUpDown` | `IconArrowsSort` |
+| `Search` | `IconSearch` |
+| `Filter` | `IconFilter` |
+| `CircleIcon` | `IconCircle` |
+| `XIcon` | `IconX` |
+| `User` | `IconUser` |
+
+### Resource Icons
+| Lucide | Tabler |
+|--------|--------|
+| `HardDrive` | `IconDeviceHardDrive` |
+| `Globe` | `IconWorld` or `IconGlobe` |
+| `Shield` | `IconShield` |
+| `Ban` | `IconBan` |
+| `LogIn` | `IconLogin` |
+| `LogOut` | `IconLogout` |
+| `Activity` | `IconActivity` |
+| `History` | `IconHistory` |
+| `Zap` | `IconBolt` |
+| `Calendar` | `IconCalendar` |
+
+### Testing Icons
+| Lucide | Tabler | Notes |
+|--------|--------|-------|
+| `TestTube` | `IconCloudQuestion` | ⭐ For cloud service testing (Azure, Cloudflare) |
+| `TestTube` | `IconSettingsQuestion` | ⭐ For settings/config testing |
+| `TestTube` | `IconDatabaseSearch` | ⭐ For database connection testing |
+| `TestTube` | `IconQuestionMark` or `IconHelpCircle` | For generic testing/validation |
+
+---
+
+## Adding New Icons
+
+When adding new functionality:
+
+1. **Check existing icons first** - Reuse established patterns
+2. **Search Tabler Icons** at https://tabler.io/icons - Search by keyword
+3. **Prefer brand icons** when representing specific technologies
+4. **Follow naming conventions**: All Tabler icons use `Icon` prefix (e.g., `IconDatabase`)
+5. **Update this guide** with the new icon and its usage context
+6. **Use consistent sizing** based on the context guidelines above
+
+---
 
 ## Examples from the Application
 
-### Sidebar Navigation (Tabler Icons)
+### Sidebar Navigation (Brand Icons)
+
 ```tsx
 // From client/src/lib/route-config.ts
 {
@@ -348,49 +597,51 @@ import { AlertCircle, Check, Loader2 } from "lucide-react";
     title: 'Dashboard'
   },
   '/containers': {
-    icon: IconBrandDocker,
-    title: 'Containers'
+    icon: IconBrandDocker,  // ⭐ Brand icon
+    title: 'Docker Containers'
   },
   '/postgres': {
-    icon: IconDatabase,
+    icon: IconBrandPostgresql,  // ⭐ Brand icon
     title: 'PostgreSQL'
   }
 }
 ```
 
-### Action Buttons (Lucide React)
+### Action Buttons
+
 ```tsx
 // Create new resource
 <Button>
-  <Plus className="h-4 w-4" />
+  <IconPlus className="size-4" />
   Add Database
 </Button>
 
 // Delete action
 <Button variant="destructive">
-  <Trash2 className="h-4 w-4" />
+  <IconTrash className="size-4" />
   Delete
 </Button>
 
 // Refresh data
 <Button variant="outline">
-  <RefreshCw className="h-4 w-4" />
+  <IconRefresh className="size-4" />
   Refresh
 </Button>
 ```
 
 ### Loading States
+
 ```tsx
 // Button loading state
 <Button disabled={isLoading}>
   {isLoading ? (
     <>
-      <Loader2 className="h-4 w-4 animate-spin" />
+      <IconLoader2 className="size-4 animate-spin" />
       Creating...
     </>
   ) : (
     <>
-      <Plus className="h-4 w-4" />
+      <IconPlus className="size-4" />
       Create
     </>
   )}
@@ -398,19 +649,38 @@ import { AlertCircle, Check, Loader2 } from "lucide-react";
 ```
 
 ### Status Indicators
+
 ```tsx
 // Error state
 <div className="flex items-center gap-2 text-destructive">
-  <AlertCircle className="h-4 w-4" />
+  <IconAlertCircle className="size-4" />
   <span>Connection failed</span>
 </div>
 
 // Success state
 <div className="flex items-center gap-2 text-green-600">
-  <Check className="h-4 w-4" />
+  <IconCircleCheck className="size-4" />
   <span>Saved successfully</span>
 </div>
 ```
+
+### Brand Icon Usage
+
+```tsx
+// Docker connectivity page
+import { IconBrandDocker } from "@tabler/icons-react";
+
+<Card>
+  <CardHeader>
+    <div className="flex items-center gap-2">
+      <IconBrandDocker className="size-6" />
+      <CardTitle>Docker Service Status</CardTitle>
+    </div>
+  </CardHeader>
+</Card>
+```
+
+---
 
 ## Maintenance
 
@@ -418,6 +688,7 @@ This iconography guide should be updated when:
 - New navigation items are added
 - New action patterns are established
 - Icon usage patterns change
-- New icon libraries are introduced
+- New features require specific brand icons
+- Tabler Icons library adds new relevant icons
 
-Last updated: 2025-11-09
+Last updated: 2025-01-09

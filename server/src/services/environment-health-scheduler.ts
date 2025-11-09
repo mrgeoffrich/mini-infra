@@ -237,10 +237,11 @@ export class EnvironmentHealthScheduler {
 
     // Check each service
     for (const service of environment.services) {
-      // Only check services that should be running
+      // Only check services that should be running or might need reconciliation
       if (service.status === ServiceStatusValues.RUNNING ||
           service.status === ServiceStatusValues.STARTING ||
-          service.status === ServiceStatusValues.DEGRADED) {
+          service.status === ServiceStatusValues.DEGRADED ||
+          service.status === ServiceStatusValues.UNINITIALIZED) {
 
         result.servicesChecked++;
 
@@ -378,15 +379,29 @@ export class EnvironmentHealthScheduler {
           environmentId: environment.id
         });
 
-        if (factoryResult.success) {
-          result.restored = true;
-          this.logger.info(
-            {
-              serviceName: service.serviceName,
-              serviceType: service.serviceType
-            },
-            "Service instance restored to factory during health check"
-          );
+        if (factoryResult.success && factoryResult.service) {
+          // Initialize the restored service
+          try {
+            await factoryResult.service.initialize([], []);
+            result.restored = true;
+            this.logger.info(
+              {
+                serviceName: service.serviceName,
+                serviceType: service.serviceType
+              },
+              "Service instance restored and initialized during health check"
+            );
+          } catch (initError) {
+            this.logger.error(
+              {
+                serviceName: service.serviceName,
+                error: initError instanceof Error ? initError.message : "Unknown error"
+              },
+              "Failed to initialize restored service during health check"
+            );
+            result.missing = true;
+            return result;
+          }
         } else {
           this.logger.error(
             {
