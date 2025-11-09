@@ -27,18 +27,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  ArrowLeft,
-  Server,
-  Network,
-  HardDrive,
-  Play,
-  Square,
-  Settings,
-  Trash2,
-  MoreHorizontal,
-  Users,
-  AlertCircle,
-} from "lucide-react";
+  IconArrowLeft,
+  IconServer,
+  IconNetwork,
+  IconDatabase,
+  IconPlayerPlay,
+  IconSquare,
+  IconSettings,
+  IconTrash,
+  IconDots,
+  IconUsers,
+  IconAlertCircle,
+} from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -139,13 +139,13 @@ export function EnvironmentDetailPage() {
           <div className="flex items-center gap-3 mb-6">
             <Button variant="ghost" asChild>
               <Link to="/environments">
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <IconArrowLeft className="h-4 w-4 mr-2" />
                 Back to Environments
               </Link>
             </Button>
           </div>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load environment: {error instanceof Error ? error.message : "Unknown error"}
             </AlertDescription>
@@ -162,7 +162,7 @@ export function EnvironmentDetailPage() {
           <div className="flex items-center gap-3 mb-6">
             <Button variant="ghost" asChild>
               <Link to="/environments">
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <IconArrowLeft className="h-4 w-4 mr-2" />
                 Back to Environments
               </Link>
             </Button>
@@ -188,13 +188,13 @@ export function EnvironmentDetailPage() {
           <div className="flex items-center gap-3 mb-6">
             <Button variant="ghost" asChild>
               <Link to="/environments">
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <IconArrowLeft className="h-4 w-4 mr-2" />
                 Back to Environments
               </Link>
             </Button>
           </div>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Environment not found
             </AlertDescription>
@@ -217,13 +217,13 @@ export function EnvironmentDetailPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" asChild>
               <Link to="/environments">
-                <ArrowLeft className="h-4 w-4 mr-2" />
+                <IconArrowLeft className="h-4 w-4 mr-2" />
                 Back to Environments
               </Link>
             </Button>
             <div className="h-6 border-l border-border" />
             <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-              <Server className="h-6 w-6" />
+              <IconServer className="h-6 w-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -250,7 +250,7 @@ export function EnvironmentDetailPage() {
                 disabled={isOperating}
                 className="flex items-center gap-2"
               >
-                <Play className="h-4 w-4" />
+                <IconPlayerPlay className="h-4 w-4" />
                 Start Environment
               </Button>
             )}
@@ -261,14 +261,14 @@ export function EnvironmentDetailPage() {
                 disabled={isOperating}
                 className="flex items-center gap-2"
               >
-                <Square className="h-4 w-4" />
+                <IconSquare className="h-4 w-4" />
                 Stop Environment
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
-                  <MoreHorizontal className="h-4 w-4" />
+                  <IconDots className="h-4 w-4" />
                   <span className="sr-only">Open menu</span>
                 </Button>
               </DropdownMenuTrigger>
@@ -277,14 +277,14 @@ export function EnvironmentDetailPage() {
                   onClick={() => setServiceAddDialogOpen(true)}
                   className="flex items-center gap-2"
                 >
-                  <Server className="h-4 w-4" />
+                  <IconServer className="h-4 w-4" />
                   Add Service
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setEditDialogOpen(true)}
                   className="flex items-center gap-2"
                 >
-                  <Settings className="h-4 w-4" />
+                  <IconSettings className="h-4 w-4" />
                   Edit Environment
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -293,7 +293,7 @@ export function EnvironmentDetailPage() {
                   className="flex items-center gap-2 text-red-600 focus:text-red-600"
                   disabled={isRunning}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <IconTrash className="h-4 w-4" />
                   Delete Environment
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -306,7 +306,7 @@ export function EnvironmentDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Services</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <IconUsers className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalServices}</div>
@@ -330,7 +330,7 @@ export function EnvironmentDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Networks</CardTitle>
-              <Network className="h-4 w-4 text-muted-foreground" />
+              <IconNetwork className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{environment.networks.length}</div>
@@ -343,7 +343,7 @@ export function EnvironmentDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Volumes</CardTitle>
-              <HardDrive className="h-4 w-4 text-muted-foreground" />
+              <IconDatabase className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{environment.volumes.length}</div>
@@ -359,15 +359,15 @@ export function EnvironmentDetailPage() {
         <Tabs defaultValue="services" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="services" className="flex items-center gap-2">
-              <Server className="h-4 w-4" />
+              <IconServer className="h-4 w-4" />
               Services
             </TabsTrigger>
             <TabsTrigger value="networks" className="flex items-center gap-2">
-              <Network className="h-4 w-4" />
+              <IconNetwork className="h-4 w-4" />
               Networks
             </TabsTrigger>
             <TabsTrigger value="volumes" className="flex items-center gap-2">
-              <HardDrive className="h-4 w-4" />
+              <IconDatabase className="h-4 w-4" />
               Volumes
             </TabsTrigger>
           </TabsList>
@@ -378,7 +378,7 @@ export function EnvironmentDetailPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-                      <Server className="h-5 w-5" />
+                      <IconServer className="h-5 w-5" />
                     </div>
                     <div>
                       <CardTitle>Services</CardTitle>
@@ -390,7 +390,7 @@ export function EnvironmentDetailPage() {
                   <Button
                     onClick={() => setServiceAddDialogOpen(true)}
                   >
-                    <Server className="h-4 w-4 mr-2" />
+                    <IconServer className="h-4 w-4 mr-2" />
                     Add Service
                   </Button>
                 </div>
@@ -398,13 +398,13 @@ export function EnvironmentDetailPage() {
               <CardContent>
                 {environment.services.length === 0 ? (
                   <div className="text-center py-8">
-                    <Server className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <IconServer className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No Services Found</h3>
                     <p className="text-muted-foreground mb-4">
                       This environment doesn't have any services yet.
                     </p>
                     <Button onClick={() => setServiceAddDialogOpen(true)}>
-                      <Server className="h-4 w-4 mr-2" />
+                      <IconServer className="h-4 w-4 mr-2" />
                       Add Service
                     </Button>
                   </div>
@@ -416,7 +416,7 @@ export function EnvironmentDetailPage() {
                         className="flex items-center justify-between rounded-md border p-4"
                       >
                         <div className="flex items-center gap-3">
-                          <Server className="h-5 w-5 text-muted-foreground" />
+                          <IconServer className="h-5 w-5 text-muted-foreground" />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{service.serviceName}</span>
