@@ -1015,6 +1015,7 @@ export interface DatabaseGrantDeleteResponse {
 
 // Quick Setup API Types
 export interface QuickSetupRequest {
+  serverId: string;
   databaseName: string;
   username: string;
   password: string;
