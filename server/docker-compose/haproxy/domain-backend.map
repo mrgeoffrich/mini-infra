@@ -1,0 +1,15 @@
+# Domain to Backend Mapping
+# Format: <domain> <backend_name>
+#
+# This file is used by HAProxy to route traffic based on SNI (Server Name Indication).
+# When a client connects via HTTPS, HAProxy reads the requested domain from the TLS handshake
+# and routes the request to the appropriate backend.
+#
+# Example entries:
+# example.com           backend_example
+# www.example.com       backend_example
+# api.example.com       backend_api
+# *.example.com         backend_example_wildcard
+#
+# Add your domain mappings below:
+

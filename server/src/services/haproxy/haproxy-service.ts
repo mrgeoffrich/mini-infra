@@ -3,6 +3,7 @@ import { servicesLogger } from '../../lib/logger-factory';
 import ContainerLabelManager from '../container-label-manager';
 import { portUtils } from '../port-utils';
 import * as path from 'path';
+import Dockerode from 'dockerode';
 import {
   IApplicationService,
   ServiceStatus,
@@ -377,7 +378,8 @@ export class HAProxyService implements IApplicationService {
         '5555/tcp': [{ HostPort: '5555' }]
       },
       volumes: [
-        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'certs')}:/etc/ssl/certs:rw`
+        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'certs')}:/etc/ssl/certs:rw`,
+        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'domain-backend.map')}:/usr/local/etc/haproxy/domain-backend.map:ro`
       ],
       mounts: [
         {
@@ -619,5 +621,84 @@ export class HAProxyService implements IApplicationService {
       this.logger.warn({ error }, 'HAProxy service readiness check failed');
       return false;
     }
+  }
+
+  /**
+   * Reload certificate via Runtime API (zero-downtime update)
+   *
+   * @param certPath - Path to certificate inside container
+   * @param certPem - Combined certificate and private key PEM
+   */
+  async reloadCertificate(certPath: string, certPem: string): Promise<void> {
+    this.logger.info({ certPath }, 'Reloading certificate via Runtime API');
+
+    try {
+      const containers = await this.getProjectContainers();
+      const haproxyContainer = containers.find(
+        c => c.State === 'running' && c.Names?.some(name => name.includes(this.mainContainerName))
+      );
+
+      if (!haproxyContainer || !haproxyContainer.Id) {
+        throw new Error('HAProxy container not found or not running');
+      }
+
+      const docker = this.dockerExecutor.getDockerClient();
+      const container = docker.getContainer(haproxyContainer.Id);
+      const sockPath = '/var/run/haproxy.sock';
+
+      // Use Runtime API to hot-reload certificate
+      await this.executeRuntimeApiCommand(container, sockPath, `set ssl cert ${certPath} <<`);
+      await this.executeRuntimeApiCommand(container, sockPath, certPem);
+      await this.executeRuntimeApiCommand(container, sockPath, `commit ssl cert ${certPath}`);
+
+      this.logger.info({ certPath }, 'Certificate reloaded successfully via Runtime API');
+    } catch (error) {
+      this.logger.error({ error, certPath }, 'Failed to reload certificate');
+      throw error;
+    }
+  }
+
+  /**
+   * Execute Runtime API command via socat
+   *
+   * @param container - Docker container instance
+   * @param sockPath - Path to HAProxy socket
+   * @param command - Runtime API command
+   * @returns Command output
+   */
+  private async executeRuntimeApiCommand(
+    container: Dockerode.Container,
+    sockPath: string,
+    command: string
+  ): Promise<string> {
+    const cmd = `echo "${command}" | socat stdio unix-connect:${sockPath}`;
+
+    const exec = await container.exec({
+      Cmd: ['sh', '-c', cmd],
+      AttachStdout: true,
+      AttachStderr: true
+    });
+
+    const stream = await exec.start({ hijack: true, stdin: false });
+
+    return new Promise((resolve, reject) => {
+      let output = '';
+      stream.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+      stream.on('end', () => resolve(output));
+      stream.on('error', reject);
+    });
+  }
+
+  /**
+   * Find HAProxy container by label or name
+   *
+   * @returns HAProxy container info or null if not found
+   */
+  async findHAProxyContainer(): Promise<Dockerode.ContainerInfo | null> {
+    const containers = await this.getProjectContainers();
+    const haproxyContainer = containers.find(
+      c => c.State === 'running' && c.Names?.some(name => name.includes(this.mainContainerName))
+    );
+    return haproxyContainer || null;
   }
 }

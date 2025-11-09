@@ -11,6 +11,7 @@ import { tlsLogger } from "../../lib/logger-factory";
 import { AcmeClientManager } from "./acme-client-manager";
 import { AzureKeyVaultCertificateStore } from "./azure-keyvault-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
+import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
 import { CertificateRequest } from "./types";
 
@@ -21,6 +22,7 @@ export class CertificateLifecycleManager {
   private acmeClient: AcmeClientManager;
   private keyVaultStore: AzureKeyVaultCertificateStore;
   private dnsChallenge: DnsChallenge01Provider;
+  private distributor?: CertificateDistributor;
   private prisma: PrismaClient;
   private logger: Logger;
 
@@ -28,11 +30,13 @@ export class CertificateLifecycleManager {
     acmeClient: AcmeClientManager,
     keyVaultStore: AzureKeyVaultCertificateStore,
     dnsChallenge: DnsChallenge01Provider,
-    prisma: PrismaClient
+    prisma: PrismaClient,
+    distributor?: CertificateDistributor
   ) {
     this.acmeClient = acmeClient;
     this.keyVaultStore = keyVaultStore;
     this.dnsChallenge = dnsChallenge;
+    this.distributor = distributor;
     this.prisma = prisma;
     this.logger = tlsLogger();
   }
@@ -104,6 +108,34 @@ export class CertificateLifecycleManager {
           createdBy: userId,
         },
       });
+
+      // Step 5: Deploy to HAProxy (if requested and distributor is available)
+      if (request.deployToHaproxy && this.distributor) {
+        this.logger.info("Deploying certificate to HAProxy");
+        try {
+          const deployResult = await this.distributor.deployCertificate(
+            keyVaultName,
+            request.haproxyContainerId
+          );
+
+          if (deployResult.success) {
+            this.logger.info(
+              { certificateId: tlsCertificate.id, method: deployResult.method },
+              "Certificate deployed to HAProxy successfully"
+            );
+          } else {
+            this.logger.warn(
+              { certificateId: tlsCertificate.id, error: deployResult.error },
+              "Certificate deployment to HAProxy failed (certificate issued but not deployed)"
+            );
+          }
+        } catch (deployError) {
+          this.logger.warn(
+            { certificateId: tlsCertificate.id, error: deployError },
+            "Certificate deployment to HAProxy failed (certificate issued but not deployed)"
+          );
+        }
+      }
 
       this.logger.info(
         { certificateId: tlsCertificate.id, domains },
@@ -204,6 +236,33 @@ export class CertificateLifecycleManager {
           updatedBy: "system",
         },
       });
+
+      // Deploy to HAProxy (zero-downtime update) if distributor is available
+      if (this.distributor) {
+        this.logger.info("Deploying renewed certificate to HAProxy");
+        try {
+          const deployResult = await this.distributor.deployCertificate(
+            existingCert.keyVaultCertificateName
+          );
+
+          if (deployResult.success) {
+            this.logger.info(
+              { certificateId, method: deployResult.method },
+              "Renewed certificate deployed to HAProxy successfully"
+            );
+          } else {
+            this.logger.warn(
+              { certificateId, error: deployResult.error },
+              "Renewed certificate deployment to HAProxy failed (certificate renewed but not deployed)"
+            );
+          }
+        } catch (deployError) {
+          this.logger.warn(
+            { certificateId, error: deployError },
+            "Renewed certificate deployment to HAProxy failed (certificate renewed but not deployed)"
+          );
+        }
+      }
 
       // Mark renewal complete
       await this.updateRenewalStatus(renewal.id, "COMPLETED", {
