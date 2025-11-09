@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
 export interface DateFormatOptions {
@@ -134,4 +134,14 @@ export function formatContainerDate(
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, "MMM d, HH:mm");
   }
+}
+
+/**
+ * Formats a date as a relative time string (e.g., "2 hours ago", "3 days ago")
+ * @param date - Date to format (string, Date, or number)
+ * @returns Relative time string
+ */
+export function formatRelativeTime(date: string | Date | number): string {
+  const dateObj = typeof date === "string" ? new Date(date) : new Date(date);
+  return formatDistanceToNow(dateObj, { addSuffix: true });
 }

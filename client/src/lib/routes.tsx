@@ -15,6 +15,7 @@ import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
 import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
 import PostgresPage from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
+import PostgresServerPage from "@/app/postgres-server/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
@@ -65,6 +66,10 @@ export const router = createBrowserRouter([
       {
         path: "postgres/:databaseId/restore",
         element: <PostgresRestorePage />,
+      },
+      {
+        path: "postgres-server",
+        element: <PostgresServerPage />,
       },
       {
         path: "deployments",
