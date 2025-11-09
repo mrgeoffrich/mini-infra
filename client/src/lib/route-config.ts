@@ -50,17 +50,35 @@ export const routeConfig: Record<string, RouteConfig> = {
 
   '/postgres': {
     path: '/postgres',
-    title: 'PostgreSQL',
+    title: 'PostgreSQL Backups',
     icon: IconDatabase,
     showInNav: true,
     navGroup: 'main',
-    description: 'Database management and backups',
+    description: 'Database backups and restore',
     children: {
       'restore': {
         path: '/postgres/:databaseId/restore',
         title: 'Restore Database',
         breadcrumbLabel: 'Restore',
         parent: '/postgres',
+        showInNav: false
+      }
+    }
+  },
+
+  '/postgres-server': {
+    path: '/postgres-server',
+    title: 'PostgreSQL Servers',
+    icon: IconServer,
+    showInNav: true,
+    navGroup: 'main',
+    description: 'PostgreSQL server and database management',
+    children: {
+      'detail': {
+        path: '/postgres-server/:serverId',
+        title: 'Server Details',
+        breadcrumbLabel: 'Server Details',
+        parent: '/postgres-server',
         showInNav: false
       }
     }

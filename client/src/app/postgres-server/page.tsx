@@ -85,8 +85,51 @@ export function PostgresServerPage() {
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {/* Server cards will go here */}
-                <div className="text-muted-foreground">Server cards coming soon...</div>
+                {servers.map((server) => (
+                  <Card key={server.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg">{server.name}</CardTitle>
+                          <CardDescription className="mt-1">
+                            {server.host}:{server.port}
+                          </CardDescription>
+                        </div>
+                        <div className={`px-2 py-1 rounded text-xs font-medium ${
+                          server.healthStatus === 'healthy'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                            : server.healthStatus === 'unhealthy'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
+                        }`}>
+                          {server.healthStatus}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Databases:</span>
+                          <span className="font-medium">{server._count.databases}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Users:</span>
+                          <span className="font-medium">{server._count.users}</span>
+                        </div>
+                        {server.serverVersion && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Version:</span>
+                            <span className="font-medium">{server.serverVersion}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">SSL Mode:</span>
+                          <span className="font-medium">{server.sslMode}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             )}
           </CardContent>
