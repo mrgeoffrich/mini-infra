@@ -277,6 +277,7 @@ export const dockerExecutorLogger = () => createLogger("dockerexecutor");
 export const deploymentLogger = () => createLogger("deployments");
 export const loadbalancerLogger = () => createLogger("loadbalancer");
 export const selfBackupLogger = () => createLogger("self-backup");
+export const tlsLogger = () => createLogger("tls");
 
 // Generic logger factory function
 export function getLogger(
@@ -288,7 +289,8 @@ export function getLogger(
     | "dockerexecutor"
     | "deployments"
     | "loadbalancer"
-    | "self-backup",
+    | "self-backup"
+    | "tls",
 ): pino.Logger {
   return createLogger(loggerType);
 }
@@ -308,7 +310,8 @@ export function createChildLogger(
     | "dockerexecutor"
     | "deployments"
     | "loadbalancer"
-    | "self-backup",
+    | "self-backup"
+    | "tls",
   context: Record<string, unknown>,
 ): pino.Logger {
   const parentLogger = getLogger(loggerType);

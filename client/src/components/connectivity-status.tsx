@@ -184,6 +184,7 @@ const serviceLabels = {
   postgres: "PostgreSQL",
   system: "System",
   deployments: "Deployments",
+  tls: "TLS / Certificates",
 } as const;
 
 export function ServiceStatusCard({

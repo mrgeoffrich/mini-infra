@@ -69,6 +69,15 @@
       "rotation": {
         "enabled": false
       }
+    },
+    "tls": {
+      "level": "debug",
+      "destination": "logs/app-tls.log",
+      "prettyPrint": false,
+      "includeCaller": true,
+      "rotation": {
+        "enabled": false
+      }
     }
   },
   "production": {
@@ -151,6 +160,16 @@
         "maxFiles": "14d",
         "maxSize": "10m"
       }
+    },
+    "tls": {
+      "level": "info",
+      "destination": "logs/app-tls.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "14d",
+        "maxSize": "10m"
+      }
     }
   },
   "test": {
@@ -176,6 +195,9 @@
       "level": "silent"
     },
     "self-backup": {
+      "level": "silent"
+    },
+    "tls": {
       "level": "silent"
     }
   },

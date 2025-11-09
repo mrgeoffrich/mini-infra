@@ -624,3 +624,161 @@ model DatabaseGrant {
   @@index([userId])
   @@map("database_grants")
 }
+
+// TLS Certificate Management Models
+
+/// Managed TLS certificate records
+model TlsCertificate {
+  id                    String   @id @default(cuid())
+
+  // Certificate identification
+  domains               String   // JSON array of domains (e.g., ["example.com", "*.example.com"])
+  primaryDomain         String   // Main domain for certificate
+  certificateType       CertificateType @default(ACME) // "ACME" | "MANUAL"
+
+  // ACME-specific fields
+  acmeProvider          String?  // "letsencrypt" | "buypass" | "zerossl"
+  acmeAccountId         String?  // ACME account identifier
+  acmeOrderUrl          String?  // ACME order URL for renewals
+
+  // Azure Key Vault references
+  keyVaultCertificateName String  @unique // Name in Azure Key Vault
+  keyVaultVersion         String?         // Current version in Key Vault
+  keyVaultSecretId        String?         // Full secret identifier
+
+  // Certificate metadata
+  issuer                String?
+  serialNumber          String?
+  fingerprint           String?  @unique
+
+  // Lifecycle dates
+  issuedAt              DateTime
+  notBefore             DateTime
+  notAfter              DateTime
+  renewAfter            DateTime // Calculated: notAfter - renewalDaysBeforeExpiry
+  lastRenewedAt         DateTime?
+
+  // Status tracking
+  status                CertificateStatus @default(PENDING) // "PENDING" | "ACTIVE" | "RENEWING" | "EXPIRED" | "REVOKED" | "ERROR"
+  lastError             String?
+  lastErrorAt           DateTime?
+
+  // Configuration
+  autoRenew             Boolean  @default(true)
+  renewalDaysBeforeExpiry Int   @default(30)
+
+  // Associated HAProxy frontends
+  haproxyFrontends      String?  // JSON array of frontend names using this cert
+
+  // Audit trail
+  createdBy             String
+  updatedBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  renewalHistory        TlsCertificateRenewal[]
+
+  @@index([primaryDomain])
+  @@index([status])
+  @@index([renewAfter])
+  @@index([notAfter])
+  @@map("tls_certificates")
+}
+
+/// Certificate renewal history and audit log
+model TlsCertificateRenewal {
+  id              String   @id @default(cuid())
+  certificateId   String
+  certificate     TlsCertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  // Renewal attempt details
+  attemptNumber   Int      // Retry attempt number (1, 2, 3...)
+  status          RenewalStatus // "INITIATED" | "DNS_CHALLENGE_CREATED" | "CHALLENGE_VALIDATED" | "CERTIFICATE_ISSUED" | "STORED_IN_VAULT" | "DEPLOYED_TO_HAPROXY" | "COMPLETED" | "FAILED"
+
+  // Timing
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+
+  // ACME details
+  acmeOrderUrl    String?
+  acmeChallengeType String? // "dns-01"
+  dnsRecordName   String?  // e.g., "_acme-challenge.example.com"
+  dnsRecordValue  String?
+
+  // Key Vault details
+  keyVaultVersion String?  // New version created in Key Vault
+
+  // HAProxy deployment
+  haproxyReloadMethod String? // "runtime-api" | "graceful-reload"
+  haproxyReloadSuccess Boolean @default(false)
+
+  // Error tracking
+  errorMessage    String?
+  errorCode       String?
+  errorDetails    String?  // JSON stringified detailed error
+
+  // Metadata
+  triggeredBy     String   // "auto-renewal" | "manual" | userId
+  metadata        String?  // JSON stringified additional data
+
+  @@index([certificateId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("tls_certificate_renewals")
+}
+
+/// ACME account management
+model AcmeAccount {
+  id              String   @id @default(cuid())
+
+  // Account identification
+  email           String   @unique
+  provider        String   // "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl"
+  accountUrl      String   @unique // ACME account URL
+
+  // Key storage
+  keyVaultSecretName String @unique // Private key stored in Key Vault
+  keyAlgorithm    String   @default("RSA-2048") // "RSA-2048" | "ECDSA-P256"
+
+  // Status
+  status          String   @default("ACTIVE") // "ACTIVE" | "DEACTIVATED"
+  termsOfServiceUrl String?
+  agreedToTermsAt DateTime?
+
+  // Audit
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([email])
+  @@index([provider])
+  @@map("acme_accounts")
+}
+
+// Enums
+enum CertificateType {
+  ACME    // Let's Encrypt via ACME protocol
+  MANUAL  // Manually uploaded certificate
+}
+
+enum CertificateStatus {
+  PENDING   // Certificate order initiated
+  ACTIVE    // Certificate issued and active
+  RENEWING  // Renewal in progress
+  EXPIRED   // Certificate expired
+  REVOKED   // Certificate revoked
+  ERROR     // Error state
+}
+
+enum RenewalStatus {
+  INITIATED
+  DNS_CHALLENGE_CREATED
+  DNS_CHALLENGE_VALIDATED
+  CERTIFICATE_ISSUED
+  STORED_IN_VAULT
+  DEPLOYED_TO_HAPROXY
+  COMPLETED
+  FAILED
+}

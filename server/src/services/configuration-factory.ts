@@ -10,6 +10,7 @@ import { DockerConfigService } from "./docker-config";
 import { CloudflareConfigService } from "./cloudflare-config";
 import { AzureConfigService } from "./azure-config";
 import { PostgresSettingsConfigService } from "./postgres-settings-config";
+import { TlsConfigService } from "./tls/tls-config";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -20,6 +21,7 @@ export class ConfigurationServiceFactory
     "cloudflare",
     "azure",
     "postgres",
+    "tls",
   ];
 
   constructor(prisma: PrismaClient) {
@@ -51,6 +53,9 @@ export class ConfigurationServiceFactory
 
         case "postgres":
           return new PostgresSettingsConfigService(this.prisma);
+
+        case "tls":
+          return new TlsConfigService(this.prisma);
 
         default:
           throw new Error(`Unknown configuration category: ${category}`);
