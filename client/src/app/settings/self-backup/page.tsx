@@ -61,17 +61,18 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Database,
-  Clock,
-  Save,
-  Play,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Download,
-  RefreshCw,
-} from "lucide-react";
-import { Check, ChevronsUpDown } from "lucide-react";
+  IconDatabase,
+  IconClock,
+  IconDeviceFloppy,
+  IconPlayerPlay,
+  IconAlertTriangle,
+  IconCircleCheck,
+  IconCircleX,
+  IconDownload,
+  IconRefresh,
+  IconCheck,
+  IconSelector,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   useSelfBackupConfig,
@@ -143,7 +144,7 @@ function ErrorDetailsDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <IconAlertTriangle className="h-5 w-5 text-red-600" />
             Backup Error Details
           </DialogTitle>
           <DialogDescription>
@@ -330,7 +331,7 @@ export default function SelfBackupSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            <Database className="h-6 w-6" />
+            <IconDatabase className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Self-Backup Settings</h1>
@@ -343,7 +344,7 @@ export default function SelfBackupSettingsPage() {
         {/* Azure Storage Check */}
         {!isAzureConnected && (
           <Alert>
-            <AlertTriangle className="h-4 w-4" />
+            <IconAlertTriangle className="h-4 w-4" />
             <AlertDescription className="flex items-center justify-between">
               <span>
                 Azure Blob Storage is required for self-backups. Please configure
@@ -468,7 +469,7 @@ export default function SelfBackupSettingsPage() {
                                   (timezone) => timezone.value === field.value,
                                 )?.label
                               : "Select a timezone"}
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            <IconSelector className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -490,7 +491,7 @@ export default function SelfBackupSettingsPage() {
                                     setTimezonePopoverOpen(false);
                                   }}
                                 >
-                                  <Check
+                                  <IconCheck
                                     className={cn(
                                       "mr-2 h-4 w-4",
                                       timezone.value === field.value
@@ -547,7 +548,7 @@ export default function SelfBackupSettingsPage() {
 
                   {scheduleInfo.nextScheduledAt && config?.enabled && (
                     <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <IconClock className="h-4 w-4 text-muted-foreground" />
                       <span>
                         Next backup:{" "}
                         {new Date(scheduleInfo.nextScheduledAt).toLocaleString()}
@@ -567,7 +568,7 @@ export default function SelfBackupSettingsPage() {
                     updateConfig.isPending
                   }
                 >
-                  <Save className="mr-2 h-4 w-4" />
+                  <IconDeviceFloppy className="mr-2 h-4 w-4" />
                   {updateConfig.isPending
                     ? "Saving..."
                     : "Save Configuration"}
@@ -584,12 +585,12 @@ export default function SelfBackupSettingsPage() {
                 >
                   {triggerBackup.isPending ? (
                     <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      <IconRefresh className="mr-2 h-4 w-4 animate-spin" />
                       Backing up...
                     </>
                   ) : (
                     <>
-                      <Play className="mr-2 h-4 w-4" />
+                      <IconPlayerPlay className="mr-2 h-4 w-4" />
                       Backup Now
                     </>
                   )}
@@ -629,7 +630,7 @@ export default function SelfBackupSettingsPage() {
                 size="sm"
                 onClick={() => refetchHistory()}
               >
-                <RefreshCw className="h-4 w-4" />
+                <IconRefresh className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -702,7 +703,7 @@ export default function SelfBackupSettingsPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <Database className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <IconDatabase className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">No backups yet</h3>
               <p className="text-muted-foreground">
                 {statusFilter !== "all"
@@ -751,13 +752,13 @@ function BackupHistoryRow({
           }
         >
           {backup.status === "completed" && (
-            <CheckCircle className="mr-1 h-3 w-3" />
+            <IconCircleCheck className="mr-1 h-3 w-3" />
           )}
           {backup.status === "failed" && (
-            <XCircle className="mr-1 h-3 w-3" />
+            <IconCircleX className="mr-1 h-3 w-3" />
           )}
           {backup.status === "in_progress" && (
-            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+            <IconRefresh className="mr-1 h-3 w-3 animate-spin" />
           )}
           {backup.status}
         </Badge>
@@ -779,14 +780,14 @@ function BackupHistoryRow({
             size="sm"
             onClick={() => onViewError(backup)}
           >
-            <AlertTriangle className="mr-1 h-3 w-3" />
+            <IconAlertTriangle className="mr-1 h-3 w-3" />
             View Error
           </Button>
         )}
         {backup.status === "completed" && backup.azureBlobUrl && (
           <Button variant="ghost" size="sm" asChild>
             <a href={`/api/self-backups/${backup.id}/download`}>
-              <Download className="mr-1 h-3 w-3" />
+              <IconDownload className="mr-1 h-3 w-3" />
               Download
             </a>
           </Button>

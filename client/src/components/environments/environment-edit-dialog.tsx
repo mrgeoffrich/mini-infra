@@ -31,7 +31,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
@@ -204,7 +204,7 @@ export function EnvironmentEditDialog({
             disabled={updateMutation.isPending}
           >
             {updateMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Update Environment
           </Button>

@@ -1,14 +1,14 @@
 import React, { useMemo, useCallback } from "react";
 import {
-  Play,
-  Check,
-  X,
-  Clock,
-  RotateCcw,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+  IconPlayerPlay,
+  IconCheck,
+  IconX,
+  IconClock,
+  IconRotateClockwise2,
+  IconAlertTriangle,
+  IconChevronDown,
+  IconChevronUp,
+} from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentStatus } from "@/hooks/use-deployment-status";
@@ -35,10 +35,10 @@ interface DeploymentProgressProps {
 // Step status icon component
 const StepStatusIcon = React.memo(({ status }: { status: DeploymentStepStatus }) => {
   const iconMap = {
-    pending: Clock,
-    running: Play,
-    completed: Check,
-    failed: X,
+    pending: IconClock,
+    running: IconPlayerPlay,
+    completed: IconCheck,
+    failed: IconX,
   };
 
   const colorMap = {
@@ -128,7 +128,7 @@ const DeploymentStep = React.memo(({
         {step.status === "failed" && step.errorMessage && (
           <div className="text-sm text-red-600 bg-red-50 p-2 rounded border">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <IconAlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <span>{step.errorMessage}</span>
             </div>
           </div>
@@ -139,9 +139,9 @@ const DeploymentStep = React.memo(({
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="sm" className="p-1 h-auto text-xs">
                 {isExpanded ? (
-                  <ChevronUp className="h-3 w-3 mr-1" />
+                  <IconChevronUp className="h-3 w-3 mr-1" />
                 ) : (
-                  <ChevronDown className="h-3 w-3 mr-1" />
+                  <IconChevronDown className="h-3 w-3 mr-1" />
                 )}
                 {isExpanded ? "Hide Details" : "Show Details"}
               </Button>
@@ -384,7 +384,7 @@ export const DeploymentProgress = React.memo(function DeploymentProgress({
     return (
       <div className={`flex items-center justify-center p-8 ${className}`}>
         <div className="text-center">
-          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
+          <IconAlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
           <p className="text-muted-foreground">Failed to load deployment progress</p>
           <p className="text-sm text-destructive mt-2">
             {error instanceof Error ? error.message : "Unknown error"}
@@ -425,7 +425,7 @@ export const DeploymentProgress = React.memo(function DeploymentProgress({
             disabled={rollbackMutation.isPending}
             className="text-orange-600 border-orange-300 hover:bg-orange-50"
           >
-            <RotateCcw className="h-4 w-4 mr-2" />
+            <IconRotateClockwise2 className="h-4 w-4 mr-2" />
             {rollbackMutation.isPending ? "Rolling back..." : "Rollback"}
           </Button>
         )}
@@ -435,7 +435,7 @@ export const DeploymentProgress = React.memo(function DeploymentProgress({
       {errorMessage && (
         <div className="bg-red-50 border border-red-200 p-4 rounded">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+            <IconAlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
             <div>
               <h4 className="font-medium text-red-900">Deployment Error</h4>
               <p className="text-red-700 mt-1">{errorMessage}</p>

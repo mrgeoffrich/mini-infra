@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Server, Network, HardDrive, Globe } from "lucide-react";
+import { IconLoader2, IconServer, IconNetwork, IconDatabase, IconWorld } from "@tabler/icons-react";
 
 const addServiceSchema = z.object({
   serviceName: z
@@ -176,7 +176,7 @@ export function ServiceAddDialog({
                         {availableServices.map((service) => (
                           <SelectItem key={service.serviceType} value={service.serviceType}>
                             <div className="flex items-center gap-2">
-                              <Server className="h-4 w-4" />
+                              <IconServer className="h-4 w-4" />
                               <div>
                                 <div className="font-medium">{service.serviceType}</div>
                                 <div className="text-xs text-muted-foreground">
@@ -219,7 +219,7 @@ export function ServiceAddDialog({
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-lg">
-                      <Server className="h-5 w-5" />
+                      <IconServer className="h-5 w-5" />
                       {serviceMetadata.serviceType}
                     </CardTitle>
                     <CardDescription>{serviceMetadata.description}</CardDescription>
@@ -241,7 +241,7 @@ export function ServiceAddDialog({
                       {serviceMetadata.requiredNetworks?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
-                            <Network className="h-3.5 w-3.5" />
+                            <IconNetwork className="h-3.5 w-3.5" />
                             Networks
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
@@ -256,7 +256,7 @@ export function ServiceAddDialog({
                       {serviceMetadata.requiredVolumes?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
-                            <HardDrive className="h-3.5 w-3.5" />
+                            <IconDatabase className="h-3.5 w-3.5" />
                             Volumes
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
@@ -271,7 +271,7 @@ export function ServiceAddDialog({
                       {serviceMetadata.exposedPorts?.length > 0 && (
                         <div>
                           <div className="flex items-center gap-1 font-medium mb-2">
-                            <Globe className="h-3.5 w-3.5" />
+                            <IconWorld className="h-3.5 w-3.5" />
                             Ports
                           </div>
                           <ul className="space-y-1 text-muted-foreground">
@@ -305,7 +305,7 @@ export function ServiceAddDialog({
 
               {metadataLoading && selectedServiceType && (
                 <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <IconLoader2 className="h-4 w-4 animate-spin" />
                   <span className="ml-2 text-sm text-muted-foreground">
                     Loading service information...
                   </span>
@@ -328,7 +328,7 @@ export function ServiceAddDialog({
             disabled={addServiceMutation.isPending || !form.formState.isValid}
           >
             {addServiceMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Add Service
           </Button>

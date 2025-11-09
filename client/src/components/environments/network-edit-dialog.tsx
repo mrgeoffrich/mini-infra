@@ -30,7 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { useEffect } from "react";
 
 const updateNetworkSchema = z.object({
@@ -209,7 +209,7 @@ export function NetworkEditDialog({
             disabled={updateNetworkMutation.isPending || !form.formState.isValid}
           >
             {updateNetworkMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Update Network
           </Button>

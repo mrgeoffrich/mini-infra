@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, RefreshCw, HardDrive, MoreHorizontal, Edit, Trash2, AlertCircle } from "lucide-react";
+import { IconPlus, IconRefresh, IconDatabase, IconDots, IconEdit, IconTrash, IconAlertCircle } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 
 interface VolumeListProps {
@@ -89,7 +89,7 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
     return (
       <div className={className}>
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Failed to load volumes: {error instanceof Error ? error.message : "Unknown error"}
           </AlertDescription>
@@ -105,7 +105,7 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-                <HardDrive className="h-5 w-5" />
+                <IconDatabase className="h-5 w-5" />
               </div>
               <div>
                 <CardTitle>Volumes</CardTitle>
@@ -121,14 +121,14 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
                 onClick={handleRefresh}
                 disabled={isRefetching}
               >
-                <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+                <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
               <Button
                 size="sm"
                 onClick={() => setCreateDialogOpen(true)}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <IconPlus className="h-4 w-4 mr-2" />
                 Create Volume
               </Button>
             </div>
@@ -146,13 +146,13 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
             </div>
           ) : volumes.length === 0 ? (
             <div className="text-center py-8">
-              <HardDrive className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <IconDatabase className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Volumes Found</h3>
               <p className="text-muted-foreground mb-4">
                 This environment doesn't have any volumes yet.
               </p>
               <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
+                <IconPlus className="h-4 w-4 mr-2" />
                 Create Volume
               </Button>
             </div>
@@ -171,7 +171,7 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
                   <TableRow key={volume.id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <HardDrive className="h-4 w-4 text-muted-foreground" />
+                        <IconDatabase className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">{volume.name}</span>
                       </div>
                     </TableCell>
@@ -185,19 +185,19 @@ export function VolumeList({ environmentId, className }: VolumeListProps) {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
+                            <IconDots className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(volume)}>
-                            <Edit className="h-4 w-4 mr-2" />
+                            <IconEdit className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleDelete(volume)}
                             className="text-red-600"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
+                            <IconTrash className="h-4 w-4 mr-2" />
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>

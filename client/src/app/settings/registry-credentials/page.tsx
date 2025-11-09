@@ -60,19 +60,19 @@ import {
   useTestRegistryCredential,
 } from "@/hooks/use-registry-credentials";
 import {
-  AlertCircle,
-  Save,
-  Loader2,
-  Eye,
-  EyeOff,
-  Plus,
-  Pencil,
-  Trash2,
-  TestTube,
-  Star,
-  StarOff,
-  Key,
-} from "lucide-react";
+  IconAlertCircle,
+  IconDeviceFloppy,
+  IconLoader2,
+  IconEye,
+  IconEyeOff,
+  IconPlus,
+  IconEdit,
+  IconTrash,
+  IconFlask,
+  IconStar,
+  IconStarOff,
+  IconKey,
+} from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import type { RegistryCredential } from "@mini-infra/types";
 
@@ -259,7 +259,7 @@ export default function RegistryCredentialsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-              <Key className="h-6 w-6" />
+              <IconKey className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Registry Credentials</h1>
@@ -270,7 +270,7 @@ export default function RegistryCredentialsPage() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load registry credentials. Please try refreshing the page.
             </AlertDescription>
@@ -288,7 +288,7 @@ export default function RegistryCredentialsPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-              <Key className="h-6 w-6" />
+              <IconKey className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Registry Credentials</h1>
@@ -299,7 +299,7 @@ export default function RegistryCredentialsPage() {
           </div>
 
           <Button onClick={() => handleOpenDialog("create")}>
-            <Plus className="h-4 w-4 mr-2" />
+            <IconPlus className="h-4 w-4 mr-2" />
             Add Credential
           </Button>
         </div>
@@ -323,13 +323,13 @@ export default function RegistryCredentialsPage() {
               </div>
             ) : credentials.length === 0 ? (
               <div className="text-center py-12">
-                <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <IconKey className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No credentials configured</h3>
                 <p className="text-muted-foreground mb-4">
                   Add your first Docker registry credential to enable authentication
                 </p>
                 <Button onClick={() => handleOpenDialog("create")}>
-                  <Plus className="h-4 w-4 mr-2" />
+                  <IconPlus className="h-4 w-4 mr-2" />
                   Add Credential
                 </Button>
               </div>
@@ -352,7 +352,7 @@ export default function RegistryCredentialsPage() {
                           {credential.name}
                           {credential.isDefault && (
                             <Badge variant="secondary" className="ml-2">
-                              <Star className="h-3 w-3 mr-1" />
+                              <IconStar className="h-3 w-3 mr-1" />
                               Default
                             </Badge>
                           )}
@@ -389,9 +389,9 @@ export default function RegistryCredentialsPage() {
                             disabled={testingCredential === credential.id}
                           >
                             {testingCredential === credential.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <IconLoader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <TestTube className="h-4 w-4" />
+                              <IconFlask className="h-4 w-4" />
                             )}
                           </Button>
 
@@ -402,7 +402,7 @@ export default function RegistryCredentialsPage() {
                               onClick={() => handleSetDefault(credential)}
                               title="Set as default"
                             >
-                              <StarOff className="h-4 w-4" />
+                              <IconStarOff className="h-4 w-4" />
                             </Button>
                           )}
 
@@ -411,7 +411,7 @@ export default function RegistryCredentialsPage() {
                             size="sm"
                             onClick={() => handleOpenDialog("edit", credential)}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <IconEdit className="h-4 w-4" />
                           </Button>
 
                           <Button
@@ -422,7 +422,7 @@ export default function RegistryCredentialsPage() {
                               setDeleteDialogOpen(true);
                             }}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <IconTrash className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -526,9 +526,9 @@ export default function RegistryCredentialsPage() {
                           onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
+                            <IconEyeOff className="h-4 w-4" />
                           ) : (
-                            <Eye className="h-4 w-4" />
+                            <IconEye className="h-4 w-4" />
                           )}
                         </Button>
                       </div>
@@ -604,12 +604,12 @@ export default function RegistryCredentialsPage() {
                 >
                   {(createCredential.isPending || updateCredential.isPending) ? (
                     <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                       Saving...
                     </>
                   ) : (
                     <>
-                      <Save className="h-4 w-4 mr-2" />
+                      <IconDeviceFloppy className="h-4 w-4 mr-2" />
                       Save
                     </>
                   )}
@@ -641,7 +641,7 @@ export default function RegistryCredentialsPage() {
             >
               {deleteCredential.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                   Deleting...
                 </>
               ) : (

@@ -12,14 +12,14 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  Activity,
-  AlertCircle,
-  Database,
-  Zap,
-  X,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+  IconActivity,
+  IconAlertCircle,
+  IconDatabase,
+  IconBolt,
+  IconX,
+  IconEye,
+  IconEyeOff,
+} from "@tabler/icons-react";
 import { useActiveOperationsStatus } from "@/hooks/use-postgres-progress";
 import {
   OperationStatusBadge,
@@ -101,16 +101,16 @@ function OperationProgressCard({
                 onClick={() => onCancel(operation.id)}
                 className="text-red-600 hover:text-red-700"
               >
-                <X className="w-4 h-4" />
+                <IconX className="w-4 h-4" />
               </Button>
             )}
             <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm">
                   {isExpanded ? (
-                    <EyeOff className="w-4 h-4" />
+                    <IconEyeOff className="w-4 h-4" />
                   ) : (
-                    <Eye className="w-4 h-4" />
+                    <IconEye className="w-4 h-4" />
                   )}
                 </Button>
               </CollapsibleTrigger>
@@ -229,7 +229,7 @@ function OperationProgressCard({
               {/* Error information */}
               {operation.errorMessage && (
                 <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
+                  <IconAlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-sm">
                     <span className="font-medium">Error:</span>{" "}
                     {operation.errorMessage}
@@ -300,7 +300,7 @@ export function ActiveOperationsDisplay({
         {showHeader && (
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Activity className="w-5 h-5 mr-2" />
+              <IconActivity className="w-5 h-5 mr-2" />
               Active Operations
             </CardTitle>
           </CardHeader>
@@ -332,14 +332,14 @@ export function ActiveOperationsDisplay({
         {showHeader && (
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Activity className="w-5 h-5 mr-2" />
+              <IconActivity className="w-5 h-5 mr-2" />
               Active Operations
             </CardTitle>
           </CardHeader>
         )}
         <CardContent>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load active operations: {error.message}
             </AlertDescription>
@@ -355,14 +355,14 @@ export function ActiveOperationsDisplay({
         {showHeader && (
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Activity className="w-5 h-5 mr-2" />
+              <IconActivity className="w-5 h-5 mr-2" />
               Active Operations
             </CardTitle>
           </CardHeader>
         )}
         <CardContent>
           <div className="text-center py-8">
-            <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <IconDatabase className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No active operations</h3>
             <p className="text-muted-foreground">
               {databaseId
@@ -381,10 +381,10 @@ export function ActiveOperationsDisplay({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center">
-              <Activity className="w-5 h-5 mr-2" />
+              <IconActivity className="w-5 h-5 mr-2" />
               Active Operations
               <Badge variant="outline" className="ml-2">
-                <Zap className="w-3 h-3 mr-1" />
+                <IconBolt className="w-3 h-3 mr-1" />
                 {filteredTotalActive}
               </Badge>
             </CardTitle>
@@ -436,7 +436,7 @@ export function ActiveOperationsIndicator({
       variant="outline"
       className={`${className} text-blue-700 border-blue-200 bg-blue-50 animate-pulse`}
     >
-      <Activity className="w-3 h-3 mr-1 animate-spin" />
+      <IconActivity className="w-3 h-3 mr-1 animate-spin" />
       {totalActiveCount} active operation{totalActiveCount !== 1 ? "s" : ""}
     </Badge>
   );

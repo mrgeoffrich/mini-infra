@@ -1,12 +1,12 @@
 import { Badge } from "@/components/ui/badge";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  Loader2,
-  AlertCircle,
-  Play,
-} from "lucide-react";
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconLoader2,
+  IconAlertCircle,
+  IconPlayerPlay,
+} from "@tabler/icons-react";
 import type {
   BackupOperationStatus,
   RestoreOperationStatus,
@@ -32,32 +32,32 @@ export function OperationStatusBadge({
       case "completed":
         return {
           label: "Completed",
-          icon: CheckCircle,
+          icon: IconCircleCheck,
           className: "text-green-700 border-green-200 bg-green-50",
         };
       case "failed":
         return {
           label: "Failed",
-          icon: XCircle,
+          icon: IconCircleX,
           className: "text-red-700 border-red-200 bg-red-50",
         };
       case "running":
         return {
           label: "Running",
-          icon: Loader2,
+          icon: IconLoader2,
           className: "text-blue-700 border-blue-200 bg-blue-50",
           animate: true,
         };
       case "pending":
         return {
           label: "Pending",
-          icon: Clock,
+          icon: IconClock,
           className: "text-yellow-700 border-yellow-200 bg-yellow-50",
         };
       default:
         return {
           label: "Unknown",
-          icon: AlertCircle,
+          icon: IconAlertCircle,
           className: "text-gray-700 border-gray-200 bg-gray-50",
         };
     }
@@ -109,7 +109,7 @@ export function OperationTypeBadge({
       const isManual = operationType === "manual";
       return {
         label: isManual ? "Manual Backup" : "Scheduled Backup",
-        icon: isManual ? Play : Clock,
+        icon: isManual ? IconPlayerPlay : IconClock,
         className: isManual
           ? "text-purple-700 border-purple-200 bg-purple-50"
           : "text-blue-700 border-blue-200 bg-blue-50",
@@ -117,7 +117,7 @@ export function OperationTypeBadge({
     } else {
       return {
         label: "Restore",
-        icon: Play,
+        icon: IconPlayerPlay,
         className: "text-orange-700 border-orange-200 bg-orange-50",
       };
     }

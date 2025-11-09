@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useUser } from "@/hooks/use-user";
 import { useLogout } from "@/hooks/use-logout";
-import { Loader2, LogOut, MoreVertical, Settings } from "lucide-react";
+import { IconLoader2, IconLogout, IconDotsVertical, IconSettings } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 
 export function NavUser() {
@@ -85,7 +85,7 @@ export function NavUser() {
                   {user.email}
                 </span>
               </div>
-              <MoreVertical className="ml-auto size-4" />
+              <IconDotsVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -121,7 +121,7 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
                 <Link to="/user/settings" className="flex items-center">
-                  <Settings className="mr-2 h-4 w-4" />
+                  <IconSettings className="mr-2 h-4 w-4" />
                   Settings
                 </Link>
               </DropdownMenuItem>
@@ -130,12 +130,12 @@ export function NavUser() {
             <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
               {isLoggingOut ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <IconLoader2 className="h-4 w-4 animate-spin" />
                   Signing out...
                 </>
               ) : (
                 <>
-                  <LogOut className="h-4 w-4" />
+                  <IconLogout className="h-4 w-4" />
                   Sign out
                 </>
               )}

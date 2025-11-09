@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Key, Plus, AlertCircle } from "lucide-react";
+import { IconKey, IconPlus, IconAlertCircle } from "@tabler/icons-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -93,7 +93,7 @@ export function ApiKeysPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-md bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
-                <Key className="h-6 w-6" />
+                <IconKey className="h-6 w-6" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold">API Keys</h1>
@@ -107,7 +107,7 @@ export function ApiKeysPage() {
 
         <div className="px-4 lg:px-6 max-w-6xl">
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load API keys. {error.message}
             </AlertDescription>
@@ -124,7 +124,7 @@ export function ApiKeysPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
-              <Key className="h-6 w-6" />
+              <IconKey className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">API Keys</h1>
@@ -133,9 +133,9 @@ export function ApiKeysPage() {
               </p>
             </div>
           </div>
-          
+
           <Button onClick={() => setCreateDialogOpen(true)} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
+            <IconPlus className="h-4 w-4" />
             Create API Key
           </Button>
         </div>

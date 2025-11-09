@@ -7,16 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useSystemSettings, useConnectivityStatus } from "@/hooks/use-settings";
 import {
-  AlertCircle,
-  ArrowRight,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Container,
-  Cloud,
-  Database,
-  Activity,
-} from "lucide-react";
+  IconAlertCircle,
+  IconArrowRight,
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconBrandDocker,
+  IconCloud,
+  IconDatabase,
+  IconActivity,
+} from "@tabler/icons-react";
 import { ConnectivityStatusType, SettingsCategory } from "@mini-infra/types";
 
 // Map connectivity categories to display info
@@ -24,14 +24,14 @@ const CATEGORY_INFO = {
   docker: {
     name: "Docker",
     description: "Container management configuration",
-    icon: Container,
+    icon: IconBrandDocker,
     color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
     path: "/connectivity/docker",
   },
   cloudflare: {
     name: "Cloudflare",
     description: "API keys and tunnel configuration",
-    icon: Cloud,
+    icon: IconCloud,
     color:
       "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
     path: "/connectivity/cloudflare",
@@ -39,7 +39,7 @@ const CATEGORY_INFO = {
   azure: {
     name: "Azure Storage",
     description: "Backup and storage configuration",
-    icon: Database,
+    icon: IconDatabase,
     color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
     path: "/connectivity/azure",
   },
@@ -49,22 +49,22 @@ const CATEGORY_INFO = {
 const STATUS_VARIANTS = {
   connected: {
     variant: "default" as const,
-    icon: CheckCircle,
+    icon: IconCircleCheck,
     color: "text-green-600",
   },
   failed: {
     variant: "destructive" as const,
-    icon: XCircle,
+    icon: IconCircleX,
     color: "text-red-600",
   },
   timeout: {
     variant: "secondary" as const,
-    icon: Clock,
+    icon: IconClock,
     color: "text-yellow-600",
   },
   unreachable: {
     variant: "outline" as const,
-    icon: AlertCircle,
+    icon: IconAlertCircle,
     color: "text-gray-600",
   },
 } as const;
@@ -98,7 +98,7 @@ export function ConnectivityOverview() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-              <Activity className="h-6 w-6" />
+              <IconActivity className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Connectivity</h1>
@@ -109,7 +109,7 @@ export function ConnectivityOverview() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load settings data.{" "}
               {settingsError?.message || connectivityError?.message}
@@ -165,7 +165,7 @@ export function ConnectivityOverview() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-            <Activity className="h-6 w-6" />
+            <IconActivity className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Connectivity</h1>
@@ -187,8 +187,8 @@ export function ConnectivityOverview() {
               const Icon = info.icon;
               const StatusIcon = connectivity
                 ? STATUS_VARIANTS[connectivity.status as ConnectivityStatusType]
-                    ?.icon || AlertCircle
-                : AlertCircle;
+                    ?.icon || IconAlertCircle
+                : IconAlertCircle;
               const statusColor = connectivity
                 ? STATUS_VARIANTS[connectivity.status as ConnectivityStatusType]
                     ?.color || "text-gray-600"
@@ -258,7 +258,7 @@ export function ConnectivityOverview() {
                     <Button asChild variant="outline" className="w-full">
                       <Link to={info.path}>
                         Configure {info.name}
-                        <ArrowRight className="ml-2 h-4 w-4" />
+                        <IconArrowRight className="ml-2 h-4 w-4" />
                       </Link>
                     </Button>
                   </CardContent>

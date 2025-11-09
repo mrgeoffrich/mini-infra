@@ -9,7 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDeletePostgresDatabase } from "@/hooks/use-postgres-databases";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import type { PostgresDatabaseInfo } from "@mini-infra/types";
 
@@ -60,7 +60,7 @@ export function DeleteDatabaseDialog({
             className="bg-red-600 hover:bg-red-700"
           >
             {deleteMutation.isPending && (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
             )}
             Delete
           </AlertDialogAction>

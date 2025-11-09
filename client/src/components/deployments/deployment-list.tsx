@@ -7,20 +7,20 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import {
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  MoreVertical,
-  Play,
-  Edit,
-  Plus,
-  Filter,
-  X,
-  Eye,
-  Rocket,
-  Square,
-  Trash,
-} from "lucide-react";
+  IconArrowsSort,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDotsVertical,
+  IconPlayerPlay,
+  IconEdit,
+  IconPlus,
+  IconFilter,
+  IconX,
+  IconEye,
+  IconRocket,
+  IconSquare,
+  IconTrash,
+} from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useDeploymentConfigs, useDeploymentConfigFilters, useRemoveDeploymentContainers } from "@/hooks/use-deployment-configs";
@@ -193,7 +193,7 @@ const DeploymentActions = React.memo(({
         disabled={isTriggering || !config.isActive}
         className="h-8"
       >
-        <Play className="h-3 w-3 mr-1" />
+        <IconPlayerPlay className="h-3 w-3 mr-1" />
         Deploy
       </Button>
 
@@ -205,7 +205,7 @@ const DeploymentActions = React.memo(({
           disabled={isTriggering}
           className="h-8"
         >
-          <Rocket className="h-3 w-3 mr-1" />
+          <IconRocket className="h-3 w-3 mr-1" />
           New
         </Button>
       )}
@@ -218,7 +218,7 @@ const DeploymentActions = React.memo(({
           disabled={isRemovingContainers || isTriggering}
           className="h-8"
         >
-          <Square className="h-3 w-3 mr-1" />
+          <IconSquare className="h-3 w-3 mr-1" />
           Remove
         </Button>
       )}
@@ -226,17 +226,17 @@ const DeploymentActions = React.memo(({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-            <MoreVertical className="h-3 w-3" />
+            <IconDotsVertical className="h-3 w-3" />
             <span className="sr-only">Open menu</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleViewDetails}>
-            <Eye className="h-3 w-3 mr-2" />
+            <IconEye className="h-3 w-3 mr-2" />
             View Details
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleEdit}>
-            <Edit className="h-3 w-3 mr-2" />
+            <IconEdit className="h-3 w-3 mr-2" />
             Edit Configuration
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -245,7 +245,7 @@ const DeploymentActions = React.memo(({
             className="text-destructive"
             disabled={hasRunningContainers}
           >
-            <Trash className="h-3 w-3 mr-2" />
+            <IconTrash className="h-3 w-3 mr-2" />
             Delete Configuration
             {hasRunningContainers && (
               <span className="text-xs ml-2">(running)</span>
@@ -273,7 +273,7 @@ const DeploymentFilters = React.memo(({
   return (
     <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
       <div className="flex items-center gap-2">
-        <Filter className="h-4 w-4 text-muted-foreground" />
+        <IconFilter className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Filters:</span>
       </div>
       
@@ -319,13 +319,13 @@ const DeploymentFilters = React.memo(({
       </div>
 
       {hasActiveFilters && (
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={resetFilters}
           className="h-8"
         >
-          <X className="h-3 w-3 mr-1" />
+          <IconX className="h-3 w-3 mr-1" />
           Clear
         </Button>
       )}
@@ -459,7 +459,7 @@ export const DeploymentList = React.memo(function DeploymentList({
             className="h-auto p-0 font-medium"
           >
             Application Name
-            <ArrowUpDown className="ml-2 h-3 w-3" />
+            <IconArrowsSort className="ml-2 h-3 w-3" />
           </Button>
         ),
         cell: ({ row }) => (
@@ -497,7 +497,7 @@ export const DeploymentList = React.memo(function DeploymentList({
             className="h-auto p-0 font-medium"
           >
             Docker Image
-            <ArrowUpDown className="ml-2 h-3 w-3" />
+            <IconArrowsSort className="ml-2 h-3 w-3" />
           </Button>
         ),
         cell: ({ row }) => {
@@ -661,7 +661,7 @@ export const DeploymentList = React.memo(function DeploymentList({
                         <div className="text-center space-y-2">
                           <p className="text-muted-foreground">No deployment configurations found.</p>
                           <Button variant="outline" onClick={onCreateConfig}>
-                            <Plus className="h-4 w-4 mr-2" />
+                            <IconPlus className="h-4 w-4 mr-2" />
                             Create your first deployment configuration
                           </Button>
                         </div>
@@ -689,7 +689,7 @@ export const DeploymentList = React.memo(function DeploymentList({
                   onClick={handlePrevPage}
                   disabled={filters.page <= 1}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <IconChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
 
@@ -719,7 +719,7 @@ export const DeploymentList = React.memo(function DeploymentList({
                   disabled={filters.page >= totalPages}
                 >
                   Next
-                  <ChevronRight className="h-4 w-4" />
+                  <IconChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>

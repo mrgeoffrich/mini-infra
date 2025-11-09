@@ -17,15 +17,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  AlertCircle,
-  CheckCircle,
-  Loader2,
-  ExternalLink,
-  Lightbulb,
-  Globe,
-  AlertTriangle,
-  Check,
-} from "lucide-react";
+  IconAlertCircle,
+  IconCircleCheck,
+  IconLoader2,
+  IconExternalLink,
+  IconBulb,
+  IconWorld,
+  IconAlertTriangle,
+  IconCheck,
+} from "@tabler/icons-react";
 import { useHostnameValidation, useHostnameValidationWithDebounce, useHostnameSuggestions } from "@/hooks/use-hostname-validation";
 import { cn } from "@/lib/utils";
 
@@ -100,15 +100,15 @@ export function HostnameInput({
   const getValidationIcon = () => {
     switch (validationState) {
       case "validating":
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+        return <IconLoader2 className="h-4 w-4 animate-spin text-blue-500" />;
       case "valid":
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return <IconCircleCheck className="h-4 w-4 text-green-500" />;
       case "invalid":
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+        return <IconAlertCircle className="h-4 w-4 text-red-500" />;
       case "conflict":
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+        return <IconAlertTriangle className="h-4 w-4 text-yellow-500" />;
       default:
-        return <Globe className="h-4 w-4 text-gray-400" />;
+        return <IconWorld className="h-4 w-4 text-gray-400" />;
     }
   };
 
@@ -118,7 +118,7 @@ export function HostnameInput({
     if (validation.validationError) {
       return (
         <Alert variant="destructive" className="mt-2">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Failed to validate hostname: {validation.validationError.message}
           </AlertDescription>
@@ -132,7 +132,7 @@ export function HostnameInput({
       if (!isValid) {
         return (
           <Alert variant="destructive" className="mt-2">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>{message}</AlertDescription>
           </Alert>
         );
@@ -141,7 +141,7 @@ export function HostnameInput({
       if (isValid && isAvailable) {
         return (
           <Alert className="mt-2 border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
+            <IconCircleCheck className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-700">{message}</AlertDescription>
           </Alert>
         );
@@ -150,7 +150,7 @@ export function HostnameInput({
       if (isValid && !isAvailable) {
         return (
           <Alert variant="destructive" className="mt-2">
-            <AlertTriangle className="h-4 w-4" />
+            <IconAlertTriangle className="h-4 w-4" />
             <AlertDescription>
               <div className="space-y-2">
                 <p>{message}</p>
@@ -186,7 +186,7 @@ export function HostnameInput({
                     onClick={() => setShowSuggestions(!showSuggestions)}
                     className="mt-2"
                   >
-                    <Lightbulb className="h-3 w-3 mr-1" />
+                    <IconBulb className="h-3 w-3 mr-1" />
                     {showSuggestions ? "Hide" : "Show"} Suggestions
                   </Button>
                 )}
@@ -208,7 +208,7 @@ export function HostnameInput({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <ExternalLink className="h-3 w-3 text-muted-foreground cursor-help" />
+                <IconExternalLink className="h-3 w-3 text-muted-foreground cursor-help" />
               </TooltipTrigger>
               <TooltipContent>
                 <p className="max-w-xs">
@@ -249,12 +249,12 @@ export function HostnameInput({
               >
                 {validation.isValidating ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                     Validating
                   </>
                 ) : (
                   <>
-                    <Check className="h-4 w-4 mr-2" />
+                    <IconCheck className="h-4 w-4 mr-2" />
                     Validate
                   </>
                 )}
@@ -284,7 +284,7 @@ export function HostnameInput({
       {/* Hostname Suggestions */}
       {showValidation && showSuggestions && hasSuggestions && (
         <Alert className="mt-2">
-          <Lightbulb className="h-4 w-4" />
+          <IconBulb className="h-4 w-4" />
           <AlertDescription>
             <div className="space-y-2">
               <p className="font-medium">Try these alternatives:</p>

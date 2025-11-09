@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, History, Zap, Database, Eye, EyeOff } from "lucide-react";
+import { IconActivity, IconHistory, IconBolt, IconDatabase, IconEye, IconEyeOff } from "@tabler/icons-react";
 import {
   ActiveOperationsDisplay,
   ActiveOperationsIndicator,
@@ -38,7 +38,7 @@ export function ProgressIndicators({
         <div className="flex items-center justify-between mb-4">
           <TabsList className="grid w-auto grid-cols-2">
             <TabsTrigger value="active" className="flex items-center space-x-2">
-              <Activity className="w-4 h-4" />
+              <IconActivity className="w-4 h-4" />
               <span>Active Operations</span>
               {hasAnyActive && (
                 <Badge variant="outline" className="ml-1 text-xs">
@@ -50,7 +50,7 @@ export function ProgressIndicators({
               value="history"
               className="flex items-center space-x-2"
             >
-              <History className="w-4 h-4" />
+              <IconHistory className="w-4 h-4" />
               <span>History</span>
             </TabsTrigger>
           </TabsList>
@@ -104,7 +104,7 @@ export function CompactProgressIndicator({
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <Activity className="w-5 h-5 text-blue-600" />
+              <IconActivity className="w-5 h-5 text-blue-600" />
               <CardTitle className="text-sm font-medium">
                 {totalActiveCount} Active Operation
                 {totalActiveCount !== 1 ? "s" : ""}
@@ -113,7 +113,7 @@ export function CompactProgressIndicator({
                 variant="outline"
                 className="text-blue-700 border-blue-200"
               >
-                <Zap className="w-3 h-3 mr-1" />
+                <IconBolt className="w-3 h-3 mr-1" />
                 Live
               </Badge>
             </div>
@@ -123,9 +123,9 @@ export function CompactProgressIndicator({
               onClick={() => setIsExpanded(!isExpanded)}
             >
               {isExpanded ? (
-                <EyeOff className="w-4 h-4" />
+                <IconEyeOff className="w-4 h-4" />
               ) : (
-                <Eye className="w-4 h-4" />
+                <IconEye className="w-4 h-4" />
               )}
             </Button>
           </div>
@@ -168,7 +168,7 @@ export function DatabaseProgressIndicator({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center">
-            <Database className="w-5 h-5 mr-2" />
+            <IconDatabase className="w-5 h-5 mr-2" />
             {databaseName
               ? `${databaseName} Operations`
               : "Database Operations"}

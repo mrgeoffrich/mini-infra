@@ -7,14 +7,14 @@ import { useContainers } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
-  AlertCircle,
-  ArrowRight,
-  Container,
-  Play,
-  Square,
-  Pause,
-  Settings,
-} from "lucide-react";
+  IconAlertCircle,
+  IconArrowRight,
+  IconBrandDocker,
+  IconPlayerPlay,
+  IconSquare,
+  IconPlayerPause,
+  IconSettings,
+} from "@tabler/icons-react";
 
 export function ContainerSummary() {
   // Get formatted date utilities with user's timezone
@@ -73,7 +73,7 @@ export function ContainerSummary() {
     return (
       <div className="px-4 lg:px-6">
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             <div className="flex items-center justify-between">
               <div>
@@ -92,7 +92,7 @@ export function ContainerSummary() {
               </div>
               <Button asChild variant="outline" size="sm">
                 <Link to="/connectivity/docker">
-                  <Settings className="mr-2 h-4 w-4" />
+                  <IconSettings className="mr-2 h-4 w-4" />
                   Configure
                 </Link>
               </Button>
@@ -118,7 +118,7 @@ export function ContainerSummary() {
     return (
       <div className="px-4 lg:px-6">
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Failed to load container data. {error?.message}
             <button
@@ -187,7 +187,7 @@ export function ContainerSummary() {
             <CardTitle className="text-sm font-medium">
               Total Containers
             </CardTitle>
-            <Container className="h-4 w-4 text-muted-foreground" />
+            <IconBrandDocker className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalContainers}</div>
@@ -197,7 +197,7 @@ export function ContainerSummary() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Running</CardTitle>
-            <Play className="h-4 w-4 text-green-600" />
+            <IconPlayerPlay className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
@@ -209,7 +209,7 @@ export function ContainerSummary() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Stopped</CardTitle>
-            <Square className="h-4 w-4 text-red-600" />
+            <IconSquare className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
@@ -221,7 +221,7 @@ export function ContainerSummary() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Paused</CardTitle>
-            <Pause className="h-4 w-4 text-yellow-600" />
+            <IconPlayerPause className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">
@@ -239,7 +239,7 @@ export function ContainerSummary() {
       {/* Recently Died Containers Alert */}
       {recentlyDiedContainers.length > 0 && (
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             <div className="flex items-center justify-between">
               <span>
@@ -251,7 +251,7 @@ export function ContainerSummary() {
               <Button asChild variant="outline" size="sm">
                 <Link to="/containers?status=exited">
                   View Details
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  <IconArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </div>

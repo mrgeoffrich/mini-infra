@@ -30,24 +30,24 @@ import {
 } from "@/components/ui/select";
 import { AzureContainerInfo } from "@mini-infra/types";
 import {
-  ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  RefreshCw,
-  Database,
-  Lock,
-  Unlock,
-  Globe,
-  Shield,
-  AlertCircle,
-  Container,
-  Calendar,
-  TestTube,
-  Loader2,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
+  IconArrowsSort,
+  IconChevronLeft,
+  IconChevronRight,
+  IconSearch,
+  IconRefresh,
+  IconDatabase,
+  IconLock,
+  IconLockOpen,
+  IconWorld,
+  IconShield,
+  IconAlertCircle,
+  IconBrandDocker,
+  IconCalendar,
+  IconCloudQuestion,
+  IconLoader2,
+  IconCircleCheck,
+  IconCircleX,
+} from "@tabler/icons-react";
 import {
   useAzureContainers,
   useAzureContainerFilters,
@@ -63,13 +63,13 @@ interface AzureContainerListProps {
 const LEASE_STATUS_VARIANTS = {
   locked: {
     variant: "destructive" as const,
-    icon: Lock,
+    icon: IconLock,
     color: "text-red-600",
     label: "Locked",
   },
   unlocked: {
     variant: "default" as const,
-    icon: Unlock,
+    icon: IconLockOpen,
     color: "text-green-600",
     label: "Unlocked",
   },
@@ -78,19 +78,19 @@ const LEASE_STATUS_VARIANTS = {
 const PUBLIC_ACCESS_VARIANTS = {
   container: {
     variant: "secondary" as const,
-    icon: Globe,
+    icon: IconWorld,
     color: "text-blue-600",
     label: "Container",
   },
   blob: {
     variant: "outline" as const,
-    icon: Globe,
+    icon: IconWorld,
     color: "text-amber-600",
     label: "Blob",
   },
   null: {
     variant: "outline" as const,
-    icon: Shield,
+    icon: IconShield,
     color: "text-gray-600",
     label: "Private",
   },
@@ -136,7 +136,7 @@ CopyButton.displayName = "CopyButton";
 const ContainerNameCell = React.memo(
   ({ name }: { name: string }) => (
     <div className="flex items-center gap-2 min-h-[2rem]">
-      <Container className="h-4 w-4 text-blue-600 shrink-0" />
+      <IconBrandDocker className="h-4 w-4 text-blue-600 shrink-0" />
       <span className="font-medium truncate flex-1">{name}</span>
       <CopyButton text={name} />
     </div>
@@ -159,7 +159,7 @@ const LastModifiedCell = React.memo(
     return (
       <div className="text-sm min-h-[2rem] flex flex-col justify-center">
         <div className="flex items-center gap-1">
-          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <IconCalendar className="h-3 w-3 text-muted-foreground" />
           <span>{formattedDate}</span>
         </div>
         <div className="text-muted-foreground text-xs">{formattedTime}</div>
@@ -220,14 +220,14 @@ const MetadataCell = React.memo(
       <div className="flex items-center gap-2 min-h-[2rem]">
         {hasMetadata ? (
           <>
-            <Database className="h-4 w-4 text-blue-600" />
+            <IconDatabase className="h-4 w-4 text-blue-600" />
             <Badge variant="secondary" className="font-medium">
               {Object.keys(metadata).length} keys
             </Badge>
           </>
         ) : (
           <span className="text-muted-foreground text-sm flex items-center gap-1">
-            <Database className="h-4 w-4" />
+            <IconDatabase className="h-4 w-4" />
             None
           </span>
         )}
@@ -281,9 +281,9 @@ const ActionsCell = React.memo(
           className="h-8 px-3"
         >
           {isTestActive ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            <IconLoader2 className="h-3 w-3 animate-spin mr-1" />
           ) : (
-            <TestTube className="h-3 w-3 mr-1" />
+            <IconCloudQuestion className="h-3 w-3 mr-1" />
           )}
           Test Access
         </Button>
@@ -291,11 +291,11 @@ const ActionsCell = React.memo(
           <div className="flex items-center gap-1">
             {testStatus?.status === "success" ? (
               <div title="Access successful">
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <IconCircleCheck className="h-4 w-4 text-green-600" />
               </div>
             ) : (
               <div title={testStatus?.error || "Access failed"}>
-                <XCircle className="h-4 w-4 text-red-600" />
+                <IconCircleX className="h-4 w-4 text-red-600" />
               </div>
             )}
             {testStatus?.responseTime && (
@@ -491,7 +491,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
             className="h-auto p-0 font-medium"
           >
             Container Name
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => <ContainerNameCell name={row.getValue("name")} />,
@@ -505,7 +505,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
             className="h-auto p-0 font-medium"
           >
             Last Modified
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => (
@@ -521,7 +521,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
             className="h-auto p-0 font-medium"
           >
             Lease Status
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => (
@@ -712,7 +712,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
       <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Container className="h-5 w-5" />
+            <IconBrandDocker className="h-5 w-5" />
             Azure Storage Containers
           </CardTitle>
         </CardHeader>
@@ -740,13 +740,13 @@ export const AzureContainerList = React.memo(function AzureContainerList({
       <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Container className="h-5 w-5" />
+            <IconBrandDocker className="h-5 w-5" />
             Azure Storage Containers
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load containers: {error.message}
               <Button
@@ -755,7 +755,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
                 onClick={() => refetch()}
                 className="mt-2 ml-2"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
+                <IconRefresh className="h-4 w-4 mr-2" />
                 Retry
               </Button>
             </AlertDescription>
@@ -771,13 +771,13 @@ export const AzureContainerList = React.memo(function AzureContainerList({
       <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Container className="h-5 w-5" />
+            <IconBrandDocker className="h-5 w-5" />
             Azure Storage Containers
           </CardTitle>
         </CardHeader>
         <CardContent>
           <Alert>
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               No Azure Storage configuration found. Please configure your
               connection string first.
@@ -793,7 +793,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Container className="h-5 w-5" />
+            <IconBrandDocker className="h-5 w-5" />
             Azure Storage Containers
             <Badge variant="secondary" className="ml-2">
               {containersData.data.containerCount} total
@@ -806,9 +806,9 @@ export const AzureContainerList = React.memo(function AzureContainerList({
             disabled={isRefetching}
           >
             {isRefetching ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
+              <IconRefresh className="h-4 w-4 animate-spin" />
             ) : (
-              <RefreshCw className="h-4 w-4" />
+              <IconRefresh className="h-4 w-4" />
             )}
             <span className="sr-only">Refresh containers</span>
           </Button>
@@ -818,7 +818,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
         {/* Filters */}
         <div className="flex flex-wrap gap-4 mb-6">
           <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <IconSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search containers by name..."
               value={filters.namePrefix || ""}
@@ -884,7 +884,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
         {/* Container Table */}
         {filteredContainers.length === 0 ? (
           <div className="text-center py-12">
-            <Container className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <IconBrandDocker className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">No containers found</h3>
             <p className="text-muted-foreground">
               {containersData.data.containers.length === 0
@@ -956,7 +956,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
                     onClick={handlePrevPage}
                     disabled={filters.page <= 1}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <IconChevronLeft className="h-4 w-4" />
                     Previous
                   </Button>
 
@@ -1046,7 +1046,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
                     disabled={filters.page >= totalPages}
                   >
                     Next
-                    <ChevronRight className="h-4 w-4" />
+                    <IconChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               </div>

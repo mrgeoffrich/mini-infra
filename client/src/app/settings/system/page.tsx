@@ -29,14 +29,14 @@ import {
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
 import {
-  AlertCircle,
-  ArrowLeft,
-  Save,
-  Loader2,
-  Settings,
-  Container,
-  Network,
-} from "lucide-react";
+  IconAlertCircle,
+  IconArrowLeft,
+  IconDeviceFloppy,
+  IconLoader2,
+  IconSettings,
+  IconBrandDocker,
+  IconNetwork,
+} from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
@@ -279,14 +279,14 @@ export default function SystemSettingsPage() {
         <div className="flex items-center space-x-2">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
-              <ArrowLeft className="h-4 w-4" />
+              <IconArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <h1 className="text-2xl font-semibold">System Settings</h1>
         </div>
 
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Failed to load system settings. Please try refreshing the page.
           </AlertDescription>
@@ -300,7 +300,7 @@ export default function SystemSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-            <Settings className="h-6 w-6" />
+            <IconSettings className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">System Settings</h1>
@@ -337,7 +337,7 @@ export default function SystemSettingsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Container className="h-5 w-5" />
+                      <IconBrandDocker className="h-5 w-5" />
                       <span>Backup Container Settings</span>
                     </CardTitle>
                     <CardDescription>
@@ -373,7 +373,7 @@ export default function SystemSettingsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Container className="h-5 w-5" />
+                      <IconBrandDocker className="h-5 w-5" />
                       <span>Restore Container Settings</span>
                     </CardTitle>
                     <CardDescription>
@@ -409,7 +409,7 @@ export default function SystemSettingsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Settings className="h-5 w-5" />
+                      <IconSettings className="h-5 w-5" />
                       <span>HAProxy Port Configuration</span>
                     </CardTitle>
                     <CardDescription>
@@ -471,7 +471,7 @@ export default function SystemSettingsPage() {
                     />
 
                     <Alert>
-                      <AlertCircle className="h-4 w-4" />
+                      <IconAlertCircle className="h-4 w-4" />
                       <AlertDescription>
                         Port overrides apply to all HAProxy deployments. Ensure chosen ports are available on the host system.
                       </AlertDescription>
@@ -483,7 +483,7 @@ export default function SystemSettingsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <Network className="h-5 w-5" />
+                      <IconNetwork className="h-5 w-5" />
                       <span>Docker Host Network Configuration</span>
                     </CardTitle>
                     <CardDescription>
@@ -523,7 +523,7 @@ export default function SystemSettingsPage() {
                     />
 
                     <Alert>
-                      <AlertCircle className="h-4 w-4" />
+                      <IconAlertCircle className="h-4 w-4" />
                       <AlertDescription>
                         This IP address will be used to create DNS A records for deployed applications.
                         Make sure it's accessible from the internet if you're deploying public-facing services.
@@ -540,12 +540,12 @@ export default function SystemSettingsPage() {
                   >
                     {isSaving ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                         Saving...
                       </>
                     ) : (
                       <>
-                        <Save className="h-4 w-4 mr-2" />
+                        <IconDeviceFloppy className="h-4 w-4 mr-2" />
                         Save Settings
                       </>
                     )}

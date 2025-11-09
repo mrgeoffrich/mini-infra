@@ -18,11 +18,11 @@ import { Badge } from "@/components/ui/badge";
 import { EnvironmentStatus, ServiceHealth } from "./environment-status";
 import { cn } from "@/lib/utils";
 import {
-  Network,
-  HardDrive,
-  Server,
-  Users,
-} from "lucide-react";
+  IconNetwork,
+  IconDatabase,
+  IconServer,
+  IconUsers,
+} from "@tabler/icons-react";
 
 interface EnvironmentCardProps {
   environment: Environment;
@@ -95,7 +95,7 @@ export function EnvironmentCard({
         {/* Services Summary */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Users className="h-4 w-4" />
+            <IconUsers className="h-4 w-4" />
             <span>Services</span>
           </div>
           <div className="flex items-center gap-2">
@@ -119,11 +119,11 @@ export function EnvironmentCard({
         {/* Networks and Volumes */}
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Network className="h-4 w-4" />
+            <IconNetwork className="h-4 w-4" />
             <span>{environment.networks.length} Networks</span>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
-            <HardDrive className="h-4 w-4" />
+            <IconDatabase className="h-4 w-4" />
             <span>{environment.volumes.length} Volumes</span>
           </div>
         </div>
@@ -139,7 +139,7 @@ export function EnvironmentCard({
                   className="flex items-center justify-between rounded-md border p-2"
                 >
                   <div className="flex items-center gap-2">
-                    <Server className="h-3.5 w-3.5 text-muted-foreground" />
+                    <IconServer className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-sm font-medium">
                       {service.serviceName}
                     </span>

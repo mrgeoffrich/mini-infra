@@ -31,16 +31,16 @@ import {
 } from "@/hooks/use-settings";
 import { useValidateService } from "@/hooks/use-settings-validation";
 import {
-  Cloud,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  ArrowLeft,
-  Loader2,
-  Eye,
-  EyeOff,
-  Shield,
-} from "lucide-react";
+  IconCloud,
+  IconCircleCheck,
+  IconCircleX,
+  IconAlertCircle,
+  IconArrowLeft,
+  IconLoader2,
+  IconEye,
+  IconEyeOff,
+  IconShield,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
@@ -209,7 +209,7 @@ export default function CloudflareSettingsPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/connectivity/overview">
-                <ArrowLeft className="h-4 w-4" />
+                <IconArrowLeft className="h-4 w-4" />
                 Back to Connectivity
               </Link>
             </Button>
@@ -219,7 +219,7 @@ export default function CloudflareSettingsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-              <Cloud className="h-6 w-6" />
+              <IconCloud className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Cloudflare Configuration</h1>
@@ -230,7 +230,7 @@ export default function CloudflareSettingsPage() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load Cloudflare settings: {settingsError.message}
             </AlertDescription>
@@ -246,7 +246,7 @@ export default function CloudflareSettingsPage() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
-              <ArrowLeft className="h-4 w-4" />
+              <IconArrowLeft className="h-4 w-4" />
               Back to Connectivity
             </Link>
           </Button>
@@ -256,7 +256,7 @@ export default function CloudflareSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-            <Cloud className="h-6 w-6" />
+            <IconCloud className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Cloudflare Configuration</h1>
@@ -298,7 +298,7 @@ export default function CloudflareSettingsPage() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
-                              <Shield className="inline mr-2 h-4 w-4" />
+                              <IconShield className="inline mr-2 h-4 w-4" />
                               API Token
                             </FormLabel>
                             <FormControl>
@@ -317,9 +317,9 @@ export default function CloudflareSettingsPage() {
                                   onClick={() => setShowApiToken(!showApiToken)}
                                 >
                                   {showApiToken ? (
-                                    <EyeOff className="h-4 w-4" />
+                                    <IconEyeOff className="h-4 w-4" />
                                   ) : (
-                                    <Eye className="h-4 w-4" />
+                                    <IconEye className="h-4 w-4" />
                                   )}
                                 </Button>
                               </div>
@@ -371,9 +371,9 @@ export default function CloudflareSettingsPage() {
                           disabled={!form.formState.isValid || isSaving}
                         >
                           {isSaving ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                           ) : (
-                            <CheckCircle className="mr-2 h-4 w-4" />
+                            <IconCircleCheck className="mr-2 h-4 w-4" />
                           )}
                           Validate & Save
                         </Button>
@@ -387,7 +387,7 @@ export default function CloudflareSettingsPage() {
         {/* Validation Feedback */}
         {validationState.isSuccess && (
           <Alert className="bg-green-50 border-green-200 mt-6">
-            <CheckCircle className="h-4 w-4 text-green-600" />
+            <IconCircleCheck className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-700">
               Cloudflare connection has been validated and configured successfully.
               The system can now monitor your tunnels and manage Cloudflare resources.
@@ -397,7 +397,7 @@ export default function CloudflareSettingsPage() {
 
         {validationState.error && (
           <Alert variant="destructive" className="mt-6">
-            <XCircle className="h-4 w-4" />
+            <IconCircleX className="h-4 w-4" />
             <AlertDescription>
               Validation failed: {validationState.error}
             </AlertDescription>
@@ -417,7 +417,7 @@ export default function CloudflareSettingsPage() {
             <CardContent>
               <Button asChild>
                 <Link to="/tunnels" className="flex items-center gap-2">
-                  <Cloud className="h-4 w-4" />
+                  <IconCloud className="h-4 w-4" />
                   View Tunnels
                 </Link>
               </Button>

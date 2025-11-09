@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Plus, X, Server, Info } from "lucide-react";
+import { IconLoader2, IconPlus, IconX, IconServer, IconInfoCircle } from "@tabler/icons-react";
 
 const createEnvironmentSchema = z.object({
   name: z
@@ -159,7 +159,7 @@ export function EnvironmentCreateDialog({
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Info Box */}
               <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-md">
-                <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <IconInfoCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm text-blue-800 font-medium">
                     Important: Environment names are permanent
@@ -298,14 +298,14 @@ export function EnvironmentCreateDialog({
                           disabled={createMutation.isPending}
                           className="flex items-center gap-2 justify-start h-auto p-3"
                         >
-                          <Server className="h-4 w-4" />
+                          <IconServer className="h-4 w-4" />
                           <div className="text-left">
                             <div className="font-medium">{service.serviceType}</div>
                             <div className="text-xs text-muted-foreground">
                               {service.description}
                             </div>
                           </div>
-                          <Plus className="h-3 w-3 ml-auto" />
+                          <IconPlus className="h-3 w-3 ml-auto" />
                         </Button>
                       ))}
                     </div>
@@ -322,7 +322,7 @@ export function EnvironmentCreateDialog({
                           key={index}
                           className="flex items-center gap-2 p-3 border rounded-md"
                         >
-                          <Server className="h-4 w-4 text-muted-foreground" />
+                          <IconServer className="h-4 w-4 text-muted-foreground" />
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center gap-2">
                               <Input
@@ -343,7 +343,7 @@ export function EnvironmentCreateDialog({
                             disabled={createMutation.isPending}
                             className="h-8 w-8 p-0"
                           >
-                            <X className="h-4 w-4" />
+                            <IconX className="h-4 w-4" />
                           </Button>
                         </div>
                       ))}
@@ -353,7 +353,7 @@ export function EnvironmentCreateDialog({
 
                 {servicesLoading && (
                   <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <IconLoader2 className="h-4 w-4 animate-spin" />
                     <span className="ml-2 text-sm text-muted-foreground">
                       Loading available services...
                     </span>
@@ -377,7 +377,7 @@ export function EnvironmentCreateDialog({
             disabled={createMutation.isPending}
           >
             {createMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Create Environment
           </Button>

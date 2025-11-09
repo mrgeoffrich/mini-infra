@@ -16,7 +16,7 @@ import {
 } from "@/hooks/use-postgres-databases";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
 import { usePostgresSettings } from "@/hooks/use-postgres-settings";
-import { Database, AlertCircle, Plus, Settings } from "lucide-react";
+import { IconDatabase, IconAlertCircle, IconPlus, IconSettings } from "@tabler/icons-react";
 import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import { DatabaseModal } from "@/components/postgres/database-modal";
 import { BackupConfigurationModal } from "@/components/postgres/backup-configuration-modal";
@@ -113,7 +113,7 @@ export default function PostgresPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Database className="h-6 w-6" />
+              <IconDatabase className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
@@ -124,7 +124,7 @@ export default function PostgresPage() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load PostgreSQL databases: {error.message}
             </AlertDescription>
@@ -141,7 +141,7 @@ export default function PostgresPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Database className="h-6 w-6" />
+              <IconDatabase className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
@@ -152,7 +152,7 @@ export default function PostgresPage() {
           </div>
 
           <Button onClick={openCreateModal}>
-            <Plus className="h-4 w-4 mr-2" />
+            <IconPlus className="h-4 w-4 mr-2" />
             Add Database
           </Button>
         </div>
@@ -160,7 +160,7 @@ export default function PostgresPage() {
         {/* PostgreSQL Settings Warning */}
         {postgresSettings && !postgresSettings.isConfigured && (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription className="flex items-center justify-between">
               <div>
                 <strong>PostgreSQL containers not configured:</strong> Backup and restore operations require Docker images to be configured in system settings. Configure backup and restore Docker images before using PostgreSQL features.
@@ -171,7 +171,7 @@ export default function PostgresPage() {
                 onClick={() => navigate("/settings/system")}
                 className="ml-4 flex-shrink-0"
               >
-                <Settings className="w-4 h-4 mr-2" />
+                <IconSettings className="w-4 h-4 mr-2" />
                 Configure Settings
               </Button>
             </AlertDescription>
@@ -184,7 +184,7 @@ export default function PostgresPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Database className="w-5 h-5 mr-2" />
+              <IconDatabase className="w-5 h-5 mr-2" />
               Database Connections
             </CardTitle>
             <CardDescription>
@@ -207,7 +207,7 @@ export default function PostgresPage() {
               </div>
             ) : databases.length === 0 ? (
               <div className="text-center py-8">
-                <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <IconDatabase className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-lg font-semibold mb-2">
                   No databases configured
                 </h3>
@@ -216,7 +216,7 @@ export default function PostgresPage() {
                   connection
                 </p>
                 <Button onClick={openCreateModal}>
-                  <Plus className="w-4 h-4 mr-2" />
+                  <IconPlus className="w-4 h-4 mr-2" />
                   Add Database
                 </Button>
               </div>

@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2, Plus, Network } from "lucide-react";
+import { IconTrash, IconPlus, IconNetwork } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 interface Port {
   containerPort: number;
@@ -68,7 +68,7 @@ export function PortEditor({ form, className }: PortEditorProps) {
     <Card className={cn("w-full", className)}>
       <CardHeader>
         <div className="flex items-center space-x-2">
-          <Network className="w-5 h-5 text-green-500" />
+          <IconNetwork className="w-5 h-5 text-green-500" />
           <div>
             <CardTitle>Port Mappings</CardTitle>
             <CardDescription>
@@ -145,7 +145,7 @@ export function PortEditor({ form, className }: PortEditorProps) {
               disabled={!newPort.containerPort || newPort.containerPort < 1}
               size="sm"
             >
-              <Plus className="w-4 h-4" />
+              <IconPlus className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -230,7 +230,7 @@ export function PortEditor({ form, className }: PortEditorProps) {
                     onClick={() => remove(index)}
                     className="ml-2 text-destructive hover:text-destructive"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <IconTrash className="w-4 h-4" />
                   </Button>
                 </div>
               ))}
@@ -240,7 +240,7 @@ export function PortEditor({ form, className }: PortEditorProps) {
 
         {fields.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
-            <Network className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <IconNetwork className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No port mappings configured</p>
             <p className="text-xs">Add port mappings using the form above</p>
           </div>

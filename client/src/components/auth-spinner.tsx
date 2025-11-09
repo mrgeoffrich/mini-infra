@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface AuthSpinnerProps {
@@ -30,7 +30,7 @@ export function AuthSpinner({
     <div
       className={`flex flex-col items-center justify-center gap-3 ${className}`}
     >
-      <Loader2
+      <IconLoader2
         className={`${sizeClasses[size]} animate-spin text-muted-foreground`}
       />
       <p
@@ -73,7 +73,7 @@ export function InlineAuthSpinner({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Loader2
+      <IconLoader2
         className={`${size === "sm" ? "h-4 w-4" : "h-5 w-5"} animate-spin`}
       />
       <span className={size === "sm" ? "text-sm" : "text-base"}>{message}</span>

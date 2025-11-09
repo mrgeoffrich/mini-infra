@@ -1,11 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
-  Trash2,
-} from "lucide-react";
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconAlertCircle,
+  IconTrash,
+} from "@tabler/icons-react";
 
 type DNSStatus = 'active' | 'pending' | 'failed' | 'removed';
 
@@ -27,31 +27,31 @@ export function DNSStatusBadge({
       case "active":
         return {
           label: "Active",
-          icon: CheckCircle,
+          icon: IconCircleCheck,
           className: "text-green-700 border-green-200 bg-green-50",
         };
       case "pending":
         return {
           label: "Pending",
-          icon: Clock,
+          icon: IconClock,
           className: "text-yellow-700 border-yellow-200 bg-yellow-50",
         };
       case "failed":
         return {
           label: "Failed",
-          icon: XCircle,
+          icon: IconCircleX,
           className: "text-red-700 border-red-200 bg-red-50",
         };
       case "removed":
         return {
           label: "Removed",
-          icon: Trash2,
+          icon: IconTrash,
           className: "text-gray-700 border-gray-200 bg-gray-50",
         };
       default:
         return {
           label: "Unknown",
-          icon: AlertCircle,
+          icon: IconAlertCircle,
           className: "text-gray-700 border-gray-200 bg-gray-50",
         };
     }
@@ -100,31 +100,31 @@ export function FrontendStatusBadge({
       case "active":
         return {
           label: "Active",
-          icon: CheckCircle,
+          icon: IconCircleCheck,
           className: "text-green-700 border-green-200 bg-green-50",
         };
       case "pending":
         return {
           label: "Pending",
-          icon: Clock,
+          icon: IconClock,
           className: "text-yellow-700 border-yellow-200 bg-yellow-50",
         };
       case "failed":
         return {
           label: "Failed",
-          icon: XCircle,
+          icon: IconCircleX,
           className: "text-red-700 border-red-200 bg-red-50",
         };
       case "removed":
         return {
           label: "Removed",
-          icon: Trash2,
+          icon: IconTrash,
           className: "text-gray-700 border-gray-200 bg-gray-50",
         };
       default:
         return {
           label: "Unknown",
-          icon: AlertCircle,
+          icon: IconAlertCircle,
           className: "text-gray-700 border-gray-200 bg-gray-50",
         };
     }

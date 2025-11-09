@@ -36,15 +36,15 @@ import {
 } from "@/hooks/use-settings";
 import { useValidateService } from "@/hooks/use-settings-validation";
 import {
-  Container,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  ArrowLeft,
-  Loader2,
-  Zap,
-  HelpCircle,
-} from "lucide-react";
+  IconBrandDocker,
+  IconCircleCheck,
+  IconCircleX,
+  IconAlertCircle,
+  IconArrowLeft,
+  IconLoader2,
+  IconBolt,
+  IconHelp,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
@@ -213,7 +213,7 @@ export default function DockerSettingsPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/connectivity/overview">
-                <ArrowLeft className="h-4 w-4" />
+                <IconArrowLeft className="h-4 w-4" />
                 Back to Connectivity
               </Link>
             </Button>
@@ -223,7 +223,7 @@ export default function DockerSettingsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Container className="h-6 w-6" />
+              <IconBrandDocker className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Docker Configuration</h1>
@@ -234,7 +234,7 @@ export default function DockerSettingsPage() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load Docker settings: {settingsError.message}
             </AlertDescription>
@@ -250,7 +250,7 @@ export default function DockerSettingsPage() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
-              <ArrowLeft className="h-4 w-4" />
+              <IconArrowLeft className="h-4 w-4" />
               Back to Connectivity
             </Link>
           </Button>
@@ -260,7 +260,7 @@ export default function DockerSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            <Container className="h-6 w-6" />
+            <IconBrandDocker className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Docker Configuration</h1>
@@ -308,13 +308,13 @@ export default function DockerSettingsPage() {
                                     size="sm"
                                     className="h-6 w-6 p-0"
                                   >
-                                    <HelpCircle className="h-4 w-4" />
+                                    <IconHelp className="h-4 w-4" />
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-80">
                                   <div className="space-y-3">
                                     <div className="flex items-center gap-2">
-                                      <Zap className="h-4 w-4" />
+                                      <IconBolt className="h-4 w-4" />
                                       <span className="font-medium text-sm">
                                         Quick Tips
                                       </span>
@@ -375,13 +375,13 @@ export default function DockerSettingsPage() {
                                     size="sm"
                                     className="h-6 w-6 p-0"
                                   >
-                                    <HelpCircle className="h-4 w-4" />
+                                    <IconHelp className="h-4 w-4" />
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-80">
                                   <div className="space-y-3">
                                     <div className="flex items-center gap-2">
-                                      <Zap className="h-4 w-4" />
+                                      <IconBolt className="h-4 w-4" />
                                       <span className="font-medium text-sm">
                                         How to find API version
                                       </span>
@@ -428,9 +428,9 @@ export default function DockerSettingsPage() {
                           className="bg-green-600 hover:bg-green-700"
                         >
                           {isSaving ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                           ) : (
-                            <CheckCircle className="mr-2 h-4 w-4" />
+                            <IconCircleCheck className="mr-2 h-4 w-4" />
                           )}
                           Validate & Save
                         </Button>
@@ -444,7 +444,7 @@ export default function DockerSettingsPage() {
         {/* Validation Feedback */}
         {validationState.isSuccess && (
           <Alert className="bg-green-50 border-green-200 mt-6">
-            <CheckCircle className="h-4 w-4 text-green-600" />
+            <IconCircleCheck className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-700">
               Docker connection has been validated and configured successfully.
               The system can now manage Docker containers and perform operations.
@@ -454,7 +454,7 @@ export default function DockerSettingsPage() {
 
         {validationState.error && (
           <Alert variant="destructive" className="mt-6">
-            <XCircle className="h-4 w-4" />
+            <IconCircleX className="h-4 w-4" />
             <AlertDescription>
               Validation failed: {validationState.error}
             </AlertDescription>

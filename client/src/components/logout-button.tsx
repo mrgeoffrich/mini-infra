@@ -11,7 +11,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useLogout } from "@/hooks/use-logout";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { useState } from "react";
 
 interface LogoutButtonProps {
@@ -68,7 +68,7 @@ export function LogoutButton({
           >
             {isLoggingOut ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 Signing out...
               </>
             ) : (
@@ -98,7 +98,7 @@ export function LogoutButton({
             >
               {isLoggingOut ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing out...
                 </>
               ) : (
@@ -121,7 +121,7 @@ export function LogoutButton({
     >
       {isLoggingOut ? (
         <>
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
           Signing out...
         </>
       ) : (

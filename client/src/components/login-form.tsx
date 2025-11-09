@@ -10,7 +10,7 @@ import {
 import { useLogin } from "@/hooks/use-login";
 import { useAuth } from "@/hooks/use-auth";
 import { InlineAuthError } from "@/components/auth-error";
-import { Loader2 } from "lucide-react";
+import { IconLoader2 } from "@tabler/icons-react";
 
 export function LoginForm({
   className,
@@ -64,7 +64,7 @@ export function LoginForm({
           >
             {isLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 Signing in...
               </>
             ) : (

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/popover";
 import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { IconArrowsSort, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -255,7 +255,7 @@ export const ContainerTable = React.memo(function ContainerTable({
             className="h-auto p-0 font-medium"
           >
             Container Name
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => <ContainerNameCell name={row.getValue("name")} />,
@@ -269,7 +269,7 @@ export const ContainerTable = React.memo(function ContainerTable({
             className="h-auto p-0 font-medium"
           >
             Status
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => (
@@ -285,7 +285,7 @@ export const ContainerTable = React.memo(function ContainerTable({
             className="h-auto p-0 font-medium"
           >
             Image
-            <ArrowUpDown className="ml-2 h-4 w-4" />
+            <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
         cell: ({ row }) => (
@@ -439,7 +439,7 @@ export const ContainerTable = React.memo(function ContainerTable({
               onClick={handlePrevPage}
               disabled={page <= 1}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <IconChevronLeft className="h-4 w-4" />
               Previous
             </Button>
 
@@ -521,7 +521,7 @@ export const ContainerTable = React.memo(function ContainerTable({
               disabled={page >= totalPages}
             >
               Next
-              <ChevronRight className="h-4 w-4" />
+              <IconChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>

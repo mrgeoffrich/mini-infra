@@ -20,7 +20,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Plus, RefreshCw, Server, AlertCircle } from "lucide-react";
+import { IconPlus, IconRefresh, IconServer, IconAlertCircle } from "@tabler/icons-react";
 
 interface EnvironmentListProps {
   className?: string;
@@ -148,7 +148,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
     return (
       <div className={className}>
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Failed to load environments: {error instanceof Error ? error.message : "Unknown error"}
           </AlertDescription>
@@ -166,7 +166,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
             onClick={() => setCreateDialogOpen(true)}
             className="flex items-center gap-2"
           >
-            <Plus className="h-4 w-4" />
+            <IconPlus className="h-4 w-4" />
             Create Environment
           </Button>
           <Button
@@ -175,7 +175,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
             disabled={isRefetching}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+            <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
@@ -214,7 +214,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
       ) : environments.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <Server className="h-12 w-12 text-muted-foreground mb-4" />
+            <IconServer className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Environments Found</h3>
             <p className="text-muted-foreground text-center mb-4">
               {Object.keys(filters).some(key => key !== 'page' && key !== 'limit' && filters[key as keyof typeof filters])
@@ -227,7 +227,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
               </Button>
             ) : (
               <Button onClick={() => setCreateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
+                <IconPlus className="h-4 w-4 mr-2" />
                 Create Environment
               </Button>
             )}

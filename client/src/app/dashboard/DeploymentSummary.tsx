@@ -11,13 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
-  Rocket,
-  CheckCircle,
-  XCircle,
-  Clock,
-  ArrowRight,
-  Plus,
-} from "lucide-react";
+  IconRocket,
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconArrowRight,
+  IconPlus,
+} from "@tabler/icons-react";
 import { useDeploymentConfigs } from "@/hooks/use-deployment-configs";
 import { useActiveDeployments } from "@/hooks/use-deployment-history";
 import { DeploymentInfo } from "@mini-infra/types";
@@ -44,18 +44,18 @@ const getStatusColor = (status: string) => {
 const getStatusIcon = (status: string) => {
   switch (status) {
     case "completed":
-      return <CheckCircle className="h-4 w-4" />;
+      return <IconCircleCheck className="h-4 w-4" />;
     case "failed":
     case "rolling_back":
-      return <XCircle className="h-4 w-4" />;
+      return <IconCircleX className="h-4 w-4" />;
     case "deploying":
     case "health_checking":
     case "switching_traffic":
     case "pending":
     case "preparing":
-      return <Clock className="h-4 w-4" />;
+      return <IconClock className="h-4 w-4" />;
     default:
-      return <Clock className="h-4 w-4" />;
+      return <IconClock className="h-4 w-4" />;
   }
 };
 
@@ -105,7 +105,7 @@ export function DeploymentSummary() {
         <Card className="border-destructive/50 bg-destructive/5">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-destructive">
-              <XCircle className="h-5 w-5" />
+              <IconCircleX className="h-5 w-5" />
               Failed to Load Deployments
             </CardTitle>
             <CardDescription>
@@ -127,7 +127,7 @@ export function DeploymentSummary() {
             <CardTitle className="text-sm font-medium">
               Deployment Configurations
             </CardTitle>
-            <Rocket className="h-4 w-4 text-muted-foreground" />
+            <IconRocket className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -148,7 +148,7 @@ export function DeploymentSummary() {
             <CardTitle className="text-sm font-medium">
               Active Deployments
             </CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <IconClock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -167,7 +167,7 @@ export function DeploymentSummary() {
             <CardTitle className="text-sm font-medium">
               Failed Deployments
             </CardTitle>
-            <XCircle className="h-4 w-4 text-muted-foreground" />
+            <IconCircleX className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -188,7 +188,7 @@ export function DeploymentSummary() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <Rocket className="h-5 w-5" />
+                <IconRocket className="h-5 w-5" />
                 Recent Deployments
               </CardTitle>
               <CardDescription>
@@ -198,14 +198,14 @@ export function DeploymentSummary() {
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" asChild>
                 <Link to="/deployments">
-                  <Plus className="h-4 w-4 mr-2" />
+                  <IconPlus className="h-4 w-4 mr-2" />
                   New Deployment
                 </Link>
               </Button>
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/deployments">
                   View All
-                  <ArrowRight className="h-4 w-4 ml-1" />
+                  <IconArrowRight className="h-4 w-4 ml-1" />
                 </Link>
               </Button>
             </div>
@@ -232,14 +232,14 @@ export function DeploymentSummary() {
             </div>
           ) : deployments.length === 0 ? (
             <div className="text-center py-8">
-              <Rocket className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+              <IconRocket className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
               <h3 className="text-lg font-semibold mb-2">No deployments yet</h3>
               <p className="text-muted-foreground mb-4">
                 Get started by creating your first deployment configuration.
               </p>
               <Button asChild>
                 <Link to="/deployments">
-                  <Plus className="h-4 w-4 mr-2" />
+                  <IconPlus className="h-4 w-4 mr-2" />
                   Create Configuration
                 </Link>
               </Button>
@@ -283,7 +283,7 @@ export function DeploymentSummary() {
                       </Badge>
                       <Button variant="ghost" size="sm" asChild>
                         <Link to={`/deployments`}>
-                          <ArrowRight className="h-4 w-4" />
+                          <IconArrowRight className="h-4 w-4" />
                         </Link>
                       </Button>
                     </div>
