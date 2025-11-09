@@ -128,6 +128,11 @@ import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
 import selfBackupSettingsRoutes from "./routes/settings-self-backup";
 import selfBackupsRoutes from "./routes/self-backups";
 import registryCredentialsRoutes from "./routes/registry-credentials";
+import postgresServerRoutes from "./routes/postgres-server/servers";
+import postgresServerDatabasesRoutes from "./routes/postgres-server/databases";
+import postgresServerUsersRoutes from "./routes/postgres-server/users";
+import postgresServerGrantsRoutes from "./routes/postgres-server/grants";
+import postgresServerWorkflowsRoutes from "./routes/postgres-server/workflows";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -159,6 +164,11 @@ app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
 app.use("/api/self-backups", selfBackupsRoutes);
 app.use("/api/registry-credentials", registryCredentialsRoutes);
+app.use("/api/postgres-server/servers", postgresServerRoutes);
+app.use("/api/postgres-server/servers/:serverId/databases", postgresServerDatabasesRoutes);
+app.use("/api/postgres-server/servers/:serverId/users", postgresServerUsersRoutes);
+app.use("/api/postgres-server/grants", postgresServerGrantsRoutes);
+app.use("/api/postgres-server/workflows", postgresServerWorkflowsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {

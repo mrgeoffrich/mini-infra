@@ -21,8 +21,9 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  apiKeys       ApiKey[]
+  apiKeys        ApiKey[]
   userPreference UserPreference?
+  postgresServers PostgresServer[]
 
   @@map("users")
 }
@@ -498,4 +499,128 @@ model RegistryCredential {
 
   @@unique([registryUrl])
   @@map("registry_credentials")
+}
+
+// PostgreSQL Server Management Models (Phase 1.1)
+
+// PostgresServer model for managing PostgreSQL server connections with admin credentials
+model PostgresServer {
+  id                String   @id @default(cuid())
+  name              String   @unique // User-friendly name
+  host              String
+  port              Int      @default(5432)
+  adminUsername     String   // Admin user (e.g., 'postgres')
+  connectionString  String   // Encrypted connection string with admin password
+  sslMode           String   @default("prefer") // prefer/require/disable
+  tags              String?  // JSON array of tags
+
+  // Health monitoring
+  healthStatus      String   @default("unknown") // healthy/unhealthy/unknown
+  lastHealthCheck   DateTime?
+  serverVersion     String?  // e.g., "PostgreSQL 15.3"
+
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  databases         ManagedDatabase[]
+  users             ManagedDatabaseUser[]
+
+  @@index([userId])
+  @@index([healthStatus])
+  @@map("postgres_servers")
+}
+
+// ManagedDatabase model for tracking databases managed on a PostgreSQL server
+model ManagedDatabase {
+  id               String   @id @default(cuid())
+  serverId         String
+  server           PostgresServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // Database info
+  databaseName     String   // Name on the server
+  owner            String   // Database owner role
+  encoding         String   @default("UTF8")
+  collation        String?
+  template         String   @default("template0")
+
+  // Metadata from server
+  sizeBytes        BigInt?  // Database size
+  connectionLimit  Int      @default(-1) // -1 = unlimited
+
+  // Tracking
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastSyncedAt     DateTime? // Last time we synced with server
+
+  // Relationships
+  grants           DatabaseGrant[]
+
+  @@unique([serverId, databaseName])
+  @@index([serverId])
+  @@map("managed_databases")
+}
+
+// ManagedDatabaseUser model for tracking users/roles on a PostgreSQL server
+model ManagedDatabaseUser {
+  id              String   @id @default(cuid())
+  serverId        String
+  server          PostgresServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // User info
+  username        String
+  canLogin        Boolean  @default(true)
+  isSuperuser     Boolean  @default(false)
+  connectionLimit Int      @default(-1)
+
+  // Password management
+  passwordHash    String?  // Encrypted - for our records only
+  passwordSetAt   DateTime?
+
+  // Tracking
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncedAt    DateTime?
+
+  // Relationships
+  grants          DatabaseGrant[]
+
+  @@unique([serverId, username])
+  @@index([serverId])
+  @@map("managed_database_users")
+}
+
+// DatabaseGrant model for tracking permissions granted to users on databases
+model DatabaseGrant {
+  id          String   @id @default(cuid())
+  databaseId  String
+  database    ManagedDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  userId      String
+  user        ManagedDatabaseUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Permissions
+  canConnect  Boolean  @default(true)
+  canCreate   Boolean  @default(false)
+  canTemp     Boolean  @default(false)
+
+  // Schema-level privileges (on public schema)
+  canCreateSchema   Boolean @default(false)
+  canUsageSchema    Boolean @default(true)
+
+  // Table-level privileges (ALL TABLES)
+  canSelect   Boolean  @default(true)
+  canInsert   Boolean  @default(true)
+  canUpdate   Boolean  @default(true)
+  canDelete   Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([databaseId, userId])
+  @@index([databaseId])
+  @@index([userId])
+  @@map("database_grants")
 }

@@ -509,23 +509,6 @@ export interface QuickSetupResponse {
 - Scheduled maintenance (cron-based)
 - Maintenance history log
 
-### 2.5 Template System
-
-**Application Templates**
-Pre-configured database setups for common applications:
-- **Laravel Database**: UTF8, user with full privileges, recommended extensions
-- **WordPress Database**: UTF8MB4 equivalent, user with specific privileges
-- **Django Database**: UTF8, user with full privileges, recommended extensions
-- **Rails Database**: UTF8, user with superuser (for migrations)
-- **Read-Only Analytics User**: User with SELECT-only across all tables
-
-**Template Service** (`template-manager.ts`)
-- Pre-defined templates in code
-- Custom user templates (saved in database)
-- Apply template to create database + user + grants
-
----
-
 ## Phase 3: Integration & Advanced Features
 
 ### 3.1 Integration with Existing Backup System
