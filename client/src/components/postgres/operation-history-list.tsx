@@ -31,14 +31,14 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  History,
-  RefreshCw,
-  Filter,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  Database,
-} from "lucide-react";
+  IconHistory,
+  IconRefresh,
+  IconFilter,
+  IconChevronDown,
+  IconChevronRight,
+  IconAlertCircle,
+  IconDatabase,
+} from "@tabler/icons-react";
 import {
   useOperationHistory,
   useOperationHistoryFilters,
@@ -95,9 +95,9 @@ function OperationDetailsRow({
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="p-0 h-6 w-6">
                   {isOpen ? (
-                    <ChevronDown className="h-4 w-4" />
+                    <IconChevronDown className="h-4 w-4" />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <IconChevronRight className="h-4 w-4" />
                   )}
                 </Button>
               </CollapsibleTrigger>
@@ -199,7 +199,7 @@ function OperationDetailsRow({
 
                 {operation.errorMessage && (
                   <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
+                    <IconAlertCircle className="h-4 w-4" />
                     <AlertDescription className="text-sm">
                       <span className="font-medium">Error:</span>{" "}
                       {operation.errorMessage}
@@ -256,7 +256,7 @@ export function OperationHistoryList({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <History className="w-5 h-5" />
+            <IconHistory className="w-5 h-5" />
             <div>
               <CardTitle className="text-lg">Operation History</CardTitle>
               <CardDescription>
@@ -272,11 +272,11 @@ export function OperationHistoryList({
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
             >
-              <Filter className="w-4 h-4 mr-2" />
+              <IconFilter className="w-4 h-4 mr-2" />
               Filters
             </Button>
             <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <IconRefresh className="w-4 h-4 mr-2" />
               Refresh
             </Button>
           </div>
@@ -365,7 +365,7 @@ export function OperationHistoryList({
       <CardContent>
         {error && (
           <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load operation history: {error.message}
             </AlertDescription>
@@ -392,7 +392,7 @@ export function OperationHistoryList({
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-12">
-              <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <IconDatabase className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-semibold mb-2">
                 No operations found
               </h3>

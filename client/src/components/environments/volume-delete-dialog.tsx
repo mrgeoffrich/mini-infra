@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, HardDrive } from "lucide-react";
+import { IconLoader2, IconAlertTriangle, IconDatabase } from "@tabler/icons-react";
 
 interface VolumeDeleteDialogProps {
   open: boolean;
@@ -60,7 +60,7 @@ export function VolumeDeleteDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <HardDrive className="h-5 w-5" />
+            <IconDatabase className="h-5 w-5" />
             Delete Volume
           </DialogTitle>
           <DialogDescription>
@@ -69,7 +69,7 @@ export function VolumeDeleteDialog({
         </DialogHeader>
 
         <Alert>
-          <AlertTriangle className="h-4 w-4" />
+          <IconAlertTriangle className="h-4 w-4" />
           <AlertDescription>
             This action cannot be undone. The volume and all its data will be
             permanently removed from this environment.
@@ -99,7 +99,7 @@ export function VolumeDeleteDialog({
             disabled={deleteVolumeMutation.isPending}
           >
             {deleteVolumeMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Delete Volume
           </Button>

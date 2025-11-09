@@ -24,15 +24,15 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { useCreateApiKey } from "@/hooks/use-api-keys";
 import { toast } from "sonner";
-import { 
-  Loader2, 
-  Key, 
-  Copy, 
-  CheckCircle, 
-  AlertTriangle,
-  Eye,
-  EyeOff 
-} from "lucide-react";
+import {
+  IconLoader2,
+  IconKey,
+  IconCopy,
+  IconCircleCheck,
+  IconAlertTriangle,
+  IconEye,
+  IconEyeOff
+} from "@tabler/icons-react";
 
 // Form validation schema
 const CreateApiKeySchema = z.object({
@@ -109,7 +109,7 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-primary" />
+            <IconKey className="h-5 w-5 text-primary" />
             {createdKey ? "API Key Created" : "Create New API Key"}
           </DialogTitle>
           <DialogDescription>
@@ -160,12 +160,12 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
                 >
                   {createApiKeyMutation.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <IconLoader2 className="h-4 w-4 animate-spin" />
                       Creating...
                     </>
                   ) : (
                     <>
-                      <Key className="h-4 w-4" />
+                      <IconKey className="h-4 w-4" />
                       Create API Key
                     </>
                   )}
@@ -178,7 +178,7 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
           <div className="space-y-6">
             {/* Success message */}
             <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
-              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <IconCircleCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
               <AlertDescription className="text-green-800 dark:text-green-200">
                 Your API key has been created successfully!
               </AlertDescription>
@@ -203,9 +203,9 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
                     onClick={() => setShowKey(!showKey)}
                   >
                     {showKey ? (
-                      <EyeOff className="h-3 w-3" />
+                      <IconEyeOff className="h-3 w-3" />
                     ) : (
-                      <Eye className="h-3 w-3" />
+                      <IconEye className="h-3 w-3" />
                     )}
                   </Button>
                 </div>
@@ -217,12 +217,12 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
                 >
                   {copied ? (
                     <>
-                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <IconCircleCheck className="h-4 w-4 text-green-600" />
                       Copied!
                     </>
                   ) : (
                     <>
-                      <Copy className="h-4 w-4" />
+                      <IconCopy className="h-4 w-4" />
                       Copy
                     </>
                   )}
@@ -232,7 +232,7 @@ export function CreateApiKeyDialog({ open, onOpenChange }: CreateApiKeyDialogPro
 
             {/* Security warning */}
             <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
+              <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <strong>Important:</strong> This is the only time you'll be able to see this API key. 
                 Make sure to copy it and store it securely. You'll need to regenerate a new key if you lose this one.

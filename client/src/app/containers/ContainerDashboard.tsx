@@ -15,7 +15,7 @@ import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { ContainerTable } from "./ContainerTable";
 import { ContainerFilters } from "./ContainerFilters";
-import { AlertCircle, Settings, Container } from "lucide-react";
+import { IconAlertCircle, IconSettings, IconBrandDocker } from "@tabler/icons-react";
 
 interface ContainerGroup {
   environmentId: string | null;
@@ -138,7 +138,7 @@ export function ContainerDashboard() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Container className="h-6 w-6" />
+              <IconBrandDocker className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Container Dashboard</h1>
@@ -149,7 +149,7 @@ export function ContainerDashboard() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               <div className="flex items-center justify-between">
                 <div>
@@ -169,7 +169,7 @@ export function ContainerDashboard() {
                 </div>
                 <Button asChild variant="outline" size="sm">
                   <Link to="/connectivity/docker">
-                    <Settings className="mr-2 h-4 w-4" />
+                    <IconSettings className="mr-2 h-4 w-4" />
                     Configure
                   </Link>
                 </Button>
@@ -188,7 +188,7 @@ export function ContainerDashboard() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Container className="h-6 w-6" />
+              <IconBrandDocker className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Container Dashboard</h1>
@@ -212,7 +212,7 @@ export function ContainerDashboard() {
               <div className="text-center py-8">
                 <Button asChild variant="outline">
                   <Link to="/connectivity/docker">
-                    <Settings className="mr-2 h-4 w-4" />
+                    <IconSettings className="mr-2 h-4 w-4" />
                     Configure Docker
                   </Link>
                 </Button>
@@ -231,7 +231,7 @@ export function ContainerDashboard() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Container className="h-6 w-6" />
+              <IconBrandDocker className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Container Dashboard</h1>
@@ -242,7 +242,7 @@ export function ContainerDashboard() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load container data. {error?.message}
               <button
@@ -263,7 +263,7 @@ export function ContainerDashboard() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            <Container className="h-6 w-6" />
+            <IconBrandDocker className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Container Dashboard</h1>

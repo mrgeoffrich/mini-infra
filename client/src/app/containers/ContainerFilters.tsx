@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ContainerFilters as FilterState } from "@mini-infra/types";
-import { Search, X } from "lucide-react";
+import { IconSearch, IconX } from "@tabler/icons-react";
 
 interface ContainerFiltersProps {
   filters: FilterState;
@@ -89,7 +89,7 @@ export function ContainerFilters({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         {/* Search by Name */}
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by container name..."
             value={nameInput}
@@ -100,7 +100,7 @@ export function ContainerFilters({
 
         {/* Search by Image */}
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by image name..."
             value={imageInput}
@@ -179,7 +179,7 @@ export function ContainerFilters({
             onClick={handleReset}
             className="shrink-0"
           >
-            <X className="h-4 w-4 mr-2" />
+            <IconX className="h-4 w-4 mr-2" />
             Reset
           </Button>
         )}

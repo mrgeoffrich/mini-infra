@@ -22,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { X, Filter } from "lucide-react";
+import { IconX, IconFilter } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface EnvironmentFiltersProps {
@@ -84,7 +84,7 @@ export function EnvironmentFilters({
       <CardContent className="p-4">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+            <IconFilter className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Filters:</span>
           </div>
 
@@ -150,7 +150,7 @@ export function EnvironmentFilters({
                       onClick={() => onFilterChange("type", undefined)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded"
                     >
-                      <X className="h-3 w-3" />
+                      <IconX className="h-3 w-3" />
                     </button>
                   </Badge>
                 )}
@@ -164,7 +164,7 @@ export function EnvironmentFilters({
                       onClick={() => onFilterChange("status", undefined)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded"
                     >
-                      <X className="h-3 w-3" />
+                      <IconX className="h-3 w-3" />
                     </button>
                   </Badge>
                 )}

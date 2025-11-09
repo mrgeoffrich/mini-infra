@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { IconSettings } from "@tabler/icons-react";
 
 export function TunnelsPage() {
   return (
@@ -17,7 +17,7 @@ export function TunnelsPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-              <Settings className="h-6 w-6" />
+              <IconSettings className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">Cloudflare Tunnels</h1>
@@ -31,7 +31,7 @@ export function TunnelsPage() {
               to="/connectivity/cloudflare"
               className="flex items-center gap-2"
             >
-              <Settings className="h-4 w-4" />
+              <IconSettings className="h-4 w-4" />
               Configure Cloudflare
             </Link>
           </Button>

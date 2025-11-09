@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, RefreshCw, X } from "lucide-react";
+import { IconAlertTriangle, IconRefresh, IconX } from "@tabler/icons-react";
 import { useState } from "react";
 
 interface AuthError {
@@ -64,7 +64,7 @@ export function AuthErrorDisplay({
 
   const errorContent = (
     <Alert variant={variant} className={className}>
-      <AlertTriangle className="h-4 w-4" />
+      <IconAlertTriangle className="h-4 w-4" />
       <div className="flex-1">
         <AlertTitle className="flex items-center justify-between">
           {getErrorTitle()}
@@ -75,7 +75,7 @@ export function AuthErrorDisplay({
               onClick={handleDismiss}
               className="h-auto p-1"
             >
-              <X className="h-4 w-4" />
+              <IconX className="h-4 w-4" />
             </Button>
           )}
         </AlertTitle>
@@ -97,7 +97,7 @@ export function AuthErrorDisplay({
                   onClick={onRetry}
                   className="h-8"
                 >
-                  <RefreshCw className="mr-1 h-3 w-3" />
+                  <IconRefresh className="mr-1 h-3 w-3" />
                   Try Again
                 </Button>
               </div>
@@ -116,7 +116,7 @@ export function AuthErrorDisplay({
     <Card className="border-destructive">
       <CardHeader className="pb-3">
         <CardTitle className="text-destructive flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" />
+          <IconAlertTriangle className="h-4 w-4" />
           {getErrorTitle()}
         </CardTitle>
       </CardHeader>
@@ -138,7 +138,7 @@ export function AuthErrorDisplay({
                 onClick={onRetry}
                 className="h-8"
               >
-                <RefreshCw className="mr-1 h-3 w-3" />
+                <IconRefresh className="mr-1 h-3 w-3" />
                 Try Again
               </Button>
             )}
@@ -170,7 +170,7 @@ export function InlineAuthError({
 
   return (
     <div className="flex items-center gap-2 text-sm text-destructive">
-      <AlertTriangle className="h-4 w-4" />
+      <IconAlertTriangle className="h-4 w-4" />
       <span>{errorMessage}</span>
       {onRetry && (
         <Button
@@ -179,7 +179,7 @@ export function InlineAuthError({
           onClick={onRetry}
           className="h-auto p-1 text-xs"
         >
-          <RefreshCw className="h-3 w-3" />
+          <IconRefresh className="h-3 w-3" />
         </Button>
       )}
     </div>

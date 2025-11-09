@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUser } from "@/hooks/use-user";
-import { User } from "lucide-react";
+import { IconUser } from "@tabler/icons-react";
 
 interface UserProfileProps {
   showCard?: boolean;
@@ -52,7 +52,7 @@ export function UserProfile({
           alt={user.name || user.email}
         />
         <AvatarFallback>
-          {user.name ? getInitials(user.name) : <User className="h-4 w-4" />}
+          {user.name ? getInitials(user.name) : <IconUser className="h-4 w-4" />}
         </AvatarFallback>
       </Avatar>
       <div className="flex flex-col justify-center min-w-0 flex-1">

@@ -1,5 +1,5 @@
 import { EnvironmentList } from "@/components/environments";
-import { Server } from "lucide-react";
+import { IconServer } from "@tabler/icons-react";
 
 export function EnvironmentsPage() {
 
@@ -8,7 +8,7 @@ export function EnvironmentsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-            <Server className="h-6 w-6" />
+            <IconServer className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Environments</h1>

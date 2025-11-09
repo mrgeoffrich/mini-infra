@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import {
-  ArrowLeftRight,
-  ChevronDown,
-  ChevronRight,
-  RefreshCw,
-  Plus,
-  Trash,
-} from "lucide-react";
+  IconArrowsLeftRight,
+  IconChevronDown,
+  IconChevronRight,
+  IconRefresh,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import {
   useCloudfareTunnels,
   useCloudfareTunnelConfig,
@@ -97,7 +97,7 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
-          <Plus className="h-4 w-4" />
+          <IconPlus className="h-4 w-4" />
           Add Hostname
         </Button>
       </DialogTrigger>
@@ -281,7 +281,7 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
                   disabled={removeHostname.isPending}
                   className="ml-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
-                  <Trash className="h-4 w-4" />
+                  <IconTrash className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -404,7 +404,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
       <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="h-5 w-5" />
+            <IconArrowsLeftRight className="h-5 w-5" />
             Cloudflare Tunnels
           </CardTitle>
         </CardHeader>
@@ -430,7 +430,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
       <Card className={className}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="h-5 w-5" />
+            <IconArrowsLeftRight className="h-5 w-5" />
             Cloudflare Tunnels
           </CardTitle>
         </CardHeader>
@@ -453,7 +453,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <ArrowLeftRight className="h-5 w-5" />
+            <IconArrowsLeftRight className="h-5 w-5" />
             Cloudflare Tunnels
           </CardTitle>
           <Button
@@ -463,7 +463,7 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
             disabled={isRefetching}
             className="flex items-center gap-2"
           >
-            <RefreshCw
+            <IconRefresh
               className={cn("h-4 w-4", isRefetching && "animate-spin")}
             />
             Refresh
@@ -493,9 +493,9 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
                     <div className="flex items-center gap-3">
                       <div className="flex items-center">
                         {isExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          <IconChevronDown className="h-4 w-4 text-muted-foreground" />
                         ) : (
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          <IconChevronRight className="h-4 w-4 text-muted-foreground" />
                         )}
                       </div>
                       <div className="flex items-center gap-3">

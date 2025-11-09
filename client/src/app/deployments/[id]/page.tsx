@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Trash2, Globe, Server } from "lucide-react";
+import { IconArrowLeft, IconRefresh, IconTrash, IconGlobe, IconServer } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -125,7 +125,7 @@ export function DeploymentConfigDetailsPage() {
               {configError instanceof Error ? configError.message : "Unknown error"}
             </p>
             <Button onClick={handleBack} className="mt-4">
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <IconArrowLeft className="mr-2 h-4 w-4" />
               Back to Deployments
             </Button>
           </div>
@@ -151,7 +151,7 @@ export function DeploymentConfigDetailsPage() {
           <div className="text-center">
             <p className="text-muted-foreground">Deployment configuration not found</p>
             <Button onClick={handleBack} className="mt-4">
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <IconArrowLeft className="mr-2 h-4 w-4" />
               Back to Deployments
             </Button>
           </div>
@@ -165,7 +165,7 @@ export function DeploymentConfigDetailsPage() {
       {/* Page Header */}
       <div className="flex items-center gap-4">
         <Button onClick={handleBack} variant="ghost" size="sm">
-          <ArrowLeft className="h-4 w-4" />
+          <IconArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
           <h1 className="text-3xl font-bold tracking-tight">{config.applicationName}</h1>
@@ -224,7 +224,7 @@ export function DeploymentConfigDetailsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
+              <IconGlobe className="h-5 w-5" />
               <CardTitle>DNS Configuration</CardTitle>
             </div>
             {dnsRecords.length > 0 && (
@@ -236,12 +236,12 @@ export function DeploymentConfigDetailsPage() {
               >
                 {syncDNSMutation.isPending ? (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    <IconRefresh className="mr-2 h-4 w-4 animate-spin" />
                     Syncing...
                   </>
                 ) : (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <IconRefresh className="mr-2 h-4 w-4" />
                     Sync DNS
                   </>
                 )}
@@ -297,9 +297,9 @@ export function DeploymentConfigDetailsPage() {
                         disabled={deletingDNSId === record.id}
                       >
                         {deletingDNSId === record.id ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <IconRefresh className="h-4 w-4 animate-spin" />
                         ) : (
-                          <Trash2 className="h-4 w-4" />
+                          <IconTrash className="h-4 w-4" />
                         )}
                       </Button>
                     </TableCell>
@@ -319,7 +319,7 @@ export function DeploymentConfigDetailsPage() {
       {/* HAProxy Frontend Section */}
       <div>
         <div className="flex items-center gap-2 mb-4">
-          <Server className="h-5 w-5" />
+          <IconServer className="h-5 w-5" />
           <h2 className="text-xl font-semibold">HAProxy Frontend</h2>
         </div>
         {isLoadingFrontend ? (

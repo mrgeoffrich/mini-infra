@@ -1,7 +1,7 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { IconRefresh } from "@tabler/icons-react";
 import { HAProxyFrontendInfo } from "@mini-infra/types";
 import { FrontendStatusBadge } from "./dns-status-badge";
 
@@ -75,12 +75,12 @@ export function FrontendConfigCard({
           >
             {isSyncing ? (
               <>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                <IconRefresh className="mr-2 h-4 w-4 animate-spin" />
                 Syncing...
               </>
             ) : (
               <>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <IconRefresh className="mr-2 h-4 w-4" />
                 Sync Configuration
               </>
             )}

@@ -51,15 +51,15 @@ import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
 import { useAzureContainers } from "@/hooks/use-azure-settings";
 import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import {
-  AlertCircle,
-  Loader2,
-  Calendar,
-  Clock,
-  Play,
-  Save,
-  Check,
-  ChevronsUpDown,
-} from "lucide-react";
+  IconAlertCircle,
+  IconLoader2,
+  IconCalendar,
+  IconClock,
+  IconPlayerPlay,
+  IconDeviceFloppy,
+  IconCheck,
+  IconChevronDown,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { cn } from "@/lib/utils";
@@ -199,7 +199,7 @@ export function BackupConfigurationModal({
 
         {submitError && (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               {submitError.includes("container") ||
               submitError.includes("Azure")
@@ -214,7 +214,7 @@ export function BackupConfigurationModal({
             {/* Enable/Disable Toggle */}
             <div className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
-                <Calendar className="w-5 h-5 text-blue-500" />
+                <IconCalendar className="w-5 h-5 text-blue-500" />
                 <div>
                   <h3 className="font-medium">Backup Schedule</h3>
                   <p className="text-sm text-muted-foreground">
@@ -290,7 +290,7 @@ export function BackupConfigurationModal({
                                 (timezone) => timezone.value === field.value,
                               )?.label
                             : "Select a timezone"}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          <IconChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </FormControl>
                     </PopoverTrigger>
@@ -312,7 +312,7 @@ export function BackupConfigurationModal({
                                   setTimezonePopoverOpen(false);
                                 }}
                               >
-                                <Check
+                                <IconCheck
                                   className={cn(
                                     "mr-2 h-4 w-4",
                                     timezone.value === field.value
@@ -345,7 +345,7 @@ export function BackupConfigurationModal({
             {/* Next Scheduled Time */}
             {backupConfig?.nextScheduledAt && form.watch("isEnabled") && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
+                <IconClock className="w-4 h-4" />
                 <span>
                   Next backup scheduled for:{" "}
                   {new Date(backupConfig.nextScheduledAt).toLocaleString(
@@ -528,9 +528,9 @@ export function BackupConfigurationModal({
                     disabled={manualBackupMutation.isPending}
                   >
                     {manualBackupMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
-                      <Play className="w-4 h-4 mr-2" />
+                      <IconPlayerPlay className="w-4 h-4 mr-2" />
                     )}
                     Run Manual Backup
                   </Button>
@@ -549,7 +549,7 @@ export function BackupConfigurationModal({
                       disabled={deleteMutation.isPending}
                     >
                       {deleteMutation.isPending && (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                       )}
                       Delete Configuration
                     </Button>
@@ -568,9 +568,9 @@ export function BackupConfigurationModal({
                     }
                   >
                     {(createMutation.isPending || updateMutation.isPending) && (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    <Save className="w-4 h-4 mr-2" />
+                    <IconDeviceFloppy className="w-4 h-4 mr-2" />
                     {isEditing ? "Update" : "Create"}
                   </Button>
                 </div>

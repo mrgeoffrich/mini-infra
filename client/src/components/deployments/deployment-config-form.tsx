@@ -45,15 +45,15 @@ import {
 import { useEnvironments } from "@/hooks/use-environments";
 import { deploymentConfigSchema } from "./schemas";
 import {
-  AlertCircle,
-  Loader2,
-  Save,
-  Container,
-  Activity,
-  RotateCcw,
-  Info,
-  Globe,
-} from "lucide-react";
+  IconAlertCircle,
+  IconLoader2,
+  IconDeviceFloppy,
+  IconBrandDocker,
+  IconActivity,
+  IconRotateClockwise2,
+  IconInfoCircle,
+  IconWorld,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { EnvVarEditor } from "./env-var-editor";
 import { PortEditor } from "./port-editor";
@@ -231,7 +231,7 @@ export function DeploymentConfigForm({
 
         {submitError && (
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>{submitError}</AlertDescription>
           </Alert>
         )}
@@ -298,28 +298,28 @@ export function DeploymentConfigForm({
                     value="docker"
                     className="flex items-center gap-2"
                   >
-                    <Container className="w-4 h-4" />
+                    <IconBrandDocker className="w-4 h-4" />
                     Docker
                   </TabsTrigger>
                   <TabsTrigger
                     value="hostname"
                     className="flex items-center gap-2"
                   >
-                    <Globe className="w-4 h-4" />
+                    <IconWorld className="w-4 h-4" />
                     Hostname
                   </TabsTrigger>
                   <TabsTrigger
                     value="health"
                     className="flex items-center gap-2"
                   >
-                    <Activity className="w-4 h-4" />
+                    <IconActivity className="w-4 h-4" />
                     Health Check
                   </TabsTrigger>
                   <TabsTrigger
                     value="rollback"
                     className="flex items-center gap-2"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <IconRotateClockwise2 className="w-4 h-4" />
                     Rollback
                   </TabsTrigger>
                 </TabsList>
@@ -329,7 +329,7 @@ export function DeploymentConfigForm({
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                          <Container className="w-5 h-5 text-blue-500" />
+                          <IconBrandDocker className="w-5 h-5 text-blue-500" />
                           Docker Configuration
                         </CardTitle>
                         <CardDescription>
@@ -462,7 +462,7 @@ export function DeploymentConfigForm({
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                          <Globe className="w-5 h-5 text-blue-500" />
+                          <IconWorld className="w-5 h-5 text-blue-500" />
                           Hostname Configuration
                         </CardTitle>
                         <CardDescription>
@@ -489,7 +489,7 @@ export function DeploymentConfigForm({
                         />
 
                         <Alert>
-                          <Info className="h-4 w-4" />
+                          <IconInfoCircle className="h-4 w-4" />
                           <AlertDescription>
                             <div className="space-y-2">
                               <p className="font-medium">About Hostnames:</p>
@@ -510,7 +510,7 @@ export function DeploymentConfigForm({
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                          <Activity className="w-5 h-5 text-green-500" />
+                          <IconActivity className="w-5 h-5 text-green-500" />
                           Health Check Configuration
                         </CardTitle>
                         <CardDescription>
@@ -671,7 +671,7 @@ export function DeploymentConfigForm({
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                          <RotateCcw className="w-5 h-5 text-red-500" />
+                          <IconRotateClockwise2 className="w-5 h-5 text-red-500" />
                           Rollback Configuration
                         </CardTitle>
                         <CardDescription>
@@ -757,7 +757,7 @@ export function DeploymentConfigForm({
                         </div>
 
                         <Alert>
-                          <Info className="h-4 w-4" />
+                          <IconInfoCircle className="h-4 w-4" />
                           <AlertDescription>
                             Rollback settings help ensure service availability
                             by automatically reverting to the previous working
@@ -777,9 +777,9 @@ export function DeploymentConfigForm({
                 </Button>
                 <Button type="submit" disabled={isLoading}>
                   {isLoading && (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                   )}
-                  <Save className="w-4 h-4 mr-2" />
+                  <IconDeviceFloppy className="w-4 h-4 mr-2" />
                   {isEditing ? "Update Configuration" : "Create Configuration"}
                 </Button>
               </DialogFooter>

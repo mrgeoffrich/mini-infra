@@ -1,4 +1,4 @@
-import { ChevronRight, Home } from 'lucide-react';
+import { IconChevronRight, IconHome } from '@tabler/icons-react';
 import { Link, useLocation } from 'react-router-dom';
 import { generateBreadcrumbs } from '@/lib/route-config';
 import { cn } from '@/lib/utils';
@@ -25,10 +25,10 @@ export function Breadcrumbs({ className, showHome = true }: BreadcrumbsProps) {
             to="/dashboard"
             className="flex items-center hover:text-foreground transition-colors"
           >
-            <Home className="h-4 w-4" />
+            <IconHome className="h-4 w-4" />
             <span className="sr-only">Dashboard</span>
           </Link>
-          {breadcrumbs.length > 0 && <ChevronRight className="h-4 w-4" />}
+          {breadcrumbs.length > 0 && <IconChevronRight className="h-4 w-4" />}
         </>
       )}
 
@@ -48,7 +48,7 @@ export function Breadcrumbs({ className, showHome = true }: BreadcrumbsProps) {
           )}
 
           {index < breadcrumbs.length - 1 && (
-            <ChevronRight className="h-4 w-4 mx-1" />
+            <IconChevronRight className="h-4 w-4 mx-1" />
           )}
         </div>
       ))}

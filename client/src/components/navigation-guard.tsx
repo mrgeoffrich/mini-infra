@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Shield, LogIn } from "lucide-react";
+import { IconShield, IconLogin } from "@tabler/icons-react";
 
 interface NavigationGuardProps {
   children: ReactNode;
@@ -34,7 +34,7 @@ export function NavigationGuard({
         <Card className="w-full max-w-md mx-auto mt-8">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Shield className="h-6 w-6 text-primary" />
+              <IconShield className="h-6 w-6 text-primary" />
             </div>
             <CardTitle>Authentication Required</CardTitle>
             <CardDescription>
@@ -43,7 +43,7 @@ export function NavigationGuard({
           </CardHeader>
           <CardContent>
             <Button onClick={() => login()} className="w-full">
-              <LogIn className="mr-2 h-4 w-4" />
+              <IconLogin className="mr-2 h-4 w-4" />
               Sign In with Google
             </Button>
           </CardContent>

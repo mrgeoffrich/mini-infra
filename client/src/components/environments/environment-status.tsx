@@ -21,15 +21,15 @@ const ApplicationServiceHealthStatusValues = {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertTriangle,
-  CircleDot,
-  Loader2,
-  Server,
-  Pause,
-} from "lucide-react";
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconAlertTriangle,
+  IconCircleDot,
+  IconLoader2,
+  IconServer,
+  IconPlayerPause,
+} from "@tabler/icons-react";
 
 interface EnvironmentStatusProps {
   status: ServiceStatus;
@@ -46,56 +46,56 @@ export function EnvironmentStatus({ status, className }: EnvironmentStatusProps)
     switch (status) {
       case ServiceStatusValues.RUNNING:
         return {
-          icon: CheckCircle,
+          icon: IconCircleCheck,
           text: "Running",
           variant: "default" as const,
           className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
         };
       case ServiceStatusValues.STOPPED:
         return {
-          icon: Pause,
+          icon: IconPlayerPause,
           text: "Stopped",
           variant: "secondary" as const,
           className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
         };
       case ServiceStatusValues.STARTING:
         return {
-          icon: Loader2,
+          icon: IconLoader2,
           text: "Starting",
           variant: "outline" as const,
           className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
         };
       case ServiceStatusValues.STOPPING:
         return {
-          icon: Loader2,
+          icon: IconLoader2,
           text: "Stopping",
           variant: "outline" as const,
           className: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
         };
       case ServiceStatusValues.FAILED:
         return {
-          icon: XCircle,
+          icon: IconCircleX,
           text: "Failed",
           variant: "destructive" as const,
           className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
         };
       case ServiceStatusValues.DEGRADED:
         return {
-          icon: AlertTriangle,
+          icon: IconAlertTriangle,
           text: "Degraded",
           variant: "outline" as const,
           className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
         };
       case ServiceStatusValues.INITIALIZING:
         return {
-          icon: Clock,
+          icon: IconClock,
           text: "Initializing",
           variant: "outline" as const,
           className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
         };
       case ServiceStatusValues.INITIALIZED:
         return {
-          icon: CircleDot,
+          icon: IconCircleDot,
           text: "Initialized",
           variant: "outline" as const,
           className: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
@@ -103,7 +103,7 @@ export function EnvironmentStatus({ status, className }: EnvironmentStatusProps)
       case ServiceStatusValues.UNINITIALIZED:
       default:
         return {
-          icon: Server,
+          icon: IconServer,
           text: "Uninitialized",
           variant: "outline" as const,
           className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
@@ -140,20 +140,20 @@ export function ServiceHealth({ health, className }: ServiceHealthProps) {
     switch (health) {
       case ApplicationServiceHealthStatusValues.HEALTHY:
         return {
-          icon: CheckCircle,
+          icon: IconCircleCheck,
           text: "Healthy",
           className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
         };
       case ApplicationServiceHealthStatusValues.UNHEALTHY:
         return {
-          icon: XCircle,
+          icon: IconCircleX,
           text: "Unhealthy",
           className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
         };
       case ApplicationServiceHealthStatusValues.UNKNOWN:
       default:
         return {
-          icon: AlertTriangle,
+          icon: IconAlertTriangle,
           text: "Unknown",
           className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
         };

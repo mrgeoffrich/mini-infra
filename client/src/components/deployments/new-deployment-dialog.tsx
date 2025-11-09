@@ -3,10 +3,10 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  X,
-  Rocket,
-  Loader2,
-} from "lucide-react";
+  IconX,
+  IconRocket,
+  IconLoader2,
+} from "@tabler/icons-react";
 
 import {
   Dialog,
@@ -167,18 +167,18 @@ export function NewDeploymentDialog({
               onClick={handleClose}
               disabled={isSubmitting}
             >
-              <X className="h-4 w-4 mr-2" />
+              <IconX className="h-4 w-4 mr-2" />
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                   Deploying...
                 </>
               ) : (
                 <>
-                  <Rocket className="h-4 w-4 mr-2" />
+                  <IconRocket className="h-4 w-4 mr-2" />
                   Start Deployment
                 </>
               )}

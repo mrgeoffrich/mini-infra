@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Boxes, Palette } from "lucide-react";
+import { IconInnerShadowTop, IconPalette } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
@@ -35,7 +35,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               <Link to="/dashboard">
-                <Boxes className="!size-5" />
+                <IconInnerShadowTop className="!size-5" />
                 <span className="text-base font-semibold">Mini Infra</span>
               </Link>
             </SidebarMenuButton>
@@ -63,7 +63,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       isActive={location.pathname === "/design/icons"}
                     >
                       <Link to="/design/icons">
-                        <Palette className="h-4 w-4" />
+                        <IconPalette className="h-4 w-4" />
                         <span>Icon Reference</span>
                       </Link>
                     </SidebarMenuButton>

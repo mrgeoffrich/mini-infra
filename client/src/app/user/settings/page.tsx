@@ -42,15 +42,15 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  Save,
-  Loader2,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  User,
-  Check,
-  ChevronsUpDown,
-} from "lucide-react";
+  IconDeviceFloppy,
+  IconLoader2,
+  IconClock,
+  IconCircleCheck,
+  IconAlertCircle,
+  IconUser,
+  IconCheck,
+  IconSelector,
+} from "@tabler/icons-react";
 
 // Form validation schema
 const UserSettingsSchema = z.object({
@@ -155,7 +155,7 @@ export function UserSettingsPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-md bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
-                <User className="h-6 w-6" />
+                <IconUser className="h-6 w-6" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold">User Settings</h1>
@@ -169,7 +169,7 @@ export function UserSettingsPage() {
 
         <div className="px-4 lg:px-6 max-w-6xl">
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load user settings.{" "}
               {preferencesError?.message || timezonesError?.message}
@@ -189,7 +189,7 @@ export function UserSettingsPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <User className="h-6 w-6" />
+              <IconUser className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">User Settings</h1>
@@ -207,7 +207,7 @@ export function UserSettingsPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-primary" />
+                <IconClock className="h-5 w-5 text-primary" />
                 <CardTitle>Timezone Settings</CardTitle>
               </div>
               <CardDescription>
@@ -248,7 +248,7 @@ export function UserSettingsPage() {
                                         timezone.value === field.value,
                                     )?.label
                                   : "Select a timezone"}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                <IconSelector className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </FormControl>
                           </PopoverTrigger>
@@ -270,7 +270,7 @@ export function UserSettingsPage() {
                                         setTimezonePopoverOpen(false);
                                       }}
                                     >
-                                      <Check
+                                      <IconCheck
                                         className={cn(
                                           "mr-2 h-4 w-4",
                                           timezone.value === field.value
@@ -307,12 +307,12 @@ export function UserSettingsPage() {
                     >
                       {isSubmitting ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <IconLoader2 className="h-4 w-4 animate-spin" />
                           Saving...
                         </>
                       ) : (
                         <>
-                          <Save className="h-4 w-4" />
+                          <IconDeviceFloppy className="h-4 w-4" />
                           Save Changes
                         </>
                       )}
@@ -331,7 +331,7 @@ export function UserSettingsPage() {
 
                   {!isDirty && preferences && (
                     <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                      <CheckCircle className="h-4 w-4" />
+                      <IconCircleCheck className="h-4 w-4" />
                       All changes saved
                     </div>
                   )}

@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, Server, Network, HardDrive } from "lucide-react";
+import { IconLoader2, IconAlertTriangle, IconServer, IconNetwork, IconDatabase } from "@tabler/icons-react";
 
 interface EnvironmentDeleteDialogProps {
   open: boolean;
@@ -76,7 +76,7 @@ export function EnvironmentDeleteDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-600">
-            <AlertTriangle className="h-5 w-5" />
+            <IconAlertTriangle className="h-5 w-5" />
             Delete Environment
           </DialogTitle>
           <DialogDescription>
@@ -89,7 +89,7 @@ export function EnvironmentDeleteDialog({
           {/* Warning for running environment */}
           {isRunning && (
             <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
+              <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 This environment is currently running. You must stop it before deletion.
               </AlertDescription>
@@ -107,15 +107,15 @@ export function EnvironmentDeleteDialog({
 
             <div className="grid grid-cols-3 gap-4 text-sm pt-2">
               <div className="flex items-center gap-1">
-                <Server className="h-3.5 w-3.5 text-muted-foreground" />
+                <IconServer className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{environment.services.length} Services</span>
               </div>
               <div className="flex items-center gap-1">
-                <Network className="h-3.5 w-3.5 text-muted-foreground" />
+                <IconNetwork className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{environment.networks.length} Networks</span>
               </div>
               <div className="flex items-center gap-1">
-                <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                <IconDatabase className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{environment.volumes.length} Volumes</span>
               </div>
             </div>
@@ -124,7 +124,7 @@ export function EnvironmentDeleteDialog({
           {/* Resources that will be deleted */}
           {(environment.services.length > 0 || environment.networks.length > 0 || environment.volumes.length > 0) && (
             <Alert>
-              <AlertTriangle className="h-4 w-4" />
+              <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <div className="font-medium mb-2">The following services will be deleted:</div>
                 <ul className="text-sm space-y-1">
@@ -191,7 +191,7 @@ export function EnvironmentDeleteDialog({
                   {/* Data loss warning for volumes */}
                   {deleteVolumes && (
                     <Alert variant="destructive">
-                      <AlertTriangle className="h-4 w-4" />
+                      <IconAlertTriangle className="h-4 w-4" />
                       <AlertDescription>
                         <div className="font-medium">⚠️ DATA LOSS WARNING</div>
                         <div className="text-sm mt-1">
@@ -238,7 +238,7 @@ export function EnvironmentDeleteDialog({
             disabled={!isConfirmed || isRunning || deleteMutation.isPending}
           >
             {deleteMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Delete Environment
           </Button>

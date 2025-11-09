@@ -33,7 +33,7 @@ import {
   useTestDatabaseConnection,
   useDiscoverDatabases,
 } from "@/hooks/use-postgres-databases";
-import { Eye, EyeOff, TestTube, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
+import { IconEye, IconEyeOff, IconFlask, IconLoader2, IconArrowRight, IconArrowLeft } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   postgresDbSchema,
@@ -407,9 +407,9 @@ export function DatabaseModal({
                           onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
+                            <IconEyeOff className="h-4 w-4" />
                           ) : (
-                            <Eye className="h-4 w-4" />
+                            <IconEye className="h-4 w-4" />
                           )}
                         </Button>
                       </div>
@@ -434,9 +434,9 @@ export function DatabaseModal({
                   disabled={discoverDatabasesMutation.isPending}
                 >
                   {discoverDatabasesMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
-                    <ArrowRight className="w-4 h-4 mr-2" />
+                    <IconArrowRight className="w-4 h-4 mr-2" />
                   )}
                   Connect & Discover
                 </Button>
@@ -490,14 +490,14 @@ export function DatabaseModal({
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleBack}>
-                <ArrowLeft className="w-4 h-4 mr-2" />
+                <IconArrowLeft className="w-4 h-4 mr-2" />
                 Back
               </Button>
               <Button
                 onClick={handleDatabaseSelection}
                 disabled={!selectedDatabase}
               >
-                <ArrowRight className="w-4 h-4 mr-2" />
+                <IconArrowRight className="w-4 h-4 mr-2" />
                 Continue
               </Button>
             </DialogFooter>
@@ -642,9 +642,9 @@ export function DatabaseModal({
                           onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
+                            <IconEyeOff className="h-4 w-4" />
                           ) : (
-                            <Eye className="h-4 w-4" />
+                            <IconEye className="h-4 w-4" />
                           )}
                         </Button>
                       </div>
@@ -662,9 +662,9 @@ export function DatabaseModal({
                   disabled={testConnectionMutation.isPending}
                 >
                   {testConnectionMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
-                    <TestTube className="w-4 h-4 mr-2" />
+                    <IconFlask className="w-4 h-4 mr-2" />
                   )}
                   Test Connection
                 </Button>
@@ -673,7 +673,7 @@ export function DatabaseModal({
               <DialogFooter>
                 {!isEditing && (
                   <Button type="button" variant="outline" onClick={handleBack}>
-                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    <IconArrowLeft className="w-4 h-4 mr-2" />
                     Back
                   </Button>
                 )}
@@ -689,7 +689,7 @@ export function DatabaseModal({
                   }
                 >
                   {(createMutation.isPending || updateMutation.isPending) && (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
                   )}
                   {isEditing ? "Update" : "Create"}
                 </Button>

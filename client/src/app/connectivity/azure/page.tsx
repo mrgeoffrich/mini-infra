@@ -36,17 +36,17 @@ import {
 } from "@/hooks/use-settings";
 import { useValidateService } from "@/hooks/use-settings-validation";
 import {
-  Database,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  ArrowLeft,
-  Loader2,
-  Eye,
-  EyeOff,
-  Shield,
-  HelpCircle,
-} from "lucide-react";
+  IconDatabase,
+  IconCircleCheck,
+  IconCircleX,
+  IconAlertCircle,
+  IconArrowLeft,
+  IconLoader2,
+  IconEye,
+  IconEyeOff,
+  IconShield,
+  IconHelp,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { AzureContainerList } from "@/components/AzureContainerList";
@@ -181,7 +181,7 @@ export default function AzureSettingsPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/connectivity/overview">
-                <ArrowLeft className="h-4 w-4" />
+                <IconArrowLeft className="h-4 w-4" />
                 Back to Connectivity
               </Link>
             </Button>
@@ -191,7 +191,7 @@ export default function AzureSettingsPage() {
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Database className="h-6 w-6" />
+              <IconDatabase className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-3xl font-bold">
@@ -204,7 +204,7 @@ export default function AzureSettingsPage() {
           </div>
 
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load Azure Storage settings: {settingsError.message}
             </AlertDescription>
@@ -220,7 +220,7 @@ export default function AzureSettingsPage() {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/connectivity/overview">
-              <ArrowLeft className="h-4 w-4" />
+              <IconArrowLeft className="h-4 w-4" />
               Back to Connectivity
             </Link>
           </Button>
@@ -230,7 +230,7 @@ export default function AzureSettingsPage() {
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            <Database className="h-6 w-6" />
+            <IconDatabase className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">Azure Storage Configuration</h1>
@@ -271,7 +271,7 @@ export default function AzureSettingsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="flex items-center gap-2">
-                          <Shield className="h-4 w-4" />
+                          <IconShield className="h-4 w-4" />
                           Connection String
                           <Popover>
                             <PopoverTrigger asChild>
@@ -281,7 +281,7 @@ export default function AzureSettingsPage() {
                                 size="sm"
                                 className="h-auto p-0 text-muted-foreground hover:text-foreground"
                               >
-                                <HelpCircle className="h-4 w-4" />
+                                <IconHelp className="h-4 w-4" />
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-80">
@@ -333,9 +333,9 @@ export default function AzureSettingsPage() {
                               }
                             >
                               {showConnectionString ? (
-                                <EyeOff className="h-4 w-4" />
+                                <IconEyeOff className="h-4 w-4" />
                               ) : (
-                                <Eye className="h-4 w-4" />
+                                <IconEye className="h-4 w-4" />
                               )}
                             </Button>
                           </div>
@@ -358,9 +358,9 @@ export default function AzureSettingsPage() {
                       className="bg-green-600 hover:bg-green-700"
                     >
                       {isSaving ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <CheckCircle className="mr-2 h-4 w-4" />
+                        <IconCircleCheck className="mr-2 h-4 w-4" />
                       )}
                       Validate & Save
                     </Button>
@@ -374,7 +374,7 @@ export default function AzureSettingsPage() {
         {/* Validation Feedback */}
         {validationState.isSuccess && (
           <Alert className="bg-green-50 border-green-200 mt-6">
-            <CheckCircle className="h-4 w-4 text-green-600" />
+            <IconCircleCheck className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-700">
               Azure Storage connection has been validated and configured successfully.
               The system can now perform backup operations to your storage account.
@@ -384,7 +384,7 @@ export default function AzureSettingsPage() {
 
         {validationState.error && (
           <Alert variant="destructive" className="mt-6">
-            <XCircle className="h-4 w-4" />
+            <IconCircleX className="h-4 w-4" />
             <AlertDescription>
               Validation failed: {validationState.error}
             </AlertDescription>

@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 
 interface Props {
   children: ReactNode;
@@ -50,7 +50,7 @@ export class AuthErrorBoundary extends Component<Props, State> {
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-                <AlertTriangle className="h-6 w-6 text-destructive" />
+                <IconAlertTriangle className="h-6 w-6 text-destructive" />
               </div>
               <CardTitle className="text-lg">Authentication Error</CardTitle>
               <CardDescription>
@@ -71,7 +71,7 @@ export class AuthErrorBoundary extends Component<Props, State> {
               )}
               <div className="flex flex-col gap-2">
                 <Button onClick={this.handleRetry} className="w-full">
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <IconRefresh className="mr-2 h-4 w-4" />
                   Try Again
                 </Button>
                 <Button

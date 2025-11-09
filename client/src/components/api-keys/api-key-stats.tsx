@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiKeyStats } from "@/hooks/use-api-keys";
-import { Key, Shield, Ban, AlertCircle, TrendingUp } from "lucide-react";
+import { IconKey, IconShield, IconBan, IconAlertCircle, IconTrendingUp } from "@tabler/icons-react";
 
 export function ApiKeyStats() {
   const {
@@ -40,7 +40,7 @@ export function ApiKeyStats() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
+            <IconTrendingUp className="h-5 w-5 text-primary" />
             <CardTitle>API Key Statistics</CardTitle>
           </div>
           <CardDescription>
@@ -49,7 +49,7 @@ export function ApiKeyStats() {
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
+            <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load API key statistics. {error.message}
             </AlertDescription>
@@ -67,7 +67,7 @@ export function ApiKeyStats() {
     <Card>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-primary" />
+          <IconTrendingUp className="h-5 w-5 text-primary" />
           <CardTitle>API Key Statistics</CardTitle>
         </div>
         <CardDescription>
@@ -80,7 +80,7 @@ export function ApiKeyStats() {
           <div className="text-center p-4 border rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border-blue-200 dark:border-blue-800">
             <div className="flex items-center justify-center mb-2">
               <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
-                <Key className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                <IconKey className="h-6 w-6 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
             <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
@@ -95,7 +95,7 @@ export function ApiKeyStats() {
           <div className="text-center p-4 border rounded-lg bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950/20 dark:to-green-900/20 border-green-200 dark:border-green-800">
             <div className="flex items-center justify-center mb-2">
               <div className="p-2 rounded-full bg-green-100 dark:bg-green-900/30">
-                <Shield className="h-6 w-6 text-green-600 dark:text-green-400" />
+                <IconShield className="h-6 w-6 text-green-600 dark:text-green-400" />
               </div>
             </div>
             <div className="text-2xl font-bold text-green-900 dark:text-green-100">
@@ -110,7 +110,7 @@ export function ApiKeyStats() {
           <div className="text-center p-4 border rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950/20 dark:to-orange-900/20 border-orange-200 dark:border-orange-800">
             <div className="flex items-center justify-center mb-2">
               <div className="p-2 rounded-full bg-orange-100 dark:bg-orange-900/30">
-                <Ban className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                <IconBan className="h-6 w-6 text-orange-600 dark:text-orange-400" />
               </div>
             </div>
             <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">

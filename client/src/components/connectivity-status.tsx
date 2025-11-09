@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from "react";
 import {
-  RefreshCcw,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
-} from "lucide-react";
+  IconRefresh,
+  IconCircleCheck,
+  IconCircleX,
+  IconClock,
+  IconAlertCircle,
+} from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,27 +48,27 @@ interface StatusBadgeProps {
 const statusConfig = {
   connected: {
     label: "Connected",
-    icon: CheckCircle,
+    icon: IconCircleCheck,
     variant: "default" as const,
     className:
       "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
   },
   failed: {
     label: "Failed",
-    icon: XCircle,
+    icon: IconCircleX,
     variant: "destructive" as const,
     className: "bg-red-100 text-red-800 border-red-200 hover:bg-red-100",
   },
   timeout: {
     label: "Timeout",
-    icon: Clock,
+    icon: IconClock,
     variant: "secondary" as const,
     className:
       "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100",
   },
   unreachable: {
     label: "Unreachable",
-    icon: AlertCircle,
+    icon: IconAlertCircle,
     variant: "outline" as const,
     className: "bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-100",
   },
@@ -281,7 +281,7 @@ export function ServiceStatusCard({
                       disabled={isRefreshing}
                       className="h-8 w-8 p-0"
                     >
-                      <RefreshCcw
+                      <IconRefresh
                         className={cn(
                           "h-4 w-4",
                           isRefreshing && "animate-spin",

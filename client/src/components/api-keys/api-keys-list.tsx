@@ -30,18 +30,18 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  MoreHorizontal, 
-  Copy, 
-  RotateCcw, 
-  Ban, 
-  Trash2, 
-  CheckCircle,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  Key
-} from "lucide-react";
+import {
+  IconDots,
+  IconCopy,
+  IconRotateClockwise2,
+  IconBan,
+  IconTrash,
+  IconCircleCheck,
+  IconAlertTriangle,
+  IconEye,
+  IconEyeOff,
+  IconKey
+} from "@tabler/icons-react";
 import { ApiKey } from "@/lib/auth-types";
 import { useRevokeApiKey, useRotateApiKey, useDeleteApiKey } from "@/hooks/use-api-keys";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -134,7 +134,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
   if (apiKeys.length === 0) {
     return (
       <div className="text-center py-12">
-        <Key className="mx-auto h-12 w-12 text-muted-foreground/50" />
+        <IconKey className="mx-auto h-12 w-12 text-muted-foreground/50" />
         <h3 className="mt-4 text-lg font-medium">No API keys</h3>
         <p className="mt-2 text-muted-foreground">
           You haven't created any API keys yet. Create one to get started with programmatic access.
@@ -183,9 +183,9 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                       className="h-6 w-6 p-0"
                     >
                       {copiedKeyId === apiKey.id ? (
-                        <CheckCircle className="h-3 w-3 text-green-600" />
+                        <IconCircleCheck className="h-3 w-3 text-green-600" />
                       ) : (
-                        <Copy className="h-3 w-3" />
+                        <IconCopy className="h-3 w-3" />
                       )}
                     </Button>
                   </div>
@@ -203,18 +203,18 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" className="h-8 w-8 p-0">
-                        <MoreHorizontal className="h-4 w-4" />
+                        <IconDots className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {apiKey.active && (
                         <>
                           <DropdownMenuItem onClick={() => setRotateKeyId(apiKey.id)}>
-                            <RotateCcw className="mr-2 h-4 w-4" />
+                            <IconRotateClockwise2 className="mr-2 h-4 w-4" />
                             Rotate
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setRevokeKeyId(apiKey.id)}>
-                            <Ban className="mr-2 h-4 w-4" />
+                            <IconBan className="mr-2 h-4 w-4" />
                             Revoke
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
@@ -224,7 +224,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                         onClick={() => setDeleteKeyId(apiKey.id)}
                         className="text-destructive focus:text-destructive"
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <IconTrash className="mr-2 h-4 w-4" />
                         Delete Permanently
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -308,7 +308,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5 text-primary" />
+              <IconKey className="h-5 w-5 text-primary" />
               API Key Rotated
             </DialogTitle>
             <DialogDescription>
@@ -319,7 +319,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
           <div className="space-y-6">
             {/* Success message */}
             <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
-              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <IconCircleCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
               <AlertDescription className="text-green-800 dark:text-green-200">
                 API key rotated successfully! The old key is now inactive.
               </AlertDescription>
@@ -344,9 +344,9 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                     onClick={() => setShowRotatedKey(!showRotatedKey)}
                   >
                     {showRotatedKey ? (
-                      <EyeOff className="h-3 w-3" />
+                      <IconEyeOff className="h-3 w-3" />
                     ) : (
-                      <Eye className="h-3 w-3" />
+                      <IconEye className="h-3 w-3" />
                     )}
                   </Button>
                 </div>
@@ -356,7 +356,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                   size="sm"
                   className="flex items-center gap-2"
                 >
-                  <Copy className="h-4 w-4" />
+                  <IconCopy className="h-4 w-4" />
                   Copy
                 </Button>
               </div>
@@ -364,7 +364,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
 
             {/* Security warning */}
             <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
+              <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <strong>Important:</strong> Make sure to update any applications or scripts using the old API key 
                 with this new key. The old key is now inactive and will no longer work.

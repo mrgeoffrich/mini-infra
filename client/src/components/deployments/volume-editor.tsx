@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2, Plus, HardDrive } from "lucide-react";
+import { IconTrash, IconPlus, IconDatabase } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 interface Volume {
   hostPath: string;
@@ -65,7 +65,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
     <Card className={cn("w-full", className)}>
       <CardHeader>
         <div className="flex items-center space-x-2">
-          <HardDrive className="w-5 h-5 text-orange-500" />
+          <IconDatabase className="w-5 h-5 text-orange-500" />
           <div>
             <CardTitle>Volume Mounts</CardTitle>
             <CardDescription>
@@ -135,7 +135,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
               }
               size="sm"
             >
-              <Plus className="w-4 h-4" />
+              <IconPlus className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -207,7 +207,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
                     onClick={() => remove(index)}
                     className="ml-2 text-destructive hover:text-destructive"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <IconTrash className="w-4 h-4" />
                   </Button>
                 </div>
               ))}
@@ -217,7 +217,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
 
         {fields.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
-            <HardDrive className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <IconDatabase className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">No volume mounts configured</p>
             <p className="text-xs">Add volume mounts using the form above</p>
           </div>

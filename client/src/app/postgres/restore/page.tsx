@@ -49,15 +49,15 @@ import {
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
 import { usePostgresDatabases } from "@/hooks/use-postgres-databases";
 import {
-  Database,
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-  Search,
-  History,
-  Undo,
-  ArrowLeft,
-} from "lucide-react";
+  IconDatabase,
+  IconAlertCircle,
+  IconLoader2,
+  IconRefresh,
+  IconSearch,
+  IconHistory,
+  IconArrowBackUp,
+  IconArrowLeft,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { RestoreOperationStatusBadge } from "@/components/postgres/status-badges";
@@ -207,7 +207,7 @@ export default function PostgresRestorePage() {
     return (
       <div className="container mx-auto px-6 py-8">
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>
             Database not found. Please check the URL and try again.
           </AlertDescription>
@@ -243,7 +243,7 @@ export default function PostgresRestorePage() {
             size="sm"
             onClick={() => navigate("/postgres")}
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <IconArrowLeft className="w-4 h-4 mr-2" />
             Back to PostgreSQL
           </Button>
           <div>
@@ -257,7 +257,7 @@ export default function PostgresRestorePage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Database className="w-5 h-5 mr-2" />
+              <IconDatabase className="w-5 h-5 mr-2" />
               Database: {database.name}
             </CardTitle>
             <CardDescription>
@@ -275,7 +275,7 @@ export default function PostgresRestorePage() {
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <Search className="w-4 h-4 mr-2 inline" />
+                <IconSearch className="w-4 h-4 mr-2 inline" />
                 Browse Backups
               </button>
               <button
@@ -286,7 +286,7 @@ export default function PostgresRestorePage() {
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <History className="w-4 h-4 mr-2 inline" />
+                <IconHistory className="w-4 h-4 mr-2 inline" />
                 Restore History
               </button>
             </div>
@@ -296,7 +296,7 @@ export default function PostgresRestorePage() {
               <div className="space-y-4">
                 {!backupConfig && (
                   <Alert>
-                    <AlertCircle className="h-4 w-4" />
+                    <IconAlertCircle className="h-4 w-4" />
                     <AlertDescription>
                       No backup configuration found. Please configure backup
                       settings first.
@@ -318,9 +318,9 @@ export default function PostgresRestorePage() {
                         disabled={backupsLoading}
                       >
                         {backupsLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <IconLoader2 className="w-4 h-4 animate-spin" />
                         ) : (
-                          <RefreshCw className="w-4 h-4" />
+                          <IconRefresh className="w-4 h-4" />
                         )}
                         Refresh
                       </Button>
@@ -329,7 +329,7 @@ export default function PostgresRestorePage() {
                     {/* Backup List */}
                     {backupsError && (
                       <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
+                        <IconAlertCircle className="h-4 w-4" />
                         <AlertDescription>
                           Failed to load backups: {backupsError.message}
                         </AlertDescription>
@@ -353,7 +353,7 @@ export default function PostgresRestorePage() {
                       </div>
                     ) : backups.length === 0 ? (
                       <div className="text-center py-12">
-                        <Database className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                        <IconDatabase className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                         <h3 className="text-xl font-semibold mb-2">
                           No backups found
                         </h3>
@@ -400,7 +400,7 @@ export default function PostgresRestorePage() {
                                     }}
                                     disabled={createRestoreMutation.isPending}
                                   >
-                                    <Undo className="w-4 h-4 mr-2" />
+                                    <IconArrowBackUp className="w-4 h-4 mr-2" />
                                     Restore
                                   </Button>
                                 </TableCell>
@@ -426,7 +426,7 @@ export default function PostgresRestorePage() {
 
                 {restoreOpsError && (
                   <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
+                    <IconAlertCircle className="h-4 w-4" />
                     <AlertDescription>
                       Failed to load restore operations:{" "}
                       {restoreOpsError.message}
@@ -450,7 +450,7 @@ export default function PostgresRestorePage() {
                   </div>
                 ) : restoreOperations.length === 0 ? (
                   <div className="text-center py-12">
-                    <History className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                    <IconHistory className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                     <h3 className="text-xl font-semibold mb-2">
                       No restore operations
                     </h3>
@@ -694,7 +694,7 @@ export default function PostgresRestorePage() {
               }
             >
               {createRestoreMutation.isPending && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
               {createRestoreMutation.isPending
                 ? "Starting Restore..."

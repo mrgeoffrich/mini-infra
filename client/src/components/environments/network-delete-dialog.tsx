@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Loader2, AlertTriangle, Network } from "lucide-react";
+import { IconLoader2, IconAlertTriangle, IconNetwork } from "@tabler/icons-react";
 
 interface NetworkDeleteDialogProps {
   open: boolean;
@@ -60,7 +60,7 @@ export function NetworkDeleteDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Network className="h-5 w-5" />
+            <IconNetwork className="h-5 w-5" />
             Delete Network
           </DialogTitle>
           <DialogDescription>
@@ -69,7 +69,7 @@ export function NetworkDeleteDialog({
         </DialogHeader>
 
         <Alert>
-          <AlertTriangle className="h-4 w-4" />
+          <IconAlertTriangle className="h-4 w-4" />
           <AlertDescription>
             This action cannot be undone. The network will be permanently removed
             from this environment.
@@ -99,7 +99,7 @@ export function NetworkDeleteDialog({
             disabled={deleteNetworkMutation.isPending}
           >
             {deleteNetworkMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
             Delete Network
           </Button>

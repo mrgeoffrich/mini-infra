@@ -36,16 +36,16 @@ import {
 } from "@/hooks/use-deployment-configs";
 import { useEnvironments } from "@/hooks/use-environments";
 import {
-  AlertCircle,
-  Loader2,
-  Save,
-  Container,
-  Activity,
-  RotateCcw,
-  Globe,
-  Info,
-  ArrowLeft,
-} from "lucide-react";
+  IconAlertCircle,
+  IconLoader2,
+  IconDeviceFloppy,
+  IconBrandDocker,
+  IconActivity,
+  IconRotate,
+  IconGlobe,
+  IconInfoCircle,
+  IconArrowLeft,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { EnvVarEditor } from "@/components/deployments/env-var-editor";
 import { PortEditor } from "@/components/deployments/port-editor";
@@ -244,7 +244,7 @@ export function NewDeploymentConfigPage() {
                 : "Unknown error"}
             </p>
             <Button onClick={handleBack} className="mt-4">
-              <ArrowLeft className="h-4 w-4 mr-2" />
+              <IconArrowLeft className="h-4 w-4 mr-2" />
               Back to Deployments
             </Button>
           </div>
@@ -257,7 +257,7 @@ export function NewDeploymentConfigPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <IconLoader2 className="h-8 w-8 animate-spin" />
         </div>
       </div>
     );
@@ -268,7 +268,7 @@ export function NewDeploymentConfigPage() {
       {/* Page Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={handleBack}>
-          <ArrowLeft className="h-4 w-4" />
+          <IconArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -285,7 +285,7 @@ export function NewDeploymentConfigPage() {
 
       {submitError && (
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <IconAlertCircle className="h-4 w-4" />
           <AlertDescription>{submitError}</AlertDescription>
         </Alert>
       )}
@@ -295,19 +295,19 @@ export function NewDeploymentConfigPage() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="docker" className="flex items-center gap-2">
-                <Container className="w-4 h-4" />
+                <IconBrandDocker className="w-4 h-4" />
                 Docker
               </TabsTrigger>
               <TabsTrigger value="hostname" className="flex items-center gap-2">
-                <Globe className="w-4 h-4" />
+                <IconGlobe className="w-4 h-4" />
                 Hostname
               </TabsTrigger>
               <TabsTrigger value="health" className="flex items-center gap-2">
-                <Activity className="w-4 h-4" />
+                <IconActivity className="w-4 h-4" />
                 Health Check
               </TabsTrigger>
               <TabsTrigger value="rollback" className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4" />
+                <IconRotate className="w-4 h-4" />
                 Rollback
               </TabsTrigger>
             </TabsList>
@@ -316,7 +316,7 @@ export function NewDeploymentConfigPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Container className="w-5 h-5 text-blue-500" />
+                    <IconBrandDocker className="w-5 h-5 text-blue-500" />
                     Docker Configuration
                   </CardTitle>
                   <CardDescription>
@@ -503,7 +503,7 @@ export function NewDeploymentConfigPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-blue-500" />
+                    <IconGlobe className="w-5 h-5 text-blue-500" />
                     Hostname Configuration
                   </CardTitle>
                   <CardDescription>
@@ -531,7 +531,7 @@ export function NewDeploymentConfigPage() {
                   />
 
                   <Alert>
-                    <Info className="h-4 w-4" />
+                    <IconInfoCircle className="h-4 w-4" />
                     <AlertDescription>
                       <div className="space-y-2">
                         <p className="font-medium">About Hostnames:</p>
@@ -564,7 +564,7 @@ export function NewDeploymentConfigPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-green-500" />
+                    <IconActivity className="w-5 h-5 text-green-500" />
                     Health Check Configuration
                   </CardTitle>
                   <CardDescription>
@@ -715,7 +715,7 @@ export function NewDeploymentConfigPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <RotateCcw className="w-5 h-5 text-red-500" />
+                    <IconRotate className="w-5 h-5 text-red-500" />
                     Rollback Configuration
                   </CardTitle>
                   <CardDescription>
@@ -800,7 +800,7 @@ export function NewDeploymentConfigPage() {
                   </div>
 
                   <Alert>
-                    <Info className="h-4 w-4" />
+                    <IconInfoCircle className="h-4 w-4" />
                     <AlertDescription>
                       Rollback settings help ensure service availability by
                       automatically reverting to the previous working version if
@@ -817,8 +817,8 @@ export function NewDeploymentConfigPage() {
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              <Save className="w-4 h-4 mr-2" />
+              {isLoading && <IconLoader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <IconDeviceFloppy className="w-4 h-4 mr-2" />
               {isEditing ? "Update Configuration" : "Create Configuration"}
             </Button>
           </div>

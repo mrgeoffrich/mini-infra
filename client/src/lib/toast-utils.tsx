@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { Copy, Check } from "lucide-react";
+import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
 
 interface CopyToastOptions {
@@ -29,12 +29,12 @@ const CopyButton = ({ text }: { text: string }) => {
     >
       {copied ? (
         <>
-          <Check size={12} />
+          <IconCheck size={12} />
           <span>Copied!</span>
         </>
       ) : (
         <>
-          <Copy size={12} />
+          <IconCopy size={12} />
           <span>Copy</span>
         </>
       )}

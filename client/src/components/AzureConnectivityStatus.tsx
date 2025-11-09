@@ -1,16 +1,16 @@
 import { useState, useCallback } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import {
-  RefreshCcw,
-  CheckCircle,
-  AlertCircle,
-  History,
-  Calendar,
-  Server,
-  Zap,
-  BarChart3,
-  Activity,
-} from "lucide-react";
+  IconRefresh,
+  IconCircleCheck,
+  IconAlertCircle,
+  IconHistory,
+  IconCalendar,
+  IconServer,
+  IconBolt,
+  IconChartBar,
+  IconActivity,
+} from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ function ResponseTimeChart({ history, isLoading }: ResponseTimeChartProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
+            <IconChartBar className="h-4 w-4" />
             Response Time Trend
           </CardTitle>
         </CardHeader>
@@ -98,7 +98,7 @@ function ResponseTimeChart({ history, isLoading }: ResponseTimeChartProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
+            <IconChartBar className="h-4 w-4" />
             Response Time Trend
           </CardTitle>
         </CardHeader>
@@ -119,7 +119,7 @@ function ResponseTimeChart({ history, isLoading }: ResponseTimeChartProps) {
     <Card>
       <CardHeader>
         <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <BarChart3 className="h-4 w-4" />
+          <IconChartBar className="h-4 w-4" />
           Response Time Trend
         </CardTitle>
         <CardDescription>
@@ -202,7 +202,7 @@ function StatusHistoryTimeline({
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <History className="h-4 w-4" />
+              <IconHistory className="h-4 w-4" />
               Connection History
             </CardTitle>
             <CardDescription>Recent connectivity checks</CardDescription>
@@ -223,7 +223,7 @@ function StatusHistoryTimeline({
               </SelectContent>
             </Select>
             <Button variant="ghost" size="sm" onClick={handleRefresh}>
-              <RefreshCcw className="h-4 w-4" />
+              <IconRefresh className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -377,7 +377,7 @@ export function AzureConnectivityStatus({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              <Activity className="h-5 w-5" />
+              <IconActivity className="h-5 w-5" />
             </div>
             <div>
               <h2 className="text-xl font-semibold">
@@ -394,7 +394,7 @@ export function AzureConnectivityStatus({
             onClick={handleRefresh}
             disabled={isRefreshing}
           >
-            <RefreshCcw
+            <IconRefresh
               className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")}
             />
             Refresh All
@@ -418,7 +418,7 @@ export function AzureConnectivityStatus({
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <IconCircleCheck className="h-4 w-4 text-green-600" />
                     Last Success
                   </CardTitle>
                 </CardHeader>
@@ -453,7 +453,7 @@ export function AzureConnectivityStatus({
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-blue-600" />
+                    <IconBolt className="h-4 w-4 text-blue-600" />
                     Response Time
                   </CardTitle>
                 </CardHeader>
@@ -475,7 +475,7 @@ export function AzureConnectivityStatus({
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <Server className="h-4 w-4 text-purple-600" />
+                    <IconServer className="h-4 w-4 text-purple-600" />
                     Storage Account
                   </CardTitle>
                 </CardHeader>
@@ -494,7 +494,7 @@ export function AzureConnectivityStatus({
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-orange-600" />
+                  <IconCalendar className="h-4 w-4 text-orange-600" />
                   Check Interval
                 </CardTitle>
               </CardHeader>
@@ -532,7 +532,7 @@ export function AzureConnectivityStatus({
             <Card className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
               <CardHeader>
                 <CardTitle className="text-sm font-medium flex items-center gap-2 text-red-800 dark:text-red-200">
-                  <AlertCircle className="h-4 w-4" />
+                  <IconAlertCircle className="h-4 w-4" />
                   Connection Error Details
                 </CardTitle>
               </CardHeader>

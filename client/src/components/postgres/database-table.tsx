@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Calendar, Download, Pencil, Trash2, Play } from "lucide-react";
+import { IconCalendar, IconDownload, IconPencil, IconTrash, IconPlayerPlay } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
@@ -73,7 +73,7 @@ export function DatabaseTable({
                   onClick={() => onConfigureBackup(database)}
                   title="Configure Backup"
                 >
-                  <Calendar className="w-4 h-4" />
+                  <IconCalendar className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="outline"
@@ -81,7 +81,7 @@ export function DatabaseTable({
                   onClick={() => onBrowseBackups(database)}
                   title="Browse Backups & Restore"
                 >
-                  <Download className="w-4 h-4" />
+                  <IconDownload className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="outline"
@@ -89,7 +89,7 @@ export function DatabaseTable({
                   onClick={() => onEditDatabase(database)}
                   title="Edit Database"
                 >
-                  <Pencil className="w-4 h-4" />
+                  <IconPencil className="w-4 h-4" />
                 </Button>
                 <Button
                   variant="outline"
@@ -97,7 +97,7 @@ export function DatabaseTable({
                   onClick={() => onDeleteDatabase(database)}
                   title="Delete Database"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <IconTrash className="w-4 h-4" />
                 </Button>
               </div>
             </TableCell>
@@ -159,7 +159,7 @@ function ManualBackupButton({
       disabled={manualBackupMutation.isPending}
       title="Start Manual Backup"
     >
-      <Play className="w-4 h-4" />
+      <IconPlayerPlay className="w-4 h-4" />
     </Button>
   );
 }

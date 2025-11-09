@@ -58,7 +58,8 @@
       "Bash(docker scout:*)",
       "Bash(docker pull:*)",
       "Bash(docker build:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(npm uninstall:*)"
     ],
     "deny": [],
     "ask": [],
