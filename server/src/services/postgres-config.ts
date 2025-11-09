@@ -453,14 +453,12 @@ export class DatabaseConfigService {
         if (filter.name) {
           where.name = {
             contains: filter.name,
-            mode: "insensitive",
           };
         }
 
         if (filter.host) {
           where.host = {
             contains: filter.host,
-            mode: "insensitive",
           };
         }
 

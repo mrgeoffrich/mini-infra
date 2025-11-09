@@ -26,6 +26,7 @@ import { ServiceRecoveryManager } from "./services/service-recovery";
 import { EnvironmentHealthScheduler } from "./services/environment-health-scheduler";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
 import { SelfBackupScheduler } from "./services/self-backup-scheduler";
+import serverHealthScheduler from "./services/postgres-server/health-scheduler";
 import prisma from "./lib/prisma";
 
 // Global scheduler instances
@@ -92,6 +93,10 @@ const initializeServices = async () => {
     SelfBackupScheduler.setInstance(selfBackupScheduler);
     await selfBackupScheduler.initialize();
     logger.info("Self-backup scheduler initialized successfully");
+
+    // Initialize PostgreSQL server health scheduler
+    serverHealthScheduler.startAll();
+    logger.info("PostgreSQL server health scheduler initialized successfully");
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -210,6 +215,10 @@ startServer()
         await selfBackupScheduler.shutdown();
         logger.info("Self-backup scheduler stopped");
       }
+
+      // Stop PostgreSQL server health scheduler
+      serverHealthScheduler.stopAll();
+      logger.info("PostgreSQL server health scheduler stopped");
 
       // Shutdown OpenTelemetry
       await shutdownTelemetry();

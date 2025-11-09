@@ -6,6 +6,7 @@ import {
   formatTime,
   formatDateWithPrefix,
   formatContainerDate,
+  formatRelativeTime,
   type DateFormatOptions,
 } from "../lib/date-utils";
 
@@ -72,6 +73,13 @@ export function useFormattedDate() {
         date: string | Date | number,
         options: DateFormatOptions = {},
       ) => formatContainerDate(date, { ...baseOptions, ...options }),
+
+      /**
+       * Formats a date as a relative time string (e.g., "2 hours ago")
+       * @param date - Date to format
+       */
+      formatRelativeTime: (date: string | Date | number) =>
+        formatRelativeTime(date),
 
       /**
        * The user's current timezone setting

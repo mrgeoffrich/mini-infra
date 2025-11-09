@@ -1,5 +1,123 @@
 // ====================
-// PostgreSQL Management Types
+// PostgreSQL Server Management Types
+// ====================
+
+// PostgreSQL Server type (matches Prisma schema)
+export interface PostgresServer {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  adminUsername: string;
+  connectionString: string; // Encrypted
+  sslMode: string;
+  tags: string | null; // JSON array
+  healthStatus: string;
+  lastHealthCheck: Date | null;
+  serverVersion: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+}
+
+// PostgreSQL Server for API responses (frontend-friendly with date strings)
+export interface PostgresServerInfo {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  adminUsername: string;
+  sslMode: string;
+  tags: string[];
+  healthStatus: "healthy" | "unhealthy" | "unknown";
+  lastHealthCheck: string | null;
+  serverVersion: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    databases: number;
+    users: number;
+  };
+}
+
+// PostgreSQL Server API Request Types
+export interface CreatePostgresServerRequest {
+  name: string;
+  host: string;
+  port: number;
+  adminUsername: string;
+  adminPassword: string; // Will be encrypted and stored in connectionString
+  sslMode: "prefer" | "require" | "disable";
+  tags?: string[];
+}
+
+export interface UpdatePostgresServerRequest {
+  name?: string;
+  host?: string;
+  port?: number;
+  adminUsername?: string;
+  adminPassword?: string; // Will be encrypted and stored in connectionString
+  sslMode?: "prefer" | "require" | "disable";
+  tags?: string[];
+}
+
+export interface TestServerConnectionRequest {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  sslMode: "prefer" | "require" | "disable";
+}
+
+// PostgreSQL Server API Response Types
+export interface PostgresServerSyncResults {
+  databasesSync: {
+    success: boolean;
+    count: number;
+    error?: string;
+  };
+  usersSync: {
+    success: boolean;
+    count: number;
+    error?: string;
+  };
+}
+
+export interface PostgresServerResponse {
+  success: boolean;
+  data: PostgresServerInfo;
+  message?: string;
+}
+
+export interface PostgresServerCreateResponse {
+  success: boolean;
+  data: {
+    server: PostgresServerInfo;
+    syncResults: PostgresServerSyncResults;
+  };
+  message?: string;
+}
+
+export interface PostgresServerListResponse {
+  success: boolean;
+  data: PostgresServerInfo[];
+  message?: string;
+}
+
+export interface PostgresServerDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ServerConnectionTestResponse {
+  success: boolean;
+  message?: string;
+  version?: string;
+  error?: string;
+}
+
+// ====================
+// PostgreSQL Database Management Types
 // ====================
 
 // Database PostgresDatabase type (matches Prisma schema)
@@ -660,4 +778,278 @@ export interface OperationHistoryItem {
   operationType?: string; // For backup operations: "manual" | "scheduled"
   backupUrl?: string; // For restore operations
   sizeBytes?: number | null; // For backup operations
+}
+
+// ====================
+// PostgreSQL Server Management - Managed Databases
+// ====================
+
+// ManagedDatabase type (matches Prisma schema)
+export interface ManagedDatabase {
+  id: string;
+  serverId: string;
+  databaseName: string;
+  owner: string;
+  encoding: string;
+  collation: string | null;
+  template: string;
+  sizeBytes: bigint | null;
+  connectionLimit: number;
+  createdAt: Date;
+  updatedAt: Date;
+  lastSyncedAt: Date | null;
+}
+
+// ManagedDatabase for API responses (frontend-friendly with date strings)
+export interface ManagedDatabaseInfo {
+  id: string;
+  serverId: string;
+  databaseName: string;
+  owner: string;
+  encoding: string;
+  collation: string | null;
+  template: string;
+  sizeBytes: number | null;
+  connectionLimit: number;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt: string | null;
+  _count?: {
+    grants: number;
+  };
+}
+
+// Managed Database API Request Types
+export interface CreateManagedDatabaseRequest {
+  databaseName: string;
+  owner?: string;
+  encoding?: string;
+  template?: string;
+  connectionLimit?: number;
+}
+
+export interface UpdateManagedDatabaseRequest {
+  databaseName?: string;
+  owner?: string;
+  connectionLimit?: number;
+}
+
+// Managed Database API Response Types
+export interface ManagedDatabaseResponse {
+  success: boolean;
+  data: ManagedDatabaseInfo;
+  message?: string;
+}
+
+export interface ManagedDatabaseListResponse {
+  success: boolean;
+  data: ManagedDatabaseInfo[];
+  message?: string;
+}
+
+export interface ManagedDatabaseDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface SyncDatabasesResponse {
+  success: boolean;
+  message: string;
+  data: {
+    synced: number;
+    created: number;
+    updated: number;
+    failed: number;
+  };
+}
+
+// ====================
+// PostgreSQL Server Management - Managed Database Users
+// ====================
+
+// ManagedDatabaseUser type (matches Prisma schema)
+export interface ManagedDatabaseUser {
+  id: string;
+  serverId: string;
+  username: string;
+  canLogin: boolean;
+  isSuperuser: boolean;
+  connectionLimit: number;
+  passwordHash: string | null;
+  passwordSetAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lastSyncedAt: Date | null;
+}
+
+// ManagedDatabaseUser for API responses (frontend-friendly with date strings)
+export interface ManagedDatabaseUserInfo {
+  id: string;
+  serverId: string;
+  username: string;
+  canLogin: boolean;
+  isSuperuser: boolean;
+  connectionLimit: number;
+  passwordSetAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt: string | null;
+  _count?: {
+    grants: number;
+  };
+}
+
+// Managed Database User API Request Types
+export interface CreateManagedDatabaseUserRequest {
+  username: string;
+  password: string;
+  canLogin?: boolean;
+  isSuperuser?: boolean;
+  connectionLimit?: number;
+}
+
+export interface UpdateManagedDatabaseUserRequest {
+  canLogin?: boolean;
+  isSuperuser?: boolean;
+  connectionLimit?: number;
+}
+
+export interface ChangeUserPasswordRequest {
+  password: string;
+}
+
+// Managed Database User API Response Types
+export interface ManagedDatabaseUserResponse {
+  success: boolean;
+  data: ManagedDatabaseUserInfo;
+  message?: string;
+}
+
+export interface ManagedDatabaseUserListResponse {
+  success: boolean;
+  data: ManagedDatabaseUserInfo[];
+  message?: string;
+}
+
+export interface ManagedDatabaseUserDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface SyncUsersResponse {
+  success: boolean;
+  message: string;
+  data: {
+    synced: number;
+    created: number;
+    updated: number;
+    failed: number;
+  };
+}
+
+// ====================
+// PostgreSQL Server Management - Database Grants
+// ====================
+
+// DatabaseGrant type (matches Prisma schema)
+export interface DatabaseGrant {
+  id: string;
+  databaseId: string;
+  userId: string;
+  canConnect: boolean;
+  canCreate: boolean;
+  canTemp: boolean;
+  canCreateSchema: boolean;
+  canUsageSchema: boolean;
+  canSelect: boolean;
+  canInsert: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// DatabaseGrant for API responses (frontend-friendly with date strings)
+export interface DatabaseGrantInfo {
+  id: string;
+  databaseId: string;
+  userId: string;
+  canConnect: boolean;
+  canCreate: boolean;
+  canTemp: boolean;
+  canCreateSchema: boolean;
+  canUsageSchema: boolean;
+  canSelect: boolean;
+  canInsert: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  createdAt: string;
+  updatedAt: string;
+  database?: ManagedDatabaseInfo;
+  user?: ManagedDatabaseUserInfo;
+}
+
+// Database Grant API Request Types
+export interface CreateDatabaseGrantRequest {
+  serverId: string;
+  databaseId: string;
+  managedUserId: string;
+  canConnect?: boolean;
+  canCreate?: boolean;
+  canTemp?: boolean;
+  canCreateSchema?: boolean;
+  canUsageSchema?: boolean;
+  canSelect?: boolean;
+  canInsert?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
+}
+
+export interface UpdateDatabaseGrantRequest {
+  canConnect?: boolean;
+  canCreate?: boolean;
+  canTemp?: boolean;
+  canCreateSchema?: boolean;
+  canUsageSchema?: boolean;
+  canSelect?: boolean;
+  canInsert?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
+}
+
+// Database Grant API Response Types
+export interface DatabaseGrantResponse {
+  success: boolean;
+  data: DatabaseGrantInfo;
+  message?: string;
+}
+
+export interface DatabaseGrantListResponse {
+  success: boolean;
+  data: DatabaseGrantInfo[];
+  message?: string;
+}
+
+export interface DatabaseGrantDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+// Quick Setup API Types
+export interface QuickSetupRequest {
+  serverId: string;
+  databaseName: string;
+  username: string;
+  password: string;
+}
+
+export interface QuickSetupResponse {
+  success: boolean;
+  message: string;
+  data: {
+    database: ManagedDatabaseInfo;
+    user: ManagedDatabaseUserInfo;
+    grant: DatabaseGrantInfo;
+    connectionString: string;
+  };
 }
