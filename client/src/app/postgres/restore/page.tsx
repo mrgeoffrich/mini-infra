@@ -146,7 +146,7 @@ export default function PostgresRestorePage() {
   // Redirect if no database ID
   useEffect(() => {
     if (!databaseId) {
-      navigate("/postgres");
+      navigate("/postgres-backup");
     }
   }, [databaseId, navigate]);
 
@@ -223,7 +223,7 @@ export default function PostgresRestorePage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink href="/postgres">PostgreSQL</BreadcrumbLink>
+              <BreadcrumbLink href="/postgres-backup">PostgreSQL</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -241,7 +241,7 @@ export default function PostgresRestorePage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate("/postgres")}
+            onClick={() => navigate("/postgres-backup")}
           >
             <IconArrowLeft className="w-4 h-4 mr-2" />
             Back to PostgreSQL

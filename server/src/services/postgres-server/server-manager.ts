@@ -34,6 +34,30 @@ export class PostgresServerService {
   }
 
   /**
+   * Parse tags from JSON string to array
+   */
+  private parseTags(tagsJson: string | null): string[] {
+    if (!tagsJson) return [];
+    try {
+      const parsed = JSON.parse(tagsJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Transform server data to include parsed tags
+   */
+  private transformServer<T extends { tags: string | null }>(server: T): Omit<T, 'tags'> & { tags: string[] } {
+    const { tags, ...rest } = server;
+    return {
+      ...rest,
+      tags: this.parseTags(tags),
+    } as Omit<T, 'tags'> & { tags: string[] };
+  }
+
+  /**
    * Build connection string from components
    */
   private buildConnectionString(
@@ -117,14 +141,14 @@ export class PostgresServerService {
       syncResults.usersSync = { success: false, count: 0, error: error.message };
     }
 
-    return { server, syncResults };
+    return { server: this.transformServer(server), syncResults };
   }
 
   /**
    * Get all servers for a user
    */
   async listServers(userId: string) {
-    return await prisma.postgresServer.findMany({
+    const servers = await prisma.postgresServer.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
       include: {
@@ -136,6 +160,7 @@ export class PostgresServerService {
         },
       },
     });
+    return servers.map(server => this.transformServer(server));
   }
 
   /**
@@ -158,7 +183,7 @@ export class PostgresServerService {
       throw new Error("Server not found");
     }
 
-    return server;
+    return this.transformServer(server);
   }
 
   /**
@@ -217,7 +242,7 @@ export class PostgresServerService {
     });
 
     logger.info({ serverId }, "Server updated");
-    return server;
+    return this.transformServer(server);
   }
 
   /**

@@ -16,6 +16,7 @@ import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
 import PostgresPage from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import PostgresServerPage from "@/app/postgres-server/page";
+import PostgresServerDetailPage from "@/app/postgres-server/[serverId]/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
@@ -60,16 +61,20 @@ export const router = createBrowserRouter([
         element: <ContainersPage />,
       },
       {
-        path: "postgres",
+        path: "postgres-backup",
         element: <PostgresPage />,
       },
       {
-        path: "postgres/:databaseId/restore",
+        path: "postgres-backup/:databaseId/restore",
         element: <PostgresRestorePage />,
       },
       {
         path: "postgres-server",
         element: <PostgresServerPage />,
+      },
+      {
+        path: "postgres-server/:serverId",
+        element: <PostgresServerDetailPage />,
       },
       {
         path: "deployments",

@@ -48,19 +48,19 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: 'Docker container management'
   },
 
-  '/postgres': {
-    path: '/postgres',
+  '/postgres-backup': {
+    path: '/postgres-backup',
     title: 'PostgreSQL Backups',
     icon: IconDatabase,
-    showInNav: true,
+    showInNav: false,
     navGroup: 'main',
     description: 'Database backups and restore',
     children: {
       'restore': {
-        path: '/postgres/:databaseId/restore',
+        path: '/postgres-backup/:databaseId/restore',
         title: 'Restore Database',
         breadcrumbLabel: 'Restore',
-        parent: '/postgres',
+        parent: '/postgres-backup',
         showInNav: false
       }
     }

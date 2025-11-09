@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { IconDatabase, IconPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +8,7 @@ import { ServerModal } from "@/components/postgres-server/server-modal";
 import { usePostgresServers } from "@/hooks/use-postgres-servers";
 
 export function PostgresServerPage() {
+  const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
 
@@ -86,7 +88,11 @@ export function PostgresServerPage() {
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {servers.map((server) => (
-                  <Card key={server.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                  <Card
+                    key={server.id}
+                    className="hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => navigate(`/postgres-server/${server.id}`)}
+                  >
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -110,11 +116,11 @@ export function PostgresServerPage() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Databases:</span>
-                          <span className="font-medium">{server._count.databases}</span>
+                          <span className="font-medium">{server._count?.databases || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Users:</span>
-                          <span className="font-medium">{server._count.users}</span>
+                          <span className="font-medium">{server._count?.users || 0}</span>
                         </div>
                         {server.serverVersion && (
                           <div className="flex justify-between">

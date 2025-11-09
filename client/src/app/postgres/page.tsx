@@ -84,7 +84,7 @@ export default function PostgresPage() {
   };
 
   const navigateToRestorePage = (database: PostgresDatabaseInfo) => {
-    navigate(`/postgres/${database.id}/restore`);
+    navigate(`/postgres-backup/${database.id}/restore`);
   };
 
   const openEditModal = (database: PostgresDatabaseInfo) => {

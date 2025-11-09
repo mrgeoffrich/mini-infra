@@ -9,7 +9,7 @@ import {
   IconTrash,
   IconDashboard,
   IconUser,
-  IconBolt,
+  IconArchive,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OverviewTab } from "@/components/postgres-server/overview-tab";
 import { DatabasesTab } from "@/components/postgres-server/databases-tab";
 import { UsersTab } from "@/components/postgres-server/users-tab";
-import { QuickSetupTab } from "@/components/postgres-server/quick-setup-tab";
+import { BackupsTab } from "@/components/postgres-server/backups-tab";
 import { HealthStatusBadge } from "@/components/postgres-server/health-status-badge";
 import { usePostgresServer } from "@/hooks/use-postgres-servers";
 import { useManagedDatabaseUsers } from "@/hooks/use-managed-database-users";
@@ -233,9 +233,9 @@ export default function PostgresServerDetailsPage() {
               <IconUser className="h-4 w-4 mr-2" />
               Users
             </TabsTrigger>
-            <TabsTrigger value="quick-setup">
-              <IconBolt className="h-4 w-4 mr-2" />
-              Quick Setup
+            <TabsTrigger value="backups">
+              <IconArchive className="h-4 w-4 mr-2" />
+              Backups
             </TabsTrigger>
           </TabsList>
 
@@ -251,8 +251,8 @@ export default function PostgresServerDetailsPage() {
             <UsersTab serverId={serverId!} />
           </TabsContent>
 
-          <TabsContent value="quick-setup">
-            <QuickSetupTab serverId={serverId!} />
+          <TabsContent value="backups">
+            <BackupsTab server={server} />
           </TabsContent>
         </Tabs>
       </div>

@@ -93,7 +93,7 @@ export function OverviewTab({ server, onChangeTab }: OverviewTabProps) {
           </div>
 
           {/* Tags */}
-          {server.tags && server.tags.length > 0 && (
+          {server.tags && Array.isArray(server.tags) && server.tags.length > 0 && (
             <div className="border-t pt-4">
               <Label className="text-sm text-muted-foreground mb-2 block">
                 Tags
