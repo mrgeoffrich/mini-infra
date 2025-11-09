@@ -188,27 +188,6 @@ This document provides a detailed frontend implementation plan for Phase 1 of th
 </div>
 ```
 
-**Option B: Data Table (Recommended for 10+ servers)**
-- Sortable, filterable columns
-- Compact, information-dense
-- Better for many servers
-- Uses `@tanstack/react-table`
-
-```tsx
-<DataTable
-  columns={[
-    { accessorKey: "name", header: "Server Name" },
-    { accessorKey: "host", header: "Host" },
-    { accessorKey: "serverVersion", header: "Version" },
-    { accessorKey: "healthStatus", header: "Status", cell: HealthStatusCell },
-    { accessorKey: "_count.databases", header: "Databases" },
-    { accessorKey: "_count.users", header: "Users" },
-    { id: "actions", header: "Actions", cell: ActionsCell }
-  ]}
-  data={servers}
-/>
-```
-
 #### Empty State
 
 ```tsx
@@ -2482,7 +2461,7 @@ className="px-4 lg:px-6"
 
 #### Server List Page
 - [ ] Create `/postgres-server` route
-- [ ] Implement server list layout (header + card grid/table)
+- [ ] Implement server list layout (header + card grid)
 - [ ] Build ServerModal component (create/edit)
 - [ ] Add ServerModal form validation
 - [ ] Implement test connection functionality
