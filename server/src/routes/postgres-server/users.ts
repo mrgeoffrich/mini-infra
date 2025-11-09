@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
 import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
 import userManagementService from "../../services/postgres-server/user-manager";
+import grantManagementService from "../../services/postgres-server/grant-manager";
 
 const logger = appLogger();
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId
@@ -329,6 +330,46 @@ router.post("/sync", requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to sync users",
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/postgres-server/servers/:serverId/users/:userId/grants
+ * List grants for a specific user
+ */
+router.get("/:userId/grants", requireSessionOrApiKey, async (req, res) => {
+  try {
+    const authUserId = getUserId(req);
+    const serverId = req.params.serverId;
+    const managedUserId = req.params.userId;
+
+    const grants = await grantManagementService.listGrantsForUser(serverId, authUserId, managedUserId);
+
+    res.json({
+      success: true,
+      data: grants,
+    });
+  } catch (error: any) {
+    if (error.message === "Server not found") {
+      return res.status(404).json({
+        success: false,
+        error: "Server not found",
+      });
+    }
+
+    if (error.message === "User not found") {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    logger.error({ error: error.message }, "Failed to list grants for user");
+    res.status(500).json({
+      success: false,
+      error: "Failed to list grants for user",
       message: error.message,
     });
   }

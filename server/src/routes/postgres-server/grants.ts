@@ -111,8 +111,7 @@ router.get("/:grantId", requireSessionOrApiKey, async (req, res) => {
     const userId = getUserId(req);
     const grantId = req.params.grantId;
 
-    // We need to get the grant first to determine the serverId
-    const grant = await grantManagementService.getGrantDetails("", userId, grantId);
+    const grant = await grantManagementService.getGrantDetails(userId, grantId);
 
     res.json({
       success: true,
@@ -145,16 +144,7 @@ router.put("/:grantId", requireSessionOrApiKey, async (req, res) => {
     const grantId = req.params.grantId;
     const validatedData = updateGrantSchema.parse(req.body);
 
-    // Get serverId from query param or from the grant itself
-    const serverId = req.query.serverId as string;
-    if (!serverId) {
-      return res.status(400).json({
-        success: false,
-        error: "Server ID is required as query parameter",
-      });
-    }
-
-    const grant = await grantManagementService.updateGrant(serverId, userId, grantId, validatedData);
+    const grant = await grantManagementService.updateGrant(userId, grantId, validatedData);
 
     res.json({
       success: true,
@@ -194,16 +184,7 @@ router.delete("/:grantId", requireSessionOrApiKey, async (req, res) => {
     const userId = getUserId(req);
     const grantId = req.params.grantId;
 
-    // Get serverId from query param
-    const serverId = req.query.serverId as string;
-    if (!serverId) {
-      return res.status(400).json({
-        success: false,
-        error: "Server ID is required as query parameter",
-      });
-    }
-
-    await grantManagementService.deleteGrant(serverId, userId, grantId);
+    await grantManagementService.deleteGrant(userId, grantId);
 
     res.json({
       success: true,
@@ -221,80 +202,6 @@ router.delete("/:grantId", requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to delete grant",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/postgres-server/servers/:serverId/databases/:dbId/grants
- * List grants for a specific database
- */
-router.get("/servers/:serverId/databases/:dbId/grants", requireSessionOrApiKey, async (req, res) => {
-  try {
-    const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
-
-    const grants = await grantManagementService.listGrantsForDatabase(serverId, userId, databaseId);
-
-    res.json({
-      success: true,
-      data: grants,
-    });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: error.message }, "Failed to list grants for database");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list grants for database",
-      message: error.message,
-    });
-  }
-});
-
-/**
- * GET /api/postgres-server/users/:userId/grants
- * List grants for a specific user
- */
-router.get("/users/:userId/grants", requireSessionOrApiKey, async (req, res) => {
-  try {
-    const authUserId = getUserId(req);
-    const managedUserId = req.params.userId;
-
-    // Get serverId from query param
-    const serverId = req.query.serverId as string;
-    if (!serverId) {
-      return res.status(400).json({
-        success: false,
-        error: "Server ID is required as query parameter",
-      });
-    }
-
-    const grants = await grantManagementService.listGrantsForUser(serverId, authUserId, managedUserId);
-
-    res.json({
-      success: true,
-      data: grants,
-    });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: error.message }, "Failed to list grants for user");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list grants for user",
       message: error.message,
     });
   }

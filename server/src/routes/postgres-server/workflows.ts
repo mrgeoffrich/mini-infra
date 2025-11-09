@@ -33,6 +33,10 @@ const createAppDatabaseSchema = z.object({
  * Returns connection string for application use
  */
 router.post("/create-app-database", requireSessionOrApiKey, async (req, res) => {
+  let createdDatabase: any = null;
+  let createdUser: any = null;
+  let createdGrant: any = null;
+
   try {
     const userId = getUserId(req);
     const validatedData = createAppDatabaseSchema.parse(req.body);
@@ -42,64 +46,100 @@ router.post("/create-app-database", requireSessionOrApiKey, async (req, res) => 
       "Starting quick setup workflow"
     );
 
-    // Step 1: Create the database
-    logger.debug("Creating database");
-    const database = await databaseManagementService.createDatabase(validatedData.serverId, userId, {
-      databaseName: validatedData.databaseName,
-      owner: "postgres", // Default owner, the new user will get full access via grants
-    });
+    try {
+      // Step 1: Create the database
+      logger.debug("Creating database");
+      createdDatabase = await databaseManagementService.createDatabase(validatedData.serverId, userId, {
+        databaseName: validatedData.databaseName,
+        owner: "postgres", // Default owner, the new user will get full access via grants
+      });
 
-    // Step 2: Create the user
-    logger.debug("Creating user");
-    const user = await userManagementService.createUser(validatedData.serverId, userId, {
-      username: validatedData.username,
-      password: validatedData.password,
-      canLogin: true,
-      isSuperuser: false,
-    });
+      // Step 2: Create the user
+      logger.debug("Creating user");
+      createdUser = await userManagementService.createUser(validatedData.serverId, userId, {
+        username: validatedData.username,
+        password: validatedData.password,
+        canLogin: true,
+        isSuperuser: false,
+      });
 
-    // Step 3: Grant all permissions to the user on the database
-    logger.debug("Granting permissions");
-    const grant = await grantManagementService.createGrant(validatedData.serverId, userId, {
-      databaseId: database.id,
-      managedUserId: user.id,
-      canConnect: true,
-      canCreate: true,
-      canTemp: true,
-      canCreateSchema: true,
-      canUsageSchema: true,
-      canSelect: true,
-      canInsert: true,
-      canUpdate: true,
-      canDelete: true,
-    });
+      // Step 3: Grant all permissions to the user on the database
+      logger.debug("Granting permissions");
+      createdGrant = await grantManagementService.createGrant(validatedData.serverId, userId, {
+        databaseId: createdDatabase.id,
+        managedUserId: createdUser.id,
+        canConnect: true,
+        canCreate: true,
+        canTemp: true,
+        canCreateSchema: true,
+        canUsageSchema: true,
+        canSelect: true,
+        canInsert: true,
+        canUpdate: true,
+        canDelete: true,
+      });
 
-    // Step 4: Build connection string
-    const server = await postgresServerService.getServer(validatedData.serverId, userId);
-    const connectionString = `postgresql://${validatedData.username}:${validatedData.password}@${server.host}:${server.port}/${validatedData.databaseName}?sslmode=${server.sslMode}`;
+      // Step 4: Build connection string
+      const server = await postgresServerService.getServer(validatedData.serverId, userId);
+      const connectionString = `postgresql://${validatedData.username}:${validatedData.password}@${server.host}:${server.port}/${validatedData.databaseName}?sslmode=${server.sslMode}`;
 
-    logger.info(
-      { serverId: validatedData.serverId, databaseId: database.id, userId: user.id, grantId: grant.id },
-      "Quick setup workflow completed successfully"
-    );
+      logger.info(
+        { serverId: validatedData.serverId, databaseId: createdDatabase.id, userId: createdUser.id, grantId: createdGrant.id },
+        "Quick setup workflow completed successfully"
+      );
 
-    // Sanitize response
-    const { passwordHash, ...sanitizedUser } = user;
-    const sanitizedDatabase = {
-      ...database,
-      sizeBytes: database.sizeBytes ? database.sizeBytes.toString() : null,
-    };
+      // Sanitize response
+      const { passwordHash, ...sanitizedUser } = createdUser;
+      const sanitizedDatabase = {
+        ...createdDatabase,
+        sizeBytes: createdDatabase.sizeBytes ? createdDatabase.sizeBytes.toString() : null,
+      };
 
-    res.status(201).json({
-      success: true,
-      message: "Application database created successfully",
-      data: {
-        database: sanitizedDatabase,
-        user: sanitizedUser,
-        grant,
-        connectionString,
-      },
-    });
+      res.status(201).json({
+        success: true,
+        message: "Application database created successfully",
+        data: {
+          database: sanitizedDatabase,
+          user: sanitizedUser,
+          grant: createdGrant,
+          connectionString,
+        },
+      });
+    } catch (workflowError: any) {
+      // Rollback any created resources
+      logger.error(
+        { error: workflowError.message, database: createdDatabase?.id, user: createdUser?.id, grant: createdGrant?.id },
+        "Quick setup workflow failed, rolling back"
+      );
+
+      try {
+        // Rollback in reverse order: grant -> user -> database
+        if (createdGrant) {
+          logger.debug({ grantId: createdGrant.id }, "Rolling back grant");
+          await grantManagementService.deleteGrant(userId, createdGrant.id);
+        }
+
+        if (createdUser) {
+          logger.debug({ userId: createdUser.id }, "Rolling back user");
+          await userManagementService.dropUser(validatedData.serverId, userId, createdUser.id);
+        }
+
+        if (createdDatabase) {
+          logger.debug({ databaseId: createdDatabase.id }, "Rolling back database");
+          await databaseManagementService.dropDatabase(validatedData.serverId, userId, createdDatabase.id);
+        }
+
+        logger.info("Rollback completed successfully");
+      } catch (rollbackError: any) {
+        logger.error(
+          { error: rollbackError.message },
+          "Failed to rollback workflow - manual cleanup may be required"
+        );
+      }
+
+      // Re-throw the original error
+      throw workflowError;
+    }
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({

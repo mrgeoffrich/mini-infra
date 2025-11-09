@@ -198,7 +198,6 @@ export class GrantManagementService {
    * Update an existing grant
    */
   async updateGrant(
-    serverId: string,
     userId: string,
     grantId: string,
     updates: {
@@ -213,15 +212,14 @@ export class GrantManagementService {
       canDelete?: boolean;
     }
   ) {
-    logger.info({ serverId, grantId, updates }, "Updating grant");
-
-    // Verify server ownership
-    await postgresServerService.getServer(serverId, userId);
-
     const grant = await prisma.databaseGrant.findUnique({
       where: { id: grantId },
       include: {
-        database: true,
+        database: {
+          include: {
+            server: true,
+          },
+        },
         user: true,
       },
     });
@@ -229,6 +227,13 @@ export class GrantManagementService {
     if (!grant) {
       throw new Error("Grant not found");
     }
+
+    const serverId = grant.database.serverId;
+
+    logger.info({ serverId, grantId, updates }, "Updating grant");
+
+    // Verify server ownership
+    await postgresServerService.getServer(serverId, userId);
 
     // First revoke all existing permissions
     await this.revokeGrantFromServer(serverId, userId, grantId);
@@ -313,7 +318,24 @@ export class GrantManagementService {
   /**
    * Delete a grant (revoke and remove from database)
    */
-  async deleteGrant(serverId: string, userId: string, grantId: string) {
+  async deleteGrant(userId: string, grantId: string) {
+    const grant = await prisma.databaseGrant.findUnique({
+      where: { id: grantId },
+      include: {
+        database: {
+          include: {
+            server: true,
+          },
+        },
+      },
+    });
+
+    if (!grant) {
+      throw new Error("Grant not found");
+    }
+
+    const serverId = grant.database.serverId;
+
     logger.info({ serverId, grantId }, "Deleting grant");
 
     // Verify server ownership
@@ -375,21 +397,25 @@ export class GrantManagementService {
   /**
    * Get grant details
    */
-  async getGrantDetails(serverId: string, userId: string, grantId: string) {
-    // Verify server ownership
-    await postgresServerService.getServer(serverId, userId);
-
+  async getGrantDetails(userId: string, grantId: string) {
     const grant = await prisma.databaseGrant.findUnique({
       where: { id: grantId },
       include: {
         user: true,
-        database: true,
+        database: {
+          include: {
+            server: true,
+          },
+        },
       },
     });
 
     if (!grant) {
       throw new Error("Grant not found");
     }
+
+    // Verify server ownership
+    await postgresServerService.getServer(grant.database.serverId, userId);
 
     return grant;
   }

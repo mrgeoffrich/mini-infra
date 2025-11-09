@@ -246,9 +246,10 @@ POST   /api/postgres-server/servers/:serverId/users/sync         // Sync with se
 ```typescript
 GET    /api/postgres-server/servers/:serverId/databases/:dbId/grants  // List grants for database
 POST   /api/postgres-server/grants                                    // Create grant
-PUT    /api/postgres-server/grants/:grantId                           // Update grant permissions
-DELETE /api/postgres-server/grants/:grantId                           // Revoke grant
-GET    /api/postgres-server/users/:userId/grants                      // List grants for user
+GET    /api/postgres-server/grants/:grantId                           // Get grant details
+PUT    /api/postgres-server/grants/:grantId                           // Update grant permissions (serverId auto-derived)
+DELETE /api/postgres-server/grants/:grantId                           // Revoke grant (serverId auto-derived)
+GET    /api/postgres-server/servers/:serverId/users/:userId/grants    // List grants for user
 ```
 
 **Quick Setup Workflows** (`/api/postgres-server/workflows`)
@@ -423,6 +424,9 @@ export interface CreateDatabaseGrantRequest {
   userId: string;
   canConnect?: boolean;
   canCreate?: boolean;
+  canTemp?: boolean;
+  canCreateSchema?: boolean;
+  canUsageSchema?: boolean;
   canSelect?: boolean;
   canInsert?: boolean;
   canUpdate?: boolean;
