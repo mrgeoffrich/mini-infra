@@ -2,6 +2,8 @@ import { Client } from "pg";
 import prisma from "../../lib/prisma";
 import CryptoJS from "crypto-js";
 import { appLogger } from "../../lib/logger-factory";
+import databaseManagerService from "./database-manager";
+import userManagerService from "./user-manager";
 
 const logger = appLogger();
 
@@ -86,7 +88,36 @@ export class PostgresServerService {
     });
 
     logger.info({ serverId: server.id, name: server.name }, "PostgreSQL server created");
-    return server;
+
+    // Perform initial sync of databases and users
+    const syncResults = {
+      databasesSync: { success: false, count: 0, error: undefined as string | undefined },
+      usersSync: { success: false, count: 0, error: undefined as string | undefined },
+    };
+
+    // Sync databases
+    try {
+      logger.info({ serverId: server.id }, "Performing initial database sync");
+      const dbSyncResult = await databaseManagerService.syncDatabases(server.id, params.userId);
+      syncResults.databasesSync = { success: true, count: dbSyncResult.synced, error: undefined };
+      logger.info({ serverId: server.id, count: dbSyncResult.synced }, "Initial database sync completed");
+    } catch (error: any) {
+      logger.error({ serverId: server.id, error: error.message }, "Initial database sync failed");
+      syncResults.databasesSync = { success: false, count: 0, error: error.message };
+    }
+
+    // Sync users
+    try {
+      logger.info({ serverId: server.id }, "Performing initial user sync");
+      const userSyncResult = await userManagerService.syncUsers(server.id, params.userId);
+      syncResults.usersSync = { success: true, count: userSyncResult.synced, error: undefined };
+      logger.info({ serverId: server.id, count: userSyncResult.synced }, "Initial user sync completed");
+    } catch (error: any) {
+      logger.error({ serverId: server.id, error: error.message }, "Initial user sync failed");
+      syncResults.usersSync = { success: false, count: 0, error: error.message };
+    }
+
+    return { server, syncResults };
   }
 
   /**

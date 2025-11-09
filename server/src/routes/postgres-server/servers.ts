@@ -83,7 +83,7 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
     const userId = getUserId(req);
     const validatedData = createServerSchema.parse(req.body);
 
-    const server = await postgresServerService.createServer({
+    const { server, syncResults } = await postgresServerService.createServer({
       ...validatedData,
       userId,
     });
@@ -93,7 +93,10 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      data: sanitizedServer,
+      data: {
+        server: sanitizedServer,
+        syncResults,
+      },
     });
   } catch (error: any) {
     if (error instanceof z.ZodError) {

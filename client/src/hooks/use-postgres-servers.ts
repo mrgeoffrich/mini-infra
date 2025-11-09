@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PostgresServerListResponse,
   PostgresServerResponse,
+  PostgresServerCreateResponse,
   PostgresServerDeleteResponse,
   CreatePostgresServerRequest,
   UpdatePostgresServerRequest,
@@ -74,7 +75,7 @@ async function fetchPostgresServer(
 async function createPostgresServer(
   server: CreatePostgresServerRequest,
   correlationId: string,
-): Promise<PostgresServerResponse> {
+): Promise<PostgresServerCreateResponse> {
   const response = await fetch(`/api/postgres-server/servers`, {
     method: "POST",
     credentials: "include",
@@ -90,7 +91,7 @@ async function createPostgresServer(
     throw new Error(errorData.message || "Failed to create PostgreSQL server");
   }
 
-  const data: PostgresServerResponse = await response.json();
+  const data: PostgresServerCreateResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to create PostgreSQL server");

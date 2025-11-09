@@ -145,7 +145,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
         : [];
 
       if (mode === "create") {
-        await createServerMutation.mutateAsync({
+        const response = await createServerMutation.mutateAsync({
           name: data.name,
           host: data.host,
           port: data.port,
@@ -154,7 +154,38 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
           sslMode: data.sslMode,
           tags,
         });
-        toast.success("Server added successfully");
+
+        // Display sync results
+        if (response.data) {
+          const { syncResults } = response.data;
+          const dbSyncSuccess = syncResults.databasesSync.success;
+          const userSyncSuccess = syncResults.usersSync.success;
+          const dbCount = syncResults.databasesSync.count;
+          const userCount = syncResults.usersSync.count;
+
+          // Build a detailed success message
+          const messages = [`Server added successfully`];
+
+          if (dbSyncSuccess) {
+            messages.push(`Synced ${dbCount} database${dbCount !== 1 ? "s" : ""}`);
+          } else if (syncResults.databasesSync.error) {
+            messages.push(`Database sync failed: ${syncResults.databasesSync.error}`);
+          }
+
+          if (userSyncSuccess) {
+            messages.push(`Synced ${userCount} user${userCount !== 1 ? "s" : ""}`);
+          } else if (syncResults.usersSync.error) {
+            messages.push(`User sync failed: ${syncResults.usersSync.error}`);
+          }
+
+          if (dbSyncSuccess && userSyncSuccess) {
+            toast.success(messages.join(" • "), { duration: 5000 });
+          } else if (!dbSyncSuccess || !userSyncSuccess) {
+            toast.warning(messages.join(" • "), { duration: 7000 });
+          }
+        } else {
+          toast.success("Server added successfully");
+        }
       } else {
         // TODO: Implement update when serverId is properly passed
         toast.info("Update functionality coming soon");

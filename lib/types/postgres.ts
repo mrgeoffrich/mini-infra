@@ -70,9 +70,31 @@ export interface TestServerConnectionRequest {
 }
 
 // PostgreSQL Server API Response Types
+export interface PostgresServerSyncResults {
+  databasesSync: {
+    success: boolean;
+    count: number;
+    error?: string;
+  };
+  usersSync: {
+    success: boolean;
+    count: number;
+    error?: string;
+  };
+}
+
 export interface PostgresServerResponse {
   success: boolean;
   data: PostgresServerInfo;
+  message?: string;
+}
+
+export interface PostgresServerCreateResponse {
+  success: boolean;
+  data: {
+    server: PostgresServerInfo;
+    syncResults: PostgresServerSyncResults;
+  };
   message?: string;
 }
 
