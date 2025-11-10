@@ -11,6 +11,14 @@ import { DeploymentConfigService } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
 import DockerService from "../services/docker";
 import prisma from "../lib/prisma";
+import { CertificateProvisioningService } from "../services/tls/certificate-provisioning-service";
+import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
+import { TlsConfigService } from "../services/tls/tls-config";
+import { AzureKeyVaultCertificateStore } from "../services/tls/azure-keyvault-certificate-store";
+import { AcmeClientManager } from "../services/tls/acme-client-manager";
+import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
+import { CloudflareConfigService } from "../services/cloudflare-config";
+import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 import {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
@@ -39,6 +47,61 @@ const deploymentOrchestrator = new DeploymentOrchestrator();
 deploymentOrchestrator.initialize().catch(error => {
   logger.error({ error: error.message }, "Failed to initialize deployment orchestrator");
 });
+
+/**
+ * Helper to initialize certificate provisioning service
+ */
+async function initializeCertificateProvisioningService(): Promise<CertificateProvisioningService | null> {
+  try {
+    // Initialize TLS config service
+    const tlsConfig = new TlsConfigService(prisma);
+
+    // Get Key Vault clients
+    const { certificateClient, secretClient } = await tlsConfig.getKeyVaultClients();
+    const keyVaultUrl = await tlsConfig.get("key_vault_url");
+
+    if (!keyVaultUrl) {
+      logger.warn("Key Vault URL not configured - SSL certificate provisioning will be disabled");
+      return null;
+    }
+
+    // Get credentials for Key Vault
+    const tenantId = await tlsConfig.get("key_vault_tenant_id");
+    const clientId = await tlsConfig.get("key_vault_client_id");
+    const clientSecret = await tlsConfig.get("key_vault_client_secret");
+
+    let credential;
+    if (tenantId && clientId && clientSecret) {
+      credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+    } else {
+      credential = new DefaultAzureCredential();
+    }
+
+    // Initialize services
+    const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
+    const acmeClient = new AcmeClientManager(tlsConfig, keyVaultStore);
+    const cloudflareConfig = new CloudflareConfigService(prisma);
+    const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
+
+    // Initialize ACME client
+    await acmeClient.initialize();
+
+    const lifecycleManager = new CertificateLifecycleManager(
+      acmeClient,
+      keyVaultStore,
+      dnsChallenge,
+      prisma
+    );
+
+    return new CertificateProvisioningService(lifecycleManager, prisma);
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      "Failed to initialize certificate provisioning service - SSL certificate provisioning will be disabled"
+    );
+    return null;
+  }
+}
 
 // ====================
 // Validation Schemas
@@ -104,6 +167,7 @@ const createConfigSchema = z.object({
     )
     .optional(),
   environmentId: z.string().min(1, "Environment ID is required"),
+  enableSsl: z.boolean().optional().default(false),
 });
 
 const updateConfigSchema = createConfigSchema.partial().extend({
@@ -320,6 +384,42 @@ router.post(
       const config = await deploymentConfigService.createDeploymentConfig(
         configData,
       );
+
+      // Handle SSL certificate provisioning if enabled
+      if (parseResult.data.enableSsl && parseResult.data.hostname) {
+        logger.info(
+          { deploymentConfigId: config.id, hostname: parseResult.data.hostname },
+          "SSL enabled - provisioning certificate"
+        );
+
+        try {
+          const provisioningService = await initializeCertificateProvisioningService();
+
+          if (provisioningService) {
+            // Provision certificate asynchronously (don't wait for completion)
+            provisioningService.provisionCertificateForDeployment({
+              deploymentConfigId: config.id,
+              hostname: parseResult.data.hostname,
+              userId: user.id,
+            }).catch((error) => {
+              logger.error(
+                { deploymentConfigId: config.id, error: error.message },
+                "Failed to provision certificate after deployment config creation"
+              );
+            });
+          } else {
+            logger.warn(
+              { deploymentConfigId: config.id },
+              "Certificate provisioning service not available - SSL will not be configured"
+            );
+          }
+        } catch (error) {
+          logger.warn(
+            { deploymentConfigId: config.id, error: error instanceof Error ? error.message : String(error) },
+            "Failed to initialize certificate provisioning - SSL will not be configured"
+          );
+        }
+      }
 
       const response: DeploymentConfigResponse = {
         success: true,

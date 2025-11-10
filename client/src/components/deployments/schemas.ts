@@ -168,6 +168,7 @@ export const deploymentConfigSchema = z.object({
     .max(500, "Docker registry must be less than 500 characters")
     .optional(),
   hostname: hostnameSchema,
+  enableSsl: z.boolean().optional().default(false),
   listeningPort: z
     .number()
     .int()

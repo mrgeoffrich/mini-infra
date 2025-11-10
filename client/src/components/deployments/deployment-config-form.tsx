@@ -95,6 +95,7 @@ export function DeploymentConfigForm({
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
       hostname: deploymentConfig?.hostname || "",
+      enableSsl: deploymentConfig?.enableSsl || false,
       containerConfig: {
         ports: deploymentConfig?.containerConfig?.ports || [],
         volumes: deploymentConfig?.containerConfig?.volumes || [],
@@ -171,6 +172,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -187,6 +189,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           environmentId: data.environmentId!,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
@@ -488,6 +491,32 @@ export function DeploymentConfigForm({
                           )}
                         />
 
+                        {form.watch("hostname") && (
+                          <FormField
+                            control={form.control}
+                            name="enableSsl"
+                            render={({ field }) => (
+                              <div className="flex items-center space-x-2 p-4 border rounded-lg">
+                                <input
+                                  type="checkbox"
+                                  id="enableSsl"
+                                  checked={field.value || false}
+                                  onChange={(e) => field.onChange(e.target.checked)}
+                                  className="h-4 w-4 rounded border-gray-300"
+                                />
+                                <div className="flex-1">
+                                  <label htmlFor="enableSsl" className="font-medium cursor-pointer">
+                                    Enable SSL/TLS
+                                  </label>
+                                  <p className="text-sm text-muted-foreground">
+                                    Automatically provision and manage SSL certificate for this hostname
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          />
+                        )}
+
                         <Alert>
                           <IconInfoCircle className="h-4 w-4" />
                           <AlertDescription>
@@ -498,6 +527,9 @@ export function DeploymentConfigForm({
                                 <li>The system will check for conflicts with existing deployments and Cloudflare tunnels</li>
                                 <li>You can leave this field empty if your application doesn't need external access</li>
                                 <li>Hostnames are used for traffic routing through Cloudflare tunnels</li>
+                                {form.watch("enableSsl") && (
+                                  <li className="text-green-600 font-medium">SSL certificate will be automatically provisioned for this hostname</li>
+                                )}
                               </ul>
                             </div>
                           </AlertDescription>

@@ -249,6 +249,13 @@ model DeploymentConfiguration {
   isActive          Boolean  @default(true)
   environmentId     String   // Required environment assignment (immutable)
   environment       Environment @relation(fields: [environmentId], references: [id])
+
+  // TLS/SSL configuration
+  enableSsl         Boolean  @default(false) // Enable SSL/TLS for this deployment
+  tlsCertificateId  String?  // Associated TLS certificate
+  tlsCertificate    TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
+  certificateStatus String?  // Certificate provisioning status: 'PENDING', 'ACTIVE', 'ERROR'
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -258,6 +265,7 @@ model DeploymentConfiguration {
 
   @@index([environmentId])
   @@index([hostname])
+  @@index([tlsCertificateId])
   @@map("deployment_configurations")
 }
 
@@ -461,6 +469,12 @@ model HAProxyFrontend {
   bindPort              Int      @default(80)
   bindAddress           String   @default("*")
   useSSL                Boolean  @default(false)
+
+  // TLS/SSL configuration
+  tlsCertificateId      String?  // Associated TLS certificate
+  tlsCertificate        TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
+  sslBindPort           Int      @default(443)
+
   status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
   errorMessage          String?
   createdAt             DateTime @default(now())
@@ -470,6 +484,7 @@ model HAProxyFrontend {
   @@index([frontendName])
   @@index([hostname])
   @@index([status])
+  @@index([tlsCertificateId])
   @@map("haproxy_frontends")
 }
 
@@ -667,8 +682,8 @@ model TlsCertificate {
   autoRenew             Boolean  @default(true)
   renewalDaysBeforeExpiry Int   @default(30)
 
-  // Associated HAProxy frontends
-  haproxyFrontends      String?  // JSON array of frontend names using this cert
+  // Associated HAProxy frontends (legacy JSON field - deprecated in favor of relation)
+  haproxyFrontendNames  String?  // JSON array of frontend names using this cert
 
   // Audit trail
   createdBy             String
@@ -678,6 +693,8 @@ model TlsCertificate {
 
   // Relations
   renewalHistory        TlsCertificateRenewal[]
+  deploymentConfigurations DeploymentConfiguration[]
+  haproxyFrontends      HAProxyFrontend[]
 
   @@index([primaryDomain])
   @@index([status])

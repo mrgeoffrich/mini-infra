@@ -1,5 +1,9 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
+import { PrismaClient } from "@prisma/client";
+import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { AzureKeyVaultCertificateStore } from "../tls/azure-keyvault-certificate-store";
+import { TlsConfigService } from "../tls/tls-config";
 
 const logger = loadbalancerLogger();
 
@@ -16,8 +20,11 @@ export class HAProxyFrontendManager {
    * @param applicationName The application name for naming
    * @param environmentId The environment ID for naming
    * @param haproxyClient The HAProxy DataPlane client instance
-   * @param bindPort The port to bind on (default: 80)
-   * @param bindAddress The address to bind on (default: *)
+   * @param options Optional configuration
+   * @param options.tlsCertificateId TLS certificate ID for SSL binding
+   * @param options.prisma Prisma client instance (required if tlsCertificateId is provided)
+   * @param options.bindPort The port to bind on (default: 80)
+   * @param options.bindAddress The address to bind on (default: *)
    * @returns The name of the created frontend
    */
   async createFrontendForDeployment(
@@ -26,9 +33,15 @@ export class HAProxyFrontendManager {
     applicationName: string,
     environmentId: string,
     haproxyClient: HAProxyDataPlaneClient,
-    bindPort: number = 80,
-    bindAddress: string = "*"
+    options?: {
+      tlsCertificateId?: string;
+      prisma?: PrismaClient;
+      bindPort?: number;
+      bindAddress?: string;
+    }
   ): Promise<string> {
+    const bindPort = options?.bindPort ?? 80;
+    const bindAddress = options?.bindAddress ?? "*";
     logger.info(
       {
         hostname,
@@ -86,8 +99,37 @@ export class HAProxyFrontendManager {
         haproxyClient
       );
 
+      // Handle SSL certificate deployment if provided
+      if (options?.tlsCertificateId && options?.prisma) {
+        logger.info(
+          { frontendName, tlsCertificateId: options.tlsCertificateId },
+          "SSL certificate provided, deploying to HAProxy and adding SSL binding"
+        );
+
+        try {
+          await this.configureSslBinding(
+            frontendName,
+            options.tlsCertificateId,
+            options.prisma,
+            haproxyClient,
+            bindAddress
+          );
+
+          logger.info(
+            { frontendName, tlsCertificateId: options.tlsCertificateId },
+            "Successfully configured SSL binding"
+          );
+        } catch (sslError) {
+          logger.error(
+            { error: sslError, frontendName, tlsCertificateId: options.tlsCertificateId },
+            "Failed to configure SSL binding - frontend created but SSL not enabled"
+          );
+          // Don't throw - frontend is created, SSL configuration failed
+        }
+      }
+
       logger.info(
-        { frontendName, hostname, backendName },
+        { frontendName, hostname, backendName, hasSsl: !!options?.tlsCertificateId },
         "Successfully created frontend with hostname routing"
       );
 
@@ -367,6 +409,141 @@ export class HAProxyFrontendManager {
       logger.error(
         { error, frontendName, hostname, newBackendName },
         "Failed to update frontend backend"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Configure SSL binding for a frontend
+   *
+   * This method:
+   * 1. Retrieves the certificate from the database
+   * 2. Gets the certificate from Azure Key Vault
+   * 3. Deploys it to HAProxy via DataPlane API
+   * 4. Adds an SSL binding on port 443
+   *
+   * @param frontendName The frontend to configure SSL for
+   * @param tlsCertificateId The TLS certificate ID from database
+   * @param prisma Prisma client instance
+   * @param haproxyClient HAProxy DataPlane client instance
+   * @param bindAddress The address to bind on (default: *)
+   */
+  private async configureSslBinding(
+    frontendName: string,
+    tlsCertificateId: string,
+    prisma: PrismaClient,
+    haproxyClient: HAProxyDataPlaneClient,
+    bindAddress: string = "*"
+  ): Promise<void> {
+    logger.info(
+      { frontendName, tlsCertificateId },
+      "Configuring SSL binding for frontend"
+    );
+
+    try {
+      // Step 1: Get certificate from database
+      const certificate = await prisma.tlsCertificate.findUnique({
+        where: { id: tlsCertificateId },
+      });
+
+      if (!certificate) {
+        throw new Error(`Certificate not found: ${tlsCertificateId}`);
+      }
+
+      if (certificate.status !== "ACTIVE") {
+        throw new Error(
+          `Certificate is not active: ${certificate.status}`
+        );
+      }
+
+      logger.info(
+        {
+          frontendName,
+          certificateId: tlsCertificateId,
+          keyVaultName: certificate.keyVaultCertificateName,
+        },
+        "Retrieved certificate from database"
+      );
+
+      // Step 2: Initialize TLS config and Key Vault client
+      const tlsConfig = new TlsConfigService(prisma);
+      const keyVaultUrl = await tlsConfig.get("key_vault_url");
+
+      if (!keyVaultUrl) {
+        throw new Error("Key Vault URL not configured");
+      }
+
+      // Get credentials
+      const tenantId = await tlsConfig.get("key_vault_tenant_id");
+      const clientId = await tlsConfig.get("key_vault_client_id");
+      const clientSecret = await tlsConfig.get("key_vault_client_secret");
+
+      let credential;
+      if (tenantId && clientId && clientSecret) {
+        credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+      } else {
+        credential = new DefaultAzureCredential();
+      }
+
+      const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
+
+      // Step 3: Get certificate from Key Vault
+      logger.info(
+        { keyVaultName: certificate.keyVaultCertificateName },
+        "Retrieving certificate from Azure Key Vault"
+      );
+
+      const certData = await keyVaultStore.getCertificate(
+        certificate.keyVaultCertificateName
+      );
+
+      // Step 4: Deploy certificate to HAProxy
+      const certFileName = `${certificate.keyVaultCertificateName}.pem`;
+
+      logger.info(
+        { certFileName, frontendName },
+        "Deploying certificate to HAProxy"
+      );
+
+      // Check if certificate already exists in HAProxy
+      const existingCerts = await haproxyClient.listSSLCertificates();
+      const certExists = existingCerts.some(
+        (cert: any) => cert.storage_name === certFileName
+      );
+
+      if (certExists) {
+        logger.info({ certFileName }, "Certificate already exists in HAProxy, updating");
+        await haproxyClient.updateSSLCertificate(certFileName, certData.combinedPem, false);
+      } else {
+        logger.info({ certFileName }, "Uploading new certificate to HAProxy");
+        await haproxyClient.uploadSSLCertificate(certFileName, certData.combinedPem, false);
+      }
+
+      // Step 5: Add SSL binding to frontend (port 443)
+      logger.info(
+        { frontendName, bindAddress, port: 443, certFileName },
+        "Adding SSL binding to frontend"
+      );
+
+      await haproxyClient.addFrontendBind(
+        frontendName,
+        bindAddress,
+        443,
+        {
+          ssl: true,
+          ssl_certificate: certFileName,
+        }
+      );
+
+      logger.info(
+        { frontendName, tlsCertificateId },
+        "Successfully configured SSL binding"
+      );
+    } catch (error) {
+      logger.error(
+        { error, frontendName, tlsCertificateId },
+        "Failed to configure SSL binding"
       );
       throw error;
     }

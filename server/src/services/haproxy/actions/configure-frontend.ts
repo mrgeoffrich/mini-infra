@@ -115,13 +115,33 @@ export class ConfigureFrontend {
         "Backend exists, proceeding with frontend creation"
       );
 
+      // Check if SSL is enabled and certificate is available
+      const enableSsl = deploymentConfig.enableSsl;
+      const tlsCertificateId = deploymentConfig.tlsCertificateId;
+      const hasSslCertificate = enableSsl && tlsCertificateId && deploymentConfig.certificateStatus === "ACTIVE";
+
+      logger.info(
+        {
+          deploymentId: context.deploymentId,
+          enableSsl,
+          tlsCertificateId,
+          certificateStatus: deploymentConfig.certificateStatus,
+          hasSslCertificate,
+        },
+        "Checking SSL configuration for frontend"
+      );
+
       // Create or update HAProxy frontend
       const frontendName = await haproxyFrontendManager.createFrontendForDeployment(
         hostname,
         backendName,
         context.applicationName,
         context.environmentId,
-        this.haproxyClient
+        this.haproxyClient,
+        hasSslCertificate ? {
+          tlsCertificateId,
+          prisma,
+        } : undefined
       );
 
       logger.info(
@@ -130,6 +150,7 @@ export class ConfigureFrontend {
           frontendName,
           hostname,
           backendName,
+          hasSslCertificate,
         },
         "HAProxy frontend created successfully"
       );
@@ -147,6 +168,9 @@ export class ConfigureFrontend {
             frontendName,
             backendName,
             hostname,
+            useSSL: hasSslCertificate,
+            tlsCertificateId: hasSslCertificate ? tlsCertificateId : null,
+            sslBindPort: hasSslCertificate ? 443 : 443,
             status: "active",
             errorMessage: null,
           },
@@ -156,6 +180,7 @@ export class ConfigureFrontend {
           {
             deploymentId: context.deploymentId,
             frontendId: existingFrontend.id,
+            hasSslCertificate,
           },
           "Updated existing frontend record in database"
         );
@@ -169,7 +194,9 @@ export class ConfigureFrontend {
             hostname,
             bindPort: 80,
             bindAddress: "*",
-            useSSL: false,
+            useSSL: hasSslCertificate,
+            tlsCertificateId: hasSslCertificate ? tlsCertificateId : null,
+            sslBindPort: hasSslCertificate ? 443 : 443,
             status: "active",
           },
         });
@@ -178,6 +205,7 @@ export class ConfigureFrontend {
           {
             deploymentId: context.deploymentId,
             frontendName,
+            hasSslCertificate,
           },
           "Created frontend record in database"
         );
