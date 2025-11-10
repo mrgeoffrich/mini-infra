@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import FormData from 'form-data';
 import { loadbalancerLogger } from '../../lib/logger-factory';
 import DockerService from '../docker';
 
@@ -637,14 +638,22 @@ export class HAProxyDataPlaneClient {
   /**
    * Add bind to frontend
    */
-  async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
+  async addFrontendBind(frontendName: string, address: string, port: number, sslOptions?: { ssl?: boolean; ssl_certificate?: string }): Promise<void> {
     try {
       const version = await this.getVersion();
-      const bindData = {
+      const bindData: any = {
         name: `bind_${port}`,
         address,
         port
       };
+
+      // Add SSL options if provided
+      if (sslOptions?.ssl) {
+        bindData.ssl = true;
+        if (sslOptions.ssl_certificate) {
+          bindData.ssl_certificate = sslOptions.ssl_certificate;
+        }
+      }
 
       await this.axiosInstance.post(
         `/services/haproxy/configuration/frontends/${frontendName}/binds?version=${version}`,
@@ -652,7 +661,7 @@ export class HAProxyDataPlaneClient {
       );
 
       logger.info(
-        { frontendName, address, port, version },
+        { frontendName, address, port, ssl: sslOptions?.ssl, version },
         'Added bind to HAProxy frontend'
       );
     } catch (error) {
@@ -1149,18 +1158,23 @@ export class HAProxyDataPlaneClient {
     try {
       logger.info({ filename, forceReload }, 'Uploading SSL certificate via DataPlane API');
 
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file_upload', Buffer.from(certificatePem), {
+        filename: filename,
+        contentType: 'application/x-pem-file'
+      });
+
       // POST to storage/ssl_certificates endpoint
-      // HAProxy DataPlane API expects the certificate as plain text body
       await this.axiosInstance.post(
         `/services/haproxy/storage/ssl_certificates`,
-        certificatePem,
+        formData,
         {
           params: {
-            file_upload: filename,
             force_reload: forceReload.toString()
           },
           headers: {
-            'Content-Type': 'text/plain'
+            ...formData.getHeaders()
           }
         }
       );
@@ -1188,16 +1202,23 @@ export class HAProxyDataPlaneClient {
     try {
       logger.info({ filename, forceReload }, 'Updating SSL certificate via DataPlane API');
 
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file_upload', Buffer.from(certificatePem), {
+        filename: filename,
+        contentType: 'application/x-pem-file'
+      });
+
       // PUT to storage/ssl_certificates/{filename} endpoint
       await this.axiosInstance.put(
         `/services/haproxy/storage/ssl_certificates/${filename}`,
-        certificatePem,
+        formData,
         {
           params: {
             force_reload: forceReload.toString()
           },
           headers: {
-            'Content-Type': 'text/plain'
+            ...formData.getHeaders()
           }
         }
       );
@@ -1404,8 +1425,8 @@ export class RetryableHAProxyClient extends HAProxyDataPlaneClient {
   /**
    * Override addFrontendBind with retry logic
    */
-  async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
-    return this.withRetry(() => super.addFrontendBind(frontendName, address, port));
+  async addFrontendBind(frontendName: string, address: string, port: number, sslOptions?: { ssl?: boolean; ssl_certificate?: string }): Promise<void> {
+    return this.withRetry(() => super.addFrontendBind(frontendName, address, port, sslOptions));
   }
 }
 

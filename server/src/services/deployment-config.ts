@@ -94,6 +94,7 @@ export const createDeploymentConfigSchema = z.object({
       "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
     )
     .optional(),
+  enableSsl: z.boolean().optional(),
   environmentId: z.string().min(1, "Environment ID is required"),
 });
 
@@ -122,6 +123,7 @@ export const updateDeploymentConfigSchema = z.object({
       "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
     )
     .optional(),
+  enableSsl: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -279,6 +281,7 @@ export class DeploymentConfigService extends ConfigurationService {
           rollbackConfig: request.rollbackConfig as any,
           listeningPort: request.listeningPort,
           hostname: request.hostname,
+          enableSsl: request.enableSsl || false,
           environmentId: request.environmentId,
           isActive: true,
         },
@@ -366,6 +369,8 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.listeningPort = request.listeningPort;
       if (request.hostname !== undefined)
         updateData.hostname = request.hostname;
+      if (request.enableSsl !== undefined)
+        updateData.enableSsl = request.enableSsl;
       if (request.isActive !== undefined)
         updateData.isActive = request.isActive;
 
@@ -1476,6 +1481,9 @@ export class DeploymentConfigService extends ConfigurationService {
       hostname: config.hostname,
       isActive: config.isActive,
       environmentId: config.environmentId,
+      enableSsl: config.enableSsl,
+      tlsCertificateId: config.tlsCertificateId,
+      certificateStatus: config.certificateStatus,
       createdAt: config.createdAt.toISOString(),
       updatedAt: config.updatedAt.toISOString(),
     };

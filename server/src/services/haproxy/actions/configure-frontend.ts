@@ -118,7 +118,7 @@ export class ConfigureFrontend {
       // Check if SSL is enabled and certificate is available
       const enableSsl = deploymentConfig.enableSsl;
       const tlsCertificateId = deploymentConfig.tlsCertificateId;
-      const hasSslCertificate = enableSsl && tlsCertificateId && deploymentConfig.certificateStatus === "ACTIVE";
+      const hasSslCertificate = Boolean(enableSsl && tlsCertificateId && deploymentConfig.certificateStatus === "ACTIVE");
 
       logger.info(
         {
@@ -139,7 +139,7 @@ export class ConfigureFrontend {
         context.environmentId,
         this.haproxyClient,
         hasSslCertificate ? {
-          tlsCertificateId,
+          tlsCertificateId: tlsCertificateId || undefined,
           prisma,
         } : undefined
       );

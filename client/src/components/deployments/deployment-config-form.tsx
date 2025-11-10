@@ -43,7 +43,7 @@ import {
   useUpdateDeploymentConfig,
 } from "@/hooks/use-deployment-configs";
 import { useEnvironments } from "@/hooks/use-environments";
-import { deploymentConfigSchema } from "./schemas";
+import { deploymentConfigSchema, type DeploymentConfigFormData } from "./schemas";
 import {
   IconAlertCircle,
   IconLoader2,
@@ -128,36 +128,7 @@ export function DeploymentConfigForm({
 
 
 
-  const onSubmit = async (data: {
-    environmentId: string;
-    applicationName: string;
-    dockerImage: string;
-    dockerTag: string;
-    dockerRegistry?: string;
-    hostname?: string;
-    listeningPort?: number;
-    containerConfig: {
-      ports: Array<{ containerPort: number; hostPort?: number; protocol: "tcp" | "udp" }>;
-      volumes: Array<{ hostPath: string; containerPath: string; mode?: "rw" | "ro" }>;
-      environment: Array<{ name: string; value: string }>;
-      labels: Record<string, string>;
-      networks: string[];
-    };
-    healthCheckConfig: {
-      endpoint: string;
-      method: "GET" | "POST";
-      expectedStatus: number[];
-      responseValidation?: string;
-      timeout: number;
-      retries: number;
-      interval: number;
-    };
-    rollbackConfig: {
-      enabled: boolean;
-      maxWaitTime: number;
-      keepOldContainer: boolean;
-    };
-  }) => {
+  const onSubmit = async (data: DeploymentConfigFormData) => {
     setSubmitError(null);
     try {
       // Combine docker image and tag for backend
@@ -496,23 +467,22 @@ export function DeploymentConfigForm({
                             control={form.control}
                             name="enableSsl"
                             render={({ field }) => (
-                              <div className="flex items-center space-x-2 p-4 border rounded-lg">
-                                <input
-                                  type="checkbox"
-                                  id="enableSsl"
-                                  checked={field.value || false}
-                                  onChange={(e) => field.onChange(e.target.checked)}
-                                  className="h-4 w-4 rounded border-gray-300"
-                                />
-                                <div className="flex-1">
-                                  <label htmlFor="enableSsl" className="font-medium cursor-pointer">
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">
                                     Enable SSL/TLS
-                                  </label>
-                                  <p className="text-sm text-muted-foreground">
+                                  </FormLabel>
+                                  <FormDescription>
                                     Automatically provision and manage SSL certificate for this hostname
-                                  </p>
+                                  </FormDescription>
                                 </div>
-                              </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </FormItem>
                             )}
                           />
                         )}

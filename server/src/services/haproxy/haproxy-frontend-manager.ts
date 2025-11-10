@@ -498,6 +498,9 @@ export class HAProxyFrontendManager {
         certificate.keyVaultCertificateName
       );
 
+      // Combine certificate and private key for HAProxy
+      const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
+
       // Step 4: Deploy certificate to HAProxy
       const certFileName = `${certificate.keyVaultCertificateName}.pem`;
 
@@ -514,10 +517,10 @@ export class HAProxyFrontendManager {
 
       if (certExists) {
         logger.info({ certFileName }, "Certificate already exists in HAProxy, updating");
-        await haproxyClient.updateSSLCertificate(certFileName, certData.combinedPem, false);
+        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
       } else {
         logger.info({ certFileName }, "Uploading new certificate to HAProxy");
-        await haproxyClient.uploadSSLCertificate(certFileName, certData.combinedPem, false);
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
       }
 
       // Step 5: Add SSL binding to frontend (port 443)

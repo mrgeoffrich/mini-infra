@@ -104,7 +104,7 @@ export class CertificateLifecycleManager {
           status: "ACTIVE",
           autoRenew: true,
           renewalDaysBeforeExpiry: 30,
-          haproxyFrontends: JSON.stringify([]),
+          haproxyFrontendNames: JSON.stringify([]),
           createdBy: userId,
         },
       });
