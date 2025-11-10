@@ -36,7 +36,16 @@ export default function TlsSettingsPage() {
     useTestTlsConnectivity();
 
   const form = useForm({
-    defaultValues: settings,
+    defaultValues: {
+      key_vault_url: "",
+      key_vault_tenant_id: "",
+      key_vault_client_id: "",
+      key_vault_client_secret: "",
+      default_acme_provider: "letsencrypt",
+      default_acme_email: "",
+      renewal_check_cron: "0 2 * * *",
+      renewal_days_before_expiry: "30",
+    },
   });
 
   // Update form when settings load
@@ -182,13 +191,13 @@ export default function TlsSettingsPage() {
               <div>
                 <Label>Provider</Label>
                 <Select
-                  value={form.watch("default_acme_provider")}
+                  value={form.watch("default_acme_provider") || "letsencrypt"}
                   onValueChange={(value) =>
                     form.setValue("default_acme_provider", value)
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Select ACME provider" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="letsencrypt">

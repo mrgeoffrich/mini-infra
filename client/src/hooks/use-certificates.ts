@@ -52,7 +52,7 @@ async function createCertificate(
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to create certificate");
+    throw new Error(errorData.message || errorData.error || "Failed to create certificate");
   }
 
   const data = await response.json();
@@ -70,7 +70,7 @@ async function renewCertificate(id: string): Promise<TlsCertificate> {
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to renew certificate");
+    throw new Error(errorData.message || errorData.error || "Failed to renew certificate");
   }
 
   const data = await response.json();
@@ -88,7 +88,7 @@ async function revokeCertificate(id: string): Promise<void> {
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to revoke certificate");
+    throw new Error(errorData.message || errorData.error || "Failed to revoke certificate");
   }
 }
 

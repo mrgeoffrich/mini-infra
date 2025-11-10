@@ -53,7 +53,12 @@ async function testTlsConnectivity(
   }
 
   const data = await response.json();
-  return data;
+  // Backend returns: { success: boolean, data: { isValid: boolean, error?: string }, message?: string }
+  // Transform to frontend format: { success: boolean, error?: string }
+  return {
+    success: data.success,
+    error: data.data?.error || data.message || undefined,
+  };
 }
 
 export function useTlsSettings() {

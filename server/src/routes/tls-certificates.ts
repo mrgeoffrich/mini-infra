@@ -33,6 +33,19 @@ const createCertificateSchema = z.object({
 });
 
 /**
+ * Helper to parse certificate JSON fields from database
+ */
+function parseCertificateData(certificate: any) {
+  return {
+    ...certificate,
+    domains: typeof certificate.domains === "string" ? JSON.parse(certificate.domains) : certificate.domains,
+    haproxyFrontends: certificate.haproxyFrontends && typeof certificate.haproxyFrontends === "string"
+      ? JSON.parse(certificate.haproxyFrontends)
+      : certificate.haproxyFrontends || [],
+  };
+}
+
+/**
  * Helper to initialize certificate lifecycle manager
  */
 async function initializeLifecycleManager(): Promise<CertificateLifecycleManager> {
@@ -134,9 +147,12 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
       },
     });
 
+    // Parse JSON fields for each certificate
+    const parsedCertificates = certificates.map(parseCertificateData);
+
     res.json({
       success: true,
-      data: certificates,
+      data: parsedCertificates,
     });
   } catch (error) {
     logger.error({ error }, "Failed to list certificates");
@@ -173,9 +189,12 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
       });
     }
 
+    // Parse JSON fields
+    const parsedCertificate = parseCertificateData(certificate);
+
     res.json({
       success: true,
-      data: certificate,
+      data: parsedCertificate,
     });
   } catch (error) {
     logger.error({ error, certificateId: req.params.id }, "Failed to get certificate");
