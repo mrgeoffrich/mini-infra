@@ -133,6 +133,9 @@ import postgresServerDatabasesRoutes from "./routes/postgres-server/databases";
 import postgresServerUsersRoutes from "./routes/postgres-server/users";
 import postgresServerGrantsRoutes from "./routes/postgres-server/grants";
 import postgresServerWorkflowsRoutes from "./routes/postgres-server/workflows";
+import tlsCertificatesRoutes from "./routes/tls-certificates";
+import tlsRenewalsRoutes from "./routes/tls-renewals";
+import tlsSettingsRoutes from "./routes/tls-settings";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -169,6 +172,9 @@ app.use("/api/postgres-server/servers/:serverId/databases", postgresServerDataba
 app.use("/api/postgres-server/servers/:serverId/users", postgresServerUsersRoutes);
 app.use("/api/postgres-server/grants", postgresServerGrantsRoutes);
 app.use("/api/postgres-server/workflows", postgresServerWorkflowsRoutes);
+app.use("/api/tls", tlsSettingsRoutes);
+app.use("/api/tls/certificates", tlsCertificatesRoutes);
+app.use("/api/tls/renewals", tlsRenewalsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {

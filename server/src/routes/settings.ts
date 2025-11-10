@@ -105,6 +105,7 @@ const settingsQuerySchema = z.object({
       "system",
       "deployments",
       "haproxy",
+      "tls",
     ])
     .optional(),
   isActive: z
@@ -156,6 +157,7 @@ const createSettingSchema = z.object({
     "system",
     "deployments",
     "haproxy",
+    "tls",
   ]),
   key: z.string().min(1, "Key is required").max(255),
   value: z.string().min(1, "Value is required"),
@@ -183,6 +185,7 @@ const connectivityQuerySchema = z.object({
       "system",
       "deployments",
       "haproxy",
+      "tls",
     ])
     .optional(),
   status: z
@@ -683,11 +686,12 @@ router.post("/validate/:service", requireSessionOrApiKey, (async (
         "system",
         "deployments",
         "haproxy",
+        "tls",
       ].includes(service)
     ) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy`,
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls`,
         timestamp: new Date().toISOString(),
         requestId,
       });

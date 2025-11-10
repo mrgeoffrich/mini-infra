@@ -66,6 +66,7 @@ interface DeploymentFormData {
   dockerTag: string;
   dockerRegistry: string;
   hostname?: string;
+  enableSsl?: boolean;
   environmentId: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
@@ -109,6 +110,7 @@ export function NewDeploymentConfigPage() {
       dockerTag: "latest",
       dockerRegistry: "",
       hostname: "",
+      enableSsl: false,
       environmentId: "",
       containerConfig: {
         ports: [],
@@ -145,6 +147,7 @@ export function NewDeploymentConfigPage() {
         dockerTag: deploymentConfig.dockerImage?.split(":")[1] || "latest",
         dockerRegistry: deploymentConfig.dockerRegistry || "",
         hostname: deploymentConfig.hostname || "",
+        enableSsl: deploymentConfig.enableSsl || false,
         environmentId: deploymentConfig.environmentId || "",
         containerConfig: {
           ports: deploymentConfig.containerConfig?.ports || [],
@@ -190,6 +193,7 @@ export function NewDeploymentConfigPage() {
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -206,6 +210,7 @@ export function NewDeploymentConfigPage() {
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           environmentId: data.environmentId,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
@@ -530,6 +535,31 @@ export function NewDeploymentConfigPage() {
                     )}
                   />
 
+                  {form.watch("hostname") && (
+                    <FormField
+                      control={form.control}
+                      name="enableSsl"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              Enable SSL/TLS
+                            </FormLabel>
+                            <FormDescription>
+                              Automatically provision and manage SSL certificate for this hostname
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
                   <Alert>
                     <IconInfoCircle className="h-4 w-4" />
                     <AlertDescription>
@@ -552,6 +582,11 @@ export function NewDeploymentConfigPage() {
                             Hostnames are used for traffic routing through
                             Cloudflare tunnels
                           </li>
+                          {form.watch("enableSsl") && (
+                            <li className="text-green-600 font-medium">
+                              SSL certificate will be automatically provisioned for this hostname
+                            </li>
+                          )}
                         </ul>
                       </div>
                     </AlertDescription>

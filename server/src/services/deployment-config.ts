@@ -94,6 +94,7 @@ export const createDeploymentConfigSchema = z.object({
       "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
     )
     .optional(),
+  enableSsl: z.boolean().optional(),
   environmentId: z.string().min(1, "Environment ID is required"),
 });
 
@@ -122,6 +123,7 @@ export const updateDeploymentConfigSchema = z.object({
       "Hostname must be a valid domain name (e.g., example.com, api.example.com)",
     )
     .optional(),
+  enableSsl: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -268,6 +270,11 @@ export class DeploymentConfigService extends ConfigurationService {
         );
       }
 
+      // Auto-adjust listeningPort based on SSL setting if not explicitly provided
+      const listeningPort = request.listeningPort !== undefined
+        ? request.listeningPort
+        : (request.enableSsl ? 443 : 80);
+
       // Create deployment configuration
       const created = await this.prisma.deploymentConfiguration.create({
         data: {
@@ -277,8 +284,9 @@ export class DeploymentConfigService extends ConfigurationService {
           containerConfig: request.containerConfig as any,
           healthCheckConfig: request.healthCheckConfig as any,
           rollbackConfig: request.rollbackConfig as any,
-          listeningPort: request.listeningPort,
+          listeningPort: listeningPort,
           hostname: request.hostname,
+          enableSsl: request.enableSsl || false,
           environmentId: request.environmentId,
           isActive: true,
         },
@@ -366,6 +374,13 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.listeningPort = request.listeningPort;
       if (request.hostname !== undefined)
         updateData.hostname = request.hostname;
+      if (request.enableSsl !== undefined) {
+        updateData.enableSsl = request.enableSsl;
+        // Auto-adjust listeningPort when SSL is toggled (unless explicitly provided)
+        if (request.listeningPort === undefined) {
+          updateData.listeningPort = request.enableSsl ? 443 : 80;
+        }
+      }
       if (request.isActive !== undefined)
         updateData.isActive = request.isActive;
 
@@ -1476,6 +1491,9 @@ export class DeploymentConfigService extends ConfigurationService {
       hostname: config.hostname,
       isActive: config.isActive,
       environmentId: config.environmentId,
+      enableSsl: config.enableSsl,
+      tlsCertificateId: config.tlsCertificateId,
+      certificateStatus: config.certificateStatus,
       createdAt: config.createdAt.toISOString(),
       updatedAt: config.updatedAt.toISOString(),
     };

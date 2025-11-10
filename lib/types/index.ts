@@ -38,6 +38,9 @@ export * from "./self-backup";
 // Registry types
 export * from "./registry";
 
+// TLS types
+export * from "./tls";
+
 // API response types
 export * from "./api";
 

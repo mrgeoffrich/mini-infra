@@ -205,6 +205,14 @@ export function DeploymentConfigDetailsPage() {
                 <p className="font-medium">{config.hostname}</p>
               </div>
             )}
+            {config.hostname && (
+              <div>
+                <p className="text-sm text-muted-foreground">SSL/TLS</p>
+                <Badge variant={config.enableSsl ? 'default' : 'secondary'}>
+                  {config.enableSsl ? 'Enabled' : 'Disabled'}
+                </Badge>
+              </div>
+            )}
             {config.listeningPort && (
               <div>
                 <p className="text-sm text-muted-foreground">Listening Port</p>

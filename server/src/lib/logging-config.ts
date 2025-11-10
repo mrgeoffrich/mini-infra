@@ -27,6 +27,7 @@ const environmentLogConfigSchema = z.object({
   deployments: loggerConfigSchema,
   loadbalancer: loggerConfigSchema,
   "self-backup": loggerConfigSchema,
+  tls: loggerConfigSchema,
 });
 
 const openobserveConfigSchema = z.object({
@@ -77,6 +78,7 @@ export function loadLoggingConfig(): LoggingConfig {
         deployments: { level: "debug" },
         loadbalancer: { level: "debug" },
         "self-backup": { level: "info" },
+        tls: { level: "debug" },
       },
       production: {
         app: { level: "info" },
@@ -87,6 +89,7 @@ export function loadLoggingConfig(): LoggingConfig {
         deployments: { level: "info" },
         loadbalancer: { level: "info" },
         "self-backup": { level: "info" },
+        tls: { level: "info" },
       },
       test: {
         app: { level: "silent" },
@@ -97,6 +100,7 @@ export function loadLoggingConfig(): LoggingConfig {
         deployments: { level: "silent" },
         loadbalancer: { level: "silent" },
         "self-backup": { level: "silent" },
+        tls: { level: "silent" },
       },
       redactionPaths: [
         "password",

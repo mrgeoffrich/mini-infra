@@ -43,7 +43,7 @@ import {
   useUpdateDeploymentConfig,
 } from "@/hooks/use-deployment-configs";
 import { useEnvironments } from "@/hooks/use-environments";
-import { deploymentConfigSchema } from "./schemas";
+import { deploymentConfigSchema, type DeploymentConfigFormData } from "./schemas";
 import {
   IconAlertCircle,
   IconLoader2,
@@ -95,6 +95,7 @@ export function DeploymentConfigForm({
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
       hostname: deploymentConfig?.hostname || "",
+      enableSsl: deploymentConfig?.enableSsl || false,
       containerConfig: {
         ports: deploymentConfig?.containerConfig?.ports || [],
         volumes: deploymentConfig?.containerConfig?.volumes || [],
@@ -127,36 +128,7 @@ export function DeploymentConfigForm({
 
 
 
-  const onSubmit = async (data: {
-    environmentId: string;
-    applicationName: string;
-    dockerImage: string;
-    dockerTag: string;
-    dockerRegistry?: string;
-    hostname?: string;
-    listeningPort?: number;
-    containerConfig: {
-      ports: Array<{ containerPort: number; hostPort?: number; protocol: "tcp" | "udp" }>;
-      volumes: Array<{ hostPath: string; containerPath: string; mode?: "rw" | "ro" }>;
-      environment: Array<{ name: string; value: string }>;
-      labels: Record<string, string>;
-      networks: string[];
-    };
-    healthCheckConfig: {
-      endpoint: string;
-      method: "GET" | "POST";
-      expectedStatus: number[];
-      responseValidation?: string;
-      timeout: number;
-      retries: number;
-      interval: number;
-    };
-    rollbackConfig: {
-      enabled: boolean;
-      maxWaitTime: number;
-      keepOldContainer: boolean;
-    };
-  }) => {
+  const onSubmit = async (data: DeploymentConfigFormData) => {
     setSubmitError(null);
     try {
       // Combine docker image and tag for backend
@@ -171,6 +143,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
           rollbackConfig: data.rollbackConfig,
@@ -187,6 +160,7 @@ export function DeploymentConfigForm({
           dockerImage: dockerImageWithTag,
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
+          enableSsl: data.enableSsl,
           environmentId: data.environmentId!,
           containerConfig: data.containerConfig,
           healthCheckConfig: data.healthCheckConfig,
@@ -488,6 +462,31 @@ export function DeploymentConfigForm({
                           )}
                         />
 
+                        {form.watch("hostname") && (
+                          <FormField
+                            control={form.control}
+                            name="enableSsl"
+                            render={({ field }) => (
+                              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                                <div className="space-y-0.5">
+                                  <FormLabel className="text-base">
+                                    Enable SSL/TLS
+                                  </FormLabel>
+                                  <FormDescription>
+                                    Automatically provision and manage SSL certificate for this hostname
+                                  </FormDescription>
+                                </div>
+                                <FormControl>
+                                  <Switch
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        )}
+
                         <Alert>
                           <IconInfoCircle className="h-4 w-4" />
                           <AlertDescription>
@@ -498,6 +497,9 @@ export function DeploymentConfigForm({
                                 <li>The system will check for conflicts with existing deployments and Cloudflare tunnels</li>
                                 <li>You can leave this field empty if your application doesn't need external access</li>
                                 <li>Hostnames are used for traffic routing through Cloudflare tunnels</li>
+                                {form.watch("enableSsl") && (
+                                  <li className="text-green-600 font-medium">SSL certificate will be automatically provisioned for this hostname</li>
+                                )}
                               </ul>
                             </div>
                           </AlertDescription>

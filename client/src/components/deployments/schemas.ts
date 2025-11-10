@@ -92,32 +92,6 @@ export const healthCheckConfigSchema = z.object({
     .default(30000),
 });
 
-// HAProxy configuration schema
-export const haproxyConfigSchema = z.object({
-  backendName: z
-    .string()
-    .min(1, "Backend name is required")
-    .max(255, "Backend name must be less than 255 characters")
-    .regex(
-      /^[a-z0-9-]+$/,
-      "Backend name can only contain lowercase letters, numbers, and hyphens",
-    ),
-  frontendName: z
-    .string()
-    .min(1, "Frontend name is required")
-    .max(255, "Frontend name must be less than 255 characters")
-    .regex(
-      /^[a-z0-9-]+$/,
-      "Frontend name can only contain lowercase letters, numbers, and hyphens",
-    ),
-  hostRule: z
-    .string()
-    .min(1, "Host rule is required")
-    .max(500, "Rule must be less than 500 characters"),
-  pathRule: z.string().optional(),
-  ssl: z.boolean().default(false),
-});
-
 // Rollback configuration schema
 export const rollbackConfigSchema = z.object({
   enabled: z.boolean().default(true),
@@ -168,6 +142,7 @@ export const deploymentConfigSchema = z.object({
     .max(500, "Docker registry must be less than 500 characters")
     .optional(),
   hostname: hostnameSchema,
+  enableSsl: z.boolean().optional().default(false),
   listeningPort: z
     .number()
     .int()
@@ -176,7 +151,6 @@ export const deploymentConfigSchema = z.object({
     .optional(),
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
-  haproxyConfig: haproxyConfigSchema,
   rollbackConfig: rollbackConfigSchema,
 });
 
@@ -186,7 +160,6 @@ export type DeploymentVolumeFormData = z.infer<typeof deploymentVolumeSchema>;
 export type ContainerEnvVarFormData = z.infer<typeof containerEnvVarSchema>;
 export type ContainerConfigFormData = z.infer<typeof containerConfigSchema>;
 export type HealthCheckConfigFormData = z.infer<typeof healthCheckConfigSchema>;
-export type HAProxyConfigFormData = z.infer<typeof haproxyConfigSchema>;
 export type RollbackConfigFormData = z.infer<typeof rollbackConfigSchema>;
 export type DeploymentConfigFormData = z.infer<typeof deploymentConfigSchema>;
 

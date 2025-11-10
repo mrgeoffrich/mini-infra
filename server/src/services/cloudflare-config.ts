@@ -1106,6 +1106,225 @@ export class CloudflareConfigService extends ConfigurationService {
   }
 
   /**
+   * Get Cloudflare zone ID by domain name
+   * @param domain - Domain name (e.g., "example.com")
+   * @returns Zone ID
+   */
+  async getZoneId(domain: string): Promise<string> {
+    // Check circuit breaker
+    if (this.isCircuitBreakerOpen()) {
+      throw new Error("Circuit breaker is open, cannot query Cloudflare API");
+    }
+
+    try {
+      const apiToken = await this.getApiToken();
+
+      if (!apiToken) {
+        throw new Error("Cloudflare API token not configured");
+      }
+
+      const cf = new Cloudflare({
+        apiToken,
+      });
+
+      // List zones and find matching domain
+      const zonesResponse = (await Promise.race([
+        cf.zones.list({ name: domain }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Get zone API request timeout")),
+            CloudflareConfigService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as any;
+
+      const zones = zonesResponse.result || [];
+
+      if (zones.length === 0) {
+        throw new Error(`No Cloudflare zone found for domain: ${domain}`);
+      }
+
+      // Record success for circuit breaker
+      this.recordSuccess();
+
+      servicesLogger().info(
+        { domain, zoneId: zones[0].id },
+        "Retrieved Cloudflare zone ID",
+      );
+
+      return zones[0].id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
+
+      servicesLogger().error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          errorCode,
+          domain,
+        }),
+        "Failed to get Cloudflare zone ID",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Create DNS record in Cloudflare
+   * @param params - DNS record parameters
+   * @returns DNS record ID
+   */
+  async createDnsRecord(params: {
+    zoneId: string;
+    type: string;
+    name: string;
+    content: string;
+    ttl: number;
+  }): Promise<string> {
+    // Check circuit breaker
+    if (this.isCircuitBreakerOpen()) {
+      throw new Error("Circuit breaker is open, cannot create DNS record");
+    }
+
+    try {
+      const apiToken = await this.getApiToken();
+
+      if (!apiToken) {
+        throw new Error("Cloudflare API token not configured");
+      }
+
+      const cf = new Cloudflare({
+        apiToken,
+      });
+
+      // Create DNS record
+      const recordResponse = (await Promise.race([
+        cf.dns.records.create({
+          zone_id: params.zoneId,
+          type: params.type as any,
+          name: params.name,
+          content: params.content,
+          ttl: params.ttl,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Create DNS record API request timeout")),
+            CloudflareConfigService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as any;
+
+      // Record success for circuit breaker
+      this.recordSuccess();
+
+      servicesLogger().info(
+        this.redactSensitiveData({
+          zoneId: params.zoneId,
+          recordId: recordResponse.id,
+          type: params.type,
+          name: params.name,
+        }),
+        "Created DNS record in Cloudflare",
+      );
+
+      return recordResponse.id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
+
+      servicesLogger().error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          errorCode,
+          zoneId: params.zoneId,
+          type: params.type,
+          name: params.name,
+        }),
+        "Failed to create DNS record in Cloudflare",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * Delete DNS record from Cloudflare
+   * @param zoneId - Zone ID
+   * @param recordId - DNS record ID to delete
+   */
+  async deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
+    // Check circuit breaker
+    if (this.isCircuitBreakerOpen()) {
+      throw new Error("Circuit breaker is open, cannot delete DNS record");
+    }
+
+    try {
+      const apiToken = await this.getApiToken();
+
+      if (!apiToken) {
+        throw new Error("Cloudflare API token not configured");
+      }
+
+      const cf = new Cloudflare({
+        apiToken,
+      });
+
+      // Delete DNS record
+      await Promise.race([
+        cf.dns.records.delete(recordId, { zone_id: zoneId }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Delete DNS record API request timeout")),
+            CloudflareConfigService.TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      // Record success for circuit breaker
+      this.recordSuccess();
+
+      servicesLogger().info(
+        { zoneId, recordId },
+        "Deleted DNS record from Cloudflare",
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      // Parse error and record failure if retriable
+      const { errorCode, isRetriable } = this.parseApiError(error);
+      if (isRetriable) {
+        this.recordFailure(errorCode);
+      }
+
+      servicesLogger().error(
+        this.redactSensitiveData({
+          error: errorMessage,
+          errorCode,
+          zoneId,
+          recordId,
+        }),
+        "Failed to delete DNS record from Cloudflare",
+      );
+
+      throw error;
+    }
+  }
+
+  /**
    * Remove API token and account ID
    * @param userId - User ID who is removing the configuration
    */

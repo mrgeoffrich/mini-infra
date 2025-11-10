@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import FormData from 'form-data';
 import { loadbalancerLogger } from '../../lib/logger-factory';
 import DockerService from '../docker';
 
@@ -637,14 +638,22 @@ export class HAProxyDataPlaneClient {
   /**
    * Add bind to frontend
    */
-  async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
+  async addFrontendBind(frontendName: string, address: string, port: number, sslOptions?: { ssl?: boolean; ssl_certificate?: string }): Promise<void> {
     try {
       const version = await this.getVersion();
-      const bindData = {
+      const bindData: any = {
         name: `bind_${port}`,
         address,
         port
       };
+
+      // Add SSL options if provided
+      if (sslOptions?.ssl) {
+        bindData.ssl = true;
+        if (sslOptions.ssl_certificate) {
+          bindData.ssl_certificate = sslOptions.ssl_certificate;
+        }
+      }
 
       await this.axiosInstance.post(
         `/services/haproxy/configuration/frontends/${frontendName}/binds?version=${version}`,
@@ -652,7 +661,7 @@ export class HAProxyDataPlaneClient {
       );
 
       logger.info(
-        { frontendName, address, port, version },
+        { frontendName, address, port, ssl: sslOptions?.ssl, version },
         'Added bind to HAProxy frontend'
       );
     } catch (error) {
@@ -1128,6 +1137,152 @@ export class HAProxyDataPlaneClient {
 
     throw lastError!;
   }
+
+  // ====================
+  // SSL Certificate Management
+  // ====================
+
+  /**
+   * Upload a new SSL certificate to HAProxy storage
+   *
+   * @param filename - Certificate filename (e.g., "example.com.pem")
+   * @param certificatePem - Combined PEM content (certificate + private key)
+   * @param forceReload - Whether to force HAProxy reload (default: false, uses Runtime API)
+   * @returns Success indicator
+   */
+  async uploadSSLCertificate(
+    filename: string,
+    certificatePem: string,
+    forceReload: boolean = false
+  ): Promise<void> {
+    try {
+      logger.info({ filename, forceReload }, 'Uploading SSL certificate via DataPlane API');
+
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file_upload', Buffer.from(certificatePem), {
+        filename: filename,
+        contentType: 'application/x-pem-file'
+      });
+
+      // POST to storage/ssl_certificates endpoint
+      await this.axiosInstance.post(
+        `/services/haproxy/storage/ssl_certificates`,
+        formData,
+        {
+          params: {
+            force_reload: forceReload.toString()
+          },
+          headers: {
+            ...formData.getHeaders()
+          }
+        }
+      );
+
+      logger.info({ filename }, 'SSL certificate uploaded successfully');
+    } catch (error) {
+      this.handleApiError(error, 'upload SSL certificate', { filename });
+      throw error;
+    }
+  }
+
+  /**
+   * Update an existing SSL certificate in HAProxy storage
+   *
+   * @param filename - Certificate filename (e.g., "example.com.pem")
+   * @param certificatePem - Combined PEM content (certificate + private key)
+   * @param forceReload - Whether to force HAProxy reload (default: false, uses Runtime API)
+   * @returns Success indicator
+   */
+  async updateSSLCertificate(
+    filename: string,
+    certificatePem: string,
+    forceReload: boolean = false
+  ): Promise<void> {
+    try {
+      logger.info({ filename, forceReload }, 'Updating SSL certificate via DataPlane API');
+
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file_upload', Buffer.from(certificatePem), {
+        filename: filename,
+        contentType: 'application/x-pem-file'
+      });
+
+      // PUT to storage/ssl_certificates/{filename} endpoint
+      await this.axiosInstance.put(
+        `/services/haproxy/storage/ssl_certificates/${filename}`,
+        formData,
+        {
+          params: {
+            force_reload: forceReload.toString()
+          },
+          headers: {
+            ...formData.getHeaders()
+          }
+        }
+      );
+
+      logger.info({ filename }, 'SSL certificate updated successfully');
+    } catch (error) {
+      this.handleApiError(error, 'update SSL certificate', { filename });
+      throw error;
+    }
+  }
+
+  /**
+   * Delete an SSL certificate from HAProxy storage
+   *
+   * @param filename - Certificate filename (e.g., "example.com.pem")
+   * @param forceReload - Whether to force HAProxy reload (default: true for deletions)
+   * @returns Success indicator
+   */
+  async deleteSSLCertificate(
+    filename: string,
+    forceReload: boolean = true
+  ): Promise<void> {
+    try {
+      logger.info({ filename, forceReload }, 'Deleting SSL certificate via DataPlane API');
+
+      // DELETE storage/ssl_certificates/{filename} endpoint
+      await this.axiosInstance.delete(
+        `/services/haproxy/storage/ssl_certificates/${filename}`,
+        {
+          params: {
+            force_reload: forceReload.toString()
+          }
+        }
+      );
+
+      logger.info({ filename }, 'SSL certificate deleted successfully');
+    } catch (error) {
+      this.handleApiError(error, 'delete SSL certificate', { filename });
+      throw error;
+    }
+  }
+
+  /**
+   * List all SSL certificates in HAProxy storage
+   *
+   * @returns Array of certificate filenames
+   */
+  async listSSLCertificates(): Promise<string[]> {
+    try {
+      logger.debug('Listing SSL certificates via DataPlane API');
+
+      const response = await this.axiosInstance.get(
+        `/services/haproxy/storage/ssl_certificates`
+      );
+
+      const certificates = response.data?.data || [];
+      logger.debug({ count: certificates.length }, 'SSL certificates listed');
+
+      return certificates;
+    } catch (error) {
+      this.handleApiError(error, 'list SSL certificates', {});
+      return [];
+    }
+  }
 }
 
 // ====================
@@ -1270,8 +1425,8 @@ export class RetryableHAProxyClient extends HAProxyDataPlaneClient {
   /**
    * Override addFrontendBind with retry logic
    */
-  async addFrontendBind(frontendName: string, address: string, port: number): Promise<void> {
-    return this.withRetry(() => super.addFrontendBind(frontendName, address, port));
+  async addFrontendBind(frontendName: string, address: string, port: number, sslOptions?: { ssl?: boolean; ssl_certificate?: string }): Promise<void> {
+    return this.withRetry(() => super.addFrontendBind(frontendName, address, port, sslOptions));
   }
 }
 

@@ -95,6 +95,9 @@ export interface DeploymentConfiguration {
   hostname: string | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
+  enableSsl: boolean; // Enable SSL/TLS for this deployment
+  tlsCertificateId: string | null; // Associated TLS certificate
+  certificateStatus: string | null; // Certificate provisioning status
   createdAt: Date;
   updatedAt: Date;
 }
@@ -112,6 +115,9 @@ export interface DeploymentConfigurationInfo {
   hostname: string | null;
   isActive: boolean;
   environmentId: string; // Required environment assignment (immutable)
+  enableSsl: boolean; // Enable SSL/TLS for this deployment
+  tlsCertificateId: string | null; // Associated TLS certificate
+  certificateStatus: string | null; // Certificate provisioning status
   createdAt: string;
   updatedAt: string;
 }
@@ -234,6 +240,7 @@ export interface CreateDeploymentConfigRequest {
   listeningPort?: number;
   hostname?: string;
   environmentId: string; // Required environment assignment
+  enableSsl?: boolean; // Enable SSL/TLS for this deployment
 }
 
 export interface UpdateDeploymentConfigRequest {
@@ -246,6 +253,7 @@ export interface UpdateDeploymentConfigRequest {
   listeningPort?: number;
   hostname?: string;
   isActive?: boolean;
+  enableSsl?: boolean; // Enable SSL/TLS for this deployment
 }
 
 export interface TriggerDeploymentRequest {
@@ -468,6 +476,7 @@ export interface HAProxyFrontendInfo {
   bindPort: number;
   bindAddress: string;
   useSSL: boolean;
+  sslBindPort: number;
   status: 'active' | 'pending' | 'failed' | 'removed';
   errorMessage: string | null;
   createdAt: string;
