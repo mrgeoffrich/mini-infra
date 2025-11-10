@@ -2,13 +2,14 @@
  * Certificate Distributor Service
  *
  * Distributes certificates from Azure Key Vault to HAProxy containers.
- * Handles certificate deployment with zero-downtime updates using HAProxy Runtime API.
+ * Handles certificate deployment with zero-downtime updates using HAProxy DataPlane API.
  */
 
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
 import { AzureKeyVaultCertificateStore } from "./azure-keyvault-certificate-store";
 import { HAProxyService } from "../haproxy/haproxy-service";
+import { HAProxyDataPlaneClient } from "../haproxy/haproxy-dataplane-client";
 import { DockerExecutorService } from "../docker-executor";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -20,7 +21,7 @@ import Dockerode from "dockerode";
 export interface DeploymentResult {
   success: boolean;
   certificatePath?: string;
-  method: "runtime-api" | "volume-mount-reload";
+  method: "dataplane-api" | "runtime-api" | "volume-mount-reload";
   error?: string;
 }
 
@@ -31,17 +32,20 @@ export class CertificateDistributor {
   private keyVaultStore: AzureKeyVaultCertificateStore;
   private haproxyService: HAProxyService;
   private dockerExecutor: DockerExecutorService;
+  private dataPlaneClient?: HAProxyDataPlaneClient;
   private logger: Logger;
   private certDir: string;
 
   constructor(
     keyVaultStore: AzureKeyVaultCertificateStore,
     haproxyService: HAProxyService,
-    dockerExecutor: DockerExecutorService
+    dockerExecutor: DockerExecutorService,
+    dataPlaneClient?: HAProxyDataPlaneClient
   ) {
     this.keyVaultStore = keyVaultStore;
     this.haproxyService = haproxyService;
     this.dockerExecutor = dockerExecutor;
+    this.dataPlaneClient = dataPlaneClient;
     this.logger = tlsLogger();
 
     // Certificate directory on host (mounted into HAProxy container)
@@ -68,17 +72,42 @@ export class CertificateDistributor {
 
       // Step 2: Combine certificate and private key (HAProxy format)
       const combinedPem = cert.certificate + cert.privateKey;
-
-      // Step 3: Write to host filesystem (shared volume)
       const certFileName = `${certificateName}.pem`;
+
+      // Step 3: Try DataPlane API first (preferred method - works from Docker)
+      if (this.dataPlaneClient) {
+        try {
+          await this.deployCertificateViaDataPlaneAPI(certFileName, combinedPem);
+
+          this.logger.info({ certificateName, method: "dataplane-api" }, "Certificate deployed successfully");
+          return {
+            success: true,
+            certificatePath: `/etc/ssl/certs/${certFileName}`,
+            method: "dataplane-api",
+          };
+        } catch (dataPlaneError) {
+          this.logger.warn(
+            { error: dataPlaneError, certificateName },
+            "DataPlane API deployment failed, falling back to Runtime API"
+          );
+        }
+      }
+
+      // Step 4: Write to host filesystem (required for fallback methods)
       const hostCertPath = path.join(this.certDir, certFileName);
+      try {
+        this.logger.info({ hostCertPath }, "Writing certificate to host filesystem");
+        await fs.writeFile(hostCertPath, combinedPem, {
+          mode: 0o640, // rw-r-----
+        });
+      } catch (fsError) {
+        this.logger.warn(
+          { error: fsError, certificateName },
+          "Host filesystem write failed (may be running in Docker) - continuing with container methods"
+        );
+      }
 
-      this.logger.info({ hostCertPath }, "Writing certificate to host filesystem");
-      await fs.writeFile(hostCertPath, combinedPem, {
-        mode: 0o640, // rw-r-----
-      });
-
-      // Step 4: Try to update via Runtime API (zero-downtime)
+      // Step 5: Try Runtime API (zero-downtime)
       try {
         await this.updateCertificateViaRuntimeApi(certificateName, cert.certificate, cert.privateKey);
 
@@ -111,9 +140,50 @@ export class CertificateDistributor {
       this.logger.error({ error, certificateName }, "Certificate deployment failed");
       return {
         success: false,
-        method: "runtime-api",
+        method: "dataplane-api",
         error: error instanceof Error ? error.message : "Unknown error",
       };
+    }
+  }
+
+  /**
+   * Deploy certificate via HAProxy DataPlane API
+   *
+   * This method works whether Mini Infra runs on the host or in Docker.
+   * It uses HAProxy's DataPlane API storage endpoints to upload certificates.
+   *
+   * @param certFileName - Certificate filename (e.g., "example.com.pem")
+   * @param combinedPem - Combined certificate and private key PEM
+   */
+  async deployCertificateViaDataPlaneAPI(
+    certFileName: string,
+    combinedPem: string
+  ): Promise<void> {
+    if (!this.dataPlaneClient) {
+      throw new Error("DataPlane client not available");
+    }
+
+    this.logger.info({ certFileName }, "Deploying certificate via DataPlane API");
+
+    try {
+      // Check if certificate already exists
+      const existingCerts = await this.dataPlaneClient.listSSLCertificates();
+      const certExists = existingCerts.includes(certFileName);
+
+      if (certExists) {
+        // Update existing certificate
+        this.logger.debug({ certFileName }, "Certificate exists, updating");
+        await this.dataPlaneClient.updateSSLCertificate(certFileName, combinedPem, false);
+      } else {
+        // Upload new certificate
+        this.logger.debug({ certFileName }, "Certificate does not exist, uploading");
+        await this.dataPlaneClient.uploadSSLCertificate(certFileName, combinedPem, false);
+      }
+
+      this.logger.info({ certFileName }, "Certificate deployed via DataPlane API successfully");
+    } catch (error) {
+      this.logger.error({ error, certFileName }, "DataPlane API certificate deployment failed");
+      throw error;
     }
   }
 
