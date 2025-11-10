@@ -25,6 +25,9 @@ import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { EnvironmentsPage } from "@/app/environments/page";
 import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
+import CertificatesPage from "@/app/certificates/page";
+import CertificateDetailsPage from "@/app/certificates/[id]/page";
+import TlsSettingsPage from "@/app/settings/tls/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
 
 export const router = createBrowserRouter([
@@ -97,6 +100,14 @@ export const router = createBrowserRouter([
         element: <ApiKeysPage />,
       },
       {
+        path: "certificates",
+        element: <CertificatesPage />,
+      },
+      {
+        path: "certificates/:id",
+        element: <CertificateDetailsPage />,
+      },
+      {
         path: "environments",
         element: <EnvironmentsPage />,
       },
@@ -147,6 +158,10 @@ export const router = createBrowserRouter([
       {
         path: "settings/self-backup",
         element: <SelfBackupSettingsPage />,
+      },
+      {
+        path: "settings/tls",
+        element: <TlsSettingsPage />,
       },
       {
         path: "user/settings",

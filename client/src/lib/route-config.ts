@@ -3,6 +3,7 @@ import {
   IconBrandDocker,
   IconBrandCloudflare,
   IconBrandAzure,
+  IconCertificate,
   IconCloudComputing,
   IconDashboard,
   IconDatabase,
@@ -138,6 +139,24 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: 'API key management'
   },
 
+  '/certificates': {
+    path: '/certificates',
+    title: 'TLS Certificates',
+    icon: IconCertificate,
+    showInNav: true,
+    navGroup: 'main',
+    description: 'Manage SSL/TLS certificates and renewals',
+    children: {
+      'detail': {
+        path: '/certificates/:id',
+        title: 'Certificate Details',
+        breadcrumbLabel: 'Details',
+        parent: '/certificates',
+        showInNav: false
+      }
+    }
+  },
+
   '/connectivity': {
     path: '/connectivity',
     title: 'Connectivity',
@@ -210,6 +229,15 @@ export const routeConfig: Record<string, RouteConfig> = {
         title: 'Self-Backup',
         breadcrumbLabel: 'Self-Backup',
         icon: IconDatabase,
+        parent: '/settings',
+        showInNav: true,
+        navGroup: 'secondary'
+      },
+      'tls': {
+        path: '/settings/tls',
+        title: 'TLS Configuration',
+        breadcrumbLabel: 'TLS',
+        icon: IconCertificate,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'
