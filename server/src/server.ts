@@ -28,6 +28,14 @@ import { ApplicationServiceFactory } from "./services/application-service-factor
 import { SelfBackupScheduler } from "./services/self-backup-scheduler";
 import serverHealthScheduler from "./services/postgres-server/health-scheduler";
 import prisma from "./lib/prisma";
+import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
+import { TlsConfigService } from "./services/tls/tls-config";
+import { AzureKeyVaultCertificateStore } from "./services/tls/azure-keyvault-certificate-store";
+import { AcmeClientManager } from "./services/tls/acme-client-manager";
+import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
+import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
+import { CloudflareConfigService } from "./services/cloudflare-config";
+import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -36,6 +44,7 @@ let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
+let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
@@ -97,6 +106,58 @@ const initializeServices = async () => {
     // Initialize PostgreSQL server health scheduler
     serverHealthScheduler.startAll();
     logger.info("PostgreSQL server health scheduler initialized successfully");
+
+    // Initialize TLS renewal scheduler (if TLS is configured)
+    try {
+      const tlsConfig = new TlsConfigService(prisma);
+      const keyVaultUrl = await tlsConfig.get("key_vault_url");
+
+      if (keyVaultUrl) {
+        logger.info("TLS configuration detected, initializing renewal scheduler");
+
+        // Get credentials for Key Vault
+        const tenantId = await tlsConfig.get("key_vault_tenant_id");
+        const clientId = await tlsConfig.get("key_vault_client_id");
+        const clientSecret = await tlsConfig.get("key_vault_client_secret");
+
+        let credential;
+        if (tenantId && clientId && clientSecret) {
+          credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+        } else {
+          credential = new DefaultAzureCredential();
+        }
+
+        // Initialize TLS services
+        const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
+        const acmeClient = new AcmeClientManager(tlsConfig, keyVaultStore);
+        const cloudflareConfig = new CloudflareConfigService(prisma);
+        const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
+
+        // Initialize ACME client
+        await acmeClient.initialize();
+
+        // Create lifecycle manager
+        const lifecycleManager = new CertificateLifecycleManager(
+          acmeClient,
+          keyVaultStore,
+          dnsChallenge,
+          prisma
+        );
+
+        // Create renewal scheduler
+        tlsRenewalScheduler = new CertificateRenewalScheduler(lifecycleManager, prisma);
+
+        // Get cron schedule from settings (default: daily at 2 AM)
+        const cronSchedule = (await tlsConfig.get("renewal_check_cron")) || "0 2 * * *";
+        await tlsRenewalScheduler.start(cronSchedule);
+
+        logger.info({ cronSchedule }, "TLS renewal scheduler initialized successfully");
+      } else {
+        logger.info("TLS not configured, skipping renewal scheduler initialization");
+      }
+    } catch (error) {
+      logger.warn({ error }, "Failed to initialize TLS renewal scheduler (non-fatal)");
+    }
 
     // Initialize development API key (development mode only)
     const devApiKeyResult = await initializeDevApiKey();
@@ -219,6 +280,12 @@ startServer()
       // Stop PostgreSQL server health scheduler
       serverHealthScheduler.stopAll();
       logger.info("PostgreSQL server health scheduler stopped");
+
+      // Stop TLS renewal scheduler
+      if (tlsRenewalScheduler) {
+        tlsRenewalScheduler.stop();
+        logger.info("TLS renewal scheduler stopped");
+      }
 
       // Shutdown OpenTelemetry
       await shutdownTelemetry();
