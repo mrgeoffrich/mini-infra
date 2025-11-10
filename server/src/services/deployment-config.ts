@@ -270,6 +270,11 @@ export class DeploymentConfigService extends ConfigurationService {
         );
       }
 
+      // Auto-adjust listeningPort based on SSL setting if not explicitly provided
+      const listeningPort = request.listeningPort !== undefined
+        ? request.listeningPort
+        : (request.enableSsl ? 443 : 80);
+
       // Create deployment configuration
       const created = await this.prisma.deploymentConfiguration.create({
         data: {
@@ -279,7 +284,7 @@ export class DeploymentConfigService extends ConfigurationService {
           containerConfig: request.containerConfig as any,
           healthCheckConfig: request.healthCheckConfig as any,
           rollbackConfig: request.rollbackConfig as any,
-          listeningPort: request.listeningPort,
+          listeningPort: listeningPort,
           hostname: request.hostname,
           enableSsl: request.enableSsl || false,
           environmentId: request.environmentId,
@@ -369,8 +374,13 @@ export class DeploymentConfigService extends ConfigurationService {
         updateData.listeningPort = request.listeningPort;
       if (request.hostname !== undefined)
         updateData.hostname = request.hostname;
-      if (request.enableSsl !== undefined)
+      if (request.enableSsl !== undefined) {
         updateData.enableSsl = request.enableSsl;
+        // Auto-adjust listeningPort when SSL is toggled (unless explicitly provided)
+        if (request.listeningPort === undefined) {
+          updateData.listeningPort = request.enableSsl ? 443 : 80;
+        }
+      }
       if (request.isActive !== undefined)
         updateData.isActive = request.isActive;
 

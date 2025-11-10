@@ -27,6 +27,7 @@ function serializeFrontend(frontend: any): HAProxyFrontendInfo {
     bindPort: frontend.bindPort,
     bindAddress: frontend.bindAddress,
     useSSL: frontend.useSSL,
+    sslBindPort: frontend.sslBindPort,
     status: frontend.status as 'active' | 'pending' | 'failed' | 'removed',
     errorMessage: frontend.errorMessage,
     createdAt: frontend.createdAt.toISOString(),

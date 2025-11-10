@@ -535,7 +535,7 @@ export class HAProxyFrontendManager {
         443,
         {
           ssl: true,
-          ssl_certificate: certFileName,
+          ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
         }
       );
 

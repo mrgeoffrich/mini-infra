@@ -476,6 +476,7 @@ export interface HAProxyFrontendInfo {
   bindPort: number;
   bindAddress: string;
   useSSL: boolean;
+  sslBindPort: number;
   status: 'active' | 'pending' | 'failed' | 'removed';
   errorMessage: string | null;
   createdAt: string;

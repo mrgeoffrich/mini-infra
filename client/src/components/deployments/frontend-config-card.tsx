@@ -47,7 +47,11 @@ export function FrontendConfigCard({
           <InfoRow label="Backend" value={frontend.backendName} />
           <InfoRow
             label="Bind Address"
-            value={`${frontend.bindAddress}:${frontend.bindPort}`}
+            value={
+              frontend.useSSL
+                ? `${frontend.bindAddress}:${frontend.bindPort}, ${frontend.bindAddress}:${frontend.sslBindPort} (SSL)`
+                : `${frontend.bindAddress}:${frontend.bindPort}`
+            }
           />
           <InfoRow
             label="SSL/TLS"
