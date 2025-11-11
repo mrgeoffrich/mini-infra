@@ -324,7 +324,7 @@ function EnvironmentSelectionCard({
     );
   }
 
-  const environments = environmentsData?.data?.environments || [];
+  const environments = environmentsData?.environments || [];
   const selectedEnvId = form.watch("environmentId");
   const selectedEnv = environments.find((e: any) => e.id === selectedEnvId);
 
@@ -680,7 +680,7 @@ function ValidationAndCreationCard({
   isCreating,
 }: ValidationAndCreationCardProps) {
   const values = form.getValues();
-  const environment = environmentsData?.data?.environments?.find(
+  const environment = environmentsData?.environments?.find(
     (e: any) => e.id === values.environmentId,
   );
   const container = containersData?.data?.containers?.find(

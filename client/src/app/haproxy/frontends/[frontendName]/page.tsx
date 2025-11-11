@@ -276,9 +276,17 @@ export function FrontendDetailsPage() {
                   <IconServer className="h-4 w-4 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">Environment</p>
                 </div>
-                <p className="font-medium">
-                  {environment ? environment.name : "Unknown"}
-                </p>
+                {environment ? (
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 font-medium text-base"
+                    onClick={() => navigate(`/environments/${environment.id}`)}
+                  >
+                    {environment.name}
+                  </Button>
+                ) : (
+                  <p className="font-medium">Unknown</p>
+                )}
               </div>
 
               <div className="space-y-1">
