@@ -106,16 +106,26 @@ COPY server/prisma ./server/prisma
 # Copy configuration files
 COPY server/config ./server/config
 
+# Create directories for data and logs with proper permissions
+RUN mkdir -p /app/data /app/server/logs
+
+# Change ownership of the entire app directory once, before switching users
+# This is more efficient than chown after creating thousands of node_modules files
+RUN chown -R node:node /app
+
+# Switch to non-root user for security BEFORE running npm/prisma
+# This way all generated files (node_modules, .prisma) are owned by node from the start
+USER node
+
 # Install production dependencies only (after copying package files)
 RUN npm install --workspace=lib --workspace=server --omit=dev
 
-# Create directories for data and logs with proper permissions
-# Also set ownership of entire app directory for node user
-RUN mkdir -p /app/data /app/server/logs && \
-    chown -R node:node /app
+# Generate Prisma client in production environment
+# This creates the client code in node_modules/.prisma/client based on the schema
+WORKDIR /app/server
+RUN npx prisma generate
 
-# Switch to non-root user for security
-USER node
+WORKDIR /app
 
 # Set environment to production
 ENV NODE_ENV=production
