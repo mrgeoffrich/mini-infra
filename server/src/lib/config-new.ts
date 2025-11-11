@@ -57,6 +57,9 @@ const configSchema = z.object({
     resourceAttributes: z.string().optional(),
     samplingRatio: z.number().min(0).max(1),
   }),
+  security: z.object({
+    allowInsecure: z.boolean(),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -168,6 +171,12 @@ const appConfig: Config = {
     resourceAttributes: getConfigValue("telemetry.resourceAttributes", "OTEL_RESOURCE_ATTRIBUTES", undefined),
     samplingRatio: getConfigValue("telemetry.samplingRatio", "OTEL_SAMPLING_RATIO", 1.0),
   },
+  security: {
+    allowInsecure: (() => {
+      const value = getConfigValue<string | boolean>("security.allowInsecure", "ALLOW_INSECURE", false);
+      return value === "true" || value === true;
+    })(),
+  },
 };
 
 // Validate the final configuration
@@ -217,4 +226,5 @@ export const {
   azure: azureConfig,
   connectivity: connectivityConfig,
   telemetry: telemetryConfig,
+  security: securityConfig,
 } = validatedConfig;
