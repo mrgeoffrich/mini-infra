@@ -181,7 +181,7 @@ if (appConfig.server.nodeEnv === "production") {
   );
 
   // Handle client-side routing for SPA
-  app.get("*", ((req: Request, res: Response, next: NextFunction) => {
+  app.get("/*", ((req: Request, res: Response, next: NextFunction) => {
     // Skip API routes
     if (
       req.path.startsWith("/api") ||
