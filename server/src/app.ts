@@ -137,38 +137,52 @@ import tlsSettingsRoutes from "./routes/tls-settings";
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
 
-// API routes
-app.use("/auth", authRoutes);
-app.use("/api/keys", apiKeyRoutes);
-app.use("/api/containers", containerRoutes);
-app.use("/api/settings/self-backup", selfBackupSettingsRoutes);
-app.use("/api/settings/system", systemSettingsRoutes);
-app.use("/api/settings/azure", azureSettingsRoutes);
-app.use("/api/settings/cloudflare", cloudflareSettingsRoutes);
-app.use("/api/settings", settingsRoutes);
-app.use("/api/connectivity/azure", azureConnectivityRoutes);
-app.use("/api/connectivity", cloudflareConnectivityRoutes);
-app.use("/api/postgres/databases", postgresDatabasesRoutes);
-app.use("/api/postgres/backup-configs", postgresBackupConfigsRoutes);
-app.use("/api/postgres", postgresBackupsRoutes);
-app.use("/api/postgres", postgresRestoreRoutes);
-app.use("/api/postgres/progress", postgresProgressRoutes);
-app.use("/api/user", userPreferencesRoutes);
-app.use("/api/deployment-infrastructure", deploymentInfrastructureRoutes);
-app.use("/api/deployments", deploymentsRoutes);
-app.use("/api/deployments", deploymentDnsRoutes);
-app.use("/api/deployments", haproxyFrontendsRoutes); // Mount for deployment config-specific routes
-app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic HAProxy management
-app.use("/api/haproxy/manual-frontends", manualHaproxyFrontendsRoutes); // Mount for manual frontend management
-app.use("/api/environments", environmentsRoutes);
-app.use("/api/self-backups", selfBackupsRoutes);
-app.use("/api/registry-credentials", registryCredentialsRoutes);
-app.use("/api/postgres-server/servers", postgresServerRoutes);
-app.use("/api/postgres-server/grants", postgresServerGrantsRoutes);
-app.use("/api/postgres-server/workflows", postgresServerWorkflowsRoutes);
-app.use("/api/tls", tlsSettingsRoutes);
-app.use("/api/tls/certificates", tlsCertificatesRoutes);
-app.use("/api/tls/renewals", tlsRenewalsRoutes);
+// API routes - with debugging to identify problematic routes
+const routes = [
+  { path: "/auth", router: authRoutes, name: "authRoutes" },
+  { path: "/api/keys", router: apiKeyRoutes, name: "apiKeyRoutes" },
+  { path: "/api/containers", router: containerRoutes, name: "containerRoutes" },
+  { path: "/api/settings/self-backup", router: selfBackupSettingsRoutes, name: "selfBackupSettingsRoutes" },
+  { path: "/api/settings/system", router: systemSettingsRoutes, name: "systemSettingsRoutes" },
+  { path: "/api/settings/azure", router: azureSettingsRoutes, name: "azureSettingsRoutes" },
+  { path: "/api/settings/cloudflare", router: cloudflareSettingsRoutes, name: "cloudflareSettingsRoutes" },
+  { path: "/api/settings", router: settingsRoutes, name: "settingsRoutes" },
+  { path: "/api/connectivity/azure", router: azureConnectivityRoutes, name: "azureConnectivityRoutes" },
+  { path: "/api/connectivity", router: cloudflareConnectivityRoutes, name: "cloudflareConnectivityRoutes" },
+  { path: "/api/postgres/databases", router: postgresDatabasesRoutes, name: "postgresDatabasesRoutes" },
+  { path: "/api/postgres/backup-configs", router: postgresBackupConfigsRoutes, name: "postgresBackupConfigsRoutes" },
+  { path: "/api/postgres", router: postgresBackupsRoutes, name: "postgresBackupsRoutes" },
+  { path: "/api/postgres", router: postgresRestoreRoutes, name: "postgresRestoreRoutes" },
+  { path: "/api/postgres/progress", router: postgresProgressRoutes, name: "postgresProgressRoutes" },
+  { path: "/api/user", router: userPreferencesRoutes, name: "userPreferencesRoutes" },
+  { path: "/api/deployment-infrastructure", router: deploymentInfrastructureRoutes, name: "deploymentInfrastructureRoutes" },
+  { path: "/api/deployments", router: deploymentsRoutes, name: "deploymentsRoutes" },
+  { path: "/api/deployments", router: deploymentDnsRoutes, name: "deploymentDnsRoutes" },
+  { path: "/api/deployments", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (deployment)" },
+  { path: "/api/haproxy/frontends", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (generic)" },
+  { path: "/api/haproxy/manual-frontends", router: manualHaproxyFrontendsRoutes, name: "manualHaproxyFrontendsRoutes" },
+  { path: "/api/environments", router: environmentsRoutes, name: "environmentsRoutes" },
+  { path: "/api/self-backups", router: selfBackupsRoutes, name: "selfBackupsRoutes" },
+  { path: "/api/registry-credentials", router: registryCredentialsRoutes, name: "registryCredentialsRoutes" },
+  { path: "/api/postgres-server/servers", router: postgresServerRoutes, name: "postgresServerRoutes" },
+  { path: "/api/postgres-server/grants", router: postgresServerGrantsRoutes, name: "postgresServerGrantsRoutes" },
+  { path: "/api/postgres-server/workflows", router: postgresServerWorkflowsRoutes, name: "postgresServerWorkflowsRoutes" },
+  { path: "/api/tls", router: tlsSettingsRoutes, name: "tlsSettingsRoutes" },
+  { path: "/api/tls/certificates", router: tlsCertificatesRoutes, name: "tlsCertificatesRoutes" },
+  { path: "/api/tls/renewals", router: tlsRenewalsRoutes, name: "tlsRenewalsRoutes" },
+];
+
+for (const route of routes) {
+  try {
+    console.log(`Registering route: ${route.name} at path: ${route.path}`);
+    app.use(route.path, route.router);
+    console.log(`✓ Successfully registered: ${route.name}`);
+  } catch (error) {
+    console.error(`✗ Failed to register route: ${route.name} at path: ${route.path}`);
+    console.error(`Error:`, error);
+    throw error;
+  }
+}
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
@@ -181,7 +195,8 @@ if (appConfig.server.nodeEnv === "production") {
   );
 
   // Handle client-side routing for SPA
-  app.get("/*", ((req: Request, res: Response, next: NextFunction) => {
+  // Express 5: Use /:path* for catch-all routes (path-to-regexp v6 syntax)
+  app.get("/:path*", ((req: Request, res: Response, next: NextFunction) => {
     // Skip API routes
     if (
       req.path.startsWith("/api") ||
