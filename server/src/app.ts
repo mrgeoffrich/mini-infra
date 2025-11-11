@@ -186,12 +186,16 @@ for (const route of routes) {
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
+  // In production (container), use process.cwd() to reliably locate public directory
+  // __dirname in compiled code may be nested (e.g., /app/server/dist/server/src)
+  // but process.cwd() is the working directory where the app started (/app/server)
+  const publicPath = path.join(process.cwd(), "public");
   console.log("Setting up static file serving...");
-  console.log("Serving static files from:", path.join(__dirname, "../public"));
+  console.log("Serving static files from:", publicPath);
   // Express 5: Explicitly set dotfiles option (default changed from 'allow' to 'ignore')
   // Currently no .well-known or dotfiles need to be served
   app.use(
-    express.static(path.join(__dirname, "../public"), {
+    express.static(publicPath, {
       dotfiles: "ignore", // Explicit for Express 5 compliance
     }),
   );
@@ -201,6 +205,7 @@ if (appConfig.server.nodeEnv === "production") {
   // Handle client-side routing for SPA
   // Express 5: Use /*path for catch-all routes (path-to-regexp v6 syntax)
   try {
+    const indexPath = path.join(publicPath, "index.html");
     app.get("/*path", ((req: Request, res: Response, next: NextFunction) => {
       // Skip API routes
       if (
@@ -211,7 +216,7 @@ if (appConfig.server.nodeEnv === "production") {
         return next();
       }
 
-      res.sendFile(path.join(__dirname, "../public/index.html"));
+      res.sendFile(indexPath);
     }) as RequestHandler);
     console.log("✓ Catch-all SPA route registered successfully");
   } catch (error) {
