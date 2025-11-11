@@ -149,7 +149,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
           frequency: "daily",
           mkdir: true,
           ...(config.rotation.maxSize && { size: config.rotation.maxSize }),
-          ...(config.rotation.maxFiles && { limit: config.rotation.maxFiles }),
+          ...(config.rotation.maxFiles && { limit: { count: parseInt(config.rotation.maxFiles) } }),
         },
         level: config.level,
       });
@@ -178,7 +178,7 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
           frequency: "daily",
           mkdir: true,
           ...(config.rotation.maxSize && { size: config.rotation.maxSize }),
-          ...(config.rotation.maxFiles && { limit: config.rotation.maxFiles }),
+          ...(config.rotation.maxFiles && { limit: { count: parseInt(config.rotation.maxFiles) } }),
         },
         level: config.level,
       });

@@ -186,6 +186,7 @@ for (const route of routes) {
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
+  console.log("Setting up static file serving...");
   // Express 5: Explicitly set dotfiles option (default changed from 'allow' to 'ignore')
   // Currently no .well-known or dotfiles need to be served
   app.use(
@@ -193,21 +194,29 @@ if (appConfig.server.nodeEnv === "production") {
       dotfiles: "ignore", // Explicit for Express 5 compliance
     }),
   );
+  console.log("✓ Static file serving configured");
 
+  console.log("Registering catch-all SPA route...");
   // Handle client-side routing for SPA
   // Express 5: Use /*path for catch-all routes (path-to-regexp v6 syntax)
-  app.get("/*path", ((req: Request, res: Response, next: NextFunction) => {
-    // Skip API routes
-    if (
-      req.path.startsWith("/api") ||
-      req.path.startsWith("/auth") ||
-      req.path.startsWith("/health")
-    ) {
-      return next();
-    }
+  try {
+    app.get("/*path", ((req: Request, res: Response, next: NextFunction) => {
+      // Skip API routes
+      if (
+        req.path.startsWith("/api") ||
+        req.path.startsWith("/auth") ||
+        req.path.startsWith("/health")
+      ) {
+        return next();
+      }
 
-    res.sendFile(path.join(__dirname, "../public/index.html"));
-  }) as RequestHandler);
+      res.sendFile(path.join(__dirname, "../public/index.html"));
+    }) as RequestHandler);
+    console.log("✓ Catch-all SPA route registered successfully");
+  } catch (error) {
+    console.error("✗ Failed to register catch-all route:", error);
+    throw error;
+  }
 }
 
 // Development welcome message

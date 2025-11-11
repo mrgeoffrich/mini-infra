@@ -190,13 +190,9 @@ const initializeServices = async () => {
 
     logger.info("All services initialized successfully");
   } catch (error) {
-    logger.fatal(
-      {
-        error,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      },
-      "Failed to initialize services - shutting down",
-    );
+    // Use console.error to avoid Pino flush timeout on exit
+    console.error("FATAL: Failed to initialize services - shutting down");
+    console.error(error);
     process.exit(1);
   }
 };
@@ -224,15 +220,9 @@ const startServer = async () => {
 
   // Handle server errors (e.g., port already in use)
   server.on('error', (error: any) => {
-    logger.fatal(
-      {
-        error: serializeError(error),
-        port: appConfig.server.port,
-        errorCode: error.code,
-        errorType: error?.constructor?.name || "Unknown",
-      },
-      `Failed to start server on port ${appConfig.server.port}`,
-    );
+    // Use console.error to avoid Pino flush timeout on exit
+    console.error(`FATAL: Failed to start server on port ${appConfig.server.port}`);
+    console.error(error);
     process.exit(1);
   });
 
@@ -311,33 +301,25 @@ startServer()
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
   })
   .catch((error) => {
-    logger.fatal({ error }, "Failed to start server");
+    // Use console.error to avoid Pino flush timeout on exit
+    console.error("FATAL: Failed to start server");
+    console.error(error);
     process.exit(1);
   });
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
-  logger.fatal(
-    {
-      error: serializeError(err),
-      errorType: err?.constructor?.name || "Unknown",
-      pid: process.pid,
-    },
-    "Uncaught Exception - Server shutting down",
-  );
+  // Use console.error to avoid Pino flush timeout on exit
+  console.error("FATAL: Uncaught Exception - Server shutting down");
+  console.error(err);
   process.exit(1);
 });
 
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, promise) => {
-  logger.fatal(
-    {
-      reason: serializeError(reason),
-      reasonType: reason?.constructor?.name || typeof reason,
-      promise: promise.toString(),
-      pid: process.pid,
-    },
-    "Unhandled Promise Rejection - Server shutting down",
-  );
+  // Use console.error to avoid Pino flush timeout on exit
+  console.error("FATAL: Unhandled Promise Rejection - Server shutting down");
+  console.error("Reason:", reason);
+  console.error("Promise:", promise);
   process.exit(1);
 });
