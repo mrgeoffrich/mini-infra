@@ -1,8 +1,13 @@
 // Initialize OpenTelemetry FIRST - before any other imports
+console.log("[STARTUP] Starting Mini Infra server...");
+console.log("[STARTUP] Initializing OpenTelemetry...");
 import { initializeTelemetry, shutdownTelemetry } from "./lib/telemetry";
 initializeTelemetry();
+console.log("[STARTUP] ✓ OpenTelemetry initialized");
 
+console.log("[STARTUP] Importing app module...");
 import app from "./app";
+console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
 import {
   appLogger,
@@ -48,47 +53,63 @@ let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
+  console.log("[STARTUP] Initializing services...");
   try {
     // Initialize Docker service
+    console.log("[STARTUP] Initializing Docker service...");
     const dockerService = DockerService.getInstance();
     await dockerService.initialize();
+    console.log("[STARTUP] ✓ Docker service initialized");
 
     // Initialize connectivity scheduler
+    console.log("[STARTUP] Initializing connectivity scheduler...");
     connectivityScheduler = new ConnectivityScheduler(
       prisma,
       appConfig.connectivity.checkInterval,
     );
     connectivityScheduler.start();
+    console.log("[STARTUP] ✓ Connectivity scheduler initialized");
 
     // Initialize backup scheduler
+    console.log("[STARTUP] Initializing backup scheduler...");
     backupScheduler = new BackupSchedulerService(prisma);
     BackupSchedulerService.setInstance(backupScheduler);
     await backupScheduler.initialize();
+    console.log("[STARTUP] ✓ Backup scheduler initialized");
 
     // Initialize restore executor service
+    console.log("[STARTUP] Initializing restore executor service...");
     restoreExecutorService = new RestoreExecutorService(prisma);
     setRestoreExecutorService(restoreExecutorService);
     await restoreExecutorService.initialize();
     logger.info("RestoreExecutorService initialized successfully");
+    console.log("[STARTUP] ✓ Restore executor service initialized");
 
     // Initialize PostgreSQL database health scheduler
+    console.log("[STARTUP] Initializing PostgreSQL database health scheduler...");
     postgresDatabaseHealthScheduler = new PostgresDatabaseHealthScheduler(
       appConfig.connectivity.checkInterval, // Use same interval as connectivity scheduler
     );
     postgresDatabaseHealthScheduler.start();
     logger.info("PostgreSQL database health scheduler initialized successfully");
+    console.log("[STARTUP] ✓ PostgreSQL database health scheduler initialized");
 
     // Configure ApplicationServiceFactory with DockerService for enhanced stop operations
+    console.log("[STARTUP] Configuring ApplicationServiceFactory...");
     const serviceFactory = ApplicationServiceFactory.getInstance();
     serviceFactory.setDockerService(dockerService);
     logger.info("ApplicationServiceFactory configured with Docker service");
+    console.log("[STARTUP] ✓ ApplicationServiceFactory configured");
 
     // Perform service recovery to restore running environments after restart
+    console.log("[STARTUP] Performing service recovery...");
     const serviceRecoveryManager = new ServiceRecoveryManager(dockerService, serviceFactory);
     await serviceRecoveryManager.performRecovery();
     logger.info("Service recovery completed successfully");
+    console.log("[STARTUP] ✓ Service recovery completed");
 
     // Initialize environment health scheduler (monitors service state every 5 minutes)
+    console.log("[STARTUP] Initializing environment health scheduler...");
     environmentHealthScheduler = new EnvironmentHealthScheduler(
       dockerService,
       serviceFactory,
@@ -96,23 +117,30 @@ const initializeServices = async () => {
     );
     environmentHealthScheduler.start();
     logger.info("Environment health scheduler initialized successfully");
+    console.log("[STARTUP] ✓ Environment health scheduler initialized");
 
     // Initialize self-backup scheduler
+    console.log("[STARTUP] Initializing self-backup scheduler...");
     selfBackupScheduler = new SelfBackupScheduler(prisma);
     SelfBackupScheduler.setInstance(selfBackupScheduler);
     await selfBackupScheduler.initialize();
     logger.info("Self-backup scheduler initialized successfully");
+    console.log("[STARTUP] ✓ Self-backup scheduler initialized");
 
     // Initialize PostgreSQL server health scheduler
+    console.log("[STARTUP] Initializing PostgreSQL server health scheduler...");
     serverHealthScheduler.startAll();
     logger.info("PostgreSQL server health scheduler initialized successfully");
+    console.log("[STARTUP] ✓ PostgreSQL server health scheduler initialized");
 
     // Initialize TLS renewal scheduler (if TLS is configured)
+    console.log("[STARTUP] Checking TLS configuration...");
     try {
       const tlsConfig = new TlsConfigService(prisma);
       const keyVaultUrl = await tlsConfig.get("key_vault_url");
 
       if (keyVaultUrl) {
+        console.log("[STARTUP] TLS configuration detected, initializing renewal scheduler...");
         logger.info("TLS configuration detected, initializing renewal scheduler");
 
         // Get credentials for Key Vault
@@ -152,15 +180,20 @@ const initializeServices = async () => {
         await tlsRenewalScheduler.start(cronSchedule);
 
         logger.info({ cronSchedule }, "TLS renewal scheduler initialized successfully");
+        console.log("[STARTUP] ✓ TLS renewal scheduler initialized");
       } else {
         logger.info("TLS not configured, skipping renewal scheduler initialization");
+        console.log("[STARTUP] TLS not configured, skipping renewal scheduler");
       }
     } catch (error) {
       logger.warn({ error }, "Failed to initialize TLS renewal scheduler (non-fatal)");
+      console.log("[STARTUP] ⚠ TLS renewal scheduler initialization failed (non-fatal)");
     }
 
     // Initialize development API key (development mode only)
+    console.log("[STARTUP] Initializing development API key...");
     const devApiKeyResult = await initializeDevApiKey();
+    console.log("[STARTUP] ✓ Development API key initialized");
     if (devApiKeyResult) {
       if (devApiKeyResult.isNewKey) {
         logger.info(
@@ -189,9 +222,10 @@ const initializeServices = async () => {
     }
 
     logger.info("All services initialized successfully");
+    console.log("[STARTUP] ✓ All services initialized successfully");
   } catch (error) {
     // Use console.error to avoid Pino flush timeout on exit
-    console.error("FATAL: Failed to initialize services - shutting down");
+    console.error("[STARTUP] FATAL: Failed to initialize services - shutting down");
     console.error(error);
     process.exit(1);
   }
@@ -199,9 +233,13 @@ const initializeServices = async () => {
 
 // Start server after successful service initialization
 const startServer = async () => {
+  console.log("[STARTUP] Starting server initialization...");
   await initializeServices();
+  console.log("[STARTUP] Services initialized, binding to port...");
 
+  console.log(`[STARTUP] Attempting to listen on port ${appConfig.server.port}...`);
   const server = app.listen(appConfig.server.port, () => {
+    console.log(`[STARTUP] ✓ Server successfully listening on port ${appConfig.server.port}`);
     logger.info(
       {
         port: appConfig.server.port,
@@ -215,23 +253,28 @@ const startServer = async () => {
       logger.info(
         `📊 Health check available at: http://localhost:${appConfig.server.port}/health`,
       );
+      console.log(`[STARTUP] Health check available at: http://localhost:${appConfig.server.port}/health`);
     }
+    console.log("[STARTUP] ✓ Server startup completed successfully - ready to accept connections");
   });
 
   // Handle server errors (e.g., port already in use)
   server.on('error', (error: any) => {
     // Use console.error to avoid Pino flush timeout on exit
-    console.error(`FATAL: Failed to start server on port ${appConfig.server.port}`);
+    console.error(`[STARTUP] FATAL: Failed to start server on port ${appConfig.server.port}`);
     console.error(error);
     process.exit(1);
   });
 
+  console.log("[STARTUP] Server object created, waiting for listen callback...");
   return server;
 };
 
 // Start the application
+console.log("[STARTUP] Executing startServer()...");
 startServer()
   .then((server) => {
+    console.log("[STARTUP] ✓ startServer() completed successfully, server is running");
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {
       logger.info(`${signal} received, starting graceful shutdown`);
@@ -302,7 +345,7 @@ startServer()
   })
   .catch((error) => {
     // Use console.error to avoid Pino flush timeout on exit
-    console.error("FATAL: Failed to start server");
+    console.error("[STARTUP] FATAL: Failed to start server");
     console.error(error);
     process.exit(1);
   });
@@ -310,7 +353,7 @@ startServer()
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
   // Use console.error to avoid Pino flush timeout on exit
-  console.error("FATAL: Uncaught Exception - Server shutting down");
+  console.error("[STARTUP] FATAL: Uncaught Exception - Server shutting down");
   console.error(err);
   process.exit(1);
 });
@@ -318,7 +361,7 @@ process.on("uncaughtException", (err) => {
 // Handle unhandled promise rejections
 process.on("unhandledRejection", (reason, promise) => {
   // Use console.error to avoid Pino flush timeout on exit
-  console.error("FATAL: Unhandled Promise Rejection - Server shutting down");
+  console.error("[STARTUP] FATAL: Unhandled Promise Rejection - Server shutting down");
   console.error("Reason:", reason);
   console.error("Promise:", promise);
   process.exit(1);
