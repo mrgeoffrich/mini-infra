@@ -1,0 +1,80 @@
+services:
+  mini-infra:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    container_name: mini-infra-dev
+    restart: unless-stopped
+    ports:
+      - "${MINI_INFRA_PORT:-5005}:5000"
+    volumes:
+      # Mount Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent data storage
+      - mini-infra-dev-data:/app/data
+      # Log files
+      - mini-infra-dev-logs:/app/server/logs
+    environment:
+      # Core Configuration
+      - NODE_ENV=production
+
+      # Security - REQUIRED (set in .env file)
+      - SESSION_SECRET=${SESSION_SECRET}
+      - API_KEY_SECRET=${API_KEY_SECRET}
+
+      # Google OAuth (Optional - for authentication)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:5000/auth/google/callback}
+
+      # Server Configuration
+      - PORT=5005
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:5005}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+
+      # Database
+      - DATABASE_URL=file:/app/data/production.db?foreign_keys=true
+
+      # Container Management
+      - CONTAINER_CACHE_TTL=${CONTAINER_CACHE_TTL:-3000}
+      - CONTAINER_POLL_INTERVAL=${CONTAINER_POLL_INTERVAL:-5000}
+
+      # Azure Configuration (Optional)
+      - AZURE_API_TIMEOUT=${AZURE_API_TIMEOUT:-15000}
+      - CONNECTIVITY_CHECK_INTERVAL=${CONNECTIVITY_CHECK_INTERVAL:-300000}
+
+      # OpenObserve Integration (Optional)
+      # - OPENOBSERVE_URL=${OPENOBSERVE_URL:-http://openobserve:5080}
+      # - OPENOBSERVE_ORGANIZATION_NAME=${OPENOBSERVE_ORGANIZATION_NAME:-}
+      # - OPENOBSERVE_USERNAME=${OPENOBSERVE_USERNAME:-}
+      # - OPENOBSERVE_PASSWORD=${OPENOBSERVE_PASSWORD:-}
+      # - OPENOBSERVE_STREAM_NAME=${OPENOBSERVE_STREAM_NAME:-mini-infra-logs}
+
+      # OpenTelemetry Configuration (Optional)
+      # - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      # - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-mini-infra-dev}
+      # - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-0.1.0}
+      # - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
+      # - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=development,service.namespace=mini-infra}
+      # - OTEL_SAMPLING_RATIO=${OTEL_SAMPLING_RATIO:-1.0}
+      # - OTEL_DEBUG=${OTEL_DEBUG:-false}
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  mini-infra-dev-data:
+    driver: local
+  mini-infra-dev-logs:
+    driver: local

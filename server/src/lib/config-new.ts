@@ -78,9 +78,10 @@ function getConfigValue<T>(path: string, envKey?: string, defaultValue?: T): T {
     return config.get<T>(path);
   }
 
-  // Use default value if provided
-  if (defaultValue !== undefined) {
-    return defaultValue;
+  // Use default value if provided (check if argument was actually passed)
+  // eslint-disable-next-line prefer-rest-params
+  if (arguments.length >= 3) {
+    return defaultValue as T;
   }
 
   throw new Error(`Configuration value not found for path: ${path}`);

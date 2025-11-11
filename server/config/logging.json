@@ -87,7 +87,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -97,7 +97,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -107,7 +107,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -117,7 +117,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -127,7 +127,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -137,7 +137,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -147,7 +147,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -157,7 +157,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     },
@@ -167,7 +167,7 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": 10,
+        "maxFiles": "10",
         "maxSize": "1m"
       }
     }

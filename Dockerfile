@@ -110,8 +110,9 @@ COPY server/config ./server/config
 RUN npm install --workspace=lib --workspace=server --omit=dev
 
 # Create directories for data and logs with proper permissions
+# Also set ownership of entire app directory for node user
 RUN mkdir -p /app/data /app/server/logs && \
-    chown -R node:node /app/data /app/server/logs
+    chown -R node:node /app
 
 # Switch to non-root user for security
 USER node
@@ -128,9 +129,9 @@ WORKDIR /app/server
 EXPOSE 5000
 
 # Health check using built-in Node.js HTTP module
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+# HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+#   CMD node -e "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Start command: Run migrations then start server
+# Start command: Generate Prisma client, run migrations, then start server
 # Use dumb-init for proper signal handling (SIGTERM for graceful shutdown)
-CMD ["dumb-init", "sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+CMD ["dumb-init", "sh", "-c", "npx prisma generate && npx prisma migrate deploy && node dist/server/src/server.js"]
