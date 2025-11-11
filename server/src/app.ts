@@ -187,6 +187,7 @@ for (const route of routes) {
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
   console.log("Setting up static file serving...");
+  console.log("Serving static files from:", path.join(__dirname, "../public"));
   // Express 5: Explicitly set dotfiles option (default changed from 'allow' to 'ignore')
   // Currently no .well-known or dotfiles need to be served
   app.use(
