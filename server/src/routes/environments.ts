@@ -522,4 +522,43 @@ router.get('/services/available/:serviceType', requireSessionOrApiKey, async (re
   }
 });
 
+// Import and mount sub-routers for environment networks and volumes
+// Express 5: Cannot use parameters in router.use() mount paths
+// Solution: Use middleware with regex to forward to sub-routers
+import environmentNetworksRoutes from './environment-networks';
+import environmentVolumesRoutes from './environment-volumes';
+
+// Express 5 compliant: use regex-based middleware instead of parameterized mount paths
+router.use(/^\/([^\/]+)\/networks/, (req, res, next) => {
+  // Extract environment ID from URL and remove the prefix for the sub-router
+  const match = req.path.match(/^\/([^\/]+)\/networks/);
+  if (match) {
+    req.params.id = match[1];
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/[^/]+\/networks/, '');
+    environmentNetworksRoutes(req, res, (err?: any) => {
+      req.url = originalUrl;
+      next(err);
+    });
+  } else {
+    next();
+  }
+});
+
+router.use(/^\/([^\/]+)\/volumes/, (req, res, next) => {
+  // Extract environment ID from URL and remove the prefix for the sub-router
+  const match = req.path.match(/^\/([^\/]+)\/volumes/);
+  if (match) {
+    req.params.id = match[1];
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/[^/]+\/volumes/, '');
+    environmentVolumesRoutes(req, res, (err?: any) => {
+      req.url = originalUrl;
+      next(err);
+    });
+  } else {
+    next();
+  }
+});
+
 export default router;

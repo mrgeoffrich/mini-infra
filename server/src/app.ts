@@ -121,8 +121,6 @@ import systemSettingsRoutes from "./routes/system-settings";
 import deploymentInfrastructureRoutes from "./routes/deployment-infrastructure";
 import deploymentsRoutes from "./routes/deployments";
 import environmentsRoutes from "./routes/environments";
-import environmentNetworksRoutes from "./routes/environment-networks";
-import environmentVolumesRoutes from "./routes/environment-volumes";
 import deploymentDnsRoutes from "./routes/deployment-dns";
 import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
 import manualHaproxyFrontendsRoutes from "./routes/manual-haproxy-frontends";
@@ -130,8 +128,6 @@ import selfBackupSettingsRoutes from "./routes/settings-self-backup";
 import selfBackupsRoutes from "./routes/self-backups";
 import registryCredentialsRoutes from "./routes/registry-credentials";
 import postgresServerRoutes from "./routes/postgres-server/servers";
-import postgresServerDatabasesRoutes from "./routes/postgres-server/databases";
-import postgresServerUsersRoutes from "./routes/postgres-server/users";
 import postgresServerGrantsRoutes from "./routes/postgres-server/grants";
 import postgresServerWorkflowsRoutes from "./routes/postgres-server/workflows";
 import tlsCertificatesRoutes from "./routes/tls-certificates";
@@ -165,13 +161,9 @@ app.use("/api/deployments", haproxyFrontendsRoutes); // Mount for deployment con
 app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic HAProxy management
 app.use("/api/haproxy/manual-frontends", manualHaproxyFrontendsRoutes); // Mount for manual frontend management
 app.use("/api/environments", environmentsRoutes);
-app.use("/api/environments/:id/networks", environmentNetworksRoutes);
-app.use("/api/environments/:id/volumes", environmentVolumesRoutes);
 app.use("/api/self-backups", selfBackupsRoutes);
 app.use("/api/registry-credentials", registryCredentialsRoutes);
 app.use("/api/postgres-server/servers", postgresServerRoutes);
-app.use("/api/postgres-server/servers/:serverId/databases", postgresServerDatabasesRoutes);
-app.use("/api/postgres-server/servers/:serverId/users", postgresServerUsersRoutes);
 app.use("/api/postgres-server/grants", postgresServerGrantsRoutes);
 app.use("/api/postgres-server/workflows", postgresServerWorkflowsRoutes);
 app.use("/api/tls", tlsSettingsRoutes);
@@ -180,7 +172,13 @@ app.use("/api/tls/renewals", tlsRenewalsRoutes);
 
 // Serve static files in production
 if (appConfig.server.nodeEnv === "production") {
-  app.use(express.static(path.join(__dirname, "../public")));
+  // Express 5: Explicitly set dotfiles option (default changed from 'allow' to 'ignore')
+  // Currently no .well-known or dotfiles need to be served
+  app.use(
+    express.static(path.join(__dirname, "../public"), {
+      dotfiles: "ignore", // Explicit for Express 5 compliance
+    }),
+  );
 
   // Handle client-side routing for SPA
   app.get("*", ((req: Request, res: Response, next: NextFunction) => {
@@ -212,8 +210,8 @@ if (appConfig.server.nodeEnv === "development") {
 // 404 handler for unmatched routes
 app.use(notFoundHandler as RequestHandler);
 
-// Global error handling middleware (must be last)
-app.use(errorHandler as any);
+// Global error handling middleware (must be last) - Express 5 compliant
+app.use(errorHandler);
 
 // Graceful shutdown handling
 const appLoggerInstance = httpLogger(); // Use HTTP logger for shutdown messages since they relate to server lifecycle

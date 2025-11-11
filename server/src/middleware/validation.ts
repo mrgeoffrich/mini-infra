@@ -4,6 +4,17 @@ import { servicesLogger } from '../lib/logger-factory';
 
 const logger = servicesLogger();
 
+// Extend Express Request type to include validated data
+// Express 5 makes req.query read-only, so we store validated query data separately
+declare global {
+  namespace Express {
+    interface Request {
+      validatedQuery?: any;
+      validatedParams?: any;
+    }
+  }
+}
+
 export function validateRequest(
   schema: z.ZodSchema,
   source: 'body' | 'query' | 'params' = 'body'
@@ -40,12 +51,14 @@ export function validateRequest(
       }
 
       // Replace the original data with the parsed/transformed data
+      // Express 5 Note: req.query and req.params are read-only getters
+      // Store validated query/params in custom properties instead
       if (source === 'body') {
         req.body = result.data;
       } else if (source === 'query') {
-        req.query = result.data as any;
+        req.validatedQuery = result.data;
       } else {
-        req.params = result.data as any;
+        req.validatedParams = result.data;
       }
 
       next();

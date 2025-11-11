@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import { appLogger } from "./logger-factory";
 
@@ -29,8 +29,8 @@ export class CustomError extends Error implements AppError {
   }
 }
 
-// Error handling middleware
-export const errorHandler = (
+// Error handling middleware - Express 5 compliant with ErrorRequestHandler type
+export const errorHandler: ErrorRequestHandler = (
   error: AppError | ZodError,
   req: Request,
   res: Response,
@@ -107,15 +107,6 @@ export const errorHandler = (
     error: message,
     requestId,
   });
-};
-
-// Async error wrapper
-export const asyncHandler = (
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void> | void,
-) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
-  };
 };
 
 // 404 handler
