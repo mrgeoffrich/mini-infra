@@ -148,9 +148,9 @@ export class AzureConfigService extends ConfigurationService {
     const startTime = Date.now();
 
     try {
-      const connectionString = settings?.connectionString || await this.get(
+      const connectionString = settings?.connectionString || (await this.get(
         AzureConfigService.CONNECTION_STRING_KEY,
-      );
+      ));
 
       if (!connectionString) {
         const result: ValidationResult = {

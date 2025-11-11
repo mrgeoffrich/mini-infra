@@ -28,8 +28,8 @@ export class DockerConfigService extends ConfigurationService {
 
     try {
       // Get Docker configuration from settings (use provided settings or fallback to stored)
-      const dockerHost = settings?.host || await this.get("host");
-      const apiVersion = settings?.version || await this.get("apiVersion");
+      const dockerHost = settings?.host || (await this.get("host"));
+      const apiVersion = settings?.version || (await this.get("apiVersion"));
 
       // Use default if no host configured
       const host = dockerHost || this.getDefaultDockerHost();

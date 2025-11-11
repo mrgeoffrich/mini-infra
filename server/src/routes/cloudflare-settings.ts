@@ -1022,10 +1022,7 @@ router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
               return true;
             } catch {
               // Also allow simple formats like "localhost:3000"
-              return (
-                /^[a-zA-Z0-9.-]+:\d+$/.test(service) ||
-                /^https?:\/\//.test(service)
-              );
+              return (/^[a-zA-Z0-9.-]+:\d+$/.test(service) || /^https?:\/\//.test(service));
             }
           },
           { message: "Invalid service URL format" },

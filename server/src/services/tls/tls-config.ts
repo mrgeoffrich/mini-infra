@@ -71,7 +71,7 @@ export class TlsConfigService extends ConfigurationService {
     try {
       // Get Key Vault URL (from provided settings or database)
       const keyVaultUrl = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_URL]
-        || await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_URL);
+        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_URL));
 
       if (!keyVaultUrl) {
         return {
@@ -92,11 +92,11 @@ export class TlsConfigService extends ConfigurationService {
 
       // Get credentials
       const tenantId = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID]
-        || await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID);
+        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID));
       const clientId = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID]
-        || await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID);
+        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID));
       const clientSecret = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET]
-        || await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET);
+        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET));
 
       // Create credential
       let credential;

@@ -79,8 +79,8 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
     try {
       // Get configured Docker images from settings (use provided settings or fallback to stored)
-      const backupImage = settings?.backup_docker_image || await this.get("backup_docker_image");
-      const restoreImage = settings?.restore_docker_image || await this.get("restore_docker_image");
+      const backupImage = settings?.backup_docker_image || (await this.get("backup_docker_image"));
+      const restoreImage = settings?.restore_docker_image || (await this.get("restore_docker_image"));
 
       // Use defaults if not configured
       const effectiveBackupImage =

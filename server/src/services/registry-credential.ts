@@ -384,8 +384,7 @@ export class RegistryCredentialService {
       );
 
       // Initialize DockerExecutorService to test the connection
-      const dockerExecutor = new (await import("./docker-executor"))
-        .DockerExecutorService();
+      const dockerExecutor = new ((await import("./docker-executor")).DockerExecutorService)();
       await dockerExecutor.initialize();
 
       // Attempt to pull the test image with credentials

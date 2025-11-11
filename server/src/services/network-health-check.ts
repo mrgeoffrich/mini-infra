@@ -237,7 +237,7 @@ export class NetworkHealthCheckService {
 
     try {
       const dockerNetworkName = await this.dockerExecutor.getDockerNetworkName();
-      const curlImage = config.curlImage || await this.getCurlImage();
+      const curlImage = config.curlImage || (await this.getCurlImage());
       const curlCommand = this.buildCurlCommand(config);
       const healthCheckUrl = `http://${config.containerName}:${config.containerPort}${config.endpoint}`;
 

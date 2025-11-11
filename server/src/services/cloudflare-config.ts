@@ -359,8 +359,8 @@ export class CloudflareConfigService extends ConfigurationService {
   ): Promise<ValidationResult> {
     try {
       // Use provided settings or fallback to stored settings
-      const apiToken = settings?.apiToken || await this.get(CloudflareConfigService.API_TOKEN_KEY);
-      const accountId = settings?.accountId || await this.get(CloudflareConfigService.ACCOUNT_ID_KEY);
+      const apiToken = settings?.apiToken || (await this.get(CloudflareConfigService.API_TOKEN_KEY));
+      const accountId = settings?.accountId || (await this.get(CloudflareConfigService.ACCOUNT_ID_KEY));
 
       servicesLogger().debug(
         this.redactSensitiveData({
