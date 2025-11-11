@@ -106,8 +106,14 @@ COPY server/prisma ./server/prisma
 # Copy configuration files
 COPY server/config ./server/config
 
+# Copy startup script
+COPY server/docker-entrypoint.sh ./server/docker-entrypoint.sh
+
 # Create directories for data and logs with proper permissions
 RUN mkdir -p /app/data /app/server/logs
+
+# Make startup script executable
+RUN chmod +x /app/server/docker-entrypoint.sh
 
 # Change ownership of the entire app directory once, before switching users
 # This is more efficient than chown after creating thousands of node_modules files
@@ -145,4 +151,4 @@ EXPOSE 5000
 # Use dumb-init as entrypoint for proper signal handling (SIGTERM for graceful shutdown)
 ENTRYPOINT ["dumb-init", "--"]
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server/src/server.js"]
+CMD ["sh", "/app/server/docker-entrypoint.sh"]
