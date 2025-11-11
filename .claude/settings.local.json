@@ -70,7 +70,11 @@
       "Bash(./start.ps1)",
       "Bash(bash:*)",
       "Bash(docker compose build:*)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(find:*)",
+      "Bash(timeout 10 node:*)",
+      "Bash(NODE_ENV=production node:*)",
+      "Bash(cross-env NODE_ENV=production timeout 10 node:*)"
     ],
     "deny": [],
     "ask": [],

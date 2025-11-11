@@ -132,6 +132,7 @@ EXPOSE 5000
 # HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 #   CMD node -e "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Start command: Generate Prisma client, run migrations, then start server
-# Use dumb-init for proper signal handling (SIGTERM for graceful shutdown)
-CMD ["dumb-init", "sh", "-c", "npx prisma generate && npx prisma migrate deploy && node dist/server/src/server.js"]
+# Use dumb-init as entrypoint for proper signal handling (SIGTERM for graceful shutdown)
+ENTRYPOINT ["dumb-init", "--"]
+
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server/src/server.js"]
