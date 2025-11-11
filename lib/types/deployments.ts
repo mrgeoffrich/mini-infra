@@ -452,15 +452,23 @@ export interface UninstallDeploymentConfigResponse {
 // HAProxy Frontend Types
 // ====================
 
+export type FrontendType = 'deployment' | 'manual';
+
 export interface HAProxyFrontend {
   id: string;
-  deploymentConfigId: string;
+  deploymentConfigId: string | null;
+  frontendType: FrontendType;
+  containerName: string | null;
+  containerId: string | null;
+  containerPort: number | null;
+  environmentId: string | null;
   frontendName: string;
   backendName: string;
   hostname: string;
   bindPort: number;
   bindAddress: string;
   useSSL: boolean;
+  sslBindPort: number;
   status: 'active' | 'pending' | 'failed' | 'removed';
   errorMessage: string | null;
   createdAt: Date;
@@ -469,7 +477,12 @@ export interface HAProxyFrontend {
 
 export interface HAProxyFrontendInfo {
   id: string;
-  deploymentConfigId: string;
+  deploymentConfigId: string | null;
+  frontendType: FrontendType;
+  containerName: string | null;
+  containerId: string | null;
+  containerPort: number | null;
+  environmentId: string | null;
   frontendName: string;
   backendName: string;
   hostname: string;
@@ -561,4 +574,66 @@ export interface HAProxyPortValidationResponse {
   success: boolean;
   data: HAProxyPortValidationResult;
   message?: string;
+}
+
+// ====================
+// Manual Frontend Types
+// ====================
+
+export interface EligibleContainer {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  networks: string[];
+  labels: Record<string, string>;
+  ports: Array<{ containerPort: number; protocol: string }>;
+  canConnect: boolean;
+  reason?: string;
+}
+
+export interface EligibleContainersResponse {
+  success: boolean;
+  data: {
+    containers: EligibleContainer[];
+    haproxyNetwork: string;
+  };
+  message?: string;
+}
+
+export interface CreateManualFrontendRequest {
+  environmentId: string;
+  containerId: string;
+  containerName: string;
+  containerPort: number;
+  hostname: string;
+  enableSsl?: boolean;
+  tlsCertificateId?: string;
+  healthCheckPath?: string;
+}
+
+export interface UpdateManualFrontendRequest {
+  hostname?: string;
+  enableSsl?: boolean;
+  tlsCertificateId?: string;
+  healthCheckPath?: string;
+}
+
+export interface ManualFrontendValidationResult {
+  isValid: boolean;
+  errors: Array<{
+    field: string;
+    message: string;
+  }>;
+}
+
+export interface ManualFrontendResponse {
+  success: boolean;
+  data: HAProxyFrontendInfo;
+  message?: string;
+}
+
+export interface DeleteManualFrontendResponse {
+  success: boolean;
+  message: string;
 }

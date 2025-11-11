@@ -21,6 +21,11 @@ function serializeFrontend(frontend: any): HAProxyFrontendInfo {
   return {
     id: frontend.id,
     deploymentConfigId: frontend.deploymentConfigId,
+    frontendType: frontend.frontendType || 'deployment',
+    containerName: frontend.containerName,
+    containerId: frontend.containerId,
+    containerPort: frontend.containerPort,
+    environmentId: frontend.environmentId,
     frontendName: frontend.frontendName,
     backendName: frontend.backendName,
     hostname: frontend.hostname,

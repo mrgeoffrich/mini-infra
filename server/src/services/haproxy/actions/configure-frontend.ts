@@ -165,6 +165,7 @@ export class ConfigureFrontend {
         await prisma.hAProxyFrontend.update({
           where: { id: existingFrontend.id },
           data: {
+            frontendType: "deployment",
             frontendName,
             backendName,
             hostname,
@@ -189,6 +190,7 @@ export class ConfigureFrontend {
         await prisma.hAProxyFrontend.create({
           data: {
             deploymentConfigId: context.deploymentConfigId,
+            frontendType: "deployment",
             frontendName,
             backendName,
             hostname,
