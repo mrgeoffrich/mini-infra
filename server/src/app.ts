@@ -195,8 +195,8 @@ if (appConfig.server.nodeEnv === "production") {
   );
 
   // Handle client-side routing for SPA
-  // Express 5: Use /:path* for catch-all routes (path-to-regexp v6 syntax)
-  app.get("/:path*", ((req: Request, res: Response, next: NextFunction) => {
+  // Express 5: Use /*path for catch-all routes (path-to-regexp v6 syntax)
+  app.get("/*path", ((req: Request, res: Response, next: NextFunction) => {
     // Skip API routes
     if (
       req.path.startsWith("/api") ||
