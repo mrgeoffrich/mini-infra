@@ -8,6 +8,150 @@ This plan outlines the implementation of standardized route patterns across the 
 
 ## Phase 1: Foundation - Core Infrastructure (Week 1)
 
+### 1.0 Shared Types - Frontend/Backend Consistency
+
+**Goal**: Ensure request/response types are identical between frontend and backend to prevent type mismatches
+
+#### Update Shared Types Package (`lib/types/api.ts`)
+
+The `@mini-infra/types` package already exists but needs to be updated with standardized response types:
+
+**Key Changes**:
+1. **Make `timestamp` and `requestId` required** in `ResponseMetadata`
+2. **Add proper generic types** for `SuccessResponse<T>`, `ListResponse<T>`, `ErrorResponse`
+3. **Add type guards** for discriminated unions (e.g., `isSuccessResponse()`, `isErrorResponse()`)
+4. **Add `PaginationMetadata`** with all required fields
+5. **Add validation error types** with structured details
+
+**Benefits**:
+- ✅ **Single source of truth** for API contracts
+- ✅ **Compile-time safety** - Frontend and backend must agree on types
+- ✅ **Autocomplete** in both frontend (axios/fetch) and backend (route handlers)
+- ✅ **Type guards** for safe runtime type checking on frontend
+- ✅ **Refactoring safety** - Changing a type updates both sides
+
+**Updated file**: `lib/types/api.ts`
+
+```typescript
+// Base metadata REQUIRED on ALL responses
+export interface ResponseMetadata {
+  timestamp: string;      // ISO 8601 - REQUIRED
+  requestId: string;      // Request ID - REQUIRED
+}
+
+// Success response with single resource
+export interface SuccessResponse<T> extends ResponseMetadata {
+  success: true;
+  data: T;
+  message?: string;
+}
+
+// Success response with paginated list
+export interface ListResponse<T> extends ResponseMetadata {
+  success: true;
+  data: T[];
+  pagination: PaginationMetadata;
+  message?: string;
+}
+
+// Standard error response
+export interface ErrorResponse extends ResponseMetadata {
+  success: false;
+  error: string;
+  message: string;
+  details?: any;
+}
+
+// Pagination metadata (standardized)
+export interface PaginationMetadata {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+// Type guards for frontend
+export function isSuccessResponse<T>(
+  response: ApiResponse<T>
+): response is SuccessResponse<T> {
+  return response.success === true;
+}
+
+export function isErrorResponse<T>(
+  response: ApiResponse<T>
+): response is ErrorResponse {
+  return response.success === false;
+}
+```
+
+#### Usage Examples
+
+**Backend (route handler)**:
+```typescript
+import { SuccessResponse, ListResponse, PaginationMetadata } from "@mini-infra/types";
+
+// Backend knows the exact shape
+const response: SuccessResponse<Item> = {
+  success: true,
+  data: item,
+  timestamp: new Date().toISOString(),
+  requestId: ctx.requestId,
+};
+```
+
+**Frontend (React Query / Axios)**:
+```typescript
+import { SuccessResponse, isSuccessResponse, ItemInfo } from "@mini-infra/types";
+
+// Frontend knows the exact shape
+const response = await axios.get<SuccessResponse<ItemInfo>>("/api/items/123");
+
+// Type guard for discriminated union
+if (isSuccessResponse(response.data)) {
+  // TypeScript knows this is SuccessResponse<ItemInfo>
+  console.log(response.data.data.name); // ✅ Type-safe
+  console.log(response.data.requestId); // ✅ Always present
+} else {
+  // TypeScript knows this is ErrorResponse
+  console.error(response.data.message); // ✅ Type-safe
+}
+```
+
+#### Build Process
+
+The shared types must be built before client/server:
+
+```bash
+# Build order (already configured in package.json)
+npm run build:lib    # First - build shared types
+npm run build:server # Second - server imports from lib
+npm run build:client # Third - client imports from lib
+```
+
+#### Benefits Over Ad-Hoc Types
+
+**Before (inconsistent)**:
+```typescript
+// Backend
+res.json({ success: true, data: item, time: Date.now() }); // ❌ 'time' not 'timestamp'
+
+// Frontend
+interface BackendResponse { success: boolean; data: any; time: number; } // ❌ Must match manually
+```
+
+**After (shared types)**:
+```typescript
+// Backend
+const response: SuccessResponse<Item> = { /* ✅ Must include timestamp, requestId */ };
+
+// Frontend
+const response: SuccessResponse<Item> = await api.get(...); // ✅ Same type!
+```
+
+---
+
 ### 1.1 Response Base System
 
 **Goal**: Ensure ALL responses have `requestId` and `timestamp`
@@ -17,10 +161,17 @@ This plan outlines the implementation of standardized route patterns across the 
 
 ```typescript
 import { Request, Response, NextFunction } from "express";
+import {
+  SuccessResponse,
+  ListResponse,
+  ErrorResponse,
+  PaginationMetadata
+} from "@mini-infra/types";
 
 /**
  * Middleware to add response context helpers
  * Adds requestId and timestamp to all responses
+ * Uses shared types from @mini-infra/types for frontend/backend consistency
  */
 export function responseContext(req: Request, res: Response, next: NextFunction) {
   const requestId = req.headers["x-request-id"] as string;
@@ -31,36 +182,39 @@ export function responseContext(req: Request, res: Response, next: NextFunction)
   res.locals.timestamp = timestamp;
 
   // Add helper methods to response object
-  res.success = function(data: any, options?: { message?: string; statusCode?: number }) {
-    return this.status(options?.statusCode || 200).json({
+  res.success = function<T>(data: T, options?: { message?: string; statusCode?: number }): Response {
+    const response: SuccessResponse<T> = {
       success: true,
       data,
       message: options?.message,
       timestamp,
       requestId,
-    });
+    };
+    return this.status(options?.statusCode || 200).json(response);
   };
 
-  res.error = function(error: string, message: string, options?: { details?: any; statusCode?: number }) {
-    return this.status(options?.statusCode || 500).json({
+  res.error = function(error: string, message: string, options?: { details?: any; statusCode?: number }): Response {
+    const response: ErrorResponse = {
       success: false,
       error,
       message,
       details: options?.details,
       timestamp,
       requestId,
-    });
+    };
+    return this.status(options?.statusCode || 500).json(response);
   };
 
-  res.list = function(data: any[], pagination: any, options?: { message?: string }) {
-    return this.status(200).json({
+  res.list = function<T>(data: T[], pagination: PaginationMetadata, options?: { message?: string }): Response {
+    const response: ListResponse<T> = {
       success: true,
       data,
       pagination,
       message: options?.message,
       timestamp,
       requestId,
-    });
+    };
+    return this.status(200).json(response);
   };
 
   next();
@@ -70,9 +224,9 @@ export function responseContext(req: Request, res: Response, next: NextFunction)
 declare global {
   namespace Express {
     interface Response {
-      success(data: any, options?: { message?: string; statusCode?: number }): Response;
+      success<T>(data: T, options?: { message?: string; statusCode?: number }): Response;
       error(error: string, message: string, options?: { details?: any; statusCode?: number }): Response;
-      list(data: any[], pagination: any, options?: { message?: string }): Response;
+      list<T>(data: T[], pagination: PaginationMetadata, options?: { message?: string }): Response;
     }
   }
 }
@@ -463,6 +617,8 @@ app.use(globalErrorHandler);
 
 ### 1.5 Deliverables
 
+- [ ] **`lib/types/api.ts`** - Update shared types for frontend/backend consistency (FIRST - required by all)
+- [ ] **`lib/` package build** - Build shared types package (`npm run build:lib`)
 - [ ] `middleware/response-context.ts` - Response helper middleware
 - [ ] `middleware/global-error-handler.ts` - Global error handler
 - [ ] `lib/validation-schemas.ts` - Reusable Zod schemas
@@ -470,6 +626,7 @@ app.use(globalErrorHandler);
 - [ ] `lib/request-context.ts` - Request context extraction
 - [ ] `lib/serialization-helpers.ts` - Date serialization
 - [ ] Update `app.ts` to register new middleware
+- [ ] Update response middleware to use shared types from `@mini-infra/types`
 
 ---
 
