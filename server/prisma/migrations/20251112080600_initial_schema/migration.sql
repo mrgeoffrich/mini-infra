@@ -173,9 +173,13 @@ CREATE TABLE "deployment_configurations" (
     "hostname" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "environmentId" TEXT NOT NULL,
+    "enableSsl" BOOLEAN NOT NULL DEFAULT false,
+    "tlsCertificateId" TEXT,
+    "certificateStatus" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "deployment_configurations_environmentId_fkey" FOREIGN KEY ("environmentId") REFERENCES "environments" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "deployment_configurations_environmentId_fkey" FOREIGN KEY ("environmentId") REFERENCES "environments" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "deployment_configurations_tlsCertificateId_fkey" FOREIGN KEY ("tlsCertificateId") REFERENCES "tls_certificates" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -306,18 +310,189 @@ CREATE TABLE "deployment_dns_records" (
 -- CreateTable
 CREATE TABLE "haproxy_frontends" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "deploymentConfigId" TEXT NOT NULL,
+    "deploymentConfigId" TEXT,
+    "frontendType" TEXT NOT NULL DEFAULT 'deployment',
+    "containerName" TEXT,
+    "containerId" TEXT,
+    "containerPort" INTEGER,
+    "environmentId" TEXT,
     "frontendName" TEXT NOT NULL,
     "backendName" TEXT NOT NULL,
     "hostname" TEXT NOT NULL,
     "bindPort" INTEGER NOT NULL DEFAULT 80,
     "bindAddress" TEXT NOT NULL DEFAULT '*',
     "useSSL" BOOLEAN NOT NULL DEFAULT false,
+    "tlsCertificateId" TEXT,
+    "sslBindPort" INTEGER NOT NULL DEFAULT 443,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "errorMessage" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
-    CONSTRAINT "haproxy_frontends_deploymentConfigId_fkey" FOREIGN KEY ("deploymentConfigId") REFERENCES "deployment_configurations" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "haproxy_frontends_deploymentConfigId_fkey" FOREIGN KEY ("deploymentConfigId") REFERENCES "deployment_configurations" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "haproxy_frontends_tlsCertificateId_fkey" FOREIGN KEY ("tlsCertificateId") REFERENCES "tls_certificates" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "registry_credentials" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "registryUrl" TEXT NOT NULL,
+    "username" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "description" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "createdBy" TEXT NOT NULL,
+    "updatedBy" TEXT NOT NULL,
+    "lastValidatedAt" DATETIME,
+    "validationStatus" TEXT,
+    "validationMessage" TEXT
+);
+
+-- CreateTable
+CREATE TABLE "postgres_servers" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "host" TEXT NOT NULL,
+    "port" INTEGER NOT NULL DEFAULT 5432,
+    "adminUsername" TEXT NOT NULL,
+    "connectionString" TEXT NOT NULL,
+    "sslMode" TEXT NOT NULL DEFAULT 'prefer',
+    "tags" TEXT,
+    "healthStatus" TEXT NOT NULL DEFAULT 'unknown',
+    "lastHealthCheck" DATETIME,
+    "serverVersion" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "postgres_servers_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "managed_databases" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "serverId" TEXT NOT NULL,
+    "databaseName" TEXT NOT NULL,
+    "owner" TEXT NOT NULL,
+    "encoding" TEXT NOT NULL DEFAULT 'UTF8',
+    "collation" TEXT,
+    "template" TEXT NOT NULL DEFAULT 'template0',
+    "sizeBytes" BIGINT,
+    "connectionLimit" INTEGER NOT NULL DEFAULT -1,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "lastSyncedAt" DATETIME,
+    CONSTRAINT "managed_databases_serverId_fkey" FOREIGN KEY ("serverId") REFERENCES "postgres_servers" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "managed_database_users" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "serverId" TEXT NOT NULL,
+    "username" TEXT NOT NULL,
+    "canLogin" BOOLEAN NOT NULL DEFAULT true,
+    "isSuperuser" BOOLEAN NOT NULL DEFAULT false,
+    "connectionLimit" INTEGER NOT NULL DEFAULT -1,
+    "passwordHash" TEXT,
+    "passwordSetAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "lastSyncedAt" DATETIME,
+    CONSTRAINT "managed_database_users_serverId_fkey" FOREIGN KEY ("serverId") REFERENCES "postgres_servers" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "database_grants" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "databaseId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "canConnect" BOOLEAN NOT NULL DEFAULT true,
+    "canCreate" BOOLEAN NOT NULL DEFAULT false,
+    "canTemp" BOOLEAN NOT NULL DEFAULT false,
+    "canCreateSchema" BOOLEAN NOT NULL DEFAULT false,
+    "canUsageSchema" BOOLEAN NOT NULL DEFAULT true,
+    "canSelect" BOOLEAN NOT NULL DEFAULT true,
+    "canInsert" BOOLEAN NOT NULL DEFAULT true,
+    "canUpdate" BOOLEAN NOT NULL DEFAULT true,
+    "canDelete" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "database_grants_databaseId_fkey" FOREIGN KEY ("databaseId") REFERENCES "managed_databases" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "database_grants_userId_fkey" FOREIGN KEY ("userId") REFERENCES "managed_database_users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "tls_certificates" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "domains" TEXT NOT NULL,
+    "primaryDomain" TEXT NOT NULL,
+    "certificateType" TEXT NOT NULL DEFAULT 'ACME',
+    "acmeProvider" TEXT,
+    "acmeAccountId" TEXT,
+    "acmeOrderUrl" TEXT,
+    "keyVaultCertificateName" TEXT NOT NULL,
+    "keyVaultVersion" TEXT,
+    "keyVaultSecretId" TEXT,
+    "issuer" TEXT,
+    "serialNumber" TEXT,
+    "fingerprint" TEXT,
+    "issuedAt" DATETIME NOT NULL,
+    "notBefore" DATETIME NOT NULL,
+    "notAfter" DATETIME NOT NULL,
+    "renewAfter" DATETIME NOT NULL,
+    "lastRenewedAt" DATETIME,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "lastError" TEXT,
+    "lastErrorAt" DATETIME,
+    "autoRenew" BOOLEAN NOT NULL DEFAULT true,
+    "renewalDaysBeforeExpiry" INTEGER NOT NULL DEFAULT 30,
+    "haproxyFrontendNames" TEXT,
+    "createdBy" TEXT NOT NULL,
+    "updatedBy" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "tls_certificate_renewals" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "certificateId" TEXT NOT NULL,
+    "attemptNumber" INTEGER NOT NULL,
+    "status" TEXT NOT NULL,
+    "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" DATETIME,
+    "durationMs" INTEGER,
+    "acmeOrderUrl" TEXT,
+    "acmeChallengeType" TEXT,
+    "dnsRecordName" TEXT,
+    "dnsRecordValue" TEXT,
+    "keyVaultVersion" TEXT,
+    "haproxyReloadMethod" TEXT,
+    "haproxyReloadSuccess" BOOLEAN NOT NULL DEFAULT false,
+    "errorMessage" TEXT,
+    "errorCode" TEXT,
+    "errorDetails" TEXT,
+    "triggeredBy" TEXT NOT NULL,
+    "metadata" TEXT,
+    CONSTRAINT "tls_certificate_renewals_certificateId_fkey" FOREIGN KEY ("certificateId") REFERENCES "tls_certificates" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "acme_accounts" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "email" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "accountUrl" TEXT NOT NULL,
+    "keyVaultSecretName" TEXT NOT NULL,
+    "keyAlgorithm" TEXT NOT NULL DEFAULT 'RSA-2048',
+    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "termsOfServiceUrl" TEXT,
+    "agreedToTermsAt" DATETIME,
+    "createdBy" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
 );
 
 -- CreateIndex
@@ -396,6 +571,9 @@ CREATE INDEX "deployment_configurations_environmentId_idx" ON "deployment_config
 CREATE INDEX "deployment_configurations_hostname_idx" ON "deployment_configurations"("hostname");
 
 -- CreateIndex
+CREATE INDEX "deployment_configurations_tlsCertificateId_idx" ON "deployment_configurations"("tlsCertificateId");
+
+-- CreateIndex
 CREATE INDEX "deployments_configurationId_status_idx" ON "deployments"("configurationId", "status");
 
 -- CreateIndex
@@ -472,3 +650,88 @@ CREATE INDEX "haproxy_frontends_hostname_idx" ON "haproxy_frontends"("hostname")
 
 -- CreateIndex
 CREATE INDEX "haproxy_frontends_status_idx" ON "haproxy_frontends"("status");
+
+-- CreateIndex
+CREATE INDEX "haproxy_frontends_tlsCertificateId_idx" ON "haproxy_frontends"("tlsCertificateId");
+
+-- CreateIndex
+CREATE INDEX "haproxy_frontends_frontendType_idx" ON "haproxy_frontends"("frontendType");
+
+-- CreateIndex
+CREATE INDEX "haproxy_frontends_environmentId_idx" ON "haproxy_frontends"("environmentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "registry_credentials_registryUrl_key" ON "registry_credentials"("registryUrl");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "postgres_servers_name_key" ON "postgres_servers"("name");
+
+-- CreateIndex
+CREATE INDEX "postgres_servers_userId_idx" ON "postgres_servers"("userId");
+
+-- CreateIndex
+CREATE INDEX "postgres_servers_healthStatus_idx" ON "postgres_servers"("healthStatus");
+
+-- CreateIndex
+CREATE INDEX "managed_databases_serverId_idx" ON "managed_databases"("serverId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "managed_databases_serverId_databaseName_key" ON "managed_databases"("serverId", "databaseName");
+
+-- CreateIndex
+CREATE INDEX "managed_database_users_serverId_idx" ON "managed_database_users"("serverId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "managed_database_users_serverId_username_key" ON "managed_database_users"("serverId", "username");
+
+-- CreateIndex
+CREATE INDEX "database_grants_databaseId_idx" ON "database_grants"("databaseId");
+
+-- CreateIndex
+CREATE INDEX "database_grants_userId_idx" ON "database_grants"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "database_grants_databaseId_userId_key" ON "database_grants"("databaseId", "userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "tls_certificates_keyVaultCertificateName_key" ON "tls_certificates"("keyVaultCertificateName");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "tls_certificates_fingerprint_key" ON "tls_certificates"("fingerprint");
+
+-- CreateIndex
+CREATE INDEX "tls_certificates_primaryDomain_idx" ON "tls_certificates"("primaryDomain");
+
+-- CreateIndex
+CREATE INDEX "tls_certificates_status_idx" ON "tls_certificates"("status");
+
+-- CreateIndex
+CREATE INDEX "tls_certificates_renewAfter_idx" ON "tls_certificates"("renewAfter");
+
+-- CreateIndex
+CREATE INDEX "tls_certificates_notAfter_idx" ON "tls_certificates"("notAfter");
+
+-- CreateIndex
+CREATE INDEX "tls_certificate_renewals_certificateId_idx" ON "tls_certificate_renewals"("certificateId");
+
+-- CreateIndex
+CREATE INDEX "tls_certificate_renewals_status_idx" ON "tls_certificate_renewals"("status");
+
+-- CreateIndex
+CREATE INDEX "tls_certificate_renewals_startedAt_idx" ON "tls_certificate_renewals"("startedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "acme_accounts_email_key" ON "acme_accounts"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "acme_accounts_accountUrl_key" ON "acme_accounts"("accountUrl");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "acme_accounts_keyVaultSecretName_key" ON "acme_accounts"("keyVaultSecretName");
+
+-- CreateIndex
+CREATE INDEX "acme_accounts_email_idx" ON "acme_accounts"("email");
+
+-- CreateIndex
+CREATE INDEX "acme_accounts_provider_idx" ON "acme_accounts"("provider");
+

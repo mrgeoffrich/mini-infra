@@ -74,7 +74,11 @@
       "Bash(find:*)",
       "Bash(timeout 10 node:*)",
       "Bash(NODE_ENV=production node:*)",
-      "Bash(cross-env NODE_ENV=production timeout 10 node:*)"
+      "Bash(cross-env NODE_ENV=production timeout 10 node:*)",
+      "Bash(cross-env NODE_ENV=production node:*)",
+      "Bash(timeout 15 cross-env NODE_ENV=production node:*)",
+      "Bash(cross-env NODE_ENV=production timeout 15 node:*)",
+      "Bash(initial_migration.sql)"
     ],
     "deny": [],
     "ask": [],
