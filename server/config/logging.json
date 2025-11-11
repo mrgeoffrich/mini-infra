@@ -87,8 +87,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "http": {
@@ -97,8 +97,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "prisma": {
@@ -107,8 +107,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "services": {
@@ -117,8 +117,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "dockerexecutor": {
@@ -127,8 +127,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "deployments": {
@@ -137,8 +137,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "loadbalancer": {
@@ -147,8 +147,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "self-backup": {
@@ -157,8 +157,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     },
     "tls": {
@@ -167,8 +167,8 @@
       "prettyPrint": false,
       "rotation": {
         "enabled": true,
-        "maxFiles": "14d",
-        "maxSize": "10m"
+        "maxFiles": 10,
+        "maxSize": "1m"
       }
     }
   },
