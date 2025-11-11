@@ -458,11 +458,24 @@ model DeploymentDNSRecord {
   @@map("deployment_dns_records")
 }
 
-// HAProxyFrontend model for tracking HAProxy frontends created for deployments
+// HAProxyFrontend model for tracking HAProxy frontends created for deployments or manually
 model HAProxyFrontend {
   id                    String   @id @default(cuid())
-  deploymentConfigId    String   @unique
-  deploymentConfig      DeploymentConfiguration @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+
+  // Deployment association (optional for manual frontends)
+  deploymentConfigId    String?  @unique
+  deploymentConfig      DeploymentConfiguration? @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+
+  // Frontend type discriminator
+  frontendType          String   @default("deployment") // "deployment" | "manual"
+
+  // Manual frontend fields
+  containerName         String?  // Docker container name (for manual frontends)
+  containerId           String?  // Docker container ID (for manual frontends)
+  containerPort         Int?     // Container listening port (for manual frontends)
+  environmentId         String?  // Environment association (for manual frontends)
+
+  // Frontend configuration
   frontendName          String   @unique
   backendName           String
   hostname              String
@@ -485,6 +498,8 @@ model HAProxyFrontend {
   @@index([hostname])
   @@index([status])
   @@index([tlsCertificateId])
+  @@index([frontendType])
+  @@index([environmentId])
   @@map("haproxy_frontends")
 }
 

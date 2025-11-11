@@ -125,6 +125,7 @@ import environmentNetworksRoutes from "./routes/environment-networks";
 import environmentVolumesRoutes from "./routes/environment-volumes";
 import deploymentDnsRoutes from "./routes/deployment-dns";
 import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
+import manualHaproxyFrontendsRoutes from "./routes/manual-haproxy-frontends";
 import selfBackupSettingsRoutes from "./routes/settings-self-backup";
 import selfBackupsRoutes from "./routes/self-backups";
 import registryCredentialsRoutes from "./routes/registry-credentials";
@@ -162,6 +163,7 @@ app.use("/api/deployments", deploymentsRoutes);
 app.use("/api/deployments", deploymentDnsRoutes);
 app.use("/api/deployments", haproxyFrontendsRoutes); // Mount for deployment config-specific routes
 app.use("/api/haproxy/frontends", haproxyFrontendsRoutes); // Mount for generic HAProxy management
+app.use("/api/haproxy/manual-frontends", manualHaproxyFrontendsRoutes); // Mount for manual frontend management
 app.use("/api/environments", environmentsRoutes);
 app.use("/api/environments/:id/networks", environmentNetworksRoutes);
 app.use("/api/environments/:id/volumes", environmentVolumesRoutes);

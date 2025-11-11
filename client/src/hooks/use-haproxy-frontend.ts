@@ -69,6 +69,33 @@ async function fetchAllFrontends(
   return data;
 }
 
+async function fetchFrontendByName(
+  frontendName: string,
+  correlationId: string,
+): Promise<HAProxyFrontendResponse> {
+  const response = await fetch(`/api/haproxy/frontends/${encodeURIComponent(frontendName)}`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch HAProxy frontend: ${response.statusText}`,
+    );
+  }
+
+  const data: HAProxyFrontendResponse = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to fetch HAProxy frontend");
+  }
+
+  return data;
+}
+
 async function syncDeploymentFrontend(
   configId: string,
   correlationId: string,
@@ -182,6 +209,51 @@ export function useAllFrontends(
           },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff with max 30s
     staleTime: 10000, // Data is fresh for 10 seconds
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+/**
+ * Hook to get a specific HAProxy frontend by name
+ */
+export function useFrontendByName(
+  frontendName: string | undefined,
+  options: UseHAProxyFrontendOptions = {},
+) {
+  const { enabled = true, refetchInterval, retry = 3 } = options;
+
+  const correlationId = generateCorrelationId();
+
+  return useQuery({
+    queryKey: ["haproxy-frontend", frontendName],
+    queryFn: () => fetchFrontendByName(frontendName!, correlationId),
+    enabled: enabled && !!frontendName,
+    refetchInterval,
+    retry:
+      typeof retry === "function"
+        ? retry
+        : (failureCount: number, error: Error) => {
+            // Don't retry on authentication errors
+            if (
+              error.message.includes("401") ||
+              error.message.includes("Unauthorized")
+            ) {
+              return false;
+            }
+            // Don't retry on not found errors
+            if (
+              error.message.includes("404") ||
+              error.message.includes("Not found")
+            ) {
+              return false;
+            }
+            // Retry up to the specified number of times for other errors
+            return typeof retry === "boolean" ? retry : failureCount < retry;
+          },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff with max 30s
+    staleTime: 5000, // Data is fresh for 5 seconds
     gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,

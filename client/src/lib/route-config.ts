@@ -139,6 +139,27 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: 'API key management'
   },
 
+  '/haproxy': {
+    path: '/haproxy',
+    title: 'HAProxy',
+    icon: IconNetwork,
+    showInNav: true,
+    navGroup: 'main',
+    description: 'HAProxy frontend management',
+    children: {
+      'frontends': {
+        path: '/haproxy/frontends',
+        title: 'Frontends',
+        showInNav: false,
+      },
+      'frontends/new/manual': {
+        path: '/haproxy/frontends/new/manual',
+        title: 'Connect Container',
+        showInNav: false,
+      },
+    }
+  },
+
   '/certificates': {
     path: '/certificates',
     title: 'TLS Certificates',

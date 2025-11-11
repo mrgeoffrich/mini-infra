@@ -29,6 +29,10 @@ import CertificatesPage from "@/app/certificates/page";
 import CertificateDetailsPage from "@/app/certificates/[id]/page";
 import TlsSettingsPage from "@/app/settings/tls/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
+import FrontendsListPage from "@/app/haproxy/frontends/page";
+import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
+import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
+import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
 
 export const router = createBrowserRouter([
   {
@@ -106,6 +110,26 @@ export const router = createBrowserRouter([
       {
         path: "certificates/:id",
         element: <CertificateDetailsPage />,
+      },
+      {
+        path: "haproxy",
+        element: <Navigate to="/haproxy/frontends" replace />,
+      },
+      {
+        path: "haproxy/frontends",
+        element: <FrontendsListPage />,
+      },
+      {
+        path: "haproxy/frontends/new/manual",
+        element: <CreateManualFrontendPage />,
+      },
+      {
+        path: "haproxy/frontends/:frontendName",
+        element: <FrontendDetailsPage />,
+      },
+      {
+        path: "haproxy/frontends/:frontendName/edit",
+        element: <EditManualFrontendPage />,
       },
       {
         path: "environments",
