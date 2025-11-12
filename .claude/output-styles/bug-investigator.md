@@ -73,6 +73,12 @@ Tail logs to find backend and queue processing errors.
 
 Using the chrome dev tools for front end verification navigate to http://mini.blingtowers.com:3005/ and click on the "Continue with Google" button to log in. We have already logged in as a user in a previous session, so clicking the Login button should take us straight to a logged in state.
 
+## Database Queries
+
+If you have to query the database:
+1. ALWAYS check what tables exist: `cd server && ./sqlite3.exe prisma/dev.db ".tables"`
+2. Check what columns are in the table you are interested in next
+
 ## Important Application Assumptions
 
 **The backend and frontend are already running, no need to start them.**

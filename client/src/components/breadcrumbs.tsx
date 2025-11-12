@@ -25,10 +25,10 @@ export function Breadcrumbs({ className, showHome = true }: BreadcrumbsProps) {
             to="/dashboard"
             className="flex items-center hover:text-foreground transition-colors"
           >
-            <IconHome className="h-4 w-4" />
+            <IconHome className="size-4" />
             <span className="sr-only">Dashboard</span>
           </Link>
-          {breadcrumbs.length > 0 && <IconChevronRight className="h-4 w-4" />}
+          {breadcrumbs.length > 0 && <IconChevronRight className="size-4" />}
         </>
       )}
 
@@ -48,7 +48,7 @@ export function Breadcrumbs({ className, showHome = true }: BreadcrumbsProps) {
           )}
 
           {index < breadcrumbs.length - 1 && (
-            <IconChevronRight className="h-4 w-4 mx-1" />
+            <IconChevronRight className="size-4 mx-1" />
           )}
         </div>
       ))}

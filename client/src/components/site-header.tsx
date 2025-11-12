@@ -3,7 +3,8 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   IconBrandDocker,
-  IconCloud,
+  IconBrandCloudflare,
+  IconBrandAzure,
   IconDatabase,
 } from "@tabler/icons-react";
 import {
@@ -45,7 +46,7 @@ function BackupHealthIndicator() {
 
   const content = (
     <div className="flex items-center gap-1.5">
-      <IconDatabase size={16} className="text-muted-foreground" />
+      <IconDatabase className="size-4 text-muted-foreground" />
       <div className={`w-2 h-2 rounded-full ${getStatusColor()}`} />
     </div>
   );
@@ -106,7 +107,7 @@ function ConnectivityIndicator({
 
   const content = (
     <div className="flex items-center gap-1.5">
-      <Icon size={16} className="text-muted-foreground" />
+      <Icon className="size-4 text-muted-foreground" />
       <div
         className={`w-2 h-2 rounded-full ${
           isConnected ? "bg-green-500" : "bg-red-500"
@@ -167,12 +168,12 @@ export function SiteHeader() {
             />
             <ConnectivityIndicator
               service="cloudflare"
-              icon={IconCloud}
+              icon={IconBrandCloudflare}
               label="Cloudflare"
             />
             <ConnectivityIndicator
               service="azure"
-              icon={IconCloud}
+              icon={IconBrandAzure}
               label="Azure"
             />
             <BackupHealthIndicator />

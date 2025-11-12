@@ -121,7 +121,7 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem asChild>
                 <Link to="/user/settings" className="flex items-center">
-                  <IconSettings className="mr-2 h-4 w-4" />
+                  <IconSettings className="mr-2 size-4" />
                   Settings
                 </Link>
               </DropdownMenuItem>
@@ -130,12 +130,12 @@ export function NavUser() {
             <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
               {isLoggingOut ? (
                 <>
-                  <IconLoader2 className="h-4 w-4 animate-spin" />
+                  <IconLoader2 className="size-4 animate-spin" />
                   Signing out...
                 </>
               ) : (
                 <>
-                  <IconLogout className="h-4 w-4" />
+                  <IconLogout className="size-4" />
                   Sign out
                 </>
               )}

@@ -4,7 +4,6 @@ import {
   IconBrandCloudflare,
   IconBrandAzure,
   IconCertificate,
-  IconCloudComputing,
   IconDashboard,
   IconDatabase,
   IconKey,
@@ -70,7 +69,7 @@ export const routeConfig: Record<string, RouteConfig> = {
   '/postgres-server': {
     path: '/postgres-server',
     title: 'PostgreSQL Servers',
-    icon: IconServer,
+    icon: IconDatabase,
     showInNav: true,
     navGroup: 'main',
     description: 'PostgreSQL server and database management',
@@ -205,7 +204,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: '/connectivity/cloudflare',
         title: 'Cloudflare Settings',
         breadcrumbLabel: 'Cloudflare',
-        icon: IconCloudComputing,
+        icon: IconBrandCloudflare,
         parent: '/connectivity',
         showInNav: true
       },

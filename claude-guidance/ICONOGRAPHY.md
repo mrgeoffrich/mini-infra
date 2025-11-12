@@ -12,7 +12,7 @@
 | `IconBrandDocker` | Docker | Containers, Docker features |
 | `IconBrandAzure` | Azure | Blob Storage, Azure services |
 | `IconBrandCloudflare` | Cloudflare | Tunnels, CDN, connectivity |
-| `IconBrandPostgresql` | PostgreSQL | Database management |
+| `IconDatabase` | PostgreSQL | Database management |
 
 ### Navigation Icons
 | Icon | Route | Purpose |
@@ -20,7 +20,7 @@
 | `IconInnerShadowTop`/`IconAppWindow` | - | App logo (size-5) |
 | `IconDashboard` | /dashboard | System overview |
 | `IconBrandDocker` | /containers | Container management |
-| `IconBrandPostgresql`/`IconDatabase` | /postgres | Database management |
+| `IconDatabase` | /postgres | Database management |
 | `IconRocket` | /deployments | Deployment orchestration |
 | `IconServer` | /environments | Infrastructure config |
 | `IconCloud`/`IconBrandCloudflare` | /tunnels | Cloud connectivity |

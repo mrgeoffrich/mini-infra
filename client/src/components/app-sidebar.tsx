@@ -63,7 +63,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       isActive={location.pathname === "/design/icons"}
                     >
                       <Link to="/design/icons">
-                        <IconPalette className="h-4 w-4" />
+                        <IconPalette className="size-4" />
                         <span>Icon Reference</span>
                       </Link>
                     </SidebarMenuButton>
