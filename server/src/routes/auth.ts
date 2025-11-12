@@ -7,7 +7,7 @@ import {
 } from "express";
 import passport from "../lib/passport";
 import { appLogger } from "../lib/logger-factory";
-import { serverConfig } from "../lib/config-new";
+import { serverConfig, securityConfig } from "../lib/config-new";
 import { generateToken } from "../lib/jwt";
 import type { AuthStatus, UserProfile, JWTUser } from "@mini-infra/types";
 
@@ -92,10 +92,12 @@ router.get("/google/callback", ((
       const redirectUrl = `${frontendUrl}${redirectPath}`;
 
       // Set JWT token as HTTP-only cookie
+      // Only set secure flag if in production AND not explicitly allowing insecure connections
+      const shouldUseSecureCookie = serverConfig.nodeEnv === "production" && !securityConfig.allowInsecure;
       res.cookie("auth-token", token, {
         httpOnly: true,
-        secure: serverConfig.nodeEnv === "production",
-        sameSite: serverConfig.nodeEnv === "production" ? "strict" : "lax",
+        secure: shouldUseSecureCookie,
+        sameSite: shouldUseSecureCookie ? "strict" : "lax",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       });
 
@@ -136,10 +138,12 @@ router.post("/logout", ((req: Request, res: Response) => {
 
   try {
     // Clear the JWT token cookie
+    // Match the same cookie options as when it was set
+    const shouldUseSecureCookie = serverConfig.nodeEnv === "production" && !securityConfig.allowInsecure;
     res.clearCookie("auth-token", {
       httpOnly: true,
-      secure: serverConfig.nodeEnv === "production",
-      sameSite: serverConfig.nodeEnv === "production" ? "strict" : "lax",
+      secure: shouldUseSecureCookie,
+      sameSite: shouldUseSecureCookie ? "strict" : "lax",
     });
 
     logger.debug({ userId }, "User logged out successfully");
