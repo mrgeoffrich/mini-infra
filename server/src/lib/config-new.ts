@@ -174,7 +174,13 @@ const appConfig: Config = {
   security: {
     allowInsecure: (() => {
       const value = getConfigValue<string | boolean>("security.allowInsecure", "ALLOW_INSECURE", false);
-      return value === "true" || value === true;
+      const explicitAllowInsecure = value === "true" || value === true;
+
+      // Auto-detect: if PUBLIC_URL is HTTP, automatically allow insecure connections
+      const publicUrl = getConfigValue<string | undefined>("server.publicUrl", "PUBLIC_URL", undefined);
+      const isHttpPublicUrl = publicUrl ? publicUrl.startsWith("http://") : false;
+
+      return explicitAllowInsecure || isHttpPublicUrl;
     })(),
   },
 };
@@ -184,6 +190,16 @@ let validatedConfig: Config;
 
 try {
   validatedConfig = configSchema.parse(appConfig);
+
+  // Log security configuration for transparency
+  if (validatedConfig.security.allowInsecure) {
+    const publicUrl = validatedConfig.server.publicUrl;
+    if (publicUrl && publicUrl.startsWith("http://")) {
+      console.log("ℹ️  Security: Allowing insecure connections (auto-detected from HTTP PUBLIC_URL)");
+    } else {
+      console.log("⚠️  Security: Allowing insecure connections (explicitly configured via ALLOW_INSECURE)");
+    }
+  }
 } catch (error) {
   // Use console.error since logger isn't available yet
   console.error("❌ FATAL: Invalid configuration detected during startup");

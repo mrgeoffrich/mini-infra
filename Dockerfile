@@ -18,7 +18,8 @@ COPY package*.json ./
 COPY lib ./lib
 
 # Install dependencies and build shared types
-RUN npm install --workspace=lib && \
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --workspace=lib && \
     npm run build:lib
 
 # ============================================
@@ -38,7 +39,8 @@ COPY package*.json ./
 COPY client ./client
 
 # Install dependencies for client workspace
-RUN npm install --workspace=client
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --workspace=client
 
 # Build frontend (outputs to server/public via vite.config.ts)
 WORKDIR /app/client
@@ -63,7 +65,8 @@ COPY package*.json ./
 COPY server ./server
 
 # Install all dependencies (including dev dependencies for build)
-RUN npm install --workspace=server --production=false
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --workspace=server --production=false
 
 # Generate Prisma client and build backend
 WORKDIR /app/server
@@ -124,7 +127,8 @@ RUN chown -R node:node /app
 USER node
 
 # Install production dependencies only (after copying package files)
-RUN npm install --workspace=lib --workspace=server --omit=dev
+RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
+    npm install --workspace=lib --workspace=server --omit=dev
 
 # Generate Prisma client in production environment
 # This creates the client code in node_modules/.prisma/client based on the schema

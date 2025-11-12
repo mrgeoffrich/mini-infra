@@ -361,6 +361,17 @@ These services can be configured through the application UI after deployment:
 - **`OTEL_ENABLED`** - Enable OpenTelemetry tracing (default: `false`)
 - **`OPENOBSERVE_URL`** - OpenObserve instance URL for observability
 
+#### Security & HTTP/HTTPS Configuration
+
+- **`PUBLIC_URL`** - Public URL for the application (e.g., `http://localhost:5000` or `https://mini-infra.yourdomain.com`)
+  - **Important**: If `PUBLIC_URL` starts with `http://`, the application automatically disables HTTPS-enforcing security headers (HSTS, CSP upgrade-insecure-requests)
+  - This ensures static assets load correctly over HTTP without browser protocol upgrades
+
+- **`ALLOW_INSECURE`** - Manually override security settings (default: `false`)
+  - Set to `true` to disable HTTPS-enforcing headers when not using `PUBLIC_URL`
+  - **Note**: Automatically set to `true` when `PUBLIC_URL` starts with `http://`
+  - **Warning**: Only use in development or trusted environments behind a reverse proxy
+
 ### Volume Mounts
 
 #### Required Volumes
