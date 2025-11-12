@@ -425,8 +425,9 @@ export class RegistryCredentialService {
           registryUrl.includes("gitlab") ||
           registryUrl.includes("azurecr.io"))
       ) {
-        result.message = `Test image not found. Authentication appears valid, but the default test image doesn't exist in your registry. For private registries, you may need to provide a specific image you have access to. The credentials were successfully validated with the registry authentication service.`;
+        result.message = "Credentials are OK";
         result.success = true; // Mark as success since auth worked
+        result.error = undefined; // Clear the error code since we're treating this as success
       }
 
       return result;

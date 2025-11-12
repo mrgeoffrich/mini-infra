@@ -7,6 +7,7 @@ import AdmZip from "adm-zip";
 import fs from "fs/promises";
 import path from "path";
 import type { SelfBackup } from "@prisma/client";
+import { getDatabaseFilePath } from "../lib/database-url-parser";
 
 /**
  * SelfBackupExecutor handles the execution of Mini Infra database backups
@@ -17,7 +18,14 @@ export class SelfBackupExecutor {
 
   // Paths
   private static readonly TEMP_DIR = path.resolve(process.cwd(), "temp");
-  private static readonly DB_PATH = path.resolve(process.cwd(), "prisma", "dev.db");
+
+  /**
+   * Get the database file path from DATABASE_URL environment variable
+   * @returns Absolute path to the SQLite database file
+   */
+  private static getDbPath(): string {
+    return getDatabaseFilePath();
+  }
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
@@ -68,10 +76,12 @@ export class SelfBackupExecutor {
 
       // Step 1: Create SQLite backup
       backupFilePath = path.join(SelfBackupExecutor.TEMP_DIR, `mini-infra-${timestamp}.db`);
-      await this.createSqliteBackup(SelfBackupExecutor.DB_PATH, backupFilePath);
+      const dbPath = SelfBackupExecutor.getDbPath();
+      await this.createSqliteBackup(dbPath, backupFilePath);
 
       selfBackupLogger().info({
         backupId: backup.id,
+        sourcePath: dbPath,
         backupFilePath,
       }, "SQLite backup created");
 

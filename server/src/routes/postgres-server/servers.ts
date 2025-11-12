@@ -342,42 +342,11 @@ router.get("/:id/info", requireSessionOrApiKey, async (req, res) => {
 });
 
 // Import and mount sub-routers for databases and users
-// Express 5: Cannot use parameters in router.use() mount paths
-// Solution: Use middleware with regex to forward to sub-routers
 import postgresServerDatabasesRoutes from './databases';
 import postgresServerUsersRoutes from './users';
 
-// Express 5 compliant: use regex-based middleware instead of parameterized mount paths
-router.use(/^\/([^\/]+)\/databases/, (req, res, next) => {
-  // Extract server ID from URL and remove the prefix for the sub-router
-  const match = req.path.match(/^\/([^\/]+)\/databases/);
-  if (match) {
-    req.params.serverId = match[1];
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/[^/]+\/databases/, '');
-    postgresServerDatabasesRoutes(req, res, (err?: any) => {
-      req.url = originalUrl;
-      next(err);
-    });
-  } else {
-    next();
-  }
-});
-
-router.use(/^\/([^\/]+)\/users/, (req, res, next) => {
-  // Extract server ID from URL and remove the prefix for the sub-router
-  const match = req.path.match(/^\/([^\/]+)\/users/);
-  if (match) {
-    req.params.serverId = match[1];
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/[^/]+\/users/, '');
-    postgresServerUsersRoutes(req, res, (err?: any) => {
-      req.url = originalUrl;
-      next(err);
-    });
-  } else {
-    next();
-  }
-});
+// Mount sub-routers with path parameters (Express 5 supports this with mergeParams)
+router.use('/:serverId/databases', postgresServerDatabasesRoutes);
+router.use('/:serverId/users', postgresServerUsersRoutes);
 
 export default router;
