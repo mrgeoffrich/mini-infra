@@ -11,6 +11,7 @@ import {
   IconRocket,
   IconServer,
   IconSettings,
+  IconShield,
 } from "@tabler/icons-react";
 
 export interface RouteMetadata {
@@ -231,6 +232,15 @@ export const routeConfig: Record<string, RouteConfig> = {
         title: 'System Settings',
         breadcrumbLabel: 'System',
         icon: IconSettings,
+        parent: '/settings',
+        showInNav: true,
+        navGroup: 'secondary'
+      },
+      'security': {
+        path: '/settings/security',
+        title: 'Security Settings',
+        breadcrumbLabel: 'Security',
+        icon: IconShield,
         parent: '/settings',
         showInNav: true,
         navGroup: 'secondary'

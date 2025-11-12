@@ -1,9 +1,9 @@
 import { randomBytes, createHmac } from "crypto";
 import prisma from "./prisma";
 import { appLogger } from "./logger-factory";
+import { getApiKeySecret } from "./security-config";
 
 const logger = appLogger();
-import { authConfig } from "./config-new";
 import type {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
@@ -24,10 +24,10 @@ export function generateApiKey(): string {
 
 /**
  * Generate a secure hash of the API key for storage
- * Uses HMAC-SHA256 with a secret from environment
+ * Uses HMAC-SHA256 with a secret from database-backed security config
  */
 export function hashApiKey(key: string): string {
-  const secret = authConfig.apiKey.secret;
+  const secret = getApiKeySecret();
   return createHmac("sha256", secret).update(key).digest("hex");
 }
 

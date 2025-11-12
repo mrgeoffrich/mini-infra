@@ -2,6 +2,7 @@ import prisma, { PrismaClient } from "../lib/prisma";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
+import { getApiKeySecret } from "../lib/security-config";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -20,13 +21,22 @@ import {
 
 export class DatabaseConfigService {
   private prisma: PrismaClient;
-  private encryptionKey: string;
+  private encryptionKey: string | null;
 
   constructor(prisma: PrismaClient, encryptionKey?: string) {
     this.prisma = prisma;
-    // Use provided encryption key or default from env
-    this.encryptionKey =
-      encryptionKey || process.env.API_KEY_SECRET || "default-key";
+    // Store provided encryption key or null (will be loaded lazily)
+    this.encryptionKey = encryptionKey || null;
+  }
+
+  /**
+   * Get the encryption key (lazy-loaded from security config if not provided)
+   */
+  private getEncryptionKey(): string {
+    if (!this.encryptionKey) {
+      this.encryptionKey = getApiKeySecret();
+    }
+    return this.encryptionKey;
   }
 
   // ====================
@@ -42,7 +52,7 @@ export class DatabaseConfigService {
     try {
       return CryptoJS.AES.encrypt(
         connectionString,
-        this.encryptionKey,
+        this.getEncryptionKey(),
       ).toString();
     } catch (error) {
       servicesLogger().error(
@@ -64,7 +74,7 @@ export class DatabaseConfigService {
     try {
       const bytes = CryptoJS.AES.decrypt(
         encryptedConnectionString,
-        this.encryptionKey,
+        this.getEncryptionKey(),
       );
       const decrypted = bytes.toString(CryptoJS.enc.Utf8);
       if (!decrypted) {

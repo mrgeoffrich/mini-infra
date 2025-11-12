@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
-import { authConfig } from "./config-new";
 import { appLogger } from "./logger-factory";
+import { getSessionSecret } from "./security-config";
 
 const logger = appLogger();
 import type { UserProfile } from "@mini-infra/types";
@@ -16,9 +16,6 @@ export interface JwtPayload {
 }
 
 // JWT configuration
-const JWT_SECRET =
-  authConfig.session.secret ||
-  "default-development-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h"; // 24 hours
 const JWT_ISSUER = "mini-infra";
 
@@ -34,7 +31,7 @@ export const generateToken = (user: UserProfile): string => {
       image: user.image || undefined,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, {
+    const token = jwt.sign(payload, getSessionSecret(), {
       expiresIn: JWT_EXPIRES_IN,
       issuer: JWT_ISSUER,
       algorithm: "HS256",
@@ -53,7 +50,7 @@ export const generateToken = (user: UserProfile): string => {
  */
 export const verifyToken = (token: string): JwtPayload => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
+    const decoded = jwt.verify(token, getSessionSecret(), {
       issuer: JWT_ISSUER,
       algorithms: ["HS256"],
     }) as JwtPayload;

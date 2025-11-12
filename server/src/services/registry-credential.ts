@@ -1,6 +1,7 @@
 import prisma, { PrismaClient } from "../lib/prisma";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
+import { getApiKeySecret } from "../lib/security-config";
 import type {
   RegistryCredential,
   CreateRegistryCredentialRequest,
@@ -11,13 +12,22 @@ import { DockerExecutorService } from "./docker-executor";
 
 export class RegistryCredentialService {
   private prisma: PrismaClient;
-  private encryptionKey: string;
+  private encryptionKey: string | null;
 
   constructor(prisma: PrismaClient, encryptionKey?: string) {
     this.prisma = prisma;
-    // Use provided encryption key or default from env
-    this.encryptionKey =
-      encryptionKey || process.env.API_KEY_SECRET || "default-key";
+    // Store provided encryption key or null (will be loaded lazily)
+    this.encryptionKey = encryptionKey || null;
+  }
+
+  /**
+   * Get the encryption key (lazy-loaded from security config if not provided)
+   */
+  private getEncryptionKey(): string {
+    if (!this.encryptionKey) {
+      this.encryptionKey = getApiKeySecret();
+    }
+    return this.encryptionKey;
   }
 
   // ====================
@@ -31,7 +41,7 @@ export class RegistryCredentialService {
    */
   private encryptPassword(password: string): string {
     try {
-      return CryptoJS.AES.encrypt(password, this.encryptionKey).toString();
+      return CryptoJS.AES.encrypt(password, this.getEncryptionKey()).toString();
     } catch (error) {
       servicesLogger().error(
         {
@@ -52,7 +62,7 @@ export class RegistryCredentialService {
     try {
       const bytes = CryptoJS.AES.decrypt(
         encryptedPassword,
-        this.encryptionKey,
+        this.getEncryptionKey(),
       );
       const decrypted = bytes.toString(CryptoJS.enc.Utf8);
       if (!decrypted) {

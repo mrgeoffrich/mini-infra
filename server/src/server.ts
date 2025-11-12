@@ -41,6 +41,8 @@ import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
 import { CloudflareConfigService } from "./services/cloudflare-config";
 import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { securityConfig } from "./lib/security-config";
+import { randomBytes } from "crypto";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -51,10 +53,124 @@ let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 
+/**
+ * Initialize security secrets from database or generate new ones
+ * This must run FIRST before any other service initialization
+ */
+const initializeSecuritySecrets = async () => {
+  console.log("[STARTUP] Initializing security secrets...");
+
+  try {
+    const CATEGORY = "system";
+    const SESSION_SECRET_KEY = "session_secret";
+    const API_KEY_SECRET_KEY = "api_key_secret";
+
+    // Check if session secret exists
+    let sessionSetting = await prisma.systemSettings.findFirst({
+      where: {
+        category: CATEGORY,
+        key: SESSION_SECRET_KEY,
+        isActive: true,
+      },
+    });
+
+    // Generate session secret if it doesn't exist
+    if (!sessionSetting || !sessionSetting.value) {
+      const newSessionSecret = randomBytes(32).toString("hex");
+      console.log("[STARTUP] Session secret not found, generating new one...");
+
+      sessionSetting = await prisma.systemSettings.upsert({
+        where: {
+          category_key: {
+            category: CATEGORY,
+            key: SESSION_SECRET_KEY,
+          },
+        },
+        create: {
+          category: CATEGORY,
+          key: SESSION_SECRET_KEY,
+          value: newSessionSecret,
+          isEncrypted: false,
+          isActive: true,
+          createdBy: "system",
+          updatedBy: "system",
+        },
+        update: {
+          value: newSessionSecret,
+          updatedBy: "system",
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.info("New session secret generated and stored in database");
+      console.log("[STARTUP] ✓ New session secret generated");
+    } else {
+      console.log("[STARTUP] ✓ Session secret loaded from database");
+    }
+
+    // Check if API key secret exists
+    let apiKeySetting = await prisma.systemSettings.findFirst({
+      where: {
+        category: CATEGORY,
+        key: API_KEY_SECRET_KEY,
+        isActive: true,
+      },
+    });
+
+    // Generate API key secret if it doesn't exist
+    if (!apiKeySetting || !apiKeySetting.value) {
+      const newApiKeySecret = randomBytes(32).toString("hex");
+      console.log("[STARTUP] API key secret not found, generating new one...");
+
+      apiKeySetting = await prisma.systemSettings.upsert({
+        where: {
+          category_key: {
+            category: CATEGORY,
+            key: API_KEY_SECRET_KEY,
+          },
+        },
+        create: {
+          category: CATEGORY,
+          key: API_KEY_SECRET_KEY,
+          value: newApiKeySecret,
+          isEncrypted: false,
+          isActive: true,
+          createdBy: "system",
+          updatedBy: "system",
+        },
+        update: {
+          value: newApiKeySecret,
+          updatedBy: "system",
+          updatedAt: new Date(),
+        },
+      });
+
+      logger.info("New API key secret generated and stored in database");
+      console.log("[STARTUP] ✓ New API key secret generated");
+    } else {
+      console.log("[STARTUP] ✓ API key secret loaded from database");
+    }
+
+    // Load secrets into memory
+    securityConfig.setSessionSecret(sessionSetting.value);
+    securityConfig.setApiKeySecret(apiKeySetting.value);
+
+    logger.info("Security secrets initialized successfully");
+    console.log("[STARTUP] ✓ Security secrets initialized and loaded into memory");
+  } catch (error) {
+    console.error("[STARTUP] FATAL: Failed to initialize security secrets");
+    console.error(error);
+    throw error;
+  }
+};
+
 // Initialize Docker connection and connectivity scheduler before starting server
 const initializeServices = async () => {
   console.log("[STARTUP] Initializing services...");
   try {
+    // Initialize security secrets FIRST (other services depend on these)
+    await initializeSecuritySecrets();
+
     // Initialize Docker service
     console.log("[STARTUP] Initializing Docker service...");
     const dockerService = DockerService.getInstance();
