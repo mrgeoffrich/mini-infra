@@ -21,6 +21,7 @@ export interface RouteMetadata {
   parent?: string; // Parent route path for breadcrumb hierarchy
   showInNav?: boolean; // Whether to show in sidebar navigation
   navGroup?: 'main' | 'secondary'; // Which navigation group
+  navSection?: 'applications' | 'databases' | 'networking' | 'connectivity' | 'administration'; // Navigation section for grouping
   description?: string;
 }
 
@@ -46,6 +47,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconBrandDocker,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'applications',
     description: 'Docker container management'
   },
 
@@ -73,6 +75,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconDatabase,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'databases',
     description: 'PostgreSQL server and database management',
     children: {
       'detail': {
@@ -91,6 +94,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconRocket,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'applications',
     description: 'Zero-downtime deployment management',
     children: {
       'new': {
@@ -109,6 +113,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconServer,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'applications',
     description: 'Environment configuration management',
     children: {
       'detail': {
@@ -127,6 +132,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconBrandCloudflare,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'networking',
     description: 'Cloudflare tunnel monitoring'
   },
 
@@ -136,6 +142,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconKey,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'administration',
     description: 'API key management'
   },
 
@@ -145,6 +152,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconNetwork,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'networking',
     description: 'HAProxy frontend management',
     children: {
       'frontends': {
@@ -166,6 +174,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconCertificate,
     showInNav: true,
     navGroup: 'main',
+    navSection: 'networking',
     description: 'Manage SSL/TLS certificates and renewals',
     children: {
       'detail': {
@@ -182,8 +191,9 @@ export const routeConfig: Record<string, RouteConfig> = {
     path: '/connectivity',
     title: 'Connectivity',
     icon: IconNetwork,
-    showInNav: true,
+    showInNav: false,
     navGroup: 'main',
+    navSection: 'connectivity',
     description: 'Service connectivity and configuration',
     children: {
       'overview': {
@@ -195,19 +205,23 @@ export const routeConfig: Record<string, RouteConfig> = {
       },
       'docker': {
         path: '/connectivity/docker',
-        title: 'Docker Configuration',
+        title: 'Docker',
         breadcrumbLabel: 'Docker',
         icon: IconBrandDocker,
         parent: '/connectivity',
-        showInNav: true
+        showInNav: true,
+        navGroup: 'main',
+        navSection: 'connectivity'
       },
       'cloudflare': {
         path: '/connectivity/cloudflare',
-        title: 'Cloudflare Settings',
+        title: 'Cloudflare',
         breadcrumbLabel: 'Cloudflare',
         icon: IconBrandCloudflare,
         parent: '/connectivity',
-        showInNav: true
+        showInNav: true,
+        navGroup: 'main',
+        navSection: 'connectivity'
       },
       'azure': {
         path: '/connectivity/azure',
@@ -215,7 +229,9 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: 'Azure',
         icon: IconBrandAzure,
         parent: '/connectivity',
-        showInNav: true
+        showInNav: true,
+        navGroup: 'main',
+        navSection: 'connectivity'
       }
     }
   },
@@ -225,7 +241,8 @@ export const routeConfig: Record<string, RouteConfig> = {
     title: 'Settings',
     icon: IconSettings,
     showInNav: false,
-    navGroup: 'secondary',
+    navGroup: 'main',
+    navSection: 'administration',
     children: {
       'system': {
         path: '/settings/system',
@@ -234,7 +251,8 @@ export const routeConfig: Record<string, RouteConfig> = {
         icon: IconSettings,
         parent: '/settings',
         showInNav: true,
-        navGroup: 'secondary'
+        navGroup: 'main',
+        navSection: 'administration'
       },
       'security': {
         path: '/settings/security',
@@ -243,7 +261,8 @@ export const routeConfig: Record<string, RouteConfig> = {
         icon: IconShield,
         parent: '/settings',
         showInNav: true,
-        navGroup: 'secondary'
+        navGroup: 'main',
+        navSection: 'administration'
       },
       'registry-credentials': {
         path: '/settings/registry-credentials',
@@ -252,7 +271,8 @@ export const routeConfig: Record<string, RouteConfig> = {
         icon: IconKey,
         parent: '/settings',
         showInNav: true,
-        navGroup: 'secondary'
+        navGroup: 'main',
+        navSection: 'administration'
       },
       'self-backup': {
         path: '/settings/self-backup',
@@ -261,16 +281,18 @@ export const routeConfig: Record<string, RouteConfig> = {
         icon: IconDatabase,
         parent: '/settings',
         showInNav: true,
-        navGroup: 'secondary'
+        navGroup: 'main',
+        navSection: 'administration'
       },
       'tls': {
         path: '/settings/tls',
-        title: 'TLS Configuration',
+        title: 'TLS Settings',
         breadcrumbLabel: 'TLS',
         icon: IconCertificate,
         parent: '/settings',
         showInNav: true,
-        navGroup: 'secondary'
+        navGroup: 'main',
+        navSection: 'administration'
       }
     }
   },
@@ -318,40 +340,48 @@ export function getRouteMetadata(pathname: string): RouteMetadata | null {
   return null;
 }
 
-// Function overloads for different navigation groups
-export function getNavigationItems(group: 'main'): Array<{
-  title: string;
-  url: string;
-  icon?: Icon;
-  items?: Array<{
+export interface NavSection {
+  id: string;
+  label: string;
+  items: Array<{
     title: string;
     url: string;
     icon?: Icon;
-  }>;
-}>;
-
-export function getNavigationItems(group: 'secondary'): Array<{
-  title: string;
-  url: string;
-  icon: Icon;
-}>;
-
-export function getNavigationItems(group: 'main' | 'secondary' = 'main') {
-  if (group === 'main') {
-    // Main navigation allows optional icons
-    const items: Array<{
+    items?: Array<{
       title: string;
       url: string;
       icon?: Icon;
-      items?: Array<{
-        title: string;
-        url: string;
-        icon?: Icon;
-      }>;
-    }> = [];
+    }>;
+  }>;
+}
 
-    for (const config of Object.values(routeConfig)) {
-      if (config.showInNav && config.navGroup === group) {
+// Get navigation items grouped by section
+export function getNavigationSections(): NavSection[] {
+  const sections = new Map<string, NavSection>();
+
+  // Define section order and labels
+  const sectionDefinitions: Array<{ id: string; label: string }> = [
+    { id: 'applications', label: 'Applications' },
+    { id: 'databases', label: 'Databases' },
+    { id: 'networking', label: 'Networking' },
+    { id: 'connectivity', label: 'Connectivity' },
+    { id: 'administration', label: 'Administration' },
+  ];
+
+  // Initialize sections
+  for (const def of sectionDefinitions) {
+    sections.set(def.id, {
+      id: def.id,
+      label: def.label,
+      items: []
+    });
+  }
+
+  // Group navigation items by section
+  for (const config of Object.values(routeConfig)) {
+    if (config.showInNav && config.navGroup === 'main' && config.navSection) {
+      const section = sections.get(config.navSection);
+      if (section) {
         const item = {
           title: config.title,
           url: config.path,
@@ -366,34 +396,17 @@ export function getNavigationItems(group: 'main' | 'secondary' = 'main') {
               }))
             : undefined
         };
-
-        items.push(item);
+        section.items.push(item);
       }
     }
 
-    return items;
-  } else {
-    // Secondary navigation requires icons
-    const items: Array<{
-      title: string;
-      url: string;
-      icon: Icon;
-    }> = [];
-
-    for (const config of Object.values(routeConfig)) {
-      if (config.showInNav && config.navGroup === group && config.icon) {
-        items.push({
-          title: config.title,
-          url: config.path,
-          icon: config.icon
-        });
-      }
-
-      // Also check children
-      if (config.children) {
-        for (const child of Object.values(config.children)) {
-          if (child.showInNav && child.navGroup === group && child.icon) {
-            items.push({
+    // Also check children
+    if (config.children) {
+      for (const child of Object.values(config.children)) {
+        if (child.showInNav && child.navGroup === 'main' && child.navSection) {
+          const section = sections.get(child.navSection);
+          if (section) {
+            section.items.push({
               title: child.breadcrumbLabel || child.title,
               url: child.path,
               icon: child.icon
@@ -402,9 +415,12 @@ export function getNavigationItems(group: 'main' | 'secondary' = 'main') {
         }
       }
     }
-
-    return items;
   }
+
+  // Return sections in order, excluding empty sections
+  return sectionDefinitions
+    .map(def => sections.get(def.id)!)
+    .filter(section => section.items.length > 0);
 }
 
 export function generateBreadcrumbs(pathname: string): Array<{
