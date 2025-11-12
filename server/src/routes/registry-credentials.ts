@@ -211,12 +211,15 @@ router.post("/:id/set-default", requireSessionOrApiKey, async (req, res) => {
 // POST /api/registry-credentials/:id/test
 router.post("/:id/test", requireSessionOrApiKey, async (req, res) => {
   try {
+    const testImage = req.body?.testImage; // Optional test image from request body
+
     const result = await registryCredentialService.validateCredential(
       req.params.id,
+      testImage,
     );
 
     logger.info(
-      { credentialId: req.params.id, success: result.success },
+      { credentialId: req.params.id, success: result.success, testImage },
       "Registry credential tested via API",
     );
 

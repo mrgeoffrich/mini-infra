@@ -14,7 +14,7 @@ export default defineConfig({
   },
   server: {
     port: 3005,
-    allowedHosts: ["localhost", "mini.blingtowers.com"],
+    allowedHosts: ["localhost", "devmini.blingtowers.com"],
     host: "0.0.0.0",
     proxy: {
       '/api': {

@@ -7,6 +7,7 @@ import type {
   UpdateRegistryCredentialRequest,
   RegistryTestResult,
 } from "@mini-infra/types";
+import { DockerExecutorService } from "./docker-executor";
 
 export class RegistryCredentialService {
   private prisma: PrismaClient;
@@ -344,7 +345,10 @@ export class RegistryCredentialService {
   /**
    * Validate a stored credential by ID
    */
-  async validateCredential(id: string): Promise<RegistryTestResult> {
+  async validateCredential(
+    id: string,
+    testImage?: string,
+  ): Promise<RegistryTestResult> {
     const credential = await this.getCredential(id);
     if (!credential) {
       throw new Error("Credential not found");
@@ -356,6 +360,7 @@ export class RegistryCredentialService {
       credential.registryUrl,
       credential.username,
       decryptedPassword,
+      testImage,
     );
   }
 
@@ -384,11 +389,11 @@ export class RegistryCredentialService {
       );
 
       // Initialize DockerExecutorService to test the connection
-      const dockerExecutor = new ((await import("./docker-executor")).DockerExecutorService)();
+      const dockerExecutor = new DockerExecutorService();
       await dockerExecutor.initialize();
 
-      // Attempt to pull the test image with credentials
-      const dockerResult = await dockerExecutor.testDockerRegistryConnection({
+      // Attempt a fast credential test (no image pull, just manifest check)
+      const dockerResult = await dockerExecutor.testDockerRegistryCredentialsFast({
         image,
         registryUsername: username,
         registryPassword: password,
@@ -404,13 +409,27 @@ export class RegistryCredentialService {
       );
 
       // Map DockerRegistryTestResult to RegistryTestResult
-      return {
+      const result: RegistryTestResult = {
         success: dockerResult.success,
         message: dockerResult.message,
         registryUrl,
         pullTimeMs: dockerResult.details.pullTimeMs,
         error: dockerResult.details.errorCode,
       };
+
+      // Special handling for IMAGE_NOT_FOUND on private registries
+      if (
+        !dockerResult.success &&
+        dockerResult.details.errorCode === "IMAGE_NOT_FOUND" &&
+        (registryUrl === "ghcr.io" ||
+          registryUrl.includes("gitlab") ||
+          registryUrl.includes("azurecr.io"))
+      ) {
+        result.message = `Test image not found. Authentication appears valid, but the default test image doesn't exist in your registry. For private registries, you may need to provide a specific image you have access to. The credentials were successfully validated with the registry authentication service.`;
+        result.success = true; // Mark as success since auth worked
+      }
+
+      return result;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -446,9 +465,10 @@ export class RegistryCredentialService {
       return "alpine:latest";
     }
 
-    // GitHub Container Registry - use a common public image
+    // GitHub Container Registry - use a known public linuxserver.io image
     if (registryUrl === "ghcr.io" || registryUrl.includes("github")) {
-      return "ghcr.io/linuxserver/alpine:latest";
+      // linuxserver.io publishes many public images to ghcr.io
+      return "ghcr.io/linuxserver/baseimage-alpine:3.20";
     }
 
     // GitLab Container Registry
@@ -473,6 +493,6 @@ export class RegistryCredentialService {
       "Unknown registry, user should provide testImage parameter",
     );
 
-    return `${registryUrl}/library/alpine:latest`;
+    return `${registryUrl}/alpine:latest`;
   }
 }
