@@ -167,29 +167,29 @@ export default function CertificateDetailsPage() {
             </CardContent>
           </Card>
 
-          {/* Key Vault info card */}
+          {/* Azure Storage info card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <IconCloud className="h-5 w-5" />
-                Key Vault Storage
+                Azure Storage
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium">
-                    Certificate Name
+                    Container Name
                   </label>
                   <p className="mt-1 text-sm font-mono">
-                    {certificate.keyVaultCertificateName}
+                    {certificate.blobContainerName || "N/A"}
                   </p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Version</label>
+                  <label className="text-sm font-medium">Blob Name</label>
                   <p className="mt-1 text-sm font-mono">
-                    {certificate.keyVaultVersion || "N/A"}
+                    {certificate.blobName || "N/A"}
                   </p>
                 </div>
 

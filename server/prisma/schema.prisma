@@ -671,10 +671,9 @@ model TlsCertificate {
   acmeAccountId         String?  // ACME account identifier
   acmeOrderUrl          String?  // ACME order URL for renewals
 
-  // Azure Key Vault references
-  keyVaultCertificateName String  @unique // Name in Azure Key Vault
-  keyVaultVersion         String?         // Current version in Key Vault
-  keyVaultSecretId        String?         // Full secret identifier
+  // Azure Blob Storage references (optional during migration from Key Vault)
+  blobContainerName     String?  // Azure Storage container name
+  blobName              String?  @unique // Blob name (cert_{id}.pem)
 
   // Certificate metadata
   issuer                String?
@@ -739,8 +738,8 @@ model TlsCertificateRenewal {
   dnsRecordName   String?  // e.g., "_acme-challenge.example.com"
   dnsRecordValue  String?
 
-  // Key Vault details
-  keyVaultVersion String?  // New version created in Key Vault
+  // Azure Blob Storage details
+  blobETag        String?  // New ETag after upload to Azure Storage
 
   // HAProxy deployment
   haproxyReloadMethod String? // "runtime-api" | "graceful-reload"
@@ -770,8 +769,9 @@ model AcmeAccount {
   provider        String   // "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl"
   accountUrl      String   @unique // ACME account URL
 
-  // Key storage
-  keyVaultSecretName String @unique // Private key stored in Key Vault
+  // Key storage in Azure Blob Storage (optional during migration from Key Vault)
+  blobContainerName String? // Azure Storage container name
+  blobName        String?  @unique // Blob name (acme-account-{email}.key)
   keyAlgorithm    String   @default("RSA-2048") // "RSA-2048" | "ECDSA-P256"
 
   // Status

@@ -66,6 +66,7 @@
 | `IconDeviceHardDrive` | Storage | Volumes |
 | `IconWorld`/`IconGlobe` | Public | Web endpoints |
 | `IconKey` | Credential | API keys |
+| `IconCertificate` | Certificate | TLS/SSL certificates |
 | `IconShield` | Security | Auth/protection |
 | `IconBan` | Blocked | Denied access |
 | `IconLogin`/`IconLogout` | Auth | User sessions |

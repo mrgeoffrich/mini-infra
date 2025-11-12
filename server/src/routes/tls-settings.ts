@@ -7,7 +7,8 @@
  * Endpoints:
  * - GET /api/tls/settings - Get all TLS configuration settings
  * - PUT /api/tls/settings - Update TLS configuration settings
- * - POST /api/tls/connectivity/test - Test Azure Key Vault connectivity
+ * - POST /api/tls/connectivity/test - Test Azure Storage container connectivity
+ * - GET /api/tls/containers - List available Azure Storage containers
  */
 
 import express, { Request, Response, NextFunction, RequestHandler } from "express";
@@ -16,21 +17,21 @@ import { tlsLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
+import { AzureConfigService } from "../services/azure-config";
+import { BlobServiceClient } from "@azure/storage-blob";
 
 const logger = tlsLogger();
 const router = express.Router();
 
-// Create TLS configuration service instance
+// Create service instances
 const tlsConfigService = new TlsConfigService(prisma);
+const azureConfigService = new AzureConfigService(prisma);
 
 /**
  * TLS Settings Response Structure
  */
 interface TlsSettingsData {
-  key_vault_url: string | null;
-  key_vault_tenant_id: string | null;
-  key_vault_client_id: string | null;
-  key_vault_client_secret: string | null;
+  certificate_blob_container: string | null;
   default_acme_provider: string | null;
   default_acme_email: string | null;
   renewal_check_cron: string | null;
@@ -62,19 +63,7 @@ interface TlsConnectivityTestResponse {
 
 // Request validation schema for updating TLS settings
 const updateTlsSettingsSchema = z.object({
-  key_vault_url: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_tenant_id: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_client_id: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_client_secret: z.preprocess(
+  certificate_blob_container: z.preprocess(
     (val) => val === null || val === "" ? undefined : val,
     z.string().optional()
   ),
@@ -98,19 +87,7 @@ const updateTlsSettingsSchema = z.object({
 
 // Request validation schema for testing connectivity
 const testConnectivitySchema = z.object({
-  key_vault_url: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_tenant_id: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_client_id: z.preprocess(
-    (val) => val === null || val === "" ? undefined : val,
-    z.string().optional()
-  ),
-  key_vault_client_secret: z.preprocess(
+  certificate_blob_container: z.preprocess(
     (val) => val === null || val === "" ? undefined : val,
     z.string().optional()
   ),
@@ -148,10 +125,7 @@ router.get("/settings", requireSessionOrApiKey, (async (
 
     // Convert array of settings to flat object
     const settingsData: TlsSettingsData = {
-      key_vault_url: null,
-      key_vault_tenant_id: null,
-      key_vault_client_id: null,
-      key_vault_client_secret: null,
+      certificate_blob_container: null,
       default_acme_provider: null,
       default_acme_email: null,
       renewal_check_cron: null,
@@ -176,7 +150,7 @@ router.get("/settings", requireSessionOrApiKey, (async (
       {
         requestId,
         userId,
-        hasKeyVaultUrl: !!settingsData.key_vault_url,
+        hasCertificateContainer: !!settingsData.certificate_blob_container,
         hasAcmeEmail: !!settingsData.default_acme_email,
       },
       "TLS settings returned successfully",
@@ -274,10 +248,7 @@ router.put("/settings", requireSessionOrApiKey, (async (
 
     // Convert array of settings to flat object
     const settingsData: TlsSettingsData = {
-      key_vault_url: null,
-      key_vault_tenant_id: null,
-      key_vault_client_id: null,
-      key_vault_client_secret: null,
+      certificate_blob_container: null,
       default_acme_provider: null,
       default_acme_email: null,
       renewal_check_cron: null,
@@ -328,7 +299,7 @@ router.put("/settings", requireSessionOrApiKey, (async (
 
 /**
  * POST /api/tls/connectivity/test
- * Test Azure Key Vault connectivity with optional temporary settings
+ * Test Azure Storage container connectivity with optional temporary settings
  */
 router.post("/connectivity/test", requireSessionOrApiKey, (async (
   req: Request,
@@ -391,14 +362,14 @@ router.post("/connectivity/test", requireSessionOrApiKey, (async (
       data: {
         isValid: validationResult.isValid,
         responseTimeMs: validationResult.responseTimeMs || 0,
-        keyVaultUrl: validationResult.metadata?.keyVaultUrl,
+        keyVaultUrl: validationResult.metadata?.containerName,
         error: validationResult.isValid ? undefined : validationResult.message,
         errorCode: validationResult.errorCode,
         validatedAt: new Date().toISOString(),
       },
       message: validationResult.isValid
-        ? "Azure Key Vault connection successful"
-        : `Azure Key Vault connection failed: ${validationResult.message}`,
+        ? "Azure Storage container connection successful"
+        : `Azure Storage connection failed: ${validationResult.message}`,
       timestamp: new Date().toISOString(),
       requestId,
     };
@@ -423,6 +394,89 @@ router.post("/connectivity/test", requireSessionOrApiKey, (async (
         userId,
       },
       "TLS connectivity test failed with error",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * GET /api/tls/containers
+ * List available Azure Storage containers
+ */
+router.get("/containers", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+    },
+    "TLS containers list requested",
+  );
+
+  try {
+    if (!user || !userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User authentication required",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get Azure Storage connection string
+    const connectionString = await azureConfigService.getConnectionString();
+
+    if (!connectionString) {
+      return res.status(400).json({
+        error: "Configuration Missing",
+        message: "Azure Storage not configured. Please configure Azure Storage first.",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // List containers
+    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    const containers: string[] = [];
+
+    for await (const container of blobServiceClient.listContainers()) {
+      containers.push(container.name);
+    }
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        containerCount: containers.length,
+      },
+      "TLS containers listed successfully",
+    );
+
+    res.json({
+      success: true,
+      data: {
+        containers,
+      },
+      message: "Containers retrieved successfully",
+      timestamp: new Date().toISOString(),
+      requestId,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+      },
+      "Failed to list TLS containers",
     );
 
     next(error);

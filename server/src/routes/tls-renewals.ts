@@ -85,7 +85,7 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
             domains: true,
             status: true,
             notAfter: true,
-            keyVaultCertificateName: true,
+            blobName: true,
           },
         },
       },

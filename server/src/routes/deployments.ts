@@ -14,11 +14,11 @@ import prisma from "../lib/prisma";
 import { CertificateProvisioningService } from "../services/tls/certificate-provisioning-service";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureKeyVaultCertificateStore } from "../services/tls/azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CloudflareConfigService } from "../services/cloudflare-config";
-import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { AzureConfigService } from "../services/azure-config";
 import {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
@@ -53,33 +53,27 @@ deploymentOrchestrator.initialize().catch(error => {
  */
 async function initializeCertificateProvisioningService(): Promise<CertificateProvisioningService | null> {
   try {
-    // Initialize TLS config service
+    // Initialize config services
     const tlsConfig = new TlsConfigService(prisma);
+    const azureConfig = new AzureConfigService(prisma);
 
-    // Get Key Vault clients
-    const { certificateClient, secretClient } = await tlsConfig.getKeyVaultClients();
-    const keyVaultUrl = await tlsConfig.get("key_vault_url");
-
-    if (!keyVaultUrl) {
-      logger.warn("Key Vault URL not configured - SSL certificate provisioning will be disabled");
+    // Get certificate container name
+    const containerName = await tlsConfig.get("certificate_blob_container");
+    if (!containerName) {
+      logger.warn("Certificate blob container not configured - SSL certificate provisioning will be disabled");
       return null;
     }
 
-    // Get credentials for Key Vault
-    const tenantId = await tlsConfig.get("key_vault_tenant_id");
-    const clientId = await tlsConfig.get("key_vault_client_id");
-    const clientSecret = await tlsConfig.get("key_vault_client_secret");
-
-    let credential;
-    if (tenantId && clientId && clientSecret) {
-      credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-    } else {
-      credential = new DefaultAzureCredential();
+    // Get Azure Storage connection string
+    const connectionString = await azureConfig.getConnectionString();
+    if (!connectionString) {
+      logger.warn("Azure Storage not configured - SSL certificate provisioning will be disabled");
+      return null;
     }
 
     // Initialize services
-    const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
-    const acmeClient = new AcmeClientManager(tlsConfig, keyVaultStore);
+    const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+    const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
     const cloudflareConfig = new CloudflareConfigService(prisma);
     const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
@@ -88,9 +82,10 @@ async function initializeCertificateProvisioningService(): Promise<CertificatePr
 
     const lifecycleManager = new CertificateLifecycleManager(
       acmeClient,
-      keyVaultStore,
+      certificateStore,
       dnsChallenge,
-      prisma
+      prisma,
+      containerName
     );
 
     return new CertificateProvisioningService(lifecycleManager, prisma);

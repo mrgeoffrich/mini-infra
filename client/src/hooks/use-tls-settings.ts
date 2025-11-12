@@ -61,6 +61,22 @@ async function testTlsConnectivity(
   };
 }
 
+async function fetchTlsContainers(): Promise<string[]> {
+  const response = await fetch("/api/tls/containers", {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch containers: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.data?.containers || [];
+}
+
 export function useTlsSettings() {
   return useQuery({
     queryKey: ["settings", "tls"],
@@ -88,7 +104,7 @@ export function useTestTlsConnectivity() {
     mutationFn: testTlsConnectivity,
     onSuccess: (data) => {
       if (data.success) {
-        toast.success("Connection successful! Azure Key Vault is reachable.");
+        toast.success("Connection successful! Azure Storage container is accessible.");
       } else {
         toast.error(data.error || "Connection failed");
       }
@@ -96,5 +112,14 @@ export function useTestTlsConnectivity() {
     onError: (error: Error) => {
       toast.error(error.message || "Failed to test connection");
     },
+  });
+}
+
+export function useTlsContainers() {
+  return useQuery({
+    queryKey: ["tls", "containers"],
+    queryFn: fetchTlsContainers,
+    staleTime: 30000, // Consider data fresh for 30 seconds
+    retry: 1,
   });
 }

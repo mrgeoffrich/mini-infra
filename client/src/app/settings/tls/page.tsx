@@ -1,13 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   IconSettings,
-  IconCloudQuestion,
   IconLoader2,
+  IconRefresh,
+  IconPlugConnected,
+  IconAlertCircle,
 } from "@tabler/icons-react";
 import {
   useTlsSettings,
   useUpdateTlsSettings,
   useTestTlsConnectivity,
+  useTlsContainers,
 } from "@/hooks/use-tls-settings";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
@@ -28,19 +31,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function TlsSettingsPage() {
   const { data: settings, isLoading } = useTlsSettings();
   const { mutate: updateSettings, isPending } = useUpdateTlsSettings();
   const { mutate: testConnectivity, isPending: isTesting } =
     useTestTlsConnectivity();
+  const {
+    data: containers,
+    isLoading: containersLoading,
+    refetch: refetchContainers,
+  } = useTlsContainers();
+
+  const [connectionTestResult, setConnectionTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
 
   const form = useForm({
     defaultValues: {
-      key_vault_url: "",
-      key_vault_tenant_id: "",
-      key_vault_client_id: "",
-      key_vault_client_secret: "",
+      certificate_blob_container: "",
       default_acme_provider: "letsencrypt",
       default_acme_email: "",
       renewal_check_cron: "0 2 * * *",
@@ -69,8 +80,39 @@ export default function TlsSettingsPage() {
     updateSettings(form.getValues());
   };
 
-  const handleTest = () => {
-    testConnectivity(form.getValues());
+  const handleTest = async () => {
+    setConnectionTestResult(null);
+    const values = form.getValues();
+
+    try {
+      const result = await new Promise<{ success: boolean; error?: string }>(
+        (resolve, reject) => {
+          testConnectivity(
+            { certificate_blob_container: values.certificate_blob_container },
+            {
+              onSuccess: (data) => resolve(data),
+              onError: (error) => reject(error),
+            }
+          );
+        }
+      );
+
+      setConnectionTestResult({
+        success: result.success,
+        message: result.success
+          ? "Connection successful! Azure Storage container is accessible."
+          : result.error || "Connection failed",
+      });
+    } catch (error) {
+      setConnectionTestResult({
+        success: false,
+        message: error instanceof Error ? error.message : "Connection test failed",
+      });
+    }
+  };
+
+  const handleRefreshContainers = () => {
+    refetchContainers();
   };
 
   return (
@@ -84,95 +126,143 @@ export default function TlsSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">TLS Configuration</h1>
             <p className="text-muted-foreground">
-              Configure Azure Key Vault and ACME settings for certificate
+              Configure Azure Storage and ACME settings for certificate
               management
             </p>
           </div>
         </div>
       </div>
 
-      {/* Azure Key Vault configuration */}
+      {/* Certificate Storage Configuration */}
       <div className="px-4 lg:px-6 max-w-7xl">
         <Card>
           <CardHeader>
-            <CardTitle>Azure Key Vault</CardTitle>
+            <CardTitle>Certificate Storage</CardTitle>
             <CardDescription>
-              Certificate storage and private key management
+              Certificates are stored in Azure Blob Storage using the existing
+              Azure Storage connection configured for PostgreSQL backups.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <form className="space-y-4">
-              <div>
-                <Label>Key Vault URL</Label>
-                <Input
-                  placeholder="https://my-vault.vault.azure.net/"
-                  {...form.register("key_vault_url")}
-                />
-              </div>
+          <CardContent className="space-y-4">
+            {/* Info about existing Azure Storage connection */}
+            <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">
+              <p className="font-medium">Using Azure Storage Connection</p>
+              <p className="mt-1 text-blue-700 dark:text-blue-200">
+                This uses the same Azure Storage account configured in Settings
+                → Azure Storage. Certificates will be stored in the container
+                you select below.
+              </p>
+            </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label>Tenant ID</Label>
-                  <Input
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    {...form.register("key_vault_tenant_id")}
-                  />
-                </div>
-
-                <div>
-                  <Label>Client ID</Label>
-                  <Input
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    {...form.register("key_vault_client_id")}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label>Client Secret</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••••••••••"
-                  {...form.register("key_vault_client_secret")}
-                />
-              </div>
-
+            {/* Container Selection Dropdown */}
+            <div className="space-y-2">
+              <Label htmlFor="certificate_blob_container">
+                Certificate Container
+              </Label>
               <div className="flex gap-2">
+                <Select
+                  value={form.watch("certificate_blob_container") || ""}
+                  onValueChange={(value) =>
+                    form.setValue("certificate_blob_container", value)
+                  }
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select a container..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {containersLoading ? (
+                      <SelectItem value="__loading__" disabled>
+                        Loading containers...
+                      </SelectItem>
+                    ) : !containers || containers.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        No containers available
+                      </SelectItem>
+                    ) : (
+                      containers.map((container) => (
+                        <SelectItem key={container} value={container}>
+                          {container}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+
+                {/* Refresh Button */}
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleTest}
-                  disabled={isTesting}
+                  onClick={handleRefreshContainers}
+                  disabled={containersLoading}
                 >
-                  {isTesting ? (
+                  {containersLoading ? (
                     <>
-                      <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Testing...
+                      <IconRefresh className="h-4 w-4 mr-2 animate-spin" />
+                      Loading...
                     </>
                   ) : (
                     <>
-                      <IconCloudQuestion className="h-4 w-4 mr-2" />
-                      Test Connection
+                      <IconRefresh className="h-4 w-4 mr-2" />
+                      Refresh
                     </>
-                  )}
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isPending}
-                >
-                  {isPending ? (
-                    <>
-                      <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Settings"
                   )}
                 </Button>
               </div>
-            </form>
+              <p className="text-xs text-muted-foreground">
+                Select the Azure Storage container where TLS certificates will
+                be stored. The container must already exist.
+              </p>
+            </div>
+
+            {/* Test Connection Button */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={
+                isTesting || !form.watch("certificate_blob_container")
+              }
+            >
+              {isTesting ? (
+                <>
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Testing Connection...
+                </>
+              ) : (
+                <>
+                  <IconPlugConnected className="h-4 w-4 mr-2" />
+                  Test Connection
+                </>
+              )}
+            </Button>
+
+            {/* Connection Test Result */}
+            {connectionTestResult && (
+              <Alert
+                variant={
+                  connectionTestResult.success ? "default" : "destructive"
+                }
+              >
+                {!connectionTestResult.success && (
+                  <IconAlertCircle className="h-4 w-4" />
+                )}
+                <AlertDescription>
+                  {connectionTestResult.message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Save Button */}
+            <Button type="button" onClick={handleSave} disabled={isPending}>
+              {isPending ? (
+                <>
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Settings"
+              )}
+            </Button>
           </CardContent>
         </Card>
       </div>

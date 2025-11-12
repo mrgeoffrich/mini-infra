@@ -11,10 +11,9 @@ export interface TlsCertificate {
   acmeAccountId: string | null;
   acmeOrderUrl: string | null;
 
-  // Azure Key Vault references
-  keyVaultCertificateName: string;
-  keyVaultVersion: string | null;
-  keyVaultSecretId: string | null;
+  // Azure Blob Storage references
+  blobContainerName: string | null;
+  blobName: string | null;
 
   // Certificate metadata
   issuer: string | null;
@@ -68,8 +67,8 @@ export interface TlsCertificateRenewal {
   dnsRecordName: string | null;
   dnsRecordValue: string | null;
 
-  // Key Vault details
-  keyVaultVersion: string | null;
+  // Azure Blob Storage details
+  blobETag: string | null;
 
   // HAProxy deployment
   haproxyReloadMethod: string | null;
@@ -93,10 +92,7 @@ export interface CreateCertificateRequest {
 }
 
 export interface TlsSettings {
-  key_vault_url: string;
-  key_vault_tenant_id: string;
-  key_vault_client_id: string;
-  key_vault_client_secret: string;
+  certificate_blob_container: string;
   default_acme_provider: "letsencrypt" | "letsencrypt-staging";
   default_acme_email: string;
   renewal_check_cron: string;

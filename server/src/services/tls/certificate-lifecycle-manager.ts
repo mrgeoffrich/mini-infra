@@ -2,14 +2,14 @@
  * Certificate Lifecycle Manager
  *
  * This service orchestrates certificate issuance and renewal workflows.
- * It coordinates between ACME client, Key Vault storage, DNS challenge provider, and the database.
+ * It coordinates between ACME client, Azure Storage, DNS challenge provider, and the database.
  */
 
 import { Logger } from "pino";
 import { PrismaClient } from "@prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { AcmeClientManager } from "./acme-client-manager";
-import { AzureKeyVaultCertificateStore } from "./azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
 import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
@@ -20,24 +20,27 @@ import { CertificateRequest } from "./types";
  */
 export class CertificateLifecycleManager {
   private acmeClient: AcmeClientManager;
-  private keyVaultStore: AzureKeyVaultCertificateStore;
+  private certificateStore: AzureStorageCertificateStore;
   private dnsChallenge: DnsChallenge01Provider;
   private distributor?: CertificateDistributor;
   private prisma: PrismaClient;
   private logger: Logger;
+  private containerName: string;
 
   constructor(
     acmeClient: AcmeClientManager,
-    keyVaultStore: AzureKeyVaultCertificateStore,
+    certificateStore: AzureStorageCertificateStore,
     dnsChallenge: DnsChallenge01Provider,
     prisma: PrismaClient,
+    containerName: string,
     distributor?: CertificateDistributor
   ) {
     this.acmeClient = acmeClient;
-    this.keyVaultStore = keyVaultStore;
+    this.certificateStore = certificateStore;
     this.dnsChallenge = dnsChallenge;
     this.distributor = distributor;
     this.prisma = prisma;
+    this.containerName = containerName;
     this.logger = tlsLogger();
   }
 
@@ -64,12 +67,39 @@ export class CertificateLifecycleManager {
       // Step 2: Parse certificate metadata
       const certInfo = await parseCertificate(certificate);
 
-      // Step 3: Store in Azure Key Vault
-      this.logger.info("Storing certificate in Azure Key Vault");
-      const keyVaultName = `cert-${primaryDomain.replace(/\./g, "-")}`;
+      // Step 3: Create database record first to get certificate ID
+      const renewAfter = new Date(certInfo.notAfter);
+      renewAfter.setDate(renewAfter.getDate() - 30); // Renew 30 days before expiry
 
-      const { version, secretId } = await this.keyVaultStore.storeCertificate(
-        keyVaultName,
+      const tlsCertificate = await this.prisma.tlsCertificate.create({
+        data: {
+          domains: JSON.stringify(domains),
+          primaryDomain: primaryDomain,
+          certificateType: "ACME",
+          acmeProvider: "letsencrypt",
+          blobContainerName: this.containerName,
+          blobName: null, // Will be set after storage
+          issuer: certInfo.issuer,
+          serialNumber: certInfo.serialNumber || undefined,
+          fingerprint: certInfo.fingerprint,
+          issuedAt: new Date(),
+          notBefore: certInfo.notBefore,
+          notAfter: certInfo.notAfter,
+          renewAfter,
+          status: "PENDING",
+          autoRenew: true,
+          renewalDaysBeforeExpiry: 30,
+          haproxyFrontendNames: JSON.stringify([]),
+          createdBy: userId,
+        },
+      });
+
+      // Step 4: Store in Azure Blob Storage using certificate ID
+      this.logger.info("Storing certificate in Azure Storage");
+      const blobName = `cert_${tlsCertificate.id}.pem`;
+
+      const { version, secretId } = await this.certificateStore.storeCertificate(
+        blobName,
         certificate,
         privateKey,
         {
@@ -81,40 +111,21 @@ export class CertificateLifecycleManager {
         }
       );
 
-      // Step 4: Create database record
-      const renewAfter = new Date(certInfo.notAfter);
-      renewAfter.setDate(renewAfter.getDate() - 30); // Renew 30 days before expiry
-
-      const tlsCertificate = await this.prisma.tlsCertificate.create({
+      // Step 5: Update certificate record with blob name and mark as ACTIVE
+      await this.prisma.tlsCertificate.update({
+        where: { id: tlsCertificate.id },
         data: {
-          domains: JSON.stringify(domains),
-          primaryDomain: primaryDomain,
-          certificateType: "ACME",
-          acmeProvider: "letsencrypt",
-          keyVaultCertificateName: keyVaultName,
-          keyVaultVersion: version,
-          keyVaultSecretId: secretId,
-          issuer: certInfo.issuer,
-          serialNumber: certInfo.serialNumber || undefined,
-          fingerprint: certInfo.fingerprint,
-          issuedAt: new Date(),
-          notBefore: certInfo.notBefore,
-          notAfter: certInfo.notAfter,
-          renewAfter,
+          blobName,
           status: "ACTIVE",
-          autoRenew: true,
-          renewalDaysBeforeExpiry: 30,
-          haproxyFrontendNames: JSON.stringify([]),
-          createdBy: userId,
         },
       });
 
-      // Step 5: Deploy to HAProxy (if requested and distributor is available)
+      // Step 6: Deploy to HAProxy (if requested and distributor is available)
       if (request.deployToHaproxy && this.distributor) {
         this.logger.info("Deploying certificate to HAProxy");
         try {
           const deployResult = await this.distributor.deployCertificate(
-            keyVaultName,
+            blobName,
             request.haproxyContainerId
           );
 
@@ -201,10 +212,12 @@ export class CertificateLifecycleManager {
       // Parse new certificate
       const certInfo = await parseCertificate(certificate);
 
-      // Store new version in Key Vault
+      // Store new version in Azure Blob Storage (overwrites existing blob)
       const domains = Array.isArray(existingCert.domains) ? existingCert.domains : JSON.parse(existingCert.domains as any);
-      const { version, secretId } = await this.keyVaultStore.storeCertificate(
-        existingCert.keyVaultCertificateName,
+      const blobName = existingCert.blobName || `cert_${certificateId}.pem`;
+
+      const { version, secretId } = await this.certificateStore.storeCertificate(
+        blobName,
         certificate,
         privateKey,
         {
@@ -224,8 +237,7 @@ export class CertificateLifecycleManager {
       const updatedCert = await this.prisma.tlsCertificate.update({
         where: { id: certificateId },
         data: {
-          keyVaultVersion: version,
-          keyVaultSecretId: secretId,
+          blobName, // Ensure blob name is set
           notBefore: certInfo.notBefore,
           notAfter: certInfo.notAfter,
           renewAfter,
@@ -237,12 +249,17 @@ export class CertificateLifecycleManager {
         },
       });
 
+      // Update renewal record with blob ETag
+      await this.updateRenewalStatus(renewal.id, "STORED_IN_VAULT", {
+        blobETag: version, // Store ETag as version
+      });
+
       // Deploy to HAProxy (zero-downtime update) if distributor is available
       if (this.distributor) {
         this.logger.info("Deploying renewed certificate to HAProxy");
         try {
           const deployResult = await this.distributor.deployCertificate(
-            existingCert.keyVaultCertificateName
+            blobName
           );
 
           if (deployResult.success) {

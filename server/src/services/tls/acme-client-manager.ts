@@ -9,7 +9,7 @@ import * as acme from "acme-client";
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
 import { TlsConfigService } from "./tls-config";
-import { AzureKeyVaultCertificateStore } from "./azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { AcmeCertificateResult } from "./types";
 import prisma from "../../lib/prisma";
 
@@ -36,20 +36,20 @@ export interface DnsChallenge01Provider {
  */
 export class AcmeClientManager {
   private acmeClient: acme.Client | null = null;
-  private keyVaultStore: AzureKeyVaultCertificateStore;
+  private certificateStore: AzureStorageCertificateStore;
   private config: TlsConfigService;
   private logger: Logger;
 
-  constructor(config: TlsConfigService, keyVaultStore: AzureKeyVaultCertificateStore) {
+  constructor(config: TlsConfigService, certificateStore: AzureStorageCertificateStore) {
     this.config = config;
-    this.keyVaultStore = keyVaultStore;
+    this.certificateStore = certificateStore;
     this.logger = tlsLogger();
   }
 
   /**
-   * Initialize ACME client with account from Key Vault
+   * Initialize ACME client with account from Azure Storage
    *
-   * This method retrieves the ACME account key from Key Vault and creates a client.
+   * This method retrieves the ACME account key from Azure Storage and creates a client.
    * If no account key exists, it will create a new account.
    */
   async initialize(): Promise<void> {
@@ -64,17 +64,17 @@ export class AcmeClientManager {
         throw new Error(`Unknown ACME provider: ${acmeConfig.provider}`);
       }
 
-      // Try to get existing account key from Key Vault
+      // Try to get existing account key from Azure Storage
       let accountKey: Buffer;
       try {
-        accountKey = await this.keyVaultStore.getAccountKey(acmeConfig.email);
+        accountKey = await this.certificateStore.getAccountKey(acmeConfig.email);
         this.logger.info({ email: acmeConfig.email }, "Using existing ACME account key");
       } catch (error) {
         // No existing account key, create new one
         this.logger.info({ email: acmeConfig.email }, "No existing ACME account key found, will create on first use");
         // Generate a new account key
         accountKey = await acme.crypto.createPrivateKey();
-        await this.keyVaultStore.storeAccountKey(acmeConfig.email, accountKey.toString());
+        await this.certificateStore.storeAccountKey(acmeConfig.email, accountKey.toString());
       }
 
       // Create ACME client
@@ -120,12 +120,16 @@ export class AcmeClientManager {
       const accountUrl = (account as any).url || "unknown";
       const tosUrl = (account as any).termsOfService || null;
 
+      const containerName = await this.config.getCertificateContainerName();
+      const blobName = `acme-account-${email.replace(/[^a-zA-Z0-9-]/g, "-")}.key`;
+
       await prisma.acmeAccount.create({
         data: {
           email,
           provider: acmeConfig.provider,
           accountUrl,
-          keyVaultSecretName: `acme-account-${email.replace(/[^a-zA-Z0-9-]/g, "-")}`,
+          blobContainerName: containerName,
+          blobName: blobName,
           keyAlgorithm: "RSA-2048",
           status: "ACTIVE",
           termsOfServiceUrl: tosUrl,
@@ -275,8 +279,12 @@ export class AcmeClientManager {
         throw new Error(`Certificate not found: ${certificateId}`);
       }
 
-      // Get certificate from Key Vault
-      const { certificate } = await this.keyVaultStore.getCertificate(cert.keyVaultCertificateName);
+      if (!cert.blobName) {
+        throw new Error(`Certificate blob name not found for certificate: ${certificateId}`);
+      }
+
+      // Get certificate from Azure Storage
+      const { certificate } = await this.certificateStore.getCertificate(cert.blobName);
 
       // Revoke certificate - pass as Buffer
       await this.acmeClient!.revokeCertificate(Buffer.from(certificate));

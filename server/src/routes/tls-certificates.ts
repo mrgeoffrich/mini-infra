@@ -15,12 +15,12 @@ import { tlsLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureKeyVaultCertificateStore } from "../services/tls/azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
 import { CloudflareConfigService } from "../services/cloudflare-config";
-import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { AzureConfigService } from "../services/azure-config";
 
 const logger = tlsLogger();
 const router = express.Router();
@@ -49,39 +49,35 @@ function parseCertificateData(certificate: any) {
  * Helper to initialize certificate lifecycle manager
  */
 async function initializeLifecycleManager(): Promise<CertificateLifecycleManager> {
-  // Initialize TLS config service
+  // Initialize config services
   const tlsConfig = new TlsConfigService(prisma);
+  const azureConfig = new AzureConfigService(prisma);
 
-  // Get Key Vault clients
-  const { certificateClient, secretClient } = await tlsConfig.getKeyVaultClients();
-  const keyVaultUrl = await tlsConfig.get("key_vault_url");
+  // Get certificate container name
+  const containerName = await tlsConfig.getCertificateContainerName();
 
-  if (!keyVaultUrl) {
-    throw new Error("Key Vault URL not configured");
-  }
-
-  // Get credentials for Key Vault
-  const tenantId = await tlsConfig.get("key_vault_tenant_id");
-  const clientId = await tlsConfig.get("key_vault_client_id");
-  const clientSecret = await tlsConfig.get("key_vault_client_secret");
-
-  let credential;
-  if (tenantId && clientId && clientSecret) {
-    credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-  } else {
-    credential = new DefaultAzureCredential();
+  // Get Azure Storage connection string
+  const connectionString = await azureConfig.getConnectionString();
+  if (!connectionString) {
+    throw new Error("Azure Storage not configured");
   }
 
   // Initialize services
-  const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
-  const acmeClient = new AcmeClientManager(tlsConfig, keyVaultStore);
+  const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+  const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
   const cloudflareConfig = new CloudflareConfigService(prisma);
   const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
   // Initialize ACME client
   await acmeClient.initialize();
 
-  return new CertificateLifecycleManager(acmeClient, keyVaultStore, dnsChallenge, prisma);
+  return new CertificateLifecycleManager(
+    acmeClient,
+    certificateStore,
+    dnsChallenge,
+    prisma,
+    containerName
+  );
 }
 
 /**

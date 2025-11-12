@@ -35,12 +35,12 @@ import serverHealthScheduler from "./services/postgres-server/health-scheduler";
 import prisma from "./lib/prisma";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { TlsConfigService } from "./services/tls/tls-config";
-import { AzureKeyVaultCertificateStore } from "./services/tls/azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "./services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
 import { CloudflareConfigService } from "./services/cloudflare-config";
-import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { AzureConfigService } from "./services/azure-config";
 import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
 
@@ -253,27 +253,23 @@ const initializeServices = async () => {
     console.log("[STARTUP] Checking TLS configuration...");
     try {
       const tlsConfig = new TlsConfigService(prisma);
-      const keyVaultUrl = await tlsConfig.get("key_vault_url");
+      const containerName = await tlsConfig.get("certificate_blob_container");
 
-      if (keyVaultUrl) {
+      if (containerName) {
         console.log("[STARTUP] TLS configuration detected, initializing renewal scheduler...");
         logger.info("TLS configuration detected, initializing renewal scheduler");
 
-        // Get credentials for Key Vault
-        const tenantId = await tlsConfig.get("key_vault_tenant_id");
-        const clientId = await tlsConfig.get("key_vault_client_id");
-        const clientSecret = await tlsConfig.get("key_vault_client_secret");
+        // Get Azure Storage connection string
+        const azureConfig = new AzureConfigService(prisma);
+        const connectionString = await azureConfig.getConnectionString();
 
-        let credential;
-        if (tenantId && clientId && clientSecret) {
-          credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        } else {
-          credential = new DefaultAzureCredential();
+        if (!connectionString) {
+          throw new Error("Azure Storage connection not configured. Please configure Azure Storage first.");
         }
 
         // Initialize TLS services
-        const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
-        const acmeClient = new AcmeClientManager(tlsConfig, keyVaultStore);
+        const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+        const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
         const cloudflareConfig = new CloudflareConfigService(prisma);
         const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
@@ -283,9 +279,10 @@ const initializeServices = async () => {
         // Create lifecycle manager
         const lifecycleManager = new CertificateLifecycleManager(
           acmeClient,
-          keyVaultStore,
+          certificateStore,
           dnsChallenge,
-          prisma
+          prisma,
+          containerName
         );
 
         // Create renewal scheduler

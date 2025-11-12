@@ -6,18 +6,14 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
-import { CertificateClient } from "@azure/keyvault-certificates";
-import { SecretClient } from "@azure/keyvault-secrets";
-import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
+import { BlobServiceClient } from "@azure/storage-blob";
+import { AzureConfigService } from "../azure-config";
 
 /**
  * TLS Configuration Service Settings Keys
  */
 const TLS_SETTINGS_KEYS = {
-  KEY_VAULT_URL: "key_vault_url",
-  KEY_VAULT_TENANT_ID: "key_vault_tenant_id",
-  KEY_VAULT_CLIENT_ID: "key_vault_client_id",
-  KEY_VAULT_CLIENT_SECRET: "key_vault_client_secret",
+  CERTIFICATE_BLOB_CONTAINER: "certificate_blob_container",
   DEFAULT_ACME_PROVIDER: "default_acme_provider",
   DEFAULT_ACME_EMAIL: "default_acme_email",
   RENEWAL_CHECK_CRON: "renewal_check_cron",
@@ -28,14 +24,6 @@ const TLS_SETTINGS_KEYS = {
  * ACME Provider types
  */
 export type AcmeProvider = "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl";
-
-/**
- * Key Vault Clients Interface
- */
-export interface KeyVaultClients {
-  certificateClient: CertificateClient;
-  secretClient: SecretClient;
-}
 
 /**
  * ACME Account Configuration
@@ -55,12 +43,15 @@ export class TlsConfigService extends ConfigurationService {
   private static readonly DEFAULT_ACME_PROVIDER: AcmeProvider = "letsencrypt";
   private static readonly TIMEOUT_MS = 15000; // 15 seconds
 
+  private azureConfigService: AzureConfigService;
+
   constructor(prisma: PrismaClient) {
     super(prisma, "tls");
+    this.azureConfigService = new AzureConfigService(prisma);
   }
 
   /**
-   * Validate Azure Key Vault connectivity
+   * Validate Azure Storage container access for certificate storage
    * @param settings - Optional settings to validate with (overrides stored settings)
    * @returns Validation result with connectivity status
    */
@@ -69,51 +60,56 @@ export class TlsConfigService extends ConfigurationService {
     const logger = servicesLogger();
 
     try {
-      // Get Key Vault URL (from provided settings or database)
-      const keyVaultUrl = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_URL]
-        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_URL));
+      // Get container name (from provided settings or database)
+      const containerName = settings?.[TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER]
+        || (await this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER));
 
-      if (!keyVaultUrl) {
+      if (!containerName) {
         return {
           isValid: false,
-          message: "Azure Key Vault URL not configured",
-          errorCode: "KEY_VAULT_URL_MISSING",
+          message: "Azure Storage container for certificates not configured",
+          errorCode: "CONTAINER_NOT_CONFIGURED",
         };
       }
 
-      // Validate URL format
-      if (!keyVaultUrl.match(/^https:\/\/[a-zA-Z0-9-]+\.vault\.azure\.net\/?$/)) {
+      // Validate container name format (Azure Storage requirements)
+      if (!containerName.match(/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/)) {
         return {
           isValid: false,
-          message: "Invalid Azure Key Vault URL format",
-          errorCode: "INVALID_KEY_VAULT_URL",
+          message: "Invalid Azure Storage container name format",
+          errorCode: "INVALID_CONTAINER_NAME",
         };
       }
 
-      // Get credentials
-      const tenantId = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID]
-        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID));
-      const clientId = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID]
-        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID));
-      const clientSecret = settings?.[TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET]
-        || (await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET));
+      // Get Azure Storage connection string from Azure config
+      const connectionString = await this.azureConfigService.getConnectionString();
 
-      // Create credential
-      let credential;
-      if (tenantId && clientId && clientSecret) {
-        credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-      } else {
-        // Fall back to default credential (environment variables, managed identity, etc.)
-        credential = new DefaultAzureCredential();
+      if (!connectionString) {
+        return {
+          isValid: false,
+          message: "Azure Storage connection not configured. Please configure Azure Storage first.",
+          errorCode: "AZURE_STORAGE_NOT_CONFIGURED",
+        };
       }
 
-      // Test connectivity by listing secrets (lightweight operation)
-      const { secretClient } = await this.createKeyVaultClients(keyVaultUrl, credential);
+      // Test container access
+      const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient = blobServiceClient.getContainerClient(containerName);
 
-      const secrets = secretClient.listPropertiesOfSecrets();
+      // Check if container exists
+      const exists = await containerClient.exists();
 
-      // Attempt to get first page of secrets (validates authentication and connectivity)
-      const firstPage = await secrets.next();
+      if (!exists) {
+        return {
+          isValid: false,
+          message: `Azure Storage container '${containerName}' does not exist`,
+          errorCode: "CONTAINER_NOT_FOUND",
+        };
+      }
+
+      // Test read access by listing blobs (lightweight operation)
+      const blobIterator = containerClient.listBlobsFlat({ prefix: "cert_" }).byPage({ maxPageSize: 1 });
+      await blobIterator.next();
 
       const responseTime = Date.now() - startTime;
 
@@ -123,34 +119,55 @@ export class TlsConfigService extends ConfigurationService {
         responseTime,
         undefined,
         undefined,
-        { keyVaultUrl }
+        { containerName }
       );
 
       logger.info(
         {
-          keyVaultUrl,
+          containerName,
           responseTime,
         },
-        "Azure Key Vault validation successful"
+        "Azure Storage container validation successful"
       );
 
       return {
         isValid: true,
-        message: "Azure Key Vault connection successful",
+        message: `Azure Storage container '${containerName}' is accessible`,
         responseTimeMs: responseTime,
         metadata: {
-          keyVaultUrl,
-          hasCredentials: !!(tenantId && clientId && clientSecret),
+          containerName,
         },
       };
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
       const errorMessage = error.message || "Unknown error";
-      const errorCode = error.code || "UNKNOWN_ERROR";
+      let errorCode = "UNKNOWN_ERROR";
+      let connectivityStatus: ConnectivityStatusType = "failed";
+
+      // Parse specific Azure Storage errors
+      if (errorMessage.includes("timeout")) {
+        errorCode = "TIMEOUT";
+        connectivityStatus = "timeout";
+      } else if (
+        errorMessage.includes("AuthenticationFailed") ||
+        errorMessage.includes("InvalidAccountKey")
+      ) {
+        errorCode = "INVALID_CREDENTIALS";
+      } else if (errorMessage.includes("Forbidden") || errorMessage.includes("403")) {
+        errorCode = "INSUFFICIENT_PERMISSIONS";
+      } else if (
+        errorMessage.includes("ENOTFOUND") ||
+        errorMessage.includes("ECONNREFUSED")
+      ) {
+        errorCode = "NETWORK_ERROR";
+        connectivityStatus = "unreachable";
+      } else if (errorMessage.includes("ContainerNotFound")) {
+        errorCode = "CONTAINER_NOT_FOUND";
+      }
 
       // Record failed connectivity
       await this.recordConnectivityStatus(
-        "failed",
+        connectivityStatus,
         responseTime,
         errorMessage,
         errorCode
@@ -162,12 +179,12 @@ export class TlsConfigService extends ConfigurationService {
           errorCode,
           responseTime,
         },
-        "Azure Key Vault validation failed"
+        "Azure Storage container validation failed"
       );
 
       return {
         isValid: false,
-        message: `Azure Key Vault validation failed: ${errorMessage}`,
+        message: `Azure Storage validation failed: ${errorMessage}`,
         errorCode,
         responseTimeMs: responseTime,
       };
@@ -175,7 +192,7 @@ export class TlsConfigService extends ConfigurationService {
   }
 
   /**
-   * Get health status of Azure Key Vault connectivity
+   * Get health status of Azure Storage container connectivity
    * @returns Service health status
    */
   async getHealthStatus(): Promise<ServiceHealthStatus> {
@@ -203,31 +220,17 @@ export class TlsConfigService extends ConfigurationService {
   }
 
   /**
-   * Get Azure Key Vault clients
-   * @returns Certificate and Secret clients
+   * Get certificate storage container name
+   * @returns Container name for certificate storage
    */
-  async getKeyVaultClients(): Promise<KeyVaultClients> {
-    const keyVaultUrl = await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_URL);
+  async getCertificateContainerName(): Promise<string> {
+    const containerName = await this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER);
 
-    if (!keyVaultUrl) {
-      throw new Error("Azure Key Vault URL not configured");
+    if (!containerName) {
+      throw new Error("Certificate storage container not configured");
     }
 
-    // Get credentials
-    const tenantId = await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID);
-    const clientId = await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID);
-    const clientSecret = await this.get(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET);
-
-    // Create credential
-    let credential;
-    if (tenantId && clientId && clientSecret) {
-      credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-    } else {
-      // Fall back to default credential
-      credential = new DefaultAzureCredential();
-    }
-
-    return this.createKeyVaultClients(keyVaultUrl, credential);
+    return containerName;
   }
 
   /**
@@ -269,41 +272,10 @@ export class TlsConfigService extends ConfigurationService {
   }
 
   /**
-   * Create Key Vault clients with given URL and credential
-   * @private
+   * Helper method to set certificate storage container
    */
-  private async createKeyVaultClients(
-    keyVaultUrl: string,
-    credential: any
-  ): Promise<KeyVaultClients> {
-    const certificateClient = new CertificateClient(keyVaultUrl, credential);
-    const secretClient = new SecretClient(keyVaultUrl, credential);
-
-    return {
-      certificateClient,
-      secretClient,
-    };
-  }
-
-  /**
-   * Helper method to set Key Vault URL
-   */
-  async setKeyVaultUrl(url: string, userId: string): Promise<void> {
-    await this.set(TLS_SETTINGS_KEYS.KEY_VAULT_URL, url, userId);
-  }
-
-  /**
-   * Helper method to set Key Vault credentials
-   */
-  async setKeyVaultCredentials(
-    tenantId: string,
-    clientId: string,
-    clientSecret: string,
-    userId: string
-  ): Promise<void> {
-    await this.set(TLS_SETTINGS_KEYS.KEY_VAULT_TENANT_ID, tenantId, userId);
-    await this.set(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_ID, clientId, userId);
-    await this.set(TLS_SETTINGS_KEYS.KEY_VAULT_CLIENT_SECRET, clientSecret, userId);
+  async setCertificateContainer(containerName: string, userId: string): Promise<void> {
+    await this.set(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER, containerName, userId);
   }
 
   /**
@@ -328,5 +300,17 @@ export class TlsConfigService extends ConfigurationService {
   ): Promise<void> {
     await this.set(TLS_SETTINGS_KEYS.RENEWAL_CHECK_CRON, cronSchedule, userId);
     await this.set(TLS_SETTINGS_KEYS.RENEWAL_DAYS_BEFORE_EXPIRY, daysBeforeExpiry.toString(), userId);
+  }
+
+  /**
+   * Get Azure Storage connection string from Azure config service
+   * @returns Connection string
+   */
+  async getConnectionString(): Promise<string> {
+    const connectionString = await this.azureConfigService.getConnectionString();
+    if (!connectionString) {
+      throw new Error("Azure Storage not configured");
+    }
+    return connectionString;
   }
 }

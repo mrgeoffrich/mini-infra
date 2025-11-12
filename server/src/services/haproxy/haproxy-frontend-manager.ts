@@ -1,9 +1,9 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "@prisma/client";
-import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
-import { AzureKeyVaultCertificateStore } from "../tls/azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "../tls/azure-storage-certificate-store";
 import { TlsConfigService } from "../tls/tls-config";
+import { AzureConfigService } from "../azure-config";
 
 const logger = loadbalancerLogger();
 
@@ -457,52 +457,45 @@ export class HAProxyFrontendManager {
         );
       }
 
+      if (!certificate.blobName) {
+        throw new Error(`Certificate blob name not found for certificate: ${tlsCertificateId}`);
+      }
+
       logger.info(
         {
           frontendName,
           certificateId: tlsCertificateId,
-          keyVaultName: certificate.keyVaultCertificateName,
+          blobName: certificate.blobName,
         },
         "Retrieved certificate from database"
       );
 
-      // Step 2: Initialize TLS config and Key Vault client
+      // Step 2: Initialize TLS config and Azure Storage client
       const tlsConfig = new TlsConfigService(prisma);
-      const keyVaultUrl = await tlsConfig.get("key_vault_url");
+      const azureConfig = new AzureConfigService(prisma);
 
-      if (!keyVaultUrl) {
-        throw new Error("Key Vault URL not configured");
+      const containerName = await tlsConfig.getCertificateContainerName();
+      const connectionString = await azureConfig.getConnectionString();
+
+      if (!connectionString) {
+        throw new Error("Azure Storage not configured");
       }
 
-      // Get credentials
-      const tenantId = await tlsConfig.get("key_vault_tenant_id");
-      const clientId = await tlsConfig.get("key_vault_client_id");
-      const clientSecret = await tlsConfig.get("key_vault_client_secret");
+      const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
 
-      let credential;
-      if (tenantId && clientId && clientSecret) {
-        credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-      } else {
-        credential = new DefaultAzureCredential();
-      }
-
-      const keyVaultStore = new AzureKeyVaultCertificateStore(keyVaultUrl, credential);
-
-      // Step 3: Get certificate from Key Vault
+      // Step 3: Get certificate from Azure Storage
       logger.info(
-        { keyVaultName: certificate.keyVaultCertificateName },
-        "Retrieving certificate from Azure Key Vault"
+        { blobName: certificate.blobName },
+        "Retrieving certificate from Azure Storage"
       );
 
-      const certData = await keyVaultStore.getCertificate(
-        certificate.keyVaultCertificateName
-      );
+      const certData = await certificateStore.getCertificate(certificate.blobName);
 
       // Combine certificate and private key for HAProxy
       const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
 
       // Step 4: Deploy certificate to HAProxy
-      const certFileName = `${certificate.keyVaultCertificateName}.pem`;
+      const certFileName = `${certificate.blobName.replace(/\.pem$/, '')}.pem`;
 
       logger.info(
         { certFileName, frontendName },
