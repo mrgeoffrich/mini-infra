@@ -19,7 +19,8 @@ export const createHelmetMiddleware = (allowInsecure: boolean) => {
   if (allowInsecure) {
     // Add http: to allowed sources for API calls
     cspDirectives.connectSrc = ["'self'", "https:", "http:"];
-    // Don't add upgradeInsecureRequests when allowing insecure connections
+    // Explicitly disable upgradeInsecureRequests to prevent Helmet from adding it by default
+    cspDirectives.upgradeInsecureRequests = null as any;
   } else {
     // Force HTTPS upgrades in production/secure mode
     cspDirectives.upgradeInsecureRequests = [];
