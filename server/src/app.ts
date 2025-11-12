@@ -207,11 +207,12 @@ if (appConfig.server.nodeEnv === "production") {
   try {
     const indexPath = path.join(publicPath, "index.html");
     app.get("/*path", ((req: Request, res: Response, next: NextFunction) => {
-      // Skip API routes
+      // Skip API routes and static assets
       if (
         req.path.startsWith("/api") ||
         req.path.startsWith("/auth") ||
-        req.path.startsWith("/health")
+        req.path.startsWith("/health") ||
+        req.path.startsWith("/assets")
       ) {
         return next();
       }
