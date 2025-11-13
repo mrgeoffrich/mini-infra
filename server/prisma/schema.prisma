@@ -24,6 +24,7 @@ model User {
   apiKeys        ApiKey[]
   userPreference UserPreference?
   postgresServers PostgresServer[]
+  userEvents     UserEvent[]
 
   @@map("users")
 }
@@ -787,6 +788,64 @@ model AcmeAccount {
   @@index([email])
   @@index([provider])
   @@map("acme_accounts")
+}
+
+// User Events - Centralized event tracking for long-running operations
+
+/// UserEvent model for tracking logs and outcomes of important long-running processes
+model UserEvent {
+  id                String   @id @default(cuid())
+
+  // Event classification
+  eventType         String   // 'deployment', 'environment_start', 'environment_stop', 'certificate_create', 'certificate_renew', 'backup', 'restore', 'container_cleanup', etc.
+  eventCategory     String   // 'infrastructure', 'database', 'security', 'maintenance'
+  eventName         String   // Human-readable name
+
+  // User/trigger information
+  userId            String?  // User who triggered (nullable for automated events)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  triggeredBy       String   // 'manual', 'scheduled', 'webhook', 'api'
+
+  // Status tracking
+  status            String   // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  progress          Int      @default(0) // 0-100 percentage
+
+  // Timing
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  durationMs        Int?     // Duration in milliseconds
+
+  // Resource identification (optional, for linking to specific resources)
+  resourceId        String?  // ID of deployment config, database, container, environment, certificate, etc.
+  resourceType      String?  // 'deployment', 'database', 'container', 'certificate', 'environment'
+  resourceName      String?  // Human-readable resource name
+
+  // Detailed information
+  description       String?  // Brief description
+  metadata          String?  // JSON stringified flexible metadata (config, parameters, steps, etc.)
+
+  // Output/results
+  resultSummary     String?  // Brief result description
+  errorMessage      String?  // Error message if failed
+  errorDetails      String?  // JSON stringified detailed error information
+
+  // Logs/output - Full text logs stored directly
+  logs              String?  // Text logs (may contain newlines, structured log entries, etc.)
+
+  // Retention
+  expiresAt         DateTime? // Optional expiration for auto-cleanup
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([eventType])
+  @@index([eventCategory])
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([resourceType, resourceId])
+  @@index([expiresAt])
+  @@map("user_events")
 }
 
 // Enums

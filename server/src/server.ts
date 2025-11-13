@@ -32,6 +32,7 @@ import { EnvironmentHealthScheduler } from "./services/environment-health-schedu
 import { ApplicationServiceFactory } from "./services/application-service-factory";
 import { SelfBackupScheduler } from "./services/self-backup-scheduler";
 import serverHealthScheduler from "./services/postgres-server/health-scheduler";
+import { UserEventCleanupScheduler } from "./services/user-event-cleanup-scheduler";
 import prisma from "./lib/prisma";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { TlsConfigService } from "./services/tls/tls-config";
@@ -52,6 +53,7 @@ let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = nu
 let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
+let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 
 /**
  * Initialize security secrets from database or generate new ones
@@ -243,6 +245,14 @@ const initializeServices = async () => {
     logger.info("Self-backup scheduler initialized successfully");
     console.log("[STARTUP] ✓ Self-backup scheduler initialized");
 
+    // Initialize user event cleanup scheduler
+    console.log("[STARTUP] Initializing user event cleanup scheduler...");
+    userEventCleanupScheduler = new UserEventCleanupScheduler(prisma);
+    UserEventCleanupScheduler.setInstance(userEventCleanupScheduler);
+    await userEventCleanupScheduler.initialize();
+    logger.info("User event cleanup scheduler initialized successfully");
+    console.log("[STARTUP] ✓ User event cleanup scheduler initialized");
+
     // Initialize PostgreSQL server health scheduler
     console.log("[STARTUP] Initializing PostgreSQL server health scheduler...");
     serverHealthScheduler.startAll();
@@ -421,6 +431,11 @@ startServer()
       if (selfBackupScheduler) {
         await selfBackupScheduler.shutdown();
         logger.info("Self-backup scheduler stopped");
+      }
+
+      if (userEventCleanupScheduler) {
+        await userEventCleanupScheduler.shutdown();
+        logger.info("User event cleanup scheduler stopped");
       }
 
       // Stop PostgreSQL server health scheduler

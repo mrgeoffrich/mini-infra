@@ -22,6 +22,7 @@ import { ServiceRegistry } from './service-registry';
 import { ApplicationServiceFactory } from './application-service-factory';
 import { DockerExecutorService } from './docker-executor';
 import { servicesLogger } from '../lib/logger-factory';
+import { UserEventService } from './user-event-service';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
@@ -29,11 +30,13 @@ export class EnvironmentManager {
   private readonly serviceRegistry: ServiceRegistry;
   private readonly serviceFactory: ApplicationServiceFactory;
   private readonly dockerExecutor: DockerExecutorService;
+  private readonly userEventService: UserEventService;
 
   constructor(private readonly prisma: PrismaClient) {
     this.serviceRegistry = ServiceRegistry.getInstance();
     this.serviceFactory = ApplicationServiceFactory.getInstance();
     this.dockerExecutor = new DockerExecutorService();
+    this.userEventService = new UserEventService(prisma);
   }
 
   public static getInstance(prisma: PrismaClient): EnvironmentManager {
@@ -43,20 +46,45 @@ export class EnvironmentManager {
     return EnvironmentManager.instance;
   }
 
-  public async createEnvironment(request: CreateEnvironmentRequest): Promise<Environment> {
+  public async createEnvironment(request: CreateEnvironmentRequest, userId?: string): Promise<Environment> {
+    const startTime = Date.now();
+    let userEvent: any = null;
+
     this.logger.info({ request }, 'Creating new environment');
 
     try {
+      // Create user event for tracking
+      userEvent = await this.userEventService.createEvent({
+        eventType: 'environment_create',
+        eventCategory: 'infrastructure',
+        eventName: `Create Environment: ${request.name}`,
+        userId: userId || undefined,
+        triggeredBy: userId ? 'manual' : 'api',
+        resourceType: 'environment',
+        resourceName: request.name,
+        description: `Creating ${request.type} environment${request.services ? ` with ${request.services.length} service(s)` : ''}`,
+        metadata: {
+          environmentName: request.name,
+          environmentType: request.type,
+          networkType: request.networkType || 'local',
+          serviceCount: request.services?.length || 0,
+          services: request.services?.map(s => ({ name: s.serviceName, type: s.serviceType })) || []
+        }
+      });
+
       // Validate service configurations
       if (request.services) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Validating ${request.services.length} service configuration(s)...`);
         for (const serviceConfig of request.services) {
           if (!this.serviceRegistry.isServiceTypeAvailable(serviceConfig.serviceType)) {
             throw new Error(`Unknown service type: ${serviceConfig.serviceType}`);
           }
         }
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All service configurations validated successfully`);
       }
 
       // Create environment record
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Creating environment record...`);
       const environmentData = await this.prisma.environment.create({
         data: {
           name: request.name,
@@ -72,10 +100,13 @@ export class EnvironmentManager {
           volumes: true
         }
       });
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment record created (ID: ${environmentData.id})`);
 
       // If services are provided, create them
       if (request.services && request.services.length > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Adding ${request.services.length} service(s) to environment...`);
         await this.addServicesToEnvironment(environmentData.id, request.services);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services added successfully`);
       }
 
       // Fetch the complete environment with relations
@@ -84,16 +115,46 @@ export class EnvironmentManager {
         throw new Error('Failed to retrieve created environment');
       }
 
+      const duration = Date.now() - startTime;
+
       this.logger.info({
         environmentId: environment.id,
         environmentName: environment.name,
-        serviceCount: environment.services.length
+        serviceCount: environment.services.length,
+        userEventId: userEvent.id
       }, 'Environment created successfully');
+
+      // Complete the user event
+      await this.userEventService.updateEvent(userEvent.id, {
+        status: 'completed',
+        resultSummary: `Environment '${environment.name}' created successfully with ${environment.services.length} service(s)`,
+        durationMs: duration
+      });
 
       return environment;
 
     } catch (error) {
-      this.logger.error({ error, request }, 'Failed to create environment');
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      this.logger.error({ error, request, userEventId: userEvent?.id }, 'Failed to create environment');
+
+      // Update user event with failure details
+      if (userEvent) {
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'failed',
+          errorMessage: `Failed to create environment: ${errorMessage}`,
+          errorDetails: {
+            type: error instanceof Error ? error.constructor.name : 'Unknown',
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined,
+            request,
+            duration
+          },
+          durationMs: duration
+        });
+      }
+
       throw error;
     }
   }
@@ -209,9 +270,11 @@ export class EnvironmentManager {
 
   public async deleteEnvironment(
     id: string,
-    options: { deleteVolumes?: boolean; deleteNetworks?: boolean } = {}
+    options: { deleteVolumes?: boolean; deleteNetworks?: boolean; userId?: string } = {}
   ): Promise<boolean> {
-    const { deleteVolumes = false, deleteNetworks = false } = options;
+    const { deleteVolumes = false, deleteNetworks = false, userId } = options;
+    const startTime = Date.now();
+    let userEvent: any = null;
 
     try {
       // Check if environment is running
@@ -224,89 +287,171 @@ export class EnvironmentManager {
         throw new Error('Cannot delete a running environment. Stop it first.');
       }
 
-      this.logger.info({
-        environmentId: id,
-        deleteVolumes,
-        deleteNetworks,
-        networkCount: environment.networks.length,
-        volumeCount: environment.volumes.length
-      }, 'Starting environment deletion');
-
-      // Delete Docker volumes if requested
-      if (deleteVolumes && environment.volumes.length > 0) {
-        this.logger.info({
-          environmentId: id,
-          volumes: environment.volumes.map(v => v.name)
-        }, 'Deleting Docker volumes');
-
-        for (const volume of environment.volumes) {
-          try {
-            await this.dockerExecutor.removeVolume(volume.name);
-            this.logger.debug({
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Docker volume deleted successfully');
-          } catch (error) {
-            this.logger.warn({
-              error,
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Failed to delete Docker volume (volume may not exist in Docker)');
-            // Continue with deletion even if Docker volume removal fails
-          }
+      // Create user event for tracking
+      userEvent = await this.userEventService.createEvent({
+        eventType: 'environment_delete',
+        eventCategory: 'infrastructure',
+        eventName: `Delete Environment: ${environment.name}`,
+        userId: userId || undefined,
+        triggeredBy: userId ? 'manual' : 'api',
+        resourceId: environment.id,
+        resourceType: 'environment',
+        resourceName: environment.name,
+        description: `Deleting ${environment.type} environment (volumes: ${deleteVolumes ? 'yes' : 'no'}, networks: ${deleteNetworks ? 'yes' : 'no'})`,
+        metadata: {
+          environmentId: environment.id,
+          environmentName: environment.name,
+          environmentType: environment.type,
+          deleteVolumes,
+          deleteNetworks,
+          networkCount: environment.networks.length,
+          volumeCount: environment.volumes.length,
+          serviceCount: environment.services.length
         }
-      }
-
-      // Delete Docker networks if requested
-      if (deleteNetworks && environment.networks.length > 0) {
-        this.logger.info({
-          environmentId: id,
-          networks: environment.networks.map(n => n.name)
-        }, 'Deleting Docker networks');
-
-        for (const network of environment.networks) {
-          try {
-            await this.dockerExecutor.removeNetwork(network.name);
-            this.logger.debug({
-              environmentId: id,
-              networkName: network.name
-            }, 'Docker network deleted successfully');
-          } catch (error) {
-            this.logger.warn({
-              error,
-              environmentId: id,
-              networkName: network.name
-            }, 'Failed to delete Docker network (network may not exist in Docker)');
-            // Continue with deletion even if Docker network removal fails
-          }
-        }
-      }
-
-      // Delete environment (cascade will handle related records)
-      await this.prisma.environment.delete({
-        where: { id }
       });
 
       this.logger.info({
         environmentId: id,
         deleteVolumes,
-        deleteNetworks
+        deleteNetworks,
+        networkCount: environment.networks.length,
+        volumeCount: environment.volumes.length,
+        userEventId: userEvent.id
+      }, 'Starting environment deletion');
+
+      // Delete Docker volumes if requested
+      if (deleteVolumes && environment.volumes.length > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${environment.volumes.length} Docker volume(s)...`);
+        this.logger.info({
+          environmentId: id,
+          volumes: environment.volumes.map(v => v.name)
+        }, 'Deleting Docker volumes');
+
+        let deletedVolumes = 0;
+        let failedVolumes = 0;
+
+        for (const volume of environment.volumes) {
+          try {
+            await this.dockerExecutor.removeVolume(volume.name);
+            deletedVolumes++;
+            this.logger.debug({
+              environmentId: id,
+              volumeName: volume.name
+            }, 'Docker volume deleted successfully');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Volume '${volume.name}' deleted successfully`);
+          } catch (error) {
+            failedVolumes++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.warn({
+              error,
+              environmentId: id,
+              volumeName: volume.name
+            }, 'Failed to delete Docker volume (volume may not exist in Docker)');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete volume '${volume.name}': ${errorMessage}`);
+            // Continue with deletion even if Docker volume removal fails
+          }
+        }
+
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedVolumes}/${environment.volumes.length} volume(s) (${failedVolumes} failed)`);
+      }
+
+      // Delete Docker networks if requested
+      if (deleteNetworks && environment.networks.length > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${environment.networks.length} Docker network(s)...`);
+        this.logger.info({
+          environmentId: id,
+          networks: environment.networks.map(n => n.name)
+        }, 'Deleting Docker networks');
+
+        let deletedNetworks = 0;
+        let failedNetworks = 0;
+
+        for (const network of environment.networks) {
+          try {
+            await this.dockerExecutor.removeNetwork(network.name);
+            deletedNetworks++;
+            this.logger.debug({
+              environmentId: id,
+              networkName: network.name
+            }, 'Docker network deleted successfully');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Network '${network.name}' deleted successfully`);
+          } catch (error) {
+            failedNetworks++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.warn({
+              error,
+              environmentId: id,
+              networkName: network.name
+            }, 'Failed to delete Docker network (network may not exist in Docker)');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete network '${network.name}': ${errorMessage}`);
+            // Continue with deletion even if Docker network removal fails
+          }
+        }
+
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${environment.networks.length} network(s) (${failedNetworks} failed)`);
+      }
+
+      // Delete environment (cascade will handle related records)
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting environment record...`);
+      await this.prisma.environment.delete({
+        where: { id }
+      });
+
+      const duration = Date.now() - startTime;
+
+      this.logger.info({
+        environmentId: id,
+        deleteVolumes,
+        deleteNetworks,
+        userEventId: userEvent.id
       }, 'Environment deleted successfully');
+
+      // Complete the user event
+      await this.userEventService.updateEvent(userEvent.id, {
+        status: 'completed',
+        resultSummary: `Environment '${environment.name}' deleted successfully`,
+        durationMs: duration
+      });
+
       return true;
 
     } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       this.logger.error({
         error,
         environmentId: id,
         deleteVolumes,
-        deleteNetworks
+        deleteNetworks,
+        userEventId: userEvent?.id
       }, 'Failed to delete environment');
+
+      // Update user event with failure details
+      if (userEvent) {
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'failed',
+          errorMessage: `Failed to delete environment: ${errorMessage}`,
+          errorDetails: {
+            type: error instanceof Error ? error.constructor.name : 'Unknown',
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined,
+            environmentId: id,
+            deleteVolumes,
+            deleteNetworks,
+            duration
+          },
+          durationMs: duration
+        });
+      }
+
       throw error;
     }
   }
 
-  public async startEnvironment(id: string): Promise<EnvironmentOperationResult> {
+  public async startEnvironment(id: string, userId?: string): Promise<EnvironmentOperationResult> {
     const startTime = Date.now();
+    let userEvent: any = null;
 
     try {
       const environment = await this.getEnvironmentById(id);
@@ -324,20 +469,55 @@ export class EnvironmentManager {
         };
       }
 
-      this.logger.info({ environmentId: id }, 'Starting environment');
+      // Create user event for tracking
+      userEvent = await this.userEventService.createEvent({
+        eventType: 'environment_start',
+        eventCategory: 'infrastructure',
+        eventName: `Start Environment: ${environment.name}`,
+        userId: userId || undefined,
+        triggeredBy: userId ? 'manual' : 'api',
+        resourceId: environment.id,
+        resourceType: 'environment',
+        resourceName: environment.name,
+        description: `Starting ${environment.type} environment with ${environment.services.length} service(s)`,
+        metadata: {
+          environmentId: environment.id,
+          environmentName: environment.name,
+          environmentType: environment.type,
+          serviceCount: environment.services.length,
+          networkCount: environment.networks.length,
+          volumeCount: environment.volumes.length,
+          services: environment.services.map(s => ({
+            name: s.serviceName,
+            type: s.serviceType,
+            status: s.status
+          }))
+        }
+      });
+
+      this.logger.info({ environmentId: id, userEventId: userEvent.id }, 'Starting environment');
 
       // Update status to starting
       await this.updateEnvironmentStatus(id, ServiceStatusValues.STARTING);
 
       try {
         // Initialize Docker executor
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Initializing Docker executor...`);
         await this.dockerExecutor.initialize();
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Docker executor initialized successfully`);
 
         // Create networks and volumes first
-        await this.provisionInfrastructure(environment);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Provisioning infrastructure (${environment.networks.length} networks, ${environment.volumes.length} volumes)...`);
+        await this.provisionInfrastructure(environment, userEvent.id);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Infrastructure provisioned successfully`);
 
         // Start services in dependency order
-        await this.startAllServices(environment);
+        const serviceTypes = environment.services.map(s => s.serviceType);
+        const startOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Starting ${environment.services.length} service(s) in dependency order: ${startOrder.join(' -> ')}`);
+
+        await this.startAllServices(environment, userEvent.id);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services started successfully`);
 
         // Update status to running
         await this.updateEnvironmentStatus(id, ServiceStatusValues.RUNNING);
@@ -347,8 +527,16 @@ export class EnvironmentManager {
 
         this.logger.info({
           environmentId: id,
-          duration
+          duration,
+          userEventId: userEvent.id
         }, 'Environment started successfully');
+
+        // Complete the user event
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'completed',
+          resultSummary: `Environment '${environment.name}' started successfully with ${environment.services.length} service(s)`,
+          durationMs: duration
+        });
 
         return {
           success: true,
@@ -365,24 +553,43 @@ export class EnvironmentManager {
 
     } catch (error) {
       const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       this.logger.error({
         error,
         environmentId: id,
-        duration
+        duration,
+        userEventId: userEvent?.id
       }, 'Failed to start environment');
+
+      // Update user event with failure details
+      if (userEvent) {
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'failed',
+          errorMessage: `Failed to start environment: ${errorMessage}`,
+          errorDetails: {
+            type: error instanceof Error ? error.constructor.name : 'Unknown',
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined,
+            environmentId: id,
+            duration
+          },
+          durationMs: duration
+        });
+      }
 
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMessage,
         duration,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+        details: { error: errorMessage }
       };
     }
   }
 
-  public async stopEnvironment(id: string): Promise<EnvironmentOperationResult> {
+  public async stopEnvironment(id: string, userId?: string): Promise<EnvironmentOperationResult> {
     const startTime = Date.now();
+    let userEvent: any = null;
 
     try {
       const environment = await this.getEnvironmentById(id);
@@ -400,14 +607,43 @@ export class EnvironmentManager {
         };
       }
 
-      this.logger.info({ environmentId: id }, 'Stopping environment');
+      // Create user event for tracking
+      userEvent = await this.userEventService.createEvent({
+        eventType: 'environment_stop',
+        eventCategory: 'infrastructure',
+        eventName: `Stop Environment: ${environment.name}`,
+        userId: userId || undefined,
+        triggeredBy: userId ? 'manual' : 'api',
+        resourceId: environment.id,
+        resourceType: 'environment',
+        resourceName: environment.name,
+        description: `Stopping ${environment.type} environment with ${environment.services.length} service(s)`,
+        metadata: {
+          environmentId: environment.id,
+          environmentName: environment.name,
+          environmentType: environment.type,
+          serviceCount: environment.services.length,
+          services: environment.services.map(s => ({
+            name: s.serviceName,
+            type: s.serviceType,
+            status: s.status
+          }))
+        }
+      });
+
+      this.logger.info({ environmentId: id, userEventId: userEvent.id }, 'Stopping environment');
 
       // Update status to stopping
       await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPING);
 
       try {
         // Stop services in reverse dependency order
-        await this.stopAllServices(environment);
+        const serviceTypes = environment.services.map(s => s.serviceType);
+        const stopOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes).reverse();
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stopping ${environment.services.length} service(s) in reverse dependency order: ${stopOrder.join(' -> ')}`);
+
+        await this.stopAllServices(environment, userEvent.id);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services stopped successfully`);
 
         // Update status to stopped
         await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPED);
@@ -417,8 +653,16 @@ export class EnvironmentManager {
 
         this.logger.info({
           environmentId: id,
-          duration
+          duration,
+          userEventId: userEvent.id
         }, 'Environment stopped successfully');
+
+        // Complete the user event
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'completed',
+          resultSummary: `Environment '${environment.name}' stopped successfully. ${environment.services.length} service(s) stopped.`,
+          durationMs: duration
+        });
 
         return {
           success: true,
@@ -435,18 +679,36 @@ export class EnvironmentManager {
 
     } catch (error) {
       const duration = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       this.logger.error({
         error,
         environmentId: id,
-        duration
+        duration,
+        userEventId: userEvent?.id
       }, 'Failed to stop environment');
+
+      // Update user event with failure details
+      if (userEvent) {
+        await this.userEventService.updateEvent(userEvent.id, {
+          status: 'failed',
+          errorMessage: `Failed to stop environment: ${errorMessage}`,
+          errorDetails: {
+            type: error instanceof Error ? error.constructor.name : 'Unknown',
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined,
+            environmentId: id,
+            duration
+          },
+          durationMs: duration
+        });
+      }
 
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMessage,
         duration,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+        details: { error: errorMessage }
       };
     }
   }
@@ -637,12 +899,16 @@ export class EnvironmentManager {
     }
   }
 
-  private async provisionInfrastructure(environment: Environment): Promise<void> {
+  private async provisionInfrastructure(environment: Environment, userEventId?: string): Promise<void> {
     // Create networks
     for (const network of environment.networks) {
       try {
         const exists = await this.dockerExecutor.networkExists(network.name);
         if (!exists) {
+          if (userEventId) {
+            await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Creating network '${network.name}' (driver: ${network.driver})...`);
+          }
+
           await this.dockerExecutor.createNetwork(
             network.name,
             environment.name,
@@ -656,13 +922,25 @@ export class EnvironmentManager {
             environmentId: environment.id,
             networkName: network.name
           }, 'Network created for environment');
+
+          if (userEventId) {
+            await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Network '${network.name}' created successfully`);
+          }
+        } else if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Network '${network.name}' already exists`);
         }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         this.logger.error({
           error,
           environmentId: environment.id,
           networkName: network.name
         }, 'Failed to create network');
+
+        if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] ERROR: Failed to create network '${network.name}': ${errorMessage}`);
+        }
+
         throw error;
       }
     }
@@ -672,6 +950,10 @@ export class EnvironmentManager {
       try {
         const exists = await this.dockerExecutor.volumeExists(volume.name);
         if (!exists) {
+          if (userEventId) {
+            await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Creating volume '${volume.name}' (driver: ${volume.driver})...`);
+          }
+
           await this.dockerExecutor.createVolume(
             volume.name,
             environment.name
@@ -681,43 +963,75 @@ export class EnvironmentManager {
             environmentId: environment.id,
             volumeName: volume.name
           }, 'Volume created for environment');
+
+          if (userEventId) {
+            await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Volume '${volume.name}' created successfully`);
+          }
+        } else if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Volume '${volume.name}' already exists`);
         }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         this.logger.error({
           error,
           environmentId: environment.id,
           volumeName: volume.name
         }, 'Failed to create volume');
+
+        if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] ERROR: Failed to create volume '${volume.name}': ${errorMessage}`);
+        }
+
         throw error;
       }
     }
   }
 
-  private async startAllServices(environment: Environment): Promise<void> {
+  private async startAllServices(environment: Environment, userEventId?: string): Promise<void> {
     const serviceTypes = environment.services.map(s => s.serviceType);
     const startOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes);
 
+    let serviceIndex = 0;
     for (const serviceType of startOrder) {
       const envService = environment.services.find(s => s.serviceType === serviceType);
       if (!envService) continue;
 
-      await this.startEnvironmentService(environment, envService);
+      serviceIndex++;
+      if (userEventId) {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Starting service ${serviceIndex}/${environment.services.length}: ${envService.serviceName} (${envService.serviceType})...`);
+      }
+
+      await this.startEnvironmentService(environment, envService, userEventId);
+
+      if (userEventId) {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Service '${envService.serviceName}' started successfully`);
+      }
     }
   }
 
-  private async stopAllServices(environment: Environment): Promise<void> {
+  private async stopAllServices(environment: Environment, userEventId?: string): Promise<void> {
     const serviceTypes = environment.services.map(s => s.serviceType);
     const stopOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes).reverse();
 
+    let serviceIndex = 0;
     for (const serviceType of stopOrder) {
       const envService = environment.services.find(s => s.serviceType === serviceType);
       if (!envService) continue;
 
-      await this.stopEnvironmentService(envService);
+      serviceIndex++;
+      if (userEventId) {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Stopping service ${serviceIndex}/${environment.services.length}: ${envService.serviceName} (${envService.serviceType})...`);
+      }
+
+      await this.stopEnvironmentService(envService, userEventId);
+
+      if (userEventId) {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Service '${envService.serviceName}' stopped successfully`);
+      }
     }
   }
 
-  private async startEnvironmentService(environment: Environment, envService: any): Promise<void> {
+  private async startEnvironmentService(environment: Environment, envService: any, userEventId?: string): Promise<void> {
     try {
       // Create service instance with environment-prefixed service name
       const prefixedServiceName = `${environment.name}-${envService.serviceName}`;
@@ -770,6 +1084,8 @@ export class EnvironmentManager {
       }, 'Environment service started successfully');
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
       await this.updateServiceStatus(
         envService.id,
         ServiceStatusValues.FAILED,
@@ -782,11 +1098,15 @@ export class EnvironmentManager {
         serviceName: envService.serviceName
       }, 'Failed to start environment service');
 
+      if (userEventId) {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] ERROR: Failed to start service '${envService.serviceName}': ${errorMessage}`);
+      }
+
       throw error;
     }
   }
 
-  private async stopEnvironmentService(envService: any): Promise<void> {
+  private async stopEnvironmentService(envService: any, userEventId?: string): Promise<void> {
     try {
       // Check if service is already stopped or uninitialized
       if (envService.status === ServiceStatusValues.STOPPED ||
@@ -795,6 +1115,10 @@ export class EnvironmentManager {
           serviceName: envService.serviceName,
           currentStatus: envService.status
         }, 'Service already in stopped/uninitialized state, skipping stop operation');
+
+        if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Service '${envService.serviceName}' is already stopped/uninitialized`);
+        }
 
         // Ensure status is set to stopped
         await this.updateServiceStatus(
@@ -845,12 +1169,20 @@ export class EnvironmentManager {
           ServiceStatusValues.FAILED,
           ApplicationServiceHealthStatusValues.UNHEALTHY
         );
+
+        if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Failed to stop service '${envService.serviceName}': ${errorMessage}`);
+        }
       } else {
         // If service wasn't found, mark as stopped since it's not running anyway
         this.logger.warn({
           serviceName: envService.serviceName,
           error: errorMessage
         }, 'Service not found, marking as stopped');
+
+        if (userEventId) {
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Service '${envService.serviceName}' not found, marking as stopped`);
+        }
 
         await this.updateServiceStatus(
           envService.id,

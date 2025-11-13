@@ -12,6 +12,7 @@ import {
   IconServer,
   IconSettings,
   IconShield,
+  IconHistory,
 } from "@tabler/icons-react";
 
 export interface RouteMetadata {
@@ -145,6 +146,25 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: 'main',
     navSection: 'administration',
     description: 'API key management'
+  },
+
+  '/events': {
+    path: '/events',
+    title: 'Events',
+    icon: IconHistory,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'administration',
+    description: 'Track and monitor system operations',
+    children: {
+      'detail': {
+        path: '/events/:id',
+        title: 'Event Details',
+        breadcrumbLabel: 'Details',
+        parent: '/events',
+        showInNav: false
+      }
+    }
   },
 
   '/haproxy': {

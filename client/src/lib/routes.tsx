@@ -24,6 +24,8 @@ import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/page";
 import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
+import { EventsPage } from "@/app/events/page";
+import EventDetailPage from "@/app/events/[id]/page";
 import { EnvironmentsPage } from "@/app/environments/page";
 import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
 import CertificatesPage from "@/app/certificates/page";
@@ -107,6 +109,14 @@ export const router = createBrowserRouter([
       {
         path: "api-keys",
         element: <ApiKeysPage />,
+      },
+      {
+        path: "events",
+        element: <EventsPage />,
+      },
+      {
+        path: "events/:id",
+        element: <EventDetailPage />,
       },
       {
         path: "certificates",

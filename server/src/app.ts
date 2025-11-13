@@ -106,6 +106,7 @@ app.get("/health", ((req: Request, res: Response) => {
 import authRoutes from "./routes/auth";
 import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
+import dockerRoutes from "./routes/docker";
 import settingsRoutes from "./routes/settings";
 import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
@@ -133,6 +134,7 @@ import postgresServerWorkflowsRoutes from "./routes/postgres-server/workflows";
 import tlsCertificatesRoutes from "./routes/tls-certificates";
 import tlsRenewalsRoutes from "./routes/tls-renewals";
 import tlsSettingsRoutes from "./routes/tls-settings";
+import eventsRoutes from "./routes/events";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -142,6 +144,7 @@ const routes = [
   { path: "/auth", router: authRoutes, name: "authRoutes" },
   { path: "/api/keys", router: apiKeyRoutes, name: "apiKeyRoutes" },
   { path: "/api/containers", router: containerRoutes, name: "containerRoutes" },
+  { path: "/api/docker", router: dockerRoutes, name: "dockerRoutes" },
   { path: "/api/settings/self-backup", router: selfBackupSettingsRoutes, name: "selfBackupSettingsRoutes" },
   { path: "/api/settings/system", router: systemSettingsRoutes, name: "systemSettingsRoutes" },
   { path: "/api/settings/azure", router: azureSettingsRoutes, name: "azureSettingsRoutes" },
@@ -170,6 +173,7 @@ const routes = [
   { path: "/api/tls", router: tlsSettingsRoutes, name: "tlsSettingsRoutes" },
   { path: "/api/tls/certificates", router: tlsCertificatesRoutes, name: "tlsCertificatesRoutes" },
   { path: "/api/tls/renewals", router: tlsRenewalsRoutes, name: "tlsRenewalsRoutes" },
+  { path: "/api/events", router: eventsRoutes, name: "eventsRoutes" },
 ];
 
 for (const route of routes) {

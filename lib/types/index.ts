@@ -8,6 +8,9 @@ export * from "./auth";
 // Container types
 export * from "./containers";
 
+// Docker resource types (networks, volumes)
+export * from "./docker";
+
 // Settings types
 export * from "./settings";
 
@@ -40,6 +43,9 @@ export * from "./registry";
 
 // TLS types
 export * from "./tls";
+
+// User Events types
+export * from "./user-events";
 
 // API response types
 export * from "./api";
