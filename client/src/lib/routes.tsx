@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
+import ContainerDetailPage from "@/app/containers/[id]/page";
 import DockerSettingsPage from "@/app/connectivity/docker/page";
 import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
 import AzureSettingsPage from "@/app/connectivity/azure/page";
@@ -66,6 +67,10 @@ export const router = createBrowserRouter([
       {
         path: "containers",
         element: <ContainersPage />,
+      },
+      {
+        path: "containers/:id",
+        element: <ContainerDetailPage />,
       },
       {
         path: "postgres-backup",

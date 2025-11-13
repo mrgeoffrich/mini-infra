@@ -522,42 +522,51 @@ router.get('/services/available/:serviceType', requireSessionOrApiKey, async (re
   }
 });
 
-// Import and mount sub-routers for environment networks and volumes
-// Express 5: Cannot use parameters in router.use() mount paths
-// Solution: Use middleware with regex to forward to sub-routers
-import environmentNetworksRoutes from './environment-networks';
-import environmentVolumesRoutes from './environment-volumes';
+// Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
+router.get('/:id/networks', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
 
-// Express 5 compliant: use regex-based middleware instead of parameterized mount paths
-router.use(/^\/([^\/]+)\/networks/, (req, res, next) => {
-  // Extract environment ID from URL and remove the prefix for the sub-router
-  const match = req.path.match(/^\/([^\/]+)\/networks/);
-  if (match) {
-    req.params.id = match[1];
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/[^/]+\/networks/, '');
-    environmentNetworksRoutes(req, res, (err?: any) => {
-      req.url = originalUrl;
-      next(err);
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    res.json({ networks: environment.networks });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment networks');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to retrieve environment networks'
     });
-  } else {
-    next();
   }
 });
 
-router.use(/^\/([^\/]+)\/volumes/, (req, res, next) => {
-  // Extract environment ID from URL and remove the prefix for the sub-router
-  const match = req.path.match(/^\/([^\/]+)\/volumes/);
-  if (match) {
-    req.params.id = match[1];
-    const originalUrl = req.url;
-    req.url = req.url.replace(/^\/[^/]+\/volumes/, '');
-    environmentVolumesRoutes(req, res, (err?: any) => {
-      req.url = originalUrl;
-      next(err);
+// Volumes routes - inline instead of sub-router to avoid Express 5 mounting complexity
+router.get('/:id/volumes', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    res.json({ volumes: environment.volumes });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment volumes');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to retrieve environment volumes'
     });
-  } else {
-    next();
   }
 });
 

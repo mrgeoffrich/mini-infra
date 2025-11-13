@@ -19,7 +19,17 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
-        changeOrigin: true
+        changeOrigin: true,
+        ws: true, // Enable WebSocket proxying (also helps with SSE)
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // For SSE endpoints, ensure proper headers
+            if (req.url?.includes('/logs/stream')) {
+              proxyReq.setHeader('Connection', 'keep-alive');
+              proxyReq.setHeader('Cache-Control', 'no-cache');
+            }
+          });
+        }
       },
       '/auth': {
         target: 'http://localhost:5000',

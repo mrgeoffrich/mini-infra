@@ -705,6 +705,8 @@ export function useStartEnvironment() {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
       queryClient.invalidateQueries({ queryKey: ["environment", id] });
       queryClient.invalidateQueries({ queryKey: ["environmentStatus", id] });
+      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", id] });
+      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", id] });
     },
   });
 }
@@ -719,6 +721,8 @@ export function useStopEnvironment() {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
       queryClient.invalidateQueries({ queryKey: ["environment", id] });
       queryClient.invalidateQueries({ queryKey: ["environmentStatus", id] });
+      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", id] });
+      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", id] });
     },
   });
 }
@@ -739,6 +743,8 @@ export function useAddServiceToEnvironment() {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
       queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
       queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", environmentId] });
     },
   });
 }

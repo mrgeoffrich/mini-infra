@@ -15,7 +15,11 @@ import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { ContainerTable } from "./ContainerTable";
 import { ContainerFilters } from "./ContainerFilters";
-import { IconAlertCircle, IconSettings, IconBrandDocker } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconSettings,
+  IconBrandDocker,
+} from "@tabler/icons-react";
 
 interface ContainerGroup {
   environmentId: string | null;
@@ -141,7 +145,7 @@ export function ContainerDashboard() {
               <IconBrandDocker className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">Container Dashboard</h1>
+              <h1 className="text-3xl font-bold">Containers</h1>
               <p className="text-muted-foreground">
                 Monitor and manage your Docker containers
               </p>
@@ -287,16 +291,20 @@ export function ContainerDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  variant={filterState.filters.status === 'running' ? 'default' : 'outline'}
+                  variant={
+                    filterState.filters.status === "running"
+                      ? "default"
+                      : "outline"
+                  }
                   size="sm"
-                  onClick={() => filterState.updateFilter('status', 'running')}
+                  onClick={() => filterState.updateFilter("status", "running")}
                 >
                   Running Only
                 </Button>
                 <Button
-                  variant={!filterState.filters.status ? 'default' : 'outline'}
+                  variant={!filterState.filters.status ? "default" : "outline"}
                   size="sm"
-                  onClick={() => filterState.updateFilter('status', undefined)}
+                  onClick={() => filterState.updateFilter("status", undefined)}
                 >
                   All
                 </Button>
@@ -319,22 +327,31 @@ export function ContainerDashboard() {
             ) : (
               <div className="space-y-6">
                 {containerGroups.map((group) => (
-                  <div key={group.environmentId || 'unmanaged'} className="space-y-3">
+                  <div
+                    key={group.environmentId || "unmanaged"}
+                    className="space-y-3"
+                  >
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold">
                         {group.environmentName}
                       </h3>
                       {group.environmentType && (
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          group.environmentType === 'production'
-                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                            : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
-                        }`}>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            group.environmentType === "production"
+                              ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                          }`}
+                        >
                           {group.environmentType}
                         </span>
                       )}
                       <span className="text-sm text-muted-foreground">
-                        ({group.containers.length} {group.containers.length === 1 ? 'container' : 'containers'})
+                        ({group.containers.length}{" "}
+                        {group.containers.length === 1
+                          ? "container"
+                          : "containers"}
+                        )
                       </span>
                     </div>
                     <ContainerTable

@@ -119,6 +119,50 @@ export interface ContainerCacheResponse {
 }
 
 // ====================
+// Container Action Types
+// ====================
+
+export type ContainerAction = "start" | "stop" | "restart";
+
+export interface ContainerActionRequest {
+  action: ContainerAction;
+}
+
+export interface ContainerActionResponse {
+  success: boolean;
+  message: string;
+  containerId: string;
+  action: ContainerAction;
+  status?: ContainerStatus;
+}
+
+// ====================
+// Container Log Types
+// ====================
+
+export interface ContainerLogOptions {
+  tail?: number; // Number of lines to show from the end
+  follow?: boolean; // Stream logs in real-time
+  timestamps?: boolean; // Include timestamps
+  since?: string; // Show logs since timestamp (Unix timestamp)
+  until?: string; // Show logs until timestamp (Unix timestamp)
+  stdout?: boolean; // Include stdout
+  stderr?: boolean; // Include stderr
+}
+
+export interface ContainerLogLine {
+  timestamp?: string;
+  message: string;
+  stream: "stdout" | "stderr";
+}
+
+export interface ContainerLogEvent {
+  type: "log" | "error" | "end";
+  data?: ContainerLogLine;
+  error?: string;
+}
+
+// ====================
 // Server-only Types
 // ====================
 

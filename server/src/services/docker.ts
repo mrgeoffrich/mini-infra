@@ -488,9 +488,7 @@ class DockerService {
       imageTag: data.Config.Image.split(":")[1] || "latest",
       ports: this.transformDetailedPorts(data.NetworkSettings?.Ports || {}),
       volumes: this.transformVolumes(data.Mounts || []),
-      ipAddress:
-        data.NetworkSettings?.IPAddress ||
-        data.NetworkSettings?.Networks?.bridge?.IPAddress,
+      ipAddress: this.extractIpAddress(data.NetworkSettings),
       createdAt: new Date(data.Created),
       startedAt: data.State.StartedAt
         ? new Date(data.State.StartedAt)
@@ -570,11 +568,13 @@ class DockerService {
   }
 
   private transformVolumes(mounts: any[]): DockerContainerInfo["volumes"] {
-    return mounts.map((mount) => ({
-      source: mount.Source || mount.Name,
-      destination: mount.Destination,
-      mode: mount.RW ? "rw" : "ro",
-    }));
+    return mounts
+      .map((mount) => ({
+        source: mount.Source || mount.Name,
+        destination: mount.Destination,
+        mode: mount.RW ? "rw" : "ro",
+      }))
+      .sort((a, b) => a.destination.localeCompare(b.destination));
   }
 
   private extractIpAddress(networkSettings: any): string | undefined {

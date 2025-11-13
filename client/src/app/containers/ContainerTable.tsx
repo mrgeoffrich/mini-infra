@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router";
 import {
   ColumnDef,
   flexRender,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { IconArrowsSort, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { IconArrowsSort, IconChevronLeft, IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -76,25 +77,28 @@ const ContainerImageCell = React.memo(
 
 ContainerImageCell.displayName = "ContainerImageCell";
 
-const ContainerIPCell = React.memo(
-  ({ ip }: { ip: string }) => {
-    if (!ip) {
-      return (
-        <span className="text-muted-foreground min-h-[2rem] flex items-center">
-          -
-        </span>
-      );
-    }
+const ContainerInfoCell = React.memo(
+  ({ containerId }: { containerId: string }) => {
     return (
-      <div className="flex items-center min-h-[2rem]">
-        <span className="font-mono text-sm truncate">{ip}</span>
+      <div className="flex items-center justify-center min-h-[2rem]">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+        >
+          <Link to={`/containers/${containerId}`}>
+            <IconInfoCircle className="h-4 w-4" />
+            <span className="sr-only">View container details</span>
+          </Link>
+        </Button>
       </div>
     );
   },
-  (prevProps, nextProps) => prevProps.ip === nextProps.ip,
+  (prevProps, nextProps) => prevProps.containerId === nextProps.containerId,
 );
 
-ContainerIPCell.displayName = "ContainerIPCell";
+ContainerInfoCell.displayName = "ContainerInfoCell";
 
 const ContainerPortsCell = React.memo(
   ({ ports }: { ports: ContainerInfo["ports"] }) => {
@@ -213,7 +217,6 @@ const ContainerRow = React.memo(
       prev.status === next.status &&
       prev.image === next.image &&
       prev.imageTag === next.imageTag &&
-      prev.ipAddress === next.ipAddress &&
       JSON.stringify(prev.ports) === JSON.stringify(next.ports)
     );
   },
@@ -301,9 +304,9 @@ export const ContainerTable = React.memo(function ContainerTable({
         cell: ({ row }) => <ContainerPortsCell ports={row.getValue("ports")} />,
       },
       {
-        accessorKey: "ipAddress",
-        header: "IP Address",
-        cell: ({ row }) => <ContainerIPCell ip={row.getValue("ipAddress")} />,
+        accessorKey: "id",
+        header: "Info",
+        cell: ({ row }) => <ContainerInfoCell containerId={row.original.id} />,
       },
     ],
     [handleNameSort, handleStatusSort, handleImageSort],
@@ -347,7 +350,7 @@ export const ContainerTable = React.memo(function ContainerTable({
       case 3:
         return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
       case 4:
-        return "w-[120px] min-w-[120px] max-w-[120px]"; // IP Address
+        return "w-[80px] min-w-[80px] max-w-[80px]"; // Info button
       default:
         return "";
     }
