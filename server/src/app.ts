@@ -133,6 +133,7 @@ import postgresServerWorkflowsRoutes from "./routes/postgres-server/workflows";
 import tlsCertificatesRoutes from "./routes/tls-certificates";
 import tlsRenewalsRoutes from "./routes/tls-renewals";
 import tlsSettingsRoutes from "./routes/tls-settings";
+import eventsRoutes from "./routes/events";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -170,6 +171,7 @@ const routes = [
   { path: "/api/tls", router: tlsSettingsRoutes, name: "tlsSettingsRoutes" },
   { path: "/api/tls/certificates", router: tlsCertificatesRoutes, name: "tlsCertificatesRoutes" },
   { path: "/api/tls/renewals", router: tlsRenewalsRoutes, name: "tlsRenewalsRoutes" },
+  { path: "/api/events", router: eventsRoutes, name: "eventsRoutes" },
 ];
 
 for (const route of routes) {

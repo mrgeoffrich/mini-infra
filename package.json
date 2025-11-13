@@ -1,30 +1,30 @@
 {
-    "name": "mini-infra",
-    "private": true,
-    "workspaces": [
-        "client",
-        "server",
-        "lib"
-    ],
-    "scripts": {
-        "dev": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
-        "dev:lib": "cd lib && npm run dev",
-        "dev:client": "cd client && npm run dev",
-        "dev:server": "cd server && npm run dev",
-        "build": "npm run build:lib && npm run build:client",
-        "build:lib": "cd lib && npm run build",
-        "build:client": "cd client && npm run build",
-        "build:server": "npm run build:lib && cd server && npm run build",
-        "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\"",
-        "start": "cd server && npm start",
-        "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
-        "format": "cd server && npm run format",
-        "format:check": "cd server && npm run format:check"
-    },
-    "devDependencies": {
-        "concurrently": "^8.2.0"
-    },
-    "dependencies": {
-        "cross-env": "^10.0.0"
-    }
+  "name": "mini-infra",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server",
+    "lib"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:lib": "cd lib && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "build": "npm run build:server && npm run build:client",
+    "build:lib": "cd lib && npm run build",
+    "build:client": "cd client && npm run build",
+    "build:server": "npm run build:lib && cd server && npm run build",
+    "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\"",
+    "start": "cd server && npm start",
+    "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
+    "format": "cd server && npm run format",
+    "format:check": "cd server && npm run format:check"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "cross-env": "^10.0.0"
+  }
 }
