@@ -11,17 +11,18 @@ import {
   IconTrash,
   IconAlertCircle,
   IconLoader2,
+  IconUser,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
 import { Separator } from "../ui/separator";
@@ -227,61 +228,87 @@ export function GrantEditor({
     }
   };
 
+  const isOwner = user.username === database.owner;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Manage Database Permissions</DialogTitle>
-          <DialogDescription>
-            Configure access permissions for <span className="font-mono">{user.username}</span> on{" "}
-            <span className="font-mono">{database.databaseName}</span>
-          </DialogDescription>
+          <div className="space-y-3 pt-2">
+            {/* User Info */}
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+              <IconUser className="h-5 w-5 text-blue-600" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold font-mono">{user.username}</span>
+                  {isOwner && (
+                    <Badge variant="outline" className="text-xs border-purple-500 text-purple-700 dark:text-purple-300">
+                      Database Owner
+                    </Badge>
+                  )}
+                  {user.isSuperuser && (
+                    <Badge variant="destructive" className="text-xs">
+                      Superuser
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Database Info */}
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+              <IconDatabase className="h-5 w-5 text-purple-600" />
+              <div className="flex-1">
+                <span className="font-semibold font-mono">{database.databaseName}</span>
+              </div>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
           {/* Quick Presets */}
-          <div className="space-y-2">
-            <Label>Permission Presets</Label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="space-y-3">
+            <Label className="text-base font-semibold">Permission Presets</Label>
+            <div className="grid grid-cols-2 gap-3">
               <Button
                 type="button"
                 variant={currentPreset === "none" ? "default" : "outline"}
                 onClick={() => applyPreset("none")}
-                className="justify-start"
+                className="justify-start p-3"
                 disabled={isSubmitting}
               >
-                <IconBan className="h-4 w-4 mr-2" />
-                No Access
+                <IconBan className="h-5 w-5 mr-2" />
+                <span className="font-semibold">No Access</span>
               </Button>
               <Button
                 type="button"
                 variant={currentPreset === "readonly" ? "default" : "outline"}
                 onClick={() => applyPreset("readonly")}
-                className="justify-start"
+                className="justify-start p-3"
                 disabled={isSubmitting}
               >
-                <IconEye className="h-4 w-4 mr-2" />
-                Read Only
+                <IconEye className="h-5 w-5 mr-2" />
+                <span className="font-semibold">Read Only</span>
               </Button>
               <Button
                 type="button"
                 variant={currentPreset === "readwrite" ? "default" : "outline"}
                 onClick={() => applyPreset("readwrite")}
-                className="justify-start"
+                className="justify-start p-3"
                 disabled={isSubmitting}
               >
-                <IconEdit className="h-4 w-4 mr-2" />
-                Read/Write
+                <IconEdit className="h-5 w-5 mr-2" />
+                <span className="font-semibold">Read/Write</span>
               </Button>
               <Button
                 type="button"
                 variant={currentPreset === "full" ? "default" : "outline"}
                 onClick={() => applyPreset("full")}
-                className="justify-start"
+                className="justify-start p-3"
                 disabled={isSubmitting}
               >
-                <IconShield className="h-4 w-4 mr-2" />
-                Full Access
+                <IconShield className="h-5 w-5 mr-2" />
+                <span className="font-semibold">Full Access</span>
               </Button>
             </div>
           </div>

@@ -35,6 +35,7 @@ import { BackupsTab } from "@/components/postgres-server/backups-tab";
 import { HealthStatusBadge } from "@/components/postgres-server/health-status-badge";
 import { usePostgresServer } from "@/hooks/use-postgres-servers";
 import { useManagedDatabaseUsers } from "@/hooks/use-managed-database-users";
+import { useManagedDatabases } from "@/hooks/use-managed-databases";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
@@ -46,9 +47,13 @@ export default function PostgresServerDetailsPage() {
   const { data: response, isLoading, error } = usePostgresServer(serverId!);
   const server = response?.data;
 
-  // Fetch users for the database modal
+  // Fetch users for the database modal and grants management
   const { data: usersResponse } = useManagedDatabaseUsers(serverId);
   const availableUsers = usersResponse?.data || [];
+
+  // Fetch databases for the grants management
+  const { data: databasesResponse } = useManagedDatabases(serverId);
+  const availableDatabases = databasesResponse?.data || [];
 
   const handleSync = async () => {
     toast.promise(
@@ -248,7 +253,7 @@ export default function PostgresServerDetailsPage() {
           </TabsContent>
 
           <TabsContent value="users">
-            <UsersTab serverId={serverId!} />
+            <UsersTab serverId={serverId!} availableDatabases={availableDatabases} />
           </TabsContent>
 
           <TabsContent value="backups">

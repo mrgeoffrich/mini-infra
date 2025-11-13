@@ -5,6 +5,7 @@ import {
   ManagedDatabaseDeleteResponse,
   CreateManagedDatabaseRequest,
   UpdateManagedDatabaseRequest,
+  ChangeDatabaseOwnerRequest,
   SyncDatabasesResponse,
 } from "@mini-infra/types";
 
@@ -174,6 +175,39 @@ async function deleteManagedDatabase(
   return data;
 }
 
+async function changeDatabaseOwner(
+  serverId: string,
+  databaseId: string,
+  ownerData: ChangeDatabaseOwnerRequest,
+  correlationId: string,
+): Promise<ManagedDatabaseResponse> {
+  const response = await fetch(
+    `/api/postgres-server/servers/${serverId}/databases/${databaseId}/owner`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Correlation-ID": correlationId,
+      },
+      body: JSON.stringify(ownerData),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to change database owner");
+  }
+
+  const data: ManagedDatabaseResponse = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to change database owner");
+  }
+
+  return data;
+}
+
 async function syncDatabases(
   serverId: string,
   correlationId: string,
@@ -307,6 +341,38 @@ export function useDeleteManagedDatabase(serverId: string) {
       // Also invalidate the server to update counts
       queryClient.invalidateQueries({
         queryKey: ["postgres-servers", serverId],
+      });
+    },
+  });
+}
+
+/**
+ * Hook to change database owner
+ */
+export function useChangeDatabaseOwner(serverId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      databaseId,
+      ownerData,
+    }: {
+      databaseId: string;
+      ownerData: ChangeDatabaseOwnerRequest;
+    }) =>
+      changeDatabaseOwner(
+        serverId,
+        databaseId,
+        ownerData,
+        generateCorrelationId(),
+      ),
+    onSuccess: (data) => {
+      // Invalidate both the list and the individual database
+      queryClient.invalidateQueries({
+        queryKey: ["postgres-servers", serverId, "databases"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["postgres-databases", data.data.id],
       });
     },
   });

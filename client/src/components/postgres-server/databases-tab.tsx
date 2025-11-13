@@ -20,6 +20,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -34,18 +41,24 @@ import {
   IconDots,
   IconEye,
   IconTrash,
+  IconUser,
+  IconUserEdit,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   useManagedDatabases,
   useCreateManagedDatabase,
   useDeleteManagedDatabase,
+  useChangeDatabaseOwner,
   useSyncDatabases,
 } from "@/hooks/use-managed-databases";
+import { useGrantsForDatabase } from "@/hooks/use-database-grants";
 import { DatabaseModal } from "./database-modal";
+import { ChangeOwnerModal } from "./change-owner-modal";
+import { GrantEditor } from "./grant-editor";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CreateManagedDatabaseRequest, ManagedDatabaseUserInfo } from "@mini-infra/types";
+import { CreateManagedDatabaseRequest, ChangeDatabaseOwnerRequest, ManagedDatabaseUserInfo, ManagedDatabaseInfo } from "@mini-infra/types";
 
 interface DatabasesTabProps {
   serverId: string;
@@ -59,8 +72,23 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
     id: string;
     name: string;
   } | null>(null);
+  const [userSelectionDialogOpen, setUserSelectionDialogOpen] = useState(false);
+  const [selectedDatabaseForGrants, setSelectedDatabaseForGrants] =
+    useState<ManagedDatabaseInfo | null>(null);
+  const [grantEditorOpen, setGrantEditorOpen] = useState(false);
+  const [selectedUserForGrant, setSelectedUserForGrant] =
+    useState<ManagedDatabaseUserInfo | null>(null);
+  const [changeOwnerDialogOpen, setChangeOwnerDialogOpen] = useState(false);
+  const [databaseToChangeOwner, setDatabaseToChangeOwner] =
+    useState<ManagedDatabaseInfo | null>(null);
 
   const { formatRelativeTime } = useFormattedDate();
+
+  // Fetch grants for the selected database (only when needed)
+  const { data: grantsResponse } = useGrantsForDatabase(
+    selectedDatabaseForGrants ? serverId : undefined,
+    selectedDatabaseForGrants?.id,
+  );
 
   // Fetch databases
   const {
@@ -73,6 +101,7 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
   // Mutations
   const createMutation = useCreateManagedDatabase(serverId);
   const deleteMutation = useDeleteManagedDatabase(serverId);
+  const changeOwnerMutation = useChangeDatabaseOwner(serverId);
   const syncMutation = useSyncDatabases(serverId);
 
   const handleCreateDatabase = async (data: CreateManagedDatabaseRequest) => {
@@ -103,6 +132,30 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
     }
   };
 
+  const handleChangeOwner = (database: ManagedDatabaseInfo) => {
+    setDatabaseToChangeOwner(database);
+    setChangeOwnerDialogOpen(true);
+  };
+
+  const handleChangeOwnerSubmit = async (data: ChangeDatabaseOwnerRequest) => {
+    if (!databaseToChangeOwner) return;
+
+    try {
+      await changeOwnerMutation.mutateAsync({
+        databaseId: databaseToChangeOwner.id,
+        ownerData: data,
+      });
+      toast.success(
+        `Database owner changed to "${data.newOwner}" successfully`
+      );
+      setChangeOwnerDialogOpen(false);
+      setDatabaseToChangeOwner(null);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to change database owner");
+      throw error;
+    }
+  };
+
   const handleSyncDatabases = async () => {
     try {
       const result = await syncMutation.mutateAsync();
@@ -114,6 +167,32 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
       toast.error(error.message || "Failed to sync databases");
     }
   };
+
+  const handleManageGrants = (database: ManagedDatabaseInfo) => {
+    setSelectedDatabaseForGrants(database);
+    setUserSelectionDialogOpen(true);
+  };
+
+  const handleUserSelected = (user: ManagedDatabaseUserInfo) => {
+    setSelectedUserForGrant(user);
+    setUserSelectionDialogOpen(false);
+    setGrantEditorOpen(true);
+  };
+
+  const handleGrantEditorClose = () => {
+    setGrantEditorOpen(false);
+    // Clear selections after a short delay to avoid visual glitch
+    setTimeout(() => {
+      setSelectedDatabaseForGrants(null);
+      setSelectedUserForGrant(null);
+    }, 200);
+  };
+
+  // Find existing grant for the selected database and user
+  const existingGrant =
+    grantsResponse?.data.find(
+      (grant) => grant.userId === selectedUserForGrant?.id,
+    ) || undefined;
 
   const formatBytes = (bytes: number | null): string => {
     if (bytes === null) return "Unknown";
@@ -319,7 +398,11 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleManageGrants(db)}
+                  >
                     <IconShield className="h-4 w-4 mr-1" />
                     Grants
                   </Button>
@@ -333,6 +416,10 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
                       <DropdownMenuItem disabled>
                         <IconEye className="h-4 w-4 mr-2" />
                         View Details
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleChangeOwner(db)}>
+                        <IconUserEdit className="h-4 w-4 mr-2" />
+                        Change Owner
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -387,6 +474,94 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* User Selection Dialog */}
+      <Dialog
+        open={userSelectionDialogOpen}
+        onOpenChange={setUserSelectionDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select User</DialogTitle>
+            <DialogDescription>
+              Choose a user to manage permissions for{" "}
+              <span className="font-mono">
+                {selectedDatabaseForGrants?.databaseName}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            {availableUsers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No users available</p>
+                <p className="text-xs mt-1">
+                  Create users first to manage permissions
+                </p>
+              </div>
+            ) : (
+              availableUsers.map((user) => {
+                const isOwner =
+                  user.username === selectedDatabaseForGrants?.owner;
+                return (
+                  <button
+                    key={user.id}
+                    onClick={() => handleUserSelected(user)}
+                    className="w-full flex items-center gap-3 p-3 border rounded-lg hover:bg-accent transition-colors text-left"
+                  >
+                    <IconUser className="h-5 w-5 text-blue-600" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm font-mono">
+                          {user.username}
+                        </span>
+                        {isOwner && (
+                          <Badge variant="outline" className="text-xs border-purple-500 text-purple-700 dark:text-purple-300">
+                            Database Owner
+                          </Badge>
+                        )}
+                        {user.isSuperuser && (
+                          <Badge variant="destructive" className="text-xs">
+                            Superuser
+                          </Badge>
+                        )}
+                      </div>
+                      {user._count && user._count.grants > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {user._count.grants} grant
+                          {user._count.grants !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grant Editor */}
+      {selectedDatabaseForGrants && selectedUserForGrant && (
+        <GrantEditor
+          open={grantEditorOpen}
+          onOpenChange={handleGrantEditorClose}
+          serverId={serverId}
+          database={selectedDatabaseForGrants}
+          user={selectedUserForGrant}
+          existingGrant={existingGrant}
+        />
+      )}
+
+      {/* Change Owner Modal */}
+      {databaseToChangeOwner && (
+        <ChangeOwnerModal
+          open={changeOwnerDialogOpen}
+          onOpenChange={setChangeOwnerDialogOpen}
+          database={databaseToChangeOwner}
+          availableUsers={availableUsers}
+          onSubmit={handleChangeOwnerSubmit}
+        />
+      )}
     </div>
   );
 }

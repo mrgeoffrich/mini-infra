@@ -834,6 +834,10 @@ export interface UpdateManagedDatabaseRequest {
   connectionLimit?: number;
 }
 
+export interface ChangeDatabaseOwnerRequest {
+  newOwner: string;
+}
+
 // Managed Database API Response Types
 export interface ManagedDatabaseResponse {
   success: boolean;

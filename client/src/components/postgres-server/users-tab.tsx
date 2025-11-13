@@ -20,6 +20,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,6 +43,7 @@ import {
   IconKey,
   IconTrash,
   IconFilter,
+  IconDatabase,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
@@ -46,21 +54,25 @@ import {
   useDeleteManagedDatabaseUser,
   useSyncUsers,
 } from "@/hooks/use-managed-database-users";
+import { useGrantsForUser } from "@/hooks/use-database-grants";
 import { UserModal } from "./user-modal";
 import { ChangePasswordModal } from "./change-password-modal";
+import { GrantEditor } from "./grant-editor";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   CreateManagedDatabaseUserRequest,
   UpdateManagedDatabaseUserRequest,
   ManagedDatabaseUserInfo,
+  ManagedDatabaseInfo,
 } from "@mini-infra/types";
 
 interface UsersTabProps {
   serverId: string;
+  availableDatabases: ManagedDatabaseInfo[];
 }
 
-export function UsersTab({ serverId }: UsersTabProps) {
+export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
   const [showSystemUsers, setShowSystemUsers] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<ManagedDatabaseUserInfo | null>(
@@ -74,8 +86,21 @@ export function UsersTab({ serverId }: UsersTabProps) {
     username: string;
     isSuperuser: boolean;
   } | null>(null);
+  const [databaseSelectionDialogOpen, setDatabaseSelectionDialogOpen] =
+    useState(false);
+  const [selectedUserForGrants, setSelectedUserForGrants] =
+    useState<ManagedDatabaseUserInfo | null>(null);
+  const [grantEditorOpen, setGrantEditorOpen] = useState(false);
+  const [selectedDatabaseForGrant, setSelectedDatabaseForGrant] =
+    useState<ManagedDatabaseInfo | null>(null);
 
   const { formatRelativeTime } = useFormattedDate();
+
+  // Fetch grants for the selected user (only when needed)
+  const { data: grantsResponse } = useGrantsForUser(
+    selectedUserForGrants ? serverId : undefined,
+    selectedUserForGrants?.id,
+  );
 
   // Fetch users
   const { data: usersResponse, isLoading, error } = useManagedDatabaseUsers(serverId);
@@ -176,6 +201,32 @@ export function UsersTab({ serverId }: UsersTabProps) {
       toast.error(error.message || "Failed to sync users");
     }
   };
+
+  const handleManageGrants = (user: ManagedDatabaseUserInfo) => {
+    setSelectedUserForGrants(user);
+    setDatabaseSelectionDialogOpen(true);
+  };
+
+  const handleDatabaseSelected = (database: ManagedDatabaseInfo) => {
+    setSelectedDatabaseForGrant(database);
+    setDatabaseSelectionDialogOpen(false);
+    setGrantEditorOpen(true);
+  };
+
+  const handleGrantEditorClose = () => {
+    setGrantEditorOpen(false);
+    // Clear selections after a short delay to avoid visual glitch
+    setTimeout(() => {
+      setSelectedUserForGrants(null);
+      setSelectedDatabaseForGrant(null);
+    }, 200);
+  };
+
+  // Find existing grant for the selected user and database
+  const existingGrant =
+    grantsResponse?.data.find(
+      (grant) => grant.databaseId === selectedDatabaseForGrant?.id,
+    ) || undefined;
 
   // Loading state
   if (isLoading) {
@@ -408,7 +459,11 @@ export function UsersTab({ serverId }: UsersTabProps) {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleManageGrants(user)}
+                  >
                     <IconShield className="h-4 w-4 mr-1" />
                     Grants
                   </Button>
@@ -515,6 +570,72 @@ export function UsersTab({ serverId }: UsersTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Database Selection Dialog */}
+      <Dialog
+        open={databaseSelectionDialogOpen}
+        onOpenChange={setDatabaseSelectionDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Database</DialogTitle>
+            <DialogDescription>
+              Choose a database to manage permissions for{" "}
+              <span className="font-mono">
+                {selectedUserForGrants?.username}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            {availableDatabases.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No databases available</p>
+                <p className="text-xs mt-1">
+                  Create databases first to manage permissions
+                </p>
+              </div>
+            ) : (
+              availableDatabases.map((database) => (
+                <button
+                  key={database.id}
+                  onClick={() => handleDatabaseSelected(database)}
+                  className="w-full flex items-center gap-3 p-3 border rounded-lg hover:bg-accent transition-colors text-left"
+                >
+                  <IconDatabase className="h-5 w-5 text-purple-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm font-mono">
+                        {database.databaseName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>Owner: {database.owner}</span>
+                      {database._count && database._count.grants > 0 && (
+                        <span>
+                          {database._count.grants} grant
+                          {database._count.grants !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grant Editor */}
+      {selectedUserForGrants && selectedDatabaseForGrant && (
+        <GrantEditor
+          open={grantEditorOpen}
+          onOpenChange={handleGrantEditorClose}
+          serverId={serverId}
+          database={selectedDatabaseForGrant}
+          user={selectedUserForGrants}
+          existingGrant={existingGrant}
+        />
+      )}
     </div>
   );
 }

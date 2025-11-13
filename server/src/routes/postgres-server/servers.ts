@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
 import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
 import postgresServerService from "../../services/postgres-server/server-manager";
+import serverHealthScheduler from "../../services/postgres-server/health-scheduler";
 
 const logger = appLogger();
 const router = express.Router();
@@ -87,6 +88,18 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
       ...validatedData,
       userId,
     });
+
+    // Trigger immediate health check for the newly created server
+    try {
+      await serverHealthScheduler.performHealthCheckForServer(server.id, userId);
+      logger.info({ serverId: server.id }, "Immediate health check completed after server creation");
+    } catch (healthCheckError: any) {
+      // Log error but don't fail the request - health check will retry on next scheduled run
+      logger.warn(
+        { serverId: server.id, error: healthCheckError.message },
+        "Immediate health check failed after server creation, will retry on next scheduled run"
+      );
+    }
 
     // Remove encrypted connection string from response
     const { connectionString, ...sanitizedServer } = server;

@@ -232,6 +232,72 @@ export class DatabaseManagementService {
   }
 
   /**
+   * Change database owner
+   */
+  async changeOwner(
+    serverId: string,
+    userId: string,
+    databaseId: string,
+    newOwner: string
+  ) {
+    logger.info({ serverId, databaseId, newOwner }, "Changing database owner");
+
+    // Verify server ownership
+    await postgresServerService.getServer(serverId, userId);
+
+    // Get managed database
+    const managedDatabase = await prisma.managedDatabase.findFirst({
+      where: { id: databaseId, serverId },
+    });
+
+    if (!managedDatabase) {
+      throw new Error("Database not found");
+    }
+
+    const client = await postgresServerService.getClient(serverId, userId);
+
+    try {
+      // Sanitize inputs (prevent SQL injection)
+      const sanitizedDbName = managedDatabase.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
+      const sanitizedOwner = newOwner.replace(/[^a-zA-Z0-9_-]/g, "");
+
+      if (sanitizedDbName !== managedDatabase.databaseName) {
+        throw new Error("Database name contains invalid characters");
+      }
+
+      if (sanitizedOwner !== newOwner) {
+        throw new Error("Owner name contains invalid characters");
+      }
+
+      // Change the database owner
+      await client.query(`ALTER DATABASE "${sanitizedDbName}" OWNER TO "${sanitizedOwner}"`);
+
+      await client.end();
+
+      // Update managed database record
+      const updatedDatabase = await prisma.managedDatabase.update({
+        where: { id: databaseId },
+        data: {
+          owner: newOwner,
+        },
+      });
+
+      logger.info(
+        { serverId, databaseId, databaseName: managedDatabase.databaseName, newOwner },
+        "Database owner changed successfully"
+      );
+      return updatedDatabase;
+    } catch (error: any) {
+      await client.end();
+      logger.error(
+        { error: error.message, serverId, databaseId, newOwner },
+        "Failed to change database owner"
+      );
+      throw new Error(`Failed to change database owner: ${error.message}`);
+    }
+  }
+
+  /**
    * Get database details
    */
   async getDatabaseDetails(serverId: string, userId: string, databaseId: string) {

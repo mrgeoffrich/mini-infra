@@ -143,7 +143,10 @@ export class UserManagementService {
       const isSuperuser = params.isSuperuser || false;
       const connectionLimit = params.connectionLimit !== undefined ? params.connectionLimit : -1;
 
-      let createQuery = `CREATE USER "${sanitizedUsername}" WITH PASSWORD $1`;
+      // Escape single quotes in password (double them for SQL string literals)
+      const escapedPassword = params.password.replace(/'/g, "''");
+
+      let createQuery = `CREATE USER "${sanitizedUsername}" WITH PASSWORD '${escapedPassword}'`;
 
       if (!canLogin) {
         createQuery += " NOLOGIN";
@@ -157,7 +160,7 @@ export class UserManagementService {
 
       createQuery += ` CONNECTION LIMIT ${connectionLimit}`;
 
-      await client.query(createQuery, [params.password]);
+      await client.query(createQuery);
 
       await client.end();
 

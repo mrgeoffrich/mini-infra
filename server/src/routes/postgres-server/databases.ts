@@ -27,6 +27,10 @@ const createDatabaseSchema = z.object({
   connectionLimit: z.number().int().default(-1),
 });
 
+const changeDatabaseOwnerSchema = z.object({
+  newOwner: z.string().min(1, "New owner is required"),
+});
+
 /**
  * GET /api/postgres-server/servers/:serverId/databases
  * List all databases on the server
@@ -193,6 +197,67 @@ router.delete("/:dbId", requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to drop database",
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * PUT /api/postgres-server/servers/:serverId/databases/:dbId/owner
+ * Change the owner of a database
+ */
+router.put("/:dbId/owner", requireSessionOrApiKey, async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const serverId = req.params.serverId;
+    const databaseId = req.params.dbId;
+    const validatedData = changeDatabaseOwnerSchema.parse(req.body);
+
+    const updatedDatabase = await databaseManagementService.changeOwner(
+      serverId,
+      userId,
+      databaseId,
+      validatedData.newOwner
+    );
+
+    // Convert BigInt to string for JSON serialization
+    const sanitizedDatabase = {
+      ...updatedDatabase,
+      sizeBytes: updatedDatabase.sizeBytes ? updatedDatabase.sizeBytes.toString() : null,
+    };
+
+    res.json({
+      success: true,
+      data: sanitizedDatabase,
+      message: "Database owner changed successfully",
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation failed",
+        details: error.issues,
+      });
+    }
+
+    if (error.message === "Server not found") {
+      return res.status(404).json({
+        success: false,
+        error: "Server not found",
+      });
+    }
+
+    if (error.message === "Database not found") {
+      return res.status(404).json({
+        success: false,
+        error: "Database not found",
+      });
+    }
+
+    logger.error({ error: error.message }, "Failed to change database owner");
+    res.status(500).json({
+      success: false,
+      error: "Failed to change database owner",
       message: error.message,
     });
   }
