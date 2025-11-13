@@ -923,10 +923,10 @@ router.post("/:id/:action", requireSessionOrApiKey, (async (
     }
 
     // Validate action
-    if (!["start", "stop", "restart"].includes(action)) {
+    if (!["start", "stop", "restart", "remove"].includes(action)) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid action '${action}'. Must be 'start', 'stop', or 'restart'`,
+        message: `Invalid action '${action}'. Must be 'start', 'stop', 'restart', or 'remove'`,
         timestamp: new Date().toISOString(),
         requestId,
       });
@@ -1002,13 +1002,17 @@ router.post("/:id/:action", requireSessionOrApiKey, (async (
       case "restart":
         await container.restart({ t: 10 }); // 10-second grace period
         break;
+      case "remove":
+        // Remove container (force: true to remove even if stopped)
+        await container.remove({ force: false, v: false });
+        break;
     }
 
     // Flush cache to get updated container status
     dockerService.flushCache();
 
-    // Get updated container info
-    const updatedContainer = await dockerService.getContainer(containerId);
+    // Get updated container info (skip for remove since container no longer exists)
+    const updatedContainer = action === "remove" ? null : await dockerService.getContainer(containerId);
 
     logger.info(
       {

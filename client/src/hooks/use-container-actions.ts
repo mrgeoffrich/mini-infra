@@ -12,9 +12,11 @@ interface UseContainerActionsResult {
   startContainer: () => void;
   stopContainer: () => void;
   restartContainer: () => void;
+  removeContainer: () => void;
   isStarting: boolean;
   isStopping: boolean;
   isRestarting: boolean;
+  isRemoving: boolean;
   isPerformingAction: boolean;
 }
 
@@ -81,15 +83,21 @@ export function useContainerActions(options: UseContainerActionsOptions): UseCon
   const startMutation = createMutation("start");
   const stopMutation = createMutation("stop");
   const restartMutation = createMutation("restart");
+  const removeMutation = createMutation("remove");
 
   return {
     startContainer: () => startMutation.mutate(),
     stopContainer: () => stopMutation.mutate(),
     restartContainer: () => restartMutation.mutate(),
+    removeContainer: () => removeMutation.mutate(),
     isStarting: startMutation.isPending,
     isStopping: stopMutation.isPending,
     isRestarting: restartMutation.isPending,
+    isRemoving: removeMutation.isPending,
     isPerformingAction:
-      startMutation.isPending || stopMutation.isPending || restartMutation.isPending,
+      startMutation.isPending ||
+      stopMutation.isPending ||
+      restartMutation.isPending ||
+      removeMutation.isPending,
   };
 }

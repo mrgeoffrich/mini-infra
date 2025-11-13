@@ -122,7 +122,7 @@ export interface ContainerCacheResponse {
 // Container Action Types
 // ====================
 
-export type ContainerAction = "start" | "stop" | "restart";
+export type ContainerAction = "start" | "stop" | "restart" | "remove";
 
 export interface ContainerActionRequest {
   action: ContainerAction;

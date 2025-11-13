@@ -15,6 +15,7 @@ import {
   IconPlayerStop,
   IconRefresh,
   IconAlertCircle,
+  IconTrash,
 } from "@tabler/icons-react";
 
 function generateCorrelationId(): string {
@@ -58,14 +59,21 @@ export default function ContainerDetailPage() {
     startContainer,
     stopContainer,
     restartContainer,
+    removeContainer,
     isStarting,
     isStopping,
     isRestarting,
+    isRemoving,
     isPerformingAction,
   } = useContainerActions({
     containerId: id!,
-    onSuccess: () => {
-      refetch();
+    onSuccess: (action) => {
+      if (action === "remove") {
+        // Navigate back to containers list after successful deletion
+        navigate("/containers");
+      } else {
+        refetch();
+      }
     },
   });
 
@@ -149,6 +157,19 @@ export default function ContainerDetailPage() {
             <IconRefresh className="h-4 w-4" />
             {isRestarting ? "Restarting..." : "Restart"}
           </Button>
+
+          {isStopped && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={removeContainer}
+              disabled={isPerformingAction}
+              className="gap-2"
+            >
+              <IconTrash className="h-4 w-4" />
+              {isRemoving ? "Deleting..." : "Delete"}
+            </Button>
+          )}
         </div>
       </div>
 

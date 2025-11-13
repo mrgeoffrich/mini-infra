@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   ContainerInfo,
   ContainerListResponse,
@@ -131,13 +131,63 @@ export function useContainers(options: UseContainersOptions = {}) {
   });
 }
 
+// LocalStorage key for persisting container filters
+const CONTAINER_FILTERS_STORAGE_KEY = "mini-infra:container-filters";
+
+// Helper to load filters from localStorage
+function loadFiltersFromStorage(): {
+  filters: ContainerFilters;
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+  limit: number;
+} | null {
+  try {
+    const stored = localStorage.getItem(CONTAINER_FILTERS_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error("Failed to load container filters from storage:", error);
+  }
+  return null;
+}
+
+// Helper to save filters to localStorage
+function saveFiltersToStorage(
+  filters: ContainerFilters,
+  sortBy: string,
+  sortOrder: "asc" | "desc",
+  limit: number,
+) {
+  try {
+    localStorage.setItem(
+      CONTAINER_FILTERS_STORAGE_KEY,
+      JSON.stringify({ filters, sortBy, sortOrder, limit }),
+    );
+  } catch (error) {
+    console.error("Failed to save container filters to storage:", error);
+  }
+}
+
 // Hook for managing container filter state
 export function useContainerFilters(initialFilters: ContainerFilters = { status: 'running' }) {
-  const [filters, setFilters] = useState<ContainerFilters>(initialFilters);
-  const [sortBy, setSortBy] = useState<string>("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  // Load from localStorage or use defaults
+  const stored = loadFiltersFromStorage();
+
+  const [filters, setFilters] = useState<ContainerFilters>(
+    stored?.filters ?? initialFilters
+  );
+  const [sortBy, setSortBy] = useState<string>(stored?.sortBy ?? "name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">(
+    stored?.sortOrder ?? "asc"
+  );
   const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(50);
+  const [limit, setLimit] = useState<number>(stored?.limit ?? 50);
+
+  // Save filters to localStorage whenever they change
+  useEffect(() => {
+    saveFiltersToStorage(filters, sortBy, sortOrder, limit);
+  }, [filters, sortBy, sortOrder, limit]);
 
   const updateFilter = useCallback(
     (key: keyof ContainerFilters, value: string | boolean | undefined) => {
