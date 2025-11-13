@@ -309,7 +309,7 @@ export function FrontendsListPage() {
               <IconNetwork className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">HAProxy Frontends</h1>
+              <h1 className="text-3xl font-bold">Load Balancer</h1>
               <p className="text-muted-foreground">
                 Manage frontend connections and routing configuration
               </p>
@@ -340,7 +340,7 @@ export function FrontendsListPage() {
               <IconNetwork className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">HAProxy Frontends</h1>
+              <h1 className="text-3xl font-bold">Load Balancer</h1>
               <p className="text-muted-foreground">
                 Manage frontend connections and routing configuration
               </p>

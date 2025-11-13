@@ -32,7 +32,7 @@ export function PostgresServerPage() {
               <IconDatabase className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">PostgreSQL Servers</h1>
+              <h1 className="text-3xl font-bold">Postgres Servers</h1>
               <p className="text-muted-foreground">
                 Manage PostgreSQL server connections, databases, and users
               </p>

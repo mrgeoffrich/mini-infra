@@ -28,7 +28,7 @@ export function TunnelsPage() {
           </div>
           <Button variant="outline" asChild>
             <Link
-              to="/connectivity/cloudflare"
+              to="/connectivity-cloudflare"
               className="flex items-center gap-2"
             >
               <IconSettings className="h-4 w-4" />
@@ -66,7 +66,7 @@ export function TunnelsPage() {
                   <strong>Configuration:</strong> Manage your Cloudflare API
                   settings in the{" "}
                   <Link
-                    to="/connectivity/cloudflare"
+                    to="/connectivity-cloudflare"
                     className="text-blue-600 hover:underline"
                   >
                     Cloudflare settings page

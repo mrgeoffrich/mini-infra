@@ -51,27 +51,9 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: 'Docker container management'
   },
 
-  '/postgres-backup': {
-    path: '/postgres-backup',
-    title: 'PostgreSQL Backups',
-    icon: IconDatabase,
-    showInNav: false,
-    navGroup: 'main',
-    description: 'Database backups and restore',
-    children: {
-      'restore': {
-        path: '/postgres-backup/:databaseId/restore',
-        title: 'Restore Database',
-        breadcrumbLabel: 'Restore',
-        parent: '/postgres-backup',
-        showInNav: false
-      }
-    }
-  },
-
   '/postgres-server': {
     path: '/postgres-server',
-    title: 'PostgreSQL Servers',
+    title: 'Postgres Servers',
     icon: IconDatabase,
     showInNav: true,
     navGroup: 'main',
@@ -83,6 +65,25 @@ export const routeConfig: Record<string, RouteConfig> = {
         title: 'Server Details',
         breadcrumbLabel: 'Server Details',
         parent: '/postgres-server',
+        showInNav: false
+      }
+    }
+  },
+
+  '/postgres-backup': {
+    path: '/postgres-backup',
+    title: 'Postgres Backups',
+    icon: IconDatabase,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'databases',
+    description: 'Database backups and restore',
+    children: {
+      'restore': {
+        path: '/postgres-backup/:databaseId/restore',
+        title: 'Restore Database',
+        breadcrumbLabel: 'Restore',
+        parent: '/postgres-backup',
         showInNav: false
       }
     }
@@ -148,7 +149,7 @@ export const routeConfig: Record<string, RouteConfig> = {
 
   '/haproxy': {
     path: '/haproxy',
-    title: 'HAProxy',
+    title: 'Load Balancer',
     icon: IconNetwork,
     showInNav: true,
     navGroup: 'main',
@@ -187,53 +188,34 @@ export const routeConfig: Record<string, RouteConfig> = {
     }
   },
 
-  '/connectivity': {
-    path: '/connectivity',
-    title: 'Connectivity',
-    icon: IconNetwork,
-    showInNav: false,
+  '/connectivity-docker': {
+    path: '/connectivity-docker',
+    title: 'Docker',
+    icon: IconBrandDocker,
+    showInNav: true,
     navGroup: 'main',
     navSection: 'connectivity',
-    description: 'Service connectivity and configuration',
-    children: {
-      'overview': {
-        path: '/connectivity/overview',
-        title: 'Connectivity Overview',
-        breadcrumbLabel: 'Overview',
-        parent: '/connectivity',
-        showInNav: false
-      },
-      'docker': {
-        path: '/connectivity/docker',
-        title: 'Docker',
-        breadcrumbLabel: 'Docker',
-        icon: IconBrandDocker,
-        parent: '/connectivity',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'connectivity'
-      },
-      'cloudflare': {
-        path: '/connectivity/cloudflare',
-        title: 'Cloudflare',
-        breadcrumbLabel: 'Cloudflare',
-        icon: IconBrandCloudflare,
-        parent: '/connectivity',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'connectivity'
-      },
-      'azure': {
-        path: '/connectivity/azure',
-        title: 'Azure Storage',
-        breadcrumbLabel: 'Azure',
-        icon: IconBrandAzure,
-        parent: '/connectivity',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'connectivity'
-      }
-    }
+    description: 'Docker service connectivity and configuration'
+  },
+
+  '/connectivity-cloudflare': {
+    path: '/connectivity-cloudflare',
+    title: 'Cloudflare',
+    icon: IconBrandCloudflare,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'connectivity',
+    description: 'Cloudflare service connectivity and configuration'
+  },
+
+  '/connectivity-azure': {
+    path: '/connectivity-azure',
+    title: 'Azure Storage',
+    icon: IconBrandAzure,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'connectivity',
+    description: 'Azure Storage service connectivity and configuration'
   },
 
   '/settings': {
@@ -364,7 +346,7 @@ export function getNavigationSections(): NavSection[] {
     { id: 'applications', label: 'Applications' },
     { id: 'databases', label: 'Databases' },
     { id: 'networking', label: 'Networking' },
-    { id: 'connectivity', label: 'Connectivity' },
+    { id: 'connectivity', label: 'Connected Services' },
     { id: 'administration', label: 'Administration' },
   ];
 

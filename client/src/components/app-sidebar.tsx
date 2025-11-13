@@ -18,12 +18,28 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
 } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
 import { getNavigationSections } from "@/lib/route-config";
+import { useSystemSettings } from "@/hooks/use-settings";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // Get navigation sections from centralized route configuration
   const navSections = getNavigationSections();
   const location = useLocation();
+
+  // Fetch is_production setting
+  const { data: settingsData } = useSystemSettings({
+    filters: { category: "system", isActive: true },
+    limit: 10,
+  });
+
+  // Check if production mode is enabled
+  const isProduction = React.useMemo(() => {
+    const isProductionSetting = settingsData?.data?.find(
+      (s) => s.key === "is_production"
+    );
+    return isProductionSetting?.value === "true";
+  }, [settingsData]);
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -34,9 +50,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               asChild
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
-              <Link to="/dashboard">
+              <Link to="/dashboard" className="flex items-center gap-2">
                 <IconInnerShadowTop className="!size-5" />
                 <span className="text-base font-semibold">Mini Infra</span>
+                {isProduction && (
+                  <Badge variant="destructive" className="ml-auto text-xs">
+                    PROD
+                  </Badge>
+                )}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

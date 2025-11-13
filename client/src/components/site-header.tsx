@@ -95,13 +95,13 @@ function ConnectivityIndicator({
   const getConnectivityRoute = (serviceName: string): string => {
     switch (serviceName) {
       case "docker":
-        return "/connectivity/docker";
+        return "/connectivity-docker";
       case "cloudflare":
-        return "/connectivity/cloudflare";
+        return "/connectivity-cloudflare";
       case "azure":
-        return "/connectivity/azure";
+        return "/connectivity-azure";
       default:
-        return "/connectivity";
+        return "/dashboard";
     }
   };
 

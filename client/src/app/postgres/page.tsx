@@ -24,7 +24,7 @@ import { DatabaseTable } from "@/components/postgres/database-table";
 import { DeleteDatabaseDialog } from "@/components/postgres/delete-database-dialog";
 import type { PostgresDatabaseInfo } from "@mini-infra/types";
 
-export default function PostgresPage() {
+export default function PostgresBackups() {
   const navigate = useNavigate();
   const [selectedDatabase, setSelectedDatabase] =
     useState<PostgresDatabaseInfo | null>(null);
@@ -116,9 +116,9 @@ export default function PostgresPage() {
               <IconDatabase className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
+              <h1 className="text-3xl font-bold">Postgres Backups</h1>
               <p className="text-muted-foreground">
-                Configure and manage PostgreSQL database connections
+                Configure and manage PostgreSQL database backups
               </p>
             </div>
           </div>
@@ -144,9 +144,9 @@ export default function PostgresPage() {
               <IconDatabase className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold">PostgreSQL Management</h1>
+              <h1 className="text-3xl font-bold">Postgres Backups</h1>
               <p className="text-muted-foreground">
-                Configure and manage PostgreSQL database connections
+                Configure and manage PostgreSQL database backups
               </p>
             </div>
           </div>

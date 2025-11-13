@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -40,7 +39,6 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconAlertCircle,
-  IconArrowLeft,
   IconLoader2,
   IconBolt,
   IconHelp,
@@ -50,6 +48,13 @@ import { SystemSettingsInfo } from "@mini-infra/types";
 
 // Docker settings schema
 const dockerSettingsSchema = z.object({
+  dockerHostIp: z
+    .string()
+    .min(1, "Docker Host IP is required")
+    .regex(
+      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+      "Must be a valid IPv4 address (e.g., 192.168.1.100)"
+    ),
   host: z
     .string()
     .min(1, "Docker host is required")
@@ -91,6 +96,16 @@ export default function DockerSettingsPage() {
     limit: 50,
   });
 
+  // Fetch Docker Host IP from system settings
+  const {
+    data: systemSettingsData,
+    isLoading: systemSettingsLoading,
+    error: systemSettingsError,
+  } = useSystemSettings({
+    filters: { category: "system", isActive: true },
+    limit: 50,
+  });
+
   // Mutations for saving settings
   const createSetting = useCreateSystemSetting();
   const updateSetting = useUpdateSystemSetting();
@@ -99,6 +114,7 @@ export default function DockerSettingsPage() {
   const form = useForm<DockerSettingsFormData>({
     resolver: zodResolver(dockerSettingsSchema),
     defaultValues: {
+      dockerHostIp: "",
       host: "npipe:////./pipe/dockerDesktopLinuxEngine",
       version: "1.51",
     },
@@ -110,25 +126,35 @@ export default function DockerSettingsPage() {
 
   // Update form when settings are loaded
   useEffect(() => {
-    if (settingsData?.data) {
-      const settingsMap = settingsData.data.reduce(
-        (acc, setting) => {
-          acc[setting.key] = setting;
-          return acc;
-        },
-        {} as Record<string, SystemSettingsInfo>,
-      );
-      setSettings(settingsMap);
+    const settingsMap: Record<string, SystemSettingsInfo> = {};
 
-      // Update form with current values
-      if (settingsMap.host?.value) {
-        form.setValue("host", settingsMap.host.value);
-      }
-      if (settingsMap.apiVersion?.value) {
-        form.setValue("version", settingsMap.apiVersion.value);
-      }
+    // Merge docker settings
+    if (settingsData?.data) {
+      settingsData.data.forEach(setting => {
+        settingsMap[setting.key] = setting;
+      });
     }
-  }, [settingsData, form]);
+
+    // Merge system settings
+    if (systemSettingsData?.data) {
+      systemSettingsData.data.forEach(setting => {
+        settingsMap[setting.key] = setting;
+      });
+    }
+
+    setSettings(settingsMap);
+
+    // Update form with current values
+    if (settingsMap.docker_host_ip?.value) {
+      form.setValue("dockerHostIp", settingsMap.docker_host_ip.value);
+    }
+    if (settingsMap.host?.value) {
+      form.setValue("host", settingsMap.host.value);
+    }
+    if (settingsMap.apiVersion?.value) {
+      form.setValue("version", settingsMap.apiVersion.value);
+    }
+  }, [settingsData, systemSettingsData, form]);
 
   const handleValidateAndSave = async (data: DockerSettingsFormData) => {
     setValidationState({ isValidating: true, isSuccess: false, error: null });
@@ -146,6 +172,25 @@ export default function DockerSettingsPage() {
 
       // Step 2: Save settings if validation passed
       const promises: Promise<unknown>[] = [];
+
+      // Save or update Docker Host IP setting
+      if (settings.docker_host_ip) {
+        promises.push(
+          updateSetting.mutateAsync({
+            id: settings.docker_host_ip.id,
+            setting: { value: data.dockerHostIp },
+          }),
+        );
+      } else {
+        promises.push(
+          createSetting.mutateAsync({
+            category: "system",
+            key: "docker_host_ip",
+            value: data.dockerHostIp,
+            isEncrypted: false,
+          }),
+        );
+      }
 
       // Save or update host setting
       if (settings.host) {
@@ -205,21 +250,12 @@ export default function DockerSettingsPage() {
   };
 
   const isSaving = createSetting.isPending || updateSetting.isPending || validationState.isValidating;
+  const isLoading = settingsLoading || systemSettingsLoading;
+  const hasError = settingsError || systemSettingsError;
 
-  if (settingsError) {
+  if (hasError) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="px-4 lg:px-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/connectivity/overview">
-                <IconArrowLeft className="h-4 w-4" />
-                Back to Connectivity
-              </Link>
-            </Button>
-          </div>
-        </div>
-
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
@@ -236,7 +272,7 @@ export default function DockerSettingsPage() {
           <Alert variant="destructive">
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to load Docker settings: {settingsError.message}
+              Failed to load settings: {settingsError?.message || systemSettingsError?.message}
             </AlertDescription>
           </Alert>
         </div>
@@ -246,17 +282,6 @@ export default function DockerSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/connectivity/overview">
-              <IconArrowLeft className="h-4 w-4" />
-              Back to Connectivity
-            </Link>
-          </Button>
-        </div>
-      </div>
-
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
@@ -272,6 +297,95 @@ export default function DockerSettingsPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-4xl">
+        {/* Docker Host Network Configuration Card */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Docker Host Network Configuration</CardTitle>
+            <CardDescription>
+              Configure the IP address of your Docker host for DNS record creation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-20" />
+              </div>
+            ) : (
+              <Form {...form}>
+                <form className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="dockerHostIp"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center gap-2">
+                          <FormLabel>Docker Host IP Address</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                              >
+                                <IconHelp className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80">
+                              <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <IconBolt className="h-4 w-4" />
+                                  <span className="font-medium text-sm">
+                                    What is this for?
+                                  </span>
+                                </div>
+                                <div className="text-sm space-y-2">
+                                  <p>
+                                    This is the IP address of the Docker host where your
+                                    containers are running. It's used for creating DNS A
+                                    records in Cloudflare that point to your services.
+                                  </p>
+                                  <div>
+                                    <strong>Examples:</strong>
+                                    <div className="mt-1 space-y-1">
+                                      <div>
+                                        Local network:{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          192.168.1.100
+                                        </code>
+                                      </div>
+                                      <div>
+                                        Public IP:{" "}
+                                        <code className="text-xs bg-muted px-1 rounded">
+                                          203.0.113.1
+                                        </code>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., 192.168.1.100 or 203.0.113.1"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Required. Must be a valid IPv4 address. This IP will be used
+                          when creating DNS records for your deployed containers.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </form>
+              </Form>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Configuration Form */}
         <Card>
               <CardHeader>
@@ -282,7 +396,7 @@ export default function DockerSettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {settingsLoading ? (
+                {isLoading ? (
                   <div className="space-y-4">
                     <Skeleton className="h-20" />
                     <Skeleton className="h-20" />

@@ -351,7 +351,7 @@ export default function SelfBackupSettingsPage() {
                 Azure Storage settings first.
               </span>
               <Button asChild variant="outline" size="sm">
-                <Link to="/connectivity/azure">Configure Azure</Link>
+                <Link to="/connectivity-azure">Configure Azure</Link>
               </Button>
             </AlertDescription>
           </Alert>

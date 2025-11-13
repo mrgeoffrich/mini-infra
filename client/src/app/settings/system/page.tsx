@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -23,6 +22,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
 import {
   useSystemSettings,
   useCreateSystemSetting,
@@ -30,18 +30,21 @@ import {
 } from "@/hooks/use-settings";
 import {
   IconAlertCircle,
-  IconArrowLeft,
   IconDeviceFloppy,
   IconLoader2,
   IconSettings,
   IconBrandDocker,
   IconNetwork,
+  IconShield,
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
 // System settings schema
 const systemSettingsSchema = z.object({
+  // Production mode setting
+  isProduction: z.boolean(),
+
   // Backup container settings
   backupDockerImage: z
     .string()
@@ -127,6 +130,7 @@ export default function SystemSettingsPage() {
   const form = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
+      isProduction: false,
       backupDockerImage: DEFAULT_BACKUP_IMAGE,
       restoreDockerImage: DEFAULT_RESTORE_IMAGE,
       haproxyHttpPort: "",
@@ -150,6 +154,10 @@ export default function SystemSettingsPage() {
       setSettings(settingsMap);
 
       // Update form with current values
+      form.setValue(
+        "isProduction",
+        settingsMap.is_production?.value === "true",
+      );
       form.setValue(
         "backupDockerImage",
         settingsMap.backup_docker_image?.value || DEFAULT_BACKUP_IMAGE,
@@ -192,6 +200,12 @@ export default function SystemSettingsPage() {
     setIsSaving(true);
     try {
       const systemSettingsToSave = [
+        {
+          category: "system" as const,
+          key: "is_production",
+          value: data.isProduction.toString(),
+          isEncrypted: false,
+        },
         {
           category: "system" as const,
           key: "backup_docker_image",
@@ -277,11 +291,6 @@ export default function SystemSettingsPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/connectivity/overview">
-              <IconArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
           <h1 className="text-2xl font-semibold">System Settings</h1>
         </div>
 
@@ -333,6 +342,52 @@ export default function SystemSettingsPage() {
                 onSubmit={form.handleSubmit(handleSubmit)}
                 className="space-y-6"
               >
+                {/* Production Mode Setting */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <IconShield className="h-5 w-5" />
+                      <span>Production Mode</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Mark this instance as a production system to enable production-specific UI indicators
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="isProduction"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              Production System
+                            </FormLabel>
+                            <FormDescription>
+                              Enable this to indicate this is a production Mini Infra instance.
+                              When enabled, the system title will display a production indicator.
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <Alert>
+                      <IconAlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        This setting is for display purposes only and does not affect system functionality.
+                        It helps visually distinguish production instances from development or staging environments.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+
                 {/* Backup Container Settings */}
                 <Card>
                   <CardHeader>

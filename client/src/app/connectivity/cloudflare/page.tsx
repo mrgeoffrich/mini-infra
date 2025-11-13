@@ -35,7 +35,6 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconAlertCircle,
-  IconArrowLeft,
   IconLoader2,
   IconEye,
   IconEyeOff,
@@ -207,17 +206,6 @@ export default function CloudflareSettingsPage() {
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/connectivity/overview">
-                <IconArrowLeft className="h-4 w-4" />
-                Back to Connectivity
-              </Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="px-4 lg:px-6">
-          <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
               <IconCloud className="h-6 w-6" />
             </div>
@@ -242,17 +230,6 @@ export default function CloudflareSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/connectivity/overview">
-              <IconArrowLeft className="h-4 w-4" />
-              Back to Connectivity
-            </Link>
-          </Button>
-        </div>
-      </div>
-
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">

@@ -91,7 +91,7 @@ export function ContainerSummary() {
                 )}
               </div>
               <Button asChild variant="outline" size="sm">
-                <Link to="/connectivity/docker">
+                <Link to="/connectivity-docker">
                   <IconSettings className="mr-2 h-4 w-4" />
                   Configure
                 </Link>

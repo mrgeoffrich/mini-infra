@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -33,6 +32,7 @@ import {
   useSystemSettings,
   useCreateSystemSetting,
   useUpdateSystemSetting,
+  useConnectivityStatus,
 } from "@/hooks/use-settings";
 import { useValidateService } from "@/hooks/use-settings-validation";
 import {
@@ -40,7 +40,6 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconAlertCircle,
-  IconArrowLeft,
   IconLoader2,
   IconEye,
   IconEyeOff,
@@ -91,6 +90,15 @@ export default function AzureSettingsPage() {
     limit: 50,
   });
 
+  // Fetch connectivity status
+  const {
+    data: connectivityData,
+  } = useConnectivityStatus({
+    filters: { service: "azure" },
+    limit: 10,
+    refetchInterval: 30000, // Poll every 30 seconds
+  });
+
   // Mutations for saving settings
   const createSetting = useCreateSystemSetting();
   const updateSetting = useUpdateSystemSetting();
@@ -106,6 +114,10 @@ export default function AzureSettingsPage() {
 
   // Validation service
   const validateService = useValidateService();
+
+  // Get latest Azure connectivity status
+  const azureConnectivity = connectivityData?.data?.[0]; // Most recent status
+  const isAzureConnected = azureConnectivity?.status === "connected";
 
   // Update form when settings are loaded
   useEffect(() => {
@@ -160,11 +172,6 @@ export default function AzureSettingsPage() {
       setValidationState({ isValidating: false, isSuccess: true, error: null });
       toast.success("Azure Storage connection validated and saved successfully");
 
-      // Clear success message after 5 seconds
-      setTimeout(() => {
-        setValidationState(prev => ({ ...prev, isSuccess: false }));
-      }, 5000);
-
     } catch (error) {
       const errorMessage = (error as Error).message;
       setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
@@ -177,17 +184,6 @@ export default function AzureSettingsPage() {
   if (settingsError) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="px-4 lg:px-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/connectivity/overview">
-                <IconArrowLeft className="h-4 w-4" />
-                Back to Connectivity
-              </Link>
-            </Button>
-          </div>
-        </div>
-
         <div className="px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
@@ -216,17 +212,6 @@ export default function AzureSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/connectivity/overview">
-              <IconArrowLeft className="h-4 w-4" />
-              Back to Connectivity
-            </Link>
-          </Button>
-        </div>
-      </div>
-
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
@@ -372,12 +357,12 @@ export default function AzureSettingsPage() {
         </Card>
 
         {/* Validation Feedback */}
-        {validationState.isSuccess && (
+        {isAzureConnected && (
           <Alert className="bg-green-50 border-green-200 mt-6">
             <IconCircleCheck className="h-4 w-4 text-green-600" />
             <AlertDescription className="text-green-700">
-              Azure Storage connection has been validated and configured successfully.
-              The system can now perform backup operations to your storage account.
+              Azure Storage connection is active and healthy.
+              The system can perform backup operations to your storage account.
             </AlertDescription>
           </Alert>
         )}
@@ -391,8 +376,8 @@ export default function AzureSettingsPage() {
           </Alert>
         )}
 
-        {/* Container List - Only show when validation is successful */}
-        {validationState.isSuccess && (
+        {/* Container List - Show when Azure is connected */}
+        {isAzureConnected && (
           <div className="mt-8">
             <AzureContainerList />
           </div>
