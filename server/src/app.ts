@@ -106,6 +106,7 @@ app.get("/health", ((req: Request, res: Response) => {
 import authRoutes from "./routes/auth";
 import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
+import dockerRoutes from "./routes/docker";
 import settingsRoutes from "./routes/settings";
 import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
@@ -143,6 +144,7 @@ const routes = [
   { path: "/auth", router: authRoutes, name: "authRoutes" },
   { path: "/api/keys", router: apiKeyRoutes, name: "apiKeyRoutes" },
   { path: "/api/containers", router: containerRoutes, name: "containerRoutes" },
+  { path: "/api/docker", router: dockerRoutes, name: "dockerRoutes" },
   { path: "/api/settings/self-backup", router: selfBackupSettingsRoutes, name: "selfBackupSettingsRoutes" },
   { path: "/api/settings/system", router: systemSettingsRoutes, name: "systemSettingsRoutes" },
   { path: "/api/settings/azure", router: azureSettingsRoutes, name: "azureSettingsRoutes" },

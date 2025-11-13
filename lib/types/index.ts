@@ -8,6 +8,9 @@ export * from "./auth";
 // Container types
 export * from "./containers";
 
+// Docker resource types (networks, volumes)
+export * from "./docker";
+
 // Settings types
 export * from "./settings";
 

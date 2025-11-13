@@ -3,6 +3,7 @@ import NodeCache from "node-cache";
 import { servicesLogger } from "../lib/logger-factory";
 import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
+import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 import { createDockerSpan, createContainerSpan } from "../lib/docker-instrumentation";
@@ -329,6 +330,24 @@ class DockerService {
                 "Container event received, invalidating cache",
               );
               this.cache.flushAll();
+            } else if (event.Type === "network") {
+              servicesLogger().debug(
+                {
+                  action: event.Action,
+                  networkId: event.id,
+                },
+                "Network event received, invalidating network cache",
+              );
+              this.cache.del("networks");
+            } else if (event.Type === "volume") {
+              servicesLogger().debug(
+                {
+                  action: event.Action,
+                  volumeName: event.Actor?.Attributes?.name,
+                },
+                "Volume event received, invalidating volume cache",
+              );
+              this.cache.del("volumes");
             }
           } catch (error) {
             servicesLogger().error({ error }, "Failed to parse Docker event");
@@ -711,6 +730,270 @@ class DockerService {
 
       throw error;
     });
+  }
+
+  /**
+   * List all Docker networks
+   */
+  public async listNetworks(): Promise<DockerNetwork[]> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    return createDockerSpan(
+      "list_networks",
+      async () => {
+        const cacheKey = "networks";
+        const cached = this.cache.get<DockerNetwork[]>(cacheKey);
+
+        if (cached) {
+          servicesLogger().debug("Returning cached network list");
+          return cached;
+        }
+
+        const networks = await this.raceWithTimeout(
+          this.docker.listNetworks(),
+          5000,
+          "Docker API timeout while listing networks",
+        );
+
+        // Get all containers to determine which are using each network
+        const containers = await this.docker.listContainers({ all: true });
+
+        const networkInfos = networks.map((network) =>
+          this.transformNetworkData(network, containers),
+        );
+
+        this.cache.set(cacheKey, networkInfos);
+        servicesLogger().info(
+          `Retrieved ${networkInfos.length} networks from Docker API`,
+        );
+
+        return networkInfos;
+      },
+      {
+        "docker.cache.hit": false,
+      }
+    );
+  }
+
+  /**
+   * List all Docker volumes
+   */
+  public async listVolumes(): Promise<DockerVolume[]> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    return createDockerSpan(
+      "list_volumes",
+      async () => {
+        const cacheKey = "volumes";
+        const cached = this.cache.get<DockerVolume[]>(cacheKey);
+
+        if (cached) {
+          servicesLogger().debug("Returning cached volume list");
+          return cached;
+        }
+
+        const volumeData = await this.raceWithTimeout(
+          this.docker.listVolumes(),
+          5000,
+          "Docker API timeout while listing volumes",
+        );
+
+        // Get all containers to determine which volumes are in use
+        const containers = await this.docker.listContainers({ all: true });
+
+        const volumeInfos = (volumeData.Volumes || []).map((volume) =>
+          this.transformVolumeData(volume, containers),
+        );
+
+        this.cache.set(cacheKey, volumeInfos);
+        servicesLogger().info(
+          `Retrieved ${volumeInfos.length} volumes from Docker API`,
+        );
+
+        return volumeInfos;
+      },
+      {
+        "docker.cache.hit": false,
+      }
+    );
+  }
+
+  /**
+   * Remove a Docker network by ID
+   * Only removes networks that have no containers attached
+   */
+  public async removeNetwork(id: string): Promise<void> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    return createDockerSpan(
+      "remove_network",
+      async () => {
+        // First, inspect the network to check if it has containers
+        const network = this.docker.getNetwork(id);
+        const networkInfo = await this.raceWithTimeout(
+          network.inspect(),
+          5000,
+          "Docker API timeout while inspecting network",
+        );
+
+        // Check if network has containers
+        const containerCount = Object.keys(networkInfo.Containers || {}).length;
+        if (containerCount > 0) {
+          throw new Error(
+            `Cannot remove network ${networkInfo.Name}: ${containerCount} container(s) are connected`,
+          );
+        }
+
+        // Remove the network
+        await this.raceWithTimeout(
+          network.remove(),
+          5000,
+          "Docker API timeout while removing network",
+        );
+
+        // Invalidate cache
+        this.cache.del("networks");
+
+        servicesLogger().info(
+          { networkId: id, networkName: networkInfo.Name },
+          "Network removed successfully",
+        );
+      },
+      {
+        "docker.network.id": id,
+      }
+    );
+  }
+
+  /**
+   * Remove a Docker volume by name
+   * Only removes volumes that are not in use by any containers
+   */
+  public async removeVolume(name: string): Promise<void> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    return createDockerSpan(
+      "remove_volume",
+      async () => {
+        // Get the volume
+        const volume = this.docker.getVolume(name);
+
+        // Try to remove it - Docker will fail if it's in use
+        try {
+          await this.raceWithTimeout(
+            volume.remove(),
+            5000,
+            "Docker API timeout while removing volume",
+          );
+
+          // Invalidate cache
+          this.cache.del("volumes");
+
+          servicesLogger().info(
+            { volumeName: name },
+            "Volume removed successfully",
+          );
+        } catch (error: any) {
+          // Docker returns a 409 Conflict if volume is in use
+          if (error.statusCode === 409) {
+            throw new Error(
+              `Cannot remove volume ${name}: volume is in use by one or more containers`,
+            );
+          }
+          throw error;
+        }
+      },
+      {
+        "docker.volume.name": name,
+      }
+    );
+  }
+
+  /**
+   * Transform Docker network data to our format
+   */
+  private transformNetworkData(
+    network: any,
+    containers: any[],
+  ): DockerNetwork {
+    const networkContainers: DockerNetwork["containers"] = [];
+
+    // Process containers connected to this network
+    if (network.Containers) {
+      for (const [containerId, containerInfo] of Object.entries(
+        network.Containers as Record<string, any>,
+      )) {
+        const container = containers.find((c) => c.Id === containerId);
+        networkContainers.push({
+          name: container?.Names?.[0]?.replace(/^\//, "") || (containerInfo as any).Name || "unknown",
+          endpointId: (containerInfo as any).EndpointID || "",
+          macAddress: (containerInfo as any).MacAddress || "",
+          ipv4Address: (containerInfo as any).IPv4Address || "",
+          ipv6Address: (containerInfo as any).IPv6Address || "",
+        });
+      }
+    }
+
+    return {
+      id: network.Id,
+      name: network.Name,
+      driver: network.Driver || "unknown",
+      scope: network.Scope || "local",
+      internal: network.Internal || false,
+      attachable: network.Attachable || false,
+      ipam: {
+        driver: network.IPAM?.Driver || "default",
+        config: (network.IPAM?.Config || []).map((cfg: any) => ({
+          subnet: cfg.Subnet || "",
+          gateway: cfg.Gateway,
+        })),
+      },
+      containers: networkContainers,
+      createdAt: network.Created || new Date().toISOString(),
+      labels: network.Labels || {},
+      options: network.Options || {},
+    };
+  }
+
+  /**
+   * Transform Docker volume data to our format
+   */
+  private transformVolumeData(volume: any, containers: any[]): DockerVolume {
+    // Determine which containers are using this volume
+    const usingContainers = containers.filter((container) => {
+      const mounts = container.Mounts || [];
+      return mounts.some(
+        (mount: any) =>
+          mount.Type === "volume" &&
+          (mount.Name === volume.Name || mount.Source === volume.Name),
+      );
+    });
+
+    return {
+      name: volume.Name,
+      driver: volume.Driver || "local",
+      mountpoint: volume.Mountpoint || "",
+      createdAt: volume.CreatedAt || new Date().toISOString(),
+      scope: volume.Scope || "local",
+      labels: volume.Labels || {},
+      options: volume.Options || null,
+      usageData: volume.UsageData
+        ? {
+            size: volume.UsageData.Size || 0,
+            refCount: volume.UsageData.RefCount || 0,
+          }
+        : undefined,
+      inUse: usingContainers.length > 0,
+      containerCount: usingContainers.length,
+    };
   }
 }
 
