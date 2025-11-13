@@ -218,65 +218,59 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: 'Azure Storage service connectivity and configuration'
   },
 
-  '/settings': {
-    path: '/settings',
-    title: 'Settings',
+  '/settings-system': {
+    path: '/settings-system',
+    title: 'System Settings',
+    breadcrumbLabel: 'Settings System',
     icon: IconSettings,
-    showInNav: false,
+    showInNav: true,
     navGroup: 'main',
     navSection: 'administration',
-    children: {
-      'system': {
-        path: '/settings/system',
-        title: 'System Settings',
-        breadcrumbLabel: 'System',
-        icon: IconSettings,
-        parent: '/settings',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'administration'
-      },
-      'security': {
-        path: '/settings/security',
-        title: 'Security Settings',
-        breadcrumbLabel: 'Security',
-        icon: IconShield,
-        parent: '/settings',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'administration'
-      },
-      'registry-credentials': {
-        path: '/settings/registry-credentials',
-        title: 'Registry Credentials',
-        breadcrumbLabel: 'Registry Credentials',
-        icon: IconKey,
-        parent: '/settings',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'administration'
-      },
-      'self-backup': {
-        path: '/settings/self-backup',
-        title: 'Self-Backup',
-        breadcrumbLabel: 'Self-Backup',
-        icon: IconDatabase,
-        parent: '/settings',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'administration'
-      },
-      'tls': {
-        path: '/settings/tls',
-        title: 'TLS Settings',
-        breadcrumbLabel: 'TLS',
-        icon: IconCertificate,
-        parent: '/settings',
-        showInNav: true,
-        navGroup: 'main',
-        navSection: 'administration'
-      }
-    }
+    description: 'System configuration and settings'
+  },
+
+  '/settings-security': {
+    path: '/settings-security',
+    title: 'Security Settings',
+    breadcrumbLabel: 'Security Settings',
+    icon: IconShield,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'administration',
+    description: 'Security configuration and API keys'
+  },
+
+  '/settings-registry-credentials': {
+    path: '/settings-registry-credentials',
+    title: 'Registry Credentials',
+    breadcrumbLabel: 'Registry Credentials',
+    icon: IconKey,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'administration',
+    description: 'Docker registry authentication'
+  },
+
+  '/settings-self-backup': {
+    path: '/settings-self-backup',
+    title: 'Self-Backup',
+    breadcrumbLabel: 'Self-Backup Settings',
+    icon: IconDatabase,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'administration',
+    description: 'Application backup configuration'
+  },
+
+  '/settings-tls': {
+    path: '/settings-tls',
+    title: 'TLS Settings',
+    breadcrumbLabel: 'TLS Settings',
+    icon: IconCertificate,
+    showInNav: true,
+    navGroup: 'main',
+    navSection: 'administration',
+    description: 'TLS certificate configuration'
   },
 
   '/user': {

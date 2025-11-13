@@ -144,14 +144,6 @@ export const router = createBrowserRouter([
         element: <div>Activity Logs - Coming Soon</div>,
       },
       {
-        path: "settings",
-        element: <Navigate to="/settings/system" replace />,
-      },
-      {
-        path: "settings/overview",
-        element: <Navigate to="/settings/system" replace />,
-      },
-      {
         path: "connectivity-docker",
         element: <DockerSettingsPage />,
       },
@@ -164,23 +156,23 @@ export const router = createBrowserRouter([
         element: <AzureSettingsPage />,
       },
       {
-        path: "settings/system",
+        path: "settings-system",
         element: <SystemSettingsPage />,
       },
       {
-        path: "settings/security",
+        path: "settings-security",
         element: <SecuritySettingsPage />,
       },
       {
-        path: "settings/registry-credentials",
+        path: "settings-registry-credentials",
         element: <RegistryCredentialsPage />,
       },
       {
-        path: "settings/self-backup",
+        path: "settings-self-backup",
         element: <SelfBackupSettingsPage />,
       },
       {
-        path: "settings/tls",
+        path: "settings-tls",
         element: <TlsSettingsPage />,
       },
       {

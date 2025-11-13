@@ -168,7 +168,7 @@ export default function PostgresBackups() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate("/settings/system")}
+                onClick={() => navigate("/settings-system")}
                 className="ml-4 flex-shrink-0"
               >
                 <IconSettings className="w-4 h-4 mr-2" />

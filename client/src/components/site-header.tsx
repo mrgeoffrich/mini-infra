@@ -55,7 +55,7 @@ function BackupHealthIndicator() {
   if (status !== "healthy") {
     return (
       <Link
-        to="/settings/self-backup"
+        to="/settings-self-backup"
         className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
         title={`Self-Backup: ${message} - Click to configure`}
       >
