@@ -5,6 +5,7 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
+import { Readable } from "stream";
 import DockerService from "../services/docker";
 import { appLogger } from "../lib/logger-factory";
 import { trace } from "@opentelemetry/api";
@@ -591,23 +592,23 @@ const logQuerySchema = z.object({
   follow: z
     .string()
     .optional()
-    .transform((val) => val !== "false")
-    .default("true"),
+    .default("true")
+    .transform((val) => val !== "false"),
   timestamps: z
     .string()
     .optional()
-    .transform((val) => val === "true")
-    .default("false"),
+    .default("false")
+    .transform((val) => val === "true"),
   stdout: z
     .string()
     .optional()
-    .transform((val) => val !== "false")
-    .default("true"),
+    .default("true")
+    .transform((val) => val !== "false"),
   stderr: z
     .string()
     .optional()
-    .transform((val) => val !== "false")
-    .default("true"),
+    .default("true")
+    .transform((val) => val !== "false"),
   since: z.string().optional(),
   until: z.string().optional(),
 });
@@ -741,15 +742,16 @@ router.get("/:id/logs/stream", requireSessionOrApiKey, (async (
     const dockerContainer = docker.getContainer(containerId);
 
     // Start streaming logs
-    const logStream = await dockerContainer.logs({
-      follow: options.follow ?? true,
+    const shouldFollow = options.follow ?? true;
+    const logStream: Readable = (await dockerContainer.logs({
+      follow: shouldFollow as true,
       stdout: options.stdout ?? true,
       stderr: options.stderr ?? true,
       tail: options.tail ?? 100,
       timestamps: options.timestamps ?? false,
       since: options.since ? parseInt(options.since) : undefined,
       until: options.until ? parseInt(options.until) : undefined,
-    });
+    })) as unknown as Readable;
 
     // Docker logs use a multiplexed stream format with 8-byte headers
     // Header format: [stream_type, 0, 0, 0, size1, size2, size3, size4]

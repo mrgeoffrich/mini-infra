@@ -572,7 +572,7 @@ class DockerService {
       .map((mount) => ({
         source: mount.Source || mount.Name,
         destination: mount.Destination,
-        mode: mount.RW ? "rw" : "ro",
+        mode: (mount.RW ? "rw" : "ro") as "rw" | "ro",
       }))
       .sort((a, b) => a.destination.localeCompare(b.destination));
   }
