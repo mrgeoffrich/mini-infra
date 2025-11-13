@@ -36,6 +36,8 @@ import {
   IconBrandDocker,
   IconNetwork,
   IconShield,
+  IconHistory,
+  IconClock,
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
@@ -87,6 +89,15 @@ const systemSettingsSchema = z.object({
       (val) => !val || /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(val),
       "Must be a valid IPv4 address (e.g., 192.168.1.100)"
     ),
+
+  // User Events Retention Settings
+  userEventsRetentionDays: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || (Number(val) >= 1 && Number(val) <= 365),
+      "Retention days must be between 1 and 365"
+    ),
 });
 
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
@@ -136,6 +147,7 @@ export default function SystemSettingsPage() {
       haproxyHttpPort: "",
       haproxyHttpsPort: "",
       dockerHostIp: "",
+      userEventsRetentionDays: "30",
     },
     mode: "onChange",
   });
@@ -169,6 +181,10 @@ export default function SystemSettingsPage() {
       form.setValue(
         "dockerHostIp",
         settingsMap.docker_host_ip?.value || "",
+      );
+      form.setValue(
+        "userEventsRetentionDays",
+        settingsMap.user_events_retention_days?.value || "30",
       );
     }
 
@@ -222,6 +238,12 @@ export default function SystemSettingsPage() {
           category: "system" as const,
           key: "docker_host_ip",
           value: data.dockerHostIp || "",
+          isEncrypted: false,
+        },
+        {
+          category: "system" as const,
+          key: "user_events_retention_days",
+          value: data.userEventsRetentionDays || "30",
           isEncrypted: false,
         },
       ];
@@ -582,6 +604,60 @@ export default function SystemSettingsPage() {
                       <AlertDescription>
                         This IP address will be used to create DNS A records for deployed applications.
                         Make sure it's accessible from the internet if you're deploying public-facing services.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+
+                {/* User Events Retention Configuration */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <IconHistory className="h-5 w-5" />
+                      <span>User Events Configuration</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure retention and cleanup settings for user event logs
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-md bg-muted p-4 space-y-2">
+                      <h4 className="text-sm font-medium">What are User Events?</h4>
+                      <p className="text-sm text-muted-foreground">
+                        User Events track long-running operations like deployments, backups, certificate renewals,
+                        and system maintenance. Events include detailed logs and progress tracking.
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        Old events are automatically cleaned up based on the retention period to manage database size.
+                      </p>
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="userEventsRetentionDays"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Event Retention Period (Days)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="30"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            User events older than this many days will be automatically deleted (1-365 days).
+                            Default is 30 days.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <Alert>
+                      <IconClock className="h-4 w-4" />
+                      <AlertDescription>
+                        Cleanup runs automatically daily at 2 AM UTC. Deleted events cannot be recovered.
                       </AlertDescription>
                     </Alert>
                   </CardContent>
