@@ -926,19 +926,27 @@ class DockerService {
   ): DockerNetwork {
     const networkContainers: DockerNetwork["containers"] = [];
 
-    // Process containers connected to this network
-    if (network.Containers) {
-      for (const [containerId, containerInfo] of Object.entries(
-        network.Containers as Record<string, any>,
-      )) {
-        const container = containers.find((c) => c.Id === containerId);
-        networkContainers.push({
-          name: container?.Names?.[0]?.replace(/^\//, "") || (containerInfo as any).Name || "unknown",
-          endpointId: (containerInfo as any).EndpointID || "",
-          macAddress: (containerInfo as any).MacAddress || "",
-          ipv4Address: (containerInfo as any).IPv4Address || "",
-          ipv6Address: (containerInfo as any).IPv6Address || "",
-        });
+    // Iterate through containers and check if they're connected to this network
+    // We can't use network.Containers from listNetworks() as it's not populated
+    // Instead, we check each container's NetworkSettings.Networks
+    for (const container of containers) {
+      const networkSettings = container.NetworkSettings?.Networks;
+      if (!networkSettings) continue;
+
+      // Check if this container is connected to the current network
+      for (const [networkName, networkInfo] of Object.entries(networkSettings)) {
+        const networkData = networkInfo as any;
+        // Match by network ID or network name
+        if (networkData.NetworkID === network.Id || networkName === network.Name) {
+          networkContainers.push({
+            name: container.Names?.[0]?.replace(/^\//, "") || "unknown",
+            endpointId: networkData.EndpointID || "",
+            macAddress: networkData.MacAddress || "",
+            ipv4Address: networkData.IPAddress || "",
+            ipv6Address: networkData.GlobalIPv6Address || "",
+          });
+          break; // Container found, no need to check other networks
+        }
       }
     }
 

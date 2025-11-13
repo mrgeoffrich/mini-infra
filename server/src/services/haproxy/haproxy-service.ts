@@ -21,7 +21,6 @@ export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
   private labelManager: ContainerLabelManager;
   private readonly projectName: string;
-  private readonly initContainerName: string;
   private readonly mainContainerName: string;
   private readonly logger = servicesLogger();
   private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
@@ -52,6 +51,9 @@ export class HAProxyService implements IApplicationService {
       },
       {
         name: 'haproxy_config'
+      },
+      {
+        name: 'haproxy_certs'
       }
     ],
     // Note: HTTP/HTTPS port mappings are dynamic and depend on:
@@ -97,7 +99,6 @@ export class HAProxyService implements IApplicationService {
     this.dockerExecutor = new DockerExecutorService();
     this.labelManager = new ContainerLabelManager();
     this.projectName = projectName;
-    this.initContainerName = `${this.projectName}-haproxy-init`;
     this.mainContainerName = `${this.projectName}-haproxy`;
   }
 
@@ -186,17 +187,11 @@ export class HAProxyService implements IApplicationService {
       // Create named volumes
       await this.createVolumes();
 
-      // Deploy haproxy-init container first
-      await this.deployInitContainer();
-
-      // Wait for init container to complete
-      await this.waitForInitCompletion();
+      // Write config files directly to haproxy_config volume
+      await this.writeConfigsToVolume();
 
       // Deploy main haproxy container
       await this.deployHAProxyContainer();
-
-      // Cleanup init container after main container is running
-      await this.cleanupInitContainer();
 
       this.logger.info('HAProxy deployment completed successfully');
     } catch (error) {
@@ -252,79 +247,66 @@ export class HAProxyService implements IApplicationService {
     }
   }
 
+  /**
+   * Write HAProxy config files directly to the haproxy_config volume
+   */
+  private async writeConfigsToVolume(): Promise<void> {
+    const configVolumeName = this.getVolumeByName('haproxy_config')?.name || 'haproxy_config';
+    this.logger.info({ volumeName: configVolumeName }, 'Writing config files to volume');
+
+    // Read the config files
+    const fs = await import('fs/promises');
+    const haproxyCfg = await fs.readFile(
+      path.join(process.cwd(), 'docker-compose', 'haproxy', 'haproxy.cfg'),
+      'utf-8'
+    );
+    const dataplaneApiYml = await fs.readFile(
+      path.join(process.cwd(), 'docker-compose', 'haproxy', 'dataplaneapi.yml'),
+      'utf-8'
+    );
+    const domainBackendMap = await fs.readFile(
+      path.join(process.cwd(), 'docker-compose', 'haproxy', 'domain-backend.map'),
+      'utf-8'
+    );
+
+    // Escape the content for shell usage
+    const escapedHaproxyCfg = haproxyCfg.replace(/'/g, "'\\''");
+    const escapedDataplaneApiYml = dataplaneApiYml.replace(/'/g, "'\\''");
+    const escapedDomainBackendMap = domainBackendMap.replace(/'/g, "'\\''");
+
+    // Run a temporary container to write the configs to the volume
+    const tempWriterName = `${this.projectName}-config-writer-${Date.now()}`;
+    const docker = this.dockerExecutor.getDockerClient();
+
+    try {
+      // Create a container that writes the configs directly to haproxy_config volume
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: tempWriterName,
+        Cmd: [
+          'sh',
+          '-c',
+          `echo '${escapedHaproxyCfg}' > /usr/local/etc/haproxy/haproxy.cfg && echo '${escapedDataplaneApiYml}' > /usr/local/etc/haproxy/dataplaneapi.yml && echo '${escapedDomainBackendMap}' > /usr/local/etc/haproxy/domain-backend.map && chmod 666 /usr/local/etc/haproxy/haproxy.cfg && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/domain-backend.map`
+        ],
+        HostConfig: {
+          Binds: [`${configVolumeName}:/usr/local/etc/haproxy`],
+          AutoRemove: true
+        }
+      });
+
+      // Start and wait for completion
+      await container.start();
+      await container.wait();
+
+      this.logger.info('Config files written to haproxy_config volume');
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to write config files to volume');
+      throw error;
+    }
+  }
+
   private getVolumeByName(name: string): VolumeRequirement | undefined {
     return this.availableVolumes.find(vol => vol.name === name);
-  }
-
-  private async deployInitContainer(): Promise<void> {
-    // Pull image first
-    await this.dockerExecutor.pullImageWithAuth('haproxytech/haproxy-alpine:3.2');
-
-    const container = await this.dockerExecutor.createLongRunningContainer({
-      image: 'haproxytech/haproxy-alpine:3.2',
-      name: this.initContainerName,
-      projectName: this.projectName,
-      serviceName: 'haproxy-init',
-      env: {},
-      labels: this.environmentId ? this.labelManager.generateHAProxyLabels({
-        environmentId: this.environmentId,
-        projectName: this.projectName,
-        serviceName: 'haproxy-init'
-      }) : undefined,
-      cmd: [
-        'sh',
-        '-c',
-        'cp /tmp/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg && cp /tmp/dataplaneapi.yml /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/haproxy.cfg'
-      ],
-      volumes: [
-        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'dataplaneapi.yml')}:/tmp/dataplaneapi.yml:ro`,
-        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'haproxy.cfg')}:/tmp/haproxy.cfg:ro`
-      ],
-      mounts: [
-        {
-          Target: '/usr/local/etc/haproxy/',
-          Source: this.getVolumeByName('haproxy_config')?.name || 'haproxy_config',
-          Type: 'volume'
-        }
-      ]
-    });
-
-    await container.start();
-    this.logger.info('Started haproxy-init container');
-  }
-
-  private async waitForInitCompletion(): Promise<void> {
-    const docker = this.dockerExecutor.getDockerClient();
-    const container = docker.getContainer(this.initContainerName);
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Init container timeout'));
-      }, 60000); // 1 minute timeout
-
-      const checkStatus = async () => {
-        try {
-          const info = await container.inspect();
-
-          if (info.State.Status === 'exited') {
-            clearTimeout(timeout);
-            if (info.State.ExitCode === 0) {
-              this.logger.info('Init container completed successfully');
-              resolve();
-            } else {
-              reject(new Error(`Init container failed with exit code ${info.State.ExitCode}`));
-            }
-          } else {
-            setTimeout(checkStatus, 1000);
-          }
-        } catch (error) {
-          clearTimeout(timeout);
-          reject(error);
-        }
-      };
-
-      checkStatus();
-    });
   }
 
   private async deployHAProxyContainer(): Promise<void> {
@@ -377,14 +359,15 @@ export class HAProxyService implements IApplicationService {
         '8404/tcp': [{ HostPort: '8404' }],
         '5555/tcp': [{ HostPort: '5555' }]
       },
-      volumes: [
-        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'certs')}:/etc/ssl/certs:rw`,
-        `${path.join(process.cwd(), 'docker-compose', 'haproxy', 'domain-backend.map')}:/usr/local/etc/haproxy/domain-backend.map:ro`
-      ],
       mounts: [
         {
           Target: '/usr/local/etc/haproxy/',
           Source: this.getVolumeByName('haproxy_config')?.name || 'haproxy_config',
+          Type: 'volume'
+        },
+        {
+          Target: '/etc/ssl/certs',
+          Source: this.getVolumeByName('haproxy_certs')?.name || 'haproxy_certs',
           Type: 'volume'
         }
       ],
@@ -408,58 +391,6 @@ export class HAProxyService implements IApplicationService {
 
     await container.start();
     this.logger.info('Started haproxy container');
-  }
-
-  /**
-   * Capture logs and remove the init container after successful deployment
-   */
-  private async cleanupInitContainer(): Promise<void> {
-    try {
-      this.logger.info({ containerName: this.initContainerName }, 'Starting init container cleanup');
-
-      // Capture logs before removing the container
-      const { stdout, stderr } = await this.dockerExecutor.captureContainerLogs(
-        this.initContainerName,
-        { tail: 100, includeTimestamps: true }
-      );
-
-      // Log the captured output for debugging and audit purposes
-      if (stdout.trim()) {
-        this.logger.info(
-          {
-            containerName: this.initContainerName,
-            stdout: stdout.trim()
-          },
-          'HAProxy init container stdout'
-        );
-      }
-
-      if (stderr.trim()) {
-        this.logger.info(
-          {
-            containerName: this.initContainerName,
-            stderr: stderr.trim()
-          },
-          'HAProxy init container stderr'
-        );
-      }
-
-      // Remove the init container
-      const docker = this.dockerExecutor.getDockerClient();
-      const container = docker.getContainer(this.initContainerName);
-      await container.remove({ force: true });
-
-      this.logger.info({ containerName: this.initContainerName }, 'Init container cleaned up successfully');
-    } catch (error) {
-      // Log cleanup failure as warning to avoid breaking the deployment
-      this.logger.warn(
-        {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          containerName: this.initContainerName
-        },
-        'Failed to cleanup init container - continuing with deployment'
-      );
-    }
   }
 
   /**
