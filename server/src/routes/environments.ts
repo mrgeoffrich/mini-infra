@@ -110,6 +110,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 router.post('/', requireSessionOrApiKey, async (req, res) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
+    const userId = (req.user as any)?.id;
 
     // Validate service types if provided
     if (request.services) {
@@ -124,12 +125,13 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
       }
     }
 
-    const environment = await environmentManager.createEnvironment(request);
+    const environment = await environmentManager.createEnvironment(request, userId);
 
     logger.debug({
       environmentId: environment.id,
       environmentName: environment.name,
-      serviceCount: environment.services.length
+      serviceCount: environment.services.length,
+      userId
     }, 'Environment created via API');
 
     res.status(201).json(environment);
@@ -220,6 +222,7 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
+    const userId = (req.user as any)?.id;
 
     // Parse boolean query parameters
     const shouldDeleteVolumes = deleteVolumes === 'true';
@@ -242,7 +245,8 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
 
     const success = await environmentManager.deleteEnvironment(id, {
       deleteVolumes: shouldDeleteVolumes,
-      deleteNetworks: shouldDeleteNetworks
+      deleteNetworks: shouldDeleteNetworks,
+      userId
     });
 
     if (!success) {
@@ -255,7 +259,8 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
     logger.debug({
       environmentId: id,
       deleteVolumes: shouldDeleteVolumes,
-      deleteNetworks: shouldDeleteNetworks
+      deleteNetworks: shouldDeleteNetworks,
+      userId
     }, 'Environment deleted via API');
 
     res.status(204).send();
@@ -306,8 +311,9 @@ router.get('/:id/status', requireSessionOrApiKey, async (req, res) => {
 router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = (req.user as any)?.id;
 
-    const result = await environmentManager.startEnvironment(id);
+    const result = await environmentManager.startEnvironment(id, userId);
 
     if (!result.success) {
       return res.status(400).json({
@@ -319,7 +325,8 @@ router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
 
     logger.debug({
       environmentId: id,
-      duration: result.duration
+      duration: result.duration,
+      userId
     }, 'Environment started via API');
 
     res.json(result);
@@ -337,8 +344,9 @@ router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
 router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = (req.user as any)?.id;
 
-    const result = await environmentManager.stopEnvironment(id);
+    const result = await environmentManager.stopEnvironment(id, userId);
 
     if (!result.success) {
       return res.status(400).json({
@@ -350,7 +358,8 @@ router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
 
     logger.debug({
       environmentId: id,
-      duration: result.duration
+      duration: result.duration,
+      userId
     }, 'Environment stopped via API');
 
     res.json(result);
