@@ -1492,8 +1492,14 @@ export class DockerExecutorService {
         containerOptions.HostConfig.NetworkMode = options.networkMode;
       }
 
-      // Add port bindings
+      // Add port bindings - need both ExposedPorts and PortBindings
       if (options.ports) {
+        // First expose the ports at container level
+        containerOptions.ExposedPorts = {};
+        for (const port of Object.keys(options.ports)) {
+          containerOptions.ExposedPorts[port] = {};
+        }
+        // Then bind them to host ports
         containerOptions.HostConfig.PortBindings = options.ports;
       }
 
