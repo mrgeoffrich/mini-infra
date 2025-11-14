@@ -279,6 +279,9 @@ export class HAProxyService implements IApplicationService {
     const docker = this.dockerExecutor.getDockerClient();
 
     try {
+      // Pull alpine image first
+      await this.dockerExecutor.pullImageWithAuth('alpine:latest');
+
       // Create a container that writes the configs directly to haproxy_config volume
       const container = await docker.createContainer({
         Image: 'alpine:latest',
