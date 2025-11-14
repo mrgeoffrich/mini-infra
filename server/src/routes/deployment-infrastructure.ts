@@ -8,6 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
+import { NetworkRequirement, VolumeRequirement } from "../services/interfaces/application-service";
 import { portUtils } from "../services/port-utils";
 import prisma from "../lib/prisma";
 
@@ -141,8 +142,23 @@ router.post("/deploy", requireSessionOrApiKey, (async (
     // Deploy HAProxy using the HAProxy service directly
     const haproxyService = new HAProxyService('haproxy', environmentId);
 
+    // Prepare prefixed networks and volumes for the environment
+    const networks: NetworkRequirement[] = [
+      {
+        name: networkName,
+        driver: networkDriver
+      }
+    ];
+
+    const volumes: VolumeRequirement[] = [
+      { name: `${environmentId}-haproxy_data` },
+      { name: `${environmentId}-haproxy_run` },
+      { name: `${environmentId}-haproxy_config` },
+      { name: `${environmentId}-haproxy_certs` }
+    ];
+
     try {
-      await haproxyService.initialize();
+      await haproxyService.initialize(networks, volumes);
       await haproxyService.deployHAProxy();
 
       // Get the deployed containers to return container ID
@@ -251,9 +267,24 @@ router.get("/status", requireSessionOrApiKey, (async (
 
     // Get infrastructure status using HAProxy service
     const haproxyService = new HAProxyService('haproxy', environmentId);
-    
+
+    // Prepare prefixed networks and volumes for the environment
+    const networks: NetworkRequirement[] = [
+      {
+        name: networkName,
+        driver: 'bridge' // Default driver for status checks
+      }
+    ];
+
+    const volumes: VolumeRequirement[] = [
+      { name: `${environmentId}-haproxy_data` },
+      { name: `${environmentId}-haproxy_run` },
+      { name: `${environmentId}-haproxy_config` },
+      { name: `${environmentId}-haproxy_certs` }
+    ];
+
     try {
-      await haproxyService.initialize();
+      await haproxyService.initialize(networks, volumes);
       
       // Check network exists by attempting to list containers (HAProxy service manages network)
       const containers = await haproxyService.getServiceContainers('haproxy');
@@ -375,9 +406,24 @@ router.delete("/cleanup", requireSessionOrApiKey, (async (
 
     // Clean up infrastructure using HAProxy service
     const haproxyService = new HAProxyService('haproxy', environmentId);
-    
+
+    // Prepare prefixed networks and volumes for the environment
+    const networks: NetworkRequirement[] = [
+      {
+        name: networkName,
+        driver: 'bridge' // Default driver for cleanup
+      }
+    ];
+
+    const volumes: VolumeRequirement[] = [
+      { name: `${environmentId}-haproxy_data` },
+      { name: `${environmentId}-haproxy_run` },
+      { name: `${environmentId}-haproxy_config` },
+      { name: `${environmentId}-haproxy_certs` }
+    ];
+
     try {
-      await haproxyService.initialize();
+      await haproxyService.initialize(networks, volumes);
       await haproxyService.removeHAProxy();
 
       logger.debug(

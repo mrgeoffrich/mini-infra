@@ -309,7 +309,11 @@ export class HAProxyService implements IApplicationService {
   }
 
   private getVolumeByName(name: string): VolumeRequirement | undefined {
-    return this.availableVolumes.find(vol => vol.name === name);
+    // Support both exact match and suffix match (for environment-prefixed volumes)
+    // e.g., 'haproxy_config' will match 'env-123-haproxy_config'
+    return this.availableVolumes.find(vol =>
+      vol.name === name || vol.name.endsWith(`-${name}`)
+    );
   }
 
   private async deployHAProxyContainer(): Promise<void> {

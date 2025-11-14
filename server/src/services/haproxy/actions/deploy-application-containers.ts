@@ -65,7 +65,8 @@ export class DeployApplicationContainers {
                     networks: containerConfig.networks
                 },
                 deploymentId: context.deploymentId,
-                labels: deploymentLabels
+                labels: deploymentLabels,
+                environmentName: context.environmentName // Used to prefix volume names
             };
 
             logger.info({

@@ -10,19 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { IconTrash, IconPlus, IconDatabase } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+
 interface Volume {
   hostPath: string;
   containerPath: string;
-  mode?: "rw" | "ro";
+  mode: "rw";
 }
 
 interface VolumeEditorProps {
@@ -69,7 +63,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
           <div>
             <CardTitle>Volume Mounts</CardTitle>
             <CardDescription>
-              Configure volume mounts between host and container
+              Configure volume mounts (all mounts are read-write)
             </CardDescription>
           </div>
         </div>
@@ -78,10 +72,10 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
         {/* Add new volume mount */}
         <div className="grid grid-cols-12 gap-2 items-end">
           <div className="col-span-5">
-            <Label htmlFor="host-path">Host Path</Label>
+            <Label htmlFor="volume-name">Volume Name</Label>
             <Input
-              id="host-path"
-              placeholder="/host/path"
+              id="volume-name"
+              placeholder="my-volume"
               value={newVolume.hostPath}
               onChange={(e) =>
                 setNewVolume((prev) => ({ ...prev, hostPath: e.target.value }))
@@ -90,7 +84,7 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
               className="font-mono"
             />
           </div>
-          <div className="col-span-4">
+          <div className="col-span-6">
             <Label htmlFor="container-path">Container Path</Label>
             <Input
               id="container-path"
@@ -105,26 +99,6 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
               onKeyDown={handleKeyDown}
               className="font-mono"
             />
-          </div>
-          <div className="col-span-2">
-            <Label htmlFor="mode">Mode</Label>
-            <Select
-              value={newVolume.mode || "rw"}
-              onValueChange={(value) =>
-                setNewVolume((prev) => ({
-                  ...prev,
-                  mode: value as "rw" | "ro",
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="rw">Read/Write</SelectItem>
-                <SelectItem value="ro">Read Only</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <div className="col-span-1">
             <Button
@@ -150,10 +124,10 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
                   key={field.id}
                   className="flex items-center justify-between p-2 bg-background border rounded-md"
                 >
-                  <div className="flex-1 grid grid-cols-3 gap-4">
+                  <div className="flex-1 grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-xs text-muted-foreground">
-                        Host Path
+                        Volume Name
                       </Label>
                       <Input
                         {...control.register(
@@ -172,32 +146,6 @@ export function VolumeEditor({ form, className }: VolumeEditorProps) {
                         )}
                         className="h-8 text-xs font-mono"
                       />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">
-                        Mode
-                      </Label>
-                      <Select
-                        value={
-                          form.getValues(
-                            `containerConfig.volumes.${index}.mode`,
-                          ) || "rw"
-                        }
-                        onValueChange={(value) =>
-                          form.setValue(
-                            `containerConfig.volumes.${index}.mode`,
-                            value as "rw" | "ro",
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="rw">Read/Write</SelectItem>
-                          <SelectItem value="ro">Read Only</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                   <Button

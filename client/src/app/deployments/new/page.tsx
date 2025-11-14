@@ -41,14 +41,10 @@ import {
   IconDeviceFloppy,
   IconBrandDocker,
   IconActivity,
-  IconRotate,
-  IconGlobe,
-  IconInfoCircle,
   IconArrowLeft,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { EnvVarEditor } from "@/components/deployments/env-var-editor";
-import { PortEditor } from "@/components/deployments/port-editor";
 import { VolumeEditor } from "@/components/deployments/volume-editor";
 import { HostnameFormField } from "@/components/deployments/hostname-input";
 import type {
@@ -71,7 +67,7 @@ interface DeploymentFormData {
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
   rollbackConfig: RollbackConfig;
-  listeningPort?: number;
+  listeningPort: number;
 }
 
 export function NewDeploymentConfigPage() {
@@ -133,7 +129,7 @@ export function NewDeploymentConfigPage() {
         maxWaitTime: 300000,
         keepOldContainer: false,
       },
-      listeningPort: undefined,
+      listeningPort: 8080,
     },
     mode: "onChange",
   });
@@ -173,7 +169,7 @@ export function NewDeploymentConfigPage() {
           keepOldContainer:
             deploymentConfig.rollbackConfig?.keepOldContainer || false,
         },
-        listeningPort: deploymentConfig.listeningPort || undefined,
+        listeningPort: deploymentConfig.listeningPort || 8080,
       });
     }
   }, [deploymentConfig, form]);
@@ -298,22 +294,14 @@ export function NewDeploymentConfigPage() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="docker" className="flex items-center gap-2">
                 <IconBrandDocker className="w-4 h-4" />
                 Docker
               </TabsTrigger>
-              <TabsTrigger value="hostname" className="flex items-center gap-2">
-                <IconGlobe className="w-4 h-4" />
-                Hostname
-              </TabsTrigger>
               <TabsTrigger value="health" className="flex items-center gap-2">
                 <IconActivity className="w-4 h-4" />
                 Health Check
-              </TabsTrigger>
-              <TabsTrigger value="rollback" className="flex items-center gap-2">
-                <IconRotate className="w-4 h-4" />
-                Rollback
               </TabsTrigger>
             </TabsList>
 
@@ -329,109 +317,103 @@ export function NewDeploymentConfigPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Environment Selection */}
-                  <FormField
-                    control={form.control}
-                    name="environmentId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Environment</FormLabel>
-                        <FormControl>
-                          {isEditing ? (
+                  {/* Environment and Application Name */}
+                  <div className="grid grid-cols-2 gap-4 items-start">
+                    <FormField
+                      control={form.control}
+                      name="environmentId"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Environment</FormLabel>
+                          <FormControl>
+                            {isEditing ? (
+                              <Input
+                                value={
+                                  environments.find((env) => env.id === field.value)?.name || ""
+                                }
+                                disabled
+                                className="bg-muted"
+                              />
+                            ) : (
+                              <Select
+                                value={field.value}
+                                onValueChange={field.onChange}
+                                disabled={isLoadingEnvironments}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue
+                                    placeholder={
+                                      isLoadingEnvironments
+                                        ? "Loading environments..."
+                                        : "Select an environment"
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {environments
+                                    .filter((env) => env.isActive)
+                                    .map((environment) => (
+                                      <SelectItem
+                                        key={environment.id}
+                                        value={environment.id}
+                                      >
+                                        {environment.name} ({environment.type})
+                                      </SelectItem>
+                                    ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="applicationName"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Application Name</FormLabel>
+                          <FormControl>
                             <Input
-                              value={
-                                environments.find((env) => env.id === field.value)?.name || ""
-                              }
-                              disabled
-                              className="bg-muted"
+                              placeholder="my-app"
+                              {...field}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9-]/g, "-");
+                                field.onChange(value);
+                              }}
                             />
-                          ) : (
-                            <Select
-                              value={field.value}
-                              onValueChange={field.onChange}
-                              disabled={isLoadingEnvironments}
-                            >
-                              <SelectTrigger>
-                                <SelectValue
-                                  placeholder={
-                                    isLoadingEnvironments
-                                      ? "Loading environments..."
-                                      : "Select an environment"
-                                  }
-                                />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {environments
-                                  .filter((env) => env.isActive)
-                                  .map((environment) => (
-                                    <SelectItem
-                                      key={environment.id}
-                                      value={environment.id}
-                                    >
-                                      {environment.name} ({environment.type})
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </FormControl>
-                        <FormDescription>
-                          Select the environment where this application will be
-                          deployed.
-                          {isEditing
-                            ? " (Cannot be changed after creation)"
-                            : ""}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                  <FormField
-                    control={form.control}
-                    name="applicationName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Application Name</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="my-app"
-                            {...field}
-                            onChange={(e) => {
-                              const value = e.target.value
-                                .toLowerCase()
-                                .replace(/[^a-z0-9-]/g, "-");
-                              field.onChange(value);
-                            }}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Unique name for your application (lowercase,
-                          alphanumeric, hyphens only)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="dockerRegistry"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Docker Registry (Optional)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="docker.io" {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Docker registry URL (leave empty for Docker Hub)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-3 gap-4">
+                  {/* Docker Registry, Image, and Tag */}
+                  <div className="grid grid-cols-6 gap-4">
                     <div className="col-span-2">
+                      <FormField
+                        control={form.control}
+                        name="dockerRegistry"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Docker Registry (Optional)</FormLabel>
+                            <FormControl>
+                              <Input placeholder="docker.io" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Docker registry URL (leave empty for Docker Hub)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-3">
                       <FormField
                         control={form.control}
                         name="dockerImage"
@@ -449,7 +431,6 @@ export function NewDeploymentConfigPage() {
                         )}
                       />
                     </div>
-
                     <FormField
                       control={form.control}
                       name="dockerTag"
@@ -471,7 +452,7 @@ export function NewDeploymentConfigPage() {
                     name="listeningPort"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Listening Port (Optional)</FormLabel>
+                        <FormLabel>Listening Port</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -481,118 +462,76 @@ export function NewDeploymentConfigPage() {
                             {...field}
                             onChange={(e) => {
                               const value = e.target.value;
-                              field.onChange(value ? Number(value) : undefined);
+                              field.onChange(value ? Number(value) : 8080);
                             }}
                           />
                         </FormControl>
                         <FormDescription>
-                          Specific port your application listens on for health
-                          checks. If not specified, the system will use port
-                          discovery from your port configuration.
+                          Port your application listens on for health checks and traffic routing.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </CardContent>
-              </Card>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <PortEditor form={form} />
-                <VolumeEditor form={form} />
-                <EnvVarEditor form={form} />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="hostname" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <IconGlobe className="w-5 h-5 text-blue-500" />
-                    Hostname Configuration
-                  </CardTitle>
-                  <CardDescription>
-                    Configure the public hostname for accessing your application
-                    through Cloudflare tunnel. This hostname will be used to
-                    route traffic to your application.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="hostname"
-                    render={({ field }) => (
-                      <HostnameFormField
-                        field={{
-                          value: field.value || "",
-                          onChange: field.onChange,
-                        }}
-                        excludeConfigId={deploymentConfig?.id}
-                        showValidateButton={true}
-                        description="Public hostname for accessing your application (e.g., api.example.com). Click 'Validate' to check availability against Cloudflare and existing configurations."
-                        placeholder="api.example.com"
-                      />
-                    )}
-                  />
-
-                  {form.watch("hostname") && (
+                  <div className="border-t pt-4 space-y-4">
                     <FormField
                       control={form.control}
-                      name="enableSsl"
+                      name="hostname"
                       render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">
-                              Enable SSL/TLS
-                            </FormLabel>
-                            <FormDescription>
-                              Automatically provision and manage SSL certificate for this hostname
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
+                        <HostnameFormField
+                          field={{
+                            value: field.value || "",
+                            onChange: field.onChange,
+                          }}
+                          excludeConfigId={deploymentConfig?.id}
+                          showValidateButton={true}
+                          description="Public hostname for accessing your application (e.g., api.example.com). Click 'Validate' to check availability against Cloudflare and existing configurations."
+                          placeholder="api.example.com"
+                        />
                       )}
                     />
-                  )}
 
-                  <Alert>
-                    <IconInfoCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      <div className="space-y-2">
-                        <p className="font-medium">About Hostnames:</p>
-                        <ul className="text-sm space-y-1 list-disc list-inside">
-                          <li>
-                            Hostnames must be valid domain names (e.g.,
-                            api.example.com)
-                          </li>
-                          <li>
-                            The system will check for conflicts with existing
-                            deployments and Cloudflare tunnels
-                          </li>
-                          <li>
-                            You can leave this field empty if your application
-                            doesn't need external access
-                          </li>
-                          <li>
-                            Hostnames are used for traffic routing through
-                            Cloudflare tunnels
-                          </li>
-                          {form.watch("enableSsl") && (
-                            <li className="text-green-600 font-medium">
-                              SSL certificate will be automatically provisioned for this hostname
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
+                    {form.watch("hostname") && (
+                      <FormField
+                        control={form.control}
+                        name="enableSsl"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">
+                                Enable SSL/TLS
+                              </FormLabel>
+                              <FormDescription>
+                                Automatically provision and manage SSL certificate for this hostname
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </div>
                 </CardContent>
               </Card>
+
+              <Tabs defaultValue="volumes" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="volumes">Volume Mounts</TabsTrigger>
+                  <TabsTrigger value="environment">Environment Variables</TabsTrigger>
+                </TabsList>
+                <TabsContent value="volumes">
+                  <VolumeEditor form={form} />
+                </TabsContent>
+                <TabsContent value="environment">
+                  <EnvVarEditor form={form} />
+                </TabsContent>
+              </Tabs>
             </TabsContent>
 
             <TabsContent value="health" className="space-y-6">
@@ -742,106 +681,6 @@ export function NewDeploymentConfigPage() {
                       )}
                     />
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="rollback" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <IconRotate className="w-5 h-5 text-red-500" />
-                    Rollback Configuration
-                  </CardTitle>
-                  <CardDescription>
-                    Configure automatic rollback behavior in case of deployment
-                    failures
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="rollbackConfig.enabled"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">
-                            Enable Automatic Rollback
-                          </FormLabel>
-                          <FormDescription>
-                            Automatically rollback to the previous version on
-                            deployment failure
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="rollbackConfig.maxWaitTime"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Wait Time (ms)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="30000"
-                              max="3600000"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(Number(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum time to wait before triggering rollback
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="rollbackConfig.keepOldContainer"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">
-                              Keep Old Container
-                            </FormLabel>
-                            <FormDescription>
-                              Keep the old container running after successful
-                              deployment
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <Alert>
-                    <IconInfoCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      Rollback settings help ensure service availability by
-                      automatically reverting to the previous working version if
-                      health checks fail or the deployment takes too long.
-                    </AlertDescription>
-                  </Alert>
                 </CardContent>
               </Card>
             </TabsContent>

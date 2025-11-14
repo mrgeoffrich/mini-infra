@@ -22,6 +22,7 @@ export interface ContainerCreateOptions {
   config: ContainerConfig;
   deploymentId?: string;
   labels?: Record<string, string>;
+  environmentName?: string; // Used to prefix volume names
 }
 
 export interface CaptureContainerOptions {
@@ -185,8 +186,8 @@ export class ContainerLifecycleManager {
       const portBindings = this.buildPortBindings(options.config.ports);
       const exposedPorts = this.buildExposedPorts(options.config.ports);
 
-      // Prepare volume bindings
-      const binds = this.buildVolumeBindings(options.config.volumes);
+      // Prepare volume bindings (with environment name prefix if provided)
+      const binds = this.buildVolumeBindings(options.config.volumes, options.environmentName);
 
       // Prepare environment variables
       const env = this.buildEnvironmentVariables(options.config.environment);
@@ -878,12 +879,31 @@ export class ContainerLifecycleManager {
 
   /**
    * Build Docker volume bindings from deployment volume configuration
+   * Prefixes volume names with environment name if provided
    */
-  private buildVolumeBindings(volumes: DeploymentVolume[]): string[] {
-    return volumes.map(
-      (volume) =>
-        `${volume.hostPath}:${volume.containerPath}:${volume.mode || "rw"}`,
-    );
+  private buildVolumeBindings(volumes: DeploymentVolume[], environmentName?: string): string[] {
+    return volumes.map((volume) => {
+      let hostPath = volume.hostPath;
+      const originalHostPath = hostPath;
+
+      // If environmentName is provided and hostPath doesn't look like an absolute path
+      // (doesn't start with / or a Windows drive letter), prefix it with the environment name
+      if (environmentName && !hostPath.startsWith('/') && !hostPath.match(/^[a-zA-Z]:/)) {
+        hostPath = `${environmentName}-${hostPath}`;
+
+        servicesLogger().debug(
+          {
+            originalVolumeName: originalHostPath,
+            prefixedVolumeName: hostPath,
+            environmentName,
+            containerPath: volume.containerPath,
+          },
+          "Prefixed volume name with environment name",
+        );
+      }
+
+      return `${hostPath}:${volume.containerPath}:${volume.mode || "rw"}`;
+    });
   }
 
   /**
