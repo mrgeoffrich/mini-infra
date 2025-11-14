@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import {
   ColumnDef,
   flexRender,
@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { IconArrowsSort, IconChevronLeft, IconChevronRight, IconInfoCircle } from "@tabler/icons-react";
+import { IconArrowsSort, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -76,29 +76,6 @@ const ContainerImageCell = React.memo(
 );
 
 ContainerImageCell.displayName = "ContainerImageCell";
-
-const ContainerInfoCell = React.memo(
-  ({ containerId }: { containerId: string }) => {
-    return (
-      <div className="flex items-center justify-center min-h-[2rem]">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-        >
-          <Link to={`/containers/${containerId}`}>
-            <IconInfoCircle className="h-4 w-4" />
-            <span className="sr-only">View container details</span>
-          </Link>
-        </Button>
-      </div>
-    );
-  },
-  (prevProps, nextProps) => prevProps.containerId === nextProps.containerId,
-);
-
-ContainerInfoCell.displayName = "ContainerInfoCell";
 
 const ContainerPortsCell = React.memo(
   ({ ports }: { ports: ContainerInfo["ports"] }) => {
@@ -189,23 +166,47 @@ const ContainerRow = React.memo(
     container,
     visibleCells,
     getColumnWidth,
+    onRowClick,
   }: {
     container: ContainerInfo;
     visibleCells: Cell<ContainerInfo, unknown>[];
     getColumnWidth: (index: number) => string;
-  }) => (
-    <TableRow key={container.id} className="hover:bg-muted/50 h-16">
-      {visibleCells.map((cell, index) => (
-        <TableCell
-          key={cell.id}
-          className={`px-6 py-4 ${getColumnWidth(index)} align-middle`}
-          style={{ height: "4rem" }}
-        >
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </TableCell>
-      ))}
-    </TableRow>
-  ),
+    onRowClick: (containerId: string) => void;
+  }) => {
+    const handleClick = React.useCallback(
+      (e: React.MouseEvent) => {
+        // Prevent navigation if clicking on interactive elements
+        const target = e.target as HTMLElement;
+        if (
+          target.closest("button") ||
+          target.closest("a") ||
+          target.closest("[role='button']")
+        ) {
+          return;
+        }
+        onRowClick(container.id);
+      },
+      [container.id, onRowClick],
+    );
+
+    return (
+      <TableRow
+        key={container.id}
+        className="hover:bg-muted/50 h-16 cursor-pointer"
+        onClick={handleClick}
+      >
+        {visibleCells.map((cell, index) => (
+          <TableCell
+            key={cell.id}
+            className={`px-6 py-4 ${getColumnWidth(index)} align-middle`}
+            style={{ height: "4rem" }}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ))}
+      </TableRow>
+    );
+  },
   (prevProps, nextProps) => {
     // Only re-render if container data actually changed
     const prev = prevProps.container;
@@ -232,6 +233,7 @@ export const ContainerTable = React.memo(function ContainerTable({
   showPagination = true,
 }: ContainerTableProps) {
   const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
+  const navigate = useNavigate();
 
   // All hooks must be declared at the top before any conditional returns
   const handleNameSort = React.useCallback(
@@ -245,6 +247,12 @@ export const ContainerTable = React.memo(function ContainerTable({
   const handleImageSort = React.useCallback(
     () => updateSort("image"),
     [updateSort],
+  );
+  const handleRowClick = React.useCallback(
+    (containerId: string) => {
+      navigate(`/containers/${containerId}`);
+    },
+    [navigate],
   );
 
   const columns: ColumnDef<ContainerInfo>[] = React.useMemo(
@@ -303,11 +311,6 @@ export const ContainerTable = React.memo(function ContainerTable({
         header: "Ports",
         cell: ({ row }) => <ContainerPortsCell ports={row.getValue("ports")} />,
       },
-      {
-        accessorKey: "id",
-        header: "Info",
-        cell: ({ row }) => <ContainerInfoCell containerId={row.original.id} />,
-      },
     ],
     [handleNameSort, handleStatusSort, handleImageSort],
   );
@@ -349,8 +352,6 @@ export const ContainerTable = React.memo(function ContainerTable({
         return "w-[240px] min-w-[240px] max-w-[240px]"; // Image
       case 3:
         return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
-      case 4:
-        return "w-[80px] min-w-[80px] max-w-[80px]"; // Info button
       default:
         return "";
     }
@@ -412,6 +413,7 @@ export const ContainerTable = React.memo(function ContainerTable({
                     container={row.original}
                     visibleCells={row.getVisibleCells()}
                     getColumnWidth={getColumnWidth}
+                    onRowClick={handleRowClick}
                   />
                 ))
             ) : (

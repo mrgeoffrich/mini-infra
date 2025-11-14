@@ -21,8 +21,14 @@ export interface RouteMetadata {
   icon?: Icon;
   parent?: string; // Parent route path for breadcrumb hierarchy
   showInNav?: boolean; // Whether to show in sidebar navigation
-  navGroup?: 'main' | 'secondary'; // Which navigation group
-  navSection?: 'applications' | 'databases' | 'networking' | 'connectivity' | 'administration'; // Navigation section for grouping
+  navGroup?: "main" | "secondary"; // Which navigation group
+  navSection?:
+    | "applications"
+    | "databases"
+    | "networking"
+    | "monitoring"
+    | "connectivity"
+    | "administration"; // Navigation section for grouping
   description?: string;
 }
 
@@ -33,280 +39,280 @@ export interface RouteConfig extends RouteMetadata {
 
 // Centralized route configuration with metadata
 export const routeConfig: Record<string, RouteConfig> = {
-  '/dashboard': {
-    path: '/dashboard',
-    title: 'Dashboard',
+  "/dashboard": {
+    path: "/dashboard",
+    title: "Dashboard",
     icon: IconDashboard,
     showInNav: true,
-    navGroup: 'main',
-    description: 'System overview and status'
+    navGroup: "main",
+    description: "System overview and status",
   },
 
-  '/containers': {
-    path: '/containers',
-    title: 'Containers',
+  "/containers": {
+    path: "/containers",
+    title: "Containers",
     icon: IconBrandDocker,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'applications',
-    description: 'Docker container management'
+    navGroup: "main",
+    navSection: "applications",
+    description: "Docker container management",
   },
 
-  '/postgres-server': {
-    path: '/postgres-server',
-    title: 'Postgres Servers',
+  "/postgres-server": {
+    path: "/postgres-server",
+    title: "Postgres Servers",
     icon: IconDatabase,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'databases',
-    description: 'PostgreSQL server and database management',
+    navGroup: "main",
+    navSection: "databases",
+    description: "PostgreSQL server and database management",
     children: {
-      'detail': {
-        path: '/postgres-server/:serverId',
-        title: 'Server Details',
-        breadcrumbLabel: 'Server Details',
-        parent: '/postgres-server',
-        showInNav: false
-      }
-    }
+      detail: {
+        path: "/postgres-server/:serverId",
+        title: "Server Details",
+        breadcrumbLabel: "Server Details",
+        parent: "/postgres-server",
+        showInNav: false,
+      },
+    },
   },
 
-  '/postgres-backup': {
-    path: '/postgres-backup',
-    title: 'Postgres Backups',
+  "/postgres-backup": {
+    path: "/postgres-backup",
+    title: "Postgres Backups",
     icon: IconDatabase,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'databases',
-    description: 'Database backups and restore',
+    navGroup: "main",
+    navSection: "databases",
+    description: "Database backups and restore",
     children: {
-      'restore': {
-        path: '/postgres-backup/:databaseId/restore',
-        title: 'Restore Database',
-        breadcrumbLabel: 'Restore',
-        parent: '/postgres-backup',
-        showInNav: false
-      }
-    }
+      restore: {
+        path: "/postgres-backup/:databaseId/restore",
+        title: "Restore Database",
+        breadcrumbLabel: "Restore",
+        parent: "/postgres-backup",
+        showInNav: false,
+      },
+    },
   },
 
-  '/deployments': {
-    path: '/deployments',
-    title: 'Deployments',
+  "/deployments": {
+    path: "/deployments",
+    title: "Deployments",
     icon: IconRocket,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'applications',
-    description: 'Zero-downtime deployment management',
+    navGroup: "main",
+    navSection: "applications",
+    description: "Zero-downtime deployment management",
     children: {
-      'new': {
-        path: '/deployments/new',
-        title: 'New Deployment Configuration',
-        breadcrumbLabel: 'New Configuration',
-        parent: '/deployments',
-        showInNav: false
-      }
-    }
+      new: {
+        path: "/deployments/new",
+        title: "New Deployment Configuration",
+        breadcrumbLabel: "New Configuration",
+        parent: "/deployments",
+        showInNav: false,
+      },
+    },
   },
 
-  '/environments': {
-    path: '/environments',
-    title: 'Environments',
+  "/environments": {
+    path: "/environments",
+    title: "Environments",
     icon: IconServer,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'applications',
-    description: 'Environment configuration management',
+    navGroup: "main",
+    navSection: "applications",
+    description: "Environment configuration management",
     children: {
-      'detail': {
-        path: '/environments/:id',
-        title: 'Environment Details',
-        breadcrumbLabel: 'Details',
-        parent: '/environments',
-        showInNav: false
-      }
-    }
+      detail: {
+        path: "/environments/:id",
+        title: "Environment Details",
+        breadcrumbLabel: "Details",
+        parent: "/environments",
+        showInNav: false,
+      },
+    },
   },
 
-  '/tunnels': {
-    path: '/tunnels',
-    title: 'Cloudflare Tunnels',
+  "/tunnels": {
+    path: "/tunnels",
+    title: "Cloudflare Tunnels",
     icon: IconBrandCloudflare,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'networking',
-    description: 'Cloudflare tunnel monitoring'
+    navGroup: "main",
+    navSection: "networking",
+    description: "Cloudflare tunnel monitoring",
   },
 
-  '/api-keys': {
-    path: '/api-keys',
-    title: 'API Keys',
+  "/api-keys": {
+    path: "/api-keys",
+    title: "API Keys",
     icon: IconKey,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'API key management'
+    navGroup: "main",
+    navSection: "administration",
+    description: "API key management",
   },
 
-  '/events': {
-    path: '/events',
-    title: 'Events',
+  "/events": {
+    path: "/events",
+    title: "Events",
     icon: IconHistory,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'Track and monitor system operations',
+    navGroup: "main",
+    navSection: "monitoring",
+    description: "Track and monitor system operations",
     children: {
-      'detail': {
-        path: '/events/:id',
-        title: 'Event Details',
-        breadcrumbLabel: 'Details',
-        parent: '/events',
-        showInNav: false
-      }
-    }
+      detail: {
+        path: "/events/:id",
+        title: "Event Details",
+        breadcrumbLabel: "Details",
+        parent: "/events",
+        showInNav: false,
+      },
+    },
   },
 
-  '/haproxy': {
-    path: '/haproxy',
-    title: 'Load Balancer',
+  "/haproxy": {
+    path: "/haproxy",
+    title: "Load Balancer",
     icon: IconNetwork,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'networking',
-    description: 'HAProxy frontend management',
+    navGroup: "main",
+    navSection: "networking",
+    description: "HAProxy frontend management",
     children: {
-      'frontends': {
-        path: '/haproxy/frontends',
-        title: 'Frontends',
+      frontends: {
+        path: "/haproxy/frontends",
+        title: "Frontends",
         showInNav: false,
       },
-      'frontends/new/manual': {
-        path: '/haproxy/frontends/new/manual',
-        title: 'Connect Container',
+      "frontends/new/manual": {
+        path: "/haproxy/frontends/new/manual",
+        title: "Connect Container",
         showInNav: false,
       },
-    }
+    },
   },
 
-  '/certificates': {
-    path: '/certificates',
-    title: 'TLS Certificates',
+  "/certificates": {
+    path: "/certificates",
+    title: "TLS Certificates",
     icon: IconCertificate,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'networking',
-    description: 'Manage SSL/TLS certificates and renewals',
+    navGroup: "main",
+    navSection: "networking",
+    description: "Manage SSL/TLS certificates and renewals",
     children: {
-      'detail': {
-        path: '/certificates/:id',
-        title: 'Certificate Details',
-        breadcrumbLabel: 'Details',
-        parent: '/certificates',
-        showInNav: false
-      }
-    }
+      detail: {
+        path: "/certificates/:id",
+        title: "Certificate Details",
+        breadcrumbLabel: "Details",
+        parent: "/certificates",
+        showInNav: false,
+      },
+    },
   },
 
-  '/connectivity-docker': {
-    path: '/connectivity-docker',
-    title: 'Docker',
+  "/connectivity-docker": {
+    path: "/connectivity-docker",
+    title: "Docker",
     icon: IconBrandDocker,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'connectivity',
-    description: 'Docker service connectivity and configuration'
+    navGroup: "main",
+    navSection: "connectivity",
+    description: "Docker service connectivity and configuration",
   },
 
-  '/connectivity-cloudflare': {
-    path: '/connectivity-cloudflare',
-    title: 'Cloudflare',
+  "/connectivity-cloudflare": {
+    path: "/connectivity-cloudflare",
+    title: "Cloudflare",
     icon: IconBrandCloudflare,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'connectivity',
-    description: 'Cloudflare service connectivity and configuration'
+    navGroup: "main",
+    navSection: "connectivity",
+    description: "Cloudflare service connectivity and configuration",
   },
 
-  '/connectivity-azure': {
-    path: '/connectivity-azure',
-    title: 'Azure Storage',
+  "/connectivity-azure": {
+    path: "/connectivity-azure",
+    title: "Azure Storage",
     icon: IconBrandAzure,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'connectivity',
-    description: 'Azure Storage service connectivity and configuration'
+    navGroup: "main",
+    navSection: "connectivity",
+    description: "Azure Storage service connectivity and configuration",
   },
 
-  '/settings-system': {
-    path: '/settings-system',
-    title: 'System Settings',
-    breadcrumbLabel: 'Settings System',
+  "/settings-system": {
+    path: "/settings-system",
+    title: "System Settings",
+    breadcrumbLabel: "Settings System",
     icon: IconSettings,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'System configuration and settings'
+    navGroup: "main",
+    navSection: "administration",
+    description: "System configuration and settings",
   },
 
-  '/settings-security': {
-    path: '/settings-security',
-    title: 'Security Settings',
-    breadcrumbLabel: 'Security Settings',
+  "/settings-security": {
+    path: "/settings-security",
+    title: "Security Settings",
+    breadcrumbLabel: "Security Settings",
     icon: IconShield,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'Security configuration and API keys'
+    navGroup: "main",
+    navSection: "administration",
+    description: "Security configuration and API keys",
   },
 
-  '/settings-registry-credentials': {
-    path: '/settings-registry-credentials',
-    title: 'Registry Credentials',
-    breadcrumbLabel: 'Registry Credentials',
+  "/settings-registry-credentials": {
+    path: "/settings-registry-credentials",
+    title: "Registry Credentials",
+    breadcrumbLabel: "Registry Credentials",
     icon: IconKey,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'Docker registry authentication'
+    navGroup: "main",
+    navSection: "administration",
+    description: "Docker registry authentication",
   },
 
-  '/settings-self-backup': {
-    path: '/settings-self-backup',
-    title: 'Self-Backup',
-    breadcrumbLabel: 'Self-Backup Settings',
+  "/settings-self-backup": {
+    path: "/settings-self-backup",
+    title: "Self-Backup Settings",
+    breadcrumbLabel: "Self-Backup Settings",
     icon: IconDatabase,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'Application backup configuration'
+    navGroup: "main",
+    navSection: "administration",
+    description: "Application backup configuration",
   },
 
-  '/settings-tls': {
-    path: '/settings-tls',
-    title: 'TLS Settings',
-    breadcrumbLabel: 'TLS Settings',
+  "/settings-tls": {
+    path: "/settings-tls",
+    title: "TLS Settings",
+    breadcrumbLabel: "TLS Settings",
     icon: IconCertificate,
     showInNav: true,
-    navGroup: 'main',
-    navSection: 'administration',
-    description: 'TLS certificate configuration'
+    navGroup: "main",
+    navSection: "administration",
+    description: "TLS certificate configuration",
   },
 
-  '/user': {
-    path: '/user',
-    title: 'User',
+  "/user": {
+    path: "/user",
+    title: "User",
     showInNav: false,
     children: {
-      'settings': {
-        path: '/user/settings',
-        title: 'User Settings',
-        breadcrumbLabel: 'Settings',
-        parent: '/user',
-        showInNav: false
-      }
-    }
-  }
+      settings: {
+        path: "/user/settings",
+        title: "User Settings",
+        breadcrumbLabel: "Settings",
+        parent: "/user",
+        showInNav: false,
+      },
+    },
+  },
 };
 
 // Helper functions for working with route config
@@ -357,11 +363,12 @@ export function getNavigationSections(): NavSection[] {
 
   // Define section order and labels
   const sectionDefinitions: Array<{ id: string; label: string }> = [
-    { id: 'applications', label: 'Applications' },
-    { id: 'databases', label: 'Databases' },
-    { id: 'networking', label: 'Networking' },
-    { id: 'connectivity', label: 'Connected Services' },
-    { id: 'administration', label: 'Administration' },
+    { id: "applications", label: "Applications" },
+    { id: "databases", label: "Databases" },
+    { id: "networking", label: "Networking" },
+    { id: "monitoring", label: "Monitoring" },
+    { id: "connectivity", label: "Connected Services" },
+    { id: "administration", label: "Administration" },
   ];
 
   // Initialize sections
@@ -369,28 +376,28 @@ export function getNavigationSections(): NavSection[] {
     sections.set(def.id, {
       id: def.id,
       label: def.label,
-      items: []
+      items: [],
     });
   }
 
   // Group navigation items by section
   for (const config of Object.values(routeConfig)) {
-    if (config.showInNav && config.navGroup === 'main' && config.navSection) {
+    if (config.showInNav && config.navGroup === "main" && config.navSection) {
       const section = sections.get(config.navSection);
       if (section) {
         const item = {
           title: config.title,
           url: config.path,
           icon: config.icon,
-          items: config.children ?
-            Object.values(config.children)
-              .filter(child => child.showInNav)
-              .map(child => ({
-                title: child.breadcrumbLabel || child.title,
-                url: child.path,
-                icon: child.icon
-              }))
-            : undefined
+          items: config.children
+            ? Object.values(config.children)
+                .filter((child) => child.showInNav)
+                .map((child) => ({
+                  title: child.breadcrumbLabel || child.title,
+                  url: child.path,
+                  icon: child.icon,
+                }))
+            : undefined,
         };
         section.items.push(item);
       }
@@ -399,13 +406,13 @@ export function getNavigationSections(): NavSection[] {
     // Also check children
     if (config.children) {
       for (const child of Object.values(config.children)) {
-        if (child.showInNav && child.navGroup === 'main' && child.navSection) {
+        if (child.showInNav && child.navGroup === "main" && child.navSection) {
           const section = sections.get(child.navSection);
           if (section) {
             section.items.push({
               title: child.breadcrumbLabel || child.title,
               url: child.path,
-              icon: child.icon
+              icon: child.icon,
             });
           }
         }
@@ -415,8 +422,8 @@ export function getNavigationSections(): NavSection[] {
 
   // Return sections in order, excluding empty sections
   return sectionDefinitions
-    .map(def => sections.get(def.id)!)
-    .filter(section => section.items.length > 0);
+    .map((def) => sections.get(def.id)!)
+    .filter((section) => section.items.length > 0);
 }
 
 export function generateBreadcrumbs(pathname: string): Array<{
@@ -447,7 +454,7 @@ export function generateBreadcrumbs(pathname: string): Array<{
     breadcrumbs.push({
       title: route.breadcrumbLabel || route.title,
       href: path === pathname ? undefined : path,
-      isCurrentPage: path === pathname
+      isCurrentPage: path === pathname,
     });
   };
 
@@ -460,8 +467,8 @@ export function generateBreadcrumbs(pathname: string): Array<{
 function matchPath(pattern: string, pathname: string): boolean {
   // Convert pattern like "/environments/:id" to regex
   const regexPattern = pattern
-    .replace(/:[^/]+/g, '[^/]+') // Replace :param with [^/]+
-    .replace(/\//g, '\\/'); // Escape forward slashes
+    .replace(/:[^/]+/g, "[^/]+") // Replace :param with [^/]+
+    .replace(/\//g, "\\/"); // Escape forward slashes
 
   const regex = new RegExp(`^${regexPattern}$`);
   return regex.test(pathname);
