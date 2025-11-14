@@ -9,6 +9,7 @@ import { HealthCheckService } from "./health-check";
 import { NetworkHealthCheckService } from "./network-health-check";
 import { DockerExecutorService } from "./docker-executor";
 import DockerService from "./docker";
+import { UserEventService } from "./user-event-service";
 import prisma from "../lib/prisma";
 import {
   DeploymentConfig,
@@ -94,6 +95,7 @@ export class DeploymentOrchestrator {
   private networkHealthCheckService: NetworkHealthCheckService;
   private dockerExecutor: DockerExecutorService;
   private dockerService: DockerService;
+  private userEventService: UserEventService;
   private activeDeployments: Map<string, any> = new Map();
   private activeRemovalOperations: Map<string, any> = new Map();
 
@@ -104,6 +106,7 @@ export class DeploymentOrchestrator {
     this.networkHealthCheckService = new NetworkHealthCheckService();
     this.dockerExecutor = new DockerExecutorService();
     this.dockerService = DockerService.getInstance();
+    this.userEventService = new UserEventService(prisma);
   }
 
   /**
@@ -204,6 +207,7 @@ export class DeploymentOrchestrator {
     config: DeploymentConfig,
     triggerType: DeploymentTriggerType,
     triggeredBy?: string,
+    userEventId?: string,
   ): Promise<void> {
     try {
       deploymentLogger().info(
@@ -267,9 +271,9 @@ export class DeploymentOrchestrator {
 
       // Start appropriate state machine based on strategy
       if (strategy === "initial") {
-        await this.startInitialDeployment(baseContext);
+        await this.startInitialDeployment(baseContext, userEventId);
       } else {
-        await this.startBlueGreenDeployment(baseContext, existingContainers);
+        await this.startBlueGreenDeployment(baseContext, existingContainers, userEventId);
       }
 
     } catch (error) {
@@ -288,7 +292,7 @@ export class DeploymentOrchestrator {
   /**
    * Start initial deployment using initial deployment state machine
    */
-  private async startInitialDeployment(baseContext: HAProxyDeploymentContext): Promise<void> {
+  private async startInitialDeployment(baseContext: HAProxyDeploymentContext, userEventId?: string): Promise<void> {
     const deploymentId = baseContext.deploymentId;
 
     deploymentLogger().info(
@@ -297,6 +301,7 @@ export class DeploymentOrchestrator {
         applicationName: baseContext.applicationName,
         environmentName: baseContext.environmentName,
         strategy: "initial",
+        userEventId,
       },
       "Starting initial deployment with HAProxy state machine"
     );
@@ -304,6 +309,8 @@ export class DeploymentOrchestrator {
     // Create initial deployment context
     const initialContext = {
       ...baseContext,
+      // User event tracking
+      userEventId,
       // Initial deployment specific fields
       containerId: undefined,
       applicationReady: false,
@@ -341,7 +348,7 @@ export class DeploymentOrchestrator {
   /**
    * Start blue-green deployment using blue-green state machine
    */
-  private async startBlueGreenDeployment(baseContext: HAProxyDeploymentContext, existingContainers: any[]): Promise<void> {
+  private async startBlueGreenDeployment(baseContext: HAProxyDeploymentContext, existingContainers: any[], userEventId?: string): Promise<void> {
     const deploymentId = baseContext.deploymentId;
 
     deploymentLogger().info(
@@ -350,6 +357,7 @@ export class DeploymentOrchestrator {
         applicationName: baseContext.applicationName,
         environmentName: baseContext.environmentName,
         strategy: "blue-green",
+        userEventId,
       },
       "Starting blue-green deployment with HAProxy state machine"
     );
@@ -359,6 +367,8 @@ export class DeploymentOrchestrator {
     // Create blue-green deployment context
     const blueGreenContext = {
       ...baseContext,
+      // User event tracking
+      userEventId,
       // Blue-green deployment specific fields
       blueHealthy: false,
       greenHealthy: false,
@@ -407,14 +417,190 @@ export class DeploymentOrchestrator {
    */
   private setupActorSubscription(actor: any, deploymentId: string, strategy: DeploymentStrategy): void {
     actor.subscribe(async (state: any) => {
+      const userEventId = state.context.userEventId;
+
+      // Update user event with progress and state changes
+      if (userEventId) {
+        try {
+          // Map state machine states to progress percentages
+          const progressMap: Record<string, number> = {
+            // Initial deployment states
+            'idle': 0,
+            'deployingInitialApp': 10,
+            'waitingAppReady': 25,
+            'initializingFirstLB': 40,
+            'initialHealthCheck': 55,
+            'configuringFrontend': 70,
+            'configuringDNS': 80,
+            'enablingTraffic': 85,
+            'validatingInitial': 90,
+            'completed': 100,
+            'failed': state.context.progress || 0,
+            // Blue-green deployment states
+            'deployingGreen': 15,
+            'waitingGreenReady': 30,
+            'addingGreenToLB': 45,
+            'healthCheckGreen': 60,
+            'openingTrafficToGreen': 75,
+            'validatingGreen': 85,
+            'drainingBlue': 90,
+            'removingBlue': 95,
+          };
+
+          const currentProgress = progressMap[state.value as string] ?? state.context.progress ?? 0;
+
+          // Build log message for state transition
+          const stateLog = `[${new Date().toISOString()}] State: ${state.value}`;
+
+          // Handle failed state immediately (even if not "done")
+          if (state.value === "failed" && state.status !== "done") {
+            const hasError = state.context.error !== undefined && state.context.error !== null;
+            const deploymentDuration = state.context.startTime ?
+              Date.now() - state.context.startTime : null;
+
+            await this.userEventService.appendLogs(
+              userEventId,
+              `${stateLog}${hasError ? ': ' + state.context.error : ''}`
+            );
+
+            await this.userEventService.updateEvent(userEventId, {
+              status: "failed",
+              progress: currentProgress,
+              completedAt: new Date().toISOString(),
+              durationMs: deploymentDuration ?? undefined,
+              errorMessage: hasError ? state.context.error : "Deployment failed",
+              errorDetails: hasError ? {
+                state: state.value,
+                strategy,
+                context: {
+                  applicationName: state.context.applicationName,
+                  environmentName: state.context.environmentName,
+                  error: state.context.error,
+                },
+              } : undefined,
+              resultSummary: `Deployment failed: ${state.context.error || "Unknown error"}`,
+              metadata: {
+                applicationName: state.context.applicationName,
+                dockerImage: state.context.dockerImage,
+                environmentName: state.context.environmentName,
+                currentState: state.value,
+                strategy,
+                deploymentId,
+                ...(strategy === 'initial' && state.context.containerId ? {
+                  newContainerId: state.context.containerId,
+                } : {}),
+                ...(strategy === 'blue-green' ? {
+                  oldContainerId: state.context.oldContainerId,
+                  newContainerId: state.context.newContainerId,
+                } : {}),
+              },
+            });
+
+            deploymentLogger().info(
+              {
+                deploymentId,
+                userEventId,
+                error: state.context.error,
+              },
+              "User event marked as failed during state machine execution"
+            );
+          }
+          // Only update if not in done status and not already handled as failed
+          else if (state.status !== "done") {
+            await this.userEventService.appendLogs(userEventId, stateLog);
+            await this.userEventService.updateEvent(userEventId, {
+              progress: currentProgress,
+              metadata: {
+                applicationName: state.context.applicationName,
+                dockerImage: state.context.dockerImage,
+                environmentName: state.context.environmentName,
+                currentState: state.value,
+                strategy,
+              },
+            });
+          }
+        } catch (error) {
+          deploymentLogger().error(
+            {
+              deploymentId,
+              userEventId,
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+            "Failed to update user event during state transition"
+          );
+        }
+      }
+
       if (state.status === "done") {
         this.activeDeployments.delete(deploymentId);
 
+        const finalStatus = state.value === "completed" ? "completed" : "failed";
+        const hasError = state.context.error !== undefined && state.context.error !== null;
+
+        // Update user event with final status
+        if (userEventId) {
+          try {
+            const deploymentDuration = state.context.startTime ?
+              Date.now() - state.context.startTime : null;
+
+            await this.userEventService.updateEvent(userEventId, {
+              status: finalStatus,
+              progress: finalStatus === "completed" ? 100 : state.context.progress || 0,
+              completedAt: new Date().toISOString(),
+              durationMs: deploymentDuration ?? undefined,
+              resultSummary: finalStatus === "completed"
+                ? `Successfully deployed ${state.context.applicationName} using ${strategy} strategy`
+                : `Deployment failed: ${state.context.error || "Unknown error"}`,
+              errorMessage: hasError ? state.context.error : undefined,
+              errorDetails: hasError ? {
+                state: state.value,
+                strategy,
+                context: {
+                  applicationName: state.context.applicationName,
+                  environmentName: state.context.environmentName,
+                  error: state.context.error,
+                },
+              } : undefined,
+              metadata: {
+                applicationName: state.context.applicationName,
+                dockerImage: state.context.dockerImage,
+                environmentName: state.context.environmentName,
+                finalState: state.value,
+                strategy,
+                deploymentId,
+                ...(strategy === 'initial' && state.context.containerId ? {
+                  newContainerId: state.context.containerId,
+                } : {}),
+                ...(strategy === 'blue-green' ? {
+                  oldContainerId: state.context.oldContainerId,
+                  newContainerId: state.context.newContainerId,
+                } : {}),
+              },
+            });
+
+            deploymentLogger().info(
+              {
+                deploymentId,
+                userEventId,
+                finalStatus,
+                strategy,
+              },
+              "Updated user event with deployment completion status"
+            );
+          } catch (error) {
+            deploymentLogger().error(
+              {
+                deploymentId,
+                userEventId,
+                error: error instanceof Error ? error.message : "Unknown error",
+              },
+              "Failed to update user event with final deployment status"
+            );
+          }
+        }
+
         // Update deployment status in database based on final state
         try {
-          const finalStatus = state.value === "completed" ? "completed" : "failed";
-          const hasError = state.context.error !== undefined && state.context.error !== null;
-
           // Build update data object with container IDs based on deployment strategy
           const updateData: any = {
             status: finalStatus,
@@ -666,6 +852,37 @@ export class DeploymentOrchestrator {
         "HAProxy deployment triggered in validated environment",
       );
 
+      // Create user event to track deployment
+      const userEvent = await this.userEventService.createEvent({
+        eventType: 'deployment',
+        eventCategory: 'infrastructure',
+        eventName: `Deploy ${config.applicationName}`,
+        userId: params.triggeredBy, // Can be undefined for system-triggered deployments
+        triggeredBy: params.triggerType,
+        resourceId: deployment.id,
+        resourceType: 'deployment',
+        resourceName: config.applicationName,
+        description: `Deploying ${params.dockerImage} to ${config.environment?.name || 'unknown environment'}`,
+        metadata: {
+          applicationName: config.applicationName,
+          dockerImage: params.dockerImage,
+          environmentName: config.environment?.name,
+          environmentId: config.environmentId,
+          deploymentId: deployment.id,
+          configurationId: params.configurationId,
+          triggerType: params.triggerType,
+        },
+      });
+
+      deploymentLogger().info(
+        {
+          deploymentId: deployment.id,
+          userEventId: userEvent.id,
+          applicationName: config.applicationName,
+        },
+        "Created user event for deployment tracking",
+      );
+
       // Prepare deployment config
       const deploymentConfig: DeploymentConfig = {
         applicationName: config.applicationName,
@@ -685,6 +902,7 @@ export class DeploymentOrchestrator {
             deploymentConfig,
             params.triggerType,
             params.triggeredBy,
+            userEvent.id,
           );
         } catch (error) {
           deploymentLogger().error(
@@ -694,6 +912,31 @@ export class DeploymentOrchestrator {
             },
             "HAProxy deployment failed during execution",
           );
+
+          // Update user event to failed
+          try {
+            await this.userEventService.updateEvent(userEvent.id, {
+              status: "failed",
+              progress: 0,
+              completedAt: new Date().toISOString(),
+              errorMessage: error instanceof Error ? error.message : "Unknown error",
+              errorDetails: {
+                type: error instanceof Error ? error.constructor.name : "Unknown",
+                message: error instanceof Error ? error.message : "Unknown error",
+                stack: error instanceof Error ? error.stack : undefined,
+              },
+              resultSummary: `Deployment failed to start: ${error instanceof Error ? error.message : "Unknown error"}`,
+            });
+          } catch (updateError) {
+            deploymentLogger().error(
+              {
+                deploymentId: deployment.id,
+                userEventId: userEvent.id,
+                error: updateError instanceof Error ? updateError.message : "Unknown error",
+              },
+              "Failed to update user event with deployment failure",
+            );
+          }
 
           // Update deployment status to failed
           await prisma.deployment.update({

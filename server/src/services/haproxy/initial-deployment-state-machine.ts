@@ -34,6 +34,9 @@ interface InitialDeploymentContext {
     applicationName: string;
     dockerImage: string;
 
+    // User event tracking
+    userEventId?: string;
+
     // Environment context
     environmentId: string;
     environmentName: string;
