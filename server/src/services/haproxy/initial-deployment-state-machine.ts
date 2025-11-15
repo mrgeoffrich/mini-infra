@@ -7,7 +7,6 @@ import { PerformHealthChecks } from './actions/perform-health-checks';
 import { ConfigureFrontend } from './actions/configure-frontend';
 import { ConfigureDNS } from './actions/configure-dns';
 import { EnableTraffic } from './actions/enable-traffic';
-import { ValidateTraffic } from './actions/validate-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
@@ -20,7 +19,6 @@ const performHealthChecks = new PerformHealthChecks();
 const configureFrontend = new ConfigureFrontend();
 const configureDNS = new ConfigureDNS();
 const enableTraffic = new EnableTraffic();
-const validateTraffic = new ValidateTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
@@ -175,17 +173,6 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
-        validateTraffic: ({ context, self }) => {
-            // Execute async action with event callback
-            validateTraffic.execute(context, (event) => {
-                self.send(event);
-            }).catch((error) => {
-                self.send({
-                    type: 'CRITICAL_ISSUES',
-                    error: error.message || 'Unknown error'
-                });
-            });
-        },
         logDeploymentSuccess: ({ context }) => {
             logDeploymentSuccess.execute(context);
         },
@@ -228,10 +215,7 @@ export const initialDeploymentMachine = setup({
         },
         serversHealthy: ({ context }) => {
             return context.healthChecksPassed;
-        },
-        trafficStable: ({ context }) => {
-            return context.validationErrors === 0;
-        },
+        }
     }
 }).createMachine({
     id: 'initialDeployment',
@@ -444,24 +428,10 @@ export const initialDeploymentMachine = setup({
             entry: 'enableTraffic',
             on: {
                 TRAFFIC_ENABLED: {
-                    target: 'validatingInitial',
+                    target: 'completed',
                     actions: assign({ trafficEnabled: true })
                 },
                 TRAFFIC_ENABLE_FAILED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
-        validatingInitial: {
-            description: 'Validating the initial deployment',
-            entry: 'validateTraffic',
-            on: {
-                TRAFFIC_STABLE: {
-                    target: 'completed'
-                },
-                CRITICAL_ISSUES: {
                     target: 'failed',
                     actions: 'preserveErrorContext'
                 }

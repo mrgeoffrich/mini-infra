@@ -203,6 +203,20 @@ export const DeploymentCard = React.memo(function DeploymentCard({
     );
   }, [latestDeployment]);
 
+  const shouldLinkToHostname = useMemo(() => {
+    return !!(
+      config.hostname &&
+      config.isActive &&
+      latestDeployment?.status === "completed"
+    );
+  }, [config.hostname, config.isActive, latestDeployment]);
+
+  const hostnameUrl = useMemo(() => {
+    if (!config.hostname) return null;
+    const protocol = config.enableSsl ? 'https' : 'http';
+    return `${protocol}://${config.hostname}`;
+  }, [config.hostname, config.enableSsl]);
+
   const showNewDeploymentButton = config.isActive && isDeploymentCompleted;
   const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && hasRunningContainers;
 
@@ -213,7 +227,19 @@ export const DeploymentCard = React.memo(function DeploymentCard({
           <div className="space-y-1 flex-1">
             <div className="flex items-center gap-2">
               <IconBrandDocker className="h-4 w-4 text-muted-foreground" />
-              <h3 className="font-semibold text-lg">{config.applicationName}</h3>
+              {shouldLinkToHostname && hostnameUrl ? (
+                <a
+                  href={hostnameUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-lg hover:underline text-primary"
+                  title={`Open ${hostnameUrl}`}
+                >
+                  {config.applicationName}
+                </a>
+              ) : (
+                <h3 className="font-semibold text-lg">{config.applicationName}</h3>
+              )}
               <Badge variant={config.isActive ? "default" : "secondary"} className="ml-auto">
                 {config.isActive ? "Active" : "Inactive"}
               </Badge>

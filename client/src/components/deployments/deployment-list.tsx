@@ -462,11 +462,34 @@ export const DeploymentList = React.memo(function DeploymentList({
             <IconArrowsSort className="ml-2 h-3 w-3" />
           </Button>
         ),
-        cell: ({ row }) => (
-          <div className="font-medium">
-            {row.getValue("applicationName")}
-          </div>
-        ),
+        cell: ({ row }) => {
+          const config = row.original;
+          const latestDeployment = latestDeploymentsByConfig.get(config.id);
+          const shouldLinkToHostname = !!(
+            config.hostname &&
+            config.isActive &&
+            latestDeployment?.status === "completed"
+          );
+          const hostnameUrl = config.hostname
+            ? `${config.enableSsl ? 'https' : 'http'}://${config.hostname}`
+            : null;
+
+          return shouldLinkToHostname && hostnameUrl ? (
+            <a
+              href={hostnameUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline text-primary"
+              title={`Open ${hostnameUrl}`}
+            >
+              {row.getValue("applicationName")}
+            </a>
+          ) : (
+            <div className="font-medium">
+              {row.getValue("applicationName")}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "environmentId",

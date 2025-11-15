@@ -398,11 +398,28 @@ export class DeploymentDNSManager {
         "Updating DNS record in CloudFlare"
       );
 
+      // Fetch the existing DNS record to get all required fields
+      const existingRecord = await cloudflareDNSService.getDNSRecord(
+        dnsRecord.zoneId,
+        dnsRecord.dnsRecordId
+      );
+
+      if (!existingRecord) {
+        throw new Error(
+          `DNS record not found in CloudFlare: ${dnsRecord.dnsRecordId}`
+        );
+      }
+
+      // Update with all required fields (Cloudflare API requires type, name, and content)
       await cloudflareDNSService.updateDNSRecord(
         dnsRecord.zoneId,
         dnsRecord.dnsRecordId,
         {
+          type: existingRecord.type as "A" | "AAAA" | "CNAME" | "MX" | "TXT",
+          name: existingRecord.name,
           content: newIP,
+          ttl: existingRecord.ttl,
+          proxied: existingRecord.proxied,
         }
       );
 
