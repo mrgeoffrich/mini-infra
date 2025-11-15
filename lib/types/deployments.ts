@@ -138,6 +138,7 @@ export type DeploymentStatus =
   | 'completed'
   | 'failed'
   | 'rolling_back'
+  | 'rolledback'
   | 'uninstalling'
   | 'removing_from_lb'
   | 'stopping_application'

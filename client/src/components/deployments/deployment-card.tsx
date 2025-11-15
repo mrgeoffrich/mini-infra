@@ -13,6 +13,7 @@ import {
   IconEye,
   IconRocket,
   IconSquare,
+  IconRotateClockwise,
 } from "@tabler/icons-react";
 
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -58,6 +59,8 @@ const DeploymentStatusIcon = React.memo(({ status }: { status: DeploymentStatus 
         return <IconLoader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       case "rolling_back":
         return <IconLoader2 className="h-4 w-4 text-orange-500 animate-spin" />;
+      case "rolledback":
+        return <IconRotateClockwise className="h-4 w-4 text-orange-500" />;
       case "uninstalling":
       case "removing_from_lb":
       case "stopping_application":
@@ -91,6 +94,8 @@ const DeploymentStatusBadge = React.memo(({ status }: { status: DeploymentStatus
       case "cleanup":
         return { variant: "default" as const, className: "bg-blue-500 text-white" };
       case "rolling_back":
+        return { variant: "default" as const, className: "bg-orange-500 text-white" };
+      case "rolledback":
         return { variant: "default" as const, className: "bg-orange-500 text-white" };
       case "uninstalling":
       case "removing_from_lb":
@@ -193,7 +198,7 @@ export const DeploymentCard = React.memo(function DeploymentCard({
 
   const isDeploymentCompleted = useMemo(() => {
     if (!latestDeployment) return false;
-    return latestDeployment.status === "completed" || latestDeployment.status === "failed";
+    return latestDeployment.status === "completed" || latestDeployment.status === "failed" || latestDeployment.status === "rolledback";
   }, [latestDeployment]);
 
   const hasRunningContainers = useMemo(() => {

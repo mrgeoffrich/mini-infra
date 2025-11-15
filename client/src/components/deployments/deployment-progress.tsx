@@ -186,6 +186,7 @@ const OverallProgress = React.memo(({
       completed: "Deployment Complete",
       failed: "Deployment Failed",
       rolling_back: "Rolling Back",
+      rolledback: "Deployment Rolled Back",
       uninstalling: "Uninstalling Application",
       removing_from_lb: "Removing from Load Balancer",
       stopping_application: "Stopping Application",
@@ -202,6 +203,8 @@ const OverallProgress = React.memo(({
       case "failed":
         return "bg-red-500";
       case "rolling_back":
+        return "bg-orange-500";
+      case "rolledback":
         return "bg-orange-500";
       default:
         return "bg-blue-500";

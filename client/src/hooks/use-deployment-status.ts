@@ -109,7 +109,7 @@ export function useDeploymentStatus(
       if (!query?.state?.data?.data) return false;
 
       const status = query.state.data.data.status;
-      const terminalStates: DeploymentStatus[] = ["completed", "failed"];
+      const terminalStates: DeploymentStatus[] = ["completed", "failed", "rolledback"];
 
       // Stop polling if deployment is in terminal state and option is enabled
       if (stopPollingOnTerminal && terminalStates.includes(status)) {
@@ -198,7 +198,7 @@ export function useDeploymentStatuses(
       if (!query?.state?.data) return false;
 
       const statuses = query.state.data.map((d: DeploymentStatusResponse) => d.data.status);
-      const terminalStates: DeploymentStatus[] = ["completed", "failed"];
+      const terminalStates: DeploymentStatus[] = ["completed", "failed", "rolledback"];
       const activeStates: DeploymentStatus[] = [
         "preparing",
         "deploying",
@@ -285,6 +285,7 @@ export function getStatusText(status: DeploymentStatus): string {
     completed: "Completed",
     failed: "Failed",
     rolling_back: "Rolling Back",
+    rolledback: "Rolled Back",
     uninstalling: "Uninstalling",
     removing_from_lb: "Removing from LB",
     stopping_application: "Stopping Application",
@@ -309,6 +310,7 @@ export function getStatusColor(status: DeploymentStatus): string {
     completed: "text-green-600",
     failed: "text-red-600",
     rolling_back: "text-orange-600",
+    rolledback: "text-orange-600",
     uninstalling: "text-purple-600",
     removing_from_lb: "text-purple-600",
     stopping_application: "text-purple-600",

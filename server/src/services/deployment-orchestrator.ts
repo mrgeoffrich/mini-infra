@@ -561,7 +561,15 @@ export class DeploymentOrchestrator {
       if (state.status === "done") {
         this.activeDeployments.delete(deploymentId);
 
-        const finalStatus = state.value === "completed" ? "completed" : "failed";
+        // Determine final status based on state machine outcome
+        let finalStatus: DeploymentStatus;
+        if (state.value === "completed") {
+          finalStatus = "completed";
+        } else if (state.value === "rollbackComplete") {
+          finalStatus = "rolledback";
+        } else {
+          finalStatus = "failed";
+        }
         const hasError = state.context.error !== undefined && state.context.error !== null;
 
         // Update user event with final status
@@ -575,9 +583,12 @@ export class DeploymentOrchestrator {
               progress: finalStatus === "completed" ? 100 : state.context.progress || 0,
               completedAt: new Date().toISOString(),
               durationMs: deploymentDuration ?? undefined,
-              resultSummary: finalStatus === "completed"
-                ? `Successfully deployed ${state.context.applicationName} using ${strategy} strategy`
-                : `Deployment failed: ${state.context.error || "Unknown error"}`,
+              resultSummary:
+                finalStatus === "completed"
+                  ? `Successfully deployed ${state.context.applicationName} using ${strategy} strategy`
+                  : finalStatus === "rolledback"
+                    ? `Deployment rolled back successfully - ${state.context.applicationName} reverted to previous version`
+                    : `Deployment failed: ${state.context.error || "Unknown error"}`,
               errorMessage: hasError ? state.context.error : undefined,
               errorDetails: hasError ? {
                 state: state.value,

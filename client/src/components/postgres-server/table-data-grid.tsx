@@ -13,7 +13,6 @@ import {
   IconArrowDown,
   IconChevronLeft,
   IconChevronRight,
-  IconCopy,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,10 +69,10 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
   const columns = useMemo<ColumnDef<Record<string, any>>[]>(() => {
     if (!tableData?.columns) return [];
 
-    return tableData.columns.map((col) => ({
+    return tableData.columns.map((col: { name: string; isPrimaryKey: boolean; dataType: string; isNullable: boolean }) => ({
       id: col.name,
       accessorKey: col.name,
-      header: ({ column }) => {
+      header: ({ column }: { column: any }) => {
         const isSorted = column.getIsSorted();
         return (
           <div
@@ -92,7 +91,7 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
           </div>
         );
       },
-      cell: ({ getValue }) => {
+      cell: ({ getValue }: { getValue: () => any }) => {
         const value = getValue();
         const displayValue = value === null ? <span className="text-muted-foreground italic">NULL</span> : String(value);
 
@@ -135,14 +134,6 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
   const handlePageSizeChange = (value: string) => {
     setPageSize(Number(value));
     setPage(1); // Reset to first page
-  };
-
-  // Copy cell value
-  const copyToClipboard = (value: any) => {
-    if (value !== null && value !== undefined) {
-      navigator.clipboard.writeText(String(value));
-      toast.success("Copied to clipboard");
-    }
   };
 
   if (!tableName) {
