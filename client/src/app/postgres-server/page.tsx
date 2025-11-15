@@ -1,23 +1,39 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { IconDatabase, IconPlus } from "@tabler/icons-react";
+import { IconDatabase, IconPlus, IconEdit, IconDots } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ServerModal } from "@/components/postgres-server/server-modal";
 import { usePostgresServers } from "@/hooks/use-postgres-servers";
+import type { PostgresServerInfo } from "@mini-infra/types";
 
 export function PostgresServerPage() {
   const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [selectedServer, setSelectedServer] = useState<PostgresServerInfo | null>(null);
 
   // Fetch servers using React Query
   const { data, isLoading } = usePostgresServers();
   const servers = data?.data || [];
 
-  const handleOpenDialog = (mode: "create" | "edit") => {
-    setModalMode(mode);
+  const handleOpenCreateDialog = () => {
+    setModalMode("create");
+    setSelectedServer(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEditDialog = (server: PostgresServerInfo, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click navigation
+    setModalMode("edit");
+    setSelectedServer(server);
     setModalOpen(true);
   };
 
@@ -40,7 +56,7 @@ export function PostgresServerPage() {
           </div>
 
           {/* Right: Add Server Button */}
-          <Button onClick={() => handleOpenDialog("create")}>
+          <Button onClick={handleOpenCreateDialog}>
             <IconPlus className="h-4 w-4 mr-2" />
             Add Server
           </Button>
@@ -80,7 +96,7 @@ export function PostgresServerPage() {
                 <p className="text-muted-foreground mb-4 max-w-sm">
                   Connect to your first PostgreSQL server to start managing databases and users
                 </p>
-                <Button onClick={() => handleOpenDialog("create")}>
+                <Button onClick={handleOpenCreateDialog}>
                   <IconPlus className="h-4 w-4 mr-2" />
                   Add Your First Server
                 </Button>
@@ -94,21 +110,36 @@ export function PostgresServerPage() {
                     onClick={() => navigate(`/postgres-server/${server.id}`)}
                   >
                     <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <CardTitle className="text-lg">{server.name}</CardTitle>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-lg truncate">{server.name}</CardTitle>
                           <CardDescription className="mt-1">
                             {server.host}:{server.port}
                           </CardDescription>
                         </div>
-                        <div className={`px-2 py-1 rounded text-xs font-medium ${
-                          server.healthStatus === 'healthy'
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                            : server.healthStatus === 'unhealthy'
-                            ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
-                        }`}>
-                          {server.healthStatus}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className={`px-2 py-1 rounded text-xs font-medium ${
+                            server.healthStatus === 'healthy'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                              : server.healthStatus === 'unhealthy'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                              : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
+                          }`}>
+                            {server.healthStatus}
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <IconDots className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={(e) => handleOpenEditDialog(server, e)}>
+                                <IconEdit className="h-4 w-4 mr-2" />
+                                Edit Server
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     </CardHeader>
@@ -147,6 +178,8 @@ export function PostgresServerPage() {
         open={modalOpen}
         onOpenChange={setModalOpen}
         mode={modalMode}
+        serverId={selectedServer?.id}
+        serverData={selectedServer || undefined}
       />
     </div>
   );

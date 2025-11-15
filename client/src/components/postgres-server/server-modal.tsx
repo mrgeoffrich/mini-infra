@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import type { PostgresServerInfo } from "@mini-infra/types";
 import { toast } from "sonner";
 import {
   useCreatePostgresServer,
@@ -42,8 +43,8 @@ import {
   IconChevronDown,
 } from "@tabler/icons-react";
 
-// Validation schema
-const serverSchema = z.object({
+// Validation schemas
+const createServerSchema = z.object({
   name: z.string().min(1, "Server name is required"),
   host: z.string().min(1, "Host is required"),
   port: z.number().min(1).max(65535),
@@ -53,13 +54,24 @@ const serverSchema = z.object({
   tags: z.string().optional(),
 });
 
-type ServerFormData = z.infer<typeof serverSchema>;
+const updateServerSchema = z.object({
+  name: z.string().min(1, "Server name is required"),
+  host: z.string().min(1, "Host is required"),
+  port: z.number().min(1).max(65535),
+  adminUsername: z.string().min(1, "Admin username is required"),
+  adminPassword: z.string().optional(), // Optional for updates
+  sslMode: z.enum(["prefer", "require", "disable"]),
+  tags: z.string().optional(),
+});
+
+type ServerFormData = z.infer<typeof updateServerSchema>;
 
 interface ServerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "create" | "edit";
   serverId?: string; // Required for edit mode
+  serverData?: PostgresServerInfo; // Server data for edit mode
 }
 
 interface TestResult {
@@ -68,7 +80,7 @@ interface TestResult {
   version?: string;
 }
 
-export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: ServerModalProps) {
+export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: ServerModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
@@ -85,7 +97,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
     reset,
     formState: { errors },
   } = useForm<ServerFormData>({
-    resolver: zodResolver(serverSchema),
+    resolver: zodResolver(mode === "edit" ? updateServerSchema : createServerSchema),
     defaultValues: {
       name: "",
       host: "",
@@ -99,6 +111,34 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
 
   const sslMode = watch("sslMode");
   const formData = watch();
+
+  // Pre-fill form when in edit mode
+  useEffect(() => {
+    if (mode === "edit" && serverData && open) {
+      reset({
+        name: serverData.name,
+        host: serverData.host,
+        port: serverData.port,
+        adminUsername: serverData.adminUsername,
+        adminPassword: "", // Don't pre-fill password for security
+        sslMode: serverData.sslMode as "prefer" | "require" | "disable",
+        tags: serverData.tags?.join(", ") || "",
+      });
+      setTestResult(null);
+    } else if (mode === "create" && open) {
+      // Reset to defaults when creating
+      reset({
+        name: "",
+        host: "",
+        port: 5432,
+        adminUsername: "postgres",
+        adminPassword: "",
+        sslMode: "prefer",
+        tags: "",
+      });
+      setTestResult(null);
+    }
+  }, [mode, serverData, open, reset]);
 
   const handleTestConnection = async () => {
     setTestResult(null);
@@ -150,7 +190,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
           host: data.host,
           port: data.port,
           adminUsername: data.adminUsername,
-          adminPassword: data.adminPassword,
+          adminPassword: data.adminPassword || "", // In create mode, this will always be present due to validation
           sslMode: data.sslMode,
           tags,
         });
@@ -186,9 +226,28 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
         } else {
           toast.success("Server added successfully");
         }
-      } else {
-        // TODO: Implement update when serverId is properly passed
-        toast.info("Update functionality coming soon");
+      } else if (mode === "edit" && serverId) {
+        // Build update payload - only include fields that are provided
+        const updatePayload: any = {
+          name: data.name,
+          host: data.host,
+          port: data.port,
+          adminUsername: data.adminUsername,
+          sslMode: data.sslMode,
+          tags,
+        };
+
+        // Only include password if it was entered (not empty)
+        if (data.adminPassword) {
+          updatePayload.adminPassword = data.adminPassword;
+        }
+
+        await updateServerMutation.mutateAsync({
+          id: serverId,
+          updates: updatePayload,
+        });
+
+        toast.success("Server updated successfully");
       }
 
       // Reset form and close modal
@@ -268,12 +327,15 @@ export function ServerModal({ open, onOpenChange, mode, serverId: _serverId }: S
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="adminPassword">Admin Password *</Label>
+              <Label htmlFor="adminPassword">
+                Admin Password {mode === "create" && "*"}
+                {mode === "edit" && <span className="text-muted-foreground font-normal">(optional)</span>}
+              </Label>
               <div className="relative">
                 <Input
                   id="adminPassword"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder={mode === "edit" ? "Leave blank to keep current password" : "••••••••"}
                   autoComplete="current-password"
                   {...register("adminPassword")}
                 />

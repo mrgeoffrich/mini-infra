@@ -33,6 +33,7 @@ import { DatabasesTab } from "@/components/postgres-server/databases-tab";
 import { UsersTab } from "@/components/postgres-server/users-tab";
 import { BackupsTab } from "@/components/postgres-server/backups-tab";
 import { HealthStatusBadge } from "@/components/postgres-server/health-status-badge";
+import { ServerModal } from "@/components/postgres-server/server-modal";
 import { usePostgresServer } from "@/hooks/use-postgres-servers";
 import { useManagedDatabaseUsers } from "@/hooks/use-managed-database-users";
 import { useManagedDatabases } from "@/hooks/use-managed-databases";
@@ -43,6 +44,7 @@ export default function PostgresServerDetailsPage() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   const { data: response, isLoading, error } = usePostgresServer(serverId!);
   const server = response?.data;
@@ -73,8 +75,7 @@ export default function PostgresServerDetailsPage() {
   };
 
   const handleEdit = () => {
-    // TODO: Open edit modal
-    toast.info("Edit functionality coming soon");
+    setEditModalOpen(true);
   };
 
   const handleTestConnection = async () => {
@@ -261,6 +262,15 @@ export default function PostgresServerDetailsPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Edit Server Modal */}
+      <ServerModal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        mode="edit"
+        serverId={serverId}
+        serverData={server}
+      />
     </div>
   );
 }
