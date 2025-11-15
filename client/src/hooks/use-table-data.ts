@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type {
   DatabaseTableListResponse,
   TableDataResponse,
@@ -125,6 +125,6 @@ export function useTableData(
       fetchTableData(serverId!, databaseId!, tableName!, params, generateCorrelationId()),
     enabled: !!serverId && !!databaseId && !!tableName,
     staleTime: 30000, // Consider data fresh for 30 seconds
-    placeholderData: keepPreviousData, // Keep previous page data while fetching new page
+    placeholderData: (previousData) => previousData, // Keep previous page data while fetching new page
   });
 }
