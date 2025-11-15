@@ -481,14 +481,9 @@ export const initialDeploymentMachine = setup({
         },
 
         failed: {
+            type: 'final' as const,
             description: 'Deployment failed, manual intervention required',
-            entry: 'alertOperationsTeam',
-            on: {
-                MANUAL_INTERVENTION_COMPLETE: {
-                    target: 'idle',
-                    actions: 'resetState'
-                }
-            }
+            entry: 'alertOperationsTeam'
         }
     }
 });

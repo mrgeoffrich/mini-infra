@@ -1,14 +1,18 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container-lifecycle-manager';
 import { DeploymentConfig, ContainerConfig } from '@mini-infra/types';
+import { UserEventService } from '../../user-event-service';
+import prisma from '../../../lib/prisma';
 
 const logger = loadbalancerLogger();
 
 export class DeployApplicationContainers {
     private containerManager: ContainerLifecycleManager;
+    private userEventService: UserEventService;
 
     constructor() {
         this.containerManager = new ContainerLifecycleManager();
+        this.userEventService = new UserEventService(prisma);
     }
 
     async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
@@ -76,6 +80,18 @@ export class DeployApplicationContainers {
                 networks: containerConfig.networks,
                 environmentId: context.environmentId
             }, 'Creating deployment container');
+
+            // Log to user event that we're pulling the image
+            if (context.userEventId) {
+                const registryInfo = context.dockerImage.includes('ghcr.io') ? 'from GitHub Container Registry' :
+                                   context.dockerImage.includes('docker.io') ? 'from Docker Hub' :
+                                   context.dockerImage.split('/')[0].includes('.') ? `from ${context.dockerImage.split('/')[0]}` :
+                                   'from Docker Hub';
+                await this.userEventService.appendLogs(
+                    context.userEventId,
+                    `Pulling image '${context.dockerImage}' ${registryInfo}... (timeout: 10 minutes)`
+                );
+            }
 
             // Create the container
             const containerId = await this.containerManager.createContainer(createOptions);

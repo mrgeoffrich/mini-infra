@@ -650,10 +650,10 @@ export class DockerExecutorService {
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(
           () => {
-            reject(new Error("Docker pull timeout after 2 minutes"));
+            reject(new Error("Docker pull timeout after 10 minutes"));
           },
-          2 * 60 * 1000,
-        ); // 2 minute timeout
+          10 * 60 * 1000,
+        ); // 10 minute timeout
 
         this.docker.modem.followProgress(stream, (err, result) => {
           clearTimeout(timeout);
@@ -796,10 +796,10 @@ export class DockerExecutorService {
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(
           () => {
-            reject(new Error("Docker pull timeout after 2 minutes"));
+            reject(new Error("Docker pull timeout after 10 minutes"));
           },
-          2 * 60 * 1000,
-        ); // 2 minute timeout
+          10 * 60 * 1000,
+        ); // 10 minute timeout
 
         this.docker.modem.followProgress(stream, (err, result) => {
           clearTimeout(timeout);
