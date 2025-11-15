@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { PostgresServerInfo } from "@mini-infra/types";
@@ -52,6 +53,8 @@ const createServerSchema = z.object({
   adminPassword: z.string().min(1, "Admin password is required"),
   sslMode: z.enum(["prefer", "require", "disable"]),
   tags: z.string().optional(),
+  linkedContainerId: z.string().optional(),
+  linkedContainerName: z.string().optional(),
 });
 
 const updateServerSchema = z.object({
@@ -62,6 +65,8 @@ const updateServerSchema = z.object({
   adminPassword: z.string().optional(), // Optional for updates
   sslMode: z.enum(["prefer", "require", "disable"]),
   tags: z.string().optional(),
+  linkedContainerId: z.string().optional(),
+  linkedContainerName: z.string().optional(),
 });
 
 type ServerFormData = z.infer<typeof updateServerSchema>;
@@ -88,6 +93,20 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
   const createServerMutation = useCreatePostgresServer();
   const updateServerMutation = useUpdatePostgresServer();
   const testConnectionMutation = useTestServerConnection();
+
+  // Fetch PostgreSQL containers for linking
+  const { data: postgresContainers } = useQuery({
+    queryKey: ["postgres-containers"],
+    queryFn: async () => {
+      const response = await fetch("/api/containers/postgres", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch PostgreSQL containers");
+      const data = await response.json();
+      return data.data || [];
+    },
+    enabled: open, // Only fetch when modal is open
+  });
 
   const {
     register,
@@ -123,6 +142,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
         adminPassword: "", // Don't pre-fill password for security
         sslMode: serverData.sslMode as "prefer" | "require" | "disable",
         tags: serverData.tags?.join(", ") || "",
+        linkedContainerId: serverData.linkedContainerId || "",
+        linkedContainerName: serverData.linkedContainerName || "",
       });
       setTestResult(null);
     } else if (mode === "create" && open) {
@@ -134,6 +155,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
         adminUsername: "postgres",
         adminPassword: "",
         sslMode: "prefer",
+        linkedContainerId: "",
+        linkedContainerName: "",
         tags: "",
       });
       setTestResult(null);
@@ -193,6 +216,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
           adminPassword: data.adminPassword || "", // In create mode, this will always be present due to validation
           sslMode: data.sslMode,
           tags,
+          linkedContainerId: data.linkedContainerId || undefined,
+          linkedContainerName: data.linkedContainerName || undefined,
         });
 
         // Display sync results
@@ -235,6 +260,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
           adminUsername: data.adminUsername,
           sslMode: data.sslMode,
           tags,
+          linkedContainerId: data.linkedContainerId || null,
+          linkedContainerName: data.linkedContainerName || null,
         };
 
         // Only include password if it was entered (not empty)
@@ -398,6 +425,39 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
                   />
                   <p className="text-xs text-muted-foreground">
                     Comma-separated tags for organization
+                  </p>
+                </div>
+
+                {/* Container Linking */}
+                <div className="space-y-2">
+                  <Label htmlFor="container">Link to Container (Optional)</Label>
+                  <Select
+                    value={watch("linkedContainerId") || "none"}
+                    onValueChange={(value) => {
+                      if (value === "none") {
+                        setValue("linkedContainerId", "");
+                        setValue("linkedContainerName", "");
+                      } else {
+                        const container = postgresContainers?.find((c: any) => c.id === value);
+                        setValue("linkedContainerId", value);
+                        setValue("linkedContainerName", container?.name || "");
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a PostgreSQL container" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {postgresContainers?.map((container: any) => (
+                        <SelectItem key={container.id} value={container.id}>
+                          {container.name} ({container.image}:{container.imageTag})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Link this server to a Docker PostgreSQL container for easy management
                   </p>
                 </div>
               </CollapsibleContent>

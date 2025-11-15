@@ -2,6 +2,8 @@
 // PostgreSQL Server Management Types
 // ====================
 
+import type { ContainerStatus } from "./containers";
+
 // PostgreSQL Server type (matches Prisma schema)
 export interface PostgresServer {
   id: string;
@@ -32,12 +34,25 @@ export interface PostgresServerInfo {
   healthStatus: "healthy" | "unhealthy" | "unknown";
   lastHealthCheck: string | null;
   serverVersion: string | null;
+  linkedContainerId: string | null;
+  linkedContainerName: string | null;
+  linkedContainerInfo?: LinkedContainerInfo; // Fetched from Docker API
   createdAt: string;
   updatedAt: string;
   _count?: {
     databases: number;
     users: number;
   };
+}
+
+// Container information for linked containers
+export interface LinkedContainerInfo {
+  id: string;
+  name: string;
+  state: ContainerStatus; // From containers.ts
+  status: string; // Full status message
+  image: string;
+  created: string;
 }
 
 // PostgreSQL Server API Request Types
@@ -49,6 +64,8 @@ export interface CreatePostgresServerRequest {
   adminPassword: string; // Will be encrypted and stored in connectionString
   sslMode: "prefer" | "require" | "disable";
   tags?: string[];
+  linkedContainerId?: string;
+  linkedContainerName?: string;
 }
 
 export interface UpdatePostgresServerRequest {
@@ -59,6 +76,8 @@ export interface UpdatePostgresServerRequest {
   adminPassword?: string; // Will be encrypted and stored in connectionString
   sslMode?: "prefer" | "require" | "disable";
   tags?: string[];
+  linkedContainerId?: string | null;
+  linkedContainerName?: string | null;
 }
 
 export interface TestServerConnectionRequest {

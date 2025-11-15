@@ -41,6 +41,8 @@ interface ContainerTableProps {
     setPage: (page: number) => void;
     setLimit: (limit: number) => void;
   };
+  postgresContainerIds?: Set<string>;
+  managedContainerIds?: Set<string>;
   showPagination?: boolean;
 }
 
@@ -231,6 +233,8 @@ export const ContainerTable = React.memo(function ContainerTable({
   isLoading,
   filterState,
   showPagination = true,
+  postgresContainerIds,
+  managedContainerIds,
 }: ContainerTableProps) {
   const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
   const navigate = useNavigate();
@@ -311,8 +315,35 @@ export const ContainerTable = React.memo(function ContainerTable({
         header: "Ports",
         cell: ({ row }) => <ContainerPortsCell ports={row.getValue("ports")} />,
       },
+      {
+        id: "actions",
+        header: "Actions",
+        cell: ({ row }) => {
+          const container = row.original;
+          const isPostgres = postgresContainerIds?.has(container.id);
+          const isManaged = managedContainerIds?.has(container.id);
+          const showManageButton = isPostgres && !isManaged;
+
+          if (!showManageButton) {
+            return null;
+          }
+
+          return (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // TODO: Open modal to create PostgreSQL server linked to this container
+                alert(`Manage PostgreSQL container: ${container.name}`);
+              }}
+            >
+              Manage
+            </Button>
+          );
+        },
+      },
     ],
-    [handleNameSort, handleStatusSort, handleImageSort],
+    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds],
   );
 
   const sortingState = React.useMemo(
@@ -352,6 +383,8 @@ export const ContainerTable = React.memo(function ContainerTable({
         return "w-[240px] min-w-[240px] max-w-[240px]"; // Image
       case 3:
         return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
+      case 4:
+        return "w-[120px] min-w-[120px] max-w-[120px]"; // Actions
       default:
         return "";
     }

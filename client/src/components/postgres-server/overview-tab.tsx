@@ -107,6 +107,32 @@ export function OverviewTab({ server, onChangeTab }: OverviewTabProps) {
               </div>
             </div>
           )}
+
+          {/* Linked Container */}
+          {server.linkedContainerId && (
+            <div className="border-t pt-4">
+              <Label className="text-sm text-muted-foreground mb-2 block">
+                Linked Docker Container
+              </Label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{server.linkedContainerName}</div>
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {server.linkedContainerId}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.location.href = `/containers/${server.linkedContainerId}`}
+                  >
+                    View Container
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -82,6 +82,8 @@ export class PostgresServerService {
     adminPassword: string;
     sslMode: string;
     tags?: string[];
+    linkedContainerId?: string;
+    linkedContainerName?: string;
     userId: string;
   }) {
     logger.info({ params: { ...params, adminPassword: "***" } }, "Creating PostgreSQL server");
@@ -107,6 +109,8 @@ export class PostgresServerService {
         connectionString: encryptedConnectionString,
         sslMode: params.sslMode,
         tags: params.tags ? JSON.stringify(params.tags) : null,
+        linkedContainerId: params.linkedContainerId,
+        linkedContainerName: params.linkedContainerName,
         userId: params.userId,
       },
     });
@@ -200,6 +204,8 @@ export class PostgresServerService {
       adminPassword?: string;
       sslMode?: string;
       tags?: string[];
+      linkedContainerId?: string | null;
+      linkedContainerName?: string | null;
     }
   ) {
     logger.info({ serverId, updates: { ...updates, adminPassword: updates.adminPassword ? "***" : undefined } }, "Updating server");
@@ -236,6 +242,8 @@ export class PostgresServerService {
         ...(updates.port && { port: updates.port }),
         ...(updates.adminUsername && { adminUsername: updates.adminUsername }),
         ...(updates.sslMode && { sslMode: updates.sslMode }),
+        ...(updates.linkedContainerId !== undefined && { linkedContainerId: updates.linkedContainerId }),
+        ...(updates.linkedContainerName !== undefined && { linkedContainerName: updates.linkedContainerName }),
         ...(updates.tags && { tags: JSON.stringify(updates.tags) }),
         connectionString: encryptedConnectionString,
       },

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
+import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -60,15 +61,56 @@ export function ContainerDashboard() {
     enabled: isDockerConnected === true, // Only fetch when explicitly connected
   });
 
+  // Fetch PostgreSQL containers
+  const { data: postgresContainersData } = useQuery({
+    queryKey: ["postgres-containers"],
+    queryFn: async () => {
+      const response = await fetch("/api/containers/postgres", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch PostgreSQL containers");
+      const data = await response.json();
+      return data.data || [];
+    },
+    enabled: isDockerConnected === true,
+    refetchInterval: 5000,
+  });
+
+  // Fetch managed container IDs
+  const { data: managedContainerIdsData } = useQuery({
+    queryKey: ["managed-container-ids"],
+    queryFn: async () => {
+      const response = await fetch("/api/containers/managed-ids", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch managed container IDs");
+      const data = await response.json();
+      return data.data || [];
+    },
+    enabled: isDockerConnected === true,
+    refetchInterval: 5000,
+  });
+
+  const postgresContainerIds = new Set<string>(
+    (postgresContainersData || []).map((c: any) => c.id)
+  );
+  const managedContainerIds = new Set<string>(managedContainerIdsData || []);
+
   // Group containers by environment
   const containerGroups = React.useMemo((): ContainerGroup[] => {
     if (!containerData?.containers) return [];
 
     const groups = new Map<string, ContainerGroup>();
+    const managedPostgresContainers: any[] = [];
     const unmanagedContainers: any[] = [];
 
     containerData.containers.forEach((container) => {
-      if (container.environmentInfo) {
+      // Check if this is a managed PostgreSQL container
+      const isManagedPostgres = managedContainerIds.has(container.id);
+      
+      if (isManagedPostgres) {
+        managedPostgresContainers.push(container);
+      } else if (container.environmentInfo) {
         const envId = container.environmentInfo.id;
         if (!groups.has(envId)) {
           groups.set(envId, {
@@ -84,7 +126,19 @@ export function ContainerDashboard() {
       }
     });
 
-    const result: ContainerGroup[] = Array.from(groups.values());
+    const result: ContainerGroup[] = [];
+
+    // Add managed Postgres servers group first if there are any
+    if (managedPostgresContainers.length > 0) {
+      result.push({
+        environmentId: "managed-postgres",
+        environmentName: "Managed Postgres Servers",
+        containers: managedPostgresContainers,
+      });
+    }
+
+    // Add environment groups
+    result.push(...Array.from(groups.values()));
 
     // Add unmanaged containers group if there are any
     if (unmanagedContainers.length > 0) {
@@ -96,7 +150,7 @@ export function ContainerDashboard() {
     }
 
     return result;
-  }, [containerData]);
+  }, [containerData, managedContainerIds]);
 
   // Log business event when container list is viewed
   React.useEffect(() => {
@@ -360,6 +414,8 @@ export function ContainerDashboard() {
                       isLoading={isLoading || isFetching}
                       filterState={filterState}
                       showPagination={false}
+                      postgresContainerIds={postgresContainerIds}
+                      managedContainerIds={managedContainerIds}
                     />
                   </div>
                 ))}

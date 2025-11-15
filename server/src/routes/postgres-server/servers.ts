@@ -26,6 +26,8 @@ const createServerSchema = z.object({
   adminPassword: z.string().min(1, "Admin password is required"),
   sslMode: z.enum(["prefer", "require", "disable"]).default("prefer"),
   tags: z.array(z.string()).optional(),
+  linkedContainerId: z.string().optional(),
+  linkedContainerName: z.string().optional(),
 });
 
 const updateServerSchema = z.object({
@@ -36,6 +38,8 @@ const updateServerSchema = z.object({
   adminPassword: z.string().min(1).optional(),
   sslMode: z.enum(["prefer", "require", "disable"]).optional(),
   tags: z.array(z.string()).optional(),
+  linkedContainerId: z.string().nullable().optional(),
+  linkedContainerName: z.string().nullable().optional(),
 });
 
 const testConnectionSchema = z.object({

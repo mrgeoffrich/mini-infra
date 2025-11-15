@@ -180,4 +180,5 @@ export interface DockerContainerInfo {
   createdAt: Date; // Date object for server-side processing
   startedAt?: Date; // Date object for server-side processing
   labels: Record<string, string>;
+  env?: Record<string, string>;
 }

@@ -549,6 +549,10 @@ model PostgresServer {
   healthStatus      String   @default("unknown") // healthy/unhealthy/unknown
   lastHealthCheck   DateTime?
   serverVersion     String?  // e.g., "PostgreSQL 15.3"
+  
+  // Container linking (optional)
+  linkedContainerId   String?  // Docker container ID
+  linkedContainerName String?  // Docker container name (for display)
 
   // Metadata
   createdAt         DateTime @default(now())

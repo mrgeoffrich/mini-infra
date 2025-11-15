@@ -324,6 +324,139 @@ router.get("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
+// Get PostgreSQL containers (detected by image and env vars)
+router.get("/postgres", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+    },
+    "PostgreSQL containers requested",
+  );
+
+  try {
+    const dockerService = DockerService.getInstance();
+
+    // Check Docker service connectivity
+    if (!dockerService.isConnected()) {
+      logger.error(
+        {
+          requestId,
+          userId,
+        },
+        "Docker service not connected",
+      );
+
+      return res.status(503).json({
+        error: "Service Unavailable",
+        message: "Docker service is not available. Please try again later.",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get detected PostgreSQL containers
+    const dockerContainers = await dockerService.detectPostgresContainers();
+    const containers = await Promise.all(dockerContainers.map(serializeContainer));
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        containerCount: containers.length,
+      },
+      "PostgreSQL containers returned successfully",
+    );
+
+    res.json({
+      success: true,
+      data: containers,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+      },
+      "Failed to fetch PostgreSQL containers",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+// Get managed container IDs (containers linked to PostgreSQL servers)
+router.get("/managed-ids", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+    },
+    "Managed container IDs requested",
+  );
+
+  try {
+    // Get all PostgreSQL servers with linked containers
+    const servers = await prisma.postgresServer.findMany({
+      where: {
+        userId,
+        linkedContainerId: {
+          not: null,
+        },
+      },
+      select: {
+        linkedContainerId: true,
+      },
+    });
+
+    const managedContainerIds = servers
+      .map((s) => s.linkedContainerId)
+      .filter((id): id is string => id !== null);
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        count: managedContainerIds.length,
+      },
+      "Managed container IDs returned successfully",
+    );
+
+    res.json({
+      success: true,
+      data: managedContainerIds,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+      },
+      "Failed to fetch managed container IDs",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
 router.get("/:id", requireSessionOrApiKey, (async (
   req: Request,
   res: Response,

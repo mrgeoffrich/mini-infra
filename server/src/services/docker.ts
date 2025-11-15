@@ -480,6 +480,34 @@ class DockerService {
     });
   }
 
+  /**
+   * Detect PostgreSQL containers by image name and environment variables
+   */
+  public async detectPostgresContainers(): Promise<DockerContainerInfo[]> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    const allContainers = await this.listContainers(true);
+
+    // Filter containers that match PostgreSQL criteria
+    const postgresContainers = allContainers.filter((container) => {
+      // Check if image name contains 'postgres'
+      const imageName = container.image.toLowerCase();
+      return imageName.includes('postgres');
+    });
+
+    servicesLogger().debug(
+      {
+        total: allContainers.length,
+        detected: postgresContainers.length,
+      },
+      "Detected PostgreSQL containers"
+    );
+
+    return postgresContainers;
+  }
+
   private transformContainerData(container: any): DockerContainerInfo {
     return {
       id: container.Id,
