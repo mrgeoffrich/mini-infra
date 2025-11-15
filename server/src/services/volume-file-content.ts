@@ -165,35 +165,16 @@ process_file() {
   echo "$size"
 
   # Check if file is too large (>1MB)
-  if [ "$size" -gt ${VolumeFileContentService.MAX_FILE_SIZE} ]; then
+  if [ "$size" -gt 1048576 ]; then
     echo "---ERROR---"
     echo "File too large (max 1MB)"
     echo "---FILE:END---"
     return
   fi
 
-  # Check if file is binary using 'file' command
-  # We need to install 'file' command first
-  if ! command -v file >/dev/null 2>&1; then
-    # If file command is not available, skip binary check
-    echo "---MIME---"
-    echo "application/octet-stream"
-  else
-    local mime=$(file -b --mime-type "$fullpath" 2>/dev/null || echo "application/octet-stream")
-    echo "---MIME---"
-    echo "$mime"
-
-    # Skip binary files (anything not text/*)
-    if ! echo "$mime" | grep -q "^text/"; then
-      # Allow some common config file types even if not detected as text
-      if ! echo "$mime" | grep -qE "(json|xml|yaml|javascript|application/x-empty)"; then
-        echo "---ERROR---"
-        echo "Binary file (skipped)"
-        echo "---FILE:END---"
-        return
-      fi
-    fi
-  fi
+  # Skip MIME detection for now - just process all files
+  echo "---MIME---"
+  echo "application/octet-stream"
 
   # Read and base64 encode the content
   echo "---CONTENT:START---"
@@ -228,9 +209,9 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
 
     for (const block of fileBlocks) {
       try {
-        // Extract file path (first line after FILE:START)
+        // Extract file path (first non-empty line after FILE:START)
         const lines = block.split("\n");
-        const filePath = lines[0]?.trim();
+        const filePath = lines.find((l) => l.trim())?.trim();
 
         if (!filePath) {
           servicesLogger().warn("Skipping file block with no path");
