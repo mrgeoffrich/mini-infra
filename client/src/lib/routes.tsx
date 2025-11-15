@@ -7,6 +7,8 @@ import { LoginPage } from "@/app/login/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import ContainerDetailPage from "@/app/containers/[id]/page";
+import { VolumeInspectPage } from "@/app/containers/volumes/VolumeInspectPage";
+import { VolumeFileContentPage } from "@/app/containers/volumes/VolumeFileContentPage";
 import DockerSettingsPage from "@/app/connectivity/docker/page";
 import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
 import AzureSettingsPage from "@/app/connectivity/azure/page";
@@ -73,6 +75,14 @@ export const router = createBrowserRouter([
       {
         path: "containers/:id",
         element: <ContainerDetailPage />,
+      },
+      {
+        path: "containers/volumes/:name/inspect",
+        element: <VolumeInspectPage />,
+      },
+      {
+        path: "containers/volumes/:name/files/*",
+        element: <VolumeFileContentPage />,
       },
       {
         path: "postgres-backup",

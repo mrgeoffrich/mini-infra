@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router";
 import {
   ColumnDef,
   flexRender,
@@ -20,8 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { DockerVolume } from "@mini-infra/types";
-import { useVolumes, useDeleteVolume } from "@/hooks/use-volumes";
-import { IconTrash, IconArrowsSort, IconSearch } from "@tabler/icons-react";
+import { useVolumes, useDeleteVolume, useInspectVolume, useVolumeInspection } from "@/hooks/use-volumes";
+import { IconTrash, IconArrowsSort, IconSearch, IconEye, IconScan, IconLoader2 } from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,21 +43,116 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
+// Volume Actions Component
+function VolumeActions({ volume }: { volume: DockerVolume }) {
+  const navigate = useNavigate();
+  const [volumeToDelete, setVolumeToDelete] = useState(false);
+
+  const deleteVolume = useDeleteVolume({
+    onSuccess: () => {
+      setVolumeToDelete(false);
+    },
+  });
+  const inspectVolume = useInspectVolume();
+
+  // Check if inspection exists and its status
+  const { data: inspection } = useVolumeInspection({
+    volumeName: volume.name,
+    enabled: true,
+    refetchInterval: false, // Only poll when explicitly requested
+  });
+
+  const isInspecting = inspection?.status === "running" || inspection?.status === "pending";
+  const canViewResults = inspection?.status === "completed";
+
+  const handleInspect = () => {
+    inspectVolume.mutate(volume.name);
+  };
+
+  const handleViewResults = () => {
+    navigate(`/containers/volumes/${encodeURIComponent(volume.name)}/inspect`);
+  };
+
+  const handleDelete = () => {
+    deleteVolume.mutate(volume.name);
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        {canViewResults && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleViewResults}
+            title="View inspection results"
+          >
+            <IconEye className="h-4 w-4" />
+          </Button>
+        )}
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleInspect}
+          disabled={isInspecting || inspectVolume.isPending}
+          title={isInspecting ? "Inspection in progress..." : "Inspect volume"}
+        >
+          {isInspecting || inspectVolume.isPending ? (
+            <IconLoader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <IconScan className="h-4 w-4" />
+          )}
+        </Button>
+
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => setVolumeToDelete(true)}
+          disabled={volume.inUse}
+          title={
+            volume.inUse
+              ? "Cannot delete volume in use by containers"
+              : "Delete volume"
+          }
+        >
+          <IconTrash className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={volumeToDelete} onOpenChange={setVolumeToDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Volume?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete volume{" "}
+              <span className="font-semibold">{volume.name}</span>? This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 export function VolumesList() {
   const [searchFilter, setSearchFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([
     { id: "name", desc: false },
   ]);
-  const [volumeToDelete, setVolumeToDelete] = useState<DockerVolume | null>(
-    null
-  );
 
   const { data, isLoading, error } = useVolumes();
-  const deleteVolume = useDeleteVolume({
-    onSuccess: () => {
-      setVolumeToDelete(null);
-    },
-  });
 
   const filteredVolumes = useMemo(() => {
     if (!data?.volumes) return [];
@@ -135,25 +231,7 @@ export function VolumesList() {
       header: "Actions",
       cell: ({ row }) => {
         const volume = row.original;
-        const inUse = volume.inUse;
-
-        return (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setVolumeToDelete(volume)}
-              disabled={inUse}
-              title={
-                inUse
-                  ? "Cannot delete volume in use by containers"
-                  : "Delete volume"
-              }
-            >
-              <IconTrash className="h-4 w-4" />
-            </Button>
-          </div>
-        );
+        return <VolumeActions volume={volume} />;
       },
     },
   ];
@@ -259,36 +337,6 @@ export function VolumesList() {
           </TableBody>
         </Table>
       </div>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog
-        open={!!volumeToDelete}
-        onOpenChange={(open) => !open && setVolumeToDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Volume</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the volume "
-              {volumeToDelete?.name}"? This action cannot be undone and all data
-              in the volume will be permanently lost.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (volumeToDelete) {
-                  deleteVolume.mutate(volumeToDelete.name);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

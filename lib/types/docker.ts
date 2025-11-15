@@ -104,3 +104,86 @@ export interface DockerVolumeFilters {
   name?: string;
   driver?: string;
 }
+
+// ====================
+// Docker Volume Inspection Types
+// ====================
+
+export type VolumeInspectionStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface VolumeFileInfo {
+  path: string; // File path within the volume
+  size: number; // File size in bytes
+  permissions: string; // File permissions (e.g., "755", "644")
+  owner: string; // Owner in format "user:group"
+  modifiedAt: string; // ISO string for JSON serialization (timestamp)
+}
+
+export interface VolumeInspection {
+  id: string;
+  volumeName: string;
+  status: VolumeInspectionStatus;
+  inspectedAt: string; // ISO string for JSON serialization
+  completedAt: string | null; // ISO string for JSON serialization
+  durationMs: number | null; // Inspection duration in milliseconds
+  fileCount: number | null; // Total number of files found
+  totalSize: number | null; // Total size in bytes (bigint as number)
+  files: VolumeFileInfo[] | null; // Array of file information
+  stdout: string | null; // Standard output from inspection container
+  stderr: string | null; // Standard error from inspection container
+  errorMessage: string | null; // Error message if failed
+  createdAt: string; // ISO string for JSON serialization
+  updatedAt: string; // ISO string for JSON serialization
+}
+
+export interface VolumeInspectionResponse {
+  success: boolean;
+  data: VolumeInspection;
+  message?: string;
+}
+
+export interface VolumeInspectionStartResponse {
+  success: boolean;
+  data: {
+    volumeName: string;
+    status: VolumeInspectionStatus;
+    message: string;
+  };
+  message?: string;
+}
+
+// ====================
+// Docker Volume File Content Types
+// ====================
+
+export interface VolumeFileContent {
+  id: string;
+  volumeName: string;
+  filePath: string; // File path within the volume (e.g., "/app/config.json")
+  content: string; // Text content (up to 1MB)
+  size: number; // Original file size in bytes
+  fetchedAt: string; // ISO string for JSON serialization
+  errorMessage: string | null; // Error message if fetch failed
+  createdAt: string; // ISO string for JSON serialization
+  updatedAt: string; // ISO string for JSON serialization
+}
+
+export interface FetchFileContentsRequest {
+  filePaths: string[]; // Array of file paths to fetch
+}
+
+export interface FetchFileContentsResponse {
+  success: boolean;
+  data: {
+    fetched: number; // Number of files successfully fetched
+    skipped: number; // Number of files skipped (binary, too large, etc.)
+    errors: string[]; // Array of error messages for failed files
+  };
+  message?: string;
+}
+
+export interface VolumeFileContentResponse {
+  success: boolean;
+  data: VolumeFileContent;
+  message?: string;
+}

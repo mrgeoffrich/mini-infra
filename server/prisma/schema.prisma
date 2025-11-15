@@ -848,6 +848,73 @@ model UserEvent {
   @@map("user_events")
 }
 
+// Volume Inspection - Stores the latest inspection results for Docker volumes
+
+/// VolumeInspection model for tracking Docker volume file system inspection results
+model VolumeInspection {
+  id              String   @id @default(cuid())
+
+  // Volume identification
+  volumeName      String   @unique // Docker volume name
+
+  // Inspection status
+  status          String   // 'pending', 'running', 'completed', 'failed'
+
+  // Timing
+  inspectedAt     DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?     // Inspection duration in milliseconds
+
+  // Results
+  fileCount       Int?     // Total number of files found
+  totalSize       BigInt?  // Total size in bytes
+  files           String?  // JSON array of file information (path, size, permissions, owner, modified timestamp)
+
+  // Output
+  stdout          String?  // Standard output from inspection container
+  stderr          String?  // Standard error from inspection container
+
+  // Error tracking
+  errorMessage    String?  // Error message if failed
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([volumeName])
+  @@index([status])
+  @@index([inspectedAt])
+  @@map("volume_inspections")
+}
+
+// Volume File Content - Stores cached file contents from volume inspections
+
+/// VolumeFileContent model for storing individual file contents from volume inspections
+model VolumeFileContent {
+  id              String   @id @default(cuid())
+
+  // File identification
+  volumeName      String   // Docker volume name
+  filePath        String   // File path within volume (e.g., "/app/config.json")
+
+  // File content and metadata
+  content         String   // Text content (up to 1MB, base64-decoded from Alpine output)
+  size            Int      // Original file size in bytes
+
+  // Timing
+  fetchedAt       DateTime @default(now())
+
+  // Error tracking (if fetch failed for this specific file)
+  errorMessage    String?  // Error message if fetch failed
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([volumeName, filePath]) // One content record per file per volume
+  @@index([volumeName])
+  @@index([fetchedAt])
+  @@map("volume_file_contents")
+}
+
 // Enums
 enum CertificateType {
   ACME    // Let's Encrypt via ACME protocol

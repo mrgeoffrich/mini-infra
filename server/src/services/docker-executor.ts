@@ -14,6 +14,7 @@ export interface ContainerExecutionOptions {
   outputHandler?: (stream: Readable) => void;
   cmd?: string[]; // Custom command to run in container
   networkMode?: string; // Docker network to attach to
+  binds?: string[]; // Volume binds in format "volume:/path:ro" or "/host/path:/container/path"
   // Compose-style grouping options
   projectName?: string; // Docker Compose project name
   serviceName?: string; // Docker Compose service name
@@ -428,6 +429,11 @@ export class DockerExecutorService {
       // Add network mode if provided
       if (options.networkMode) {
         containerOptions.HostConfig.NetworkMode = options.networkMode;
+      }
+
+      // Add volume binds if provided
+      if (options.binds && options.binds.length > 0) {
+        containerOptions.HostConfig.Binds = options.binds;
       }
 
       return await this.docker.createContainer(containerOptions);

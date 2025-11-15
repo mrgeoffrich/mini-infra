@@ -360,20 +360,17 @@ export function useDeleteDeploymentConfig() {
 
   return useMutation({
     mutationFn: (id: string) => deleteDeploymentConfig(id, correlationId),
-    onSuccess: async (_, id) => {
+    onSuccess: (_, id) => {
       // Remove specific deployment config from cache
       queryClient.removeQueries({ queryKey: ["deploymentConfig", id] });
       // Remove related deployment data
       queryClient.removeQueries({ queryKey: ["deploymentHistory", id] });
       queryClient.removeQueries({ queryKey: ["deploymentStatus", id] });
-      // Refetch deployment configs list to ensure UI updates
-      await queryClient.refetchQueries({
-        queryKey: ["deploymentConfigs"],
-        type: 'active'
-      });
+      // Invalidate deployment configs list to ensure UI updates
+      queryClient.invalidateQueries({ queryKey: ["deploymentConfigs"] });
       // Invalidate deployment history queries
-      await queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
-      await queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
+      queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
+      queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
     },
   });
 }
