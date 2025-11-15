@@ -336,4 +336,10 @@ router.get("/:dbId/grants", requireSessionOrApiKey, async (req, res) => {
   }
 });
 
+// Import and mount sub-router for table data
+import tableDataRoutes from './table-data';
+
+// Mount sub-router for table data operations
+router.use('/:dbId/tables', tableDataRoutes);
+
 export default router;

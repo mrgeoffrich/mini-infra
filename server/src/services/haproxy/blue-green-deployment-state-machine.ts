@@ -335,10 +335,17 @@ export const blueGreenDeploymentMachine = setup({
                 containerId: context.newContainerId
             };
             removeContainerFromLB.execute(contextWithContainerId, (event) => {
-                self.send(event);
+                // Map the standard LB removal events to rollback events
+                if (event.type === 'LB_REMOVAL_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_GREEN_CONFIG_REMOVED' });
+                } else if (event.type === 'LB_REMOVAL_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
             }).catch((error) => {
                 self.send({
-                    type: 'GREEN_LB_REMOVAL_ERROR',
+                    type: 'ROLLBACK_ERROR',
                     error: error.message || 'Unknown error'
                 });
             });

@@ -1057,3 +1057,65 @@ export interface QuickSetupResponse {
     connectionString: string;
   };
 }
+
+// ====================
+// Database Table Data Types
+// ====================
+
+// Table metadata (from information_schema and pg_catalog)
+export interface DatabaseTableInfo {
+  name: string;
+  schema: string;
+  rowCount: number | null;
+  sizeBytes: number | null;
+  tableType: "BASE TABLE" | "VIEW" | "MATERIALIZED VIEW" | "FOREIGN TABLE";
+  lastModified: string | null;
+}
+
+// Column metadata for a table
+export interface TableColumnInfo {
+  name: string;
+  dataType: string;
+  isNullable: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+  ordinalPosition: number;
+  maxLength: number | null;
+}
+
+// Table data request parameters
+export interface TableDataRequest {
+  page?: number;
+  pageSize?: number;
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
+  filters?: TableDataFilter[];
+}
+
+// Filter for table data
+export interface TableDataFilter {
+  column: string;
+  operator: "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" | "ILIKE" | "IS NULL" | "IS NOT NULL";
+  value?: string | number | boolean | null;
+}
+
+// Table data response (paginated)
+export interface TableDataResponse {
+  success: boolean;
+  data: {
+    columns: TableColumnInfo[];
+    rows: Record<string, any>[];
+    totalRows: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  };
+  message?: string;
+}
+
+// Table list response
+export interface DatabaseTableListResponse {
+  success: boolean;
+  data: DatabaseTableInfo[];
+  message?: string;
+}

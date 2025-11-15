@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -70,6 +71,7 @@ interface DatabasesTabProps {
 }
 
 export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort }: DatabasesTabProps) {
+  const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [databaseToDelete, setDatabaseToDelete] = useState<{
@@ -369,7 +371,8 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
             {databases.map((db) => (
               <div
                 key={db.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
+                onClick={() => navigate(`/postgres-server/${serverId}/databases/${db.id}`)}
               >
                 <div className="flex items-start gap-3 flex-1">
                   <IconDatabase className="h-5 w-5 text-purple-600 mt-0.5" />
@@ -409,7 +412,7 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="outline"
                     size="sm"
@@ -429,7 +432,7 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
                         <IconPlugConnected className="h-4 w-4 mr-2" />
                         Connect
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled>
+                      <DropdownMenuItem onClick={() => navigate(`/postgres-server/${serverId}/databases/${db.id}`)}>
                         <IconEye className="h-4 w-4 mr-2" />
                         View Details
                       </DropdownMenuItem>

@@ -20,6 +20,7 @@ import PostgresBackups from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import PostgresServerPage from "@/app/postgres-server/page";
 import PostgresServerDetailPage from "@/app/postgres-server/[serverId]/page";
+import DatabaseDetailPage from "@/app/postgres-server/[serverId]/databases/[dbId]/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
@@ -99,6 +100,10 @@ export const router = createBrowserRouter([
       {
         path: "postgres-server/:serverId",
         element: <PostgresServerDetailPage />,
+      },
+      {
+        path: "postgres-server/:serverId/databases/:dbId",
+        element: <DatabaseDetailPage />,
       },
       {
         path: "deployments",

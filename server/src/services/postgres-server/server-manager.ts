@@ -401,6 +401,23 @@ export class PostgresServerService {
     await client.connect();
     return client;
   }
+
+  /**
+   * Get a PostgreSQL client connected to a specific database on a server
+   * Used by services that need to query specific databases
+   */
+  async getClientForDatabase(serverId: string, userId: string, databaseName: string): Promise<Client> {
+    const server = await this.getServer(serverId, userId);
+    const connectionString = this.decryptConnectionString(server.connectionString);
+
+    // Parse and modify connection string to use the specified database
+    const url = new URL(connectionString);
+    url.pathname = `/${databaseName}`;
+
+    const client = new Client({ connectionString: url.toString() });
+    await client.connect();
+    return client;
+  }
 }
 
 export default new PostgresServerService();
