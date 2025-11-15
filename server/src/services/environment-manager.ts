@@ -320,6 +320,9 @@ export class EnvironmentManager {
         userEventId: userEvent.id
       }, 'Starting environment deletion');
 
+      // Initialize Docker executor for volume/network operations
+      await this.dockerExecutor.initialize();
+
       // Clean up service instances and containers first to free volumes/networks
       if (environment.services.length > 0) {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${environment.services.length} service container(s)...`);

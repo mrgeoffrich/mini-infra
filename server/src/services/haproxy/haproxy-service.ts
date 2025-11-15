@@ -292,16 +292,24 @@ export class HAProxyService implements IApplicationService {
           `echo '${escapedHaproxyCfg}' > /usr/local/etc/haproxy/haproxy.cfg && echo '${escapedDataplaneApiYml}' > /usr/local/etc/haproxy/dataplaneapi.yml && echo '${escapedDomainBackendMap}' > /usr/local/etc/haproxy/domain-backend.map && chmod 666 /usr/local/etc/haproxy/haproxy.cfg && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/domain-backend.map`
         ],
         HostConfig: {
-          Binds: [`${configVolumeName}:/usr/local/etc/haproxy`],
-          AutoRemove: true
+          Binds: [`${configVolumeName}:/usr/local/etc/haproxy`]
         }
       });
 
-      // Start and wait for completion
-      await container.start();
-      await container.wait();
+      try {
+        // Start and wait for completion
+        await container.start();
+        await container.wait();
 
-      this.logger.info('Config files written to haproxy_config volume');
+        this.logger.info('Config files written to haproxy_config volume');
+      } finally {
+        // Always cleanup the temporary container
+        try {
+          await container.remove({ force: true });
+        } catch (cleanupError) {
+          this.logger.warn({ error: cleanupError }, 'Failed to cleanup config writer container');
+        }
+      }
     } catch (error) {
       this.logger.error({ error }, 'Failed to write config files to volume');
       throw error;
