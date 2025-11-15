@@ -253,12 +253,17 @@ export class DeploymentOrchestrator {
       const { strategy, existingContainers } = await this.determineDeploymentStrategy(config.applicationName, environmentContext);
 
       // Create base deployment context
+      // Construct full docker image name with registry prefix if provided
+      const fullDockerImage = config.dockerRegistry
+        ? `${config.dockerRegistry}/${config.dockerImage}:${config.dockerTag}`
+        : `${config.dockerImage}:${config.dockerTag}`;
+
       const baseContext: HAProxyDeploymentContext = {
         deploymentId,
         configurationId: deploymentRecord.configurationId,
         deploymentConfigId: deploymentRecord.configurationId,
         applicationName: config.applicationName,
-        dockerImage: `${config.dockerImage}:${config.dockerTag}`,
+        dockerImage: fullDockerImage,
         environmentId: environmentContext.environmentId,
         environmentName: environmentContext.environmentName,
         haproxyContainerId: environmentContext.haproxyContainerId,
@@ -449,8 +454,30 @@ export class DeploymentOrchestrator {
 
           const currentProgress = progressMap[state.value as string] ?? state.context.progress ?? 0;
 
-          // Build log message for state transition
-          const stateLog = `[${new Date().toISOString()}] State: ${state.value}`;
+          // Build log message for state transition with context-specific details
+          const stateDescriptions: Record<string, string> = {
+            'deployingInitialApp': `Pulling Docker image ${state.context.dockerImage} and deploying initial application container`,
+            'deployingGreen': `Pulling Docker image ${state.context.dockerImage} and deploying new (green) container`,
+            'waitingAppReady': 'Waiting for application container to be ready',
+            'waitingGreenReady': 'Waiting for new container to be ready',
+            'initializingFirstLB': 'Initializing load balancer configuration',
+            'initialHealthCheck': 'Performing health check on application',
+            'healthCheckGreen': 'Performing health check on new container',
+            'configuringFrontend': 'Configuring HAProxy frontend',
+            'configuringDNS': 'Configuring DNS records',
+            'enablingTraffic': 'Enabling traffic to application',
+            'openingTrafficToGreen': 'Switching traffic to new container',
+            'validatingInitial': 'Validating deployment',
+            'validatingGreen': 'Validating new container deployment',
+            'drainingBlue': 'Draining traffic from old container',
+            'removingBlue': 'Removing old container',
+            'addingGreenToLB': 'Adding new container to load balancer',
+          };
+
+          const stateDescription = stateDescriptions[state.value as string];
+          const stateLog = stateDescription
+            ? `[${new Date().toISOString()}] ${stateDescription}`
+            : `[${new Date().toISOString()}] State: ${state.value}`;
 
           // Handle failed state immediately (even if not "done")
           if (state.value === "failed" && state.status !== "done") {
@@ -887,6 +914,7 @@ export class DeploymentOrchestrator {
       const deploymentConfig: DeploymentConfig = {
         applicationName: config.applicationName,
         dockerImage: config.dockerImage,
+        dockerRegistry: config.dockerRegistry,
         dockerTag: params.dockerImage.split(":")[1] || "latest",
         containerConfig: config.containerConfig as unknown as ContainerConfig,
         healthCheck: config.healthCheckConfig as unknown as HealthCheckConfig,

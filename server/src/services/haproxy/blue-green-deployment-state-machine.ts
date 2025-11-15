@@ -46,6 +46,9 @@ interface BlueGreenDeploymentContext {
     applicationName: string;
     dockerImage: string;
 
+    // User event tracking
+    userEventId?: string;
+
     // Environment context
     environmentId: string;
     environmentName: string;
@@ -558,6 +561,9 @@ export const blueGreenDeploymentMachine = setup({
         deploymentConfigId: input?.deploymentConfigId || input?.configurationId || "",
         applicationName: input?.applicationName || "",
         dockerImage: input?.dockerImage || "",
+
+        // User event tracking
+        userEventId: input?.userEventId,
 
         // Environment context
         environmentId: input?.environmentId || "",

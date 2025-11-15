@@ -246,6 +246,9 @@ export const initialDeploymentMachine = setup({
         applicationName: deploymentInput?.applicationName || "",
         dockerImage: deploymentInput?.dockerImage || "",
 
+        // User event tracking
+        userEventId: deploymentInput?.userEventId,
+
         // Environment context
         environmentId: deploymentInput?.environmentId || "",
         environmentName: deploymentInput?.environmentName || "",

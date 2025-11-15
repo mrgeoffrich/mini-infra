@@ -74,6 +74,7 @@ export interface RollbackConfig {
 export interface DeploymentConfig {
   applicationName: string;
   dockerImage: string;
+  dockerRegistry?: string | null;
   dockerTag: string;
   containerConfig: ContainerConfig;
   healthCheck: HealthCheckConfig;

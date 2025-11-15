@@ -43,6 +43,7 @@ import {
   IconTrash,
   IconUser,
   IconUserEdit,
+  IconPlugConnected,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
@@ -56,6 +57,7 @@ import { useGrantsForDatabase } from "@/hooks/use-database-grants";
 import { DatabaseModal } from "./database-modal";
 import { ChangeOwnerModal } from "./change-owner-modal";
 import { GrantEditor } from "./grant-editor";
+import { ConnectionStringModal } from "./connection-string-modal";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CreateManagedDatabaseRequest, ChangeDatabaseOwnerRequest, ManagedDatabaseUserInfo, ManagedDatabaseInfo } from "@mini-infra/types";
@@ -63,9 +65,11 @@ import { CreateManagedDatabaseRequest, ChangeDatabaseOwnerRequest, ManagedDataba
 interface DatabasesTabProps {
   serverId: string;
   availableUsers: ManagedDatabaseUserInfo[];
+  serverHost: string;
+  serverPort: number;
 }
 
-export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
+export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort }: DatabasesTabProps) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [databaseToDelete, setDatabaseToDelete] = useState<{
@@ -80,6 +84,9 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
     useState<ManagedDatabaseUserInfo | null>(null);
   const [changeOwnerDialogOpen, setChangeOwnerDialogOpen] = useState(false);
   const [databaseToChangeOwner, setDatabaseToChangeOwner] =
+    useState<ManagedDatabaseInfo | null>(null);
+  const [connectionStringDialogOpen, setConnectionStringDialogOpen] = useState(false);
+  const [databaseForConnection, setDatabaseForConnection] =
     useState<ManagedDatabaseInfo | null>(null);
 
   const { formatRelativeTime } = useFormattedDate();
@@ -186,6 +193,11 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
       setSelectedDatabaseForGrants(null);
       setSelectedUserForGrant(null);
     }, 200);
+  };
+
+  const handleConnect = (database: ManagedDatabaseInfo) => {
+    setDatabaseForConnection(database);
+    setConnectionStringDialogOpen(true);
   };
 
   // Find existing grant for the selected database and user
@@ -413,6 +425,10 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleConnect(db)}>
+                        <IconPlugConnected className="h-4 w-4 mr-2" />
+                        Connect
+                      </DropdownMenuItem>
                       <DropdownMenuItem disabled>
                         <IconEye className="h-4 w-4 mr-2" />
                         View Details
@@ -560,6 +576,17 @@ export function DatabasesTab({ serverId, availableUsers }: DatabasesTabProps) {
           database={databaseToChangeOwner}
           availableUsers={availableUsers}
           onSubmit={handleChangeOwnerSubmit}
+        />
+      )}
+
+      {/* Connection String Modal */}
+      {databaseForConnection && (
+        <ConnectionStringModal
+          open={connectionStringDialogOpen}
+          onOpenChange={setConnectionStringDialogOpen}
+          database={databaseForConnection}
+          serverHost={serverHost}
+          serverPort={serverPort}
         />
       )}
     </div>
