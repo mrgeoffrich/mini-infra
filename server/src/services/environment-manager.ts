@@ -316,8 +316,50 @@ export class EnvironmentManager {
         deleteNetworks,
         networkCount: environment.networks.length,
         volumeCount: environment.volumes.length,
+        serviceCount: environment.services.length,
         userEventId: userEvent.id
       }, 'Starting environment deletion');
+
+      // Clean up service instances and containers first to free volumes/networks
+      if (environment.services.length > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${environment.services.length} service container(s)...`);
+        this.logger.info({
+          environmentId: id,
+          services: environment.services.map(s => s.serviceName)
+        }, 'Cleaning up service containers before deletion');
+
+        let cleanedServices = 0;
+        let failedServices = 0;
+
+        for (const service of environment.services) {
+          try {
+            const prefixedServiceName = `${environment.name}-${service.serviceName}`;
+
+            // Use stopService which handles both factory cleanup AND Docker container removal
+            // This works even if the service instance is not in the factory
+            await this.serviceFactory.stopService(prefixedServiceName, environment.id);
+
+            cleanedServices++;
+            this.logger.debug({
+              environmentId: id,
+              serviceName: service.serviceName
+            }, 'Service container cleaned up successfully');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Service '${service.serviceName}' container cleaned up successfully`);
+          } catch (error) {
+            failedServices++;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.warn({
+              error,
+              environmentId: id,
+              serviceName: service.serviceName
+            }, 'Failed to clean up service container (may not exist)');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to clean up service '${service.serviceName}': ${errorMessage}`);
+            // Continue with deletion even if service cleanup fails
+          }
+        }
+
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaned up ${cleanedServices}/${environment.services.length} service container(s) (${failedServices} failed or already removed)`);
+      }
 
       // Delete Docker volumes if requested
       if (deleteVolumes && environment.volumes.length > 0) {
@@ -1136,8 +1178,11 @@ export class EnvironmentManager {
         throw new Error(`Environment not found: ${envService.environmentId}`);
       }
 
+      // Use environment-prefixed service name (must match the name used during creation)
+      const prefixedServiceName = `${environment.name}-${envService.serviceName}`;
+
       // Attempt to stop service (factory will handle missing service instances gracefully)
-      await this.serviceFactory.stopService(envService.serviceName, environment.id);
+      await this.serviceFactory.stopService(prefixedServiceName, environment.id);
 
       // Update service status
       await this.updateServiceStatus(
