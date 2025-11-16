@@ -39,6 +39,7 @@ async function fetchSystemSettings(
   url.searchParams.set("page", page.toString());
   url.searchParams.set("limit", limit.toString());
   if (filters.category) url.searchParams.set("category", filters.category);
+  if (filters.key) url.searchParams.set("key", filters.key);
   if (filters.isActive !== undefined)
     url.searchParams.set("isActive", filters.isActive.toString());
   if (filters.validationStatus)

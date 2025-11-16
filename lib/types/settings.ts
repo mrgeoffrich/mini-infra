@@ -103,6 +103,7 @@ export interface SettingsDeleteResponse {
 
 export interface SettingsFilter {
   category?: SettingsCategory;
+  key?: string;
   isActive?: boolean;
   validationStatus?: ValidationStatus;
 }

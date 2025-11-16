@@ -23,6 +23,7 @@ import { IconLoader2, IconRocket } from "@tabler/icons-react";
 import { ManagedDatabaseInfo } from "@mini-infra/types";
 import { useQuickSetupPostgresBackup } from "@/hooks/use-postgres-backup-configs";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
+import { useSystemSettings } from "@/hooks/use-settings";
 import { toast } from "sonner";
 
 // Validation schema
@@ -53,6 +54,16 @@ export function QuickBackupSetupModal({
   const quickSetupMutation = useQuickSetupPostgresBackup();
   const { data: userPreferences } = useUserPreferences();
 
+  // Fetch default container setting
+  const { data: defaultContainerData } = useSystemSettings({
+    filters: {
+      category: "system",
+      key: "default_postgres_backup_container",
+      isActive: true,
+    },
+    limit: 1,
+  });
+
   const {
     handleSubmit,
     formState: { errors },
@@ -68,6 +79,8 @@ export function QuickBackupSetupModal({
 
   const selectedDatabaseName = watch("databaseName");
   const timezone = userPreferences?.timezone || "UTC";
+  const defaultContainer =
+    defaultContainerData?.data?.[0]?.value || "postgres-backups";
 
   // Update form when pre-selected database changes or modal opens
   useEffect(() => {
@@ -172,7 +185,7 @@ export function QuickBackupSetupModal({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Storage:</span>
-                  <span className="font-medium">Azure (postgres-backups)</span>
+                  <span className="font-medium">Azure ({defaultContainer})</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Retention:</span>

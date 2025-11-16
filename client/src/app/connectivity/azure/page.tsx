@@ -49,6 +49,7 @@ import {
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
 import { AzureContainerList } from "@/components/AzureContainerList";
+import { AzureContainerSelector } from "@/components/AzureContainerSelector";
 
 // Azure settings schema
 const azureSettingsSchema = z.object({
@@ -79,6 +80,9 @@ export default function AzureSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
     {},
   );
+  const [defaultContainer, setDefaultContainer] = useState<string>("");
+  const [isSavingDefaultContainer, setIsSavingDefaultContainer] =
+    useState(false);
 
   // Fetch existing Azure settings
   const {
@@ -88,6 +92,19 @@ export default function AzureSettingsPage() {
   } = useSystemSettings({
     filters: { category: "azure", isActive: true },
     limit: 50,
+  });
+
+  // Fetch default container setting (from system category)
+  const {
+    data: systemSettingsData,
+    isLoading: systemSettingsLoading,
+  } = useSystemSettings({
+    filters: {
+      category: "system",
+      key: "default_postgres_backup_container",
+      isActive: true,
+    },
+    limit: 1,
   });
 
   // Fetch connectivity status
@@ -138,6 +155,13 @@ export default function AzureSettingsPage() {
     }
   }, [settingsData, form]);
 
+  // Update default container when system settings are loaded
+  useEffect(() => {
+    if (systemSettingsData?.data?.[0]?.value) {
+      setDefaultContainer(systemSettingsData.data[0].value);
+    }
+  }, [systemSettingsData]);
+
   const handleValidateAndSave = async (data: AzureSettingsFormData) => {
     setValidationState({ isValidating: true, isSuccess: false, error: null });
 
@@ -176,6 +200,36 @@ export default function AzureSettingsPage() {
       const errorMessage = (error as Error).message;
       setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
       toast.error(`Failed to validate and save: ${errorMessage}`);
+    }
+  };
+
+  const handleDefaultContainerChange = async (containerName: string) => {
+    setDefaultContainer(containerName);
+    setIsSavingDefaultContainer(true);
+
+    try {
+      const existingSetting = systemSettingsData?.data?.[0];
+
+      if (existingSetting) {
+        await updateSetting.mutateAsync({
+          id: existingSetting.id,
+          setting: { value: containerName },
+        });
+      } else {
+        await createSetting.mutateAsync({
+          category: "system",
+          key: "default_postgres_backup_container",
+          value: containerName,
+          isEncrypted: false,
+        });
+      }
+
+      toast.success("Default backup container updated successfully");
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      toast.error(`Failed to save default container: ${errorMessage}`);
+    } finally {
+      setIsSavingDefaultContainer(false);
     }
   };
 
@@ -382,6 +436,30 @@ export default function AzureSettingsPage() {
             <AzureContainerList />
           </div>
         )}
+
+        {/* Default Backup Container Setting */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Default Postgres Backup Container</CardTitle>
+            <CardDescription>
+              Select a default Azure Storage container for PostgreSQL database
+              backups. This container will be pre-selected when setting up new
+              backup configurations.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {systemSettingsLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (
+              <AzureContainerSelector
+                value={defaultContainer}
+                onChange={handleDefaultContainerChange}
+                disabled={!isAzureConnected || isSavingDefaultContainer}
+                placeholder="Select default backup container..."
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

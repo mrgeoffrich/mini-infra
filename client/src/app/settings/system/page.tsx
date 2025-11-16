@@ -27,6 +27,7 @@ import {
   useSystemSettings,
   useCreateSystemSetting,
   useUpdateSystemSetting,
+  useConnectivityStatus,
 } from "@/hooks/use-settings";
 import {
   IconAlertCircle,
@@ -38,9 +39,11 @@ import {
   IconShield,
   IconHistory,
   IconClock,
+  IconDatabase,
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
+import { AzureContainerSelector } from "@/components/AzureContainerSelector";
 
 // System settings schema
 const systemSettingsSchema = z.object({
@@ -111,6 +114,9 @@ export default function SystemSettingsPage() {
     {},
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [defaultContainer, setDefaultContainer] = useState<string>("");
+  const [isSavingDefaultContainer, setIsSavingDefaultContainer] =
+    useState(false);
 
   // Fetch existing system settings for system category
   const {
@@ -133,6 +139,27 @@ export default function SystemSettingsPage() {
     limit: 10,
   });
 
+  // Fetch default container setting
+  const {
+    data: defaultContainerData,
+    isLoading: defaultContainerLoading,
+  } = useSystemSettings({
+    filters: {
+      category: "system",
+      key: "default_postgres_backup_container",
+      isActive: true,
+    },
+    limit: 1,
+  });
+
+  // Fetch Azure connectivity status
+  const {
+    data: connectivityData,
+  } = useConnectivityStatus({
+    filters: { service: "azure" },
+    limit: 1,
+  });
+
   // Mutations for saving settings
   const createSetting = useCreateSystemSetting();
   const updateSetting = useUpdateSystemSetting();
@@ -151,6 +178,10 @@ export default function SystemSettingsPage() {
     },
     mode: "onChange",
   });
+
+  // Get Azure connectivity status
+  const azureConnectivity = connectivityData?.data?.[0];
+  const isAzureConnected = azureConnectivity?.status === "connected";
 
 
   // Update form when settings are loaded
@@ -211,6 +242,13 @@ export default function SystemSettingsPage() {
       );
     }
   }, [settingsData, haproxySettingsData, form]);
+
+  // Update default container when loaded
+  useEffect(() => {
+    if (defaultContainerData?.data?.[0]?.value) {
+      setDefaultContainer(defaultContainerData.data[0].value);
+    }
+  }, [defaultContainerData]);
 
   const handleSubmit = async (data: SystemSettingsFormData) => {
     setIsSaving(true);
@@ -308,6 +346,35 @@ export default function SystemSettingsPage() {
     }
   };
 
+  const handleDefaultContainerChange = async (containerName: string) => {
+    setDefaultContainer(containerName);
+    setIsSavingDefaultContainer(true);
+
+    try {
+      const existingSetting = defaultContainerData?.data?.[0];
+
+      if (existingSetting) {
+        await updateSetting.mutateAsync({
+          id: existingSetting.id,
+          setting: { value: containerName },
+        });
+      } else {
+        await createSetting.mutateAsync({
+          category: "system",
+          key: "default_postgres_backup_container",
+          value: containerName,
+          isEncrypted: false,
+        });
+      }
+
+      toastWithCopy.success("Default backup container updated successfully");
+    } catch (error) {
+      console.error("Failed to save default container:", error);
+      toastWithCopy.error("Failed to save default container");
+    } finally {
+      setIsSavingDefaultContainer(false);
+    }
+  };
 
   if (settingsError) {
     return (
@@ -660,6 +727,33 @@ export default function SystemSettingsPage() {
                         Cleanup runs automatically daily at 2 AM UTC. Deleted events cannot be recovered.
                       </AlertDescription>
                     </Alert>
+                  </CardContent>
+                </Card>
+
+                {/* Default Postgres Backup Container */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <IconDatabase className="h-5 w-5" />
+                      <span>Default Postgres Backup Container</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Select a default Azure Storage container for PostgreSQL database
+                      backups. This container will be pre-selected when setting up new
+                      backup configurations.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {defaultContainerLoading ? (
+                      <Skeleton className="h-9 w-full" />
+                    ) : (
+                      <AzureContainerSelector
+                        value={defaultContainer}
+                        onChange={handleDefaultContainerChange}
+                        disabled={!isAzureConnected || isSavingDefaultContainer}
+                        placeholder="Select default backup container..."
+                      />
+                    )}
                   </CardContent>
                 </Card>
 

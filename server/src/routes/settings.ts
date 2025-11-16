@@ -108,6 +108,7 @@ const settingsQuerySchema = z.object({
       "tls",
     ])
     .optional(),
+  key: z.string().optional(),
   isActive: z
     .string()
     .optional()
@@ -301,6 +302,7 @@ router.get("/", requireSessionOrApiKey, (async (
 
     const {
       category,
+      key,
       isActive,
       validationStatus,
       sortBy,
@@ -312,6 +314,7 @@ router.get("/", requireSessionOrApiKey, (async (
     // Build filter conditions
     const where: any = { isActive: false }; // Default to inactive settings
     if (category) where.category = category;
+    if (key) where.key = key;
     if (typeof isActive === "boolean") where.isActive = isActive;
     if (validationStatus) where.validationStatus = validationStatus;
 
@@ -342,7 +345,7 @@ router.get("/", requireSessionOrApiKey, (async (
         userId,
         totalSettings: totalCount,
         returnedSettings: serializedSettings.length,
-        filters: { category, isActive, validationStatus },
+        filters: { category, key, isActive, validationStatus },
         sortBy,
         sortOrder,
         page,
