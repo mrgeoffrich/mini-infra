@@ -280,10 +280,8 @@ export class ManualFrontendManager {
         throw new Error(`Could not determine container IP address on network ${haproxyNetworkName}`);
       }
 
-      // Generate frontend and backend names
+      // Generate backend name
       const sanitizedContainerName = request.containerName.replace(/[^a-zA-Z0-9]/g, "_");
-      const sanitizedEnvId = request.environmentId.replace(/[^a-zA-Z0-9]/g, "_");
-      const frontendName = `fe_manual_${sanitizedContainerName}_${sanitizedEnvId}`;
       const backendName = `be_manual_${sanitizedContainerName}`;
 
       // Create backend in HAProxy
@@ -303,8 +301,9 @@ export class ManualFrontendManager {
       });
 
       // Create frontend using existing HAProxyFrontendManager
-      logger.info({ frontendName, hostname: request.hostname }, "Creating frontend");
-      await this.frontendManager.createFrontendForDeployment(
+      // IMPORTANT: Capture the actual frontend name created by the manager
+      logger.info({ hostname: request.hostname }, "Creating frontend");
+      const frontendName = await this.frontendManager.createFrontendForDeployment(
         request.hostname,
         backendName,
         request.containerName,
@@ -318,7 +317,7 @@ export class ManualFrontendManager {
         }
       );
 
-      // Create database record
+      // Create database record with the actual frontend name from HAProxy
       const frontend = await prisma.hAProxyFrontend.create({
         data: {
           frontendType: "manual",
