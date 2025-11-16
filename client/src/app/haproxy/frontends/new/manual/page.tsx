@@ -130,7 +130,13 @@ export default function CreateManualFrontendPage() {
 
   const createMutation = useCreateManualFrontend();
 
-  const handleNext = async () => {
+  const handleNext = async (e?: React.MouseEvent) => {
+    // Prevent any event propagation that might trigger the submit button
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     let fieldsToValidate: (keyof FormValues)[] = [];
 
     // Validate fields based on current step
@@ -151,7 +157,10 @@ export default function CreateManualFrontendPage() {
 
     const isValid = await form.trigger(fieldsToValidate);
     if (isValid) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
+      // Use setTimeout to ensure the click event is fully processed before rendering step 4
+      setTimeout(() => {
+        setCurrentStep((prev) => Math.min(prev + 1, STEPS.length));
+      }, 0);
     }
   };
 
@@ -169,6 +178,13 @@ export default function CreateManualFrontendPage() {
       navigate("/haproxy/frontends");
     } catch (error) {
       // Error is handled by the mutation hook
+    }
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    // Prevent Enter key from submitting the form except on step 4
+    if (e.key === "Enter" && currentStep < 4) {
+      e.preventDefault();
     }
   };
 
@@ -209,7 +225,7 @@ export default function CreateManualFrontendPage() {
 
       {/* Form Content */}
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
+        <form onSubmit={form.handleSubmit(onSubmit)} onKeyDown={handleFormKeyDown}>
           <div className="px-4 lg:px-6 max-w-7xl">
             {currentStep === 1 && (
               <EnvironmentSelectionCard
@@ -517,6 +533,7 @@ function ContainerSelectionCard({
                     max={65535}
                     placeholder="80"
                     {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
                   />
                 </FormControl>
                 <FormDescription>

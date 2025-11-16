@@ -119,9 +119,9 @@ export class ManualFrontendManager {
           }
 
           // Extract exposed ports
-          const ports = Object.keys(container.Ports || {}).map((key) => ({
-            containerPort: parseInt(key.split("/")[0]),
-            protocol: key.split("/")[1] || "tcp",
+          const ports = (container.Ports || []).map((port: any) => ({
+            containerPort: port.PrivatePort,
+            protocol: port.Type || "tcp",
           }));
 
           return {

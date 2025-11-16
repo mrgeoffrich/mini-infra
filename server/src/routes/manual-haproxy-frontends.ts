@@ -5,6 +5,7 @@ import { requireSessionOrApiKey } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
+import DockerService from "../services/docker";
 import {
   EligibleContainersResponse,
   CreateManualFrontendRequest,
@@ -90,12 +91,41 @@ async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlane
     throw new Error(`HAProxy service not found for environment: ${environmentId}`);
   }
 
-  // Get HAProxy container to connect to DataPlane API
-  // For now, use default localhost:5555
-  // TODO: Improve this to dynamically find HAProxy container
+  // Find HAProxy container using Docker
+  const dockerService = DockerService.getInstance();
+  await dockerService.initialize();
+  const containers = await dockerService.listContainers();
+
+  // Look for HAProxy container with environment label
+  const haproxyContainer = containers.find((container: any) => {
+    const labels = container.labels || {};
+    return (
+      labels["mini-infra.service"] === "haproxy" &&
+      labels["mini-infra.environment"] === environmentId &&
+      container.status === "running"
+    );
+  });
+
+  if (!haproxyContainer) {
+    throw new Error(
+      `No running HAProxy container found for environment: ${environment.name}. ` +
+      `Ensure HAProxy is deployed and running.`
+    );
+  }
+
+  logger.info(
+    {
+      environmentId,
+      environmentName: environment.name,
+      haproxyContainerId: haproxyContainer.id.slice(0, 12),
+    },
+    "Found HAProxy container for manual frontend operation"
+  );
+
+  // Initialize HAProxy client with container ID
   const client = new HAProxyDataPlaneClient();
-  // Note: Client will need to be initialized with container ID in a real scenario
-  // For now, assuming HAProxy is accessible at localhost:5555
+  await client.initialize(haproxyContainer.id);
+
   return client;
 }
 
