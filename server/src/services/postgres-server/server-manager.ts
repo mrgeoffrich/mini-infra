@@ -426,6 +426,19 @@ export class PostgresServerService {
     await client.connect();
     return client;
   }
+
+  /**
+   * Get the admin password for a server
+   * Used by services that need credentials for backup/migration operations
+   */
+  async getServerAdminPassword(serverId: string, userId: string): Promise<string> {
+    const server = await this.getServer(serverId, userId);
+    const connectionString = this.decryptConnectionString(server.connectionString);
+
+    // Parse connection string to extract password
+    const url = new URL(connectionString);
+    return decodeURIComponent(url.password);
+  }
 }
 
 export default new PostgresServerService();

@@ -252,6 +252,7 @@ export default function PostgresServerDetailsPage() {
           <TabsContent value="databases">
             <DatabasesTab
               serverId={serverId!}
+              serverName={server.name}
               availableUsers={availableUsers}
               serverHost={server.host}
               serverPort={server.port}

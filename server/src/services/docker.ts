@@ -508,6 +508,67 @@ class DockerService {
     return postgresContainers;
   }
 
+  /**
+   * Get environment variables for a specific container
+   */
+  public async getContainerEnvironmentVariables(id: string): Promise<Record<string, string> | null> {
+    if (!this.connected) {
+      throw new Error("Docker service not connected");
+    }
+
+    return createContainerSpan(
+      "inspect_env",
+      id,
+      async () => {
+        const container = this.docker.getContainer(id);
+        const data = await this.raceWithTimeout(
+          container.inspect(),
+          5000,
+          "Docker API timeout",
+        );
+
+        // Extract environment variables from Config.Env
+        // Format: ["KEY1=value1", "KEY2=value2", ...]
+        const envArray: string[] = data.Config?.Env || [];
+        const envVars: Record<string, string> = {};
+
+        for (const envEntry of envArray) {
+          const separatorIndex = envEntry.indexOf('=');
+          if (separatorIndex > 0) {
+            const key = envEntry.substring(0, separatorIndex);
+            const value = envEntry.substring(separatorIndex + 1);
+            envVars[key] = value;
+          }
+        }
+
+        servicesLogger().debug(
+          {
+            containerId: id,
+            envVarCount: Object.keys(envVars).length,
+          },
+          "Extracted container environment variables"
+        );
+
+        return envVars;
+      },
+      {
+        "docker.cache.hit": false,
+      }
+    ).catch((error) => {
+      if ((error as any).statusCode === 404) {
+        return null;
+      }
+      servicesLogger().error(
+        {
+          error,
+          containerId: id,
+        },
+        "Failed to get container environment variables",
+      );
+      throw error;
+    });
+  }
+
   private transformContainerData(container: any): DockerContainerInfo {
     return {
       id: container.Id,

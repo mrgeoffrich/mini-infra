@@ -486,6 +486,11 @@ export interface UpdateBackupConfigurationRequest {
   isEnabled?: boolean;
 }
 
+export interface QuickBackupSetupRequest {
+  serverId: string;
+  databaseName: string;
+}
+
 // ====================
 // Backup Configuration API Response Types
 // ====================

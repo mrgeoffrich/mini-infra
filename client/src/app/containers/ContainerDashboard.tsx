@@ -76,8 +76,8 @@ export function ContainerDashboard() {
     refetchInterval: 5000,
   });
 
-  // Fetch managed container IDs
-  const { data: managedContainerIdsData } = useQuery({
+  // Fetch managed container IDs mapping (container ID -> server ID)
+  const { data: managedContainerMapData } = useQuery({
     queryKey: ["managed-container-ids"],
     queryFn: async () => {
       const response = await fetch("/api/containers/managed-ids", {
@@ -85,7 +85,7 @@ export function ContainerDashboard() {
       });
       if (!response.ok) throw new Error("Failed to fetch managed container IDs");
       const data = await response.json();
-      return data.data || [];
+      return data.data || {};
     },
     enabled: isDockerConnected === true,
     refetchInterval: 5000,
@@ -94,7 +94,9 @@ export function ContainerDashboard() {
   const postgresContainerIds = new Set<string>(
     (postgresContainersData || []).map((c: any) => c.id)
   );
-  const managedContainerIds = new Set<string>(managedContainerIdsData || []);
+  // Extract container IDs from the mapping
+  const managedContainerMap = managedContainerMapData || {};
+  const managedContainerIds = new Set<string>(Object.keys(managedContainerMap));
 
   // Group containers by environment
   const containerGroups = React.useMemo((): ContainerGroup[] => {
@@ -416,6 +418,7 @@ export function ContainerDashboard() {
                       showPagination={false}
                       postgresContainerIds={postgresContainerIds}
                       managedContainerIds={managedContainerIds}
+                      managedContainerMap={managedContainerMap}
                     />
                   </div>
                 ))}

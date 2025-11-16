@@ -11,18 +11,24 @@ const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { BackupConfigService } from "../services/backup-config";
+import { PostgresServerService } from "../services/postgres-server/server-manager";
+import { DatabaseConfigService } from "../services/postgres-config";
+import { UserPreferencesService } from "../services/user-preferences";
 import {
   CreateBackupConfigurationRequest,
   UpdateBackupConfigurationRequest,
   BackupConfigurationResponse,
   BackupConfigurationDeleteResponse,
   BackupFormat,
+  QuickBackupSetupRequest,
 } from "@mini-infra/types";
 
 const router = express.Router();
 
-// Create backup configuration service
+// Create service instances
 const backupConfigService = new BackupConfigService(prisma);
+const postgresServerService = new PostgresServerService();
+const databaseConfigService = new DatabaseConfigService(prisma);
 
 // Zod validation schemas
 
@@ -84,6 +90,12 @@ const updateBackupConfigSchema = z.object({
     .max(9, "Compression level must be between 0 and 9")
     .optional(),
   isEnabled: z.boolean().optional(),
+});
+
+// Quick backup setup request validation schema
+const quickBackupSetupSchema = z.object({
+  serverId: z.string().min(1, "Server ID is required"),
+  databaseName: z.string().min(1, "Database name is required"),
 });
 
 
@@ -523,6 +535,192 @@ router.delete("/:id", requireSessionOrApiKey, (async (
         timestamp: new Date().toISOString(),
         requestId,
       });
+    }
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/postgres/backup-configs/quick-setup - Quick setup backup for a database on a server
+ */
+router.post("/quick-setup", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+
+  logger.debug(
+    {
+      requestId,
+      body: req.body,
+    },
+    "Quick backup setup requested",
+  );
+
+  try {
+    // Get authenticated user
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "User not authenticated",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Validate request body
+    const bodyValidation = quickBackupSetupSchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+      logger.warn(
+        {
+          requestId,
+          validationErrors: bodyValidation.error.issues,
+        },
+        "Invalid request body for quick backup setup",
+      );
+
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid request data",
+        details: bodyValidation.error.issues,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const setupRequest: QuickBackupSetupRequest = bodyValidation.data;
+
+    // Get the PostgreSQL server
+    const server = await postgresServerService.getServer(
+      setupRequest.serverId,
+      user.id,
+    );
+
+    if (!server) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: `PostgreSQL server with ID '${setupRequest.serverId}' not found`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get user preferences for timezone
+    const userPreferences = await UserPreferencesService.getUserPreferences(user.id);
+    const timezone = userPreferences.timezone || "UTC";
+
+    // Get the server's admin password
+    const adminPassword = await postgresServerService.getServerAdminPassword(
+      setupRequest.serverId,
+      user.id,
+    );
+
+    // Create PostgresDatabase entry with server's admin credentials
+    const databaseEntry = await databaseConfigService.createDatabase({
+      name: `${server.name} - ${setupRequest.databaseName}`,
+      host: server.host,
+      port: server.port,
+      database: setupRequest.databaseName,
+      username: server.adminUsername,
+      password: adminPassword,
+      sslMode: server.sslMode as "prefer" | "require" | "disable",
+      tags: [`server:${server.name}`, "backup"],
+    });
+
+    // Create backup configuration with smart defaults
+    const backupConfig = await backupConfigService.createBackupConfig(
+      databaseEntry.id,
+      {
+        schedule: "0 2 * * *", // 2am every day
+        timezone: timezone,
+        azureContainerName: "postgres-backups",
+        azurePathPrefix: setupRequest.databaseName,
+        retentionDays: 30,
+        backupFormat: "custom" as BackupFormat,
+        compressionLevel: 6,
+        isEnabled: true,
+      },
+    );
+
+    logger.info(
+      {
+        requestId,
+        serverId: server.id,
+        databaseName: setupRequest.databaseName,
+        databaseId: databaseEntry.id,
+        configId: backupConfig.id,
+        timezone,
+      },
+      "Quick backup setup completed successfully",
+    );
+
+    // Log business event
+    logger.debug(
+      {
+        event: "postgres_backup_quick_setup",
+        requestId,
+        serverId: server.id,
+        databaseName: setupRequest.databaseName,
+        databaseId: databaseEntry.id,
+        configId: backupConfig.id,
+        timezone,
+      },
+      "Business event: Quick backup setup completed",
+    );
+
+    const response: BackupConfigurationResponse = {
+      success: true,
+      data: backupConfig,
+      message: "Backup configuration created successfully",
+      timestamp: new Date().toISOString(),
+      requestId,
+    };
+
+    res.status(201).json(response);
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : "Unknown error",
+        requestId,
+        serverId: req.body?.serverId,
+        databaseName: req.body?.databaseName,
+      },
+      "Failed to create quick backup setup",
+    );
+
+    if (error instanceof Error) {
+      if (error.message.includes("already exists")) {
+        return res.status(409).json({
+          error: "Conflict",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      if (
+        error.message.includes("not found") ||
+        error.message.includes("Server not found")
+      ) {
+        return res.status(404).json({
+          error: "Not Found",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      if (error.message.includes("Invalid")) {
+        return res.status(400).json({
+          error: "Bad Request",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
     }
 
     next(error);

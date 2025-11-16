@@ -422,26 +422,31 @@ router.get("/managed-ids", requireSessionOrApiKey, (async (
         },
       },
       select: {
+        id: true,
         linkedContainerId: true,
       },
     });
 
-    const managedContainerIds = servers
-      .map((s) => s.linkedContainerId)
-      .filter((id): id is string => id !== null);
+    // Create a mapping of container ID to server ID
+    const managedContainerMap = servers
+      .filter((s) => s.linkedContainerId !== null)
+      .reduce((acc, s) => {
+        acc[s.linkedContainerId!] = s.id;
+        return acc;
+      }, {} as Record<string, string>);
 
     logger.debug(
       {
         requestId,
         userId,
-        count: managedContainerIds.length,
+        count: Object.keys(managedContainerMap).length,
       },
       "Managed container IDs returned successfully",
     );
 
     res.json({
       success: true,
-      data: managedContainerIds,
+      data: managedContainerMap,
     });
   } catch (error) {
     logger.error(
@@ -549,6 +554,118 @@ router.get("/:id", requireSessionOrApiKey, (async (
         containerId,
       },
       "Failed to fetch container details",
+    );
+
+    // Handle specific Docker API errors
+    if (error instanceof Error && error.message.includes("timeout")) {
+      return res.status(504).json({
+        error: "Gateway Timeout",
+        message: "Docker API request timed out. Please try again.",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    next(error);
+  }
+}) as RequestHandler);
+
+// Get container environment variables
+router.get("/:id/env", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id;
+  const containerId = req.params.id;
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+      containerId,
+    },
+    "Container environment variables requested",
+  );
+
+  try {
+    // Validate container ID format
+    if (!containerId || containerId.length < 12) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Invalid container ID format",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    const dockerService = DockerService.getInstance();
+
+    // Check Docker service connectivity
+    if (!dockerService.isConnected()) {
+      logger.error(
+        {
+          requestId,
+          userId,
+          containerId,
+        },
+        "Docker service not connected",
+      );
+
+      return res.status(503).json({
+        error: "Service Unavailable",
+        message: "Docker service is not available. Please try again later.",
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    // Get environment variables
+    const envVars = await dockerService.getContainerEnvironmentVariables(containerId);
+
+    if (envVars === null) {
+      logger.warn(
+        {
+          requestId,
+          userId,
+          containerId,
+        },
+        "Container not found for environment variables",
+      );
+
+      return res.status(404).json({
+        error: "Not Found",
+        message: `Container with ID '${containerId}' not found`,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        containerId,
+        envVarCount: Object.keys(envVars).length,
+      },
+      "Container environment variables returned successfully",
+    );
+
+    res.json({
+      success: true,
+      data: envVars,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        requestId,
+        userId,
+        containerId,
+      },
+      "Failed to fetch container environment variables",
     );
 
     // Handle specific Docker API errors

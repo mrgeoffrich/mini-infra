@@ -45,6 +45,7 @@ import {
   IconUser,
   IconUserEdit,
   IconPlugConnected,
+  IconRocket,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
@@ -59,18 +60,20 @@ import { DatabaseModal } from "./database-modal";
 import { ChangeOwnerModal } from "./change-owner-modal";
 import { GrantEditor } from "./grant-editor";
 import { ConnectionStringModal } from "./connection-string-modal";
+import { QuickBackupSetupModal } from "./quick-backup-setup-modal";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CreateManagedDatabaseRequest, ChangeDatabaseOwnerRequest, ManagedDatabaseUserInfo, ManagedDatabaseInfo } from "@mini-infra/types";
 
 interface DatabasesTabProps {
   serverId: string;
+  serverName: string;
   availableUsers: ManagedDatabaseUserInfo[];
   serverHost: string;
   serverPort: number;
 }
 
-export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort }: DatabasesTabProps) {
+export function DatabasesTab({ serverId, serverName, availableUsers, serverHost, serverPort }: DatabasesTabProps) {
   const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -90,6 +93,9 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
   const [connectionStringDialogOpen, setConnectionStringDialogOpen] = useState(false);
   const [databaseForConnection, setDatabaseForConnection] =
     useState<ManagedDatabaseInfo | null>(null);
+  const [quickBackupSetupOpen, setQuickBackupSetupOpen] = useState(false);
+  const [preSelectedDatabaseForBackup, setPreSelectedDatabaseForBackup] =
+    useState<string | undefined>(undefined);
 
   const { formatRelativeTime } = useFormattedDate();
 
@@ -200,6 +206,11 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
   const handleConnect = (database: ManagedDatabaseInfo) => {
     setDatabaseForConnection(database);
     setConnectionStringDialogOpen(true);
+  };
+
+  const handleQuickBackupSetup = (database: ManagedDatabaseInfo) => {
+    setPreSelectedDatabaseForBackup(database.databaseName);
+    setQuickBackupSetupOpen(true);
   };
 
   // Find existing grant for the selected database and user
@@ -432,6 +443,11 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
                         <IconPlugConnected className="h-4 w-4 mr-2" />
                         Connect
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleQuickBackupSetup(db)}>
+                        <IconRocket className="h-4 w-4 mr-2" />
+                        Quick Setup Backup
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => navigate(`/postgres-server/${serverId}/databases/${db.id}`)}>
                         <IconEye className="h-4 w-4 mr-2" />
                         View Details
@@ -592,6 +608,16 @@ export function DatabasesTab({ serverId, availableUsers, serverHost, serverPort 
           serverPort={serverPort}
         />
       )}
+
+      {/* Quick Backup Setup Modal */}
+      <QuickBackupSetupModal
+        open={quickBackupSetupOpen}
+        onOpenChange={setQuickBackupSetupOpen}
+        serverId={serverId}
+        serverName={serverName}
+        availableDatabases={databases}
+        preSelectedDatabase={preSelectedDatabaseForBackup}
+      />
     </div>
   );
 }

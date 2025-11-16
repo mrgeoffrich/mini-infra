@@ -26,6 +26,8 @@ import {
 import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
 import { IconArrowsSort, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { ServerModal } from "@/components/postgres-server/server-modal";
+import { toast } from "sonner";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -43,6 +45,7 @@ interface ContainerTableProps {
   };
   postgresContainerIds?: Set<string>;
   managedContainerIds?: Set<string>;
+  managedContainerMap?: Record<string, string>; // container ID -> server ID
   showPagination?: boolean;
 }
 
@@ -235,9 +238,67 @@ export const ContainerTable = React.memo(function ContainerTable({
   showPagination = true,
   postgresContainerIds,
   managedContainerIds,
+  managedContainerMap,
 }: ContainerTableProps) {
   const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
   const navigate = useNavigate();
+
+  // Modal state for adding postgres servers
+  const [isServerModalOpen, setIsServerModalOpen] = React.useState(false);
+  const [selectedContainer, setSelectedContainer] = React.useState<ContainerInfo | null>(null);
+  const [initialServerValues, setInitialServerValues] = React.useState<any>(null);
+  const [isLoadingServerData, setIsLoadingServerData] = React.useState(false);
+
+  // Function to fetch container environment variables and docker host
+  const handleAddPostgresServer = React.useCallback(async (container: ContainerInfo) => {
+    setSelectedContainer(container);
+    setIsLoadingServerData(true);
+
+    try {
+      // Fetch environment variables and docker host in parallel
+      const [envResponse, dockerHostResponse] = await Promise.all([
+        fetch(`/api/containers/${container.id}/env`).then(r => r.json()),
+        fetch('/api/settings/docker-host').then(r => r.json()),
+      ]);
+
+      // Extract postgres-related environment variables
+      const envVars = envResponse.success ? envResponse.data : {};
+      const dockerHost = dockerHostResponse.success ? dockerHostResponse.data.host : 'localhost';
+
+      // Find the postgres port (default 5432)
+      const postgresPort = container.ports.find(p => p.private === 5432);
+      const port = postgresPort?.public || postgresPort?.private || 5432;
+
+      // Prepare initial values for the modal
+      const initialValues = {
+        name: container.name,
+        host: dockerHost,
+        port: port,
+        adminUsername: envVars.POSTGRES_USER || 'postgres',
+        adminPassword: envVars.POSTGRES_PASSWORD || '',
+        sslMode: 'prefer' as const,
+        linkedContainerId: container.id,
+        linkedContainerName: container.name,
+      };
+
+      setInitialServerValues(initialValues);
+      setIsServerModalOpen(true);
+    } catch (error) {
+      console.error('Failed to fetch container data:', error);
+      toast.error('Failed to load container details. Please try again.');
+    } finally {
+      setIsLoadingServerData(false);
+    }
+  }, []);
+
+  // Handle modal close
+  const handleServerModalClose = React.useCallback((open: boolean) => {
+    setIsServerModalOpen(open);
+    if (!open) {
+      setSelectedContainer(null);
+      setInitialServerValues(null);
+    }
+  }, []);
 
   // All hooks must be declared at the top before any conditional returns
   const handleNameSort = React.useCallback(
@@ -322,28 +383,40 @@ export const ContainerTable = React.memo(function ContainerTable({
           const container = row.original;
           const isPostgres = postgresContainerIds?.has(container.id);
           const isManaged = managedContainerIds?.has(container.id);
-          const showManageButton = isPostgres && !isManaged;
+          const serverId = managedContainerMap?.[container.id];
 
-          if (!showManageButton) {
-            return null;
+          // Show "Add" button for unmanaged postgres containers
+          if (isPostgres && !isManaged) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleAddPostgresServer(container)}
+                disabled={isLoadingServerData}
+              >
+                Add
+              </Button>
+            );
           }
 
-          return (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                // TODO: Open modal to create PostgreSQL server linked to this container
-                alert(`Manage PostgreSQL container: ${container.name}`);
-              }}
-            >
-              Manage
-            </Button>
-          );
+          // Show "Manage" button for managed postgres containers
+          if (isPostgres && isManaged && serverId) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/postgres-server/${serverId}`)}
+              >
+                Manage
+              </Button>
+            );
+          }
+
+          return null;
         },
       },
     ],
-    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds],
+    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds, managedContainerMap, handleAddPostgresServer, isLoadingServerData, navigate],
   );
 
   const sortingState = React.useMemo(
@@ -563,6 +636,16 @@ export const ContainerTable = React.memo(function ContainerTable({
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Server Modal for adding postgres server */}
+      {isServerModalOpen && initialServerValues && (
+        <ServerModal
+          open={isServerModalOpen}
+          onOpenChange={handleServerModalClose}
+          mode="create"
+          initialValues={initialServerValues}
+        />
       )}
     </div>
   );

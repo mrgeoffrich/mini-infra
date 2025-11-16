@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -15,9 +16,12 @@ import {
   IconFolderOpen,
   IconSettings,
   IconPlus,
+  IconRocket,
 } from "@tabler/icons-react";
 import { usePostgresDatabases } from "@/hooks/use-postgres-databases";
+import { useManagedDatabases } from "@/hooks/use-managed-databases";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
+import { QuickBackupSetupModal } from "./quick-backup-setup-modal";
 import type { PostgresServerInfo } from "@mini-infra/types";
 
 interface BackupsTabProps {
@@ -27,6 +31,7 @@ interface BackupsTabProps {
 export function BackupsTab({ server }: BackupsTabProps) {
   const navigate = useNavigate();
   const { formatRelativeTime } = useFormattedDate();
+  const [quickSetupOpen, setQuickSetupOpen] = useState(false);
 
   // Fetch all PostgresDatabase entries that match this server's host and port
   const {
@@ -43,6 +48,10 @@ export function BackupsTab({ server }: BackupsTabProps) {
 
   // Filter to only show databases that match this server's port as well
   const matchingDatabases = databases.filter((db) => db.port === server.port);
+
+  // Fetch managed databases for the quick setup modal
+  const { data: managedDatabasesResponse } = useManagedDatabases(server.id);
+  const availableDatabases = managedDatabasesResponse?.data || [];
 
   // Loading state
   if (isLoading) {
@@ -89,6 +98,63 @@ export function BackupsTab({ server }: BackupsTabProps) {
   // Empty state
   if (matchingDatabases.length === 0) {
     return (
+      <>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Database Backups</CardTitle>
+                  <CardDescription>
+                    Configure automated backups for databases on this server
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={() => setQuickSetupOpen(true)}>
+                    <IconRocket className="h-4 w-4 mr-2" />
+                    Quick Setup
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate("/postgres-backup")}>
+                    <IconPlus className="h-4 w-4 mr-2" />
+                    Advanced Setup
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="p-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 mb-4">
+                  <IconDatabase className="h-12 w-12" />
+                </div>
+                <h3 className="text-lg font-semibold mb-2">
+                  No backups configured
+                </h3>
+                <p className="text-muted-foreground mb-4 max-w-sm">
+                  Set up automated backups for databases on {server.host}:{server.port} to protect your data
+                </p>
+                <Button onClick={() => setQuickSetupOpen(true)}>
+                  <IconRocket className="h-4 w-4 mr-2" />
+                  Quick Setup
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <QuickBackupSetupModal
+          open={quickSetupOpen}
+          onOpenChange={setQuickSetupOpen}
+          serverId={server.id}
+          serverName={server.name}
+          availableDatabases={availableDatabases}
+        />
+      </>
+    );
+  }
+
+  // Database list view with backup configurations
+  return (
+    <>
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -96,55 +162,21 @@ export function BackupsTab({ server }: BackupsTabProps) {
               <div>
                 <CardTitle>Database Backups</CardTitle>
                 <CardDescription>
-                  Configure automated backups for databases on this server
+                  Backup configurations for databases on this server
                 </CardDescription>
               </div>
-              <Button onClick={() => navigate("/postgres-backup")}>
-                <IconPlus className="h-4 w-4 mr-2" />
-                Configure First Backup
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => setQuickSetupOpen(true)}>
+                  <IconRocket className="h-4 w-4 mr-2" />
+                  Quick Setup
+                </Button>
+                <Button variant="outline" onClick={() => navigate("/postgres-backup")}>
+                  <IconPlus className="h-4 w-4 mr-2" />
+                  Advanced Setup
+                </Button>
+              </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="p-4 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 mb-4">
-                <IconDatabase className="h-12 w-12" />
-              </div>
-              <h3 className="text-lg font-semibold mb-2">
-                No backups configured
-              </h3>
-              <p className="text-muted-foreground mb-4 max-w-sm">
-                Set up automated backups for databases on {server.host}:{server.port} to protect your data
-              </p>
-              <Button onClick={() => navigate("/postgres-backup")}>
-                <IconPlus className="h-4 w-4 mr-2" />
-                Configure Backup
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Database list view with backup configurations
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Database Backups</CardTitle>
-              <CardDescription>
-                Backup configurations for databases on this server
-              </CardDescription>
-            </div>
-            <Button onClick={() => navigate("/postgres-backup")}>
-              <IconPlus className="h-4 w-4 mr-2" />
-              Add Backup Configuration
-            </Button>
-          </div>
-        </CardHeader>
         <CardContent>
           <div className="text-sm text-muted-foreground mb-4 pb-4 border-b">
             {matchingDatabases.length} backup configuration
@@ -245,6 +277,15 @@ export function BackupsTab({ server }: BackupsTabProps) {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+
+      <QuickBackupSetupModal
+        open={quickSetupOpen}
+        onOpenChange={setQuickSetupOpen}
+        serverId={server.id}
+        serverName={server.name}
+        availableDatabases={availableDatabases}
+      />
+    </>
   );
 }

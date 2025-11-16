@@ -77,6 +77,7 @@ interface ServerModalProps {
   mode: "create" | "edit";
   serverId?: string; // Required for edit mode
   serverData?: PostgresServerInfo; // Server data for edit mode
+  initialValues?: Partial<ServerFormData>; // Initial values for create mode
 }
 
 interface TestResult {
@@ -85,7 +86,7 @@ interface TestResult {
   version?: string;
 }
 
-export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: ServerModalProps) {
+export function ServerModal({ open, onOpenChange, mode, serverId, serverData, initialValues }: ServerModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
@@ -131,7 +132,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
   const sslMode = watch("sslMode");
   const formData = watch();
 
-  // Pre-fill form when in edit mode
+  // Pre-fill form when in edit mode or when initial values provided
   useEffect(() => {
     if (mode === "edit" && serverData && open) {
       reset({
@@ -147,21 +148,21 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData }: 
       });
       setTestResult(null);
     } else if (mode === "create" && open) {
-      // Reset to defaults when creating
+      // Use initialValues if provided, otherwise use defaults
       reset({
-        name: "",
-        host: "",
-        port: 5432,
-        adminUsername: "postgres",
-        adminPassword: "",
-        sslMode: "prefer",
-        linkedContainerId: "",
-        linkedContainerName: "",
-        tags: "",
+        name: initialValues?.name || "",
+        host: initialValues?.host || "",
+        port: initialValues?.port || 5432,
+        adminUsername: initialValues?.adminUsername || "postgres",
+        adminPassword: initialValues?.adminPassword || "",
+        sslMode: initialValues?.sslMode || "prefer",
+        linkedContainerId: initialValues?.linkedContainerId || "",
+        linkedContainerName: initialValues?.linkedContainerName || "",
+        tags: initialValues?.tags || "",
       });
       setTestResult(null);
     }
-  }, [mode, serverData, open, reset]);
+  }, [mode, serverData, open, reset, initialValues]);
 
   const handleTestConnection = async () => {
     setTestResult(null);

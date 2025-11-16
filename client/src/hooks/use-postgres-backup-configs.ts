@@ -5,6 +5,7 @@ import {
   BackupConfigurationDeleteResponse,
   CreateBackupConfigurationRequest,
   UpdateBackupConfigurationRequest,
+  QuickBackupSetupRequest,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -178,6 +179,50 @@ async function deletePostgresBackupConfig(
   return data;
 }
 
+async function quickSetupPostgresBackup(
+  request: QuickBackupSetupRequest,
+  correlationId: string,
+): Promise<BackupConfigurationResponse> {
+  const response = await fetch(`/api/postgres/backup-configs/quick-setup`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Failed to quick setup backup: ${response.statusText}`;
+
+    try {
+      const errorData = await response.json();
+      if (errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.details && Array.isArray(errorData.details)) {
+        // Handle Zod validation errors
+        const validationErrors = errorData.details
+          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .join(", ");
+        errorMessage = `Validation failed: ${validationErrors}`;
+      }
+    } catch {
+      // If JSON parsing fails, keep the original error message
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  const data: BackupConfigurationResponse = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to quick setup backup");
+  }
+
+  return data;
+}
+
 // ====================
 // PostgreSQL Backup Configuration Hooks
 // ====================
@@ -295,6 +340,27 @@ export function useDeletePostgresBackupConfig() {
   });
 }
 
+export function useQuickSetupPostgresBackup() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: (request: QuickBackupSetupRequest) =>
+      quickSetupPostgresBackup(request, correlationId),
+    onSuccess: (response) => {
+      const databaseId = response.data.databaseId;
+      // Invalidate and refetch backup configuration for this database
+      queryClient.invalidateQueries({
+        queryKey: ["postgresBackupConfig", databaseId],
+      });
+      // Also invalidate databases list as it might show backup configuration status
+      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      // Invalidate managed databases list for the server
+      queryClient.invalidateQueries({ queryKey: ["managedDatabases"] });
+    },
+  });
+}
+
 // ====================
 // Type Exports
 // ====================
@@ -305,4 +371,5 @@ export type {
   BackupConfigurationDeleteResponse,
   CreateBackupConfigurationRequest,
   UpdateBackupConfigurationRequest,
+  QuickBackupSetupRequest,
 };
