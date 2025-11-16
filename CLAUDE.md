@@ -205,10 +205,11 @@ The backend implements a sophisticated service layer with dependency injection, 
 - `npm run clean` - Remove dist/ build output
 
 ### Database (server/)
-- `npx prisma db push` - Sync database schema
-- `npx prisma studio` - Open database GUI
-- `npx prisma generate` - Generate Prisma client
-- `npx prisma migrate dev` - Create and apply new migration
+- `npx prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
+- `npx prisma generate` - Regenerate Prisma client after schema changes
+- `npx prisma studio` - Open database GUI for data inspection
+- `npx prisma migrate status` - Check migration status and detect drift
+- `npx prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
 
 #### Host Docker Socket Mount (Recommended)
 
