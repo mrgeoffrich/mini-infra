@@ -3,6 +3,7 @@ import {
   IconBrandDocker,
   IconBrandCloudflare,
   IconBrandAzure,
+  IconBrandGithub,
   IconCertificate,
   IconDashboard,
   IconDatabase,
@@ -297,6 +298,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "TLS certificate configuration",
+  },
+
+  "/settings-github": {
+    path: "/settings-github",
+    title: "GitHub Settings",
+    breadcrumbLabel: "GitHub Settings",
+    icon: IconBrandGithub,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "GitHub integration for bug reporting",
   },
 
   "/user": {

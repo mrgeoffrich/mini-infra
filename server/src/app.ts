@@ -112,6 +112,8 @@ import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
 import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 import cloudflareConnectivityRoutes from "./routes/cloudflare-connectivity";
+import githubSettingsRoutes from "./routes/github-settings";
+import githubBugReportRoutes from "./routes/github-bug-report";
 import postgresDatabasesRoutes from "./routes/postgres-databases";
 import postgresBackupConfigsRoutes from "./routes/postgres-backup-configs";
 import postgresBackupsRoutes from "./routes/postgres-backups";
@@ -149,6 +151,8 @@ const routes = [
   { path: "/api/settings/system", router: systemSettingsRoutes, name: "systemSettingsRoutes" },
   { path: "/api/settings/azure", router: azureSettingsRoutes, name: "azureSettingsRoutes" },
   { path: "/api/settings/cloudflare", router: cloudflareSettingsRoutes, name: "cloudflareSettingsRoutes" },
+  { path: "/api/settings/github", router: githubSettingsRoutes, name: "githubSettingsRoutes" },
+  { path: "/api/github/bug-report", router: githubBugReportRoutes, name: "githubBugReportRoutes" },
   { path: "/api/settings", router: settingsRoutes, name: "settingsRoutes" },
   { path: "/api/connectivity/azure", router: azureConnectivityRoutes, name: "azureConnectivityRoutes" },
   { path: "/api/connectivity", router: cloudflareConnectivityRoutes, name: "cloudflareConnectivityRoutes" },

@@ -16,6 +16,7 @@ import SystemSettingsPage from "@/app/settings/system/page";
 import SecuritySettingsPage from "@/app/settings/security/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
 import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
+import GitHubSettingsPage from "@/app/settings/github/page";
 import PostgresBackups from "@/app/postgres/page";
 import PostgresRestorePage from "@/app/postgres/restore/page";
 import PostgresServerPage from "@/app/postgres-server/page";
@@ -204,6 +205,10 @@ export const router = createBrowserRouter([
       {
         path: "settings-tls",
         element: <TlsSettingsPage />,
+      },
+      {
+        path: "settings-github",
+        element: <GitHubSettingsPage />,
       },
       {
         path: "user/settings",

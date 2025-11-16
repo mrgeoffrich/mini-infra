@@ -185,6 +185,7 @@ const serviceLabels = {
   system: "System",
   deployments: "Deployments",
   tls: "TLS / Certificates",
+  github: "GitHub",
 } as const;
 
 export function ServiceStatusCard({

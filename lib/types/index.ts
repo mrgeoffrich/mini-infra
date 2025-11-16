@@ -20,6 +20,9 @@ export * from "./azure";
 // Cloudflare types
 export * from "./cloudflare";
 
+// GitHub types
+export * from "./github";
+
 // PostgreSQL types
 export * from "./postgres";
 

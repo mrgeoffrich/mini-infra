@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -16,13 +17,15 @@ import {
 } from "@/components/ui/sidebar";
 import { useUser } from "@/hooks/use-user";
 import { useLogout } from "@/hooks/use-logout";
-import { IconLoader2, IconLogout, IconDotsVertical, IconSettings } from "@tabler/icons-react";
+import { IconLoader2, IconLogout, IconDotsVertical, IconSettings, IconBug } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { BugReportDialog } from "@/components/bug-report-dialog";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
   const { user, isLoading } = useUser();
   const { logout, isLoggingOut } = useLogout();
+  const [bugReportOpen, setBugReportOpen] = useState(false);
 
   if (isLoading || !user) {
     return (
@@ -58,44 +61,15 @@ export function NavUser() {
   };
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage
-                  src={user.image || undefined}
-                  alt={user.name || user.email}
-                />
-                <AvatarFallback className="rounded-lg">
-                  {user.name
-                    ? getInitials(user.name)
-                    : user.email.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">
-                  {user.name || user.email}
-                </span>
-                <span className="text-muted-foreground truncate text-xs">
-                  {user.email}
-                </span>
-              </div>
-              <IconDotsVertical className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+    <>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuButton
+                size="lg"
+                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              >
                 <Avatar className="h-8 w-8 rounded-lg">
                   <AvatarImage
                     src={user.image || undefined}
@@ -115,34 +89,72 @@ export function NavUser() {
                     {user.email}
                   </span>
                 </div>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem asChild>
-                <Link to="/user/settings" className="flex items-center">
-                  <IconSettings className="mr-2 size-4" />
-                  Settings
-                </Link>
+                <IconDotsVertical className="ml-auto size-4" />
+              </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+              side={isMobile ? "bottom" : "right"}
+              align="end"
+              sideOffset={4}
+            >
+              <DropdownMenuLabel className="p-0 font-normal">
+                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                  <Avatar className="h-8 w-8 rounded-lg">
+                    <AvatarImage
+                      src={user.image || undefined}
+                      alt={user.name || user.email}
+                    />
+                    <AvatarFallback className="rounded-lg">
+                      {user.name
+                        ? getInitials(user.name)
+                        : user.email.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {user.name || user.email}
+                    </span>
+                    <span className="text-muted-foreground truncate text-xs">
+                      {user.email}
+                    </span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                  <Link to="/user/settings" className="flex items-center">
+                    <IconSettings className="mr-2 size-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setBugReportOpen(true)}>
+                  <IconBug className="mr-2 size-4" />
+                  Report a Bug
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
+                {isLoggingOut ? (
+                  <>
+                    <IconLoader2 className="size-4 animate-spin" />
+                    Signing out...
+                  </>
+                ) : (
+                  <>
+                    <IconLogout className="size-4" />
+                    Sign out
+                  </>
+                )}
               </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? (
-                <>
-                  <IconLoader2 className="size-4 animate-spin" />
-                  Signing out...
-                </>
-              ) : (
-                <>
-                  <IconLogout className="size-4" />
-                  Sign out
-                </>
-              )}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      {/* Bug Report Dialog */}
+      <BugReportDialog open={bugReportOpen} onOpenChange={setBugReportOpen} />
+    </>
   );
 }
