@@ -534,6 +534,38 @@ router.post("/", requireSessionOrApiKey, (async (
     });
 
     if (existingSetting) {
+      // If the setting exists but is inactive, reactivate it with the new value
+      if (!existingSetting.isActive) {
+        logger.info(
+          {
+            requestId,
+            userId,
+            category,
+            key,
+            settingId: existingSetting.id,
+          },
+          "Reactivating inactive setting",
+        );
+
+        const updatedSetting = await prisma.systemSettings.update({
+          where: { id: existingSetting.id },
+          data: {
+            value,
+            isEncrypted: isEncrypted || false,
+            isActive: true,
+            updatedBy: userId,
+          },
+        });
+
+        const response: SettingResponse = {
+          success: true,
+          data: serializeSystemSetting(updatedSetting),
+          message: "Setting reactivated successfully",
+        };
+
+        return res.status(200).json(response);
+      }
+
       logger.warn(
         {
           requestId,

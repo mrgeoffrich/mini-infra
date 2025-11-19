@@ -750,7 +750,7 @@ export default function SystemSettingsPage() {
                       <AzureContainerSelector
                         value={defaultContainer}
                         onChange={handleDefaultContainerChange}
-                        disabled={!isAzureConnected || isSavingDefaultContainer}
+                        disabled={isSavingDefaultContainer}
                         placeholder="Select default backup container..."
                       />
                     )}
