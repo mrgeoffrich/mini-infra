@@ -228,8 +228,8 @@ export class HAProxyDataPlaneClient {
       // Check if port is bound to host
       const hostBinding = dataplanePort[0];
       if (hostBinding && hostBinding.HostPort) {
-        // Use host binding
-        const hostIp = hostBinding.HostIp || 'localhost';
+        // Use host binding (0.0.0.0 means "all interfaces" for binding, but we need localhost to connect)
+        const hostIp = (hostBinding.HostIp && hostBinding.HostIp !== '0.0.0.0') ? hostBinding.HostIp : 'localhost';
         baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
       } else {
         // Use container network IP
