@@ -43,6 +43,8 @@ describe('PortUtils', () => {
       expect(result).toEqual({
         httpPort: 80,
         httpsPort: 443,
+        statsPort: 8404,
+        dataplanePort: 5555,
         source: 'network-type',
         networkType: 'local',
       });
@@ -67,6 +69,8 @@ describe('PortUtils', () => {
       expect(result).toEqual({
         httpPort: 8111,
         httpsPort: 8443,
+        statsPort: 8405,
+        dataplanePort: 5556,
         source: 'network-type',
         networkType: 'internet',
       });
@@ -89,6 +93,8 @@ describe('PortUtils', () => {
       expect(result).toEqual({
         httpPort: 9080,
         httpsPort: 9443,
+        statsPort: 8404,
+        dataplanePort: 5555,
         source: 'override',
       });
     });

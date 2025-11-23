@@ -16,8 +16,8 @@ export class PortUtils {
 
   // Default port mappings based on network type
   private static readonly DEFAULT_PORTS = {
-    local: { http: 80, https: 443 },
-    internet: { http: 8111, https: 8443 },
+    local: { http: 80, https: 443, stats: 8404, dataplane: 5555 },
+    internet: { http: 8111, https: 8443, stats: 8405, dataplane: 5556 },
   };
 
   /**
@@ -40,25 +40,27 @@ export class PortUtils {
         throw new Error(`Environment not found: ${environmentId}`);
       }
 
+      // Get network type defaults (used for stats/dataplane even when http/https are overridden)
+      const networkType = environment.networkType as "local" | "internet";
+      const defaultPorts = PortUtils.DEFAULT_PORTS[networkType] || PortUtils.DEFAULT_PORTS.internet;
+
       // Check for manual port overrides
       const httpOverride = await this.getPortOverride("http");
       const httpsOverride = await this.getPortOverride("https");
 
       if (httpOverride && httpsOverride) {
         logger.info(
-          { httpPort: httpOverride, httpsPort: httpsOverride },
+          { httpPort: httpOverride, httpsPort: httpsOverride, statsPort: defaultPorts.stats, dataplanePort: defaultPorts.dataplane },
           "Using manual port overrides for HAProxy"
         );
         return {
           httpPort: httpOverride,
           httpsPort: httpsOverride,
+          statsPort: defaultPorts.stats,
+          dataplanePort: defaultPorts.dataplane,
           source: "override",
         };
       }
-
-      // Use network type defaults
-      const networkType = environment.networkType as "local" | "internet";
-      const defaultPorts = PortUtils.DEFAULT_PORTS[networkType] || PortUtils.DEFAULT_PORTS.internet;
 
       logger.info(
         {
@@ -66,6 +68,8 @@ export class PortUtils {
           networkType,
           httpPort: defaultPorts.http,
           httpsPort: defaultPorts.https,
+          statsPort: defaultPorts.stats,
+          dataplanePort: defaultPorts.dataplane,
         },
         "Using network type default ports for HAProxy"
       );
@@ -73,6 +77,8 @@ export class PortUtils {
       return {
         httpPort: defaultPorts.http,
         httpsPort: defaultPorts.https,
+        statsPort: defaultPorts.stats,
+        dataplanePort: defaultPorts.dataplane,
         source: "network-type",
         networkType,
       };

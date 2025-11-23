@@ -554,6 +554,8 @@ export interface DeploymentDNSRecordResponse {
 export interface HAProxyPortConfig {
   httpPort: number;
   httpsPort: number;
+  statsPort: number;
+  dataplanePort: number;
   source: 'override' | 'network-type'; // Whether from manual override or network type
   networkType?: 'local' | 'internet'; // Network type if from environment
 }

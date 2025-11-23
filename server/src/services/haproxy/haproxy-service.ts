@@ -56,9 +56,11 @@ export class HAProxyService implements IApplicationService {
         name: 'haproxy_certs'
       }
     ],
-    // Note: HTTP/HTTPS port mappings are dynamic and depend on:
+    // Note: Port mappings are dynamic and depend on:
     // 1. Manual port overrides (if configured in system settings)
-    // 2. Environment network type (local: 80/443, internet: 8111/8443)
+    // 2. Environment network type:
+    //    - local: HTTP 80, HTTPS 443, stats 8404, dataplane 5555
+    //    - internet: HTTP 8111, HTTPS 8443, stats 8405, dataplane 5556
     // The values below are defaults for 'internet' network type
     exposedPorts: [
       {
@@ -78,14 +80,14 @@ export class HAProxyService implements IApplicationService {
       {
         name: 'stats',
         containerPort: 8404,
-        hostPort: 8404,
+        hostPort: 8405,
         protocol: 'tcp',
         description: 'HAProxy statistics and monitoring'
       },
       {
         name: 'dataplane-api',
         containerPort: 5555,
-        hostPort: 5555,
+        hostPort: 5556,
         protocol: 'tcp',
         description: 'HAProxy DataPlane API'
       }
@@ -328,19 +330,26 @@ export class HAProxyService implements IApplicationService {
     await this.dockerExecutor.pullImageWithAuth('haproxytech/haproxy-alpine:3.2');
 
     // Get dynamic port configuration based on environment
-    let httpPort = 8111; // Default for internet/no environment
+    // Defaults are for internet/no environment
+    let httpPort = 8111;
     let httpsPort = 8443;
+    let statsPort = 8405;
+    let dataplanePort = 5556;
 
     if (this.environmentId) {
       try {
         const portConfig = await portUtils.getHAProxyPortsForEnvironment(this.environmentId);
         httpPort = portConfig.httpPort;
         httpsPort = portConfig.httpsPort;
+        statsPort = portConfig.statsPort;
+        dataplanePort = portConfig.dataplanePort;
         this.logger.info(
           {
             environmentId: this.environmentId,
             httpPort,
             httpsPort,
+            statsPort,
+            dataplanePort,
             source: portConfig.source
           },
           'Using dynamic port configuration for HAProxy'
@@ -371,8 +380,8 @@ export class HAProxyService implements IApplicationService {
       ports: {
         '80/tcp': [{ HostPort: httpPort.toString() }],
         '443/tcp': [{ HostPort: httpsPort.toString() }],
-        '8404/tcp': [{ HostPort: '8404' }],
-        '5555/tcp': [{ HostPort: '5555' }]
+        '8404/tcp': [{ HostPort: statsPort.toString() }],
+        '5555/tcp': [{ HostPort: dataplanePort.toString() }]
       },
       mounts: [
         {
