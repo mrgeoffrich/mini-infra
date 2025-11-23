@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import FormData from 'form-data';
 import { loadbalancerLogger } from '../../lib/logger-factory';
 import DockerService from '../docker';
+import { networkUtils } from '../network-utils';
 
 const logger = loadbalancerLogger();
 
@@ -222,34 +223,15 @@ export class HAProxyDataPlaneClient {
         throw new Error('DataPlane API port 5555 is not exposed on HAProxy container');
       }
 
-      // Determine the endpoint URL
-      let baseUrl: string;
-
-      // Check if port is bound to host
+      // Get the host port from the container binding
       const hostBinding = dataplanePort[0];
-      if (hostBinding && hostBinding.HostPort) {
-        // Use host binding (0.0.0.0 means "all interfaces" for binding, but we need localhost to connect)
-        const hostIp = (hostBinding.HostIp && hostBinding.HostIp !== '0.0.0.0') ? hostBinding.HostIp : 'localhost';
-        baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
-      } else {
-        // Use container network IP
-        const networks = containerInfo.NetworkSettings?.Networks || {};
-        const networkNames = Object.keys(networks);
-
-        if (networkNames.length === 0) {
-          throw new Error('HAProxy container is not connected to any networks');
-        }
-
-        // Use the first non-bridge network, or bridge if that's all we have
-        const preferredNetwork = networkNames.find(name => name !== 'bridge') || networkNames[0];
-        const networkInfo = networks[preferredNetwork];
-
-        if (!networkInfo?.IPAddress) {
-          throw new Error(`No IP address found for HAProxy container on network ${preferredNetwork}`);
-        }
-
-        baseUrl = `http://${networkInfo.IPAddress}:5555/v3`;
+      if (!hostBinding || !hostBinding.HostPort) {
+        throw new Error('DataPlane API port 5555 is not bound to a host port');
       }
+
+      // Use the configured Docker host IP from system settings
+      const hostIp = await networkUtils.getDockerHostIP();
+      const baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
 
       return {
         baseUrl,
