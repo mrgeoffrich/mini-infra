@@ -116,6 +116,126 @@ router.get(
   }
 );
 
+// Validation schema for creating a shared frontend
+const createSharedFrontendSchema = z.object({
+  environmentId: z.string().cuid("Invalid environment ID"),
+  type: z.enum(["http", "https"]),
+  bindPort: z.number().int().min(1).max(65535).optional(),
+});
+
+/**
+ * POST /api/haproxy/frontends/shared
+ * Create a shared frontend for an environment
+ */
+router.post(
+  "/shared",
+  requireSessionOrApiKey as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const validationResult = createSharedFrontendSchema.safeParse(req.body);
+
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: validationResult.error.issues,
+        });
+      }
+
+      const { environmentId, type, bindPort } = validationResult.data;
+
+      // Get environment details
+      const environment = await prisma.environment.findUnique({
+        where: { id: environmentId },
+        include: {
+          services: {
+            where: { serviceName: "haproxy" },
+          },
+        },
+      });
+
+      if (!environment) {
+        return res.status(404).json({
+          success: false,
+          error: "Environment not found",
+        });
+      }
+
+      const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
+      if (!haproxyService) {
+        return res.status(400).json({
+          success: false,
+          error: "Environment does not have HAProxy service",
+        });
+      }
+
+      // Find HAProxy container
+      const dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+      const containers = await dockerService.listContainers();
+
+      const haproxyContainer = containers.find((container: any) => {
+        const labels = container.labels || {};
+        return (
+          labels["mini-infra.service"] === "haproxy" &&
+          labels["mini-infra.environment"] === environmentId &&
+          container.status === "running"
+        );
+      });
+
+      if (!haproxyContainer) {
+        return res.status(503).json({
+          success: false,
+          error: "HAProxy container not found or not running",
+        });
+      }
+
+      // Initialize HAProxy client
+      const haproxyClient = new HAProxyDataPlaneClient();
+      await haproxyClient.initialize(haproxyContainer.id);
+
+      // Create the shared frontend
+      const defaultPort = type === "https" ? 443 : 80;
+      const sharedFrontend = await haproxyFrontendManager.getOrCreateSharedFrontend(
+        environmentId,
+        type,
+        haproxyClient,
+        prisma,
+        {
+          bindPort: bindPort ?? defaultPort,
+          bindAddress: "*",
+        }
+      );
+
+      logger.info(
+        { environmentId, type, frontendName: sharedFrontend.frontendName },
+        "Created shared frontend via API"
+      );
+
+      res.status(201).json({
+        success: true,
+        data: {
+          id: sharedFrontend.id,
+          frontendName: sharedFrontend.frontendName,
+          environmentId: sharedFrontend.environmentId,
+          isSharedFrontend: sharedFrontend.isSharedFrontend,
+          bindPort: sharedFrontend.bindPort,
+          bindAddress: sharedFrontend.bindAddress,
+          type,
+        },
+        message: `Shared ${type.toUpperCase()} frontend created successfully`,
+      });
+    } catch (error: any) {
+      logger.error({ error: error.message }, "Failed to create shared frontend");
+      res.status(500).json({
+        success: false,
+        error: "Failed to create shared frontend",
+        message: error.message,
+      });
+    }
+  }
+);
+
 /**
  * GET /api/haproxy/frontends/:frontendName
  * Get details of a specific HAProxy frontend by name

@@ -274,11 +274,13 @@ export class ManualFrontendManager {
       }
 
       // Validate hostname uniqueness - check both HAProxyFrontend and HAProxyRoute tables
+      // Exclude "removed" frontends as they are no longer active
       const existingFrontend = await prisma.hAProxyFrontend.findFirst({
         where: {
           hostname: request.hostname,
           environmentId: request.environmentId,
           isSharedFrontend: false, // Only check non-shared frontends
+          status: { not: "removed" }, // Exclude removed frontends
         },
       });
 
@@ -288,10 +290,11 @@ export class ManualFrontendManager {
         );
       }
 
-      // Also check existing routes in shared frontends
+      // Also check existing routes in shared frontends (exclude removed routes)
       const existingRoute = await prisma.hAProxyRoute.findFirst({
         where: {
           hostname: request.hostname,
+          status: { not: "removed" }, // Exclude removed routes
           sharedFrontend: {
             environmentId: request.environmentId,
           },
@@ -354,17 +357,21 @@ export class ManualFrontendManager {
       });
 
       // Get or create the shared frontend for this environment
+      // Use HTTPS frontend when SSL is enabled, otherwise HTTP
+      const frontendType = request.enableSsl ? "https" : "http";
+      const bindPort = request.enableSsl ? 443 : 80;
+
       logger.info(
-        { environmentId: request.environmentId },
-        "Getting or creating shared HTTP frontend"
+        { environmentId: request.environmentId, frontendType, bindPort },
+        `Getting or creating shared ${frontendType.toUpperCase()} frontend`
       );
       const sharedFrontend = await this.frontendManager.getOrCreateSharedFrontend(
         request.environmentId,
-        "http",
+        frontendType,
         haproxyClient,
         prisma,
         {
-          bindPort: 80,
+          bindPort,
           bindAddress: "*",
         }
       );
