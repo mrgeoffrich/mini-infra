@@ -13,6 +13,8 @@ on:
       - main
     paths-ignore:
       - '**.md'
+  release:
+    types: [published]
   workflow_dispatch:
 
 env:
@@ -47,10 +49,17 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            # Branch name (e.g., :main)
             type=ref,event=branch
+            # PR number (e.g., :pr-123)
             type=ref,event=pr
-            type=sha,prefix=main-,enable={{is_default_branch}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            # SHA for main branch pushes (e.g., :main-abc1234)
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            # :dev tag for main branch pushes
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            # :production tag for releases
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            # Semver tags for releases (e.g., :1.2.3, :1.2)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
