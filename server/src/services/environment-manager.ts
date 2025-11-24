@@ -23,6 +23,7 @@ import { ApplicationServiceFactory } from './application-service-factory';
 import { DockerExecutorService } from './docker-executor';
 import { servicesLogger } from '../lib/logger-factory';
 import { UserEventService } from './user-event-service';
+import { portUtils } from './port-utils';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
@@ -512,6 +513,26 @@ export class EnvironmentManager {
           success: true,
           message: 'Environment is already running'
         };
+      }
+
+      // Pre-flight port validation for HAProxy services
+      const hasHAProxy = environment.services.some(s => s.serviceType === 'haproxy');
+      if (hasHAProxy) {
+        this.logger.info({ environmentId: id }, 'Validating HAProxy ports before starting');
+        const { validation } = await portUtils.validatePortsForEnvironment(id);
+
+        if (!validation.isValid) {
+          this.logger.warn({ environmentId: id, validation }, 'Port validation failed');
+          return {
+            success: false,
+            message: validation.message,
+            details: {
+              unavailablePorts: validation.unavailablePorts,
+              conflicts: validation.conflicts
+            }
+          };
+        }
+        this.logger.info({ environmentId: id }, 'Port validation passed');
       }
 
       // Create user event for tracking

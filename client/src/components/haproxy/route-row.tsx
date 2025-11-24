@@ -1,0 +1,203 @@
+import { useState } from "react";
+import {
+  IconDots,
+  IconTrash,
+  IconShield,
+  IconRocket,
+  IconSettings,
+} from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { TableCell, TableRow } from "@/components/ui/table";
+import { useDeleteRoute } from "@/hooks/use-haproxy-routes";
+import { HAProxyRouteInfo } from "@mini-infra/types";
+import { toast } from "sonner";
+
+interface RouteRowProps {
+  route: HAProxyRouteInfo;
+  frontendName: string;
+}
+
+function RouteStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case "active":
+      return (
+        <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50 dark:text-green-300 dark:border-green-800 dark:bg-green-950">
+          Active
+        </Badge>
+      );
+    case "pending":
+      return (
+        <Badge variant="outline" className="text-yellow-700 border-yellow-200 bg-yellow-50 dark:text-yellow-300 dark:border-yellow-800 dark:bg-yellow-950">
+          Pending
+        </Badge>
+      );
+    case "failed":
+      return (
+        <Badge variant="outline" className="text-red-700 border-red-200 bg-red-50 dark:text-red-300 dark:border-red-800 dark:bg-red-950">
+          Failed
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="outline">
+          {status}
+        </Badge>
+      );
+  }
+}
+
+function RouteSourceBadge({ sourceType }: { sourceType: string }) {
+  switch (sourceType) {
+    case "deployment":
+      return (
+        <Badge variant="secondary" className="gap-1">
+          <IconRocket className="h-3 w-3" />
+          Deployment
+        </Badge>
+      );
+    case "manual":
+      return (
+        <Badge variant="outline" className="gap-1">
+          <IconSettings className="h-3 w-3" />
+          Manual
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="outline">
+          {sourceType}
+        </Badge>
+      );
+  }
+}
+
+export function RouteRow({ route, frontendName }: RouteRowProps) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const deleteRouteMutation = useDeleteRoute();
+
+  const handleDelete = async () => {
+    try {
+      await deleteRouteMutation.mutateAsync({
+        frontendName,
+        routeId: route.id,
+      });
+      toast.success("Route deleted successfully");
+      setDeleteDialogOpen(false);
+    } catch (error) {
+      toast.error(
+        `Failed to delete route: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  };
+
+  // Determine if this route can be deleted
+  // Deployment routes should be managed through the deployment config
+  const canDelete = route.sourceType === "manual";
+
+  return (
+    <>
+      <TableRow>
+        <TableCell>
+          <div className="font-medium">{route.hostname}</div>
+          <div className="text-xs text-muted-foreground">{route.aclName}</div>
+        </TableCell>
+        <TableCell>
+          <div className="font-mono text-sm">{route.backendName}</div>
+        </TableCell>
+        <TableCell>
+          <RouteSourceBadge sourceType={route.sourceType} />
+        </TableCell>
+        <TableCell>
+          {route.useSSL ? (
+            <IconShield className="h-4 w-4 text-green-600" />
+          ) : (
+            <span className="text-muted-foreground text-xs">No</span>
+          )}
+        </TableCell>
+        <TableCell>
+          <RouteStatusBadge status={route.status} />
+        </TableCell>
+        <TableCell>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <IconDots className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canDelete ? (
+                <DropdownMenuItem
+                  onClick={() => setDeleteDialogOpen(true)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <IconTrash className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem disabled>
+                  <IconRocket className="h-4 w-4 mr-2" />
+                  Managed by Deployment
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Route</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the route for "{route.hostname}"?
+              This will remove the ACL and backend switching rule from HAProxy.
+              <br />
+              <br />
+              Traffic to this hostname will no longer be routed to the backend.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteRouteMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteRouteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteRouteMutation.isPending ? (
+                <>
+                  <IconTrash className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <IconTrash className="h-4 w-4 mr-2" />
+                  Delete
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

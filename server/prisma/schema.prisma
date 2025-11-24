@@ -376,6 +376,7 @@ model Environment {
   networks    EnvironmentNetwork[]
   volumes     EnvironmentVolume[]
   deploymentConfigurations DeploymentConfiguration[]
+  haproxyFrontends HAProxyFrontend[]
 
   @@index([type])
   @@index([networkType])
@@ -468,13 +469,16 @@ model HAProxyFrontend {
   deploymentConfig      DeploymentConfiguration? @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
 
   // Frontend type discriminator
-  frontendType          String   @default("deployment") // "deployment" | "manual"
+  frontendType          String   @default("deployment") // "deployment" | "manual" | "shared"
 
   // Manual frontend fields
   containerName         String?  // Docker container name (for manual frontends)
   containerId           String?  // Docker container ID (for manual frontends)
   containerPort         Int?     // Container listening port (for manual frontends)
-  environmentId         String?  // Environment association (for manual frontends)
+  environmentId         String?  // Environment association
+
+  // Environment relation
+  environment           Environment? @relation(fields: [environmentId], references: [id])
 
   // Frontend configuration
   frontendName          String   @unique
@@ -489,6 +493,13 @@ model HAProxyFrontend {
   tlsCertificate        TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
   sslBindPort           Int      @default(443)
 
+  // Shared frontend support
+  isSharedFrontend      Boolean  @default(false)
+  sharedFrontendId      String?  // Reference to parent shared frontend (for routes)
+
+  // Relations
+  routes                HAProxyRoute[]
+
   status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
   errorMessage          String?
   createdAt             DateTime @default(now())
@@ -501,7 +512,41 @@ model HAProxyFrontend {
   @@index([tlsCertificateId])
   @@index([frontendType])
   @@index([environmentId])
+  @@index([isSharedFrontend])
   @@map("haproxy_frontends")
+}
+
+// HAProxyRoute model for tracking individual hostname routes within a shared frontend
+model HAProxyRoute {
+  id                    String   @id @default(cuid())
+  sharedFrontendId      String   // FK to shared HAProxyFrontend
+  sharedFrontend        HAProxyFrontend @relation(fields: [sharedFrontendId], references: [id], onDelete: Cascade)
+
+  // Route configuration
+  hostname              String
+  aclName               String   // e.g., "acl_pilltracker_app"
+  backendName           String   // e.g., "pilltracker"
+  priority              Int      @default(0)  // For rule ordering
+
+  // Source tracking
+  sourceType            String   // "deployment" | "manual"
+  deploymentConfigId    String?  // For deployment routes
+  manualFrontendId      String?  // For manual routes (legacy migration)
+
+  // SSL per-route (for SNI)
+  useSSL                Boolean  @default(false)
+  tlsCertificateId      String?
+
+  status                String   @default("active")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([sharedFrontendId, hostname])
+  @@index([sharedFrontendId])
+  @@index([hostname])
+  @@index([status])
+  @@index([sourceType])
+  @@map("haproxy_routes")
 }
 
 // Registry Credentials Management

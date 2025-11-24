@@ -78,7 +78,7 @@ export class ManualFrontendManager {
         all: false, // Only running containers
       });
 
-      // Get existing frontends to check for conflicts
+      // Get existing manual frontends to check for conflicts
       const existingFrontends = await prisma.hAProxyFrontend.findMany({
         where: {
           environmentId,
@@ -90,9 +90,41 @@ export class ManualFrontendManager {
         },
       });
 
-      const usedContainerIds = new Set(
-        existingFrontends.map((f) => f.containerId).filter(Boolean)
-      );
+      // Also get containers from routes in shared frontends
+      const existingRoutes = await prisma.hAProxyRoute.findMany({
+        where: {
+          sourceType: "manual",
+          sharedFrontend: {
+            environmentId,
+          },
+        },
+        include: {
+          sharedFrontend: true,
+        },
+      });
+
+      // Collect all container IDs that are already connected
+      const usedContainerIds = new Set<string>();
+
+      // Add from manual frontends
+      existingFrontends.forEach((f) => {
+        if (f.containerId) {
+          usedContainerIds.add(f.containerId);
+        }
+      });
+
+      // Add from routes (manualFrontendId points to the frontend record which has containerId)
+      for (const route of existingRoutes) {
+        if (route.manualFrontendId) {
+          const manualFrontend = await prisma.hAProxyFrontend.findUnique({
+            where: { id: route.manualFrontendId },
+            select: { containerId: true },
+          });
+          if (manualFrontend?.containerId) {
+            usedContainerIds.add(manualFrontend.containerId);
+          }
+        }
+      }
 
       // Filter and map containers
       const eligibleContainers: EligibleContainer[] = await Promise.all(
@@ -211,19 +243,23 @@ export class ManualFrontendManager {
   }
 
   /**
-   * Create a manual frontend for a container
+   * Create a manual frontend for a container using shared frontends
+   *
+   * This method uses shared frontends - if a shared frontend already exists
+   * for the environment/port combination, a route is added to it. Otherwise,
+   * a new shared frontend is created first.
    *
    * @param request Manual frontend creation request
    * @param haproxyClient HAProxy DataPlane client instance
    * @param prisma Prisma client instance
-   * @returns Created frontend record
+   * @returns Created frontend record (for backward compatibility) with route info
    */
   async createManualFrontend(
     request: CreateManualFrontendRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
   ): Promise<any> {
-    logger.info({ request }, "Creating manual frontend");
+    logger.info({ request }, "Creating manual frontend using shared frontend");
 
     try {
       // Validate container
@@ -237,17 +273,34 @@ export class ManualFrontendManager {
         throw new Error(`Container validation failed: ${validation.errors.join(", ")}`);
       }
 
-      // Validate hostname uniqueness
+      // Validate hostname uniqueness - check both HAProxyFrontend and HAProxyRoute tables
       const existingFrontend = await prisma.hAProxyFrontend.findFirst({
         where: {
           hostname: request.hostname,
           environmentId: request.environmentId,
+          isSharedFrontend: false, // Only check non-shared frontends
         },
       });
 
       if (existingFrontend) {
         throw new Error(
           `Hostname ${request.hostname} is already in use by frontend: ${existingFrontend.frontendName}`
+        );
+      }
+
+      // Also check existing routes in shared frontends
+      const existingRoute = await prisma.hAProxyRoute.findFirst({
+        where: {
+          hostname: request.hostname,
+          sharedFrontend: {
+            environmentId: request.environmentId,
+          },
+        },
+      });
+
+      if (existingRoute) {
+        throw new Error(
+          `Hostname ${request.hostname} is already in use by an existing route`
         );
       }
 
@@ -300,52 +353,84 @@ export class ManualFrontendManager {
         enabled: true,
       });
 
-      // Create frontend using existing HAProxyFrontendManager
-      // IMPORTANT: Capture the actual frontend name created by the manager
-      logger.info({ hostname: request.hostname }, "Creating frontend");
-      const frontendName = await this.frontendManager.createFrontendForDeployment(
-        request.hostname,
-        backendName,
-        request.containerName,
+      // Get or create the shared frontend for this environment
+      logger.info(
+        { environmentId: request.environmentId },
+        "Getting or creating shared HTTP frontend"
+      );
+      const sharedFrontend = await this.frontendManager.getOrCreateSharedFrontend(
         request.environmentId,
+        "http",
         haproxyClient,
+        prisma,
         {
-          tlsCertificateId: request.tlsCertificateId,
-          prisma,
           bindPort: 80,
           bindAddress: "*",
         }
       );
 
-      // Create database record with the actual frontend name from HAProxy
-      const frontend = await prisma.hAProxyFrontend.create({
+      // Add route to the shared frontend
+      logger.info(
+        {
+          sharedFrontendId: sharedFrontend.id,
+          hostname: request.hostname,
+          backendName,
+        },
+        "Adding route to shared frontend"
+      );
+      const route = await this.frontendManager.addRouteToSharedFrontend(
+        sharedFrontend.id,
+        request.hostname,
+        backendName,
+        "manual",
+        request.containerId, // Use containerId as sourceId for manual routes
+        haproxyClient,
+        prisma,
+        {
+          useSSL: request.enableSsl || false,
+          tlsCertificateId: request.tlsCertificateId,
+        }
+      );
+
+      // Create a "virtual" frontend record for backward compatibility
+      // This record represents the manual connection and links to the route
+      const manualFrontendRecord = await prisma.hAProxyFrontend.create({
         data: {
           frontendType: "manual",
           containerName: request.containerName,
           containerId: request.containerId,
           containerPort: request.containerPort,
           environmentId: request.environmentId,
-          frontendName,
+          frontendName: `manual_${sanitizedContainerName}_${request.environmentId.slice(-8)}`,
           backendName,
           hostname: request.hostname,
           bindPort: 80,
           bindAddress: "*",
           useSSL: request.enableSsl || false,
           tlsCertificateId: request.tlsCertificateId,
+          isSharedFrontend: false,
+          sharedFrontendId: sharedFrontend.id,
           status: "active",
         },
       });
 
+      // Update the route to link to the manual frontend record
+      await prisma.hAProxyRoute.update({
+        where: { id: route.id },
+        data: { manualFrontendId: manualFrontendRecord.id },
+      });
+
       logger.info(
         {
-          frontendId: frontend.id,
-          frontendName,
+          frontendId: manualFrontendRecord.id,
+          routeId: route.id,
+          sharedFrontendName: sharedFrontend.frontendName,
           hostname: request.hostname,
         },
-        "Manual frontend created successfully"
+        "Manual frontend created successfully using shared frontend"
       );
 
-      return frontend;
+      return manualFrontendRecord;
     } catch (error) {
       logger.error({ error, request }, "Failed to create manual frontend");
       throw error;
@@ -354,6 +439,9 @@ export class ManualFrontendManager {
 
   /**
    * Delete a manual frontend
+   *
+   * For shared frontends, this removes the route but keeps the shared frontend.
+   * It also removes the backend associated with this container.
    *
    * @param frontendName Frontend name to delete
    * @param haproxyClient HAProxy DataPlane client instance
@@ -382,9 +470,25 @@ export class ManualFrontendManager {
         );
       }
 
-      // Remove frontend from HAProxy
-      logger.info({ frontendName }, "Removing frontend from HAProxy");
-      await this.frontendManager.removeFrontend(frontendName, haproxyClient);
+      // Check if this frontend uses a shared frontend
+      if (frontend.sharedFrontendId) {
+        // Remove the route from the shared frontend
+        logger.info(
+          { frontendName, sharedFrontendId: frontend.sharedFrontendId, hostname: frontend.hostname },
+          "Removing route from shared frontend"
+        );
+
+        await this.frontendManager.removeRouteFromSharedFrontend(
+          frontend.sharedFrontendId,
+          frontend.hostname,
+          haproxyClient,
+          prisma
+        );
+      } else {
+        // Legacy path: remove the dedicated frontend from HAProxy
+        logger.info({ frontendName }, "Removing dedicated frontend from HAProxy");
+        await this.frontendManager.removeFrontend(frontendName, haproxyClient);
+      }
 
       // Remove backend from HAProxy
       if (frontend.backendName) {

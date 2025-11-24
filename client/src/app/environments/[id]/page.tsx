@@ -2,11 +2,14 @@ import { useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment, useStartEnvironment, useStopEnvironment } from "@/hooks/use-environments";
+import { useValidatePorts, hasUnavailablePorts, formatUnavailablePorts } from "@/hooks/use-validate-ports";
 import { NetworkList, VolumeList } from "@/components/environments";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
 import { ServiceAddDialog } from "@/components/environments/service-add-dialog";
 import { EnvironmentStatus, ServiceHealth } from "@/components/environments/environment-status";
+import { HAProxyStatusCard } from "@/components/environments/haproxy-status-card";
+import { RemediateHAProxyDialog } from "@/components/haproxy/remediate-haproxy-dialog";
 import {
   Card,
   CardContent,
@@ -38,6 +41,7 @@ import {
   IconDots,
   IconUsers,
   IconAlertCircle,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
@@ -56,6 +60,7 @@ export function EnvironmentDetailPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [serviceAddDialogOpen, setServiceAddDialogOpen] = useState(false);
+  const [remediateDialogOpen, setRemediateDialogOpen] = useState(false);
   const [isOperating, setIsOperating] = useState(false);
 
   const startMutation = useStartEnvironment();
@@ -72,6 +77,15 @@ export function EnvironmentDetailPage() {
     enabled: !!environmentId, // Only fetch if environmentId exists
   });
 
+  // Validate ports for HAProxy services
+  const {
+    data: portValidation,
+    refetch: refetchPortValidation,
+  } = useValidatePorts(environmentId, {
+    enabled: !!environmentId,
+    refetchInterval: 30000, // Check ports every 30 seconds
+  });
+
   if (!environmentId) {
     return <Navigate to="/environments" replace />;
   }
@@ -84,6 +98,15 @@ export function EnvironmentDetailPage() {
     if (!environment) return;
     setIsOperating(true);
     try {
+      // Re-validate ports before starting
+      const { data: freshValidation } = await refetchPortValidation();
+      if (freshValidation && hasUnavailablePorts(freshValidation.data?.validation)) {
+        const unavailable = formatUnavailablePorts(freshValidation.data?.validation);
+        toast.error(`Cannot start environment: The following ports are unavailable: ${unavailable}`);
+        setIsOperating(false);
+        return;
+      }
+
       await startMutation.mutateAsync(environment.id);
       toast.success(`Environment "${environment.name}" started successfully`);
     } catch (error) {
@@ -301,6 +324,20 @@ export function EnvironmentDetailPage() {
           </div>
         </div>
 
+        {/* Port Unavailability Warning */}
+        {canStart && hasUnavailablePorts(portValidation?.data?.validation) && (
+          <Alert variant="destructive" className="mb-6">
+            <IconAlertTriangle className="h-4 w-4" />
+            <AlertDescription className="flex flex-col gap-1">
+              <span className="font-medium">Port Conflict Detected</span>
+              <span>
+                The following ports are already in use and may prevent the environment from starting:{" "}
+                {formatUnavailablePorts(portValidation?.data?.validation)}
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Environment Overview */}
         <div className="grid gap-6 md:grid-cols-3 mb-6">
           <Card>
@@ -353,6 +390,15 @@ export function EnvironmentDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* HAProxy Status Card - Only show if environment has HAProxy service */}
+        {environment.services.some(s => s.serviceName === 'haproxy') && (
+          <HAProxyStatusCard
+            environmentId={environment.id}
+            onRemediateClick={() => setRemediateDialogOpen(true)}
+            className="mb-6"
+          />
+        )}
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
@@ -479,6 +525,14 @@ export function EnvironmentDetailPage() {
         onOpenChange={setServiceAddDialogOpen}
         environment={environment}
         onSuccess={handleServiceAddSuccess}
+      />
+
+      <RemediateHAProxyDialog
+        environmentId={environment.id}
+        environmentName={environment.name}
+        open={remediateDialogOpen}
+        onOpenChange={setRemediateDialogOpen}
+        onSuccess={() => refetch()}
       />
     </div>
   );

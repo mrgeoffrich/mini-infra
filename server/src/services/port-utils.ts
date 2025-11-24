@@ -92,7 +92,7 @@ export class PortUtils {
   }
 
   /**
-   * Validate HAProxy port configuration
+   * Validate HAProxy port configuration (HTTP and HTTPS only - legacy method)
    * Checks if ports are available and returns validation result
    *
    * @param httpPort HTTP port to validate
@@ -103,62 +103,111 @@ export class PortUtils {
     httpPort: number,
     httpsPort: number
   ): Promise<HAProxyPortValidationResult> {
-    logger.info({ httpPort, httpsPort }, "Validating HAProxy ports");
+    // Use the full validation method with dummy stats/dataplane ports
+    return this.validateAllHAProxyPorts({
+      httpPort,
+      httpsPort,
+      statsPort: 8404,
+      dataplanePort: 5555,
+      source: "network-type",
+    });
+  }
+
+  /**
+   * Validate all HAProxy ports (HTTP, HTTPS, Stats, DataPlane)
+   * Checks if all ports are available and returns detailed validation result
+   *
+   * @param config HAProxy port configuration to validate
+   * @returns Validation result with availability status for all ports
+   */
+  async validateAllHAProxyPorts(
+    config: HAProxyPortConfig
+  ): Promise<HAProxyPortValidationResult> {
+    const { httpPort, httpsPort, statsPort, dataplanePort } = config;
+    logger.info({ httpPort, httpsPort, statsPort, dataplanePort }, "Validating all HAProxy ports");
 
     const result: HAProxyPortValidationResult = {
       isValid: true,
       httpPortAvailable: true,
       httpsPortAvailable: true,
+      statsPortAvailable: true,
+      dataplanePortAvailable: true,
       conflicts: {},
-      message: "Ports are available",
+      unavailablePorts: [],
+      message: "All ports are available",
     };
 
     try {
+      const ports = [
+        { port: httpPort, name: "HTTP", key: "httpPort" as const },
+        { port: httpsPort, name: "HTTPS", key: "httpsPort" as const },
+        { port: statsPort, name: "Stats", key: "statsPort" as const },
+        { port: dataplanePort, name: "DataPlane API", key: "dataplanePort" as const },
+      ];
+
       // Validate port numbers
-      if (!this.isValidPort(httpPort)) {
-        result.isValid = false;
-        result.httpPortAvailable = false;
-        result.conflicts.httpPort = `Invalid port number: ${httpPort}`;
+      for (const { port, name, key } of ports) {
+        if (!this.isValidPort(port)) {
+          result.isValid = false;
+          if (key === "httpPort") result.httpPortAvailable = false;
+          if (key === "httpsPort") result.httpsPortAvailable = false;
+          if (key === "statsPort") result.statsPortAvailable = false;
+          if (key === "dataplanePort") result.dataplanePortAvailable = false;
+          result.conflicts[key] = `Invalid port number: ${port}`;
+          result.unavailablePorts.push({ port, name, reason: `Invalid port number` });
+        }
       }
 
-      if (!this.isValidPort(httpsPort)) {
-        result.isValid = false;
-        result.httpsPortAvailable = false;
-        result.conflicts.httpsPort = `Invalid port number: ${httpsPort}`;
-      }
-
-      if (!result.isValid) {
+      if (result.unavailablePorts.length > 0) {
         result.message = "Invalid port numbers";
         return result;
       }
 
-      // Check if ports are the same
-      if (httpPort === httpsPort) {
-        result.isValid = false;
-        result.conflicts.httpPort = "HTTP and HTTPS ports cannot be the same";
-        result.conflicts.httpsPort = "HTTP and HTTPS ports cannot be the same";
-        result.message = "HTTP and HTTPS ports must be different";
+      // Check for duplicate ports
+      const portSet = new Set<number>();
+      for (const { port, name, key } of ports) {
+        if (portSet.has(port)) {
+          result.isValid = false;
+          if (key === "httpPort") result.httpPortAvailable = false;
+          if (key === "httpsPort") result.httpsPortAvailable = false;
+          if (key === "statsPort") result.statsPortAvailable = false;
+          if (key === "dataplanePort") result.dataplanePortAvailable = false;
+          result.conflicts[key] = `Port ${port} is used by multiple services`;
+          result.unavailablePorts.push({ port, name, reason: `Duplicate port` });
+        }
+        portSet.add(port);
+      }
+
+      if (result.unavailablePorts.length > 0) {
+        result.message = "Duplicate ports detected";
         return result;
       }
 
-      // Check port availability
-      const httpAvailable = await this.isPortAvailable(httpPort);
-      const httpsAvailable = await this.isPortAvailable(httpsPort);
+      // Check port availability in parallel
+      const availabilityChecks = await Promise.all(
+        ports.map(async ({ port, name, key }) => ({
+          port,
+          name,
+          key,
+          available: await this.isPortAvailable(port),
+        }))
+      );
 
-      if (!httpAvailable) {
-        result.isValid = false;
-        result.httpPortAvailable = false;
-        result.conflicts.httpPort = `Port ${httpPort} is already in use`;
-      }
-
-      if (!httpsAvailable) {
-        result.isValid = false;
-        result.httpsPortAvailable = false;
-        result.conflicts.httpsPort = `Port ${httpsPort} is already in use`;
+      for (const { port, name, key, available } of availabilityChecks) {
+        if (!available) {
+          result.isValid = false;
+          if (key === "httpPort") result.httpPortAvailable = false;
+          if (key === "httpsPort") result.httpsPortAvailable = false;
+          if (key === "statsPort") result.statsPortAvailable = false;
+          if (key === "dataplanePort") result.dataplanePortAvailable = false;
+          result.conflicts[key] = `Port ${port} is already in use`;
+          result.unavailablePorts.push({ port, name, reason: `Port is already in use` });
+        }
       }
 
       if (!result.isValid) {
-        result.message = "One or more ports are already in use";
+        const portList = result.unavailablePorts.map(p => `${p.name} (${p.port})`).join(", ");
+        result.message = `The following ports are unavailable: ${portList}`;
         result.suggestedPorts = {
           httpPort: 8111,
           httpsPort: 8443,
@@ -167,9 +216,27 @@ export class PortUtils {
 
       return result;
     } catch (error) {
-      logger.error({ error, httpPort, httpsPort }, "Failed to validate HAProxy ports");
+      logger.error({ error, config }, "Failed to validate HAProxy ports");
       throw error;
     }
+  }
+
+  /**
+   * Validate ports for an environment
+   * Gets the port configuration and validates all ports
+   *
+   * @param environmentId The environment ID
+   * @returns Validation result with port configuration and availability
+   */
+  async validatePortsForEnvironment(
+    environmentId: string
+  ): Promise<{ config: HAProxyPortConfig; validation: HAProxyPortValidationResult }> {
+    logger.info({ environmentId }, "Validating ports for environment");
+
+    const config = await this.getHAProxyPortsForEnvironment(environmentId);
+    const validation = await this.validateAllHAProxyPorts(config);
+
+    return { config, validation };
   }
 
   /**
