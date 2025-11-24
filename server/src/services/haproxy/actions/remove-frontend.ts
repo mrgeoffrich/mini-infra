@@ -104,6 +104,35 @@ export class RemoveFrontend {
           },
           "Route removed from shared frontend successfully"
         );
+
+        // Clean up certificate if route had SSL enabled
+        if (routeRecord.tlsCertificateId) {
+          logger.info(
+            {
+              deploymentId: context.deploymentId,
+              tlsCertificateId: routeRecord.tlsCertificateId,
+            },
+            "Cleaning up SSL certificate after route removal"
+          );
+
+          try {
+            await haproxyFrontendManager.removeCertificateFromHAProxy(
+              routeRecord.tlsCertificateId,
+              prisma,
+              this.haproxyClient
+            );
+          } catch (certError) {
+            // Log warning but don't fail the removal if certificate cleanup fails
+            logger.warn(
+              {
+                deploymentId: context.deploymentId,
+                tlsCertificateId: routeRecord.tlsCertificateId,
+                error: certError instanceof Error ? certError.message : "Unknown error",
+              },
+              "Failed to remove SSL certificate (non-critical)"
+            );
+          }
+        }
       }
 
       // Step 2: Check for legacy HAProxyFrontend record
@@ -156,6 +185,35 @@ export class RemoveFrontend {
               errorMessage: null,
             },
           });
+
+          // Clean up certificate if legacy frontend had SSL enabled
+          if (frontendRecord.tlsCertificateId) {
+            logger.info(
+              {
+                deploymentId: context.deploymentId,
+                tlsCertificateId: frontendRecord.tlsCertificateId,
+              },
+              "Cleaning up SSL certificate after legacy frontend removal"
+            );
+
+            try {
+              await haproxyFrontendManager.removeCertificateFromHAProxy(
+                frontendRecord.tlsCertificateId,
+                prisma,
+                this.haproxyClient
+              );
+            } catch (certError) {
+              // Log warning but don't fail the removal if certificate cleanup fails
+              logger.warn(
+                {
+                  deploymentId: context.deploymentId,
+                  tlsCertificateId: frontendRecord.tlsCertificateId,
+                  error: certError instanceof Error ? certError.message : "Unknown error",
+                },
+                "Failed to remove SSL certificate (non-critical)"
+              );
+            }
+          }
         }
       }
 

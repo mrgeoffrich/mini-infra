@@ -888,13 +888,183 @@ export class HAProxyFrontendManager {
       bindPort,
       {
         ssl: true,
-        ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
+        ssl_certificate: `/etc/haproxy/ssl/`,  // Directory path for SNI-based certificate selection
       }
     );
 
     logger.info(
       { frontendName, tlsCertificateId },
       "Successfully configured SSL for shared frontend"
+    );
+  }
+
+  /**
+   * Upload a certificate to HAProxy storage for SNI-based selection.
+   *
+   * The certificate is uploaded to /etc/haproxy/ssl/ where the shared
+   * HTTPS frontend bind is pointing. HAProxy will automatically select
+   * the correct certificate based on the SNI hostname.
+   *
+   * @param tlsCertificateId The TLS certificate ID from database
+   * @param prisma Prisma client instance
+   * @param haproxyClient HAProxy DataPlane client instance
+   */
+  async uploadCertificateForSNI(
+    tlsCertificateId: string,
+    prisma: PrismaClient,
+    haproxyClient: HAProxyDataPlaneClient
+  ): Promise<void> {
+    logger.info(
+      { tlsCertificateId },
+      "Uploading certificate to HAProxy for SNI selection"
+    );
+
+    // Get certificate from database
+    const certificate = await prisma.tlsCertificate.findUnique({
+      where: { id: tlsCertificateId },
+    });
+
+    if (!certificate) {
+      logger.warn(
+        { tlsCertificateId },
+        "Certificate not found, skipping upload"
+      );
+      return;
+    }
+
+    if (!certificate.blobName) {
+      logger.warn(
+        { tlsCertificateId },
+        "Certificate blob name not found, skipping upload"
+      );
+      return;
+    }
+
+    // Initialize TLS config and Azure Storage client
+    const tlsConfig = new TlsConfigService(prisma);
+    const azureConfig = new AzureConfigService(prisma);
+
+    const containerName = await tlsConfig.getCertificateContainerName();
+    const connectionString = await azureConfig.getConnectionString();
+
+    if (!connectionString) {
+      throw new Error("Azure Storage not configured");
+    }
+
+    const certificateStore = new AzureStorageCertificateStore(
+      connectionString,
+      containerName
+    );
+
+    // Get certificate from Azure Storage
+    logger.info(
+      { blobName: certificate.blobName },
+      "Retrieving certificate from Azure Storage for SNI"
+    );
+
+    const certData = await certificateStore.getCertificate(certificate.blobName);
+
+    // Combine certificate and private key for HAProxy
+    // Use domain name for filename - HAProxy matches by CN/SAN in the certificate
+    const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
+    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
+
+    // Upload or update certificate in HAProxy
+    try {
+      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+      logger.info({ certFileName }, "Updated existing SSL certificate for SNI");
+    } catch (updateError: any) {
+      if (
+        updateError.message?.includes("not found") ||
+        updateError.message?.includes("404")
+      ) {
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        logger.info({ certFileName }, "Uploaded new SSL certificate for SNI");
+      } else {
+        throw updateError;
+      }
+    }
+
+    logger.info(
+      { certFileName, tlsCertificateId, primaryDomain: certificate.primaryDomain },
+      "Certificate uploaded successfully for SNI selection"
+    );
+  }
+
+  /**
+   * Remove a certificate from HAProxy storage.
+   *
+   * This should be called when a deployment is removed and its certificate
+   * is no longer needed by any other deployments.
+   *
+   * @param tlsCertificateId The TLS certificate ID from database
+   * @param prisma Prisma client instance
+   * @param haproxyClient HAProxy DataPlane client instance
+   */
+  async removeCertificateFromHAProxy(
+    tlsCertificateId: string,
+    prisma: PrismaClient,
+    haproxyClient: HAProxyDataPlaneClient
+  ): Promise<void> {
+    logger.info(
+      { tlsCertificateId },
+      "Removing certificate from HAProxy storage"
+    );
+
+    // Get certificate from database to find the filename
+    const certificate = await prisma.tlsCertificate.findUnique({
+      where: { id: tlsCertificateId },
+    });
+
+    if (!certificate) {
+      logger.warn(
+        { tlsCertificateId },
+        "Certificate not found in database, skipping removal"
+      );
+      return;
+    }
+
+    // Generate the same filename used during upload
+    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
+
+    // Check if any other routes still use this certificate
+    const otherRoutesUsingCert = await prisma.hAProxyRoute.count({
+      where: {
+        tlsCertificateId,
+        status: "active",
+      },
+    });
+
+    if (otherRoutesUsingCert > 0) {
+      logger.info(
+        { tlsCertificateId, certFileName, otherRoutesUsingCert },
+        "Certificate still in use by other routes, skipping removal"
+      );
+      return;
+    }
+
+    // Also check legacy frontends using this certificate
+    const legacyFrontendsUsingCert = await prisma.hAProxyFrontend.count({
+      where: {
+        tlsCertificateId,
+        status: { not: "removed" },
+      },
+    });
+
+    if (legacyFrontendsUsingCert > 0) {
+      logger.info(
+        { tlsCertificateId, certFileName, legacyFrontendsUsingCert },
+        "Certificate still in use by legacy frontends, skipping removal"
+      );
+      return;
+    }
+
+    // Delete the certificate from HAProxy
+    await haproxyClient.deleteSSLCertificate(certFileName, false);
+
+    logger.info(
+      { certFileName, tlsCertificateId, primaryDomain: certificate.primaryDomain },
+      "Certificate removed from HAProxy storage"
     );
   }
 
@@ -982,6 +1152,16 @@ export class HAProxyFrontendManager {
         backendName,
         haproxyClient
       );
+
+      // If SSL is enabled and we have a certificate, upload it to HAProxy
+      // This ensures the certificate is in /etc/haproxy/ssl/ for SNI selection
+      if (sslOptions?.useSSL && sslOptions?.tlsCertificateId) {
+        await this.uploadCertificateForSNI(
+          sslOptions.tlsCertificateId,
+          prisma,
+          haproxyClient
+        );
+      }
 
       // Create route record in database
       const route = await prisma.hAProxyRoute.create({
