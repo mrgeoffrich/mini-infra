@@ -642,6 +642,9 @@ export class HAProxyFrontendManager {
    * @param haproxyClient The HAProxy DataPlane client instance
    * @param prisma Prisma client instance
    * @param options Optional configuration
+   * @param options.bindPort The port to bind on (default: 80 for http, 443 for https)
+   * @param options.bindAddress The address to bind on (default: *)
+   * @param options.tlsCertificateId TLS certificate ID for HTTPS frontends - if provided, SSL will be configured
    * @returns The shared frontend database record
    */
   async getOrCreateSharedFrontend(
@@ -652,6 +655,7 @@ export class HAProxyFrontendManager {
     options?: {
       bindPort?: number;
       bindAddress?: string;
+      tlsCertificateId?: string;
     }
   ): Promise<{
     id: string;
@@ -660,13 +664,16 @@ export class HAProxyFrontendManager {
     isSharedFrontend: boolean;
     bindPort: number;
     bindAddress: string;
+    useSSL: boolean;
+    tlsCertificateId: string | null;
   }> {
     const frontendName = this.generateSharedFrontendName(environmentId, type);
     const bindPort = options?.bindPort ?? (type === "https" ? 443 : 80);
     const bindAddress = options?.bindAddress ?? "*";
+    const tlsCertificateId = options?.tlsCertificateId;
 
     logger.info(
-      { environmentId, type, frontendName, bindPort, bindAddress },
+      { environmentId, type, frontendName, bindPort, bindAddress, hasTlsCert: !!tlsCertificateId },
       "Getting or creating shared frontend"
     );
 
@@ -693,6 +700,8 @@ export class HAProxyFrontendManager {
           isSharedFrontend: existingFrontend.isSharedFrontend,
           bindPort: existingFrontend.bindPort,
           bindAddress: existingFrontend.bindAddress,
+          useSSL: existingFrontend.useSSL,
+          tlsCertificateId: existingFrontend.tlsCertificateId,
         };
       }
 
@@ -710,16 +719,40 @@ export class HAProxyFrontendManager {
           mode: "http",
         });
 
-        // Add bind configuration
-        logger.info(
-          { frontendName, bindAddress, bindPort },
-          "Adding bind to shared frontend"
-        );
-        await haproxyClient.addFrontendBind(
-          frontendName,
-          bindAddress,
-          bindPort
-        );
+        // Add bind configuration based on type and SSL options
+        if (type === "https" && tlsCertificateId) {
+          // HTTPS with certificate - configure SSL from the start
+          logger.info(
+            { frontendName, bindAddress, bindPort, tlsCertificateId },
+            "Configuring HTTPS shared frontend with SSL"
+          );
+          await this.configureSharedFrontendSSL(
+            frontendName,
+            tlsCertificateId,
+            prisma,
+            haproxyClient,
+            bindAddress,
+            bindPort
+          );
+        } else if (type === "https") {
+          // HTTPS without certificate - don't create bind yet
+          // The SSL endpoint will create the bind with proper SSL configuration later
+          logger.info(
+            { frontendName, bindPort },
+            "HTTPS shared frontend created without bind - SSL must be configured separately"
+          );
+        } else {
+          // HTTP - create plain bind
+          logger.info(
+            { frontendName, bindAddress, bindPort },
+            "Adding bind to HTTP shared frontend"
+          );
+          await haproxyClient.addFrontendBind(
+            frontendName,
+            bindAddress,
+            bindPort
+          );
+        }
       } else {
         logger.info(
           { frontendName },
@@ -739,11 +772,13 @@ export class HAProxyFrontendManager {
           isSharedFrontend: true,
           environmentId,
           status: "active",
+          useSSL: type === "https" && !!tlsCertificateId,
+          tlsCertificateId: tlsCertificateId ?? null,
         },
       });
 
       logger.info(
-        { frontendId: newFrontend.id, frontendName, environmentId },
+        { frontendId: newFrontend.id, frontendName, environmentId, useSSL: newFrontend.useSSL },
         "Created shared frontend"
       );
 
@@ -754,6 +789,8 @@ export class HAProxyFrontendManager {
         isSharedFrontend: newFrontend.isSharedFrontend,
         bindPort: newFrontend.bindPort,
         bindAddress: newFrontend.bindAddress,
+        useSSL: newFrontend.useSSL,
+        tlsCertificateId: newFrontend.tlsCertificateId,
       };
     } catch (error) {
       logger.error(
@@ -762,6 +799,103 @@ export class HAProxyFrontendManager {
       );
       throw new Error(`Failed to get or create shared frontend: ${error}`);
     }
+  }
+
+  /**
+   * Configure SSL for a shared frontend
+   * This deploys the certificate and creates an SSL-enabled bind
+   *
+   * @param frontendName The frontend name
+   * @param tlsCertificateId The TLS certificate ID
+   * @param prisma Prisma client instance
+   * @param haproxyClient HAProxy DataPlane client instance
+   * @param bindAddress The address to bind on
+   * @param bindPort The port to bind on (default: 443)
+   */
+  private async configureSharedFrontendSSL(
+    frontendName: string,
+    tlsCertificateId: string,
+    prisma: PrismaClient,
+    haproxyClient: HAProxyDataPlaneClient,
+    bindAddress: string = "*",
+    bindPort: number = 443
+  ): Promise<void> {
+    logger.info(
+      { frontendName, tlsCertificateId, bindPort },
+      "Configuring SSL for shared frontend"
+    );
+
+    // Get certificate from database
+    const certificate = await prisma.tlsCertificate.findUnique({
+      where: { id: tlsCertificateId },
+    });
+
+    if (!certificate) {
+      throw new Error(`Certificate not found: ${tlsCertificateId}`);
+    }
+
+    if (!certificate.blobName) {
+      throw new Error(`Certificate blob name not found for certificate: ${tlsCertificateId}`);
+    }
+
+    // Initialize TLS config and Azure Storage client
+    const tlsConfig = new TlsConfigService(prisma);
+    const azureConfig = new AzureConfigService(prisma);
+
+    const containerName = await tlsConfig.getCertificateContainerName();
+    const connectionString = await azureConfig.getConnectionString();
+
+    if (!connectionString) {
+      throw new Error("Azure Storage not configured");
+    }
+
+    const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+
+    // Get certificate from Azure Storage
+    logger.info(
+      { blobName: certificate.blobName },
+      "Retrieving certificate from Azure Storage"
+    );
+
+    const certData = await certificateStore.getCertificate(certificate.blobName);
+
+    // Combine certificate and private key for HAProxy
+    const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
+    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
+
+    // Upload or update certificate in HAProxy
+    try {
+      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+      logger.info({ certFileName }, "Updated existing SSL certificate");
+    } catch (updateError: any) {
+      if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        logger.info({ certFileName }, "Uploaded new SSL certificate");
+      } else {
+        throw updateError;
+      }
+    }
+
+    // Add SSL-enabled bind
+    logger.info(
+      { frontendName, bindAddress, bindPort, certFileName },
+      "Adding SSL binding to shared frontend"
+    );
+
+    await haproxyClient.addFrontendBind(
+      frontendName,
+      bindAddress,
+      bindPort,
+      {
+        ssl: true,
+        ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
+      }
+    );
+
+    logger.info(
+      { frontendName, tlsCertificateId },
+      "Successfully configured SSL for shared frontend"
+    );
   }
 
   /**

@@ -121,6 +121,7 @@ const createSharedFrontendSchema = z.object({
   environmentId: z.string().cuid("Invalid environment ID"),
   type: z.enum(["http", "https"]),
   bindPort: z.number().int().min(1).max(65535).optional(),
+  tlsCertificateId: z.string().cuid("Invalid certificate ID").optional(),
 });
 
 /**
@@ -142,7 +143,26 @@ router.post(
         });
       }
 
-      const { environmentId, type, bindPort } = validationResult.data;
+      const { environmentId, type, bindPort, tlsCertificateId } = validationResult.data;
+
+      // If HTTPS with certificate, validate the certificate exists
+      if (type === "https" && tlsCertificateId) {
+        const certificate = await prisma.tlsCertificate.findUnique({
+          where: { id: tlsCertificateId },
+        });
+        if (!certificate) {
+          return res.status(404).json({
+            success: false,
+            error: "Certificate not found",
+          });
+        }
+        if (!certificate.blobName) {
+          return res.status(400).json({
+            success: false,
+            error: "Certificate has no blob name - not yet provisioned",
+          });
+        }
+      }
 
       // Get environment details
       const environment = await prisma.environment.findUnique({
@@ -204,6 +224,7 @@ router.post(
         {
           bindPort: bindPort ?? defaultPort,
           bindAddress: "*",
+          tlsCertificateId,
         }
       );
 
@@ -221,9 +242,13 @@ router.post(
           isSharedFrontend: sharedFrontend.isSharedFrontend,
           bindPort: sharedFrontend.bindPort,
           bindAddress: sharedFrontend.bindAddress,
+          useSSL: sharedFrontend.useSSL,
+          tlsCertificateId: sharedFrontend.tlsCertificateId,
           type,
         },
-        message: `Shared ${type.toUpperCase()} frontend created successfully`,
+        message: sharedFrontend.useSSL
+          ? `Shared ${type.toUpperCase()} frontend created with SSL configured`
+          : `Shared ${type.toUpperCase()} frontend created successfully`,
       });
     } catch (error: any) {
       logger.error({ error: error.message }, "Failed to create shared frontend");

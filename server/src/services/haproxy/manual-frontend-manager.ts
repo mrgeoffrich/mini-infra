@@ -362,7 +362,7 @@ export class ManualFrontendManager {
       const bindPort = request.enableSsl ? 443 : 80;
 
       logger.info(
-        { environmentId: request.environmentId, frontendType, bindPort },
+        { environmentId: request.environmentId, frontendType, bindPort, hasTlsCert: !!request.tlsCertificateId },
         `Getting or creating shared ${frontendType.toUpperCase()} frontend`
       );
       const sharedFrontend = await this.frontendManager.getOrCreateSharedFrontend(
@@ -373,6 +373,7 @@ export class ManualFrontendManager {
         {
           bindPort,
           bindAddress: "*",
+          tlsCertificateId: request.enableSsl ? request.tlsCertificateId : undefined,
         }
       );
 

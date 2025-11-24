@@ -168,11 +168,16 @@ export class HAProxyRemediationService {
 
       if (sslConfigs.length > 0) {
         try {
+          // Use the first available TLS certificate for the shared HTTPS frontend
+          const firstCertId = sslConfigs.find((dc) => dc.tlsCertificateId)?.tlsCertificateId;
           httpsFrontend = await this.frontendManager.getOrCreateSharedFrontend(
             environmentId,
             "https",
             haproxyClient,
-            prisma
+            prisma,
+            {
+              tlsCertificateId: firstCertId ?? undefined,
+            }
           );
           result.frontendsCreated++;
           logger.info(

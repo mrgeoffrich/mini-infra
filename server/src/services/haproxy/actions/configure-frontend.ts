@@ -137,7 +137,10 @@ export class ConfigureFrontend {
         context.environmentId,
         frontendType,
         this.haproxyClient,
-        prisma
+        prisma,
+        {
+          tlsCertificateId: hasSslCertificate ? (tlsCertificateId ?? undefined) : undefined,
+        }
       );
 
       logger.info(
