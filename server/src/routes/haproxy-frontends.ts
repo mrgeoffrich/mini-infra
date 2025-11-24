@@ -236,6 +236,176 @@ router.post(
   }
 );
 
+// Validation schema for configuring SSL on a frontend
+const configureSSLSchema = z.object({
+  tlsCertificateId: z.string().cuid("Invalid certificate ID"),
+});
+
+/**
+ * POST /api/haproxy/frontends/:frontendName/ssl
+ * Configure SSL on a shared frontend
+ */
+router.post(
+  "/:frontendName/ssl",
+  requireSessionOrApiKey as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const { frontendName } = req.params;
+      const validationResult = configureSSLSchema.safeParse(req.body);
+
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: validationResult.error.issues,
+        });
+      }
+
+      const { tlsCertificateId } = validationResult.data;
+
+      // Get frontend
+      const frontend = await prisma.hAProxyFrontend.findUnique({
+        where: { frontendName },
+      });
+
+      if (!frontend) {
+        return res.status(404).json({
+          success: false,
+          error: "Frontend not found",
+        });
+      }
+
+      if (!frontend.environmentId) {
+        return res.status(400).json({
+          success: false,
+          error: "Frontend has no environment ID",
+        });
+      }
+
+      // Get HAProxy client
+      const dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+      const containers = await dockerService.listContainers();
+
+      const haproxyContainer = containers.find((container: any) => {
+        const labels = container.labels || {};
+        return (
+          labels["mini-infra.service"] === "haproxy" &&
+          labels["mini-infra.environment"] === frontend.environmentId &&
+          container.status === "running"
+        );
+      });
+
+      if (!haproxyContainer) {
+        return res.status(503).json({
+          success: false,
+          error: "HAProxy container not found or not running",
+        });
+      }
+
+      const haproxyClient = new HAProxyDataPlaneClient();
+      await haproxyClient.initialize(haproxyContainer.id);
+
+      // Configure SSL binding (this is a private method, need to expose it)
+      // For now, we'll do it directly here
+      const certificate = await prisma.tlsCertificate.findUnique({
+        where: { id: tlsCertificateId },
+      });
+
+      if (!certificate) {
+        return res.status(404).json({
+          success: false,
+          error: "Certificate not found",
+        });
+      }
+
+      if (!certificate.blobName) {
+        return res.status(400).json({
+          success: false,
+          error: "Certificate has no blob name - not yet provisioned",
+        });
+      }
+
+      // Get certificate from Azure storage and deploy to HAProxy
+      const { AzureConfigService } = await import("../services/azure-config");
+      const { AzureStorageCertificateStore } = await import("../services/tls/azure-storage-certificate-store");
+      const { TlsConfigService } = await import("../services/tls/tls-config");
+
+      const azureConfig = new AzureConfigService(prisma);
+      const tlsConfig = new TlsConfigService(prisma);
+
+      const connectionString = await azureConfig.getConnectionString();
+      const containerName = await tlsConfig.get("certificate_blob_container");
+
+      if (!connectionString || !containerName) {
+        return res.status(503).json({
+          success: false,
+          error: "Azure Storage not configured",
+        });
+      }
+
+      const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+      const certResult = await certificateStore.getCertificate(certificate.blobName);
+
+      // Create combined PEM (cert + key)
+      const combinedPem = `${certResult.certificate}\n${certResult.privateKey}`;
+      const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
+
+      // Upload to HAProxy
+      const existingCerts = await haproxyClient.listSSLCertificates();
+      const certExists = existingCerts.some((c: any) => c.storage_name === certFileName);
+
+      if (certExists) {
+        // Delete and re-upload since there's no replace method
+        await haproxyClient.deleteSSLCertificate(certFileName);
+      }
+      await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+
+      // Add SSL binding to frontend
+      await haproxyClient.addFrontendBind(
+        frontendName,
+        "*",
+        443,
+        {
+          ssl: true,
+          ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
+        }
+      );
+
+      // Update frontend record
+      await prisma.hAProxyFrontend.update({
+        where: { frontendName },
+        data: {
+          useSSL: true,
+          tlsCertificateId,
+        },
+      });
+
+      logger.info(
+        { frontendName, tlsCertificateId, certFileName },
+        "Configured SSL on frontend via API"
+      );
+
+      res.json({
+        success: true,
+        message: "SSL configured successfully",
+        data: {
+          frontendName,
+          tlsCertificateId,
+          certFileName,
+        },
+      });
+    } catch (error: any) {
+      logger.error({ error: error.message }, "Failed to configure SSL on frontend");
+      res.status(500).json({
+        success: false,
+        error: "Failed to configure SSL",
+        message: error.message,
+      });
+    }
+  }
+);
+
 /**
  * GET /api/haproxy/frontends/:frontendName
  * Get details of a specific HAProxy frontend by name
