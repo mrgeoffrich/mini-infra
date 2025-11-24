@@ -668,6 +668,25 @@ export class HAProxyDataPlaneClient {
     }
   }
 
+  /**
+   * Delete a bind from a frontend
+   */
+  async deleteFrontendBind(frontendName: string, bindName: string): Promise<void> {
+    try {
+      const version = await this.getVersion();
+      await this.axiosInstance.delete(
+        `/services/haproxy/configuration/frontends/${frontendName}/binds/${bindName}?version=${version}`
+      );
+
+      logger.info(
+        { frontendName, bindName, version },
+        'Deleted bind from HAProxy frontend'
+      );
+    } catch (error) {
+      this.handleApiError(error, 'delete frontend bind', { frontendName, bindName });
+    }
+  }
+
   // ====================
   // ACL Management
   // ====================

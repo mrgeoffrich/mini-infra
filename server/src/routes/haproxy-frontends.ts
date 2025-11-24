@@ -361,6 +361,19 @@ router.post(
       }
       await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
 
+      // Delete existing bind if present (created without SSL when shared frontend was made)
+      // The bind name follows the pattern bind_${port}
+      try {
+        await haproxyClient.deleteFrontendBind(frontendName, "bind_443");
+        logger.info({ frontendName }, "Deleted existing bind_443 to replace with SSL-enabled bind");
+      } catch (deleteError: any) {
+        // If bind doesn't exist, that's fine - we'll just create it
+        if (!deleteError.message?.includes("not found")) {
+          throw deleteError;
+        }
+        logger.debug({ frontendName }, "No existing bind_443 to delete");
+      }
+
       // Add SSL binding to frontend
       await haproxyClient.addFrontendBind(
         frontendName,
