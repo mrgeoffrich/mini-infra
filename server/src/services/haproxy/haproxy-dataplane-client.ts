@@ -1203,23 +1203,16 @@ export class HAProxyDataPlaneClient {
     try {
       logger.info({ filename, forceReload }, 'Updating SSL certificate via DataPlane API');
 
-      // Create FormData for multipart/form-data upload
-      const formData = new FormData();
-      formData.append('file_upload', Buffer.from(certificatePem), {
-        filename: filename,
-        contentType: 'application/x-pem-file'
-      });
-
-      // PUT to storage/ssl_certificates/{filename} endpoint
+      // PUT to storage/ssl_certificates/{filename} endpoint with raw PEM content
       await this.axiosInstance.put(
         `/services/haproxy/storage/ssl_certificates/${filename}`,
-        formData,
+        certificatePem,
         {
           params: {
             force_reload: forceReload.toString()
           },
           headers: {
-            ...formData.getHeaders()
+            'Content-Type': 'text/plain'
           }
         }
       );
