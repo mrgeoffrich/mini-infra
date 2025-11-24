@@ -131,49 +131,67 @@ export class ConfigureFrontend {
         "Checking SSL configuration for frontend"
       );
 
-      // Create or update HAProxy frontend
-      const frontendName = await haproxyFrontendManager.createFrontendForDeployment(
-        hostname,
-        backendName,
-        context.applicationName,
+      // Get or create shared frontend for this environment
+      const frontendType = hasSslCertificate ? "https" : "http";
+      const sharedFrontend = await haproxyFrontendManager.getOrCreateSharedFrontend(
         context.environmentId,
+        frontendType,
         this.haproxyClient,
-        hasSslCertificate ? {
-          tlsCertificateId: tlsCertificateId || undefined,
-          prisma,
-        } : undefined
+        prisma
       );
 
       logger.info(
         {
           deploymentId: context.deploymentId,
+          sharedFrontendId: sharedFrontend.id,
+          sharedFrontendName: sharedFrontend.frontendName,
+          frontendType,
+        },
+        "Shared frontend retrieved/created"
+      );
+
+      // Add route to shared frontend
+      const route = await haproxyFrontendManager.addRouteToSharedFrontend(
+        sharedFrontend.id,
+        hostname,
+        backendName,
+        "deployment",
+        context.deploymentConfigId,
+        this.haproxyClient,
+        prisma,
+        {
+          useSSL: hasSslCertificate,
+          tlsCertificateId: hasSslCertificate ? (tlsCertificateId ?? undefined) : undefined,
+        }
+      );
+
+      const frontendName = sharedFrontend.frontendName;
+
+      logger.info(
+        {
+          deploymentId: context.deploymentId,
+          routeId: route.id,
           frontendName,
           hostname,
           backendName,
           hasSslCertificate,
         },
-        "HAProxy frontend created successfully"
+        "Route added to shared frontend successfully"
       );
 
-      // Check if frontend record already exists in database
+      // Check if a legacy frontend record exists for this deployment config
+      // If so, mark it as removed since we're now using shared frontends
       const existingFrontend = await prisma.hAProxyFrontend.findUnique({
         where: { deploymentConfigId: context.deploymentConfigId },
       });
 
-      if (existingFrontend) {
-        // Update existing record
+      if (existingFrontend && !existingFrontend.isSharedFrontend) {
+        // Mark legacy frontend as removed
         await prisma.hAProxyFrontend.update({
           where: { id: existingFrontend.id },
           data: {
-            frontendType: "deployment",
-            frontendName,
-            backendName,
-            hostname,
-            useSSL: hasSslCertificate,
-            tlsCertificateId: hasSslCertificate ? tlsCertificateId : null,
-            sslBindPort: hasSslCertificate ? 443 : 443,
-            status: "active",
-            errorMessage: null,
+            status: "removed",
+            errorMessage: "Migrated to shared frontend architecture",
           },
         });
 
@@ -181,35 +199,8 @@ export class ConfigureFrontend {
           {
             deploymentId: context.deploymentId,
             frontendId: existingFrontend.id,
-            hasSslCertificate,
           },
-          "Updated existing frontend record in database"
-        );
-      } else {
-        // Create new frontend record in database
-        await prisma.hAProxyFrontend.create({
-          data: {
-            deploymentConfigId: context.deploymentConfigId,
-            frontendType: "deployment",
-            frontendName,
-            backendName,
-            hostname,
-            bindPort: 80,
-            bindAddress: "*",
-            useSSL: hasSslCertificate,
-            tlsCertificateId: hasSslCertificate ? tlsCertificateId : null,
-            sslBindPort: hasSslCertificate ? 443 : 443,
-            status: "active",
-          },
-        });
-
-        logger.info(
-          {
-            deploymentId: context.deploymentId,
-            frontendName,
-            hasSslCertificate,
-          },
-          "Created frontend record in database"
+          "Marked legacy frontend record as removed"
         );
       }
 

@@ -618,6 +618,625 @@ export class HAProxyFrontendManager {
     // Replace dots and other special characters with underscores
     return `acl_${hostname.replace(/[^a-zA-Z0-9]/g, "_")}`;
   }
+
+  /**
+   * Generate a shared frontend name for an environment
+   *
+   * @param environmentId The environment ID
+   * @param type The frontend type ('http' or 'https')
+   * @returns The generated shared frontend name
+   */
+  private generateSharedFrontendName(
+    environmentId: string,
+    type: "http" | "https"
+  ): string {
+    const sanitizedEnv = environmentId.replace(/[^a-zA-Z0-9]/g, "_");
+    return `${type}_frontend_${sanitizedEnv}`;
+  }
+
+  /**
+   * Get or create a shared frontend for an environment
+   *
+   * @param environmentId The environment ID
+   * @param type The frontend type ('http' or 'https')
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @param prisma Prisma client instance
+   * @param options Optional configuration
+   * @returns The shared frontend database record
+   */
+  async getOrCreateSharedFrontend(
+    environmentId: string,
+    type: "http" | "https",
+    haproxyClient: HAProxyDataPlaneClient,
+    prisma: PrismaClient,
+    options?: {
+      bindPort?: number;
+      bindAddress?: string;
+    }
+  ): Promise<{
+    id: string;
+    frontendName: string;
+    environmentId: string | null;
+    isSharedFrontend: boolean;
+    bindPort: number;
+    bindAddress: string;
+  }> {
+    const frontendName = this.generateSharedFrontendName(environmentId, type);
+    const bindPort = options?.bindPort ?? (type === "https" ? 443 : 80);
+    const bindAddress = options?.bindAddress ?? "*";
+
+    logger.info(
+      { environmentId, type, frontendName, bindPort, bindAddress },
+      "Getting or creating shared frontend"
+    );
+
+    try {
+      // Check if shared frontend already exists in database
+      const existingFrontend = await prisma.hAProxyFrontend.findFirst({
+        where: {
+          environmentId,
+          isSharedFrontend: true,
+          frontendType: "shared",
+          bindPort,
+        },
+      });
+
+      if (existingFrontend) {
+        logger.info(
+          { frontendName: existingFrontend.frontendName, environmentId },
+          "Shared frontend already exists in database"
+        );
+        return {
+          id: existingFrontend.id,
+          frontendName: existingFrontend.frontendName,
+          environmentId: existingFrontend.environmentId,
+          isSharedFrontend: existingFrontend.isSharedFrontend,
+          bindPort: existingFrontend.bindPort,
+          bindAddress: existingFrontend.bindAddress,
+        };
+      }
+
+      // Check if frontend exists in HAProxy
+      const existingHAProxyFrontend = await this.getFrontend(
+        frontendName,
+        haproxyClient
+      );
+
+      if (!existingHAProxyFrontend) {
+        // Create frontend in HAProxy
+        logger.info({ frontendName }, "Creating shared frontend in HAProxy");
+        await haproxyClient.createFrontend({
+          name: frontendName,
+          mode: "http",
+        });
+
+        // Add bind configuration
+        logger.info(
+          { frontendName, bindAddress, bindPort },
+          "Adding bind to shared frontend"
+        );
+        await haproxyClient.addFrontendBind(
+          frontendName,
+          bindAddress,
+          bindPort
+        );
+      } else {
+        logger.info(
+          { frontendName },
+          "Shared frontend already exists in HAProxy"
+        );
+      }
+
+      // Create database record
+      const newFrontend = await prisma.hAProxyFrontend.create({
+        data: {
+          frontendType: "shared",
+          frontendName,
+          backendName: "", // Shared frontends don't have a single backend
+          hostname: "", // Shared frontends route multiple hostnames
+          bindPort,
+          bindAddress,
+          isSharedFrontend: true,
+          environmentId,
+          status: "active",
+        },
+      });
+
+      logger.info(
+        { frontendId: newFrontend.id, frontendName, environmentId },
+        "Created shared frontend"
+      );
+
+      return {
+        id: newFrontend.id,
+        frontendName: newFrontend.frontendName,
+        environmentId: newFrontend.environmentId,
+        isSharedFrontend: newFrontend.isSharedFrontend,
+        bindPort: newFrontend.bindPort,
+        bindAddress: newFrontend.bindAddress,
+      };
+    } catch (error) {
+      logger.error(
+        { error, environmentId, type },
+        "Failed to get or create shared frontend"
+      );
+      throw new Error(`Failed to get or create shared frontend: ${error}`);
+    }
+  }
+
+  /**
+   * Add a route (ACL + backend switching rule) to a shared frontend
+   *
+   * @param sharedFrontendId The shared frontend database ID
+   * @param hostname The hostname to route
+   * @param backendName The backend to route to
+   * @param sourceType The source type ('deployment' or 'manual')
+   * @param sourceId The source ID (deployment config ID or manual frontend ID)
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @param prisma Prisma client instance
+   * @param sslOptions Optional SSL configuration
+   * @returns The created route database record
+   */
+  async addRouteToSharedFrontend(
+    sharedFrontendId: string,
+    hostname: string,
+    backendName: string,
+    sourceType: "deployment" | "manual",
+    sourceId: string,
+    haproxyClient: HAProxyDataPlaneClient,
+    prisma: PrismaClient,
+    sslOptions?: { useSSL: boolean; tlsCertificateId?: string }
+  ): Promise<{
+    id: string;
+    hostname: string;
+    aclName: string;
+    backendName: string;
+    sourceType: string;
+    useSSL: boolean;
+  }> {
+    logger.info(
+      { sharedFrontendId, hostname, backendName, sourceType, sourceId },
+      "Adding route to shared frontend"
+    );
+
+    try {
+      // Get the shared frontend
+      const sharedFrontend = await prisma.hAProxyFrontend.findUnique({
+        where: { id: sharedFrontendId },
+      });
+
+      if (!sharedFrontend) {
+        throw new Error(`Shared frontend not found: ${sharedFrontendId}`);
+      }
+
+      if (!sharedFrontend.isSharedFrontend) {
+        throw new Error(
+          `Frontend ${sharedFrontendId} is not a shared frontend`
+        );
+      }
+
+      const frontendName = sharedFrontend.frontendName;
+      const aclName = this.generateACLName(hostname);
+
+      // Check if route already exists
+      const existingRoute = await prisma.hAProxyRoute.findFirst({
+        where: {
+          sharedFrontendId,
+          hostname,
+        },
+      });
+
+      if (existingRoute) {
+        logger.warn(
+          { hostname, sharedFrontendId },
+          "Route already exists for this hostname"
+        );
+        return {
+          id: existingRoute.id,
+          hostname: existingRoute.hostname,
+          aclName: existingRoute.aclName,
+          backendName: existingRoute.backendName,
+          sourceType: existingRoute.sourceType,
+          useSSL: existingRoute.useSSL,
+        };
+      }
+
+      // Add ACL and backend switching rule to HAProxy
+      await this.addHostnameRouting(
+        frontendName,
+        hostname,
+        backendName,
+        haproxyClient
+      );
+
+      // Create route record in database
+      const route = await prisma.hAProxyRoute.create({
+        data: {
+          sharedFrontendId,
+          hostname,
+          aclName,
+          backendName,
+          sourceType,
+          deploymentConfigId: sourceType === "deployment" ? sourceId : null,
+          manualFrontendId: sourceType === "manual" ? sourceId : null,
+          useSSL: sslOptions?.useSSL ?? false,
+          tlsCertificateId: sslOptions?.tlsCertificateId ?? null,
+          status: "active",
+        },
+      });
+
+      logger.info(
+        { routeId: route.id, hostname, backendName, frontendName },
+        "Successfully added route to shared frontend"
+      );
+
+      return {
+        id: route.id,
+        hostname: route.hostname,
+        aclName: route.aclName,
+        backendName: route.backendName,
+        sourceType: route.sourceType,
+        useSSL: route.useSSL,
+      };
+    } catch (error) {
+      logger.error(
+        { error, sharedFrontendId, hostname, backendName },
+        "Failed to add route to shared frontend"
+      );
+      throw new Error(`Failed to add route to shared frontend: ${error}`);
+    }
+  }
+
+  /**
+   * Remove a route from a shared frontend
+   *
+   * @param sharedFrontendId The shared frontend database ID
+   * @param hostname The hostname to remove
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @param prisma Prisma client instance
+   */
+  async removeRouteFromSharedFrontend(
+    sharedFrontendId: string,
+    hostname: string,
+    haproxyClient: HAProxyDataPlaneClient,
+    prisma: PrismaClient
+  ): Promise<void> {
+    logger.info(
+      { sharedFrontendId, hostname },
+      "Removing route from shared frontend"
+    );
+
+    try {
+      // Get the shared frontend
+      const sharedFrontend = await prisma.hAProxyFrontend.findUnique({
+        where: { id: sharedFrontendId },
+      });
+
+      if (!sharedFrontend) {
+        throw new Error(`Shared frontend not found: ${sharedFrontendId}`);
+      }
+
+      const frontendName = sharedFrontend.frontendName;
+      const aclName = this.generateACLName(hostname);
+
+      // Get the route from database
+      const route = await prisma.hAProxyRoute.findFirst({
+        where: {
+          sharedFrontendId,
+          hostname,
+        },
+      });
+
+      if (!route) {
+        logger.warn(
+          { hostname, sharedFrontendId },
+          "Route not found in database, may have been already removed"
+        );
+      }
+
+      // Remove backend switching rule from HAProxy
+      const existingRules =
+        await haproxyClient.getBackendSwitchingRules(frontendName);
+      const ruleIndex = existingRules.findIndex(
+        (rule: any) => rule.cond_test === aclName
+      );
+
+      if (ruleIndex !== -1) {
+        logger.info(
+          { frontendName, aclName, ruleIndex },
+          "Removing backend switching rule"
+        );
+        await haproxyClient.deleteBackendSwitchingRule(frontendName, ruleIndex);
+      } else {
+        logger.warn(
+          { frontendName, aclName },
+          "Backend switching rule not found in HAProxy"
+        );
+      }
+
+      // Remove ACL from HAProxy
+      const existingACLs = await haproxyClient.getACLs(frontendName);
+      const aclIndex = existingACLs.findIndex(
+        (acl: any) => acl.acl_name === aclName
+      );
+
+      if (aclIndex !== -1) {
+        logger.info({ frontendName, aclName, aclIndex }, "Removing ACL");
+        await haproxyClient.deleteACL(frontendName, aclIndex);
+      } else {
+        logger.warn({ frontendName, aclName }, "ACL not found in HAProxy");
+      }
+
+      // Delete route from database
+      if (route) {
+        await prisma.hAProxyRoute.delete({
+          where: { id: route.id },
+        });
+      }
+
+      logger.info(
+        { hostname, frontendName },
+        "Successfully removed route from shared frontend"
+      );
+    } catch (error) {
+      logger.error(
+        { error, sharedFrontendId, hostname },
+        "Failed to remove route from shared frontend"
+      );
+      throw new Error(`Failed to remove route from shared frontend: ${error}`);
+    }
+  }
+
+  /**
+   * Update an existing route
+   *
+   * @param routeId The route database ID
+   * @param updates The updates to apply
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @param prisma Prisma client instance
+   * @returns The updated route
+   */
+  async updateRoute(
+    routeId: string,
+    updates: {
+      hostname?: string;
+      backendName?: string;
+      useSSL?: boolean;
+      tlsCertificateId?: string | null;
+    },
+    haproxyClient: HAProxyDataPlaneClient,
+    prisma: PrismaClient
+  ): Promise<{
+    id: string;
+    hostname: string;
+    aclName: string;
+    backendName: string;
+    useSSL: boolean;
+  }> {
+    logger.info({ routeId, updates }, "Updating route");
+
+    try {
+      // Get the existing route
+      const existingRoute = await prisma.hAProxyRoute.findUnique({
+        where: { id: routeId },
+        include: { sharedFrontend: true },
+      });
+
+      if (!existingRoute) {
+        throw new Error(`Route not found: ${routeId}`);
+      }
+
+      const frontendName = existingRoute.sharedFrontend.frontendName;
+      const oldAclName = existingRoute.aclName;
+
+      // If hostname is being changed, we need to update ACL and rule
+      if (updates.hostname && updates.hostname !== existingRoute.hostname) {
+        const newAclName = this.generateACLName(updates.hostname);
+
+        // Remove old ACL and rule
+        const existingRules =
+          await haproxyClient.getBackendSwitchingRules(frontendName);
+        const ruleIndex = existingRules.findIndex(
+          (rule: any) => rule.cond_test === oldAclName
+        );
+
+        if (ruleIndex !== -1) {
+          await haproxyClient.deleteBackendSwitchingRule(
+            frontendName,
+            ruleIndex
+          );
+        }
+
+        const existingACLs = await haproxyClient.getACLs(frontendName);
+        const aclIndex = existingACLs.findIndex(
+          (acl: any) => acl.acl_name === oldAclName
+        );
+
+        if (aclIndex !== -1) {
+          await haproxyClient.deleteACL(frontendName, aclIndex);
+        }
+
+        // Add new ACL and rule
+        await this.addHostnameRouting(
+          frontendName,
+          updates.hostname,
+          updates.backendName ?? existingRoute.backendName,
+          haproxyClient
+        );
+      } else if (
+        updates.backendName &&
+        updates.backendName !== existingRoute.backendName
+      ) {
+        // Only backend changed, update the rule
+        await this.updateFrontendBackend(
+          frontendName,
+          existingRoute.hostname,
+          updates.backendName,
+          haproxyClient
+        );
+      }
+
+      // Update database record
+      const updatedRoute = await prisma.hAProxyRoute.update({
+        where: { id: routeId },
+        data: {
+          hostname: updates.hostname ?? existingRoute.hostname,
+          aclName: updates.hostname
+            ? this.generateACLName(updates.hostname)
+            : existingRoute.aclName,
+          backendName: updates.backendName ?? existingRoute.backendName,
+          useSSL: updates.useSSL ?? existingRoute.useSSL,
+          tlsCertificateId:
+            updates.tlsCertificateId !== undefined
+              ? updates.tlsCertificateId
+              : existingRoute.tlsCertificateId,
+        },
+      });
+
+      logger.info({ routeId, updates }, "Successfully updated route");
+
+      return {
+        id: updatedRoute.id,
+        hostname: updatedRoute.hostname,
+        aclName: updatedRoute.aclName,
+        backendName: updatedRoute.backendName,
+        useSSL: updatedRoute.useSSL,
+      };
+    } catch (error) {
+      logger.error({ error, routeId, updates }, "Failed to update route");
+      throw new Error(`Failed to update route: ${error}`);
+    }
+  }
+
+  /**
+   * Sync all routes for an environment (used by remediation)
+   * This ensures HAProxy config matches database state
+   *
+   * @param environmentId The environment ID
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @param prisma Prisma client instance
+   */
+  async syncEnvironmentRoutes(
+    environmentId: string,
+    haproxyClient: HAProxyDataPlaneClient,
+    prisma: PrismaClient
+  ): Promise<{
+    synced: number;
+    errors: string[];
+  }> {
+    logger.info({ environmentId }, "Syncing environment routes");
+
+    const errors: string[] = [];
+    let synced = 0;
+
+    try {
+      // Get all shared frontends for this environment
+      const sharedFrontends = await prisma.hAProxyFrontend.findMany({
+        where: {
+          environmentId,
+          isSharedFrontend: true,
+        },
+        include: {
+          routes: true,
+        },
+      });
+
+      for (const frontend of sharedFrontends) {
+        const frontendName = frontend.frontendName;
+
+        // Get current ACLs and rules from HAProxy
+        const haproxyACLs = await haproxyClient.getACLs(frontendName);
+        const haproxyRules =
+          await haproxyClient.getBackendSwitchingRules(frontendName);
+
+        // Build set of expected ACL names from database routes
+        const expectedACLs = new Set(frontend.routes.map((r) => r.aclName));
+
+        // Find ACLs in HAProxy that are not in database (should be removed)
+        for (const acl of haproxyACLs) {
+          if (!expectedACLs.has(acl.acl_name)) {
+            try {
+              logger.info(
+                { frontendName, aclName: acl.acl_name },
+                "Removing orphaned ACL"
+              );
+              const aclIndex = haproxyACLs.findIndex(
+                (a: any) => a.acl_name === acl.acl_name
+              );
+              if (aclIndex !== -1) {
+                await haproxyClient.deleteACL(frontendName, aclIndex);
+              }
+            } catch (err) {
+              errors.push(`Failed to remove orphaned ACL ${acl.acl_name}: ${err}`);
+            }
+          }
+        }
+
+        // Find rules in HAProxy that reference ACLs not in database
+        for (const rule of haproxyRules) {
+          if (!expectedACLs.has(rule.cond_test)) {
+            try {
+              logger.info(
+                { frontendName, aclName: rule.cond_test },
+                "Removing orphaned rule"
+              );
+              const ruleIndex = haproxyRules.findIndex(
+                (r: any) => r.cond_test === rule.cond_test
+              );
+              if (ruleIndex !== -1) {
+                await haproxyClient.deleteBackendSwitchingRule(
+                  frontendName,
+                  ruleIndex
+                );
+              }
+            } catch (err) {
+              errors.push(`Failed to remove orphaned rule: ${err}`);
+            }
+          }
+        }
+
+        // Ensure all database routes exist in HAProxy
+        for (const route of frontend.routes) {
+          const aclExists = haproxyACLs.some(
+            (a: any) => a.acl_name === route.aclName
+          );
+          const ruleExists = haproxyRules.some(
+            (r: any) => r.cond_test === route.aclName
+          );
+
+          if (!aclExists || !ruleExists) {
+            try {
+              logger.info(
+                { frontendName, hostname: route.hostname },
+                "Adding missing route to HAProxy"
+              );
+              await this.addHostnameRouting(
+                frontendName,
+                route.hostname,
+                route.backendName,
+                haproxyClient
+              );
+              synced++;
+            } catch (err) {
+              errors.push(
+                `Failed to add route for ${route.hostname}: ${err}`
+              );
+            }
+          }
+        }
+      }
+
+      logger.info(
+        { environmentId, synced, errorCount: errors.length },
+        "Completed environment routes sync"
+      );
+
+      return { synced, errors };
+    } catch (error) {
+      logger.error({ error, environmentId }, "Failed to sync environment routes");
+      throw new Error(`Failed to sync environment routes: ${error}`);
+    }
+  }
 }
 
 // Export singleton instance

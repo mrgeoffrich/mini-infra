@@ -24,7 +24,6 @@ import {
 import { useAllFrontends } from "@/hooks/use-haproxy-frontend";
 import { useDeleteManualFrontend } from "@/hooks/use-manual-haproxy-frontend";
 import { useEnvironments } from "@/hooks/use-environments";
-import { FrontendTypeBadge } from "@/components/haproxy/frontend-type-badge";
 import { FrontendStatusBadge } from "@/components/deployments/dns-status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,16 +101,25 @@ export function FrontendsListPage() {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
+        const routeHostnamesMatch = frontend.routeHostnames?.some(
+          (hostname) => hostname.toLowerCase().includes(query)
+        );
         const matchesSearch =
           frontend.frontendName.toLowerCase().includes(query) ||
-          frontend.hostname.toLowerCase().includes(query) ||
+          routeHostnamesMatch ||
           (frontend.containerName && frontend.containerName.toLowerCase().includes(query));
         if (!matchesSearch) return false;
       }
 
       // Type filter
-      if (typeFilter !== "all" && frontend.frontendType !== typeFilter) {
-        return false;
+      if (typeFilter !== "all") {
+        if (typeFilter === "shared") {
+          // Filter for shared frontends
+          if (!frontend.isSharedFrontend) return false;
+        } else {
+          // Filter for other types (deployment, manual)
+          if (frontend.frontendType !== typeFilter) return false;
+        }
       }
 
       // Status filter
@@ -132,13 +140,6 @@ export function FrontendsListPage() {
   const columns = useMemo<ColumnDef<HAProxyFrontendInfo>[]>(
     () => [
       {
-        accessorKey: "frontendType",
-        header: "Type",
-        cell: ({ row }) => (
-          <FrontendTypeBadge type={row.original.frontendType} />
-        ),
-      },
-      {
         accessorKey: "frontendName",
         header: "Frontend Name",
         cell: ({ row }) => (
@@ -146,30 +147,30 @@ export function FrontendsListPage() {
         ),
       },
       {
-        accessorKey: "hostname",
-        header: "Hostname",
-        cell: ({ row }) => (
-          <div className="text-sm">{row.original.hostname}</div>
-        ),
-      },
-      {
-        accessorKey: "source",
-        header: "Backend/Source",
+        accessorKey: "routes",
+        header: "Routes",
         cell: ({ row }) => {
-          const frontend = row.original;
-          if (frontend.frontendType === "deployment") {
+          const hostnames = row.original.routeHostnames || [];
+          if (hostnames.length === 0) {
             return (
-              <div className="text-sm text-muted-foreground">
-                {frontend.backendName}
-              </div>
-            );
-          } else {
-            return (
-              <div className="text-sm text-muted-foreground">
-                {frontend.containerName || "Unknown"}
-              </div>
+              <div className="text-sm text-muted-foreground">No routes</div>
             );
           }
+          const displayHostnames = hostnames.slice(0, 3);
+          const remaining = hostnames.length - 3;
+          return (
+            <div className="text-sm">
+              {displayHostnames.map((hostname, index) => (
+                <span key={hostname}>
+                  {hostname}
+                  {index < displayHostnames.length - 1 && ", "}
+                </span>
+              ))}
+              {remaining > 0 && (
+                <span className="text-muted-foreground"> +{remaining} more</span>
+              )}
+            </div>
+          );
         },
       },
       {
@@ -373,6 +374,7 @@ export function FrontendsListPage() {
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="deployment">Deployment</SelectItem>
                     <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="shared">Shared</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

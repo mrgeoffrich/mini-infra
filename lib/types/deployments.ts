@@ -493,6 +493,11 @@ export interface HAProxyFrontendInfo {
   useSSL: boolean;
   tlsCertificateId: string | null;
   sslBindPort: number;
+  // Shared frontend support
+  isSharedFrontend: boolean;
+  sharedFrontendId?: string | null; // Reference to parent shared frontend (for manual connections)
+  routesCount?: number;
+  routeHostnames?: string[]; // Hostnames from routes (for shared frontends)
   status: 'active' | 'pending' | 'failed' | 'removed';
   errorMessage: string | null;
   createdAt: string;
@@ -564,10 +569,15 @@ export interface HAProxyPortValidationResult {
   isValid: boolean;
   httpPortAvailable: boolean;
   httpsPortAvailable: boolean;
+  statsPortAvailable: boolean;
+  dataplanePortAvailable: boolean;
   conflicts: {
     httpPort?: string; // Description of conflict
     httpsPort?: string; // Description of conflict
+    statsPort?: string; // Description of conflict
+    dataplanePort?: string; // Description of conflict
   };
+  unavailablePorts: Array<{ port: number; name: string; reason: string }>;
   suggestedPorts?: {
     httpPort: number;
     httpsPort: number;
@@ -641,4 +651,151 @@ export interface ManualFrontendResponse {
 export interface DeleteManualFrontendResponse {
   success: boolean;
   message: string;
+}
+
+// ====================
+// HAProxy Route Types (Shared Frontend)
+// ====================
+
+export type RouteSourceType = 'deployment' | 'manual';
+
+export interface HAProxyRoute {
+  id: string;
+  sharedFrontendId: string;
+  hostname: string;
+  aclName: string;
+  backendName: string;
+  sourceType: RouteSourceType;
+  deploymentConfigId: string | null;
+  manualFrontendId: string | null;
+  useSSL: boolean;
+  tlsCertificateId: string | null;
+  priority: number;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface HAProxyRouteInfo {
+  id: string;
+  hostname: string;
+  aclName: string;
+  backendName: string;
+  sourceType: RouteSourceType;
+  deploymentConfigId: string | null;
+  manualFrontendId: string | null;
+  useSSL: boolean;
+  tlsCertificateId: string | null;
+  priority: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HAProxyRoutesListResponse {
+  success: boolean;
+  data: {
+    frontendId: string;
+    frontendName: string;
+    routes: HAProxyRouteInfo[];
+  };
+  message?: string;
+}
+
+export interface CreateRouteRequest {
+  hostname: string;
+  backendName: string;
+  useSSL?: boolean;
+  tlsCertificateId?: string;
+}
+
+export interface CreateRouteResponse {
+  success: boolean;
+  data: {
+    id: string;
+    hostname: string;
+    aclName: string;
+    backendName: string;
+    sourceType: RouteSourceType;
+    useSSL: boolean;
+  };
+  message?: string;
+}
+
+export interface DeleteRouteResponse {
+  success: boolean;
+  message: string;
+}
+
+// ====================
+// HAProxy Remediation Types
+// ====================
+
+export interface RemediationResult {
+  success: boolean;
+  frontendsDeleted: number;
+  frontendsCreated: number;
+  backendsRecreated: number;
+  routesConfigured: number;
+  errors: string[];
+}
+
+export interface RemediationPreview {
+  needsRemediation: boolean;
+  currentState: {
+    frontends: string[];
+    backends: string[];
+  };
+  expectedState: {
+    sharedHttpFrontend: string | null;
+    sharedHttpsFrontend: string | null;
+    routes: Array<{ hostname: string; backend: string; ssl: boolean }>;
+    backends: string[];
+  };
+  changes: {
+    frontendsToDelete: string[];
+    frontendsToCreate: string[];
+    backendsToRecreate: string[];
+    routesToAdd: string[];
+  };
+}
+
+export interface RemediateHAProxyResponse {
+  success: boolean;
+  data: {
+    frontendsDeleted: number;
+    frontendsCreated: number;
+    backendsRecreated: number;
+    routesConfigured: number;
+    errors: string[];
+  };
+  message: string;
+}
+
+export interface HAProxyStatusResponse {
+  success: boolean;
+  data: {
+    hasHAProxy: boolean;
+    message?: string;
+    sharedFrontendsCount?: number;
+    legacyFrontendsCount?: number;
+    totalRoutesCount?: number;
+    deploymentConfigsWithHostnames?: number;
+    needsRemediation?: boolean;
+    frontends?: Array<{
+      id: string;
+      frontendName: string;
+      frontendType: string;
+      isSharedFrontend: boolean;
+      hostname: string;
+      bindPort: number;
+      status: string;
+      routesCount: number;
+    }>;
+  };
+}
+
+export interface RemediationPreviewResponse {
+  success: boolean;
+  data: RemediationPreview;
 }

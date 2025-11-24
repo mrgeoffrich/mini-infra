@@ -7,7 +7,6 @@ import {
   IconRefresh,
   IconTrash,
   IconInfoCircle,
-  IconWorld,
   IconServer,
   IconCalendar,
   IconAlertCircle,
@@ -47,6 +46,7 @@ import { useSyncDeploymentFrontend } from "@/hooks/use-haproxy-frontend";
 import { useEnvironments } from "@/hooks/use-environments";
 import { FrontendTypeBadge } from "@/components/haproxy/frontend-type-badge";
 import { FrontendStatusBadge } from "@/components/deployments/dns-status-badge";
+import { RoutesTable } from "@/components/haproxy/routes-table";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
 
@@ -196,7 +196,10 @@ export function FrontendDetailsPage() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h1 className="text-3xl font-bold">{frontend.frontendName}</h1>
-                <FrontendTypeBadge type={frontend.frontendType} />
+                <FrontendTypeBadge
+                  type={frontend.frontendType}
+                  isSharedFrontend={frontend.isSharedFrontend}
+                />
                 <FrontendStatusBadge status={frontend.status} />
               </div>
               <p className="text-muted-foreground">
@@ -261,14 +264,6 @@ export function FrontendDetailsPage() {
                 <div>
                   <FrontendStatusBadge status={frontend.status} />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <IconWorld className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Hostname</p>
-                </div>
-                <p className="font-medium">{frontend.hostname}</p>
               </div>
 
               <div className="space-y-1">
@@ -338,11 +333,6 @@ export function FrontendDetailsPage() {
               </div>
 
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Backend Name</p>
-                <p className="font-medium">{frontend.backendName}</p>
-              </div>
-
-              <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Bind Address</p>
                 <p className="font-medium">
                   {frontend.bindAddress}:{frontend.bindPort}
@@ -373,6 +363,17 @@ export function FrontendDetailsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Routes Table (Shared Frontends) */}
+      {frontend.isSharedFrontend && (
+        <div className="px-4 lg:px-6 max-w-7xl">
+          <RoutesTable
+            frontendName={frontend.frontendName}
+            frontendId={frontend.id}
+            environmentId={frontend.environmentId}
+          />
+        </div>
+      )}
 
       {/* Container Details Card (Manual Frontends) */}
       {isManual && (

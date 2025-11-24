@@ -16,6 +16,9 @@ import { ServiceRegistry } from '../services/service-registry';
 import { requireSessionOrApiKey } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
+import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
+import DockerService from '../services/docker';
+import { portUtils } from '../services/port-utils';
 
 const router = Router();
 const logger = appLogger();
@@ -308,6 +311,65 @@ router.get('/:id/status', requireSessionOrApiKey, async (req, res) => {
 });
 
 
+// Validate ports for environment before starting
+router.get('/:id/validate-ports', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if environment exists
+    const environment = await prisma.environment.findUnique({
+      where: { id },
+      include: { services: true }
+    });
+
+    if (!environment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Environment not found'
+      });
+    }
+
+    // Check if environment has HAProxy service
+    const hasHAProxy = environment.services.some(s => s.serviceType === 'haproxy');
+    if (!hasHAProxy) {
+      return res.json({
+        success: true,
+        data: {
+          isValid: true,
+          message: 'No HAProxy service configured',
+          unavailablePorts: []
+        }
+      });
+    }
+
+    // Validate ports for the environment
+    const { config, validation } = await portUtils.validatePortsForEnvironment(id);
+
+    logger.debug({
+      environmentId: id,
+      config,
+      validation
+    }, 'Port validation result');
+
+    res.json({
+      success: true,
+      data: {
+        config,
+        validation
+      }
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to validate ports');
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to validate ports'
+    });
+  }
+});
+
+
 router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
   try {
     const { id } = req.params;
@@ -575,6 +637,282 @@ router.get('/:id/volumes', requireSessionOrApiKey, async (req, res) => {
     res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to retrieve environment volumes'
+    });
+  }
+});
+
+// ====================
+// HAProxy Remediation Routes
+// ====================
+
+/**
+ * Helper function to get HAProxy DataPlane client for an environment
+ */
+async function getHAProxyClientForEnvironment(environmentId: string): Promise<HAProxyDataPlaneClient> {
+  // Get environment details
+  const environment = await prisma.environment.findUnique({
+    where: { id: environmentId },
+    include: {
+      services: {
+        where: {
+          serviceName: "haproxy",
+        },
+      },
+    },
+  });
+
+  if (!environment) {
+    throw new Error(`Environment not found: ${environmentId}`);
+  }
+
+  const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
+
+  if (!haproxyService) {
+    throw new Error(`HAProxy service not configured for environment: ${environment.name}`);
+  }
+
+  // Find HAProxy container using Docker
+  const dockerService = DockerService.getInstance();
+  await dockerService.initialize();
+  const containers = await dockerService.listContainers();
+
+  // Look for HAProxy container with environment label
+  const haproxyContainer = containers.find((container: any) => {
+    const labels = container.labels || {};
+    return (
+      labels["mini-infra.service"] === "haproxy" &&
+      labels["mini-infra.environment"] === environmentId &&
+      container.status === "running"
+    );
+  });
+
+  if (!haproxyContainer) {
+    throw new Error(
+      `No running HAProxy container found for environment: ${environment.name}. ` +
+      `Ensure HAProxy is deployed and running.`
+    );
+  }
+
+  // Initialize HAProxy client with container ID
+  const client = new HAProxyDataPlaneClient();
+  await client.initialize(haproxyContainer.id);
+
+  return client;
+}
+
+/**
+ * POST /api/environments/:id/remediate-haproxy
+ * Trigger full HAProxy remediation for an environment
+ */
+router.post('/:id/remediate-haproxy', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify environment exists
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    // Check if environment has HAProxy service
+    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
+    if (!hasHAProxy) {
+      return res.status(400).json({
+        error: 'No HAProxy service',
+        message: 'This environment does not have an HAProxy service configured'
+      });
+    }
+
+    // Get HAProxy client
+    let haproxyClient: HAProxyDataPlaneClient;
+    try {
+      haproxyClient = await getHAProxyClientForEnvironment(id);
+    } catch (error) {
+      return res.status(503).json({
+        error: 'HAProxy unavailable',
+        message: error instanceof Error ? error.message : 'Failed to connect to HAProxy'
+      });
+    }
+
+    // Perform remediation
+    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting HAProxy remediation via API');
+    const result = await haproxyRemediationService.remediateEnvironment(id, haproxyClient, prisma);
+
+    logger.info({
+      environmentId: id,
+      result
+    }, 'HAProxy remediation completed via API');
+
+    res.json({
+      success: result.success,
+      data: {
+        frontendsDeleted: result.frontendsDeleted,
+        frontendsCreated: result.frontendsCreated,
+        backendsRecreated: result.backendsRecreated,
+        routesConfigured: result.routesConfigured,
+        errors: result.errors
+      },
+      message: result.success
+        ? 'HAProxy remediation completed successfully'
+        : 'HAProxy remediation completed with errors'
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to remediate HAProxy');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to remediate HAProxy'
+    });
+  }
+});
+
+/**
+ * GET /api/environments/:id/haproxy-status
+ * Get HAProxy configuration status for an environment
+ */
+router.get('/:id/haproxy-status', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify environment exists
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    // Check if environment has HAProxy service
+    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
+    if (!hasHAProxy) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          hasHAProxy: false,
+          message: 'This environment does not have an HAProxy service configured'
+        }
+      });
+    }
+
+    // Get HAProxy frontends for this environment
+    const frontends = await prisma.hAProxyFrontend.findMany({
+      where: {
+        environmentId: id,
+        status: { not: 'removed' }
+      },
+      include: {
+        routes: true
+      }
+    });
+
+    // Check if using shared frontend architecture
+    const sharedFrontends = frontends.filter(f => f.isSharedFrontend);
+    const legacyFrontends = frontends.filter(f => !f.isSharedFrontend);
+
+    // Get deployment configs with hostnames
+    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
+      where: {
+        environmentId: id,
+        isActive: true,
+        hostname: { not: null }
+      },
+      select: {
+        id: true,
+        applicationName: true,
+        hostname: true,
+        enableSsl: true
+      }
+    });
+
+    // Determine if remediation is recommended
+    const needsRemediation = legacyFrontends.length > 0 ||
+      (deploymentConfigs.length > 0 && sharedFrontends.length === 0);
+
+    res.json({
+      success: true,
+      data: {
+        hasHAProxy: true,
+        sharedFrontendsCount: sharedFrontends.length,
+        legacyFrontendsCount: legacyFrontends.length,
+        totalRoutesCount: sharedFrontends.reduce((acc, f) => acc + (f.routes?.length || 0), 0),
+        deploymentConfigsWithHostnames: deploymentConfigs.length,
+        needsRemediation,
+        frontends: frontends.map(f => ({
+          id: f.id,
+          frontendName: f.frontendName,
+          frontendType: f.frontendType,
+          isSharedFrontend: f.isSharedFrontend,
+          hostname: f.hostname,
+          bindPort: f.bindPort,
+          status: f.status,
+          routesCount: f.routes?.length || 0
+        }))
+      }
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to get HAProxy status');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to retrieve HAProxy status'
+    });
+  }
+});
+
+/**
+ * GET /api/environments/:id/remediation-preview
+ * Get preview of what HAProxy remediation would do
+ */
+router.get('/:id/remediation-preview', requireSessionOrApiKey, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify environment exists
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    // Check if environment has HAProxy service
+    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
+    if (!hasHAProxy) {
+      return res.status(400).json({
+        error: 'No HAProxy service',
+        message: 'This environment does not have an HAProxy service configured'
+      });
+    }
+
+    // Get HAProxy client
+    let haproxyClient: HAProxyDataPlaneClient;
+    try {
+      haproxyClient = await getHAProxyClientForEnvironment(id);
+    } catch (error) {
+      return res.status(503).json({
+        error: 'HAProxy unavailable',
+        message: error instanceof Error ? error.message : 'Failed to connect to HAProxy'
+      });
+    }
+
+    // Get remediation preview
+    const preview = await haproxyRemediationService.getRemediationPreview(id, haproxyClient, prisma);
+
+    res.json({
+      success: true,
+      data: preview
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to get remediation preview');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to get remediation preview'
     });
   }
 });
