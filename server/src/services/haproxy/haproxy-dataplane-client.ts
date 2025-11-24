@@ -1228,12 +1228,12 @@ export class HAProxyDataPlaneClient {
    * Delete an SSL certificate from HAProxy storage
    *
    * @param filename - Certificate filename (e.g., "example.com.pem")
-   * @param forceReload - Whether to force HAProxy reload (default: true for deletions)
+   * @param forceReload - Whether to force HAProxy reload (default: false for deletions)
    * @returns Success indicator
    */
   async deleteSSLCertificate(
     filename: string,
-    forceReload: boolean = true
+    forceReload: boolean = false
   ): Promise<void> {
     try {
       logger.info({ filename, forceReload }, 'Deleting SSL certificate via DataPlane API');
@@ -1243,13 +1243,21 @@ export class HAProxyDataPlaneClient {
         `/services/haproxy/storage/ssl_certificates/${filename}`,
         {
           params: {
-            force_reload: forceReload.toString()
+            force_reload: forceReload,
           }
         }
       );
 
       logger.info({ filename }, 'SSL certificate deleted successfully');
-    } catch (error) {
+    } catch (error: any) {
+      // If certificate doesn't exist, log warning but don't throw
+      if (error.response?.status === 404) {
+        logger.warn(
+          { filename },
+          'SSL certificate not found during deletion, may have been already removed'
+        );
+        return;
+      }
       this.handleApiError(error, 'delete SSL certificate', { filename });
       throw error;
     }
