@@ -6,8 +6,10 @@ import prisma from "../../../lib/prisma";
 const logger = loadbalancerLogger();
 
 /**
- * RemoveFrontend action removes an HAProxy frontend for a deployment
- * This action is called during deployment removal to clean up frontend configuration
+ * RemoveFrontend action removes HAProxy frontend configuration for a deployment
+ * This action handles both:
+ * - Legacy frontends (per-deployment HAProxyFrontend records)
+ * - Shared frontend routes (HAProxyRoute records pointing to shared frontends)
  */
 export class RemoveFrontend {
   private haproxyClient: HAProxyDataPlaneClient;
@@ -23,7 +25,7 @@ export class RemoveFrontend {
         deploymentConfigId: context?.deploymentConfigId,
         applicationName: context?.applicationName,
       },
-      "Action: Removing HAProxy frontend..."
+      "Action: Removing HAProxy frontend configuration..."
     );
 
     try {
@@ -34,52 +36,15 @@ export class RemoveFrontend {
         );
       }
 
-      // Get frontend record from database
-      const frontendRecord = await prisma.hAProxyFrontend.findUnique({
-        where: { deploymentConfigId: context.deploymentConfigId },
-      });
-
-      if (!frontendRecord) {
-        logger.warn(
-          { deploymentConfigId: context.deploymentConfigId },
-          "No frontend record found in database, skipping removal"
-        );
-
-        // Send skipped event
-        sendEvent({
-          type: "FRONTEND_REMOVAL_SKIPPED",
-          message: "No frontend record found",
-        });
-        return;
-      }
-
-      const { frontendName } = frontendRecord;
-
-      logger.info(
-        {
-          deploymentId: context.deploymentId,
-          frontendName,
-          frontendRecordId: frontendRecord.id,
-        },
-        "Found frontend record, proceeding with removal"
-      );
-
       // Check if HAProxy container ID is available
       if (!context.haproxyContainerId) {
         logger.warn(
           { deploymentId: context.deploymentId },
-          "HAProxy container ID not available, will try to remove without it"
+          "HAProxy container ID not available, will update database only"
         );
 
-        // Update database status to removed even if we can't access HAProxy
-        await prisma.hAProxyFrontend.update({
-          where: { id: frontendRecord.id },
-          data: {
-            status: "removed",
-            errorMessage:
-              "HAProxy not accessible, frontend may need manual cleanup",
-          },
-        });
+        // Update database records even if we can't access HAProxy
+        await this.updateDatabaseRecordsOnSkip(context.deploymentConfigId);
 
         sendEvent({
           type: "FRONTEND_REMOVAL_SKIPPED",
@@ -93,97 +58,126 @@ export class RemoveFrontend {
         {
           deploymentId: context.deploymentId,
           haproxyContainerId: context.haproxyContainerId.slice(0, 12),
-          frontendName,
         },
         "Initializing HAProxy DataPlane client for frontend removal"
       );
 
       await this.haproxyClient.initialize(context.haproxyContainerId);
 
-      // Remove frontend from HAProxy
-      logger.info(
-        {
-          deploymentId: context.deploymentId,
-          frontendName,
-        },
-        "Removing frontend from HAProxy"
-      );
+      // Track what we removed
+      let routeRemoved = false;
+      let legacyFrontendRemoved = false;
 
-      await haproxyFrontendManager.removeFrontend(
-        frontendName,
-        this.haproxyClient
-      );
+      // Step 1: Check for HAProxyRoute (shared frontend architecture)
+      const routeRecord = await prisma.hAProxyRoute.findFirst({
+        where: { deploymentConfigId: context.deploymentConfigId },
+        include: { sharedFrontend: true },
+      });
 
-      logger.info(
-        {
-          deploymentId: context.deploymentId,
-          frontendName,
-        },
-        "Frontend removed from HAProxy successfully"
-      );
+      if (routeRecord) {
+        logger.info(
+          {
+            deploymentId: context.deploymentId,
+            routeId: routeRecord.id,
+            hostname: routeRecord.hostname,
+            sharedFrontendId: routeRecord.sharedFrontendId,
+            sharedFrontendName: routeRecord.sharedFrontend.frontendName,
+          },
+          "Found route in shared frontend, removing route only"
+        );
 
-      // Now that frontend is removed, remove the backend if it exists
-      const backendName = context.applicationName;
-      if (backendName) {
-        try {
-          const existingBackend = await this.haproxyClient.getBackend(backendName);
-          if (existingBackend) {
-            logger.info(
-              {
-                deploymentId: context.deploymentId,
-                backendName,
-              },
-              "Removing HAProxy backend after frontend removal"
-            );
+        // Remove only the route from the shared frontend (not the frontend itself)
+        await haproxyFrontendManager.removeRouteFromSharedFrontend(
+          routeRecord.sharedFrontendId,
+          routeRecord.hostname,
+          this.haproxyClient,
+          prisma
+        );
 
-            await this.haproxyClient.deleteBackend(backendName);
+        routeRemoved = true;
 
-            logger.info(
-              {
-                deploymentId: context.deploymentId,
-                backendName,
-              },
-              "HAProxy backend removed successfully"
-            );
-          } else {
-            logger.info(
-              {
-                deploymentId: context.deploymentId,
-                backendName,
-              },
-              "Backend does not exist, skipping backend removal"
-            );
-          }
-        } catch (backendError) {
-          // Log warning but don't fail the removal if backend cleanup fails
+        logger.info(
+          {
+            deploymentId: context.deploymentId,
+            hostname: routeRecord.hostname,
+            sharedFrontendName: routeRecord.sharedFrontend.frontendName,
+          },
+          "Route removed from shared frontend successfully"
+        );
+      }
+
+      // Step 2: Check for legacy HAProxyFrontend record
+      const frontendRecord = await prisma.hAProxyFrontend.findUnique({
+        where: { deploymentConfigId: context.deploymentConfigId },
+      });
+
+      if (frontendRecord) {
+        // Only remove if it's NOT a shared frontend
+        if (frontendRecord.isSharedFrontend) {
           logger.warn(
             {
               deploymentId: context.deploymentId,
-              backendName,
-              error: backendError instanceof Error ? backendError.message : "Unknown error",
+              frontendRecordId: frontendRecord.id,
+              frontendName: frontendRecord.frontendName,
             },
-            "Failed to remove backend after frontend removal (non-critical)"
+            "Frontend record is a shared frontend, skipping frontend deletion (routes should be removed instead)"
           );
+        } else {
+          logger.info(
+            {
+              deploymentId: context.deploymentId,
+              frontendName: frontendRecord.frontendName,
+              frontendRecordId: frontendRecord.id,
+            },
+            "Found legacy frontend record, proceeding with removal"
+          );
+
+          // Remove legacy frontend from HAProxy
+          await haproxyFrontendManager.removeFrontend(
+            frontendRecord.frontendName,
+            this.haproxyClient
+          );
+
+          legacyFrontendRemoved = true;
+
+          logger.info(
+            {
+              deploymentId: context.deploymentId,
+              frontendName: frontendRecord.frontendName,
+            },
+            "Legacy frontend removed from HAProxy successfully"
+          );
+
+          // Update database record status
+          await prisma.hAProxyFrontend.update({
+            where: { id: frontendRecord.id },
+            data: {
+              status: "removed",
+              errorMessage: null,
+            },
+          });
         }
       }
 
-      // Update database record status
-      await prisma.hAProxyFrontend.update({
-        where: { id: frontendRecord.id },
-        data: {
-          status: "removed",
-          errorMessage: null,
-        },
-      });
+      // Step 3: Remove backend if no other routes/frontends are using it
+      const backendName = context.applicationName;
+      if (backendName) {
+        await this.removeBackendIfOrphaned(context.deploymentId, backendName);
+      }
 
-      logger.info(
-        {
-          deploymentId: context.deploymentId,
-          frontendName,
-          frontendRecordId: frontendRecord.id,
-        },
-        "Updated frontend record status to 'removed'"
-      );
+      // Determine result
+      if (!routeRemoved && !legacyFrontendRemoved && !frontendRecord) {
+        logger.warn(
+          { deploymentConfigId: context.deploymentConfigId },
+          "No frontend or route records found in database, skipping removal"
+        );
+
+        sendEvent({
+          type: "FRONTEND_REMOVAL_SKIPPED",
+          message: "No frontend or route records found",
+        });
+        return;
+      }
 
       // Update context
       context.frontendRemoved = true;
@@ -191,13 +185,14 @@ export class RemoveFrontend {
       // Send success event
       sendEvent({
         type: "FRONTEND_REMOVED",
-        frontendName,
+        frontendName: frontendRecord?.frontendName || routeRecord?.sharedFrontend.frontendName,
       });
 
       logger.info(
         {
           deploymentId: context.deploymentId,
-          frontendName,
+          routeRemoved,
+          legacyFrontendRemoved,
         },
         "Frontend removal completed successfully"
       );
@@ -244,6 +239,125 @@ export class RemoveFrontend {
         type: "FRONTEND_REMOVAL_ERROR",
         error: errorMessage,
       });
+    }
+  }
+
+  /**
+   * Update database records when HAProxy is not accessible
+   */
+  private async updateDatabaseRecordsOnSkip(deploymentConfigId: string): Promise<void> {
+    // Update route status if exists
+    const routeRecord = await prisma.hAProxyRoute.findFirst({
+      where: { deploymentConfigId },
+    });
+
+    if (routeRecord) {
+      await prisma.hAProxyRoute.update({
+        where: { id: routeRecord.id },
+        data: { status: "removed" },
+      });
+    }
+
+    // Update frontend status if exists
+    const frontendRecord = await prisma.hAProxyFrontend.findUnique({
+      where: { deploymentConfigId },
+    });
+
+    if (frontendRecord) {
+      await prisma.hAProxyFrontend.update({
+        where: { id: frontendRecord.id },
+        data: {
+          status: "removed",
+          errorMessage: "HAProxy not accessible, frontend may need manual cleanup",
+        },
+      });
+    }
+  }
+
+  /**
+   * Remove backend only if no other routes or frontends are using it
+   */
+  private async removeBackendIfOrphaned(deploymentId: string, backendName: string): Promise<void> {
+    try {
+      // Check if any other routes are using this backend
+      const otherRoutes = await prisma.hAProxyRoute.findFirst({
+        where: {
+          backendName,
+          status: "active",
+        },
+      });
+
+      if (otherRoutes) {
+        logger.info(
+          {
+            deploymentId,
+            backendName,
+            otherRouteId: otherRoutes.id,
+          },
+          "Backend is still in use by other routes, skipping backend removal"
+        );
+        return;
+      }
+
+      // Check if any other frontends are using this backend
+      const otherFrontends = await prisma.hAProxyFrontend.findFirst({
+        where: {
+          backendName,
+          status: "active",
+        },
+      });
+
+      if (otherFrontends) {
+        logger.info(
+          {
+            deploymentId,
+            backendName,
+            otherFrontendId: otherFrontends.id,
+          },
+          "Backend is still in use by other frontends, skipping backend removal"
+        );
+        return;
+      }
+
+      // Backend is orphaned, remove it
+      const existingBackend = await this.haproxyClient.getBackend(backendName);
+      if (existingBackend) {
+        logger.info(
+          {
+            deploymentId,
+            backendName,
+          },
+          "Removing orphaned HAProxy backend"
+        );
+
+        await this.haproxyClient.deleteBackend(backendName);
+
+        logger.info(
+          {
+            deploymentId,
+            backendName,
+          },
+          "HAProxy backend removed successfully"
+        );
+      } else {
+        logger.info(
+          {
+            deploymentId,
+            backendName,
+          },
+          "Backend does not exist in HAProxy, skipping backend removal"
+        );
+      }
+    } catch (backendError) {
+      // Log warning but don't fail the removal if backend cleanup fails
+      logger.warn(
+        {
+          deploymentId,
+          backendName,
+          error: backendError instanceof Error ? backendError.message : "Unknown error",
+        },
+        "Failed to remove backend (non-critical)"
+      );
     }
   }
 }
