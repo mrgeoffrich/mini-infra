@@ -508,12 +508,13 @@ export class HAProxyFrontendManager {
         (cert: any) => cert.storage_name === certFileName
       );
 
+      // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate
       if (certExists) {
         logger.info({ certFileName }, "Certificate already exists in HAProxy, updating");
-        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
       } else {
         logger.info({ certFileName }, "Uploading new certificate to HAProxy");
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
       }
 
       // Step 5: Add SSL binding to frontend (port 443)
@@ -864,12 +865,13 @@ export class HAProxyFrontendManager {
     const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
 
     // Upload or update certificate in HAProxy
+    // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate
     try {
-      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
       logger.info({ certFileName }, "Updated existing SSL certificate");
     } catch (updateError: any) {
       if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
         logger.info({ certFileName }, "Uploaded new SSL certificate");
       } else {
         throw updateError;
@@ -970,15 +972,16 @@ export class HAProxyFrontendManager {
     const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
 
     // Upload or update certificate in HAProxy
+    // IMPORTANT: Use force_reload=true so HAProxy picks up the new certificate for SNI selection
     try {
-      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
       logger.info({ certFileName }, "Updated existing SSL certificate for SNI");
     } catch (updateError: any) {
       if (
         updateError.message?.includes("not found") ||
         updateError.message?.includes("404")
       ) {
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
         logger.info({ certFileName }, "Uploaded new SSL certificate for SNI");
       } else {
         throw updateError;

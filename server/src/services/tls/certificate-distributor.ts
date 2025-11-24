@@ -170,14 +170,15 @@ export class CertificateDistributor {
       const existingCerts = await this.dataPlaneClient.listSSLCertificates();
       const certExists = existingCerts.includes(certFileName);
 
+      // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate for SNI selection
       if (certExists) {
         // Update existing certificate
         this.logger.debug({ certFileName }, "Certificate exists, updating");
-        await this.dataPlaneClient.updateSSLCertificate(certFileName, combinedPem, false);
+        await this.dataPlaneClient.updateSSLCertificate(certFileName, combinedPem, true);
       } else {
         // Upload new certificate
         this.logger.debug({ certFileName }, "Certificate does not exist, uploading");
-        await this.dataPlaneClient.uploadSSLCertificate(certFileName, combinedPem, false);
+        await this.dataPlaneClient.uploadSSLCertificate(certFileName, combinedPem, true);
       }
 
       this.logger.info({ certFileName }, "Certificate deployed via DataPlane API successfully");

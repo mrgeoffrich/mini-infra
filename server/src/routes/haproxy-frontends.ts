@@ -377,14 +377,15 @@ router.post(
       const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
 
       // Upload to HAProxy - try update first, then upload if it doesn't exist
+      // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate for SNI selection
       try {
-        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
         logger.info({ certFileName }, "Updated existing SSL certificate");
       } catch (updateError: any) {
         // If update fails (cert doesn't exist), try uploading
         if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
           logger.debug({ certFileName }, "Certificate doesn't exist, uploading new one");
-          await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+          await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
           logger.info({ certFileName }, "Uploaded new SSL certificate");
         } else {
           throw updateError;
