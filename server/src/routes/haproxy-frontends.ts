@@ -351,17 +351,20 @@ router.post(
       const combinedPem = `${certResult.certificate}\n${certResult.privateKey}`;
       const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
 
-      // Upload to HAProxy - try to delete first if it exists
+      // Upload to HAProxy - try update first, then upload if it doesn't exist
       try {
-        await haproxyClient.deleteSSLCertificate(certFileName);
-        logger.info({ certFileName }, "Deleted existing SSL certificate to re-upload");
-      } catch (deleteError: any) {
-        // Certificate doesn't exist, that's fine
-        if (!deleteError.message?.includes("not found")) {
-          logger.debug({ certFileName }, "No existing SSL certificate to delete");
+        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, false);
+        logger.info({ certFileName }, "Updated existing SSL certificate");
+      } catch (updateError: any) {
+        // If update fails (cert doesn't exist), try uploading
+        if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
+          logger.debug({ certFileName }, "Certificate doesn't exist, uploading new one");
+          await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
+          logger.info({ certFileName }, "Uploaded new SSL certificate");
+        } else {
+          throw updateError;
         }
       }
-      await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, false);
 
       // Delete existing bind if present (created without SSL when shared frontend was made)
       // The bind name follows the pattern bind_${port}
