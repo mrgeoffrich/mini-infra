@@ -43,6 +43,7 @@ interface InitialDeploymentContext {
 
     // Container state
     containerId?: string;
+    containerName?: string;
     containerIpAddress?: string;
     containerPort?: number;
     applicationReady: boolean;
@@ -68,9 +69,9 @@ interface InitialDeploymentContext {
 
 type InitialDeploymentEvent =
     | { type: 'START_DEPLOYMENT' }
-    | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
+    | { type: 'DEPLOYMENT_SUCCESS'; containerId: string; containerName?: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING'; containerIpAddress?: string; containerPort?: number }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress?: string; containerPort?: number; containerName?: string }
     | { type: 'STARTUP_TIMEOUT'; error?: string }
     | { type: 'LB_CONFIGURED' }
     | { type: 'LB_CONFIG_ERROR'; error: string }
@@ -194,6 +195,7 @@ export const initialDeploymentMachine = setup({
             // Keep deployment identifiers and environment context
             // Only reset deployment state
             containerId: undefined,
+            containerName: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
             applicationReady: false,
@@ -241,6 +243,7 @@ export const initialDeploymentMachine = setup({
 
         // Container state
         containerId: deploymentInput?.containerId,
+        containerName: deploymentInput?.containerName,
         containerIpAddress: deploymentInput?.containerIpAddress,
         containerPort: deploymentInput?.containerPort,
         applicationReady: deploymentInput?.applicationReady || false,
@@ -288,6 +291,12 @@ export const initialDeploymentMachine = setup({
                                 return event.containerId;
                             }
                             return undefined;
+                        },
+                        containerName: ({ event }) => {
+                            if (event.type === 'DEPLOYMENT_SUCCESS') {
+                                return event.containerName;
+                            }
+                            return undefined;
                         }
                     })
                 },
@@ -315,6 +324,12 @@ export const initialDeploymentMachine = setup({
                         containerPort: ({ event }) => {
                             if (event.type === 'CONTAINERS_RUNNING') {
                                 return event.containerPort;
+                            }
+                            return undefined;
+                        },
+                        containerName: ({ event }) => {
+                            if (event.type === 'CONTAINERS_RUNNING') {
+                                return event.containerName;
                             }
                             return undefined;
                         }

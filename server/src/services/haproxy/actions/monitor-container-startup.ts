@@ -86,6 +86,7 @@ export class MonitorContainerStartup {
                 deploymentId: context.deploymentId,
                 containerId: containerId.slice(0, 12),
                 ipAddress: networkInfo.ipAddress,
+                containerName: networkInfo.containerName,
                 networkName: context.haproxyNetworkName,
                 listeningPort: networkInfo.listeningPort
             }, 'Container startup monitoring completed successfully');
@@ -94,7 +95,8 @@ export class MonitorContainerStartup {
             sendEvent({
                 type: 'CONTAINERS_RUNNING',
                 containerIpAddress: networkInfo.ipAddress,
-                containerPort: networkInfo.listeningPort
+                containerPort: networkInfo.listeningPort,
+                containerName: networkInfo.containerName
             });
 
         } catch (error) {
@@ -121,6 +123,7 @@ export class MonitorContainerStartup {
     private async getContainerNetworkInfo(containerId: string, networkName: string): Promise<{
         ipAddress: string | null;
         listeningPort: number | null;
+        containerName: string | null;
     }> {
         try {
             await this.dockerService.initialize();
@@ -138,8 +141,11 @@ export class MonitorContainerStartup {
                     networkName,
                     availableNetworks: Object.keys(networks)
                 }, 'Container not found on specified network');
-                return { ipAddress: null, listeningPort: null };
+                return { ipAddress: null, listeningPort: null, containerName: null };
             }
+
+            // Extract container name (remove leading slash if present)
+            const containerName = containerInfo.Name?.replace(/^\//, '') || null;
 
             const ipAddress = networkInfo.IPAddress;
 
@@ -175,13 +181,15 @@ export class MonitorContainerStartup {
                 networkName,
                 ipAddress,
                 listeningPort,
+                containerName,
                 exposedPorts: Object.keys(exposedPorts),
                 portBindings: Object.keys(containerInfo.HostConfig?.PortBindings || {})
             }, 'Retrieved container network information');
 
             return {
                 ipAddress,
-                listeningPort
+                listeningPort,
+                containerName
             };
 
         } catch (error) {

@@ -16,6 +16,7 @@ export class AddContainerToLB {
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
             containerId: context?.containerId?.slice(0, 12),
+            containerName: context?.containerName,
             containerIpAddress: context?.containerIpAddress,
             containerPort: context?.containerPort,
             environmentId: context?.environmentId,
@@ -32,8 +33,8 @@ export class AddContainerToLB {
             if (!context.applicationName) {
                 throw new Error('Application name is required for backend configuration');
             }
-            if (!context.containerIpAddress) {
-                throw new Error('Container IP address is required for server configuration');
+            if (!context.containerName && !context.containerIpAddress) {
+                throw new Error('Container name or IP address is required for server configuration');
             }
             if (!context.containerPort) {
                 throw new Error('Container port is required for server configuration');
@@ -89,10 +90,12 @@ export class AddContainerToLB {
             const healthCheckEndpoint = healthCheck.endpoint || '/health';
 
             // Configure server with health check settings
+            // Use container name for DNS resolution (preferred) or fall back to IP address
+            const serverAddress = context.containerName || context.containerIpAddress;
             const serverName = `${context.applicationName}-${context.containerId.slice(0, 8)}`;
             const serverConfig: ServerConfig = {
                 name: serverName,
-                address: context.containerIpAddress,
+                address: serverAddress,
                 port: context.containerPort,
                 check: 'enabled',
                 check_path: healthCheckEndpoint,
@@ -110,13 +113,15 @@ export class AddContainerToLB {
                 serverName,
                 serverConfig: {
                     address: serverConfig.address,
+                    containerName: context.containerName,
+                    containerIpAddress: context.containerIpAddress,
                     port: serverConfig.port,
                     check_path: serverConfig.check_path,
                     inter: serverConfig.inter,
                     rise: serverConfig.rise,
                     fall: serverConfig.fall
                 }
-            }, 'Adding server to HAProxy backend with health check configuration');
+            }, 'Adding server to HAProxy backend with health check configuration (using DNS name for Docker resolution)');
 
             // Add server to backend
             await this.haproxyClient.addServer(backendName, serverConfig);
@@ -125,7 +130,9 @@ export class AddContainerToLB {
                 deploymentId: context.deploymentId,
                 backendName,
                 serverName,
-                address: context.containerIpAddress,
+                address: serverAddress,
+                containerName: context.containerName,
+                containerIpAddress: context.containerIpAddress,
                 port: context.containerPort,
                 healthCheckEndpoint,
                 applicationName: context.applicationName
@@ -143,6 +150,7 @@ export class AddContainerToLB {
                 deploymentId: context.deploymentId,
                 applicationName: context.applicationName,
                 containerId: context.containerId?.slice(0, 12),
+                containerName: context.containerName,
                 containerIpAddress: context.containerIpAddress,
                 containerPort: context.containerPort,
                 haproxyContainerId: context.haproxyContainerId?.slice(0, 12),

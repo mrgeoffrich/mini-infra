@@ -73,6 +73,7 @@ interface BlueGreenDeploymentContext {
     activeConnections: number;
     oldContainerId?: string;
     newContainerId?: string;
+    containerName?: string;
     containerIpAddress?: string;
     containerPort?: number;
     frontendName?: string;
@@ -92,9 +93,9 @@ type BlueGreenDeploymentEvent =
     | { type: 'START_DEPLOYMENT' }
 
     // Green deployment events
-    | { type: 'DEPLOYMENT_SUCCESS'; containerId: string }
+    | { type: 'DEPLOYMENT_SUCCESS'; containerId: string; containerName?: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING'; containerIpAddress: string; containerPort: number }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress: string; containerPort: number; containerName?: string }
     | { type: 'STARTUP_TIMEOUT' }
 
     // Load balancer configuration events
@@ -519,6 +520,7 @@ export const blueGreenDeploymentMachine = setup({
             activeConnections: 0,
             newContainerId: undefined,
             oldContainerId: undefined,
+            containerName: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
             frontendName: undefined,
@@ -593,6 +595,7 @@ export const blueGreenDeploymentMachine = setup({
         activeConnections: 0,
         oldContainerId: input?.oldContainerId,
         newContainerId: input?.newContainerId,
+        containerName: input?.containerName,
         containerIpAddress: input?.containerIpAddress,
         containerPort: input?.containerPort,
         frontendName: undefined,
@@ -677,6 +680,12 @@ export const blueGreenDeploymentMachine = setup({
                                     return event.containerId;
                                 }
                                 return undefined;
+                            },
+                            containerName: ({ event }) => {
+                                if (event.type === 'DEPLOYMENT_SUCCESS') {
+                                    return event.containerName;
+                                }
+                                return undefined;
                             }
                         }),
                         ({ context, event }) => {
@@ -684,7 +693,8 @@ export const blueGreenDeploymentMachine = setup({
                             logger.info({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
-                                containerId: 'containerId' in event ? event.containerId : 'unknown'
+                                containerId: 'containerId' in event ? event.containerId : 'unknown',
+                                containerName: 'containerName' in event ? event.containerName : 'unknown'
                             }, 'State machine: DEPLOYMENT_SUCCESS - transitioning to waitingGreenReady');
                         }
                     ]
@@ -736,6 +746,12 @@ export const blueGreenDeploymentMachine = setup({
                                     return event.containerPort;
                                 }
                                 return undefined;
+                            },
+                            containerName: ({ event }) => {
+                                if (event.type === 'CONTAINERS_RUNNING' && 'containerName' in event) {
+                                    return event.containerName;
+                                }
+                                return undefined;
                             }
                         }),
                         ({ context, event }) => {
@@ -744,7 +760,8 @@ export const blueGreenDeploymentMachine = setup({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
                                 containerIpAddress: 'containerIpAddress' in event ? event.containerIpAddress : 'unknown',
-                                containerPort: 'containerPort' in event ? event.containerPort : 'unknown'
+                                containerPort: 'containerPort' in event ? event.containerPort : 'unknown',
+                                containerName: 'containerName' in event ? event.containerName : 'unknown'
                             }, 'State machine: CONTAINERS_RUNNING - transitioning to initializingGreenLB');
                         }
                     ]

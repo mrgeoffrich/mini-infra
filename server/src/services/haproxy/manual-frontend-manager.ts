@@ -341,16 +341,24 @@ export class ManualFrontendManager {
       const backendName = `be_manual_${sanitizedContainerName}`;
 
       // Create backend in HAProxy
-      logger.info({ backendName, containerIpAddress, port: request.containerPort }, "Creating backend");
+      // Use container name for DNS resolution (preferred) to survive container restarts
+      const serverAddress = targetContainer.name || containerIpAddress;
+      logger.info({
+        backendName,
+        serverAddress,
+        containerName: targetContainer.name,
+        containerIpAddress,
+        port: request.containerPort
+      }, "Creating backend with Docker DNS resolution");
       await haproxyClient.createBackend({
         name: backendName,
         mode: "http",
       });
 
-      // Add server to backend
+      // Add server to backend using container name for DNS resolution
       await haproxyClient.addServer(backendName, {
         name: `${request.containerName}_server`,
-        address: containerIpAddress,
+        address: serverAddress,
         port: request.containerPort,
         check: "enabled",
         enabled: true,

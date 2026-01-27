@@ -137,10 +137,11 @@ export class DeployApplicationContainers {
                 }, 'Failed to capture container for deployment tracking - continuing with deployment');
             }
 
-            // Send success event with container ID
+            // Send success event with container ID and name
             sendEvent({
                 type: 'DEPLOYMENT_SUCCESS',
-                containerId: containerId
+                containerId: containerId,
+                containerName: containerName
             });
 
         } catch (error) {
