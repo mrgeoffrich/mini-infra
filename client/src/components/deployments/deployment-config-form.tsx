@@ -91,7 +91,7 @@ export function DeploymentConfigForm({
     defaultValues: {
       environmentId: deploymentConfig?.environmentId || "",
       applicationName: deploymentConfig?.applicationName || "",
-      dockerImage: deploymentConfig?.dockerImage || "",
+      dockerImage: deploymentConfig?.dockerImage?.split(":")[0] || "",
       dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
       hostname: deploymentConfig?.hostname || "",

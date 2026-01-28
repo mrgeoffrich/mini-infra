@@ -175,9 +175,9 @@ export class SelfBackupExecutor {
     let sourceDb: Database.Database | null = null;
 
     try {
-      // Open in readonly mode - safe with Prisma running
+      // Open database for backup - SQLite's backup API handles concurrent access safely
+      // Note: readonly mode cannot be used here as backup() may need write access for WAL checkpointing
       sourceDb = new Database(sourcePath, {
-        readonly: true,
         fileMustExist: true,
       });
 
