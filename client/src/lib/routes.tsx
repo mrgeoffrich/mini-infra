@@ -25,7 +25,7 @@ import DatabaseDetailPage from "@/app/postgres-server/[serverId]/databases/[dbId
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import DeploymentsPage from "@/app/deployments/page";
-import NewDeploymentConfigPage from "@/app/deployments/new/page";
+import NewDeploymentConfigPage from "@/app/deployments/new/new-and-edit-page";
 import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { EventsPage } from "@/app/events/page";

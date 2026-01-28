@@ -140,7 +140,7 @@ export function NewDeploymentConfigPage() {
       form.reset({
         applicationName: deploymentConfig.applicationName || "",
         dockerImage: deploymentConfig.dockerImage || "",
-        dockerTag: deploymentConfig.dockerImage?.split(":")[1] || "latest",
+        dockerTag: deploymentConfig.dockerTag || "latest",
         dockerRegistry: deploymentConfig.dockerRegistry || "",
         hostname: deploymentConfig.hostname || "",
         enableSsl: deploymentConfig.enableSsl || false,
@@ -177,16 +177,11 @@ export function NewDeploymentConfigPage() {
   const onSubmit = async (data: any) => {
     setSubmitError(null);
     try {
-      // Combine docker image and tag for backend
-      const dockerImageWithTag =
-        data.dockerTag && data.dockerTag !== "latest"
-          ? `${data.dockerImage}:${data.dockerTag}`
-          : data.dockerImage;
-
       if (isEditing && deploymentConfig) {
         const updateData: UpdateDeploymentConfigRequest = {
           applicationName: data.applicationName,
-          dockerImage: dockerImageWithTag,
+          dockerImage: data.dockerImage,
+          dockerTag: data.dockerTag || "latest",
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
           enableSsl: data.enableSsl,
@@ -203,7 +198,8 @@ export function NewDeploymentConfigPage() {
       } else {
         const createData: CreateDeploymentConfigRequest = {
           applicationName: data.applicationName,
-          dockerImage: dockerImageWithTag,
+          dockerImage: data.dockerImage,
+          dockerTag: data.dockerTag || "latest",
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
           enableSsl: data.enableSsl,
