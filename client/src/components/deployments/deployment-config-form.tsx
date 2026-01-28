@@ -423,7 +423,23 @@ export function DeploymentConfigForm({
                                 <FormItem>
                                   <FormLabel>Docker Image</FormLabel>
                                   <FormControl>
-                                    <Input placeholder="nginx" {...field} />
+                                    <Input
+                                      placeholder="nginx"
+                                      {...field}
+                                      onChange={(e) => {
+                                        let value = e.target.value;
+                                        // If user enters image:tag, split and move tag to dockerTag field
+                                        if (value.includes(":")) {
+                                          const [imagePart, tagPart] = value.split(":");
+                                          field.onChange(imagePart);
+                                          if (tagPart) {
+                                            form.setValue("dockerTag", tagPart);
+                                          }
+                                        } else {
+                                          field.onChange(value);
+                                        }
+                                      }}
+                                    />
                                   </FormControl>
                                   <FormDescription>
                                     Docker image name (without tag)
