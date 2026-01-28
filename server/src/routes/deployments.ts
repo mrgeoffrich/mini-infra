@@ -112,6 +112,7 @@ const createConfigSchema = z.object({
       "Application name can only contain letters, numbers, hyphens, and underscores",
     ),
   dockerImage: z.string().min(1, "Docker image is required"),
+  dockerTag: z.string().optional().default("latest"),
   dockerRegistry: z.string().optional(),
   containerConfig: z.object({
     ports: z.array(
@@ -720,12 +721,9 @@ router.post(
         });
       }
 
-      // Determine Docker image with tag
-      const dockerImage = tag
-        ? config.dockerImage.includes(':')
-          ? `${config.dockerImage.split(':')[0]}:${tag}`
-          : `${config.dockerImage}:${tag}`
-        : config.dockerImage;
+      // Determine Docker image with tag (tag parameter overrides stored dockerTag)
+      const effectiveTag = tag || config.dockerTag || "latest";
+      const dockerImage = `${config.dockerImage}:${effectiveTag}`;
 
       // Trigger deployment
       const deployment = await deploymentOrchestrator.triggerDeployment({

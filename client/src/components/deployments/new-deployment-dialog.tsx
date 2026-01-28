@@ -152,7 +152,7 @@ export function NewDeploymentDialog({
           <div className="rounded-md bg-muted p-3 text-sm">
             <p className="font-medium mb-1">Deployment Details:</p>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-              <li>Docker Image: {config.dockerImage}</li>
+              <li>Docker Image: {config.dockerImage}:{config.dockerTag || "latest"}</li>
               <li>Health Check: {config.healthCheckConfig.endpoint}</li>
               <li>
                 Rollback: {config.rollbackConfig.enabled ? "Enabled" : "Disabled"}

@@ -241,6 +241,7 @@ model DeploymentConfiguration {
   id                String   @id @default(cuid())
   applicationName   String   @unique
   dockerImage       String
+  dockerTag         String   @default("latest")
   dockerRegistry    String?
   containerConfig   Json     // Ports, volumes, env vars
   healthCheckConfig Json     // Endpoint, validation rules

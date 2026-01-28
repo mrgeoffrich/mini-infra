@@ -88,6 +88,7 @@ export interface DeploymentConfiguration {
   id: string;
   applicationName: string;
   dockerImage: string;
+  dockerTag: string;
   dockerRegistry: string | null;
   containerConfig: ContainerConfig; // JSON field
   healthCheckConfig: HealthCheckConfig; // JSON field
@@ -108,6 +109,7 @@ export interface DeploymentConfigurationInfo {
   id: string;
   applicationName: string;
   dockerImage: string;
+  dockerTag: string;
   dockerRegistry: string | null;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
@@ -235,6 +237,7 @@ export interface DeploymentStepInfo {
 export interface CreateDeploymentConfigRequest {
   applicationName: string;
   dockerImage: string;
+  dockerTag?: string;
   dockerRegistry?: string;
   containerConfig: ContainerConfig;
   healthCheckConfig: HealthCheckConfig;
@@ -248,6 +251,7 @@ export interface CreateDeploymentConfigRequest {
 export interface UpdateDeploymentConfigRequest {
   applicationName?: string;
   dockerImage?: string;
+  dockerTag?: string;
   dockerRegistry?: string;
   containerConfig?: ContainerConfig;
   healthCheckConfig?: HealthCheckConfig;

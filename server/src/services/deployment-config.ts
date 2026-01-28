@@ -80,6 +80,7 @@ export const createDeploymentConfigSchema = z.object({
       "Application name can only contain letters, numbers, hyphens, and underscores",
     ),
   dockerImage: z.string().min(1, "Docker image is required"),
+  dockerTag: z.string().optional().default("latest"),
   dockerRegistry: z.string().optional(),
   containerConfig: containerConfigSchema,
   healthCheckConfig: healthCheckConfigSchema,
@@ -109,6 +110,7 @@ export const updateDeploymentConfigSchema = z.object({
     )
     .optional(),
   dockerImage: z.string().min(1, "Docker image is required").optional(),
+  dockerTag: z.string().optional(),
   dockerRegistry: z.string().optional(),
   containerConfig: containerConfigSchema.optional(),
   healthCheckConfig: healthCheckConfigSchema.optional(),
@@ -280,6 +282,7 @@ export class DeploymentConfigService extends ConfigurationService {
         data: {
           applicationName: request.applicationName,
           dockerImage: request.dockerImage,
+          dockerTag: request.dockerTag || "latest",
           dockerRegistry: request.dockerRegistry,
           containerConfig: request.containerConfig as any,
           healthCheckConfig: request.healthCheckConfig as any,
@@ -362,6 +365,8 @@ export class DeploymentConfigService extends ConfigurationService {
       if (request.applicationName)
         updateData.applicationName = request.applicationName;
       if (request.dockerImage) updateData.dockerImage = request.dockerImage;
+      if (request.dockerTag !== undefined)
+        updateData.dockerTag = request.dockerTag;
       if (request.dockerRegistry !== undefined)
         updateData.dockerRegistry = request.dockerRegistry;
       if (request.containerConfig)
@@ -1483,6 +1488,7 @@ export class DeploymentConfigService extends ConfigurationService {
       id: config.id,
       applicationName: config.applicationName,
       dockerImage: config.dockerImage,
+      dockerTag: config.dockerTag,
       dockerRegistry: config.dockerRegistry,
       containerConfig: config.containerConfig as ContainerConfig,
       healthCheckConfig: config.healthCheckConfig as HealthCheckConfig,

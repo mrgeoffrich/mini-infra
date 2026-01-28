@@ -922,11 +922,17 @@ export class DeploymentOrchestrator {
       );
 
       // Prepare deployment config
+      // Extract tag from params.dockerImage (which contains the effective tag from trigger request)
+      // or fall back to config.dockerTag from database
+      const effectiveTag = params.dockerImage.includes(":")
+        ? params.dockerImage.split(":")[1]
+        : config.dockerTag || "latest";
+
       const deploymentConfig: DeploymentConfig = {
         applicationName: config.applicationName,
         dockerImage: config.dockerImage,
         dockerRegistry: config.dockerRegistry,
-        dockerTag: params.dockerImage.split(":")[1] || "latest",
+        dockerTag: effectiveTag,
         containerConfig: config.containerConfig as unknown as ContainerConfig,
         healthCheck: config.healthCheckConfig as unknown as HealthCheckConfig,
         rollbackConfig: config.rollbackConfig as unknown as RollbackConfig,

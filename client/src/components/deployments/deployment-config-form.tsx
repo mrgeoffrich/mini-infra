@@ -91,8 +91,8 @@ export function DeploymentConfigForm({
     defaultValues: {
       environmentId: deploymentConfig?.environmentId || "",
       applicationName: deploymentConfig?.applicationName || "",
-      dockerImage: deploymentConfig?.dockerImage?.split(":")[0] || "",
-      dockerTag: deploymentConfig?.dockerImage?.split(":")[1] || "latest",
+      dockerImage: deploymentConfig?.dockerImage || "",
+      dockerTag: deploymentConfig?.dockerTag || "latest",
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
       hostname: deploymentConfig?.hostname || "",
       enableSsl: deploymentConfig?.enableSsl || false,
@@ -131,16 +131,12 @@ export function DeploymentConfigForm({
   const onSubmit = async (data: DeploymentConfigFormData) => {
     setSubmitError(null);
     try {
-      // Combine docker image and tag for backend
-      const dockerImageWithTag =
-        data.dockerTag && data.dockerTag !== "latest"
-          ? `${data.dockerImage}:${data.dockerTag}`
-          : data.dockerImage;
-
+      // Send docker image and tag separately - they will be combined at deployment time
       if (isEditing && deploymentConfig) {
         const updateData: UpdateDeploymentConfigRequest = {
           applicationName: data.applicationName,
-          dockerImage: dockerImageWithTag,
+          dockerImage: data.dockerImage,
+          dockerTag: data.dockerTag || "latest",
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
           enableSsl: data.enableSsl,
@@ -157,7 +153,8 @@ export function DeploymentConfigForm({
       } else {
         const createData: CreateDeploymentConfigRequest = {
           applicationName: data.applicationName,
-          dockerImage: dockerImageWithTag,
+          dockerImage: data.dockerImage,
+          dockerTag: data.dockerTag || "latest",
           dockerRegistry: data.dockerRegistry,
           hostname: data.hostname || undefined,
           enableSsl: data.enableSsl,
