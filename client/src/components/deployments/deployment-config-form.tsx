@@ -86,13 +86,36 @@ export function DeploymentConfigForm({
 
   const { data: environments } = useEnvironments();
 
+  // Handle legacy data where tag might be embedded in dockerImage
+  const getImageAndTag = () => {
+    const image = deploymentConfig?.dockerImage || "";
+    const storedTag = deploymentConfig?.dockerTag;
+
+    // If dockerTag is set and not default, use it
+    if (storedTag && storedTag !== "latest") {
+      // Strip any tag from dockerImage if present (legacy cleanup)
+      const cleanImage = image.includes(":") ? image.split(":")[0] : image;
+      return { image: cleanImage, tag: storedTag };
+    }
+
+    // Check if dockerImage contains a tag (legacy data)
+    if (image.includes(":")) {
+      const [imgPart, tagPart] = image.split(":");
+      return { image: imgPart, tag: tagPart };
+    }
+
+    return { image, tag: storedTag || "latest" };
+  };
+
+  const { image: initialImage, tag: initialTag } = getImageAndTag();
+
   const form = useForm({
     resolver: zodResolver(deploymentConfigSchema),
     defaultValues: {
       environmentId: deploymentConfig?.environmentId || "",
       applicationName: deploymentConfig?.applicationName || "",
-      dockerImage: deploymentConfig?.dockerImage || "",
-      dockerTag: deploymentConfig?.dockerTag || "latest",
+      dockerImage: initialImage,
+      dockerTag: initialTag,
       dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
       hostname: deploymentConfig?.hostname || "",
       enableSsl: deploymentConfig?.enableSsl || false,
@@ -175,13 +198,47 @@ export function DeploymentConfigForm({
     }
   };
 
-  // Clear error when modal opens/closes
+  // Reset form when modal opens with new data
   React.useEffect(() => {
     if (isOpen) {
       setSubmitError(null);
       setActiveTab("docker");
+
+      // Reset form with current deployment config values
+      const { image, tag } = getImageAndTag();
+      form.reset({
+        environmentId: deploymentConfig?.environmentId || "",
+        applicationName: deploymentConfig?.applicationName || "",
+        dockerImage: image,
+        dockerTag: tag,
+        dockerRegistry: deploymentConfig?.dockerRegistry || undefined,
+        hostname: deploymentConfig?.hostname || "",
+        enableSsl: deploymentConfig?.enableSsl || false,
+        containerConfig: {
+          ports: deploymentConfig?.containerConfig?.ports || [],
+          volumes: deploymentConfig?.containerConfig?.volumes || [],
+          environment: deploymentConfig?.containerConfig?.environment || [],
+          labels: deploymentConfig?.containerConfig?.labels || {},
+          networks: deploymentConfig?.containerConfig?.networks || [],
+        },
+        healthCheckConfig: {
+          endpoint: deploymentConfig?.healthCheckConfig?.endpoint || "/health",
+          method: deploymentConfig?.healthCheckConfig?.method || "GET",
+          expectedStatus: deploymentConfig?.healthCheckConfig?.expectedStatus || [200],
+          responseValidation: deploymentConfig?.healthCheckConfig?.responseValidation || undefined,
+          timeout: deploymentConfig?.healthCheckConfig?.timeout || 10000,
+          retries: deploymentConfig?.healthCheckConfig?.retries || 3,
+          interval: deploymentConfig?.healthCheckConfig?.interval || 30000,
+        },
+        rollbackConfig: {
+          enabled: deploymentConfig?.rollbackConfig?.enabled ?? true,
+          maxWaitTime: deploymentConfig?.rollbackConfig?.maxWaitTime || 300000,
+          keepOldContainer: deploymentConfig?.rollbackConfig?.keepOldContainer || false,
+        },
+        listeningPort: deploymentConfig?.listeningPort || undefined,
+      });
     }
-  }, [isOpen]);
+  }, [isOpen, deploymentConfig, form]);
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
