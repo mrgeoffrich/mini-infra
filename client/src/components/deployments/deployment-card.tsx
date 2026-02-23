@@ -223,7 +223,8 @@ export const DeploymentCard = React.memo(function DeploymentCard({
   }, [config.hostname, config.enableSsl]);
 
   const showNewDeploymentButton = config.isActive && isDeploymentCompleted;
-  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && hasRunningContainers;
+  const isRolledBack = latestDeployment?.status === "rolledback";
+  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && (hasRunningContainers || isRolledBack);
 
   return (
     <Card className="transition-shadow hover:shadow-md">
