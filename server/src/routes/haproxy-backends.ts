@@ -607,29 +607,24 @@ router.patch(
         try {
           const haproxyClient = await getHAProxyClient(environmentId);
 
-          // Use runtime API to update server state
+          // Build a single runtime payload with all updates
+          const runtimePayload: Record<string, unknown> = {};
+
           if (updates.weight !== undefined) {
-            await (haproxyClient as any).axiosInstance.put(
-              `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
-              { operational_state: server.enabled ? "up" : "down", admin_state: server.maintenance ? "maint" : "ready", weight: updates.weight }
-            );
+            runtimePayload.weight = updates.weight;
           }
 
-          if (updates.maintenance !== undefined) {
-            const adminState = updates.maintenance ? "maint" : "ready";
-            await (haproxyClient as any).axiosInstance.put(
-              `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
-              { admin_state: adminState }
-            );
-          }
+          // Use the new value if provided, otherwise fall back to the current DB value
+          const effectiveEnabled = updates.enabled !== undefined ? updates.enabled : server.enabled;
+          const effectiveMaintenance = updates.maintenance !== undefined ? updates.maintenance : server.maintenance;
 
-          if (updates.enabled !== undefined) {
-            const opState = updates.enabled ? "up" : "down";
-            await (haproxyClient as any).axiosInstance.put(
-              `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
-              { operational_state: opState }
-            );
-          }
+          runtimePayload.operational_state = effectiveEnabled ? "up" : "down";
+          runtimePayload.admin_state = effectiveMaintenance ? "maint" : "ready";
+
+          await (haproxyClient as any).axiosInstance.put(
+            `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
+            runtimePayload
+          );
 
           logger.info(
             { backendName, serverName, updates },

@@ -42,6 +42,9 @@ const editRouteSchema = z.object({
   useSSL: z.boolean(),
   tlsCertificateId: z.string().optional().nullable(),
   priority: z.number().int().min(0),
+}).refine((data) => !data.useSSL || !!data.tlsCertificateId, {
+  message: "A TLS certificate is required when SSL is enabled",
+  path: ["tlsCertificateId"],
 });
 
 type EditRouteFormValues = z.infer<typeof editRouteSchema>;
@@ -67,7 +70,7 @@ export function EditRouteDialog({
       hostname: route.hostname,
       backendName: route.backendName,
       useSSL: route.useSSL,
-      tlsCertificateId: route.tlsCertificateId || "",
+      tlsCertificateId: route.tlsCertificateId || null,
       priority: route.priority,
     },
   });
@@ -85,7 +88,7 @@ export function EditRouteDialog({
           hostname: data.hostname,
           backendName: data.backendName,
           useSSL: data.useSSL,
-          tlsCertificateId: data.useSSL ? data.tlsCertificateId : undefined,
+          tlsCertificateId: data.useSSL ? (data.tlsCertificateId || null) : null,
           priority: data.priority,
         },
       });
@@ -104,7 +107,7 @@ export function EditRouteDialog({
         hostname: route.hostname,
         backendName: route.backendName,
         useSSL: route.useSSL,
-        tlsCertificateId: route.tlsCertificateId || "",
+        tlsCertificateId: route.tlsCertificateId || null,
         priority: route.priority,
       });
     }

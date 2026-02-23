@@ -130,8 +130,11 @@ export function RouteRow({ route, frontendName, environmentId }: RouteRowProps) 
           <button
             className="font-mono text-sm text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
             onClick={() => {
-              const params = environmentId ? `?environmentId=${environmentId}` : "";
-              navigate(`/haproxy/backends/${route.backendName}${params}`);
+              if (!environmentId) {
+                toast.error("Cannot navigate to backend: environment ID is not available");
+                return;
+              }
+              navigate(`/haproxy/backends/${route.backendName}?environmentId=${environmentId}`);
             }}
           >
             {route.backendName}

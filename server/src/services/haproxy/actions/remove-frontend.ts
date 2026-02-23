@@ -220,7 +220,7 @@ export class RemoveFrontend {
       // Step 3: Remove backend if no other routes/frontends are using it
       const backendName = context.applicationName;
       if (backendName) {
-        await this.removeBackendIfOrphaned(context.deploymentId, backendName);
+        await this.removeBackendIfOrphaned(context.deploymentId, backendName, context.deploymentConfigId);
       }
 
       // Determine result
@@ -335,7 +335,7 @@ export class RemoveFrontend {
   /**
    * Remove backend only if no other routes or frontends are using it
    */
-  private async removeBackendIfOrphaned(deploymentId: string, backendName: string): Promise<void> {
+  private async removeBackendIfOrphaned(deploymentId: string, backendName: string, deploymentConfigId: string): Promise<void> {
     try {
       // Check if any other routes are using this backend
       const otherRoutes = await prisma.hAProxyRoute.findFirst({
@@ -393,8 +393,8 @@ export class RemoveFrontend {
         // Mark backend as removed in database
         try {
           // Find the environment from the deployment config
-          const deploymentConfig = await prisma.deploymentConfiguration.findFirst({
-            where: { applicationName: backendName },
+          const deploymentConfig = await prisma.deploymentConfiguration.findUnique({
+            where: { id: deploymentConfigId },
             select: { environmentId: true },
           });
 

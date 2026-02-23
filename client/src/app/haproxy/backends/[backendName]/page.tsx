@@ -95,6 +95,7 @@ export function BackendDetailsPage() {
     error,
   } = useBackendByName(backendName, environmentId || undefined, {
     refetchInterval: 30000,
+    enabled: !!backendName && !!environmentId,
   });
 
   // Fetch environments to get environment name
@@ -129,6 +130,36 @@ export function BackendDetailsPage() {
         </div>
         <div className="px-4 lg:px-6 max-w-7xl">
           <Skeleton className="h-[250px] w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  // Missing environmentId state
+  if (!environmentId) {
+    return (
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <Button variant="ghost" onClick={handleBack}>
+            <IconArrowLeft className="h-4 w-4 mr-2" />
+            Back to Backends
+          </Button>
+
+          <div className="mt-6 p-4 border border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20 rounded-md flex items-start gap-3">
+            <IconAlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-yellow-700 dark:text-yellow-300">
+                Environment ID required
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Navigate to this page from the{" "}
+                <Button variant="link" className="h-auto p-0 text-sm" onClick={handleBack}>
+                  Backends list
+                </Button>{" "}
+                to view backend details.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     );
