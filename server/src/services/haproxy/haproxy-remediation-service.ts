@@ -334,6 +334,21 @@ export class HAProxyRemediationService {
         logger.warn("Could not fetch current backends from HAProxy");
       }
 
+      // Get DB-tracked backends for comparison
+      let dbBackends: string[] = [];
+      try {
+        const dbBackendRecords = await prisma.hAProxyBackend.findMany({
+          where: {
+            environmentId,
+            status: 'active',
+          },
+          select: { name: true },
+        });
+        dbBackends = dbBackendRecords.map((b) => b.name);
+      } catch {
+        logger.warn("Could not fetch DB backend records");
+      }
+
       // Build expected state
       const sanitizedEnv = environmentId.replace(/[^a-zA-Z0-9]/g, "_");
       const sharedHttpFrontend = `http_frontend_${sanitizedEnv}`;
@@ -385,9 +400,15 @@ export class HAProxyRemediationService {
 
       const routesToAdd = expectedRoutes.map((r) => r.hostname);
 
+      // Backends that exist in DB but not in HAProxy runtime need recreation
+      const backendsToRecreate = dbBackends.filter(
+        (name) => !currentBackends.includes(name)
+      );
+
       const needsRemediation =
         frontendsToDelete.length > 0 ||
         frontendsToCreate.length > 0 ||
+        backendsToRecreate.length > 0 ||
         !sharedExists;
 
       return {
@@ -405,7 +426,7 @@ export class HAProxyRemediationService {
         changes: {
           frontendsToDelete,
           frontendsToCreate,
-          backendsToRecreate: [], // Backends are typically kept as-is
+          backendsToRecreate,
           routesToAdd,
         },
       };

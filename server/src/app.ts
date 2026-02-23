@@ -137,6 +137,7 @@ import tlsCertificatesRoutes from "./routes/tls-certificates";
 import tlsRenewalsRoutes from "./routes/tls-renewals";
 import tlsSettingsRoutes from "./routes/tls-settings";
 import eventsRoutes from "./routes/events";
+import haproxyBackendsRoutes from "./routes/haproxy-backends";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -168,6 +169,7 @@ const routes = [
   { path: "/api/deployments", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (deployment)" },
   { path: "/api/haproxy/frontends", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (generic)" },
   { path: "/api/haproxy/manual-frontends", router: manualHaproxyFrontendsRoutes, name: "manualHaproxyFrontendsRoutes" },
+  { path: "/api/haproxy/backends", router: haproxyBackendsRoutes, name: "haproxyBackendsRoutes" },
   { path: "/api/environments", router: environmentsRoutes, name: "environmentsRoutes" },
   { path: "/api/self-backups", router: selfBackupsRoutes, name: "selfBackupsRoutes" },
   { path: "/api/registry-credentials", router: registryCredentialsRoutes, name: "registryCredentialsRoutes" },

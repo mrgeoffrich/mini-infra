@@ -356,13 +356,78 @@ export class ManualFrontendManager {
       });
 
       // Add server to backend using container name for DNS resolution
+      const serverName = `${request.containerName}_server`;
       await haproxyClient.addServer(backendName, {
-        name: `${request.containerName}_server`,
+        name: serverName,
         address: serverAddress,
         port: request.containerPort,
         check: "enabled",
         enabled: true,
       });
+
+      // Persist backend and server records to database
+      try {
+        const backendRecord = await prisma.hAProxyBackend.upsert({
+          where: {
+            name_environmentId: {
+              name: backendName,
+              environmentId: request.environmentId,
+            },
+          },
+          update: {
+            mode: 'http',
+            status: 'active',
+            errorMessage: null,
+          },
+          create: {
+            name: backendName,
+            environmentId: request.environmentId,
+            mode: 'http',
+            sourceType: 'manual',
+            status: 'active',
+          },
+        });
+
+        await prisma.hAProxyServer.upsert({
+          where: {
+            name_backendId: {
+              name: serverName,
+              backendId: backendRecord.id,
+            },
+          },
+          update: {
+            address: serverAddress,
+            port: request.containerPort,
+            check: 'enabled',
+            checkPath: request.healthCheckPath ?? null,
+            containerId: request.containerId,
+            containerName: request.containerName,
+            status: 'active',
+            errorMessage: null,
+          },
+          create: {
+            name: serverName,
+            backendId: backendRecord.id,
+            address: serverAddress,
+            port: request.containerPort,
+            check: 'enabled',
+            checkPath: request.healthCheckPath ?? null,
+            containerId: request.containerId,
+            containerName: request.containerName,
+            status: 'active',
+          },
+        });
+
+        logger.info(
+          { backendName, serverName, backendRecordId: backendRecord.id },
+          'Manual backend and server records persisted to database'
+        );
+      } catch (dbError) {
+        logger.warn(
+          { backendName, error: dbError instanceof Error ? dbError.message : 'Unknown error' },
+          'Failed to persist manual backend/server records to database (non-critical)'
+        );
+      }
 
       // Get or create the shared frontend for this environment
       // Use HTTPS frontend when SSL is enabled, otherwise HTTP
@@ -435,6 +500,22 @@ export class ManualFrontendManager {
         where: { id: route.id },
         data: { manualFrontendId: manualFrontendRecord.id },
       });
+
+      // Update the backend record with manualFrontendId
+      try {
+        await prisma.hAProxyBackend.updateMany({
+          where: {
+            name: backendName,
+            environmentId: request.environmentId,
+          },
+          data: { manualFrontendId: manualFrontendRecord.id },
+        });
+      } catch (dbError) {
+        logger.warn(
+          { backendName, error: dbError instanceof Error ? dbError.message : 'Unknown error' },
+          'Failed to update backend manualFrontendId (non-critical)'
+        );
+      }
 
       logger.info(
         {
@@ -519,6 +600,25 @@ export class ManualFrontendManager {
           if (error?.response?.status !== 404) {
             logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
           }
+        }
+      }
+
+      // Mark backend as removed in database
+      if (frontend.backendName && frontend.environmentId) {
+        try {
+          await prisma.hAProxyBackend.updateMany({
+            where: {
+              name: frontend.backendName,
+              environmentId: frontend.environmentId,
+            },
+            data: { status: 'removed' },
+          });
+          logger.info({ backendName: frontend.backendName }, 'Backend marked as removed in database');
+        } catch (dbError) {
+          logger.warn(
+            { backendName: frontend.backendName, error: dbError instanceof Error ? dbError.message : 'Unknown error' },
+            'Failed to mark backend as removed in database (non-critical)'
+          );
         }
       }
 

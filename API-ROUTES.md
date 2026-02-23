@@ -309,7 +309,19 @@
 | POST | `.../configs/:configId/frontend/sync` | Sync frontend for config |
 | GET | `.../:frontendName/routes` | List routes |
 | POST | `.../:frontendName/routes` | Add route |
+| PATCH | `.../:frontendName/routes/:routeId` | Update route |
 | DELETE | `.../:frontendName/routes/:routeId` | Delete route |
+
+## HAProxy Backends (`/api/haproxy/backends`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/haproxy/backends` | List backends (filter by `environmentId`, `status`, `sourceType`, `name`) |
+| GET | `/api/haproxy/backends/:backendName?environmentId=` | Get backend with servers |
+| PATCH | `/api/haproxy/backends/:backendName?environmentId=` | Update backend config (propagates to HAProxy) |
+| GET | `/api/haproxy/backends/:backendName/servers?environmentId=` | List servers in backend |
+| GET | `/api/haproxy/backends/:backendName/servers/:serverName?environmentId=` | Get server details |
+| PATCH | `/api/haproxy/backends/:backendName/servers/:serverName?environmentId=` | Update server (propagates to HAProxy) |
 
 ## Manual HAProxy Frontends (`/api/haproxy/manual-frontends`)
 

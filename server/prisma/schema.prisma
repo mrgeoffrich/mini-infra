@@ -378,6 +378,7 @@ model Environment {
   volumes     EnvironmentVolume[]
   deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends HAProxyFrontend[]
+  haproxyBackends  HAProxyBackend[]
 
   @@index([type])
   @@index([networkType])
@@ -548,6 +549,81 @@ model HAProxyRoute {
   @@index([status])
   @@index([sourceType])
   @@map("haproxy_routes")
+}
+
+// HAProxyBackend model for tracking HAProxy backend configurations
+model HAProxyBackend {
+  id                    String   @id @default(cuid())
+  name                  String   // Backend name in HAProxy
+  environmentId         String
+  environment           Environment @relation(fields: [environmentId], references: [id])
+
+  // Backend configuration
+  mode                  String   @default("http") // "http" | "tcp"
+  balanceAlgorithm      String   @default("roundrobin") // "roundrobin" | "leastconn" | "source"
+  checkTimeout          Int?     // Health check timeout in ms
+  connectTimeout        Int?     // Connection timeout in ms
+  serverTimeout         Int?     // Server timeout in ms
+
+  // Source tracking
+  sourceType            String   // "deployment" | "manual"
+  deploymentConfigId    String?  // For deployment-created backends
+  manualFrontendId      String?  // For manually-created backends
+
+  // Status tracking
+  status                String   @default("active") // "active" | "removed" | "failed"
+  errorMessage          String?
+
+  // Relations
+  servers               HAProxyServer[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([name, environmentId])
+  @@index([environmentId])
+  @@index([status])
+  @@index([sourceType])
+  @@index([deploymentConfigId])
+  @@map("haproxy_backends")
+}
+
+// HAProxyServer model for tracking HAProxy server configurations within backends
+model HAProxyServer {
+  id                    String   @id @default(cuid())
+  name                  String   // Server name in HAProxy
+  backendId             String
+  backend               HAProxyBackend @relation(fields: [backendId], references: [id], onDelete: Cascade)
+
+  // Server configuration
+  address               String   // Container name or IP address
+  port                  Int
+  check                 String   @default("enabled") // "enabled" | "disabled"
+  checkPath             String?  // Health check endpoint
+  inter                 Int?     // Health check interval in ms
+  rise                  Int?     // Consecutive successful checks to mark UP
+  fall                  Int?     // Consecutive failed checks to mark DOWN
+  weight                Int      @default(100)
+  enabled               Boolean  @default(true)
+  maintenance           Boolean  @default(false)
+
+  // Container tracking
+  containerId           String?  // Docker container ID
+  containerName         String?  // Docker container name
+  deploymentId          String?  // Deployment that created this server
+
+  // Status tracking
+  status                String   @default("active") // "active" | "removed" | "draining"
+  errorMessage          String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([name, backendId])
+  @@index([backendId])
+  @@index([status])
+  @@index([containerId])
+  @@map("haproxy_servers")
 }
 
 // Registry Credentials Management

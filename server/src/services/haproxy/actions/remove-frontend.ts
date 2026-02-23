@@ -390,6 +390,36 @@ export class RemoveFrontend {
 
         await this.haproxyClient.deleteBackend(backendName);
 
+        // Mark backend as removed in database
+        try {
+          // Find the environment from the deployment config
+          const deploymentConfig = await prisma.deploymentConfiguration.findFirst({
+            where: { applicationName: backendName },
+            select: { environmentId: true },
+          });
+
+          if (deploymentConfig?.environmentId) {
+            await prisma.hAProxyBackend.updateMany({
+              where: {
+                name: backendName,
+                environmentId: deploymentConfig.environmentId,
+              },
+              data: {
+                status: 'removed',
+              },
+            });
+            logger.info({ backendName }, 'Backend marked as removed in database');
+          }
+        } catch (dbError) {
+          logger.warn(
+            {
+              backendName,
+              error: dbError instanceof Error ? dbError.message : 'Unknown error',
+            },
+            'Failed to mark backend as removed in database (non-critical)'
+          );
+        }
+
         logger.info(
           {
             deploymentId,

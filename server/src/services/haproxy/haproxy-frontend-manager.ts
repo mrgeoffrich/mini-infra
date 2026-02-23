@@ -1320,6 +1320,8 @@ export class HAProxyFrontendManager {
       backendName?: string;
       useSSL?: boolean;
       tlsCertificateId?: string | null;
+      priority?: number;
+      status?: string;
     },
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
@@ -1329,6 +1331,8 @@ export class HAProxyFrontendManager {
     aclName: string;
     backendName: string;
     useSSL: boolean;
+    priority: number;
+    status: string;
   }> {
     logger.info({ routeId, updates }, "Updating route");
 
@@ -1407,6 +1411,8 @@ export class HAProxyFrontendManager {
             updates.tlsCertificateId !== undefined
               ? updates.tlsCertificateId
               : existingRoute.tlsCertificateId,
+          ...(updates.priority !== undefined && { priority: updates.priority }),
+          ...(updates.status !== undefined && { status: updates.status }),
         },
       });
 
@@ -1418,6 +1424,8 @@ export class HAProxyFrontendManager {
         aclName: updatedRoute.aclName,
         backendName: updatedRoute.backendName,
         useSSL: updatedRoute.useSSL,
+        priority: updatedRoute.priority,
+        status: updatedRoute.status,
       };
     } catch (error) {
       logger.error({ error, routeId, updates }, "Failed to update route");

@@ -884,6 +884,173 @@ router.post(
   }
 );
 
+// Validation schema for patching a route
+const patchRouteSchema = z.object({
+  hostname: z.string().min(1).regex(/^[a-z0-9.-]+$/i, "Invalid hostname format").optional(),
+  backendName: z.string().min(1).optional(),
+  useSSL: z.boolean().optional(),
+  tlsCertificateId: z.string().cuid().nullable().optional(),
+  priority: z.number().int().optional(),
+  status: z.enum(["active", "inactive", "failed"]).optional(),
+}).refine((data) => Object.keys(data).length > 0, {
+  message: "At least one field must be provided",
+});
+
+/**
+ * PATCH /api/haproxy/frontends/:frontendName/routes/:routeId
+ * Update a route on a shared frontend (propagates changes to HAProxy)
+ */
+router.patch(
+  "/:frontendName/routes/:routeId",
+  requireSessionOrApiKey as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const { frontendName, routeId } = req.params;
+
+      // Validate route ID
+      if (!z.string().cuid().safeParse(routeId).success) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid route ID format",
+        });
+      }
+
+      // Validate request body
+      const validationResult = patchRouteSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: validationResult.error.issues,
+        });
+      }
+
+      // Fetch frontend
+      const frontend = await prisma.hAProxyFrontend.findUnique({
+        where: { frontendName },
+      });
+
+      if (!frontend) {
+        return res.status(404).json({
+          success: false,
+          error: "Frontend not found",
+        });
+      }
+
+      if (!frontend.isSharedFrontend) {
+        return res.status(400).json({
+          success: false,
+          error: "Frontend is not a shared frontend",
+          message: "Routes can only be updated on shared frontends",
+        });
+      }
+
+      // Fetch route and verify it belongs to this frontend
+      const route = await prisma.hAProxyRoute.findUnique({
+        where: { id: routeId },
+      });
+
+      if (!route) {
+        return res.status(404).json({
+          success: false,
+          error: "Route not found",
+        });
+      }
+
+      if (route.sharedFrontendId !== frontend.id) {
+        return res.status(400).json({
+          success: false,
+          error: "Route does not belong to this frontend",
+        });
+      }
+
+      // Check for hostname uniqueness if hostname is being changed
+      if (validationResult.data.hostname && validationResult.data.hostname !== route.hostname) {
+        const existingRoute = await prisma.hAProxyRoute.findFirst({
+          where: {
+            sharedFrontendId: frontend.id,
+            hostname: validationResult.data.hostname,
+            id: { not: routeId },
+          },
+        });
+
+        if (existingRoute) {
+          return res.status(409).json({
+            success: false,
+            error: "A route with this hostname already exists on this frontend",
+          });
+        }
+      }
+
+      // Get HAProxy client
+      let haproxyClient: HAProxyDataPlaneClient;
+      try {
+        haproxyClient = await getHAProxyClientForFrontend(frontendName);
+      } catch (error) {
+        return res.status(503).json({
+          success: false,
+          error: "HAProxy unavailable",
+          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
+        });
+      }
+
+      // Update route (propagates to HAProxy)
+      await haproxyFrontendManager.updateRoute(
+        routeId,
+        validationResult.data,
+        haproxyClient,
+        prisma
+      );
+
+      // Fetch full updated record for response
+      const updatedRoute = await prisma.hAProxyRoute.findUnique({
+        where: { id: routeId },
+      });
+
+      logger.info(
+        { frontendName, routeId, updates: validationResult.data },
+        "Route updated on shared frontend via API"
+      );
+
+      res.json({
+        success: true,
+        data: updatedRoute ? {
+          id: updatedRoute.id,
+          hostname: updatedRoute.hostname,
+          aclName: updatedRoute.aclName,
+          backendName: updatedRoute.backendName,
+          sourceType: updatedRoute.sourceType,
+          deploymentConfigId: updatedRoute.deploymentConfigId,
+          manualFrontendId: updatedRoute.manualFrontendId,
+          useSSL: updatedRoute.useSSL,
+          tlsCertificateId: updatedRoute.tlsCertificateId,
+          status: updatedRoute.status,
+          priority: updatedRoute.priority,
+          createdAt: updatedRoute.createdAt.toISOString(),
+          updatedAt: updatedRoute.updatedAt.toISOString(),
+        } : null,
+        message: "Route updated successfully",
+      });
+    } catch (error: any) {
+      logger.error(
+        { error: error.message, frontendName: req.params.frontendName, routeId: req.params.routeId },
+        "Failed to update route on frontend"
+      );
+
+      let statusCode = 500;
+      if (error.message.includes("not found")) {
+        statusCode = 404;
+      }
+
+      res.status(statusCode).json({
+        success: false,
+        error: "Failed to update route",
+        message: error.message,
+      });
+    }
+  }
+);
+
 /**
  * DELETE /api/haproxy/frontends/:frontendName/routes/:routeId
  * Remove a route from a shared frontend
