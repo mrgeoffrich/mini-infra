@@ -151,6 +151,7 @@ export function RoutesTable({ frontendName, frontendId, environmentId }: RoutesT
                       key={route.id}
                       route={route}
                       frontendName={frontendName}
+                      environmentId={environmentId}
                     />
                   ))}
                 </TableBody>
