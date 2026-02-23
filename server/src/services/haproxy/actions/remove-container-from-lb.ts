@@ -1,6 +1,7 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 import DockerService from '../../docker';
+import prisma from '../../../lib/prisma';
 
 const logger = loadbalancerLogger();
 
@@ -111,6 +112,9 @@ export class RemoveContainerFromLB {
                         serverName
                     }, 'Server not found in HAProxy runtime, skipping server removal');
                 }
+
+                // Mark server as removed in database
+                await this.markServerRemoved(backendName, serverName, context.environmentId);
             }
 
             // Clean up any stale servers (servers whose containers no longer exist)
@@ -149,6 +153,8 @@ export class RemoveContainerFromLB {
                                     serverName
                                 }, 'Stale server successfully removed from HAProxy backend');
                             }
+                            // Mark stale server as removed in database
+                            await this.markServerRemoved(backendName, serverName, context.environmentId);
                         } catch (error) {
                             logger.warn({
                                 deploymentId: context.deploymentId,
@@ -174,6 +180,9 @@ export class RemoveContainerFromLB {
                     deploymentId: context.deploymentId,
                     backendName
                 }, 'Backend has no remaining servers - backend will be removed after frontend cleanup');
+
+                // Mark backend as removed in database
+                await this.markBackendRemoved(backendName, context.environmentId);
             } else {
                 logger.info({
                     deploymentId: context.deploymentId,
@@ -210,6 +219,70 @@ export class RemoveContainerFromLB {
                 type: 'LB_REMOVAL_FAILED',
                 error: errorMessage
             });
+        }
+    }
+
+    /**
+     * Mark a server as removed in the database
+     */
+    private async markServerRemoved(backendName: string, serverName: string, environmentId?: string): Promise<void> {
+        try {
+            if (!environmentId) return;
+
+            const backend = await prisma.hAProxyBackend.findUnique({
+                where: {
+                    name_environmentId: {
+                        name: backendName,
+                        environmentId,
+                    },
+                },
+            });
+
+            if (!backend) return;
+
+            await prisma.hAProxyServer.updateMany({
+                where: {
+                    name: serverName,
+                    backendId: backend.id,
+                },
+                data: {
+                    status: 'removed',
+                },
+            });
+
+            logger.info({ backendName, serverName }, 'Server marked as removed in database');
+        } catch (dbError) {
+            logger.warn({
+                backendName,
+                serverName,
+                error: dbError instanceof Error ? dbError.message : 'Unknown error',
+            }, 'Failed to mark server as removed in database (non-critical)');
+        }
+    }
+
+    /**
+     * Mark a backend as removed in the database
+     */
+    private async markBackendRemoved(backendName: string, environmentId?: string): Promise<void> {
+        try {
+            if (!environmentId) return;
+
+            await prisma.hAProxyBackend.updateMany({
+                where: {
+                    name: backendName,
+                    environmentId,
+                },
+                data: {
+                    status: 'removed',
+                },
+            });
+
+            logger.info({ backendName }, 'Backend marked as removed in database');
+        } catch (dbError) {
+            logger.warn({
+                backendName,
+                error: dbError instanceof Error ? dbError.message : 'Unknown error',
+            }, 'Failed to mark backend as removed in database (non-critical)');
         }
     }
 }

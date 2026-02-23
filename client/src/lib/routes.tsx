@@ -40,6 +40,8 @@ import FrontendsListPage from "@/app/haproxy/frontends/page";
 import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
 import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
 import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
+import BackendsListPage from "@/app/haproxy/backends/page";
+import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
 
 export const router = createBrowserRouter([
   {
@@ -161,6 +163,14 @@ export const router = createBrowserRouter([
       {
         path: "haproxy/frontends/:frontendName/edit",
         element: <EditManualFrontendPage />,
+      },
+      {
+        path: "haproxy/backends",
+        element: <BackendsListPage />,
+      },
+      {
+        path: "haproxy/backends/:backendName",
+        element: <BackendDetailsPage />,
       },
       {
         path: "environments",

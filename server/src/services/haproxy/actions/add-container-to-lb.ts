@@ -1,6 +1,7 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
 import { HealthCheckConfig } from '@mini-infra/types';
+import prisma from '../../../lib/prisma';
 
 const logger = loadbalancerLogger();
 
@@ -137,6 +138,100 @@ export class AddContainerToLB {
                 healthCheckEndpoint,
                 applicationName: context.applicationName
             }, 'Container successfully added to HAProxy load balancer');
+
+            // Persist backend and server records to database
+            try {
+                if (context.environmentId) {
+                    const backendRecord = await prisma.hAProxyBackend.upsert({
+                        where: {
+                            name_environmentId: {
+                                name: backendName,
+                                environmentId: context.environmentId,
+                            },
+                        },
+                        update: {
+                            mode: backendConfig.mode || 'http',
+                            balanceAlgorithm: backendConfig.balance || 'roundrobin',
+                            checkTimeout: backendConfig.check_timeout ?? null,
+                            connectTimeout: backendConfig.connect_timeout ?? null,
+                            serverTimeout: backendConfig.server_timeout ?? null,
+                            status: 'active',
+                            errorMessage: null,
+                        },
+                        create: {
+                            name: backendName,
+                            environmentId: context.environmentId,
+                            mode: backendConfig.mode || 'http',
+                            balanceAlgorithm: backendConfig.balance || 'roundrobin',
+                            checkTimeout: backendConfig.check_timeout ?? null,
+                            connectTimeout: backendConfig.connect_timeout ?? null,
+                            serverTimeout: backendConfig.server_timeout ?? null,
+                            sourceType: 'deployment',
+                            deploymentConfigId: context.deploymentConfigId ?? null,
+                            status: 'active',
+                        },
+                    });
+
+                    await prisma.hAProxyServer.upsert({
+                        where: {
+                            name_backendId: {
+                                name: serverName,
+                                backendId: backendRecord.id,
+                            },
+                        },
+                        update: {
+                            address: serverAddress,
+                            port: context.containerPort,
+                            check: serverConfig.check || 'enabled',
+                            checkPath: serverConfig.check_path || null,
+                            inter: serverConfig.inter ?? null,
+                            rise: serverConfig.rise ?? null,
+                            fall: serverConfig.fall ?? null,
+                            weight: serverConfig.weight ?? 100,
+                            enabled: serverConfig.enabled ?? true,
+                            maintenance: serverConfig.maintenance === 'enabled',
+                            containerId: context.containerId ?? null,
+                            containerName: context.containerName ?? null,
+                            deploymentId: context.deploymentId ?? null,
+                            status: 'active',
+                            errorMessage: null,
+                        },
+                        create: {
+                            name: serverName,
+                            backendId: backendRecord.id,
+                            address: serverAddress,
+                            port: context.containerPort,
+                            check: serverConfig.check || 'enabled',
+                            checkPath: serverConfig.check_path || null,
+                            inter: serverConfig.inter ?? null,
+                            rise: serverConfig.rise ?? null,
+                            fall: serverConfig.fall ?? null,
+                            weight: serverConfig.weight ?? 100,
+                            enabled: serverConfig.enabled ?? true,
+                            maintenance: serverConfig.maintenance === 'enabled',
+                            containerId: context.containerId ?? null,
+                            containerName: context.containerName ?? null,
+                            deploymentId: context.deploymentId ?? null,
+                            status: 'active',
+                        },
+                    });
+
+                    logger.info({
+                        deploymentId: context.deploymentId,
+                        backendName,
+                        serverName,
+                        backendRecordId: backendRecord.id,
+                    }, 'Backend and server records persisted to database');
+                }
+            } catch (dbError) {
+                // DB write failure is non-critical - remediation can reconcile later
+                logger.warn({
+                    deploymentId: context.deploymentId,
+                    backendName,
+                    serverName,
+                    error: dbError instanceof Error ? dbError.message : 'Unknown error',
+                }, 'Failed to persist backend/server records to database (non-critical)');
+            }
 
             // Send success event
             sendEvent({

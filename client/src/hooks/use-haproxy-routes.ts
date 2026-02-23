@@ -4,6 +4,7 @@ import {
   CreateRouteRequest,
   CreateRouteResponse,
   DeleteRouteResponse,
+  HAProxyRouteInfo,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -100,6 +101,39 @@ async function deleteRoute(
   return data;
 }
 
+async function updateRoute(
+  frontendName: string,
+  routeId: string,
+  request: Partial<Pick<HAProxyRouteInfo, "hostname" | "backendName" | "useSSL" | "tlsCertificateId" | "priority">>,
+  correlationId: string,
+): Promise<{ success: boolean; data: HAProxyRouteInfo; message?: string }> {
+  const response = await fetch(
+    `/api/haproxy/frontends/${encodeURIComponent(frontendName)}/routes/${routeId}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Correlation-ID": correlationId,
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to update route: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message || "Failed to update route");
+  }
+
+  return data;
+}
+
 // ====================
 // Hooks
 // ====================
@@ -182,6 +216,34 @@ export function useDeleteRoute() {
       frontendName: string;
       routeId: string;
     }) => deleteRoute(frontendName, routeId, correlationId),
+    onSuccess: (_, variables) => {
+      // Invalidate routes list
+      queryClient.invalidateQueries({ queryKey: ["haproxy-routes", variables.frontendName] });
+      // Invalidate frontend details
+      queryClient.invalidateQueries({ queryKey: ["haproxy-frontend", variables.frontendName] });
+      // Invalidate all frontends list
+      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+    },
+  });
+}
+
+/**
+ * Hook to update a route on a shared frontend
+ */
+export function useUpdateRoute() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: ({
+      frontendName,
+      routeId,
+      request,
+    }: {
+      frontendName: string;
+      routeId: string;
+      request: Partial<Pick<HAProxyRouteInfo, "hostname" | "backendName" | "useSSL" | "tlsCertificateId" | "priority">>;
+    }) => updateRoute(frontendName, routeId, request, correlationId),
     onSuccess: (_, variables) => {
       // Invalidate routes list
       queryClient.invalidateQueries({ queryKey: ["haproxy-routes", variables.frontendName] });

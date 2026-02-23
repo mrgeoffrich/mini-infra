@@ -138,7 +138,10 @@ export function RoutesTable({ frontendName, frontendId, environmentId }: RoutesT
                     <TableHead>Backend</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>SSL</TableHead>
+                    <TableHead>Priority</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Updated</TableHead>
                     <TableHead className="w-[80px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -148,6 +151,7 @@ export function RoutesTable({ frontendName, frontendId, environmentId }: RoutesT
                       key={route.id}
                       route={route}
                       frontendName={frontendName}
+                      environmentId={environmentId}
                     />
                   ))}
                 </TableBody>

@@ -186,11 +186,23 @@ export const routeConfig: Record<string, RouteConfig> = {
       frontends: {
         path: "/haproxy/frontends",
         title: "Frontends",
-        showInNav: false,
+        showInNav: true,
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
         title: "Connect Container",
+        showInNav: false,
+      },
+      backends: {
+        path: "/haproxy/backends",
+        title: "Backends",
+        showInNav: true,
+      },
+      "backends/detail": {
+        path: "/haproxy/backends/:backendName",
+        title: "Backend Details",
+        breadcrumbLabel: "Details",
+        parent: "/haproxy/backends",
         showInNav: false,
       },
     },

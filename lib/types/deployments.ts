@@ -732,6 +732,99 @@ export interface DeleteRouteResponse {
 }
 
 // ====================
+// HAProxy Backend & Server Types
+// ====================
+
+export type BackendSourceType = 'deployment' | 'manual';
+export type BackendStatus = 'active' | 'removed' | 'failed';
+export type ServerStatus = 'active' | 'removed' | 'draining';
+
+export interface HAProxyBackendInfo {
+  id: string;
+  name: string;
+  environmentId: string;
+  mode: string;
+  balanceAlgorithm: string;
+  checkTimeout: number | null;
+  connectTimeout: number | null;
+  serverTimeout: number | null;
+  sourceType: BackendSourceType;
+  deploymentConfigId: string | null;
+  manualFrontendId: string | null;
+  status: BackendStatus;
+  errorMessage: string | null;
+  serversCount: number;
+  servers?: HAProxyServerInfo[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HAProxyServerInfo {
+  id: string;
+  name: string;
+  backendId: string;
+  backendName?: string;
+  address: string;
+  port: number;
+  check: string;
+  checkPath: string | null;
+  inter: number | null;
+  rise: number | null;
+  fall: number | null;
+  weight: number;
+  enabled: boolean;
+  maintenance: boolean;
+  containerId: string | null;
+  containerName: string | null;
+  deploymentId: string | null;
+  status: ServerStatus;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HAProxyBackendListResponse {
+  success: boolean;
+  data: HAProxyBackendInfo[];
+  message?: string;
+}
+
+export interface HAProxyBackendResponse {
+  success: boolean;
+  data: HAProxyBackendInfo;
+  message?: string;
+}
+
+export interface HAProxyServerListResponse {
+  success: boolean;
+  data: HAProxyServerInfo[];
+  message?: string;
+}
+
+export interface HAProxyServerResponse {
+  success: boolean;
+  data: HAProxyServerInfo;
+  message?: string;
+}
+
+export interface UpdateBackendRequest {
+  balanceAlgorithm?: string;
+  checkTimeout?: number;
+  connectTimeout?: number;
+  serverTimeout?: number;
+}
+
+export interface UpdateServerRequest {
+  weight?: number;
+  enabled?: boolean;
+  maintenance?: boolean;
+  checkPath?: string;
+  inter?: number;
+  rise?: number;
+  fall?: number;
+}
+
+// ====================
 // HAProxy Remediation Types
 // ====================
 

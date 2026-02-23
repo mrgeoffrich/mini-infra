@@ -220,7 +220,7 @@ export class RemoveFrontend {
       // Step 3: Remove backend if no other routes/frontends are using it
       const backendName = context.applicationName;
       if (backendName) {
-        await this.removeBackendIfOrphaned(context.deploymentId, backendName);
+        await this.removeBackendIfOrphaned(context.deploymentId, backendName, context.deploymentConfigId);
       }
 
       // Determine result
@@ -335,7 +335,7 @@ export class RemoveFrontend {
   /**
    * Remove backend only if no other routes or frontends are using it
    */
-  private async removeBackendIfOrphaned(deploymentId: string, backendName: string): Promise<void> {
+  private async removeBackendIfOrphaned(deploymentId: string, backendName: string, deploymentConfigId: string): Promise<void> {
     try {
       // Check if any other routes are using this backend
       const otherRoutes = await prisma.hAProxyRoute.findFirst({
@@ -389,6 +389,36 @@ export class RemoveFrontend {
         );
 
         await this.haproxyClient.deleteBackend(backendName);
+
+        // Mark backend as removed in database
+        try {
+          // Find the environment from the deployment config
+          const deploymentConfig = await prisma.deploymentConfiguration.findUnique({
+            where: { id: deploymentConfigId },
+            select: { environmentId: true },
+          });
+
+          if (deploymentConfig?.environmentId) {
+            await prisma.hAProxyBackend.updateMany({
+              where: {
+                name: backendName,
+                environmentId: deploymentConfig.environmentId,
+              },
+              data: {
+                status: 'removed',
+              },
+            });
+            logger.info({ backendName }, 'Backend marked as removed in database');
+          }
+        } catch (dbError) {
+          logger.warn(
+            {
+              backendName,
+              error: dbError instanceof Error ? dbError.message : 'Unknown error',
+            },
+            'Failed to mark backend as removed in database (non-critical)'
+          );
+        }
 
         logger.info(
           {

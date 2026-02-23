@@ -2,12 +2,15 @@ import { useState } from "react";
 import {
   IconDots,
   IconTrash,
+  IconEdit,
   IconShield,
   IconRocket,
   IconSettings,
 } from "@tabler/icons-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,11 +30,13 @@ import {
 import { TableCell, TableRow } from "@/components/ui/table";
 import { useDeleteRoute } from "@/hooks/use-haproxy-routes";
 import { HAProxyRouteInfo } from "@mini-infra/types";
+import { EditRouteDialog } from "./edit-route-dialog";
 import { toast } from "sonner";
 
 interface RouteRowProps {
   route: HAProxyRouteInfo;
   frontendName: string;
+  environmentId: string | null;
 }
 
 function RouteStatusBadge({ status }: { status: string }) {
@@ -88,9 +93,12 @@ function RouteSourceBadge({ sourceType }: { sourceType: string }) {
   }
 }
 
-export function RouteRow({ route, frontendName }: RouteRowProps) {
+export function RouteRow({ route, frontendName, environmentId }: RouteRowProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const deleteRouteMutation = useDeleteRoute();
+  const { formatDateTime } = useFormattedDate();
+  const navigate = useNavigate();
 
   const handleDelete = async () => {
     try {
@@ -119,20 +127,61 @@ export function RouteRow({ route, frontendName }: RouteRowProps) {
           <div className="text-xs text-muted-foreground">{route.aclName}</div>
         </TableCell>
         <TableCell>
-          <div className="font-mono text-sm">{route.backendName}</div>
+          <button
+            className="font-mono text-sm text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
+            onClick={() => {
+              if (!environmentId) {
+                toast.error("Cannot navigate to backend: environment ID is not available");
+                return;
+              }
+              navigate(`/haproxy/backends/${route.backendName}?environmentId=${environmentId}`);
+            }}
+          >
+            {route.backendName}
+          </button>
         </TableCell>
         <TableCell>
           <RouteSourceBadge sourceType={route.sourceType} />
-        </TableCell>
-        <TableCell>
-          {route.useSSL ? (
-            <IconShield className="h-4 w-4 text-green-600" />
-          ) : (
-            <span className="text-muted-foreground text-xs">No</span>
+          {route.sourceType === "deployment" && route.deploymentConfigId && (
+            <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[140px]" title={route.deploymentConfigId}>
+              {route.deploymentConfigId}
+            </div>
+          )}
+          {route.sourceType === "manual" && route.manualFrontendId && (
+            <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[140px]" title={route.manualFrontendId}>
+              {route.manualFrontendId}
+            </div>
           )}
         </TableCell>
         <TableCell>
+          <div className="flex items-center gap-1">
+            {route.useSSL ? (
+              <IconShield className="h-4 w-4 text-green-600" />
+            ) : (
+              <span className="text-muted-foreground text-xs">No</span>
+            )}
+          </div>
+          {route.useSSL && route.tlsCertificateId && (
+            <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[140px]" title={route.tlsCertificateId}>
+              {route.tlsCertificateId}
+            </div>
+          )}
+        </TableCell>
+        <TableCell>
+          <span className="text-sm">{route.priority}</span>
+        </TableCell>
+        <TableCell>
           <RouteStatusBadge status={route.status} />
+        </TableCell>
+        <TableCell>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatDateTime(route.createdAt)}
+          </span>
+        </TableCell>
+        <TableCell>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {formatDateTime(route.updatedAt)}
+          </span>
         </TableCell>
         <TableCell>
           <DropdownMenu>
@@ -142,6 +191,12 @@ export function RouteRow({ route, frontendName }: RouteRowProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canDelete && (
+                <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
+                  <IconEdit className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+              )}
               {canDelete ? (
                 <DropdownMenuItem
                   onClick={() => setDeleteDialogOpen(true)}
@@ -160,6 +215,17 @@ export function RouteRow({ route, frontendName }: RouteRowProps) {
           </DropdownMenu>
         </TableCell>
       </TableRow>
+
+      {/* Edit Route Dialog */}
+      {canDelete && (
+        <EditRouteDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          route={route}
+          frontendName={frontendName}
+          environmentId={environmentId}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
