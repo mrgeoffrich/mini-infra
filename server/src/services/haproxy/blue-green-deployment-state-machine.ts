@@ -266,7 +266,12 @@ export const blueGreenDeploymentMachine = setup({
 
         // Blue decommission actions
         removeBlueFromLB: ({ context, self }) => {
-            removeContainerFromLB.execute(context, (event) => {
+            // Map oldContainerId to containerId for the action
+            const contextWithContainerId = {
+                ...context,
+                containerId: context.oldContainerId
+            };
+            removeContainerFromLB.execute(contextWithContainerId, (event) => {
                 self.send(event);
             }).catch((error) => {
                 self.send({
