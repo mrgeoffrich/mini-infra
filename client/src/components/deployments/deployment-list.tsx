@@ -171,7 +171,7 @@ const DeploymentActions = React.memo(({
 
   const isDeploymentCompleted = useMemo(() => {
     if (!latestDeployment) return false;
-    return latestDeployment.status === "completed" || latestDeployment.status === "failed";
+    return latestDeployment.status === "completed" || latestDeployment.status === "failed" || latestDeployment.status === "rolledback";
   }, [latestDeployment]);
 
   const hasRunningContainers = useMemo(() => {
@@ -181,8 +181,9 @@ const DeploymentActions = React.memo(({
     );
   }, [latestDeployment]);
 
+  const isRolledBack = latestDeployment?.status === "rolledback";
   const showNewDeploymentButton = config.isActive && isDeploymentCompleted;
-  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && hasRunningContainers;
+  const showRemoveDeploymentButton = config.isActive && isDeploymentCompleted && (hasRunningContainers || isRolledBack);
 
   return (
     <div className="flex items-center gap-2">
