@@ -1,4 +1,5 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
+import prisma from '../../../lib/prisma';
 import DockerService from '../../docker';
 import ContainerLifecycleManager from '../../container-lifecycle-manager';
 
@@ -132,6 +133,14 @@ export class StopApplication {
             // Wait a moment for containers to fully stop
             await new Promise(resolve => setTimeout(resolve, 2000));
 
+            // Mark containers as stopped in the deployment_containers table
+            const successfulContainerIds = successfulStops
+                .filter((r): r is { containerId: string; success: true } => 'containerId' in r)
+                .map(r => r.containerId);
+            if (successfulContainerIds.length > 0) {
+                await this.markContainersStopped(context.deploymentId, successfulContainerIds);
+            }
+
             logger.info({
                 deploymentId: context.deploymentId,
                 applicationName: context.applicationName,
@@ -167,6 +176,35 @@ export class StopApplication {
                 type: 'STOP_FAILED',
                 error: errorMessage
             });
+        }
+    }
+
+    /**
+     * Mark containers as stopped in the deployment_containers table
+     */
+    private async markContainersStopped(deploymentId: string | undefined, containerIds: string[]): Promise<void> {
+        try {
+            if (!deploymentId || containerIds.length === 0) return;
+
+            await prisma.deploymentContainer.updateMany({
+                where: {
+                    containerId: { in: containerIds },
+                },
+                data: {
+                    status: 'stopped',
+                },
+            });
+
+            logger.info({
+                deploymentId,
+                containerIds: containerIds.map(id => id.slice(0, 12)),
+            }, 'Deployment containers marked as stopped in database');
+        } catch (dbError) {
+            logger.warn({
+                deploymentId,
+                containerIds: containerIds.map(id => id.slice(0, 12)),
+                error: dbError instanceof Error ? dbError.message : 'Unknown error',
+            }, 'Failed to mark deployment containers as stopped in database (non-critical)');
         }
     }
 }
