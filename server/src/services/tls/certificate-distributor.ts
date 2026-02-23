@@ -7,7 +7,7 @@
 
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
-import { AzureKeyVaultCertificateStore } from "./azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { HAProxyService } from "../haproxy/haproxy-service";
 import { HAProxyDataPlaneClient } from "../haproxy/haproxy-dataplane-client";
 import { DockerExecutorService } from "../docker-executor";
@@ -29,7 +29,7 @@ export interface DeploymentResult {
  * Service for deploying certificates to HAProxy
  */
 export class CertificateDistributor {
-  private keyVaultStore: AzureKeyVaultCertificateStore;
+  private certificateStore: AzureStorageCertificateStore;
   private haproxyService: HAProxyService;
   private dockerExecutor: DockerExecutorService;
   private dataPlaneClient?: HAProxyDataPlaneClient;
@@ -37,12 +37,12 @@ export class CertificateDistributor {
   private certDir: string;
 
   constructor(
-    keyVaultStore: AzureKeyVaultCertificateStore,
+    certificateStore: AzureStorageCertificateStore,
     haproxyService: HAProxyService,
     dockerExecutor: DockerExecutorService,
     dataPlaneClient?: HAProxyDataPlaneClient
   ) {
-    this.keyVaultStore = keyVaultStore;
+    this.certificateStore = certificateStore;
     this.haproxyService = haproxyService;
     this.dockerExecutor = dockerExecutor;
     this.dataPlaneClient = dataPlaneClient;
@@ -66,15 +66,31 @@ export class CertificateDistributor {
     this.logger.info({ certificateName, haproxyContainerId }, "Starting certificate deployment");
 
     try {
-      // Step 1: Get certificate from Key Vault
-      this.logger.info({ certificateName }, "Retrieving certificate from Azure Key Vault");
-      const cert = await this.keyVaultStore.getCertificate(certificateName);
+      // Step 1: Get certificate from Azure Storage
+      this.logger.info({ certificateName }, "Retrieving certificate from Azure Storage");
+      const cert = await this.certificateStore.getCertificate(certificateName);
 
       // Step 2: Combine certificate and private key (HAProxy format)
       const combinedPem = cert.certificate + cert.privateKey;
-      const certFileName = `${certificateName}.pem`;
+      // Ensure filename ends with .pem (avoid double .pem extension)
+      const certFileName = certificateName.endsWith(".pem") ? certificateName : `${certificateName}.pem`;
 
-      // Step 3: Try DataPlane API first (preferred method - works from Docker)
+      // Step 3: Try to initialize DataPlane client if not already available
+      if (!this.dataPlaneClient) {
+        try {
+          const dataPlaneClient = await this.initializeDataPlaneClient();
+          if (dataPlaneClient) {
+            this.dataPlaneClient = dataPlaneClient;
+          }
+        } catch (initError) {
+          this.logger.warn(
+            { error: initError },
+            "Failed to initialize DataPlane client, will try fallback methods"
+          );
+        }
+      }
+
+      // Step 4: Try DataPlane API first (preferred method - works from Docker)
       if (this.dataPlaneClient) {
         try {
           await this.deployCertificateViaDataPlaneAPI(certFileName, combinedPem);
@@ -205,8 +221,9 @@ export class CertificateDistributor {
     // Combine certificate and private key
     const combinedPem = certificatePem + privateKeyPem;
 
-    // Certificate path inside HAProxy container
-    const certPath = `/etc/ssl/certs/${certificateName}.pem`;
+    // Certificate path inside HAProxy container (avoid double .pem extension)
+    const certFile = certificateName.endsWith(".pem") ? certificateName : `${certificateName}.pem`;
+    const certPath = `/etc/ssl/certs/${certFile}`;
     const sockPath = "/var/run/haproxy.sock";
 
     try {
@@ -340,6 +357,33 @@ export class CertificateDistributor {
     } catch (error) {
       this.logger.error({ error, haproxyContainerId }, "Graceful reload failed");
       throw error;
+    }
+  }
+
+  /**
+   * Lazily initialize HAProxy DataPlane client by finding the running HAProxy container
+   *
+   * @returns Initialized DataPlane client, or null if HAProxy container not found
+   */
+  private async initializeDataPlaneClient(): Promise<HAProxyDataPlaneClient | null> {
+    try {
+      const containers = await this.haproxyService.getProjectContainers();
+      const haproxyContainer = containers.find(
+        (c) => c.State === "running" && c.Names?.some((name) => name.includes("haproxy"))
+      );
+
+      if (!haproxyContainer || !haproxyContainer.Id) {
+        this.logger.warn("HAProxy container not found for DataPlane client initialization");
+        return null;
+      }
+
+      const client = new HAProxyDataPlaneClient();
+      await client.initialize(haproxyContainer.Id);
+      this.logger.info("DataPlane client initialized successfully");
+      return client;
+    } catch (error) {
+      this.logger.warn({ error }, "Failed to initialize DataPlane client");
+      return null;
     }
   }
 

@@ -13,12 +13,15 @@ import DockerService from "../services/docker";
 import prisma from "../lib/prisma";
 import { CertificateProvisioningService } from "../services/tls/certificate-provisioning-service";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
+import { CertificateDistributor } from "../services/tls/certificate-distributor";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CloudflareConfigService } from "../services/cloudflare-config";
 import { AzureConfigService } from "../services/azure-config";
+import { HAProxyService } from "../services/haproxy/haproxy-service";
+import { DockerExecutorService } from "../services/docker-executor";
 import {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
@@ -80,12 +83,18 @@ async function initializeCertificateProvisioningService(): Promise<CertificatePr
     // Initialize ACME client
     await acmeClient.initialize();
 
+    // Create certificate distributor for HAProxy deployment
+    const haproxyService = new HAProxyService();
+    const dockerExecutor = new DockerExecutorService();
+    const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExecutor);
+
     const lifecycleManager = new CertificateLifecycleManager(
       acmeClient,
       certificateStore,
       dnsChallenge,
       prisma,
-      containerName
+      containerName,
+      distributor
     );
 
     return new CertificateProvisioningService(lifecycleManager, prisma);

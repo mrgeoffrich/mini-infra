@@ -40,8 +40,11 @@ import { AzureStorageCertificateStore } from "./services/tls/azure-storage-certi
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
+import { CertificateDistributor } from "./services/tls/certificate-distributor";
 import { CloudflareConfigService } from "./services/cloudflare-config";
 import { AzureConfigService } from "./services/azure-config";
+import { HAProxyService } from "./services/haproxy/haproxy-service";
+import { DockerExecutorService } from "./services/docker-executor";
 import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
 
@@ -286,13 +289,19 @@ const initializeServices = async () => {
         // Initialize ACME client
         await acmeClient.initialize();
 
+        // Create certificate distributor for HAProxy deployment
+        const haproxyService = new HAProxyService();
+        const dockerExecutor = new DockerExecutorService();
+        const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExecutor);
+
         // Create lifecycle manager
         const lifecycleManager = new CertificateLifecycleManager(
           acmeClient,
           certificateStore,
           dnsChallenge,
           prisma,
-          containerName
+          containerName,
+          distributor
         );
 
         // Create renewal scheduler
