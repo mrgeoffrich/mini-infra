@@ -170,7 +170,10 @@ export class CertificateLifecycleManager {
     // Get existing certificate
     const existingCert = await this.prisma.tlsCertificate.findUnique({
       where: { id: certificateId },
-      include: { renewalHistory: true },
+      include: {
+        renewalHistory: true,
+        haproxyFrontends: { include: { environment: true } },
+      },
     });
 
     if (!existingCert) {
@@ -254,30 +257,53 @@ export class CertificateLifecycleManager {
         blobETag: version, // Store ETag as version
       });
 
-      // Deploy to HAProxy (zero-downtime update) if distributor is available
+      // Deploy to HAProxy environments that use this certificate
       if (this.distributor) {
-        this.logger.info("Deploying renewed certificate to HAProxy");
-        try {
-          const deployResult = await this.distributor.deployCertificate(
-            blobName
-          );
+        const environments = this.getUniqueEnvironments(existingCert.haproxyFrontends);
 
-          if (deployResult.success) {
+        if (environments.length === 0) {
+          this.logger.warn(
+            { certificateId },
+            "No HAProxy frontends linked to this certificate - skipping HAProxy deployment"
+          );
+        }
+
+        for (const env of environments) {
+          try {
             this.logger.info(
-              { certificateId, method: deployResult.method },
-              "Renewed certificate deployed to HAProxy successfully"
+              { certificateId, environmentName: env.name },
+              "Deploying renewed certificate to HAProxy"
             );
-          } else {
+
+            const deployResult = await this.distributor.deployCertificate(
+              blobName,
+              undefined,
+              env.name
+            );
+
+            if (deployResult.success) {
+              this.logger.info(
+                { certificateId, environmentName: env.name, method: deployResult.method },
+                "Renewed certificate deployed to HAProxy successfully"
+              );
+            } else {
+              this.logger.warn(
+                { certificateId, environmentName: env.name, error: deployResult.error },
+                "Renewed certificate deployment to HAProxy failed"
+              );
+            }
+
+            // Persist deploy result to renewal record
+            await this.updateRenewalStatus(renewal.id, renewal.status, {
+              haproxyReloadMethod: deployResult.method,
+              haproxyReloadSuccess: deployResult.success,
+            });
+          } catch (deployError) {
             this.logger.warn(
-              { certificateId, error: deployResult.error },
-              "Renewed certificate deployment to HAProxy failed (certificate renewed but not deployed)"
+              { certificateId, environmentName: env.name, error: deployError },
+              "Renewed certificate deployment to HAProxy failed"
             );
           }
-        } catch (deployError) {
-          this.logger.warn(
-            { certificateId, error: deployError },
-            "Renewed certificate deployment to HAProxy failed (certificate renewed but not deployed)"
-          );
         }
       }
 
@@ -374,5 +400,24 @@ export class CertificateLifecycleManager {
     });
 
     this.logger.debug({ renewalId, status }, "Updated renewal status");
+  }
+
+  /**
+   * Extract unique environments from HAProxy frontends
+   *
+   * @param frontends - Array of frontends with optional environment relation
+   * @returns Deduplicated array of environments
+   * @private
+   */
+  private getUniqueEnvironments(
+    frontends: Array<{ environment?: { id: string; name: string } | null }>
+  ): Array<{ id: string; name: string }> {
+    const envMap = new Map<string, { id: string; name: string }>();
+    for (const frontend of frontends) {
+      if (frontend.environment) {
+        envMap.set(frontend.environment.id, frontend.environment);
+      }
+    }
+    return Array.from(envMap.values());
   }
 }

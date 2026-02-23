@@ -61,9 +61,10 @@ export class CertificateDistributor {
    */
   async deployCertificate(
     certificateName: string,
-    haproxyContainerId?: string
+    haproxyContainerId?: string,
+    projectName?: string
   ): Promise<DeploymentResult> {
-    this.logger.info({ certificateName, haproxyContainerId }, "Starting certificate deployment");
+    this.logger.info({ certificateName, haproxyContainerId, projectName }, "Starting certificate deployment");
 
     try {
       // Step 1: Get certificate from Azure Storage
@@ -76,11 +77,22 @@ export class CertificateDistributor {
       const certFileName = certificateName.endsWith(".pem") ? certificateName : `${certificateName}.pem`;
 
       // Step 3: Try to initialize DataPlane client if not already available
-      if (!this.dataPlaneClient) {
+      // When projectName is provided, always create a fresh client for that environment
+      const useEnvironmentOverride = !!projectName;
+      let dataPlaneClient = this.dataPlaneClient;
+
+      if (!dataPlaneClient || useEnvironmentOverride) {
         try {
-          const dataPlaneClient = await this.initializeDataPlaneClient();
-          if (dataPlaneClient) {
-            this.dataPlaneClient = dataPlaneClient;
+          const haproxyOverride = projectName
+            ? new HAProxyService(projectName)
+            : undefined;
+          const newClient = await this.initializeDataPlaneClient(haproxyOverride);
+          if (newClient) {
+            dataPlaneClient = newClient;
+            // Only cache the client if we're not using an environment override
+            if (!useEnvironmentOverride) {
+              this.dataPlaneClient = newClient;
+            }
           }
         } catch (initError) {
           this.logger.warn(
@@ -91,9 +103,9 @@ export class CertificateDistributor {
       }
 
       // Step 4: Try DataPlane API first (preferred method - works from Docker)
-      if (this.dataPlaneClient) {
+      if (dataPlaneClient) {
         try {
-          await this.deployCertificateViaDataPlaneAPI(certFileName, combinedPem);
+          await this.deployCertificateViaDataPlaneAPI(certFileName, combinedPem, dataPlaneClient);
 
           this.logger.info({ certificateName, method: "dataplane-api" }, "Certificate deployed successfully");
           return {
@@ -125,7 +137,10 @@ export class CertificateDistributor {
 
       // Step 5: Try Runtime API (zero-downtime)
       try {
-        await this.updateCertificateViaRuntimeApi(certificateName, cert.certificate, cert.privateKey);
+        const runtimeHaproxyService = projectName
+          ? new HAProxyService(projectName)
+          : this.haproxyService;
+        await this.updateCertificateViaRuntimeApi(certificateName, cert.certificate, cert.privateKey, runtimeHaproxyService);
 
         this.logger.info({ certificateName, method: "runtime-api" }, "Certificate deployed successfully");
         return {
@@ -173,9 +188,11 @@ export class CertificateDistributor {
    */
   async deployCertificateViaDataPlaneAPI(
     certFileName: string,
-    combinedPem: string
+    combinedPem: string,
+    client?: HAProxyDataPlaneClient
   ): Promise<void> {
-    if (!this.dataPlaneClient) {
+    const dpClient = client || this.dataPlaneClient;
+    if (!dpClient) {
       throw new Error("DataPlane client not available");
     }
 
@@ -183,18 +200,18 @@ export class CertificateDistributor {
 
     try {
       // Check if certificate already exists
-      const existingCerts = await this.dataPlaneClient.listSSLCertificates();
+      const existingCerts = await dpClient.listSSLCertificates();
       const certExists = existingCerts.includes(certFileName);
 
       // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate for SNI selection
       if (certExists) {
         // Update existing certificate
         this.logger.debug({ certFileName }, "Certificate exists, updating");
-        await this.dataPlaneClient.updateSSLCertificate(certFileName, combinedPem, true);
+        await dpClient.updateSSLCertificate(certFileName, combinedPem, true);
       } else {
         // Upload new certificate
         this.logger.debug({ certFileName }, "Certificate does not exist, uploading");
-        await this.dataPlaneClient.uploadSSLCertificate(certFileName, combinedPem, true);
+        await dpClient.uploadSSLCertificate(certFileName, combinedPem, true);
       }
 
       this.logger.info({ certFileName }, "Certificate deployed via DataPlane API successfully");
@@ -214,7 +231,8 @@ export class CertificateDistributor {
   async updateCertificateViaRuntimeApi(
     certificateName: string,
     certificatePem: string,
-    privateKeyPem: string
+    privateKeyPem: string,
+    haproxyServiceOverride?: HAProxyService
   ): Promise<void> {
     this.logger.info({ certificateName }, "Updating certificate via Runtime API");
 
@@ -228,7 +246,8 @@ export class CertificateDistributor {
 
     try {
       // Find HAProxy container
-      const containers = await this.haproxyService.getProjectContainers();
+      const service = haproxyServiceOverride || this.haproxyService;
+      const containers = await service.getProjectContainers();
       const haproxyContainer = containers.find(
         (c) => c.State === "running" && c.Names?.some((name) => name.includes("haproxy"))
       );
@@ -365,9 +384,12 @@ export class CertificateDistributor {
    *
    * @returns Initialized DataPlane client, or null if HAProxy container not found
    */
-  private async initializeDataPlaneClient(): Promise<HAProxyDataPlaneClient | null> {
+  private async initializeDataPlaneClient(
+    haproxyServiceOverride?: HAProxyService
+  ): Promise<HAProxyDataPlaneClient | null> {
     try {
-      const containers = await this.haproxyService.getProjectContainers();
+      const service = haproxyServiceOverride || this.haproxyService;
+      const containers = await service.getProjectContainers();
       const haproxyContainer = containers.find(
         (c) => c.State === "running" && c.Names?.some((name) => name.includes("haproxy"))
       );
