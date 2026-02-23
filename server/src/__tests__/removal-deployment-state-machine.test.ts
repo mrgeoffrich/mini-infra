@@ -4,6 +4,8 @@ import { removalDeploymentMachine } from '../services/haproxy/removal-deployment
 
 // Mock all action classes to prevent actual execution
 jest.mock('../services/haproxy/actions/remove-container-from-lb');
+jest.mock('../services/haproxy/actions/remove-frontend');
+jest.mock('../services/haproxy/actions/remove-dns');
 jest.mock('../services/haproxy/actions/stop-application');
 jest.mock('../services/haproxy/actions/remove-application');
 jest.mock('../services/haproxy/actions/log-deployment-success');
@@ -82,6 +84,8 @@ describe('RemovalDeploymentStateMachine', () => {
         it('should handle containers update on STOP_SUCCESS', () => {
             actor.send({ type: 'START_REMOVAL' });
             actor.send({ type: 'LB_REMOVAL_SUCCESS' });
+            actor.send({ type: 'FRONTEND_REMOVED' });
+            actor.send({ type: 'DNS_REMOVED' });
             actor.send({ type: 'STOP_SUCCESS', stoppedContainers: ['container1', 'container2'] });
 
             const snapshot = actor.getSnapshot();
@@ -89,12 +93,15 @@ describe('RemovalDeploymentStateMachine', () => {
             expect(snapshot.context.containersToRemove).toEqual(['container1', 'container2']);
         });
 
-        it('should preserve error context on failed events', () => {
+        it('should preserve error context on failed events and continue flow', () => {
             actor.send({ type: 'START_REMOVAL' });
             actor.send({ type: 'LB_REMOVAL_FAILED', error: 'Test error message' });
 
             const snapshot = actor.getSnapshot();
-            expect(snapshot.context.error).toBe('Test error message');
+            // Error is preserved as a warning and flow continues to removingFrontend
+            expect(snapshot.context.error).toBe('LB removal warning: Test error message');
+            expect(snapshot.context.lbRemovalComplete).toBe(false);
+            expect(snapshot.value).toBe('removingFrontend');
         });
     });
 
@@ -142,6 +149,8 @@ describe('RemovalDeploymentStateMachine', () => {
             // Verify that context is properly updated during the flow
             actor.send({ type: 'START_REMOVAL' });
             actor.send({ type: 'LB_REMOVAL_SUCCESS' });
+            actor.send({ type: 'FRONTEND_REMOVED' });
+            actor.send({ type: 'DNS_REMOVED' });
             actor.send({ type: 'STOP_SUCCESS', stoppedContainers: ['container1'] });
 
             let context = actor.getSnapshot().context;
@@ -151,7 +160,6 @@ describe('RemovalDeploymentStateMachine', () => {
 
             // Simulate completion
             actor.send({ type: 'REMOVAL_SUCCESS' });
-            actor.send({ type: 'CLEANUP_SUCCESS' });
 
             context = actor.getSnapshot().context;
 
@@ -186,6 +194,14 @@ describe('RemovalDeploymentStateMachine', () => {
             actor.send({ type: 'LB_REMOVAL_SUCCESS' });
             expect(actor.getSnapshot().context.lbRemovalComplete).toBe(true);
 
+            // Frontend removal succeeds
+            actor.send({ type: 'FRONTEND_REMOVED' });
+            expect(actor.getSnapshot().context.frontendRemoved).toBe(true);
+
+            // DNS removal succeeds
+            actor.send({ type: 'DNS_REMOVED' });
+            expect(actor.getSnapshot().context.dnsRemoved).toBe(true);
+
             // Application stop succeeds
             actor.send({ type: 'STOP_SUCCESS', stoppedContainers: ['container1'] });
             expect(actor.getSnapshot().context.applicationStopped).toBe(true);
@@ -195,28 +211,51 @@ describe('RemovalDeploymentStateMachine', () => {
             actor.send({ type: 'REMOVAL_SUCCESS' });
             expect(actor.getSnapshot().context.applicationRemoved).toBe(true);
 
-            // Cleanup succeeds
-            actor.send({ type: 'CLEANUP_SUCCESS' });
-            // Should reach some final state
+            // cleanup has an `always` transition to completed, so we should already be done
             const finalSnapshot = actor.getSnapshot();
-            expect(finalSnapshot.value === 'completed' || finalSnapshot.done).toBe(true);
+            expect(finalSnapshot.value).toBe('completed');
         });
 
         it('should handle cleanup failure gracefully', () => {
-            // Get to cleanup state
+            // Get to cleanup state via full flow
             actor.send({ type: 'START_REMOVAL' });
             actor.send({ type: 'LB_REMOVAL_SUCCESS' });
+            actor.send({ type: 'FRONTEND_REMOVED' });
+            actor.send({ type: 'DNS_REMOVED' });
             actor.send({ type: 'STOP_SUCCESS' });
             actor.send({ type: 'REMOVAL_SUCCESS' });
 
-            // Cleanup fails but should not fail entire process
-            actor.send({ type: 'CLEANUP_FAILED', error: 'Cleanup failed' });
-
+            // cleanup has an `always` transition to completed, so it auto-transitions
             const snapshot = actor.getSnapshot();
-            // Should still complete but with warning - the main point is it doesn't fail
-            expect(snapshot.value === 'completed' || snapshot.done).toBe(true);
-            // The state machine should handle the cleanup failure gracefully
-            // and continue to completion (this is the key behavior we're testing)
+            expect(snapshot.value).toBe('completed');
+        });
+
+        it('should continue through all states even when steps fail', () => {
+            actor.send({ type: 'START_REMOVAL' });
+
+            // LB removal fails - should continue to removingFrontend
+            actor.send({ type: 'LB_REMOVAL_FAILED', error: 'HAProxy unreachable' });
+            expect(actor.getSnapshot().value).toBe('removingFrontend');
+            expect(actor.getSnapshot().context.lbRemovalComplete).toBe(false);
+
+            // Frontend removal errors - should continue to removingDNS
+            actor.send({ type: 'FRONTEND_REMOVAL_ERROR', error: 'Frontend error' });
+            expect(actor.getSnapshot().value).toBe('removingDNS');
+
+            // DNS removal errors - should continue to stoppingApplication
+            actor.send({ type: 'DNS_REMOVAL_ERROR', error: 'DNS error' });
+            expect(actor.getSnapshot().value).toBe('stoppingApplication');
+
+            // Stop fails - should continue to removingApplication
+            actor.send({ type: 'STOP_FAILED', error: 'Docker socket error' });
+            expect(actor.getSnapshot().value).toBe('removingApplication');
+            expect(actor.getSnapshot().context.applicationStopped).toBe(false);
+
+            // Removal fails - should continue to cleanup
+            actor.send({ type: 'REMOVAL_FAILED', error: 'Container removal error' });
+            // cleanup has always → completed
+            expect(actor.getSnapshot().value).toBe('completed');
+            expect(actor.getSnapshot().context.applicationRemoved).toBe(false);
         });
     });
 });

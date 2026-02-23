@@ -16,8 +16,8 @@ Add one of these headers to your HTTP requests:
 
 ### Example Usage
 ```bash
-curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/containers
-curl -H "x-api-key: <your-api-key>" http://localhost:5000/api/deployments/configs
+curl -H "x-api-key: <your-api-key>" http://localhost:5005/api/containers
+curl -H "x-api-key: <your-api-key>" http://localhost:5005/api/deployments/configs
 ```
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.

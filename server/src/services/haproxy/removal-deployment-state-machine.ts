@@ -270,14 +270,26 @@ export const removalDeploymentMachine = setup({
                     actions: assign({ lbRemovalComplete: true })
                 },
                 LB_REMOVAL_FAILED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
+                    // Don't fail entire removal for LB errors - continue cleanup
+                    target: 'removingFrontend',
+                    actions: assign({
+                        lbRemovalComplete: false,
+                        error: ({ event }) => {
+                            if ('error' in event) {
+                                return `LB removal warning: ${event.error}`;
+                            }
+                            return 'LB removal failed (non-critical)';
+                        }
+                    })
                 }
             },
             after: {
                 60000: { // 1 minute timeout for LB removal
-                    target: 'failed',
-                    actions: assign({ error: 'Load balancer removal timeout' })
+                    target: 'removingFrontend',
+                    actions: assign({
+                        lbRemovalComplete: false,
+                        error: 'LB removal timeout (non-critical)'
+                    })
                 }
             }
         },
@@ -368,14 +380,26 @@ export const removalDeploymentMachine = setup({
                     ]
                 },
                 STOP_FAILED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
+                    // Don't fail entire removal for stop errors - continue cleanup
+                    target: 'removingApplication',
+                    actions: assign({
+                        applicationStopped: false,
+                        error: ({ event }) => {
+                            if ('error' in event) {
+                                return `Application stop warning: ${event.error}`;
+                            }
+                            return 'Application stop failed (non-critical)';
+                        }
+                    })
                 }
             },
             after: {
                 90000: { // 90 second timeout for stopping containers
-                    target: 'failed',
-                    actions: assign({ error: 'Container stop timeout' })
+                    target: 'removingApplication',
+                    actions: assign({
+                        applicationStopped: false,
+                        error: 'Application stop timeout (non-critical)'
+                    })
                 }
             }
         },
@@ -389,14 +413,26 @@ export const removalDeploymentMachine = setup({
                     actions: assign({ applicationRemoved: true })
                 },
                 REMOVAL_FAILED: {
-                    target: 'failed',
-                    actions: 'preserveErrorContext'
+                    // Don't fail entire removal for container removal errors - continue cleanup
+                    target: 'cleanup',
+                    actions: assign({
+                        applicationRemoved: false,
+                        error: ({ event }) => {
+                            if ('error' in event) {
+                                return `Application removal warning: ${event.error}`;
+                            }
+                            return 'Application removal failed (non-critical)';
+                        }
+                    })
                 }
             },
             after: {
                 120000: { // 2 minute timeout for container removal
-                    target: 'failed',
-                    actions: assign({ error: 'Container removal timeout' })
+                    target: 'cleanup',
+                    actions: assign({
+                        applicationRemoved: false,
+                        error: 'Application removal timeout (non-critical)'
+                    })
                 }
             }
         },

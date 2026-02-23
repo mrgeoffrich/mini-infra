@@ -10,6 +10,11 @@ import { EnableTraffic } from './actions/enable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
+import { RemoveFrontend } from './actions/remove-frontend';
+import { RemoveDNS } from './actions/remove-dns';
+import { StopApplication } from './actions/stop-application';
+import { RemoveApplication } from './actions/remove-application';
 
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
@@ -22,6 +27,11 @@ const enableTraffic = new EnableTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
+const removeContainerFromLB = new RemoveContainerFromLB();
+const removeFrontend = new RemoveFrontend();
+const removeDNS = new RemoveDNS();
+const stopApplication = new StopApplication();
+const removeApplication = new RemoveApplication();
 
 // Types for context and events
 interface InitialDeploymentContext {
@@ -88,7 +98,16 @@ type InitialDeploymentEvent =
     | { type: 'TRAFFIC_STABLE' }
     | { type: 'CRITICAL_ISSUES'; error: string }
     | { type: 'RESET' }
-    | { type: 'MANUAL_INTERVENTION_COMPLETE' };
+    | { type: 'MANUAL_INTERVENTION_COMPLETE' }
+    // Rollback events
+    | { type: 'ROLLBACK_DNS_REMOVED' }
+    | { type: 'ROLLBACK_DNS_REMOVAL_SKIPPED' }
+    | { type: 'ROLLBACK_FRONTEND_REMOVED' }
+    | { type: 'ROLLBACK_FRONTEND_REMOVAL_SKIPPED' }
+    | { type: 'ROLLBACK_CONFIG_REMOVED' }
+    | { type: 'ROLLBACK_APP_STOPPED' }
+    | { type: 'ROLLBACK_APP_REMOVED' }
+    | { type: 'ROLLBACK_ERROR'; error: string };
 
 // The Initial Deployment State Machine using setup
 export const initialDeploymentMachine = setup({
@@ -182,6 +201,75 @@ export const initialDeploymentMachine = setup({
         },
         cleanupTempResources: ({ context }) => {
             cleanupTempResources.execute(context);
+        },
+        rollbackRemoveDNS: ({ context, self }) => {
+            removeDNS.execute(context, (event) => {
+                if (event.type === 'DNS_REMOVED') {
+                    self.send({ type: 'ROLLBACK_DNS_REMOVED' });
+                } else if (event.type === 'DNS_REMOVAL_SKIPPED') {
+                    self.send({ type: 'ROLLBACK_DNS_REMOVAL_SKIPPED' });
+                } else if (event.type === 'DNS_REMOVAL_ERROR') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            }).catch((error) => {
+                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+            });
+        },
+        rollbackRemoveFrontend: ({ context, self }) => {
+            removeFrontend.execute(context, (event) => {
+                if (event.type === 'FRONTEND_REMOVED') {
+                    self.send({ type: 'ROLLBACK_FRONTEND_REMOVED' });
+                } else if (event.type === 'FRONTEND_REMOVAL_SKIPPED') {
+                    self.send({ type: 'ROLLBACK_FRONTEND_REMOVAL_SKIPPED' });
+                } else if (event.type === 'FRONTEND_REMOVAL_ERROR') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            }).catch((error) => {
+                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+            });
+        },
+        rollbackRemoveHAProxyConfig: ({ context, self }) => {
+            removeContainerFromLB.execute(context, (event) => {
+                if (event.type === 'LB_REMOVAL_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_CONFIG_REMOVED' });
+                } else if (event.type === 'LB_REMOVAL_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            }).catch((error) => {
+                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+            });
+        },
+        rollbackStopApplication: ({ context, self }) => {
+            stopApplication.execute(context, (event) => {
+                if (event.type === 'STOP_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_APP_STOPPED' });
+                } else if (event.type === 'STOP_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            }).catch((error) => {
+                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+            });
+        },
+        rollbackRemoveApplication: ({ context, self }) => {
+            removeApplication.execute(context, (event) => {
+                if (event.type === 'REMOVAL_SUCCESS') {
+                    self.send({ type: 'ROLLBACK_APP_REMOVED' });
+                } else if (event.type === 'REMOVAL_FAILED') {
+                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
+                } else {
+                    self.send(event);
+                }
+            }).catch((error) => {
+                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+            });
         },
         preserveErrorContext: assign({
             error: ({ event }) => {
@@ -336,13 +424,13 @@ export const initialDeploymentMachine = setup({
                     })
                 },
                 STARTUP_TIMEOUT: {
-                    target: 'failed',
+                    target: 'rollbackStoppingApp',
                     actions: assign({ error: 'Container startup timeout' })
                 }
             },
             after: {
                 120000: { // 2 minute timeout
-                    target: 'failed',
+                    target: 'rollbackStoppingApp',
                     actions: assign({ error: 'Application startup timeout' })
                 }
             }
@@ -357,7 +445,7 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ haproxyConfigured: true })
                 },
                 LB_CONFIG_ERROR: {
-                    target: 'failed',
+                    target: 'rollbackRemoveHaproxyConfig',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -372,13 +460,13 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ healthChecksPassed: true })
                 },
                 HEALTH_CHECK_TIMEOUT: {
-                    target: 'failed',
+                    target: 'rollbackRemoveHaproxyConfig',
                     actions: assign({ error: 'Health check timeout' })
                 }
             },
             after: {
                 90000: { // 90 second timeout
-                    target: 'failed',
+                    target: 'rollbackRemoveHaproxyConfig',
                     actions: assign({ error: 'Health check timeout after 90 seconds' })
                 }
             }
@@ -405,7 +493,7 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ frontendConfigured: false })
                 },
                 FRONTEND_CONFIG_ERROR: {
-                    target: 'failed',
+                    target: 'rollbackRemoveFrontend',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -432,7 +520,7 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ dnsConfigured: false })
                 },
                 DNS_CONFIG_ERROR: {
-                    target: 'failed',
+                    target: 'rollbackRemoveDNS',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -447,7 +535,7 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ trafficEnabled: true })
                 },
                 TRAFFIC_ENABLE_FAILED: {
-                    target: 'failed',
+                    target: 'rollbackRemoveDNS',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -463,6 +551,89 @@ export const initialDeploymentMachine = setup({
                     actions: 'resetState'
                 }
             }
+        },
+
+        // Rollback states - clean up in reverse order of deployment progress
+        rollbackRemoveDNS: {
+            description: 'Removing DNS records during rollback',
+            entry: 'rollbackRemoveDNS',
+            on: {
+                ROLLBACK_DNS_REMOVED: {
+                    target: 'rollbackRemoveFrontend'
+                },
+                ROLLBACK_DNS_REMOVAL_SKIPPED: {
+                    target: 'rollbackRemoveFrontend'
+                },
+                ROLLBACK_ERROR: {
+                    target: 'rollbackRemoveFrontend',
+                    actions: assign({ error: 'DNS removal had errors - continuing rollback' })
+                }
+            }
+        },
+
+        rollbackRemoveFrontend: {
+            description: 'Removing HAProxy frontend configuration during rollback',
+            entry: 'rollbackRemoveFrontend',
+            on: {
+                ROLLBACK_FRONTEND_REMOVED: {
+                    target: 'rollbackRemoveHaproxyConfig'
+                },
+                ROLLBACK_FRONTEND_REMOVAL_SKIPPED: {
+                    target: 'rollbackRemoveHaproxyConfig'
+                },
+                ROLLBACK_ERROR: {
+                    target: 'rollbackRemoveHaproxyConfig',
+                    actions: assign({ error: 'Frontend removal had errors - continuing rollback' })
+                }
+            }
+        },
+
+        rollbackRemoveHaproxyConfig: {
+            description: 'Removing HAProxy backend and server configuration during rollback',
+            entry: 'rollbackRemoveHAProxyConfig',
+            on: {
+                ROLLBACK_CONFIG_REMOVED: {
+                    target: 'rollbackStoppingApp'
+                },
+                ROLLBACK_ERROR: {
+                    target: 'failed',
+                    actions: assign({ error: 'Cannot rollback HAProxy config' })
+                }
+            }
+        },
+
+        rollbackStoppingApp: {
+            description: 'Stopping application container during rollback',
+            entry: 'rollbackStopApplication',
+            on: {
+                ROLLBACK_APP_STOPPED: {
+                    target: 'rollbackRemovingApp'
+                },
+                ROLLBACK_ERROR: {
+                    target: 'rollbackRemovingApp',
+                    actions: assign({ error: 'App stop failed - continuing cleanup' })
+                }
+            }
+        },
+
+        rollbackRemovingApp: {
+            description: 'Removing application container during rollback',
+            entry: 'rollbackRemoveApplication',
+            on: {
+                ROLLBACK_APP_REMOVED: {
+                    target: 'rollbackComplete'
+                },
+                ROLLBACK_ERROR: {
+                    target: 'rollbackComplete',
+                    actions: assign({ error: 'App removal had errors - rollback completed with warnings' })
+                }
+            }
+        },
+
+        rollbackComplete: {
+            type: 'final' as const,
+            description: 'Rollback completed - deployment failed but infrastructure cleaned up',
+            entry: ['alertOperationsTeam', 'cleanupTempResources']
         },
 
         failed: {

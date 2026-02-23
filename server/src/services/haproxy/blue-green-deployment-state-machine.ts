@@ -17,6 +17,8 @@ import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
 import { EnableTraffic } from './actions/enable-traffic';
+import { RemoveFrontend } from './actions/remove-frontend';
+import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
 
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
@@ -35,6 +37,7 @@ const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
 const enableTraffic = new EnableTraffic();
+const removeFrontend = new RemoveFrontend();
 
 // Types for context and events
 // Note in a blue green deployment Blue is the old container set, Green is the new container set
@@ -131,8 +134,12 @@ type BlueGreenDeploymentEvent =
     | { type: 'LB_REMOVAL_FAILED'; error: string }
     | { type: 'BLUE_APP_STOPPED' }
     | { type: 'BLUE_APP_STOP_ERROR'; error: string }
+    | { type: 'STOP_SUCCESS' }
+    | { type: 'STOP_FAILED'; error: string }
     | { type: 'BLUE_APP_REMOVED' }
     | { type: 'BLUE_APP_REMOVAL_ERROR'; error: string }
+    | { type: 'REMOVAL_SUCCESS' }
+    | { type: 'REMOVAL_FAILED'; error: string }
 
     // Rollback events
     | { type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' }
@@ -450,6 +457,35 @@ export const blueGreenDeploymentMachine = setup({
                             containerId: context.newContainerId.slice(0, 12),
                             error: lbError instanceof Error ? lbError.message : 'Unknown error'
                         }, 'Failed to remove container from HAProxy during cleanup');
+                    }
+
+                    // Check if backend is empty and clean up frontend routes + orphaned backends
+                    try {
+                        if (context.haproxyContainerId && context.applicationName) {
+                            const cleanupClient = new HAProxyDataPlaneClient();
+                            await cleanupClient.initialize(context.haproxyContainerId);
+                            const remainingServers = await cleanupClient.listServers(context.applicationName);
+
+                            if (!remainingServers || remainingServers.length === 0) {
+                                logger.info({
+                                    deploymentId: context.deploymentId,
+                                    backendName: context.applicationName
+                                }, 'Backend has no remaining servers, cleaning up frontend routes and orphaned backend');
+
+                                await removeFrontend.execute(context, () => {});
+
+                                logger.info({
+                                    deploymentId: context.deploymentId,
+                                    backendName: context.applicationName
+                                }, 'Frontend route and orphaned backend cleanup completed');
+                            }
+                        }
+                    } catch (frontendCleanupError) {
+                        logger.warn({
+                            deploymentId: context.deploymentId,
+                            applicationName: context.applicationName,
+                            error: frontendCleanupError instanceof Error ? frontendCleanupError.message : 'Unknown error'
+                        }, 'Failed to clean up frontend routes/orphaned backend during cleanup (non-critical)');
                     }
 
                     // Try to stop and remove the container
@@ -990,8 +1026,18 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'stoppingBlueApp'
                 },
                 LB_REMOVAL_FAILED: {
-                    target: 'failed',
-                    actions: assign({ error: 'Unable to remove blue backend (Non-Critical)' })
+                    target: 'stoppingBlueApp',
+                    actions: [
+                        assign({ error: 'Unable to remove blue backend (Non-Critical)' }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'Blue LB removal failed post-PONR - continuing blue cleanup (green is live)');
+                        }
+                    ]
                 }
             }
         },
@@ -1004,12 +1050,34 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'removingBlueApp'
                 },
                 BLUE_APP_STOP_ERROR: {
-                    target: 'failed',
-                    actions: assign({ error: 'Blue app stop failed (Non-Critical)' })
+                    target: 'removingBlueApp',
+                    actions: [
+                        assign({ error: 'Blue app stop failed (Non-Critical)' }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                oldContainerId: context.oldContainerId?.slice(0, 12),
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'Blue app stop failed post-PONR - continuing to removal (green is live)');
+                        }
+                    ]
                 },
                 STOP_FAILED: {
-                    target: 'failed',
-                    actions: assign({ error: 'Blue app stop failed (Non-Critical)' })
+                    target: 'removingBlueApp',
+                    actions: [
+                        assign({ error: 'Blue app stop failed (Non-Critical)' }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                oldContainerId: context.oldContainerId?.slice(0, 12),
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'Blue app stop failed post-PONR - continuing to removal (green is live)');
+                        }
+                    ]
                 }
             }
         },
@@ -1022,12 +1090,34 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'completed'
                 },
                 BLUE_APP_REMOVAL_ERROR: {
-                    target: 'failed',
-                    actions: assign({ error: 'Blue app removal failed (Non-Critical)' })
+                    target: 'completed',
+                    actions: [
+                        assign({ error: 'Blue app removal failed (Non-Critical)' }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                oldContainerId: context.oldContainerId?.slice(0, 12),
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'Blue app removal failed post-PONR - completing deployment (green is live)');
+                        }
+                    ]
                 },
                 REMOVAL_FAILED: {
-                    target: 'failed',
-                    actions: assign({ error: 'Blue app removal failed (Non-Critical)' })
+                    target: 'completed',
+                    actions: [
+                        assign({ error: 'Blue app removal failed (Non-Critical)' }),
+                        ({ context, event }) => {
+                            const logger = deploymentLogger();
+                            logger.warn({
+                                deploymentId: context.deploymentId,
+                                applicationName: context.applicationName,
+                                oldContainerId: context.oldContainerId?.slice(0, 12),
+                                error: 'error' in event ? event.error : 'Unknown error'
+                            }, 'Blue app removal failed post-PONR - completing deployment (green is live)');
+                        }
+                    ]
                 }
             }
         },
@@ -1052,10 +1142,10 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'disableGreenTraffic',
             on: {
                 ROLLBACK_GREEN_TRAFFIC_DISABLED: {
-                    target: 'rollbackStoppingGreenApp'
+                    target: 'rollbackRemoveGreenHaproxyConfig'
                 },
                 ROLLBACK_ERROR: {
-                    target: 'rollbackStoppingGreenApp',
+                    target: 'rollbackRemoveGreenHaproxyConfig',
                     actions: 'preserveErrorContext'
                 }
             }

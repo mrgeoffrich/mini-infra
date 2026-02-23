@@ -97,7 +97,7 @@ const appConfig: Config = {
       | "development"
       | "production"
       | "test",
-    port: getConfigValue("server.port", "PORT", 5000),
+    port: getConfigValue("server.port", "PORT", 5005),
     publicUrl: getConfigValue("server.publicUrl", "PUBLIC_URL", undefined),
   },
   database: {

@@ -18,7 +18,7 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        target: "http://localhost:5005",
         changeOrigin: true,
         ws: true, // Enable WebSocket proxying (also helps with SSE)
         configure: (proxy, _options) => {
@@ -32,7 +32,7 @@ export default defineConfig({
         },
       },
       "/auth": {
-        target: "http://localhost:5000",
+        target: "http://localhost:5005",
         changeOrigin: true,
       },
     },

@@ -583,7 +583,7 @@ router.delete(
       const latestDeployment = await prisma.deployment.findFirst({
         where: {
           configurationId: id,
-          status: "completed",
+          status: { in: ["completed", "failed"] },
         },
         orderBy: {
           startedAt: "desc",
@@ -1249,11 +1249,11 @@ router.delete(
         });
       }
 
-      // Get the latest deployment for this configuration
+      // Get the latest deployment for this configuration (include failed deployments that may have containers)
       const latestDeployment = await prisma.deployment.findFirst({
         where: {
           configurationId: id,
-          status: "completed",
+          status: { in: ["completed", "failed"] },
         },
         orderBy: {
           startedAt: "desc",
