@@ -89,7 +89,7 @@ export const healthCheckConfigSchema = z.object({
     .int()
     .min(1000, "Interval must be at least 1000ms")
     .max(300000, "Interval must be less than 300000ms")
-    .default(30000),
+    .default(5000),
 });
 
 // Rollback configuration schema

@@ -136,7 +136,7 @@ export function DeploymentConfigForm({
           deploymentConfig?.healthCheckConfig?.responseValidation || undefined,
         timeout: deploymentConfig?.healthCheckConfig?.timeout || 10000,
         retries: deploymentConfig?.healthCheckConfig?.retries || 3,
-        interval: deploymentConfig?.healthCheckConfig?.interval || 30000,
+        interval: deploymentConfig?.healthCheckConfig?.interval || 5000,
       },
       rollbackConfig: {
         enabled: deploymentConfig?.rollbackConfig?.enabled ?? true,
@@ -228,7 +228,7 @@ export function DeploymentConfigForm({
           responseValidation: deploymentConfig?.healthCheckConfig?.responseValidation || undefined,
           timeout: deploymentConfig?.healthCheckConfig?.timeout || 10000,
           retries: deploymentConfig?.healthCheckConfig?.retries || 3,
-          interval: deploymentConfig?.healthCheckConfig?.interval || 30000,
+          interval: deploymentConfig?.healthCheckConfig?.interval || 5000,
         },
         rollbackConfig: {
           enabled: deploymentConfig?.rollbackConfig?.enabled ?? true,
