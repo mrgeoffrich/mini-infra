@@ -6,7 +6,9 @@
       "prettyPrint": true,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "http": {
@@ -14,7 +16,9 @@
       "destination": "logs/app-http.log",
       "prettyPrint": false,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "prisma": {
@@ -22,7 +26,9 @@
       "destination": "logs/app-prisma.log",
       "prettyPrint": false,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "services": {
@@ -31,7 +37,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "dockerexecutor": {
@@ -40,7 +48,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "deployments": {
@@ -49,7 +59,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "loadbalancer": {
@@ -58,7 +70,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "self-backup": {
@@ -67,7 +81,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     },
     "tls": {
@@ -76,7 +92,9 @@
       "prettyPrint": false,
       "includeCaller": true,
       "rotation": {
-        "enabled": false
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
       }
     }
   },
