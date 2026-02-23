@@ -246,7 +246,7 @@ export class AcmeClientManager {
       }
 
       // Request new certificate with same domains (ensure it's an array)
-      const domains = Array.isArray(existingCert.domains) ? existingCert.domains : [existingCert.domains];
+      const domains = Array.isArray(existingCert.domains) ? existingCert.domains : JSON.parse(existingCert.domains);
       return await this.requestCertificate(domains, challengeProvider);
     } catch (error) {
       this.logger.error(
