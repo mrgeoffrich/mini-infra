@@ -22,7 +22,7 @@
     "format:check": "cd server && npm run format:check"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^9.2.1"
   },
   "dependencies": {
     "cross-env": "^10.0.0"
