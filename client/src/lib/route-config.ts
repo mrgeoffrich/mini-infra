@@ -186,7 +186,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       frontends: {
         path: "/haproxy/frontends",
         title: "Frontends",
-        showInNav: false,
+        showInNav: true,
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
@@ -196,7 +196,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       backends: {
         path: "/haproxy/backends",
         title: "Backends",
-        showInNav: false,
+        showInNav: true,
       },
       "backends/detail": {
         path: "/haproxy/backends/:backendName",
