@@ -10,6 +10,7 @@ import {
   SyncFrontendResponse,
 } from "@mini-infra/types";
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
+import { haproxyCertificateDeployer } from "../services/haproxy/haproxy-certificate-deployer";
 import DockerService from "../services/docker";
 
 const logger = appLogger();
@@ -331,65 +332,18 @@ router.post(
       const haproxyClient = new HAProxyDataPlaneClient();
       await haproxyClient.initialize(haproxyContainer.id);
 
-      // Configure SSL binding (this is a private method, need to expose it)
-      // For now, we'll do it directly here
-      const certificate = await prisma.tlsCertificate.findUnique({
-        where: { id: tlsCertificateId },
-      });
+      // Deploy certificate to HAProxy via the certificate deployer
+      const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+        tlsCertificateId,
+        prisma,
+        haproxyClient,
+      );
 
-      if (!certificate) {
+      if (!certFileName) {
         return res.status(404).json({
           success: false,
-          error: "Certificate not found",
+          error: "Certificate not found or not ready for deployment",
         });
-      }
-
-      if (!certificate.blobName) {
-        return res.status(400).json({
-          success: false,
-          error: "Certificate has no blob name - not yet provisioned",
-        });
-      }
-
-      // Get certificate from Azure storage and deploy to HAProxy
-      const { AzureStorageService } = await import("../services/azure-storage-service");
-      const { AzureStorageCertificateStore } = await import("../services/tls/azure-storage-certificate-store");
-      const { TlsConfigService } = await import("../services/tls/tls-config");
-
-      const azureConfig = new AzureStorageService(prisma);
-      const tlsConfig = new TlsConfigService(prisma);
-
-      const connectionString = await azureConfig.getConnectionString();
-      const containerName = await tlsConfig.get("certificate_blob_container");
-
-      if (!connectionString || !containerName) {
-        return res.status(503).json({
-          success: false,
-          error: "Azure Storage not configured",
-        });
-      }
-
-      const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
-      const certResult = await certificateStore.getCertificate(certificate.blobName);
-
-      // Create combined PEM (cert + key)
-      const combinedPem = `${certResult.certificate}\n${certResult.privateKey}`;
-      const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
-
-      // Upload to HAProxy - try update first, then upload if it doesn't exist
-      // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate for SNI selection
-      try {
-        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
-        logger.info({ certFileName }, "Updated existing SSL certificate");
-      } catch (updateError: any) {
-        // If update fails (cert doesn't exist), try uploading
-        if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
-          logger.debug({ certFileName }, "Certificate doesn't exist, uploading new one");
-          await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
-          logger.info({ certFileName }, "Uploaded new SSL certificate");
-        } else {
-          throw updateError;
-        }
       }
 
       // Delete existing bind if present (created without SSL when shared frontend was made)

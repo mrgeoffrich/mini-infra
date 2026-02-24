@@ -2,6 +2,7 @@ import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "@prisma/client";
+import { generateSharedFrontendName } from "./haproxy-naming";
 
 const logger = loadbalancerLogger();
 
@@ -350,11 +351,10 @@ export class HAProxyRemediationService {
       }
 
       // Build expected state
-      const sanitizedEnv = environmentId.replace(/[^a-zA-Z0-9]/g, "_");
-      const sharedHttpFrontend = `http_frontend_${sanitizedEnv}`;
+      const sharedHttpFrontend = generateSharedFrontendName(environmentId, "http");
       const hasSSL = deploymentConfigs.some((dc) => dc.enableSsl);
       const sharedHttpsFrontend = hasSSL
-        ? `https_frontend_${sanitizedEnv}`
+        ? generateSharedFrontendName(environmentId, "https")
         : null;
 
       const expectedRoutes = deploymentConfigs

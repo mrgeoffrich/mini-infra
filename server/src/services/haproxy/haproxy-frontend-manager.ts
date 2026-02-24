@@ -1,9 +1,12 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "@prisma/client";
-import { AzureStorageCertificateStore } from "../tls/azure-storage-certificate-store";
-import { TlsConfigService } from "../tls/tls-config";
-import { AzureStorageService } from "../azure-storage-service";
+import {
+  generateFrontendName,
+  generateACLName,
+  generateSharedFrontendName,
+} from "./haproxy-naming";
+import { haproxyCertificateDeployer } from "./haproxy-certificate-deployer";
 
 const logger = loadbalancerLogger();
 
@@ -56,7 +59,7 @@ export class HAProxyFrontendManager {
 
     try {
       // Generate frontend name: fe_{applicationName}_{environmentId}
-      const frontendName = this.generateFrontendName(
+      const frontendName = generateFrontendName(
         applicationName,
         environmentId
       );
@@ -165,7 +168,7 @@ export class HAProxyFrontendManager {
 
     try {
       // Generate ACL name from hostname (replace dots with underscores)
-      const aclName = this.generateACLName(hostname);
+      const aclName = generateACLName(hostname);
 
       // Add ACL for hostname matching
       logger.info({ frontendName, aclName, hostname }, "Creating ACL");
@@ -361,7 +364,7 @@ export class HAProxyFrontendManager {
     );
 
     try {
-      const aclName = this.generateACLName(hostname);
+      const aclName = generateACLName(hostname);
 
       // Get existing rules
       const existingRules = await haproxyClient.getBackendSwitchingRules(
@@ -442,82 +445,19 @@ export class HAProxyFrontendManager {
     );
 
     try {
-      // Step 1: Get certificate from database
-      const certificate = await prisma.tlsCertificate.findUnique({
-        where: { id: tlsCertificateId },
-      });
-
-      if (!certificate) {
-        throw new Error(`Certificate not found: ${tlsCertificateId}`);
-      }
-
-      if (certificate.status !== "ACTIVE") {
-        throw new Error(
-          `Certificate is not active: ${certificate.status}`
-        );
-      }
-
-      if (!certificate.blobName) {
-        throw new Error(`Certificate blob name not found for certificate: ${tlsCertificateId}`);
-      }
-
-      logger.info(
-        {
-          frontendName,
-          certificateId: tlsCertificateId,
-          blobName: certificate.blobName,
-        },
-        "Retrieved certificate from database"
+      // Fetch, prepare, and deploy certificate to HAProxy
+      const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+        tlsCertificateId,
+        prisma,
+        haproxyClient,
+        { requireActive: true, fileNameSource: "blobName" }
       );
 
-      // Step 2: Initialize TLS config and Azure Storage client
-      const tlsConfig = new TlsConfigService(prisma);
-      const azureConfig = new AzureStorageService(prisma);
-
-      const containerName = await tlsConfig.getCertificateContainerName();
-      const connectionString = await azureConfig.getConnectionString();
-
-      if (!connectionString) {
-        throw new Error("Azure Storage not configured");
+      if (!certFileName) {
+        throw new Error(`Failed to deploy certificate: ${tlsCertificateId}`);
       }
 
-      const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
-
-      // Step 3: Get certificate from Azure Storage
-      logger.info(
-        { blobName: certificate.blobName },
-        "Retrieving certificate from Azure Storage"
-      );
-
-      const certData = await certificateStore.getCertificate(certificate.blobName);
-
-      // Combine certificate and private key for HAProxy
-      const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
-
-      // Step 4: Deploy certificate to HAProxy
-      const certFileName = `${certificate.blobName.replace(/\.pem$/, '')}.pem`;
-
-      logger.info(
-        { certFileName, frontendName },
-        "Deploying certificate to HAProxy"
-      );
-
-      // Check if certificate already exists in HAProxy
-      const existingCerts = await haproxyClient.listSSLCertificates();
-      const certExists = existingCerts.some(
-        (cert: any) => cert.storage_name === certFileName
-      );
-
-      // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate
-      if (certExists) {
-        logger.info({ certFileName }, "Certificate already exists in HAProxy, updating");
-        await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
-      } else {
-        logger.info({ certFileName }, "Uploading new certificate to HAProxy");
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
-      }
-
-      // Step 5: Add SSL binding to frontend (port 443)
+      // Add SSL binding to frontend (port 443)
       logger.info(
         { frontendName, bindAddress, port: 443, certFileName },
         "Adding SSL binding to frontend"
@@ -593,49 +533,6 @@ export class HAProxyFrontendManager {
   }
 
   /**
-   * Generate a frontend name from application name and environment ID
-   *
-   * @param applicationName The application name
-   * @param environmentId The environment ID
-   * @returns The generated frontend name
-   */
-  private generateFrontendName(
-    applicationName: string,
-    environmentId: string
-  ): string {
-    // Sanitize names to be HAProxy-friendly (alphanumeric and underscores only)
-    const sanitizedApp = applicationName.replace(/[^a-zA-Z0-9]/g, "_");
-    const sanitizedEnv = environmentId.replace(/[^a-zA-Z0-9]/g, "_");
-    return `fe_${sanitizedApp}_${sanitizedEnv}`;
-  }
-
-  /**
-   * Generate an ACL name from a hostname
-   *
-   * @param hostname The hostname
-   * @returns The generated ACL name
-   */
-  private generateACLName(hostname: string): string {
-    // Replace dots and other special characters with underscores
-    return `acl_${hostname.replace(/[^a-zA-Z0-9]/g, "_")}`;
-  }
-
-  /**
-   * Generate a shared frontend name for an environment
-   *
-   * @param environmentId The environment ID
-   * @param type The frontend type ('http' or 'https')
-   * @returns The generated shared frontend name
-   */
-  private generateSharedFrontendName(
-    environmentId: string,
-    type: "http" | "https"
-  ): string {
-    const sanitizedEnv = environmentId.replace(/[^a-zA-Z0-9]/g, "_");
-    return `${type}_frontend_${sanitizedEnv}`;
-  }
-
-  /**
    * Get or create a shared frontend for an environment
    *
    * @param environmentId The environment ID
@@ -668,7 +565,7 @@ export class HAProxyFrontendManager {
     useSSL: boolean;
     tlsCertificateId: string | null;
   }> {
-    const frontendName = this.generateSharedFrontendName(environmentId, type);
+    const frontendName = generateSharedFrontendName(environmentId, type);
     const bindPort = options?.bindPort ?? (type === "https" ? 443 : 80);
     const bindAddress = options?.bindAddress ?? "*";
     const tlsCertificateId = options?.tlsCertificateId;
@@ -826,56 +723,16 @@ export class HAProxyFrontendManager {
       "Configuring SSL for shared frontend"
     );
 
-    // Get certificate from database
-    const certificate = await prisma.tlsCertificate.findUnique({
-      where: { id: tlsCertificateId },
-    });
-
-    if (!certificate) {
-      throw new Error(`Certificate not found: ${tlsCertificateId}`);
-    }
-
-    if (!certificate.blobName) {
-      throw new Error(`Certificate blob name not found for certificate: ${tlsCertificateId}`);
-    }
-
-    // Initialize TLS config and Azure Storage client
-    const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureStorageService(prisma);
-
-    const containerName = await tlsConfig.getCertificateContainerName();
-    const connectionString = await azureConfig.getConnectionString();
-
-    if (!connectionString) {
-      throw new Error("Azure Storage not configured");
-    }
-
-    const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
-
-    // Get certificate from Azure Storage
-    logger.info(
-      { blobName: certificate.blobName },
-      "Retrieving certificate from Azure Storage"
+    // Fetch, prepare, and deploy certificate to HAProxy
+    const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+      tlsCertificateId,
+      prisma,
+      haproxyClient,
+      { fileNameSource: "primaryDomain" }
     );
 
-    const certData = await certificateStore.getCertificate(certificate.blobName);
-
-    // Combine certificate and private key for HAProxy
-    const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
-    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
-
-    // Upload or update certificate in HAProxy
-    // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate
-    try {
-      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
-      logger.info({ certFileName }, "Updated existing SSL certificate");
-    } catch (updateError: any) {
-      if (updateError.message?.includes("not found") || updateError.message?.includes("404")) {
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
-        logger.info({ certFileName }, "Uploaded new SSL certificate");
-      } else {
-        throw updateError;
-      }
+    if (!certFileName) {
+      throw new Error(`Failed to deploy certificate: ${tlsCertificateId}`);
     }
 
     // Add SSL-enabled bind
@@ -921,77 +778,19 @@ export class HAProxyFrontendManager {
       "Uploading certificate to HAProxy for SNI selection"
     );
 
-    // Get certificate from database
-    const certificate = await prisma.tlsCertificate.findUnique({
-      where: { id: tlsCertificateId },
-    });
+    const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+      tlsCertificateId,
+      prisma,
+      haproxyClient,
+      { gracefulNotFound: true }
+    );
 
-    if (!certificate) {
-      logger.warn(
-        { tlsCertificateId },
-        "Certificate not found, skipping upload"
+    if (certFileName) {
+      logger.info(
+        { certFileName, tlsCertificateId },
+        "Certificate uploaded successfully for SNI selection"
       );
-      return;
     }
-
-    if (!certificate.blobName) {
-      logger.warn(
-        { tlsCertificateId },
-        "Certificate blob name not found, skipping upload"
-      );
-      return;
-    }
-
-    // Initialize TLS config and Azure Storage client
-    const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureStorageService(prisma);
-
-    const containerName = await tlsConfig.getCertificateContainerName();
-    const connectionString = await azureConfig.getConnectionString();
-
-    if (!connectionString) {
-      throw new Error("Azure Storage not configured");
-    }
-
-    const certificateStore = new AzureStorageCertificateStore(
-      connectionString,
-      containerName
-    );
-
-    // Get certificate from Azure Storage
-    logger.info(
-      { blobName: certificate.blobName },
-      "Retrieving certificate from Azure Storage for SNI"
-    );
-
-    const certData = await certificateStore.getCertificate(certificate.blobName);
-
-    // Combine certificate and private key for HAProxy
-    // Use domain name for filename - HAProxy matches by CN/SAN in the certificate
-    const combinedPem = `${certData.certificate}\n${certData.privateKey}`;
-    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
-
-    // Upload or update certificate in HAProxy
-    // IMPORTANT: Use force_reload=true so HAProxy picks up the new certificate for SNI selection
-    try {
-      await haproxyClient.updateSSLCertificate(certFileName, combinedPem, true);
-      logger.info({ certFileName }, "Updated existing SSL certificate for SNI");
-    } catch (updateError: any) {
-      if (
-        updateError.message?.includes("not found") ||
-        updateError.message?.includes("404")
-      ) {
-        await haproxyClient.uploadSSLCertificate(certFileName, combinedPem, true);
-        logger.info({ certFileName }, "Uploaded new SSL certificate for SNI");
-      } else {
-        throw updateError;
-      }
-    }
-
-    logger.info(
-      { certFileName, tlsCertificateId, primaryDomain: certificate.primaryDomain },
-      "Certificate uploaded successfully for SNI selection"
-    );
   }
 
   /**
@@ -1009,65 +808,10 @@ export class HAProxyFrontendManager {
     prisma: PrismaClient,
     haproxyClient: HAProxyDataPlaneClient
   ): Promise<void> {
-    logger.info(
-      { tlsCertificateId },
-      "Removing certificate from HAProxy storage"
-    );
-
-    // Get certificate from database to find the filename
-    const certificate = await prisma.tlsCertificate.findUnique({
-      where: { id: tlsCertificateId },
-    });
-
-    if (!certificate) {
-      logger.warn(
-        { tlsCertificateId },
-        "Certificate not found in database, skipping removal"
-      );
-      return;
-    }
-
-    // Generate the same filename used during upload
-    const certFileName = `${certificate.primaryDomain.replace(/[^a-zA-Z0-9]/g, "_")}.pem`;
-
-    // Check if any other routes still use this certificate
-    const otherRoutesUsingCert = await prisma.hAProxyRoute.count({
-      where: {
-        tlsCertificateId,
-        status: "active",
-      },
-    });
-
-    if (otherRoutesUsingCert > 0) {
-      logger.info(
-        { tlsCertificateId, certFileName, otherRoutesUsingCert },
-        "Certificate still in use by other routes, skipping removal"
-      );
-      return;
-    }
-
-    // Also check legacy frontends using this certificate
-    const legacyFrontendsUsingCert = await prisma.hAProxyFrontend.count({
-      where: {
-        tlsCertificateId,
-        status: { not: "removed" },
-      },
-    });
-
-    if (legacyFrontendsUsingCert > 0) {
-      logger.info(
-        { tlsCertificateId, certFileName, legacyFrontendsUsingCert },
-        "Certificate still in use by legacy frontends, skipping removal"
-      );
-      return;
-    }
-
-    // Delete the certificate from HAProxy
-    await haproxyClient.deleteSSLCertificate(certFileName, false);
-
-    logger.info(
-      { certFileName, tlsCertificateId, primaryDomain: certificate.primaryDomain },
-      "Certificate removed from HAProxy storage"
+    await haproxyCertificateDeployer.removeCertificateIfUnused(
+      tlsCertificateId,
+      prisma,
+      haproxyClient
     );
   }
 
@@ -1123,7 +867,7 @@ export class HAProxyFrontendManager {
       }
 
       const frontendName = sharedFrontend.frontendName;
-      const aclName = this.generateACLName(hostname);
+      const aclName = generateACLName(hostname);
 
       // Check if route already exists
       const existingRoute = await prisma.hAProxyRoute.findFirst({
@@ -1234,7 +978,7 @@ export class HAProxyFrontendManager {
       }
 
       const frontendName = sharedFrontend.frontendName;
-      const aclName = this.generateACLName(hostname);
+      const aclName = generateACLName(hostname);
 
       // Get the route from database
       const route = await prisma.hAProxyRoute.findFirst({
@@ -1352,7 +1096,7 @@ export class HAProxyFrontendManager {
 
       // If hostname is being changed, we need to update ACL and rule
       if (updates.hostname && updates.hostname !== existingRoute.hostname) {
-        const newAclName = this.generateACLName(updates.hostname);
+        const newAclName = generateACLName(updates.hostname);
 
         // Remove old ACL and rule
         const existingRules =
@@ -1403,7 +1147,7 @@ export class HAProxyFrontendManager {
         data: {
           hostname: updates.hostname ?? existingRoute.hostname,
           aclName: updates.hostname
-            ? this.generateACLName(updates.hostname)
+            ? generateACLName(updates.hostname)
             : existingRoute.aclName,
           backendName: updates.backendName ?? existingRoute.backendName,
           useSSL: updates.useSSL ?? existingRoute.useSSL,
