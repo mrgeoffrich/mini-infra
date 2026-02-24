@@ -8,25 +8,102 @@ import { ConfigurationService } from "./configuration-base";
 import { servicesLogger } from "../lib/logger-factory";
 import Cloudflare from "cloudflare";
 import { createCloudflareSpan } from "../lib/http-instrumentation";
+import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
 
 /**
- * Circuit breaker state for managing API failures
+ * Cloudflare-specific error mappers for the circuit breaker.
+ * Order matters: HTTP status code checks come first, then message-based checks.
  */
-interface CircuitBreakerState {
-  state: "closed" | "open" | "half-open";
-  consecutiveFailures: number;
-  lastFailureTime?: Date;
-  lastSuccessTime?: Date;
-  nextRetryTime?: Date;
-}
-
-/**
- * Request deduplication tracking
- */
-interface PendingRequest {
-  promise: Promise<ValidationResult>;
-  timestamp: number;
-}
+const CLOUDFLARE_ERROR_MAPPERS: ErrorMapper[] = [
+  // HTTP status code matchers (checked via predicate)
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 401 ||
+      (error as any)?.status === 401,
+    errorCode: "INVALID_API_TOKEN",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 403 ||
+      (error as any)?.status === 403,
+    errorCode: "INSUFFICIENT_PERMISSIONS",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 429 ||
+      (error as any)?.status === 429,
+    errorCode: "RATE_LIMITED",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 500 ||
+      (error as any)?.status === 500,
+    errorCode: "SERVER_ERROR_500",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 502 ||
+      (error as any)?.status === 502,
+    errorCode: "SERVER_ERROR_502",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 503 ||
+      (error as any)?.status === 503,
+    errorCode: "SERVER_ERROR_503",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+  {
+    pattern: (error: unknown) =>
+      (error as any)?.response?.status === 504 ||
+      (error as any)?.status === 504,
+    errorCode: "SERVER_ERROR_504",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+  // Message-based matchers
+  {
+    pattern: /timeout/,
+    errorCode: "TIMEOUT",
+    connectivityStatus: "timeout",
+    isRetriable: true,
+  },
+  {
+    pattern: /Unauthorized|Invalid API Token/,
+    errorCode: "INVALID_API_TOKEN",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: /Forbidden/,
+    errorCode: "INSUFFICIENT_PERMISSIONS",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: /ENOTFOUND|ECONNREFUSED/,
+    errorCode: "NETWORK_ERROR",
+    connectivityStatus: "unreachable",
+    isRetriable: true,
+  },
+  {
+    pattern: /Rate limit/,
+    errorCode: "RATE_LIMITED",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+];
 
 /**
  * CloudflareConfigService handles Cloudflare API configuration management
@@ -38,243 +115,28 @@ export class CloudflareConfigService extends ConfigurationService {
   private static readonly API_TOKEN_KEY = "api_token";
   private static readonly ACCOUNT_ID_KEY = "account_id";
 
-  // Circuit breaker configuration
-  private static readonly FAILURE_THRESHOLD = 5; // Open circuit after 5 consecutive failures
-  private static readonly COOLDOWN_PERIOD_MS = 5 * 60 * 1000; // 5 minutes cooldown
-  private static readonly DEDUP_WINDOW_MS = 1000; // 1 second deduplication window
-
-  // Circuit breaker state
-  private circuitBreaker: CircuitBreakerState = {
-    state: "closed",
-    consecutiveFailures: 0,
-  };
-
-  // Request deduplication
-  private pendingValidation: PendingRequest | null = null;
+  private circuitBreaker: CircuitBreaker;
 
   constructor(prisma: PrismaClient) {
     super(prisma, "cloudflare");
-  }
 
-  /**
-   * Check if the circuit breaker allows requests
-   * @returns Whether the circuit is closed or half-open (allowing requests)
-   */
-  private isCircuitBreakerOpen(): boolean {
-    if (this.circuitBreaker.state === "open") {
-      // Check if cooldown period has passed
-      if (
-        this.circuitBreaker.nextRetryTime &&
-        new Date() >= this.circuitBreaker.nextRetryTime
-      ) {
-        // Transition to half-open state to allow retry
-        this.circuitBreaker.state = "half-open";
-        servicesLogger().info(
-          {
-            previousFailures: this.circuitBreaker.consecutiveFailures,
-            lastFailureTime: this.circuitBreaker.lastFailureTime,
-          },
-          "Circuit breaker transitioning to half-open state",
-        );
-        return false;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Record a successful API call and reset circuit breaker if needed
-   */
-  private recordSuccess(): void {
-    if (
-      this.circuitBreaker.state === "half-open" ||
-      this.circuitBreaker.consecutiveFailures > 0
-    ) {
-      servicesLogger().info(
-        {
-          previousState: this.circuitBreaker.state,
-          previousFailures: this.circuitBreaker.consecutiveFailures,
-        },
-        "Circuit breaker reset after successful API call",
-      );
-    }
-
-    this.circuitBreaker = {
-      state: "closed",
-      consecutiveFailures: 0,
-      lastSuccessTime: new Date(),
-    };
-  }
-
-  /**
-   * Record a failed API call and update circuit breaker state
-   * @param errorCode The error code from the API failure
-   */
-  private recordFailure(errorCode: string): void {
-    this.circuitBreaker.consecutiveFailures++;
-    this.circuitBreaker.lastFailureTime = new Date();
-
-    // Check if we should open the circuit
-    if (
-      this.circuitBreaker.consecutiveFailures >=
-      CloudflareConfigService.FAILURE_THRESHOLD
-    ) {
-      this.circuitBreaker.state = "open";
-      this.circuitBreaker.nextRetryTime = new Date(
-        Date.now() + CloudflareConfigService.COOLDOWN_PERIOD_MS,
-      );
-
-      servicesLogger().warn(
-        {
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          errorCode,
-          nextRetryTime: this.circuitBreaker.nextRetryTime,
-        },
-        "Circuit breaker opened due to consecutive failures",
-      );
-    } else {
-      servicesLogger().debug(
-        {
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          threshold: CloudflareConfigService.FAILURE_THRESHOLD,
-          errorCode,
-        },
-        "API failure recorded, circuit breaker still closed",
-      );
-    }
-  }
-
-  /**
-   * Parse and categorize Cloudflare API errors
-   * @param error The error to parse
-   * @returns Categorized error information
-   */
-  private parseApiError(error: any): {
-    errorCode: string;
-    connectivityStatus: ConnectivityStatusType;
-    isRetriable: boolean;
-  } {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const statusCode = error?.response?.status || error?.status;
-
-    // Handle specific HTTP status codes
-    if (statusCode) {
-      switch (statusCode) {
-        case 401:
-          return {
-            errorCode: "INVALID_API_TOKEN",
-            connectivityStatus: "failed",
-            isRetriable: false,
-          };
-        case 403:
-          return {
-            errorCode: "INSUFFICIENT_PERMISSIONS",
-            connectivityStatus: "failed",
-            isRetriable: false,
-          };
-        case 429:
-          return {
-            errorCode: "RATE_LIMITED",
-            connectivityStatus: "failed",
-            isRetriable: true,
-          };
-        case 500:
-        case 502:
-        case 503:
-        case 504:
-          return {
-            errorCode: `SERVER_ERROR_${statusCode}`,
-            connectivityStatus: "failed",
-            isRetriable: true,
-          };
-      }
-    }
-
-    // Parse error messages
-    if (errorMessage.includes("timeout")) {
-      return {
-        errorCode: "TIMEOUT",
-        connectivityStatus: "timeout",
-        isRetriable: true,
-      };
-    } else if (
-      errorMessage.includes("Unauthorized") ||
-      errorMessage.includes("Invalid API Token")
-    ) {
-      return {
-        errorCode: "INVALID_API_TOKEN",
-        connectivityStatus: "failed",
-        isRetriable: false,
-      };
-    } else if (errorMessage.includes("Forbidden")) {
-      return {
-        errorCode: "INSUFFICIENT_PERMISSIONS",
-        connectivityStatus: "failed",
-        isRetriable: false,
-      };
-    } else if (
-      errorMessage.includes("ENOTFOUND") ||
-      errorMessage.includes("ECONNREFUSED")
-    ) {
-      return {
-        errorCode: "NETWORK_ERROR",
-        connectivityStatus: "unreachable",
-        isRetriable: true,
-      };
-    } else if (errorMessage.includes("Rate limit")) {
-      return {
-        errorCode: "RATE_LIMITED",
-        connectivityStatus: "failed",
-        isRetriable: true,
-      };
-    }
-
-    return {
-      errorCode: "CLOUDFLARE_API_ERROR",
-      connectivityStatus: "failed",
-      isRetriable: true,
-    };
-  }
-
-  /**
-   * Redact sensitive information from log data
-   * @param data The data to redact
-   * @returns Redacted data safe for logging
-   */
-  private redactSensitiveData(data: any): any {
-    if (typeof data === "string") {
-      // Redact API tokens (typically 40+ characters starting with specific patterns)
-      return data.replace(/[a-zA-Z0-9_-]{40,}/g, "[REDACTED_TOKEN]");
-    }
-
-    if (typeof data === "object" && data !== null) {
-      const redacted = { ...data };
-      const sensitiveKeys = [
+    this.circuitBreaker = new CircuitBreaker({
+      serviceName: "Cloudflare",
+      failureThreshold: 5,
+      cooldownPeriodMs: 5 * 60 * 1000,
+      dedupWindowMs: 1000,
+      errorMappers: CLOUDFLARE_ERROR_MAPPERS,
+      defaultErrorCode: "CLOUDFLARE_API_ERROR",
+      tokenRedactPatterns: [/[a-zA-Z0-9_-]{40,}/g],
+      sensitiveKeys: [
         "apiToken",
         "api_token",
         "token",
         "secret",
         "password",
         "key",
-      ];
-
-      for (const key of Object.keys(redacted)) {
-        if (
-          sensitiveKeys.some((sensitive) =>
-            key.toLowerCase().includes(sensitive),
-          )
-        ) {
-          redacted[key] = "[REDACTED]";
-        } else if (typeof redacted[key] === "object") {
-          redacted[key] = this.redactSensitiveData(redacted[key]);
-        }
-      }
-
-      return redacted;
-    }
-
-    return data;
+      ],
+    });
   }
 
   /**
@@ -284,67 +146,10 @@ export class CloudflareConfigService extends ConfigurationService {
    * @returns ValidationResult with connectivity status and details
    */
   async validate(settings?: Record<string, string>): Promise<ValidationResult> {
-    const startTime = Date.now();
-
-    // Check for request deduplication
-    if (this.pendingValidation) {
-      const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
-      if (timeSinceRequest < CloudflareConfigService.DEDUP_WINDOW_MS) {
-        servicesLogger().debug(
-          {
-            timeSinceRequest,
-            dedupWindow: CloudflareConfigService.DEDUP_WINDOW_MS,
-          },
-          "Deduplicating validation request within time window",
-        );
-        return this.pendingValidation.promise;
-      }
-    }
-
-    // Check circuit breaker state
-    if (this.isCircuitBreakerOpen()) {
-      const timeSinceFailure = this.circuitBreaker.lastFailureTime
-        ? Date.now() - this.circuitBreaker.lastFailureTime.getTime()
-        : 0;
-      const timeUntilRetry = this.circuitBreaker.nextRetryTime
-        ? this.circuitBreaker.nextRetryTime.getTime() - Date.now()
-        : 0;
-
-      servicesLogger().info(
-        {
-          circuitState: "open",
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          timeSinceFailure,
-          timeUntilRetry,
-        },
-        "Circuit breaker is open, skipping validation",
-      );
-
-      const result: ValidationResult = {
-        isValid: false,
-        message: `Circuit breaker open after ${this.circuitBreaker.consecutiveFailures} consecutive failures. Retry in ${Math.ceil(timeUntilRetry / 1000)} seconds.`,
-        errorCode: "CIRCUIT_BREAKER_OPEN",
-        responseTimeMs: Date.now() - startTime,
-      };
-
-      return result;
-    }
-
-    // Create the validation promise
-    const validationPromise = this.performValidation(startTime, settings);
-
-    // Store for deduplication
-    this.pendingValidation = {
-      promise: validationPromise,
-      timestamp: Date.now(),
-    };
-
-    // Clear pending validation after completion
-    validationPromise.finally(() => {
-      this.pendingValidation = null;
-    });
-
-    return validationPromise;
+    return this.circuitBreaker.validateWithDedup(
+      (startTime, s) => this.performValidation(startTime, s),
+      settings,
+    );
   }
 
   /**
@@ -363,7 +168,7 @@ export class CloudflareConfigService extends ConfigurationService {
       const accountId = settings?.accountId || (await this.get(CloudflareConfigService.ACCOUNT_ID_KEY));
 
       servicesLogger().debug(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           hasToken: !!apiToken,
           tokenLength: apiToken?.length,
           circuitState: this.circuitBreaker.state,
@@ -438,7 +243,7 @@ export class CloudflareConfigService extends ConfigurationService {
       }
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       const result: ValidationResult = {
         isValid: true,
@@ -456,7 +261,7 @@ export class CloudflareConfigService extends ConfigurationService {
       );
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           responseTime,
           userEmail: userResponse.email,
           accountStatus: metadata.accountStatus,
@@ -473,11 +278,11 @@ export class CloudflareConfigService extends ConfigurationService {
 
       // Parse and categorize the error
       const { errorCode, connectivityStatus, isRetriable } =
-        this.parseApiError(error);
+        this.circuitBreaker.parseError(error);
 
       // Record failure for circuit breaker (only for retriable errors)
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       const result: ValidationResult = {
@@ -495,7 +300,7 @@ export class CloudflareConfigService extends ConfigurationService {
       );
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           responseTime,
@@ -566,13 +371,10 @@ export class CloudflareConfigService extends ConfigurationService {
     await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
 
     // Reset circuit breaker when new credentials are set
-    this.circuitBreaker = {
-      state: "closed",
-      consecutiveFailures: 0,
-    };
+    this.circuitBreaker.reset();
 
     servicesLogger().info(
-      this.redactSensitiveData({
+      this.circuitBreaker.redact({
         userId,
         tokenLength: apiToken.length,
       }),
@@ -616,7 +418,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async getTunnelConfig(tunnelId: string): Promise<any> {
     // Check circuit breaker before making API call
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
         {
           circuitState: "open",
@@ -672,7 +474,7 @@ export class CloudflareConfigService extends ConfigurationService {
 
       if (!configResponse.ok) {
         servicesLogger().warn(
-          this.redactSensitiveData({
+          this.circuitBreaker.redact({
             accountId,
             tunnelId,
             status: configResponse.status,
@@ -686,10 +488,10 @@ export class CloudflareConfigService extends ConfigurationService {
       const configData = await configResponse.json();
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           accountId,
           tunnelId,
           configVersion: configData.result?.version,
@@ -704,13 +506,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           isRetriable,
@@ -730,7 +532,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async getTunnelInfo(): Promise<any[]> {
     // Check circuit breaker before making API call
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
         {
           circuitState: "open",
@@ -785,10 +587,10 @@ export class CloudflareConfigService extends ConfigurationService {
       const tunnels = tunnelsResponse.result || [];
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           accountId,
           tunnelCount: tunnels.length,
         }),
@@ -810,13 +612,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           isRetriable,
@@ -836,7 +638,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async updateTunnelConfig(tunnelId: string, config: any): Promise<any> {
     // Check circuit breaker before making API call
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
         {
           circuitState: "open",
@@ -892,7 +694,7 @@ export class CloudflareConfigService extends ConfigurationService {
       if (!updateResponse.ok) {
         const errorText = await updateResponse.text();
         servicesLogger().warn(
-          this.redactSensitiveData({
+          this.circuitBreaker.redact({
             accountId,
             tunnelId,
             status: updateResponse.status,
@@ -907,10 +709,10 @@ export class CloudflareConfigService extends ConfigurationService {
       const updateData = await updateResponse.json();
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           accountId,
           tunnelId,
           configVersion: updateData.result?.version,
@@ -925,13 +727,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           isRetriable,
@@ -1004,7 +806,7 @@ export class CloudflareConfigService extends ConfigurationService {
       };
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           tunnelId,
           hostname,
           service,
@@ -1020,7 +822,7 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           tunnelId,
           hostname,
@@ -1078,7 +880,7 @@ export class CloudflareConfigService extends ConfigurationService {
       };
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           tunnelId,
           hostname,
           path,
@@ -1093,7 +895,7 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           tunnelId,
           hostname,
@@ -1112,7 +914,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async getZoneId(domain: string): Promise<string> {
     // Check circuit breaker
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       throw new Error("Circuit breaker is open, cannot query Cloudflare API");
     }
 
@@ -1145,7 +947,7 @@ export class CloudflareConfigService extends ConfigurationService {
       }
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
         { domain, zoneId: zones[0].id },
@@ -1158,13 +960,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           domain,
@@ -1189,7 +991,7 @@ export class CloudflareConfigService extends ConfigurationService {
     ttl: number;
   }): Promise<string> {
     // Check circuit breaker
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       throw new Error("Circuit breaker is open, cannot create DNS record");
     }
 
@@ -1222,10 +1024,10 @@ export class CloudflareConfigService extends ConfigurationService {
       ])) as any;
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           zoneId: params.zoneId,
           recordId: recordResponse.id,
           type: params.type,
@@ -1240,13 +1042,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           zoneId: params.zoneId,
@@ -1267,7 +1069,7 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
     // Check circuit breaker
-    if (this.isCircuitBreakerOpen()) {
+    if (this.circuitBreaker.isOpen()) {
       throw new Error("Circuit breaker is open, cannot delete DNS record");
     }
 
@@ -1294,7 +1096,7 @@ export class CloudflareConfigService extends ConfigurationService {
       ]);
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       servicesLogger().info(
         { zoneId, recordId },
@@ -1305,13 +1107,13 @@ export class CloudflareConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       // Parse error and record failure if retriable
-      const { errorCode, isRetriable } = this.parseApiError(error);
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
       if (isRetriable) {
-        this.recordFailure(errorCode);
+        this.circuitBreaker.recordFailure(errorCode);
       }
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           zoneId,

@@ -9,25 +9,43 @@ import {
 import { ConfigurationService } from "./configuration-base";
 import { servicesLogger } from "../lib/logger-factory";
 import { Octokit } from "@octokit/rest";
+import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
 
 /**
- * Circuit breaker state for managing API failures
+ * GitHub-specific error mappers for the circuit breaker.
  */
-interface CircuitBreakerState {
-  state: "closed" | "open" | "half-open";
-  consecutiveFailures: number;
-  lastFailureTime?: Date;
-  lastSuccessTime?: Date;
-  nextRetryTime?: Date;
-}
-
-/**
- * Request deduplication tracking
- */
-interface PendingRequest {
-  promise: Promise<ValidationResult>;
-  timestamp: number;
-}
+const GITHUB_ERROR_MAPPERS: ErrorMapper[] = [
+  {
+    pattern: /timeout|ETIMEDOUT/,
+    errorCode: "TIMEOUT",
+    connectivityStatus: "unreachable",
+    isRetriable: true,
+  },
+  {
+    pattern: /Bad credentials|Unauthorized|401/,
+    errorCode: "INVALID_CREDENTIALS",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: /Not Found|404/,
+    errorCode: "REPOSITORY_NOT_FOUND",
+    connectivityStatus: "failed",
+    isRetriable: false,
+  },
+  {
+    pattern: /ENOTFOUND|ECONNREFUSED/,
+    errorCode: "NETWORK_ERROR",
+    connectivityStatus: "unreachable",
+    isRetriable: true,
+  },
+  {
+    pattern: /rate limit/,
+    errorCode: "RATE_LIMITED",
+    connectivityStatus: "failed",
+    isRetriable: true,
+  },
+];
 
 /**
  * GitHubConfigService handles GitHub API configuration management
@@ -40,216 +58,28 @@ export class GitHubConfigService extends ConfigurationService {
   private static readonly REPO_OWNER_KEY = "repo_owner";
   private static readonly REPO_NAME_KEY = "repo_name";
 
-  // Circuit breaker configuration
-  private static readonly FAILURE_THRESHOLD = 5; // Open circuit after 5 consecutive failures
-  private static readonly COOLDOWN_PERIOD_MS = 5 * 60 * 1000; // 5 minutes cooldown
-  private static readonly DEDUP_WINDOW_MS = 1000; // 1 second deduplication window
-
-  // Circuit breaker state
-  private circuitBreaker: CircuitBreakerState = {
-    state: "closed",
-    consecutiveFailures: 0,
-  };
-
-  // Request deduplication
-  private pendingValidation: PendingRequest | null = null;
+  private circuitBreaker: CircuitBreaker;
 
   constructor(prisma: PrismaClient) {
     super(prisma, "github");
-  }
 
-  /**
-   * Check if the circuit breaker allows requests
-   * @returns Whether the circuit is closed or half-open (allowing requests)
-   */
-  private isCircuitBreakerOpen(): boolean {
-    if (this.circuitBreaker.state === "open") {
-      // Check if cooldown period has passed
-      if (
-        this.circuitBreaker.nextRetryTime &&
-        new Date() >= this.circuitBreaker.nextRetryTime
-      ) {
-        // Transition to half-open state to allow retry
-        this.circuitBreaker.state = "half-open";
-        servicesLogger().info(
-          {
-            previousFailures: this.circuitBreaker.consecutiveFailures,
-            lastFailureTime: this.circuitBreaker.lastFailureTime,
-          },
-          "Circuit breaker transitioning to half-open state",
-        );
-        return false;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Record a successful API call and reset circuit breaker if needed
-   */
-  private recordSuccess(): void {
-    if (
-      this.circuitBreaker.state === "half-open" ||
-      this.circuitBreaker.consecutiveFailures > 0
-    ) {
-      servicesLogger().info(
-        {
-          previousState: this.circuitBreaker.state,
-          previousFailures: this.circuitBreaker.consecutiveFailures,
-        },
-        "Circuit breaker reset after successful API call",
-      );
-    }
-
-    this.circuitBreaker = {
-      state: "closed",
-      consecutiveFailures: 0,
-      lastSuccessTime: new Date(),
-    };
-  }
-
-  /**
-   * Record a failed API call and update circuit breaker state
-   * @param errorCode The error code from the API failure
-   */
-  private recordFailure(errorCode: string): void {
-    this.circuitBreaker.consecutiveFailures++;
-    this.circuitBreaker.lastFailureTime = new Date();
-
-    // Check if we should open the circuit
-    if (
-      this.circuitBreaker.consecutiveFailures >=
-      GitHubConfigService.FAILURE_THRESHOLD
-    ) {
-      this.circuitBreaker.state = "open";
-      this.circuitBreaker.nextRetryTime = new Date(
-        Date.now() + GitHubConfigService.COOLDOWN_PERIOD_MS,
-      );
-
-      servicesLogger().warn(
-        {
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          errorCode,
-          nextRetryTime: this.circuitBreaker.nextRetryTime,
-        },
-        "Circuit breaker opened due to consecutive failures",
-      );
-    } else {
-      servicesLogger().debug(
-        {
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          threshold: GitHubConfigService.FAILURE_THRESHOLD,
-          errorCode,
-        },
-        "API failure recorded, circuit breaker still closed",
-      );
-    }
-  }
-
-  /**
-   * Parse and categorize GitHub API errors
-   * @param error The error to parse
-   * @returns Error categorization with connectivity status
-   */
-  private parseApiError(error: unknown): {
-    errorCode: string;
-    connectivityStatus: ConnectivityStatusType;
-    isRetriable: boolean;
-  } {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
-
-    servicesLogger().debug(
-      { errorMessage },
-      "Parsing GitHub API error",
-    );
-
-    // Check for specific GitHub API error patterns
-    if (errorMessage.includes("timeout") || errorMessage.includes("ETIMEDOUT")) {
-      return {
-        errorCode: "TIMEOUT",
-        connectivityStatus: "unreachable",
-        isRetriable: true,
-      };
-    } else if (
-      errorMessage.includes("Bad credentials") ||
-      errorMessage.includes("Unauthorized") ||
-      errorMessage.includes("401")
-    ) {
-      return {
-        errorCode: "INVALID_CREDENTIALS",
-        connectivityStatus: "failed",
-        isRetriable: false,
-      };
-    } else if (errorMessage.includes("Not Found") || errorMessage.includes("404")) {
-      return {
-        errorCode: "REPOSITORY_NOT_FOUND",
-        connectivityStatus: "failed",
-        isRetriable: false,
-      };
-    } else if (
-      errorMessage.includes("ENOTFOUND") ||
-      errorMessage.includes("ECONNREFUSED")
-    ) {
-      return {
-        errorCode: "NETWORK_ERROR",
-        connectivityStatus: "unreachable",
-        isRetriable: true,
-      };
-    } else if (errorMessage.includes("rate limit")) {
-      return {
-        errorCode: "RATE_LIMITED",
-        connectivityStatus: "failed",
-        isRetriable: true,
-      };
-    }
-
-    return {
-      errorCode: "GITHUB_API_ERROR",
-      connectivityStatus: "failed",
-      isRetriable: true,
-    };
-  }
-
-  /**
-   * Redact sensitive information from log data
-   * @param data The data to redact
-   * @returns Redacted data safe for logging
-   */
-  private redactSensitiveData(data: any): any {
-    if (typeof data === "string") {
-      // Redact GitHub tokens (typically start with ghp_, gho_, etc.)
-      return data.replace(/gh[a-z]_[a-zA-Z0-9]{36,}/g, "[REDACTED_TOKEN]");
-    }
-
-    if (typeof data === "object" && data !== null) {
-      const redacted = { ...data };
-      const sensitiveKeys = [
+    this.circuitBreaker = new CircuitBreaker({
+      serviceName: "GitHub",
+      failureThreshold: 5,
+      cooldownPeriodMs: 5 * 60 * 1000,
+      dedupWindowMs: 1000,
+      errorMappers: GITHUB_ERROR_MAPPERS,
+      defaultErrorCode: "GITHUB_API_ERROR",
+      tokenRedactPatterns: [/gh[a-z]_[a-zA-Z0-9]{36,}/g],
+      sensitiveKeys: [
         "personalAccessToken",
         "personal_access_token",
         "token",
         "secret",
         "password",
         "key",
-      ];
-
-      for (const key of Object.keys(redacted)) {
-        if (
-          sensitiveKeys.some((sensitive) =>
-            key.toLowerCase().includes(sensitive),
-          )
-        ) {
-          redacted[key] = "[REDACTED]";
-        } else if (typeof redacted[key] === "object") {
-          redacted[key] = this.redactSensitiveData(redacted[key]);
-        }
-      }
-
-      return redacted;
-    }
-
-    return data;
+      ],
+    });
   }
 
   /**
@@ -259,67 +89,10 @@ export class GitHubConfigService extends ConfigurationService {
    * @returns ValidationResult with connectivity status and details
    */
   async validate(settings?: Record<string, string>): Promise<ValidationResult> {
-    const startTime = Date.now();
-
-    // Check for request deduplication
-    if (this.pendingValidation) {
-      const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
-      if (timeSinceRequest < GitHubConfigService.DEDUP_WINDOW_MS) {
-        servicesLogger().debug(
-          {
-            timeSinceRequest,
-            dedupWindow: GitHubConfigService.DEDUP_WINDOW_MS,
-          },
-          "Deduplicating validation request within time window",
-        );
-        return this.pendingValidation.promise;
-      }
-    }
-
-    // Check circuit breaker state
-    if (this.isCircuitBreakerOpen()) {
-      const timeSinceFailure = this.circuitBreaker.lastFailureTime
-        ? Date.now() - this.circuitBreaker.lastFailureTime.getTime()
-        : 0;
-      const timeUntilRetry = this.circuitBreaker.nextRetryTime
-        ? this.circuitBreaker.nextRetryTime.getTime() - Date.now()
-        : 0;
-
-      servicesLogger().info(
-        {
-          circuitState: "open",
-          consecutiveFailures: this.circuitBreaker.consecutiveFailures,
-          timeSinceFailure,
-          timeUntilRetry,
-        },
-        "Circuit breaker is open, skipping validation",
-      );
-
-      const result: ValidationResult = {
-        isValid: false,
-        message: `Circuit breaker open after ${this.circuitBreaker.consecutiveFailures} consecutive failures. Retry in ${Math.ceil(timeUntilRetry / 1000)} seconds.`,
-        errorCode: "CIRCUIT_BREAKER_OPEN",
-        responseTimeMs: Date.now() - startTime,
-      };
-
-      return result;
-    }
-
-    // Create the validation promise
-    const validationPromise = this.performValidation(startTime, settings);
-
-    // Store for deduplication
-    this.pendingValidation = {
-      promise: validationPromise,
-      timestamp: Date.now(),
-    };
-
-    // Clear pending validation after completion
-    validationPromise.finally(() => {
-      this.pendingValidation = null;
-    });
-
-    return validationPromise;
+    return this.circuitBreaker.validateWithDedup(
+      (startTime, s) => this.performValidation(startTime, s),
+      settings,
+    );
   }
 
   /**
@@ -342,7 +115,7 @@ export class GitHubConfigService extends ConfigurationService {
         (await this.get(GitHubConfigService.REPO_NAME_KEY));
 
       servicesLogger().debug(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           hasToken: !!personalAccessToken,
           tokenLength: personalAccessToken?.length,
           repoOwner,
@@ -434,7 +207,7 @@ export class GitHubConfigService extends ConfigurationService {
       };
 
       // Record success for circuit breaker
-      this.recordSuccess();
+      this.circuitBreaker.recordSuccess();
 
       const result: ValidationResult = {
         isValid: true,
@@ -451,7 +224,7 @@ export class GitHubConfigService extends ConfigurationService {
       );
 
       servicesLogger().info(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           responseTime,
           username: userResponse.data.login,
           repository: repoResponse.data.full_name,
@@ -462,14 +235,14 @@ export class GitHubConfigService extends ConfigurationService {
       return result;
     } catch (error) {
       const { errorCode, connectivityStatus, isRetriable } =
-        this.parseApiError(error);
+        this.circuitBreaker.parseError(error);
 
       const responseTime = Date.now() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
       // Record failure for circuit breaker
-      this.recordFailure(errorCode);
+      this.circuitBreaker.recordFailure(errorCode);
 
       const result: ValidationResult = {
         isValid: false,
@@ -487,7 +260,7 @@ export class GitHubConfigService extends ConfigurationService {
       );
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
           connectivityStatus,
@@ -520,7 +293,7 @@ export class GitHubConfigService extends ConfigurationService {
       const repoName = await this.get(GitHubConfigService.REPO_NAME_KEY);
 
       servicesLogger().debug(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           hasToken: !!personalAccessToken,
           repoOwner,
           repoName,
@@ -591,7 +364,7 @@ export class GitHubConfigService extends ConfigurationService {
       const responseTime = Date.now() - startTime;
 
       servicesLogger().error(
-        this.redactSensitiveData({
+        this.circuitBreaker.redact({
           error: errorMessage,
           responseTime,
           title: request.title,
