@@ -108,6 +108,10 @@ import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
 import dockerRoutes from "./routes/docker";
 import settingsRoutes from "./routes/settings";
+import settingsConnectivityRoutes from "./routes/settings-connectivity";
+import settingsValidationRoutes from "./routes/settings-validation";
+import settingsSecurityRoutes from "./routes/settings-security";
+import settingsDockerRoutes from "./routes/settings-docker";
 import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
 import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
@@ -154,6 +158,10 @@ const routes = [
   { path: "/api/settings/cloudflare", router: cloudflareSettingsRoutes, name: "cloudflareSettingsRoutes" },
   { path: "/api/settings/github", router: githubSettingsRoutes, name: "githubSettingsRoutes" },
   { path: "/api/github/bug-report", router: githubBugReportRoutes, name: "githubBugReportRoutes" },
+  { path: "/api/settings/connectivity", router: settingsConnectivityRoutes, name: "settingsConnectivityRoutes" },
+  { path: "/api/settings/validate", router: settingsValidationRoutes, name: "settingsValidationRoutes" },
+  { path: "/api/settings/security", router: settingsSecurityRoutes, name: "settingsSecurityRoutes" },
+  { path: "/api/settings/docker-host", router: settingsDockerRoutes, name: "settingsDockerRoutes" },
   { path: "/api/settings", router: settingsRoutes, name: "settingsRoutes" },
   { path: "/api/connectivity/azure", router: azureConnectivityRoutes, name: "azureConnectivityRoutes" },
   { path: "/api/connectivity", router: cloudflareConnectivityRoutes, name: "cloudflareConnectivityRoutes" },

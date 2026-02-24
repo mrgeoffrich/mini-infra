@@ -5,9 +5,6 @@ import { createId } from "@paralleldrive/cuid2";
 import {
   SystemSettings,
   SettingsCategory,
-  ValidationStatus,
-  ValidationResult,
-  ServiceHealthStatus,
 } from "@mini-infra/types";
 
 // Mock Prisma client
@@ -17,13 +14,8 @@ const mockPrisma = {
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
-    updateMany: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
-  },
-  connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
   },
 };
 
@@ -73,27 +65,6 @@ jest.mock("../../lib/auth-middleware", () => ({
   getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
 }));
 
-// Mock configuration factory
-const mockConfigService = {
-  validate: jest.fn(),
-  getHealthStatus: jest.fn(),
-  set: jest.fn(),
-  get: jest.fn(),
-  delete: jest.fn(),
-};
-
-const mockConfigFactory = {
-  create: jest.fn(),
-  getSupportedCategories: jest.fn(),
-  isSupported: jest.fn(),
-};
-
-jest.mock("../../services/configuration-factory", () => ({
-  ConfigurationServiceFactory: jest
-    .fn()
-    .mockImplementation(() => mockConfigFactory),
-}));
-
 import settingsRouter from "../settings";
 
 describe("Settings API Routes", () => {
@@ -128,29 +99,6 @@ describe("Settings API Routes", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-
-    // Set up default mock returns
-    mockConfigFactory.create.mockReturnValue(mockConfigService);
-    mockConfigFactory.getSupportedCategories.mockReturnValue([
-      "docker",
-      "cloudflare",
-      "azure",
-      "postgres",
-    ]);
-    mockConfigFactory.isSupported.mockReturnValue(true);
-
-    // Reset default mocks
-    mockConfigService.validate.mockResolvedValue({
-      isValid: true,
-      message: "Validation successful",
-      responseTimeMs: 100,
-    });
-
-    mockConfigService.getHealthStatus.mockResolvedValue({
-      service: "docker",
-      status: "connected",
-      lastChecked: new Date(),
-    });
   });
 
   describe("GET /api/settings", () => {
@@ -224,7 +172,7 @@ describe("Settings API Routes", () => {
         take: 20,
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "test-user-id",
           totalSettings: 2,
@@ -419,7 +367,7 @@ describe("Settings API Routes", () => {
         where: { id: "setting-123" },
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "setting-123",
           category: "docker",
@@ -535,7 +483,7 @@ describe("Settings API Routes", () => {
         },
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "new-setting-id",
           category: "docker",
@@ -696,7 +644,7 @@ describe("Settings API Routes", () => {
         },
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "setting-123",
           category: "docker",
@@ -850,7 +798,7 @@ describe("Settings API Routes", () => {
         where: { id: "setting-123" },
       });
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           settingId: "setting-123",
           category: "docker",
@@ -926,256 +874,6 @@ describe("Settings API Routes", () => {
     });
   });
 
-  describe("POST /api/settings/validate/:service", () => {
-    const mockValidationResult: ValidationResult = {
-      isValid: true,
-      message: "Docker connection successful",
-      responseTimeMs: 150,
-      errorCode: undefined,
-      metadata: {
-        version: "20.10.17",
-        apiVersion: "1.41",
-      },
-    };
-
-    it("should validate Docker service successfully", async () => {
-      mockConfigService.validate.mockResolvedValue(mockValidationResult);
-      mockPrisma.connectivityStatus.create.mockResolvedValue({});
-      mockPrisma.systemSettings.updateMany.mockResolvedValue({ count: 2 });
-
-      const response = await request(app)
-        .post("/api/settings/validate/docker")
-        .send({})
-        .expect(200);
-
-      expect(response.body).toMatchObject({
-        success: true,
-        message: "docker service validation successful",
-        data: {
-          service: "docker",
-          isValid: true,
-          responseTimeMs: expect.any(Number),
-          metadata: {
-            version: "20.10.17",
-            apiVersion: "1.41",
-          },
-          validatedAt: expect.any(String),
-        },
-      });
-
-      expect(mockConfigFactory.create).toHaveBeenCalledWith({
-        category: "docker",
-      });
-
-      expect(mockConfigService.validate).toHaveBeenCalled();
-
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: {
-          service: "docker",
-          status: "connected",
-          responseTimeMs: expect.any(Number),
-          errorMessage: null,
-          errorCode: undefined,
-          lastSuccessfulAt: expect.any(Date),
-          checkInitiatedBy: "test-user-id",
-          metadata: JSON.stringify(mockValidationResult.metadata),
-        },
-      });
-
-      expect(mockPrisma.systemSettings.updateMany).toHaveBeenCalledWith({
-        where: {
-          category: "docker",
-          isActive: true,
-        },
-        data: {
-          validationStatus: "valid",
-          validationMessage: null,
-          lastValidatedAt: expect.any(Date),
-        },
-      });
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          service: "docker",
-          isValid: true,
-          responseTimeMs: expect.any(Number),
-        }),
-        "Service validation completed",
-      );
-    });
-
-    it("should handle failed validation", async () => {
-      const failedValidationResult: ValidationResult = {
-        isValid: false,
-        message: "Docker daemon not running",
-        responseTimeMs: 5000,
-        errorCode: "CONNECTION_FAILED",
-      };
-
-      mockConfigService.validate.mockResolvedValue(failedValidationResult);
-      mockPrisma.connectivityStatus.create.mockResolvedValue({});
-      mockPrisma.systemSettings.updateMany.mockResolvedValue({ count: 1 });
-
-      const response = await request(app)
-        .post("/api/settings/validate/cloudflare")
-        .send({})
-        .expect(200);
-
-      expect(response.body).toMatchObject({
-        success: true,
-        message: "cloudflare service validation failed",
-        data: {
-          service: "cloudflare",
-          isValid: false,
-          error: "Docker daemon not running",
-          errorCode: "CONNECTION_FAILED",
-        },
-      });
-
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: {
-          service: "cloudflare",
-          status: "failed",
-          responseTimeMs: expect.any(Number),
-          errorMessage: "Docker daemon not running",
-          errorCode: "CONNECTION_FAILED",
-          lastSuccessfulAt: null,
-          checkInitiatedBy: "test-user-id",
-          metadata: null,
-        },
-      });
-
-      expect(mockPrisma.systemSettings.updateMany).toHaveBeenCalledWith({
-        where: {
-          category: "cloudflare",
-          isActive: true,
-        },
-        data: {
-          validationStatus: "invalid",
-          validationMessage: "Docker daemon not running",
-          lastValidatedAt: expect.any(Date),
-        },
-      });
-    });
-
-    it("should handle validation with custom settings", async () => {
-      const customSettings = {
-        host: "tcp://192.168.1.100:2375",
-        api_version: "1.41",
-      };
-
-      mockConfigService.validate.mockResolvedValue(mockValidationResult);
-      mockPrisma.connectivityStatus.create.mockResolvedValue({});
-
-      const response = await request(app)
-        .post("/api/settings/validate/azure")
-        .send({ settings: customSettings })
-        .expect(200);
-
-      // When custom settings are provided, we should not update SystemSettings
-      expect(mockPrisma.systemSettings.updateMany).not.toHaveBeenCalled();
-    });
-
-    it("should return 400 for invalid service", async () => {
-      const response = await request(app)
-        .post("/api/settings/validate/invalid-service")
-        .send({})
-        .expect(400);
-
-      expect(response.body).toMatchObject({
-        error: "Bad Request",
-        message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres, system, deployments",
-      });
-    });
-
-    it("should return 400 for invalid request body", async () => {
-      const response = await request(app)
-        .post("/api/settings/validate/docker")
-        .send({ settings: "invalid" }) // Should be an object
-        .expect(400);
-
-      expect(response.body).toMatchObject({
-        error: "Bad Request",
-        message: "Invalid request data",
-        details: expect.any(Array),
-      });
-    });
-
-
-    it("should handle validation timeout", async () => {
-      // Mock a validation that takes longer than the timeout
-      mockConfigService.validate.mockImplementation(
-        () =>
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Validation timeout")), 100),
-          ),
-      );
-
-      const response = await request(app)
-        .post("/api/settings/validate/docker")
-        .send({})
-        .expect(500);
-
-      // Should store error in connectivity status
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          service: "docker",
-          status: "error",
-          errorMessage: "Validation timeout",
-          errorCode: "VALIDATION_ERROR",
-        }),
-      });
-    }, 15000);
-
-    it("should handle validation service errors", async () => {
-      const validationError = new Error("Service configuration invalid");
-      mockConfigService.validate.mockRejectedValue(validationError);
-
-      const response = await request(app)
-        .post("/api/settings/validate/docker")
-        .send({})
-        .expect(500);
-
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          service: "docker",
-          status: "error",
-          errorMessage: "Service configuration invalid",
-          errorCode: "VALIDATION_ERROR",
-        }),
-      });
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: validationError,
-          service: "docker",
-        }),
-        "Service validation failed with error",
-      );
-    });
-
-    it("should handle database error during validation storage", async () => {
-      mockConfigService.validate.mockResolvedValue(mockValidationResult);
-
-      const dbError = new Error("Database connection failed");
-      mockPrisma.connectivityStatus.create.mockRejectedValue(dbError);
-
-      const response = await request(app)
-        .post("/api/settings/validate/docker")
-        .send({})
-        .expect(500);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: dbError,
-        }),
-        "Service validation failed with error",
-      );
-    });
-  });
-
-
   describe("Request Correlation", () => {
     it("should include request ID in responses and logs", async () => {
       const requestId = createId();
@@ -1187,7 +885,7 @@ describe("Settings API Routes", () => {
         .set("x-request-id", requestId)
         .expect(200);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           requestId,
         }),
@@ -1202,7 +900,7 @@ describe("Settings API Routes", () => {
       const response = await request(app).get("/api/settings").expect(200);
 
       // The response should include a request ID even if we didn't provide one
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           requestId: expect.any(String),
         }),
@@ -1240,7 +938,7 @@ describe("Settings API Routes", () => {
         })
         .expect(201);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           body: {
             category: "cloudflare",
@@ -1284,7 +982,7 @@ describe("Settings API Routes", () => {
         })
         .expect(200);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           body: { value: "[REDACTED]", isEncrypted: true },
         }),
