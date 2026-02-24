@@ -83,10 +83,7 @@ export class CertificateDistributor {
 
       if (!dataPlaneClient || useEnvironmentOverride) {
         try {
-          const haproxyOverride = projectName
-            ? new HAProxyService(projectName)
-            : undefined;
-          const newClient = await this.initializeDataPlaneClient(haproxyOverride);
+          const newClient = await this.initializeDataPlaneClient(projectName);
           if (newClient) {
             dataPlaneClient = newClient;
             // Only cache the client if we're not using an environment override
@@ -137,10 +134,7 @@ export class CertificateDistributor {
 
       // Step 5: Try Runtime API (zero-downtime)
       try {
-        const runtimeHaproxyService = projectName
-          ? new HAProxyService(projectName)
-          : this.haproxyService;
-        await this.updateCertificateViaRuntimeApi(certificateName, cert.certificate, cert.privateKey, runtimeHaproxyService);
+        await this.updateCertificateViaRuntimeApi(certificateName, cert.certificate, cert.privateKey, projectName);
 
         this.logger.info({ certificateName, method: "runtime-api" }, "Certificate deployed successfully");
         return {
@@ -232,7 +226,7 @@ export class CertificateDistributor {
     certificateName: string,
     certificatePem: string,
     privateKeyPem: string,
-    haproxyServiceOverride?: HAProxyService
+    projectName?: string
   ): Promise<void> {
     this.logger.info({ certificateName }, "Updating certificate via Runtime API");
 
@@ -245,9 +239,9 @@ export class CertificateDistributor {
     const sockPath = "/var/run/haproxy.sock";
 
     try {
-      // Find HAProxy container
-      const service = haproxyServiceOverride || this.haproxyService;
-      const containers = await service.getProjectContainers();
+      // Find HAProxy container using the already-initialized dockerExecutor
+      const resolvedProject = projectName || this.haproxyService.getProjectName();
+      const containers = await this.dockerExecutor.getProjectContainers(resolvedProject);
       const haproxyContainer = containers.find(
         (c) => c.State === "running" && c.Names?.some((name) => name.includes("haproxy"))
       );
@@ -385,11 +379,11 @@ export class CertificateDistributor {
    * @returns Initialized DataPlane client, or null if HAProxy container not found
    */
   private async initializeDataPlaneClient(
-    haproxyServiceOverride?: HAProxyService
+    projectName?: string
   ): Promise<HAProxyDataPlaneClient | null> {
     try {
-      const service = haproxyServiceOverride || this.haproxyService;
-      const containers = await service.getProjectContainers();
+      const resolvedProject = projectName || this.haproxyService.getProjectName();
+      const containers = await this.dockerExecutor.getProjectContainers(resolvedProject);
       const haproxyContainer = containers.find(
         (c) => c.State === "running" && c.Names?.some((name) => name.includes("haproxy"))
       );

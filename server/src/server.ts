@@ -306,6 +306,7 @@ const initializeServices = async () => {
         // Create certificate distributor for HAProxy deployment
         const haproxyService = new HAProxyService();
         const dockerExecutor = new DockerExecutorService();
+        await dockerExecutor.initialize();
         const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExecutor);
 
         // Create lifecycle manager

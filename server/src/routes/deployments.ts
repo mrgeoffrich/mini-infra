@@ -86,6 +86,7 @@ async function initializeCertificateProvisioningService(): Promise<CertificatePr
     // Create certificate distributor for HAProxy deployment
     const haproxyService = new HAProxyService();
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExecutor);
 
     const lifecycleManager = new CertificateLifecycleManager(

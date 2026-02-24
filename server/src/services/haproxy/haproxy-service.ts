@@ -105,6 +105,13 @@ export class HAProxyService implements IApplicationService {
   }
 
   /**
+   * Get the project name used for container discovery
+   */
+  getProjectName(): string {
+    return this.projectName;
+  }
+
+  /**
    * Initialize the HAProxy service
    */
   async initialize(networks?: NetworkRequirement[], volumes?: VolumeRequirement[]): Promise<void> {
