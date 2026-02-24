@@ -1,6 +1,6 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import { testPrisma, createTestUser } from "./setup";
-import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
+import { DeploymentConfigurationManager } from "../services/deployment-config";
 import {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,

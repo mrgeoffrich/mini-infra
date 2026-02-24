@@ -7,7 +7,7 @@ import express, {
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
-import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
+import { DeploymentConfigurationManager } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
 import DockerService from "../services/docker";
 import prisma from "../lib/prisma";

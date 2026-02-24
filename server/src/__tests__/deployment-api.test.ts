@@ -4,7 +4,7 @@ import { testPrisma, createTestUser, createTestApiKey } from "./setup";
 import express from "express";
 import deploymentRoutes from "../routes/deployments";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
-import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
+import { DeploymentConfigurationManager } from "../services/deployment-config";
 import {
   CreateDeploymentConfigRequest,
   DeploymentConfigResponse,
@@ -30,10 +30,10 @@ jest.mock("../services/deployment-orchestrator", () => {
 
 // Get reference to the mocked orchestrator and service
 const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
-const { __mockDeploymentConfigurationManager: mockDeploymentConfigurationManager } = require("../services/deployment-configuration-manager");
+const { __mockDeploymentConfigurationManager: mockDeploymentConfigurationManager } = require("../services/deployment-config");
 
 // Mock the deployment config service
-jest.mock("../services/deployment-configuration-manager", () => {
+jest.mock("../services/deployment-config", () => {
   const mockService = {
     listDeploymentConfigs: jest.fn(),
     createDeploymentConfig: jest.fn(),
