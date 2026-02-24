@@ -218,7 +218,6 @@ describe("HealthCheckService", () => {
         expectedStatuses: [200, 201],
         responseBodyPattern: "healthy",
         responseTimeThreshold: 5000,
-        customValidation: "status === 200",
       };
 
       const result = await healthCheckService.performComprehensiveHealthCheck(config);
@@ -229,7 +228,6 @@ describe("HealthCheckService", () => {
         statusCode: true,
         bodyPattern: true,
         responseTime: true,
-        customValidation: true,
       });
     });
 
@@ -334,52 +332,6 @@ describe("HealthCheckService", () => {
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
     });
 
-    it("should execute custom validation successfully", async () => {
-      // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
-      let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
-        callCount++;
-        return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
-      });
-      
-      const mockResponse = createMockResponse(200, { uptime: 1000, status: "ok" });
-      mockedAxios.mockResolvedValueOnce(mockResponse);
-
-      const config: HealthCheckConfig = {
-        endpoint: "http://example.com/health",
-        customValidation: "body.uptime > 500 && body.status === 'ok'",
-      };
-
-      const result = await healthCheckService.performComprehensiveHealthCheck(config);
-
-      expect(result.success).toBe(true);
-      expect(result.validationDetails?.customValidation).toBe(true);
-    });
-
-    it("should fail custom validation", async () => {
-      // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
-      let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
-        callCount++;
-        return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
-      });
-      
-      const mockResponse = createMockResponse(200, { uptime: 100 });
-      mockedAxios.mockResolvedValueOnce(mockResponse);
-
-      const config: HealthCheckConfig = {
-        endpoint: "http://example.com/health",
-        customValidation: "body.uptime > 500",
-      };
-
-      const result = await healthCheckService.performComprehensiveHealthCheck(config);
-
-      expect(result.success).toBe(false);
-      expect(result.validationDetails?.customValidation).toBe(false);
-    });
-
     it("should handle invalid regex patterns gracefully", async () => {
       // Reset Date.now() mock for this specific test
       jest.spyOn(Date, 'now').mockRestore();
@@ -403,28 +355,6 @@ describe("HealthCheckService", () => {
       expect(result.validationDetails?.bodyPattern).toBe(false);
     });
 
-    it("should handle invalid custom validation expressions", async () => {
-      // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
-      let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
-        callCount++;
-        return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
-      });
-      
-      const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
-
-      const config: HealthCheckConfig = {
-        endpoint: "http://example.com/health",
-        customValidation: "invalid.javascript.expression.that.throws",
-      };
-
-      const result = await healthCheckService.performComprehensiveHealthCheck(config);
-
-      expect(result.success).toBe(false);
-      expect(result.validationDetails?.customValidation).toBe(false);
-    });
   });
 
   describe("Retry Logic", () => {

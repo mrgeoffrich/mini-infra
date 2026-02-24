@@ -1,4 +1,4 @@
-import axios, { AxiosResponse, AxiosError } from "axios";
+import axios from "axios";
 import { ValidationResult } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 
@@ -15,7 +15,6 @@ export interface HealthCheckConfig {
   expectedStatuses?: number[];
   responseBodyPattern?: string; // regex pattern
   responseTimeThreshold?: number; // milliseconds
-  customValidation?: string; // JavaScript expression
 }
 
 /**
@@ -31,7 +30,6 @@ export interface HealthCheckResult {
     statusCode: boolean;
     bodyPattern: boolean;
     responseTime: boolean;
-    customValidation: boolean;
   };
 }
 
@@ -214,50 +212,6 @@ export class HealthCheckService {
   }
 
   /**
-   * Execute custom validation JavaScript expression
-   */
-  private executeCustomValidation(
-    response: AxiosResponse,
-    expression: string,
-  ): boolean {
-    if (!expression) return true;
-
-    try {
-      // Create a safe evaluation context
-      const context = {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        body: response.data,
-        responseTime: 0, // Will be set by caller
-      };
-
-      // Simple expression evaluation (restricted for security)
-      // Only allow basic comparison operations
-      const safeExpression = expression.replace(
-        /[^a-zA-Z0-9\s\.\[\]\(\)===!==><>=<=\+\-\*\/\%&\|'"]/g,
-        "",
-      );
-
-      // Create function and execute with context
-      const func = new Function(
-        "context",
-        `with(context) { return ${safeExpression}; }`,
-      );
-      return Boolean(func(context));
-    } catch (error) {
-      servicesLogger().warn(
-        {
-          expression,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to execute custom validation expression",
-      );
-      return false;
-    }
-  }
-
-  /**
    * Perform single health check request
    */
   private async performSingleCheck(
@@ -289,10 +243,6 @@ export class HealthCheckService {
         responseTime:
           !config.responseTimeThreshold ||
           responseTime <= config.responseTimeThreshold,
-        customValidation: this.executeCustomValidation(
-          response,
-          config.customValidation || "",
-        ),
       };
 
       const success = Object.values(validationDetails).every(Boolean);
