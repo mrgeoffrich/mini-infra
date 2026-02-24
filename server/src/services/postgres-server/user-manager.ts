@@ -11,17 +11,31 @@ const logger = appLogger();
  * Handles user creation, deletion, password management, and syncing
  */
 export class UserManagementService {
-  private readonly encryptionSecret: string;
+  private readonly encryptionSecret: string | undefined;
 
   constructor(encryptionSecret?: string) {
-    this.encryptionSecret = encryptionSecret || process.env.ENCRYPTION_SECRET || "default-secret-key";
+    this.encryptionSecret = encryptionSecret || process.env.ENCRYPTION_SECRET;
+  }
+
+  /**
+   * Get the encryption secret, throwing if not configured
+   */
+  private getEncryptionSecret(): string {
+    if (!this.encryptionSecret) {
+      throw new Error(
+        "ENCRYPTION_SECRET environment variable is not set. " +
+          "It is required for PostgreSQL credential encryption. " +
+          "Set it in your .env file."
+      );
+    }
+    return this.encryptionSecret;
   }
 
   /**
    * Encrypt a password using AES encryption
    */
   private encryptPassword(password: string): string {
-    return CryptoJS.AES.encrypt(password, this.encryptionSecret).toString();
+    return CryptoJS.AES.encrypt(password, this.getEncryptionSecret()).toString();
   }
 
   /**

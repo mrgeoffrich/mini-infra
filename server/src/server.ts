@@ -64,6 +64,21 @@ let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 const initializeSecuritySecrets = async () => {
   console.log("[STARTUP] Initializing security secrets...");
 
+  // Check for ENCRYPTION_SECRET environment variable
+  if (!process.env.ENCRYPTION_SECRET) {
+    logger.warn(
+      "ENCRYPTION_SECRET environment variable is not set. " +
+        "PostgreSQL credential encryption will not be available. " +
+        "Set ENCRYPTION_SECRET in your .env file to enable secure credential storage."
+    );
+    console.warn(
+      "[STARTUP] ⚠ WARNING: ENCRYPTION_SECRET is not set - PostgreSQL credential encryption is disabled. " +
+        "Set this in your .env file."
+    );
+  } else {
+    console.log("[STARTUP] ✓ ENCRYPTION_SECRET is configured");
+  }
+
   try {
     const CATEGORY = "system";
     const SESSION_SECRET_KEY = "session_secret";
