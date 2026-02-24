@@ -3,13 +3,13 @@ import { deploymentLogger } from "../lib/logger-factory";
 import { blueGreenDeploymentMachine } from "./haproxy/blue-green-deployment-state-machine";
 import { initialDeploymentMachine } from "./haproxy/initial-deployment-state-machine";
 import { removalDeploymentMachine } from "./haproxy/removal-deployment-state-machine";
-import { EnvironmentValidationService, HAProxyEnvironmentContext } from "./environment-validation";
-import { ContainerLifecycleManager } from "./container-lifecycle-manager";
+import { EnvironmentValidationService, HAProxyEnvironmentContext } from "./environment";
+import { ContainerLifecycleManager } from "./container";
 import { HealthCheckService } from "./health-check";
-import { NetworkHealthCheckService } from "./network-health-check";
+import { NetworkHealthCheckService } from "./container";
 import { DockerExecutorService } from "./docker-executor";
 import DockerService from "./docker";
-import { UserEventService } from "./user-event-service";
+import { UserEventService } from "./user-events";
 import prisma from "../lib/prisma";
 import {
   DeploymentConfig,

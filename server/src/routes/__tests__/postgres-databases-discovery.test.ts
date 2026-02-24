@@ -2,11 +2,11 @@ import request from "supertest";
 import { Express } from "express";
 import { PrismaClient } from "@prisma/client";
 import { createApp } from "../../app";
-import { PostgresDatabaseManager } from "../../services/postgres-database-manager";
+import { PostgresDatabaseManager } from "../../services/postgres";
 import { DatabaseInfo } from "@mini-infra/types";
 
 // Mock the PostgresDatabaseManager
-jest.mock("../../services/postgres-database-manager");
+jest.mock("../../services/postgres/postgres-database-manager");
 
 const mockDiscoverDatabases = jest.fn();
 const MockPostgresDatabaseManager = PostgresDatabaseManager as jest.MockedClass<

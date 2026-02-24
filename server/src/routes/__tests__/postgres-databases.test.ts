@@ -19,7 +19,7 @@ const mockPostgresDatabaseManager = {
   testDatabaseConnection: jest.fn(),
 };
 
-jest.mock("../../services/postgres-database-manager", () => ({
+jest.mock("../../services/postgres/postgres-database-manager", () => ({
   PostgresDatabaseManager: jest
     .fn()
     .mockImplementation(() => mockPostgresDatabaseManager),

@@ -1,12 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import { EnvironmentManager } from '../services/environment-manager';
-import { ServiceRegistry } from '../services/service-registry';
+import { EnvironmentManager, ServiceRegistry } from '../services/environment';
 import { ApplicationServiceFactory } from '../services/application-service-factory';
 import { DockerExecutorService } from '../services/docker-executor';
 import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
 // Mock dependencies
-jest.mock('../services/service-registry');
+jest.mock('../services/environment/service-registry');
 jest.mock('../services/application-service-factory');
 jest.mock('../services/docker-executor');
 

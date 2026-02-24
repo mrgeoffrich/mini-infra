@@ -1,15 +1,15 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import prisma, { PrismaClient } from "../../lib/prisma";
 import {
   InMemoryQueue,
   Job as QueueJob,
   QueueOptions,
-} from "../lib/in-memory-queue";
-import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
-import { DockerExecutorService } from "./docker-executor";
+} from "../../lib/in-memory-queue";
+import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
-import { PostgresDatabaseManager } from "./postgres-database-manager";
-import { PostgresSettingsConfigService } from "./postgres-settings-config";
-import { AzureStorageService } from "./azure-storage-service";
+import { PostgresDatabaseManager } from "../postgres";
+import { PostgresSettingsConfigService } from "../postgres";
+import { AzureStorageService } from "../azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
   BackupOperationInfo,

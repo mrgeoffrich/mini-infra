@@ -18,7 +18,7 @@ import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
-import { CloudflareService } from "../services/cloudflare-service";
+import { CloudflareService } from "../services/cloudflare";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";

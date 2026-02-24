@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { PostgresDatabaseManager } from "../postgres";
 import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,

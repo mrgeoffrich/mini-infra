@@ -2,7 +2,7 @@ import Docker, { Container } from "dockerode";
 import { servicesLogger } from "../../lib/logger-factory";
 import prisma from "../../lib/prisma";
 import { DockerConfigService } from "../docker-config";
-import ContainerLabelManager from "../container-label-manager";
+import ContainerLabelManager from "../container/container-label-manager";
 import { RegistryCredentialService } from "../registry-credential";
 
 import { DockerClientFactory } from "./docker-client-factory";

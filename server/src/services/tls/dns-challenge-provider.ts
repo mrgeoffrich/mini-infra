@@ -10,7 +10,7 @@ import NodeCache from "node-cache";
 import dns from "dns";
 import { promisify } from "util";
 import { tlsLogger } from "../../lib/logger-factory";
-import { CloudflareService } from "../cloudflare-service";
+import { CloudflareService } from "../cloudflare";
 
 const resolveTxt = promisify(dns.resolveTxt);
 

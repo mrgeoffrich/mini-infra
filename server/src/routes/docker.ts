@@ -1,7 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import DockerService from "../services/docker";
-import { VolumeInspectorService } from "../services/volume-inspector";
-import { VolumeFileContentService } from "../services/volume-file-content";
+import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../middleware/auth";
 import {

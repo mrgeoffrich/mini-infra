@@ -1,4 +1,4 @@
-import { ConfigurationService } from "./configuration-base";
+import { ConfigurationService } from "../configuration-base";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -6,8 +6,8 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import prisma, { PrismaClient } from "../lib/prisma";
-import { servicesLogger } from "../lib/logger-factory";
+import prisma, { PrismaClient } from "../../lib/prisma";
+import { servicesLogger } from "../../lib/logger-factory";
 
 /**
  * PostgreSQL Settings Configuration Service

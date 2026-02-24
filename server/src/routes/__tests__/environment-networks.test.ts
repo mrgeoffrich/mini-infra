@@ -56,13 +56,13 @@ const mockPrisma = {
   },
 };
 
-jest.mock("../../services/environment-manager", () => ({
+jest.mock("../../services/environment/environment-manager", () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
   }
 }));
 
-jest.mock("../../services/service-registry", () => ({
+jest.mock("../../services/environment/service-registry", () => ({
   ServiceRegistry: {
     getInstance: () => mockServiceRegistry
   }

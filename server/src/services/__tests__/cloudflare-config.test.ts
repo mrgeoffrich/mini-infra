@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
-import { CloudflareService } from "../cloudflare-service";
+import { CloudflareService } from "../cloudflare";
 
 // Mock Cloudflare SDK
 const mockCloudflare = {

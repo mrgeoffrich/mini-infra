@@ -2,7 +2,7 @@ import request from "supertest";
 import express from "express";
 import { PrismaClient } from "../../generated/prisma";
 import router from "../postgres-backups";
-import { BackupExecutorService } from "../../services/backup-executor";
+import { BackupExecutorService } from "../../services/backup";
 
 // Mock the Prisma module
 jest.mock("../../lib/prisma", () => ({
@@ -50,7 +50,7 @@ jest.mock("@prisma/client", () => {
 const mockPrismaClient = jest.requireMock("../../lib/prisma").default;
 
 // Mock the BackupExecutorService
-jest.mock("../../services/backup-executor", () => {
+jest.mock("../../services/backup/backup-executor", () => {
   const mockService = {
     queueBackup: jest.fn(),
   };
@@ -63,7 +63,7 @@ jest.mock("../../services/backup-executor", () => {
 
 // Get the mock service for use in tests
 const { __mockService: mockBackupExecutorService } = jest.requireMock(
-  "../../services/backup-executor",
+  "../../services/backup/backup-executor",
 );
 
 // Mock logger

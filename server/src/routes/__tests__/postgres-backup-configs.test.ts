@@ -11,7 +11,7 @@ const mockBackupConfigurationManager = {
   deleteBackupConfig: jest.fn(),
 };
 
-jest.mock("../../services/backup-configuration-manager", () => ({
+jest.mock("../../services/backup/backup-configuration-manager", () => ({
   BackupConfigurationManager: jest
     .fn()
     .mockImplementation(() => mockBackupConfigurationManager),

@@ -1,6 +1,6 @@
 import { PrismaClient } from "../../lib/prisma";
 import { ConfigurationService } from "../configuration-base";
-import { ContainerLifecycleManager } from "../container-lifecycle-manager";
+import { ContainerLifecycleManager } from "../container";
 import DockerService from "../docker";
 import NodeCache from "node-cache";
 import { SettingsCategory } from "@mini-infra/types";
@@ -16,7 +16,7 @@ import {
   ContainerConfig,
   HostnameValidationResult,
 } from "@mini-infra/types";
-import { CloudflareService } from "../cloudflare-service";
+import { CloudflareService } from "../cloudflare";
 import { DeploymentOrchestrator } from "../deployment-orchestrator";
 
 import { ConfigValidator } from "./config-validator";

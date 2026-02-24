@@ -1,6 +1,6 @@
 import Docker, { Container } from "dockerode";
 import { servicesLogger } from "../../lib/logger-factory";
-import ContainerLabelManager from "../container-label-manager";
+import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions } from "./types";
 import { generateTaskId } from "./utils";
 

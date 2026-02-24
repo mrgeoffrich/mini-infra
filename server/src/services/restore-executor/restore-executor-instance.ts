@@ -1,4 +1,4 @@
-import { RestoreExecutorService } from "./restore-executor";
+import { RestoreExecutorService } from ".";
 
 let instance: RestoreExecutorService | null = null;
 

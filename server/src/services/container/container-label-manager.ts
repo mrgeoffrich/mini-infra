@@ -1,5 +1,5 @@
 import { ContainerConfig } from "@mini-infra/types";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger } from "../../lib/logger-factory";
 
 // ====================
 // Container Labeling Types

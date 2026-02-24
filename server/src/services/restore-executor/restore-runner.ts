@@ -1,6 +1,6 @@
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";

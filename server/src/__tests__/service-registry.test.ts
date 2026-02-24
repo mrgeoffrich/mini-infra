@@ -1,4 +1,4 @@
-import { ServiceRegistry } from '../services/service-registry';
+import { ServiceRegistry } from '../services/environment';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
 
 describe('ServiceRegistry', () => {

@@ -1,7 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import { servicesLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
-import { ContainerLifecycleManager } from "../container-lifecycle-manager";
+import { ContainerLifecycleManager } from "../container";
 import { DeploymentOrchestrator } from "../deployment-orchestrator";
 
 export class ConfigDeletionManager {

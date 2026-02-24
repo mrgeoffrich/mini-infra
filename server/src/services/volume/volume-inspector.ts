@@ -1,7 +1,7 @@
-import { servicesLogger } from "../lib/logger-factory";
-import { DockerExecutorService } from "./docker-executor";
+import { servicesLogger } from "../../lib/logger-factory";
+import { DockerExecutorService } from "../docker-executor";
 import { VolumeFileContentService } from "./volume-file-content";
-import prisma from "../lib/prisma";
+import prisma from "../../lib/prisma";
 import { VolumeFileInfo, VolumeInspectionStatus } from "@mini-infra/types";
 
 export interface VolumeInspectionResult {

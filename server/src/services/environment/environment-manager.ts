@@ -17,13 +17,13 @@ import {
 import {
   NetworkRequirement,
   VolumeRequirement
-} from './interfaces/application-service';
+} from '../interfaces/application-service';
 import { ServiceRegistry } from './service-registry';
-import { ApplicationServiceFactory } from './application-service-factory';
-import { DockerExecutorService } from './docker-executor';
-import { servicesLogger } from '../lib/logger-factory';
-import { UserEventService } from './user-event-service';
-import { portUtils } from './port-utils';
+import { ApplicationServiceFactory } from '../application-service-factory';
+import { DockerExecutorService } from '../docker-executor';
+import { servicesLogger } from '../../lib/logger-factory';
+import { UserEventService } from '../user-events';
+import { portUtils } from '../port-utils';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;

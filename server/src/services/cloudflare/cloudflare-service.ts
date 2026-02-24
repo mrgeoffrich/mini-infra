@@ -1,14 +1,14 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import prisma, { PrismaClient } from "../../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import { ConfigurationService } from "./configuration-base";
-import { servicesLogger } from "../lib/logger-factory";
+import { ConfigurationService } from "../configuration-base";
+import { servicesLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
-import { createCloudflareSpan } from "../lib/http-instrumentation";
-import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
+import { createCloudflareSpan } from "../../lib/http-instrumentation";
+import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
 
 /**
  * Cloudflare-specific error mappers for the circuit breaker.

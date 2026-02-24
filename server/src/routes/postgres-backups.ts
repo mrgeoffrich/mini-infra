@@ -5,7 +5,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
-import { BackupExecutorService } from "../services/backup-executor";
+import { BackupExecutorService } from "../services/backup";
 import {
   BackupOperationListResponse,
   BackupOperationStatusResponse,

@@ -1,7 +1,7 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import prisma, { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger } from "../../lib/logger-factory";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
 import { BackupExecutorService } from "./backup-executor";
 import { BackupOperationType } from "@mini-infra/types";

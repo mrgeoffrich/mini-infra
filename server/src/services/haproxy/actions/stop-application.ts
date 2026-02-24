@@ -1,7 +1,7 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import prisma from '../../../lib/prisma';
 import DockerService from '../../docker';
-import ContainerLifecycleManager from '../../container-lifecycle-manager';
+import { ContainerLifecycleManager } from '../../container';
 
 const logger = loadbalancerLogger();
 

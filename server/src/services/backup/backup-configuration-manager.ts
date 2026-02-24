@@ -1,9 +1,9 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import prisma, { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { servicesLogger } from "../lib/logger-factory";
-import { AzureStorageService } from "./azure-storage-service";
-import { UserPreferencesService } from "./user-preferences";
+import { servicesLogger } from "../../lib/logger-factory";
+import { AzureStorageService } from "../azure-storage-service";
+import { UserPreferencesService } from "../user-preferences";
 import { BackupSchedulerService } from "./backup-scheduler";
 import {
   BackupConfiguration,

@@ -49,11 +49,11 @@ jest.mock("../middleware/auth", () => ({
 }));
 
 // Mock self-backup services to avoid better-sqlite3 dependency
-jest.mock("../services/self-backup-executor", () => ({
+jest.mock("../services/backup/self-backup-executor", () => ({
   SelfBackupExecutor: jest.fn(),
 }));
 
-jest.mock("../services/self-backup-scheduler", () => ({
+jest.mock("../services/backup/self-backup-scheduler", () => ({
   SelfBackupScheduler: jest.fn(),
 }));
 

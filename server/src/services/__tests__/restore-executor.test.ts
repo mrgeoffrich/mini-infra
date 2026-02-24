@@ -3,7 +3,7 @@ import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { RestoreExecutorService } from "../restore-executor";
 import { DockerExecutorService } from "../docker-executor";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 
@@ -32,7 +32,7 @@ jest.mock("../../lib/in-memory-queue", () => {
 
 // Mock all the services
 jest.mock("../docker-executor");
-jest.mock("../postgres-database-manager");
+jest.mock("../postgres/postgres-database-manager");
 jest.mock("../azure-storage-service");
 
 // Mock logger factory

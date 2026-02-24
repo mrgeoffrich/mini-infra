@@ -10,7 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { PostgresDatabaseManager } from "../services/postgres-database-manager";
+import { PostgresDatabaseManager } from "../services/postgres";
 import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,

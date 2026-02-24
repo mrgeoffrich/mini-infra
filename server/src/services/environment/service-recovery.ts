@@ -1,7 +1,7 @@
-import prisma from "../lib/prisma";
-import DockerService from "./docker";
-import { ApplicationServiceFactory } from "./application-service-factory";
-import { servicesLogger } from "../lib/logger-factory";
+import prisma from "../../lib/prisma";
+import DockerService from "../docker";
+import { ApplicationServiceFactory } from "../application-service-factory";
+import { servicesLogger } from "../../lib/logger-factory";
 import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from "@mini-infra/types";
 
 interface RecoveryResult {

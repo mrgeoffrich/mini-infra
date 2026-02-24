@@ -1,6 +1,6 @@
 import { assign, setup } from 'xstate';
 import { deploymentLogger } from '../../lib/logger-factory';
-import { ContainerLifecycleManager } from '../container-lifecycle-manager';
+import { ContainerLifecycleManager } from '../container';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';

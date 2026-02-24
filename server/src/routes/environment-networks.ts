@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { EnvironmentManager } from '../services/environment-manager';
-import { ServiceRegistry } from '../services/service-registry';
+import { EnvironmentManager, ServiceRegistry } from '../services/environment';
 import { requireSessionOrApiKey } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';

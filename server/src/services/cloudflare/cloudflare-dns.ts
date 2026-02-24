@@ -1,7 +1,7 @@
 import Cloudflare from "cloudflare";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "./cloudflare-service";
-import prisma from "../lib/prisma";
+import prisma from "../../lib/prisma";
 import {
   CloudflareDNSZone,
   CloudflareDNSRecord,

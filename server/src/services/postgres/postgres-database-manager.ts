@@ -1,8 +1,8 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import prisma, { PrismaClient } from "../../lib/prisma";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
-import { servicesLogger } from "../lib/logger-factory";
-import { getApiKeySecret } from "../lib/security-config";
+import { servicesLogger } from "../../lib/logger-factory";
+import { getApiKeySecret } from "../../lib/security-config";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,

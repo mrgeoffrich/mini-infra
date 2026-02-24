@@ -1,5 +1,5 @@
-import prisma, { PrismaClient } from '../lib/prisma';
-import { servicesLogger } from '../lib/logger-factory';
+import prisma, { PrismaClient } from '../../lib/prisma';
+import { servicesLogger } from '../../lib/logger-factory';
 import {
   UserEventInfo,
   UserEventFilter,

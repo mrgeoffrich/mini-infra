@@ -1,4 +1,4 @@
-import { PostgresDatabaseManager } from "../services/postgres-database-manager";
+import { PostgresDatabaseManager } from "../services/postgres";
 import { PrismaClient } from "@prisma/client";
 import { CreatePostgresDatabaseRequest } from "@mini-infra/types";
 

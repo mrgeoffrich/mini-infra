@@ -1,5 +1,5 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
-import { ContainerLifecycleManager } from '../../container-lifecycle-manager';
+import { ContainerLifecycleManager } from '../../container';
 import DockerService from '../../docker';
 
 const logger = loadbalancerLogger();

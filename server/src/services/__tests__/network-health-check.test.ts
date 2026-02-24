@@ -1,4 +1,4 @@
-import { NetworkHealthCheckService } from "../network-health-check";
+import { NetworkHealthCheckService } from "../container/network-health-check";
 import { DockerExecutorService } from "../docker-executor";
 import type { ContainerExecutionResult } from "../docker-executor";
 import prisma from "../../lib/prisma";

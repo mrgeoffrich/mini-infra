@@ -1,9 +1,7 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { BackupSchedulerService } from "../backup-scheduler";
-import { BackupConfigurationManager } from "../backup-configuration-manager";
-import { BackupExecutorService } from "../backup-executor";
+import { BackupSchedulerService, BackupConfigurationManager, BackupExecutorService } from "../backup";
 
 // Mock objects that need to be referenced in tests
 const mockScheduledTask = {
@@ -19,8 +17,8 @@ jest.mock("node-cron", () => ({
 }));
 
 // Mock services
-jest.mock("../backup-configuration-manager");
-jest.mock("../backup-executor");
+jest.mock("../backup/backup-configuration-manager");
+jest.mock("../backup/backup-executor");
 jest.mock("../../lib/prisma", () => ({
   __esModule: true,
   default: {

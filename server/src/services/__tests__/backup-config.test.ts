@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { BackupConfigurationManager } from "../backup-configuration-manager";
+import { BackupConfigurationManager } from "../backup";
 import { AzureStorageService } from "../azure-storage-service";
 import { BackupFormat } from "@mini-infra/types";
 

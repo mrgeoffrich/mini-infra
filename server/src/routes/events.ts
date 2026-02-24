@@ -5,7 +5,7 @@ import {
   requireSessionOrApiKey,
   getAuthenticatedUser,
 } from '../middleware/auth';
-import { UserEventService } from '../services/user-event-service';
+import { UserEventService } from '../services/user-events';
 import prisma from '../lib/prisma';
 import {
   CreateUserEventRequest,

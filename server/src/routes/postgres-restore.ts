@@ -5,7 +5,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { getRestoreExecutorService } from "../services/restore-executor-instance";
+import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {

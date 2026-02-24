@@ -1,6 +1,6 @@
 import prisma from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
-import { cloudflareDNSService } from "./cloudflare-dns";
+import { cloudflareDNSService } from "./cloudflare";
 import { networkUtils } from "./network-utils";
 import { CloudflareDNSRecord } from "@mini-infra/types";
 

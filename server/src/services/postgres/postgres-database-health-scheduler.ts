@@ -1,6 +1,6 @@
-import prisma from "../lib/prisma";
+import prisma from "../../lib/prisma";
 import { PostgresDatabaseManager } from "./postgres-database-manager";
-import { servicesLogger } from "../lib/logger-factory";
+import { servicesLogger } from "../../lib/logger-factory";
 
 /**
  * PostgresDatabaseHealthScheduler manages periodic health checks for PostgreSQL database configurations

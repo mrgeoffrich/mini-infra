@@ -1,6 +1,6 @@
-import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
-import { DockerExecutorService } from "./docker-executor";
-import prisma from "../lib/prisma";
+import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { DockerExecutorService } from "../docker-executor";
+import prisma from "../../lib/prisma";
 import {
   HealthCheckConfig,
   ValidationResult,

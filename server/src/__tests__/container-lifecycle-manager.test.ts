@@ -2,7 +2,7 @@ import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals
 import {
   ContainerLifecycleManager,
   ContainerCreateOptions,
-} from "../services/container-lifecycle-manager";
+} from "../services/container";
 import DockerService from "../services/docker";
 import {
   ContainerConfig,
@@ -38,7 +38,7 @@ const mockLabelManager = {
   shouldCleanupContainer: jest.fn(),
 };
 
-jest.mock('../services/container-label-manager', () => ({
+jest.mock('../services/container/container-label-manager', () => ({
   __esModule: true,
   default: jest.fn(() => mockLabelManager),
 }));

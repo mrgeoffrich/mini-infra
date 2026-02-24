@@ -1,5 +1,5 @@
 import { ApplicationServiceFactory } from '../services/application-service-factory';
-import { ServiceRegistry } from '../services/service-registry';
+import { ServiceRegistry } from '../services/environment';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
 import { IApplicationService } from '../services/interfaces/application-service';
 import { ServiceStatusValues } from '@mini-infra/types';
@@ -9,7 +9,7 @@ jest.mock('../services/haproxy/haproxy-service');
 const MockHAProxyService = HAProxyService as jest.MockedClass<typeof HAProxyService>;
 
 // Mock ServiceRegistry to control its behavior in tests
-jest.mock('../services/service-registry');
+jest.mock('../services/environment/service-registry');
 const MockServiceRegistry = ServiceRegistry as jest.MockedClass<typeof ServiceRegistry>;
 
 describe('ApplicationServiceFactory', () => {

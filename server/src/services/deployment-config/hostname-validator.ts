@@ -1,7 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import { servicesLogger } from "../../lib/logger-factory";
 import { HostnameValidationResult } from "@mini-infra/types";
-import { CloudflareService } from "../cloudflare-service";
+import { CloudflareService } from "../cloudflare";
 
 export class HostnameValidator {
   private prisma: PrismaClient;

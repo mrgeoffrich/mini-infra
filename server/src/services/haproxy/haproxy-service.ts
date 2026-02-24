@@ -1,6 +1,6 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
-import ContainerLabelManager from '../container-label-manager';
+import ContainerLabelManager from '../container/container-label-manager';
 import { portUtils } from '../port-utils';
 import * as path from 'path';
 import Dockerode from 'dockerode';

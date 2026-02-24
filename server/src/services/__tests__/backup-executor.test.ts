@@ -1,10 +1,9 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { BackupExecutorService } from "../backup-executor";
+import { BackupExecutorService, BackupConfigurationManager } from "../backup";
 import { DockerExecutorService } from "../docker-executor";
-import { BackupConfigurationManager } from "../backup-configuration-manager";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 
@@ -33,8 +32,8 @@ jest.mock("../../lib/in-memory-queue", () => {
 
 // Mock all the services
 jest.mock("../docker-executor");
-jest.mock("../backup-configuration-manager");
-jest.mock("../postgres-database-manager");
+jest.mock("../backup/backup-configuration-manager");
+jest.mock("../postgres/postgres-database-manager");
 jest.mock("../azure-storage-service");
 
 // Mock logger factory - create the mock instance inline

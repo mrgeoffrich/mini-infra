@@ -40,8 +40,8 @@ jest.mock('../lib/logger-factory', () => {
 });
 
 // Mock dependencies
-jest.mock('../services/environment-manager');
-jest.mock('../services/service-registry');
+jest.mock('../services/environment/environment-manager');
+jest.mock('../services/environment/service-registry');
 jest.mock('../lib/prisma', () => ({
   deploymentConfiguration: {
     findMany: jest.fn()
@@ -86,13 +86,13 @@ const mockPrisma = {
 };
 
 // Mock the modules
-jest.doMock('../services/environment-manager', () => ({
+jest.doMock('../services/environment/environment-manager', () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
   }
 }));
 
-jest.doMock('../services/service-registry', () => ({
+jest.doMock('../services/environment/service-registry', () => ({
   ServiceRegistry: {
     getInstance: () => mockServiceRegistry
   }

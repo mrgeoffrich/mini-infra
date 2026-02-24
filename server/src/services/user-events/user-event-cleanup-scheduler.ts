@@ -1,6 +1,6 @@
-import prisma, { PrismaClient } from '../lib/prisma';
+import prisma, { PrismaClient } from '../../lib/prisma';
 import * as cron from 'node-cron';
-import { servicesLogger } from '../lib/logger-factory';
+import { servicesLogger } from '../../lib/logger-factory';
 import { UserEventService } from './user-event-service';
 
 /**

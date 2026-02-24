@@ -1,13 +1,13 @@
-import prisma, { PrismaClient } from "../lib/prisma";
-import { selfBackupLogger } from "../lib/logger-factory";
-import { AzureStorageService } from "./azure-storage-service";
+import prisma, { PrismaClient } from "../../lib/prisma";
+import { selfBackupLogger } from "../../lib/logger-factory";
+import { AzureStorageService } from "../azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
 import fs from "fs/promises";
 import path from "path";
 import type { SelfBackup } from "@prisma/client";
-import { getDatabaseFilePath } from "../lib/database-url-parser";
+import { getDatabaseFilePath } from "../../lib/database-url-parser";
 
 /**
  * SelfBackupExecutor handles the execution of Mini Infra database backups

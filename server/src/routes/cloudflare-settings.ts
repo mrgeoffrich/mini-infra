@@ -10,7 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { CloudflareService } from "../services/cloudflare-service";
+import { CloudflareService } from "../services/cloudflare";
 import {
   CreateCloudflareSettingRequest,
   UpdateCloudflareSettingRequest,

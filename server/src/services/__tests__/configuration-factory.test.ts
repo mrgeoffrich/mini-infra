@@ -3,9 +3,9 @@ import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
-import { CloudflareService } from "../cloudflare-service";
+import { CloudflareService } from "../cloudflare";
 import { AzureStorageService } from "../azure-storage-service";
-import { PostgresSettingsConfigService } from "../postgres-settings-config";
+import { PostgresSettingsConfigService } from "../postgres";
 
 // Create a single mock logger instance
 const mockLogger = {
@@ -27,9 +27,9 @@ jest.mock("../../lib/logger-factory", () => ({
 
 // Mock configuration services
 jest.mock("../docker-config");
-jest.mock("../cloudflare-service");
+jest.mock("../cloudflare/cloudflare-service");
 jest.mock("../azure-storage-service");
-jest.mock("../postgres-settings-config");
+jest.mock("../postgres/postgres-settings-config");
 
 // Mock Prisma client
 const mockPrisma = {

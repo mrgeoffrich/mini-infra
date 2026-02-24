@@ -1,7 +1,7 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
-import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container-lifecycle-manager';
+import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
 import { DeploymentConfig, ContainerConfig } from '@mini-infra/types';
-import { UserEventService } from '../../user-event-service';
+import { UserEventService } from '../../user-events';
 import prisma from '../../../lib/prisma';
 
 const logger = loadbalancerLogger();

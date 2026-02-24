@@ -3,9 +3,9 @@ import {
   ServiceMetadata,
   NetworkRequirement,
   VolumeRequirement
-} from './interfaces/application-service';
-import { HAProxyService } from './haproxy/haproxy-service';
-import { servicesLogger } from '../lib/logger-factory';
+} from '../interfaces/application-service';
+import { HAProxyService } from '../haproxy/haproxy-service';
+import { servicesLogger } from '../../lib/logger-factory';
 
 export interface ServiceTypeDefinition {
   serviceType: string;

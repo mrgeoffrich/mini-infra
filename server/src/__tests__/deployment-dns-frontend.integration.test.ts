@@ -1,6 +1,6 @@
 import { testPrisma, createTestUser } from './setup';
 import { HAProxyDataPlaneClient } from '../services/haproxy/haproxy-dataplane-client';
-import { CloudflareDNSService } from '../services/cloudflare-dns';
+import { CloudflareDNSService } from '../services/cloudflare';
 import { DeploymentDNSManager } from '../services/deployment-dns-manager';
 import { HAProxyFrontendManager } from '../services/haproxy/haproxy-frontend-manager';
 import DockerService from '../services/docker';

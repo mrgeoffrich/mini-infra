@@ -19,7 +19,7 @@ jest.mock("../../lib/prisma", () => mockPrismaInstance);
 
 // Mock all services that RestoreExecutorService depends on
 jest.mock("../../services/docker-executor");
-jest.mock("../../services/postgres-database-manager");
+jest.mock("../../services/postgres/postgres-database-manager");
 
 // Create mock service instances
 const mockRestoreExecutorService = {
@@ -36,7 +36,7 @@ jest.mock("../../services/restore-executor", () => ({
 }));
 
 // Mock the restore executor instance functions
-jest.mock("../../services/restore-executor-instance", () => ({
+jest.mock("../../services/restore-executor/restore-executor-instance", () => ({
   getRestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
   setRestoreExecutorService: jest.fn(),
 }));

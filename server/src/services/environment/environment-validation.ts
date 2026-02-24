@@ -1,6 +1,6 @@
-import { servicesLogger } from "../lib/logger-factory";
-import DockerService from "./docker";
-import prisma from "../lib/prisma";
+import { servicesLogger } from "../../lib/logger-factory";
+import DockerService from "../docker";
+import prisma from "../../lib/prisma";
 
 const logger = servicesLogger();
 

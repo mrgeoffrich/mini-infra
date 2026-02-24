@@ -6,8 +6,8 @@ import {
 } from "../../lib/in-memory-queue";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
-import { PostgresSettingsConfigService } from "../postgres-settings-config";
+import { PostgresDatabaseManager } from "../postgres";
+import { PostgresSettingsConfigService } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import {
   RestoreOperationInfo,

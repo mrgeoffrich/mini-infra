@@ -10,9 +10,9 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { BackupConfigurationManager } from "../services/backup-configuration-manager";
+import { BackupConfigurationManager } from "../services/backup";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
-import { PostgresDatabaseManager } from "../services/postgres-database-manager";
+import { PostgresDatabaseManager } from "../services/postgres";
 import { UserPreferencesService } from "../services/user-preferences";
 import {
   CreateBackupConfigurationRequest,

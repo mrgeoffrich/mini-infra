@@ -3,7 +3,7 @@ import {
   NetworkRequirement,
   VolumeRequirement
 } from './interfaces/application-service';
-import { ServiceRegistry } from './service-registry';
+import { ServiceRegistry } from './environment';
 import { servicesLogger } from '../lib/logger-factory';
 import DockerService from './docker';
 

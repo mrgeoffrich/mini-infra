@@ -1,9 +1,9 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../lib/logger-factory";
-import DockerService from "./docker";
+import { servicesLogger } from "../../lib/logger-factory";
+import DockerService from "../docker";
 import ContainerLabelManager from "./container-label-manager";
-import { DockerExecutorService } from "./docker-executor";
-import prisma from "../lib/prisma";
+import { DockerExecutorService } from "../docker-executor";
+import prisma from "../../lib/prisma";
 import {
   ContainerConfig,
   DeploymentPort,

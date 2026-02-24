@@ -1,6 +1,6 @@
 import { servicesLogger } from "../../lib/logger-factory";
-import { PostgresDatabaseManager } from "../postgres-database-manager";
-import { PostgresSettingsConfigService } from "../postgres-settings-config";
+import { PostgresDatabaseManager } from "../postgres";
+import { PostgresSettingsConfigService } from "../postgres";
 import type { RestoreProgressData } from "./types";
 import type { RestoreOperation } from "@prisma/client";
 import {

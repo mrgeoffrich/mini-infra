@@ -3,8 +3,7 @@ import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getCurrentUserId } from "../middleware/auth";
 import { z } from "zod";
-import { SelfBackupScheduler } from "../services/self-backup-scheduler";
-import { SelfBackupExecutor } from "../services/self-backup-executor";
+import { SelfBackupScheduler, SelfBackupExecutor } from "../services/backup";
 import type {
   SelfBackupConfigResponse,
   UpdateSelfBackupConfigRequest,

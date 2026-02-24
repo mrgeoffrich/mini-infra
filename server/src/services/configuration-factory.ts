@@ -7,9 +7,9 @@ import {
 } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
-import { CloudflareService } from "./cloudflare-service";
+import { CloudflareService } from "./cloudflare";
 import { AzureStorageService } from "./azure-storage-service";
-import { PostgresSettingsConfigService } from "./postgres-settings-config";
+import { PostgresSettingsConfigService } from "./postgres";
 import { TlsConfigService } from "./tls/tls-config";
 
 export class ConfigurationServiceFactory
