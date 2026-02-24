@@ -1,15 +1,15 @@
-import { DatabaseConfigService } from "../services/postgres-config";
+import { PostgresDatabaseManager } from "../services/postgres-database-manager";
 import { PrismaClient } from "@prisma/client";
 import { CreatePostgresDatabaseRequest } from "@mini-infra/types";
 
 describe("PostgreSQL System-Wide Database Management", () => {
   let prisma: PrismaClient;
-  let databaseConfigService: DatabaseConfigService;
+  let databaseConfigService: PostgresDatabaseManager;
 
   beforeAll(async () => {
     prisma = new PrismaClient();
     await prisma.$connect();
-    databaseConfigService = new DatabaseConfigService(prisma);
+    databaseConfigService = new PostgresDatabaseManager(prisma);
   });
 
   afterAll(async () => {

@@ -352,11 +352,11 @@ router.post(
       }
 
       // Get certificate from Azure storage and deploy to HAProxy
-      const { AzureConfigService } = await import("../services/azure-config");
+      const { AzureStorageService } = await import("../services/azure-storage-service");
       const { AzureStorageCertificateStore } = await import("../services/tls/azure-storage-certificate-store");
       const { TlsConfigService } = await import("../services/tls/tls-config");
 
-      const azureConfig = new AzureConfigService(prisma);
+      const azureConfig = new AzureStorageService(prisma);
       const tlsConfig = new TlsConfigService(prisma);
 
       const connectionString = await azureConfig.getConnectionString();

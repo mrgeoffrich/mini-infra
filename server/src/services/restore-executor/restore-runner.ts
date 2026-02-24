@@ -1,7 +1,7 @@
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { DatabaseConfigService } from "../postgres-config";
-import { AzureConfigService } from "../azure-config";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { AzureStorageService } from "../azure-storage-service";
 import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";
 import { DbOperations } from "./db-operations";
@@ -19,8 +19,8 @@ export const RESTORE_NETWORK_NAME = "mini-infra-postgres-backup";
  */
 export class RestoreRunner {
   private dockerExecutor: DockerExecutorService;
-  private databaseConfigService: DatabaseConfigService;
-  private azureConfigService: AzureConfigService;
+  private databaseConfigService: PostgresDatabaseManager;
+  private azureConfigService: AzureStorageService;
   private backupValidator: BackupValidator;
   private rollbackManager: RollbackManager;
   private dbOps: DbOperations;
@@ -28,8 +28,8 @@ export class RestoreRunner {
 
   constructor(
     dockerExecutor: DockerExecutorService,
-    databaseConfigService: DatabaseConfigService,
-    azureConfigService: AzureConfigService,
+    databaseConfigService: PostgresDatabaseManager,
+    azureConfigService: AzureStorageService,
     backupValidator: BackupValidator,
     rollbackManager: RollbackManager,
     dbOps: DbOperations,

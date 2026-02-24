@@ -6,9 +6,9 @@ import {
 } from "../../lib/in-memory-queue";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { DatabaseConfigService } from "../postgres-config";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
 import { PostgresSettingsConfigService } from "../postgres-settings-config";
-import { AzureConfigService } from "../azure-config";
+import { AzureStorageService } from "../azure-storage-service";
 import {
   RestoreOperationInfo,
   RestoreOperationStatus,
@@ -57,8 +57,8 @@ export class RestoreExecutorService {
 
   // Backing fields for getter/setter pattern
   private _dockerExecutor: DockerExecutorService;
-  private _databaseConfigService: DatabaseConfigService;
-  private _azureConfigService: AzureConfigService;
+  private _databaseConfigService: PostgresDatabaseManager;
+  private _azureConfigService: AzureStorageService;
   private _restoreQueue: InMemoryQueue;
 
   // Sub-modules
@@ -74,11 +74,11 @@ export class RestoreExecutorService {
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this._dockerExecutor = new DockerExecutorService();
-    this._databaseConfigService = new DatabaseConfigService(prisma);
+    this._databaseConfigService = new PostgresDatabaseManager(prisma);
     this.postgresSettingsConfigService = new PostgresSettingsConfigService(
       prisma,
     );
-    this._azureConfigService = new AzureConfigService(prisma);
+    this._azureConfigService = new AzureStorageService(prisma);
 
     // Initialize in-memory queue
     this._restoreQueue = new InMemoryQueue("postgres-restore", {
@@ -110,20 +110,20 @@ export class RestoreExecutorService {
     this.rebuildSubModules();
   }
 
-  private get databaseConfigService(): DatabaseConfigService {
+  private get databaseConfigService(): PostgresDatabaseManager {
     return this._databaseConfigService;
   }
 
-  private set databaseConfigService(value: DatabaseConfigService) {
+  private set databaseConfigService(value: PostgresDatabaseManager) {
     this._databaseConfigService = value;
     this.rebuildSubModules();
   }
 
-  private get azureConfigService(): AzureConfigService {
+  private get azureConfigService(): AzureStorageService {
     return this._azureConfigService;
   }
 
-  private set azureConfigService(value: AzureConfigService) {
+  private set azureConfigService(value: AzureStorageService) {
     this._azureConfigService = value;
     this.rebuildSubModules();
   }

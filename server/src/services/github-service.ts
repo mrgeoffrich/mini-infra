@@ -48,11 +48,11 @@ const GITHUB_ERROR_MAPPERS: ErrorMapper[] = [
 ];
 
 /**
- * GitHubConfigService handles GitHub API configuration management
+ * GitHubService handles GitHub API configuration management
  * Extends the base ConfigurationService to provide GitHub-specific functionality
  * Implements circuit breaker pattern for resilient API communication
  */
-export class GitHubConfigService extends ConfigurationService {
+export class GitHubService extends ConfigurationService {
   private static readonly TIMEOUT_MS = 10000; // 10 second timeout
   private static readonly PERSONAL_ACCESS_TOKEN_KEY = "personal_access_token";
   private static readonly REPO_OWNER_KEY = "repo_owner";
@@ -108,11 +108,11 @@ export class GitHubConfigService extends ConfigurationService {
     try {
       // Use provided settings or fallback to stored settings
       const personalAccessToken = settings?.personalAccessToken ||
-        (await this.get(GitHubConfigService.PERSONAL_ACCESS_TOKEN_KEY));
+        (await this.get(GitHubService.PERSONAL_ACCESS_TOKEN_KEY));
       const repoOwner = settings?.repoOwner ||
-        (await this.get(GitHubConfigService.REPO_OWNER_KEY));
+        (await this.get(GitHubService.REPO_OWNER_KEY));
       const repoName = settings?.repoName ||
-        (await this.get(GitHubConfigService.REPO_NAME_KEY));
+        (await this.get(GitHubService.REPO_NAME_KEY));
 
       servicesLogger().debug(
         this.circuitBreaker.redact({
@@ -165,7 +165,7 @@ export class GitHubConfigService extends ConfigurationService {
       const octokit = new Octokit({
         auth: personalAccessToken,
         request: {
-          timeout: GitHubConfigService.TIMEOUT_MS,
+          timeout: GitHubService.TIMEOUT_MS,
         },
       });
 
@@ -175,7 +175,7 @@ export class GitHubConfigService extends ConfigurationService {
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("API request timeout")),
-            GitHubConfigService.TIMEOUT_MS,
+            GitHubService.TIMEOUT_MS,
           ),
         ),
       ]);
@@ -189,7 +189,7 @@ export class GitHubConfigService extends ConfigurationService {
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Repository access timeout")),
-            GitHubConfigService.TIMEOUT_MS,
+            GitHubService.TIMEOUT_MS,
           ),
         ),
       ]);
@@ -287,10 +287,10 @@ export class GitHubConfigService extends ConfigurationService {
     try {
       // Get stored settings
       const personalAccessToken = await this.get(
-        GitHubConfigService.PERSONAL_ACCESS_TOKEN_KEY,
+        GitHubService.PERSONAL_ACCESS_TOKEN_KEY,
       );
-      const repoOwner = await this.get(GitHubConfigService.REPO_OWNER_KEY);
-      const repoName = await this.get(GitHubConfigService.REPO_NAME_KEY);
+      const repoOwner = await this.get(GitHubService.REPO_OWNER_KEY);
+      const repoName = await this.get(GitHubService.REPO_NAME_KEY);
 
       servicesLogger().debug(
         this.circuitBreaker.redact({
@@ -311,7 +311,7 @@ export class GitHubConfigService extends ConfigurationService {
       const octokit = new Octokit({
         auth: personalAccessToken,
         request: {
-          timeout: GitHubConfigService.TIMEOUT_MS,
+          timeout: GitHubService.TIMEOUT_MS,
         },
       });
 
@@ -328,7 +328,7 @@ export class GitHubConfigService extends ConfigurationService {
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Issue creation timeout")),
-            GitHubConfigService.TIMEOUT_MS,
+            GitHubService.TIMEOUT_MS,
           ),
         ),
       ]);
@@ -387,7 +387,7 @@ export class GitHubConfigService extends ConfigurationService {
   ): Promise<void> {
     // TODO: Encryption should be handled at the database/route level
     await this.set(
-      GitHubConfigService.PERSONAL_ACCESS_TOKEN_KEY,
+      GitHubService.PERSONAL_ACCESS_TOKEN_KEY,
       token,
       userId,
     );
@@ -399,7 +399,7 @@ export class GitHubConfigService extends ConfigurationService {
    * @param userId The user making the change
    */
   async setRepoOwner(owner: string, userId: string): Promise<void> {
-    await this.set(GitHubConfigService.REPO_OWNER_KEY, owner, userId);
+    await this.set(GitHubService.REPO_OWNER_KEY, owner, userId);
   }
 
   /**
@@ -408,7 +408,7 @@ export class GitHubConfigService extends ConfigurationService {
    * @param userId The user making the change
    */
   async setRepoName(name: string, userId: string): Promise<void> {
-    await this.set(GitHubConfigService.REPO_NAME_KEY, name, userId);
+    await this.set(GitHubService.REPO_NAME_KEY, name, userId);
   }
 
   /**
@@ -422,10 +422,10 @@ export class GitHubConfigService extends ConfigurationService {
     repoName?: string;
   }> {
     const personalAccessToken = await this.get(
-      GitHubConfigService.PERSONAL_ACCESS_TOKEN_KEY,
+      GitHubService.PERSONAL_ACCESS_TOKEN_KEY,
     );
-    const repoOwner = await this.get(GitHubConfigService.REPO_OWNER_KEY);
-    const repoName = await this.get(GitHubConfigService.REPO_NAME_KEY);
+    const repoOwner = await this.get(GitHubService.REPO_OWNER_KEY);
+    const repoName = await this.get(GitHubService.REPO_NAME_KEY);
 
     return {
       isConfigured:
@@ -476,4 +476,4 @@ export class GitHubConfigService extends ConfigurationService {
 }
 
 // Export singleton instance
-export const githubConfigService = new GitHubConfigService(prisma);
+export const githubService = new GitHubService(prisma);

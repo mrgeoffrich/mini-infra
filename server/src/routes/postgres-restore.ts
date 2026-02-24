@@ -6,7 +6,7 @@ const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getRestoreExecutorService } from "../services/restore-executor-instance";
-import { AzureConfigService } from "../services/azure-config";
+import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
   RestoreOperationResponse,
@@ -24,7 +24,7 @@ import {
 const router = Router();
 
 // Initialize services
-const azureConfigService = new AzureConfigService(prisma);
+const azureConfigService = new AzureStorageService(prisma);
 
 // ====================
 // Validation Schemas

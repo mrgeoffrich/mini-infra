@@ -41,8 +41,8 @@ import { AcmeClientManager } from "./services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
 import { CertificateDistributor } from "./services/tls/certificate-distributor";
-import { CloudflareConfigService } from "./services/cloudflare-config";
-import { AzureConfigService } from "./services/azure-config";
+import { CloudflareService } from "./services/cloudflare-service";
+import { AzureStorageService } from "./services/azure-storage-service";
 import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { securityConfig } from "./lib/security-config";
@@ -273,7 +273,7 @@ const initializeServices = async () => {
         logger.info("TLS configuration detected, initializing renewal scheduler");
 
         // Get Azure Storage connection string
-        const azureConfig = new AzureConfigService(prisma);
+        const azureConfig = new AzureStorageService(prisma);
         const connectionString = await azureConfig.getConnectionString();
 
         if (!connectionString) {
@@ -283,7 +283,7 @@ const initializeServices = async () => {
         // Initialize TLS services
         const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
         const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
-        const cloudflareConfig = new CloudflareConfigService(prisma);
+        const cloudflareConfig = new CloudflareService(prisma);
         const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
         // Initialize ACME client

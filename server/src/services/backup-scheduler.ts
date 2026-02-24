@@ -2,7 +2,7 @@ import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
-import { BackupConfigService } from "./backup-config";
+import { BackupConfigurationManager } from "./backup-configuration-manager";
 import { BackupExecutorService } from "./backup-executor";
 import { BackupOperationType } from "@mini-infra/types";
 
@@ -25,14 +25,14 @@ export interface ScheduledJob {
 export class BackupSchedulerService {
   private static instance: BackupSchedulerService | null = null;
   private prisma: PrismaClient;
-  private backupConfigService: BackupConfigService;
+  private backupConfigService: BackupConfigurationManager;
   private backupExecutorService: BackupExecutorService;
   private scheduledJobs: Map<string, ScheduledJob> = new Map();
   private isInitialized = false;
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    this.backupConfigService = new BackupConfigService(prisma);
+    this.backupConfigService = new BackupConfigurationManager(prisma);
     this.backupExecutorService = new BackupExecutorService(prisma);
   }
 

@@ -1,6 +1,6 @@
 import { BlobServiceClient } from "@azure/storage-blob";
 import { servicesLogger } from "../../lib/logger-factory";
-import { AzureConfigService } from "../azure-config";
+import { AzureStorageService } from "../azure-storage-service";
 import { parseBackupUrl } from "./utils";
 import type { BackupValidationResult } from "./types";
 
@@ -9,9 +9,9 @@ import type { BackupValidationResult } from "./types";
  * before restore operations are executed.
  */
 export class BackupValidator {
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
 
-  constructor(azureConfigService: AzureConfigService) {
+  constructor(azureConfigService: AzureStorageService) {
     this.azureConfigService = azureConfigService;
   }
 

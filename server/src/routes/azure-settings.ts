@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { AzureConfigService } from "../services/azure-config";
+import { AzureStorageService } from "../services/azure-storage-service";
 import {
   CreateAzureSettingRequest,
   UpdateAzureSettingRequest,
@@ -23,7 +23,7 @@ const router = express.Router();
 const logger = appLogger();
 
 // Create Azure configuration service instance
-const azureConfigService = new AzureConfigService(prisma);
+const azureConfigService = new AzureStorageService(prisma);
 
 // Request validation schemas
 const createAzureSettingSchema = z.object({
@@ -351,7 +351,7 @@ router.post("/validate", requireSessionOrApiKey, (async (
     // If a connection string is provided for testing, temporarily use it
     if (connectionString) {
       // Create temporary service instance for testing
-      const tempService = new AzureConfigService(prisma);
+      const tempService = new AzureStorageService(prisma);
       await tempService.setConnectionString(connectionString, userId);
 
       // Perform validation
@@ -574,7 +574,7 @@ router.get("/containers", requireSessionOrApiKey, (async (
           hasLegalHold: container.hasLegalHold || false,
           metadata: container.metadata,
         })),
-        hasMore: containerInfo.length >= 50, // Based on the limit in AzureConfigService
+        hasMore: containerInfo.length >= 50, // Based on the limit in AzureStorageService
         nextMarker: undefined, // Not implemented in current service
       },
       message: `Found ${containerInfo.length} containers`,

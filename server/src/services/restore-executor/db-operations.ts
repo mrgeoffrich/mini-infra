@@ -1,5 +1,5 @@
 import { servicesLogger } from "../../lib/logger-factory";
-import { DatabaseConfigService } from "../postgres-config";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
 import { PostgresSettingsConfigService } from "../postgres-settings-config";
 import type { RestoreProgressData } from "./types";
 import type { RestoreOperation } from "@prisma/client";
@@ -15,12 +15,12 @@ import {
 export class DbOperations {
   private prisma: any;
   private postgresSettingsConfigService: PostgresSettingsConfigService;
-  private databaseConfigService: DatabaseConfigService;
+  private databaseConfigService: PostgresDatabaseManager;
 
   constructor(
     prisma: any,
     postgresSettingsConfigService: PostgresSettingsConfigService,
-    databaseConfigService: DatabaseConfigService,
+    databaseConfigService: PostgresDatabaseManager,
   ) {
     this.prisma = prisma;
     this.postgresSettingsConfigService = postgresSettingsConfigService;

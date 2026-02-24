@@ -17,7 +17,7 @@ import { tlsLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureConfigService } from "../services/azure-config";
+import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 
 const logger = tlsLogger();
@@ -25,7 +25,7 @@ const router = express.Router();
 
 // Create service instances
 const tlsConfigService = new TlsConfigService(prisma);
-const azureConfigService = new AzureConfigService(prisma);
+const azureConfigService = new AzureStorageService(prisma);
 
 /**
  * TLS Settings Response Structure

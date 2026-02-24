@@ -3,9 +3,9 @@ import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupExecutorService } from "../backup-executor";
 import { DockerExecutorService } from "../docker-executor";
-import { BackupConfigService } from "../backup-config";
-import { DatabaseConfigService } from "../postgres-config";
-import { AzureConfigService } from "../azure-config";
+import { BackupConfigurationManager } from "../backup-configuration-manager";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { AzureStorageService } from "../azure-storage-service";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 
 // Mock InMemoryQueue
@@ -33,9 +33,9 @@ jest.mock("../../lib/in-memory-queue", () => {
 
 // Mock all the services
 jest.mock("../docker-executor");
-jest.mock("../backup-config");
-jest.mock("../postgres-config");
-jest.mock("../azure-config");
+jest.mock("../backup-configuration-manager");
+jest.mock("../postgres-database-manager");
+jest.mock("../azure-storage-service");
 
 // Mock logger factory - create the mock instance inline
 jest.mock("../../lib/logger-factory", () => {
@@ -100,19 +100,19 @@ const mockDockerExecutor = {
   executeContainerWithProgress: jest.fn(),
 } as unknown as DockerExecutorService;
 
-const mockBackupConfigService = {
+const mockBackupConfigurationManager = {
   getBackupConfigByDatabaseId: jest.fn(),
   updateLastBackupTime: jest.fn(),
-} as unknown as BackupConfigService;
+} as unknown as BackupConfigurationManager;
 
-const mockDatabaseConfigService = {
+const mockPostgresDatabaseManager = {
   getDatabaseById: jest.fn(),
   getConnectionConfig: jest.fn(),
-} as unknown as DatabaseConfigService;
+} as unknown as PostgresDatabaseManager;
 
-const mockAzureConfigService = {
+const mockAzureStorageService = {
   get: jest.fn(),
-} as unknown as AzureConfigService;
+} as unknown as AzureStorageService;
 
 describe("BackupExecutorService", () => {
   let backupExecutorService: BackupExecutorService;
@@ -124,16 +124,16 @@ describe("BackupExecutorService", () => {
     // Mock service instances
     (backupExecutorService as any).dockerExecutor = mockDockerExecutor;
     (backupExecutorService as any).backupConfigService =
-      mockBackupConfigService;
+      mockBackupConfigurationManager;
     (backupExecutorService as any).databaseConfigService =
-      mockDatabaseConfigService;
-    (backupExecutorService as any).azureConfigService = mockAzureConfigService;
+      mockPostgresDatabaseManager;
+    (backupExecutorService as any).azureConfigService = mockAzureStorageService;
     (backupExecutorService as any).backupQueue = mockQueue;
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
-    AzureConfigService.cleanupCache();
+    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
+    AzureStorageService.cleanupCache();
   });
 
   describe("constructor", () => {
@@ -487,16 +487,16 @@ describe("BackupExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockDatabaseConfigService.getDatabaseById = jest
+      mockPostgresDatabaseManager.getDatabaseById = jest
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockBackupConfigService.getBackupConfigByDatabaseId = jest
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId = jest
         .fn()
         .mockResolvedValue(mockBackupConfig);
-      mockDatabaseConfigService.getConnectionConfig = jest
+      mockPostgresDatabaseManager.getConnectionConfig = jest
         .fn()
         .mockResolvedValue(mockConnectionConfig);
-      mockAzureConfigService.get = jest
+      mockAzureStorageService.get = jest
         .fn()
         .mockResolvedValue("azure-connection-string");
       mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue({
@@ -555,7 +555,7 @@ describe("BackupExecutorService", () => {
         .fn()
         .mockReturnValue(mockAsyncIterator);
 
-      mockBackupConfigService.updateLastBackupTime = jest
+      mockBackupConfigurationManager.updateLastBackupTime = jest
         .fn()
         .mockResolvedValue(undefined);
 
@@ -588,7 +588,7 @@ describe("BackupExecutorService", () => {
 
   describe("verifyBackupInAzure", () => {
     beforeEach(() => {
-      mockAzureConfigService.get = jest
+      mockAzureStorageService.get = jest
         .fn()
         .mockResolvedValue("azure-connection-string");
       mockBlobServiceClient.getContainerClient = jest
@@ -626,7 +626,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle Azure connection string not configured", async () => {
-      mockAzureConfigService.get = jest.fn().mockResolvedValue(null);
+      mockAzureStorageService.get = jest.fn().mockResolvedValue(null);
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",

@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { DatabaseConfigService } from "../postgres-config";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
 import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,
@@ -68,13 +68,13 @@ const mockPrisma = {
   },
 } as unknown as typeof prisma;
 
-describe("DatabaseConfigService", () => {
-  let databaseConfigService: DatabaseConfigService;
+describe("PostgresDatabaseManager", () => {
+  let databaseConfigService: PostgresDatabaseManager;
   const testEncryptionKey = "test-encryption-key";
 
   beforeEach(() => {
     jest.clearAllMocks();
-    databaseConfigService = new DatabaseConfigService(
+    databaseConfigService = new PostgresDatabaseManager(
       mockPrisma,
       testEncryptionKey,
     );
@@ -82,20 +82,20 @@ describe("DatabaseConfigService", () => {
 
   describe("constructor", () => {
     it("should initialize with provided encryption key", () => {
-      expect(databaseConfigService).toBeInstanceOf(DatabaseConfigService);
+      expect(databaseConfigService).toBeInstanceOf(PostgresDatabaseManager);
     });
 
     it("should use API_KEY_SECRET from env if no key provided", () => {
       process.env.API_KEY_SECRET = "env-key";
-      const service = new DatabaseConfigService(mockPrisma);
-      expect(service).toBeInstanceOf(DatabaseConfigService);
+      const service = new PostgresDatabaseManager(mockPrisma);
+      expect(service).toBeInstanceOf(PostgresDatabaseManager);
       delete process.env.API_KEY_SECRET;
     });
 
     it("should use default key if no env or provided key", () => {
       delete process.env.API_KEY_SECRET;
-      const service = new DatabaseConfigService(mockPrisma);
-      expect(service).toBeInstanceOf(DatabaseConfigService);
+      const service = new PostgresDatabaseManager(mockPrisma);
+      expect(service).toBeInstanceOf(PostgresDatabaseManager);
     });
   });
 

@@ -2,15 +2,15 @@ import request from "supertest";
 import { Express } from "express";
 import { PrismaClient } from "@prisma/client";
 import { createApp } from "../../app";
-import { DatabaseConfigService } from "../../services/postgres-config";
+import { PostgresDatabaseManager } from "../../services/postgres-database-manager";
 import { DatabaseInfo } from "@mini-infra/types";
 
-// Mock the DatabaseConfigService
-jest.mock("../../services/postgres-config");
+// Mock the PostgresDatabaseManager
+jest.mock("../../services/postgres-database-manager");
 
 const mockDiscoverDatabases = jest.fn();
-const MockDatabaseConfigService = DatabaseConfigService as jest.MockedClass<
-  typeof DatabaseConfigService
+const MockPostgresDatabaseManager = PostgresDatabaseManager as jest.MockedClass<
+  typeof PostgresDatabaseManager
 >;
 
 describe("PostgreSQL Database Discovery API", () => {
@@ -21,7 +21,7 @@ describe("PostgreSQL Database Discovery API", () => {
     jest.clearAllMocks();
 
     // Mock the discoverDatabases method
-    MockDatabaseConfigService.prototype.discoverDatabases = mockDiscoverDatabases;
+    MockPostgresDatabaseManager.prototype.discoverDatabases = mockDiscoverDatabases;
 
     app = createApp();
     prisma = new PrismaClient();

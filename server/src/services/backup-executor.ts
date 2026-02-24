@@ -6,10 +6,10 @@ import {
 } from "../lib/in-memory-queue";
 import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 import { DockerExecutorService } from "./docker-executor";
-import { BackupConfigService } from "./backup-config";
-import { DatabaseConfigService } from "./postgres-config";
+import { BackupConfigurationManager } from "./backup-configuration-manager";
+import { PostgresDatabaseManager } from "./postgres-database-manager";
 import { PostgresSettingsConfigService } from "./postgres-settings-config";
-import { AzureConfigService } from "./azure-config";
+import { AzureStorageService } from "./azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
   BackupOperationInfo,
@@ -44,10 +44,10 @@ export interface BackupProgressData {
 export class BackupExecutorService {
   private prisma: typeof prisma;
   private dockerExecutor: DockerExecutorService;
-  private backupConfigService: BackupConfigService;
-  private databaseConfigService: DatabaseConfigService;
+  private backupConfigService: BackupConfigurationManager;
+  private databaseConfigService: PostgresDatabaseManager;
   private postgresSettingsConfigService: PostgresSettingsConfigService;
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
   private backupQueue: InMemoryQueue;
   private isInitialized = false;
 
@@ -64,12 +64,12 @@ export class BackupExecutorService {
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
     this.dockerExecutor = new DockerExecutorService();
-    this.backupConfigService = new BackupConfigService(prisma);
-    this.databaseConfigService = new DatabaseConfigService(prisma);
+    this.backupConfigService = new BackupConfigurationManager(prisma);
+    this.databaseConfigService = new PostgresDatabaseManager(prisma);
     this.postgresSettingsConfigService = new PostgresSettingsConfigService(
       prisma,
     );
-    this.azureConfigService = new AzureConfigService(prisma);
+    this.azureConfigService = new AzureStorageService(prisma);
 
     // Initialize in-memory queue
     this.backupQueue = new InMemoryQueue("postgres-backup", {

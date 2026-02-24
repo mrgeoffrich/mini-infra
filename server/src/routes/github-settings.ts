@@ -9,7 +9,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
-import { githubConfigService } from "../services/github-config";
+import { githubService } from "../services/github-service";
 import {
   CreateGitHubSettingRequest,
   UpdateGitHubSettingRequest,
@@ -100,7 +100,7 @@ router.get("/", requireSessionOrApiKey, (async (
   );
 
   try {
-    const configStatus = await githubConfigService.getConfigStatus();
+    const configStatus = await githubService.getConfigStatus();
 
     const response: GitHubSettingResponse = {
       success: true,
@@ -183,16 +183,16 @@ router.post("/", requireSessionOrApiKey, (async (
       validationResult.data;
 
     // Check if configuration already exists
-    const existingConfig = await githubConfigService.getConfigStatus();
+    const existingConfig = await githubService.getConfigStatus();
 
     if (existingConfig.isConfigured) {
       // Update existing configuration
-      await githubConfigService.setPersonalAccessToken(
+      await githubService.setPersonalAccessToken(
         personal_access_token,
         userId,
       );
-      await githubConfigService.setRepoOwner(repo_owner, userId);
-      await githubConfigService.setRepoName(repo_name, userId);
+      await githubService.setRepoOwner(repo_owner, userId);
+      await githubService.setRepoName(repo_name, userId);
 
       logger.debug(
         {
@@ -203,12 +203,12 @@ router.post("/", requireSessionOrApiKey, (async (
       );
     } else {
       // Create new configuration
-      await githubConfigService.setPersonalAccessToken(
+      await githubService.setPersonalAccessToken(
         personal_access_token,
         userId,
       );
-      await githubConfigService.setRepoOwner(repo_owner, userId);
-      await githubConfigService.setRepoName(repo_name, userId);
+      await githubService.setRepoOwner(repo_owner, userId);
+      await githubService.setRepoName(repo_name, userId);
 
       logger.debug(
         {
@@ -220,7 +220,7 @@ router.post("/", requireSessionOrApiKey, (async (
     }
 
     // Validate the configuration
-    const validationResponse = await githubConfigService.validate();
+    const validationResponse = await githubService.validate();
 
     const response: GitHubSettingResponse = {
       success: true,
@@ -297,22 +297,22 @@ router.patch("/", requireSessionOrApiKey, (async (
 
     // Update only provided fields
     if (personal_access_token) {
-      await githubConfigService.setPersonalAccessToken(
+      await githubService.setPersonalAccessToken(
         personal_access_token,
         userId,
       );
     }
     if (repo_owner) {
-      await githubConfigService.setRepoOwner(repo_owner, userId);
+      await githubService.setRepoOwner(repo_owner, userId);
     }
     if (repo_name) {
-      await githubConfigService.setRepoName(repo_name, userId);
+      await githubService.setRepoName(repo_name, userId);
     }
 
     // Validate the configuration
-    const validationResponse = await githubConfigService.validate();
+    const validationResponse = await githubService.validate();
 
-    const currentConfig = await githubConfigService.getConfigStatus();
+    const currentConfig = await githubService.getConfigStatus();
 
     const response: GitHubSettingResponse = {
       success: true,
@@ -372,9 +372,9 @@ router.delete("/", requireSessionOrApiKey, (async (
 
   try {
     // Delete all GitHub settings
-    await githubConfigService.delete("personal_access_token", userId);
-    await githubConfigService.delete("repo_owner", userId);
-    await githubConfigService.delete("repo_name", userId);
+    await githubService.delete("personal_access_token", userId);
+    await githubService.delete("repo_owner", userId);
+    await githubService.delete("repo_name", userId);
 
     logger.debug(
       {
@@ -468,7 +468,7 @@ router.post("/test", requireSessionOrApiKey, (async (
     }
 
     // Validate the configuration
-    const validationResponse = await githubConfigService.validate(settings);
+    const validationResponse = await githubService.validate(settings);
 
     const response: GitHubValidationResponse = {
       success: validationResponse.isValid,

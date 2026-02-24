@@ -10,7 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { DatabaseConfigService } from "../services/postgres-config";
+import { PostgresDatabaseManager } from "../services/postgres-database-manager";
 import {
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,
@@ -31,7 +31,7 @@ import {
 const router = express.Router();
 
 // Create database configuration service
-const databaseConfigService = new DatabaseConfigService(prisma);
+const databaseConfigService = new PostgresDatabaseManager(prisma);
 
 // Helper function to serialize database for API responses
 function serializeDatabaseInfo(

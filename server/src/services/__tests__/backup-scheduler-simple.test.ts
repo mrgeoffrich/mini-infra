@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupSchedulerService } from "../backup-scheduler";
-import { BackupConfigService } from "../backup-config";
+import { BackupConfigurationManager } from "../backup-configuration-manager";
 import { BackupExecutorService } from "../backup-executor";
 
 // Mock objects that need to be referenced in tests
@@ -19,7 +19,7 @@ jest.mock("node-cron", () => ({
 }));
 
 // Mock services
-jest.mock("../backup-config");
+jest.mock("../backup-configuration-manager");
 jest.mock("../backup-executor");
 jest.mock("../../lib/prisma", () => ({
   __esModule: true,
@@ -64,7 +64,7 @@ const mockPrisma = {
 } as unknown as typeof prisma;
 
 // Mock service instances
-const mockBackupConfigService = {} as unknown as BackupConfigService;
+const mockBackupConfigurationManager = {} as unknown as BackupConfigurationManager;
 const mockBackupExecutorService = {
   initialize: jest.fn(),
   queueBackup: jest.fn(),
@@ -92,7 +92,7 @@ describe("BackupSchedulerService - Memory Test", () => {
 
     // Mock service instances
     (backupSchedulerService as any).backupConfigService =
-      mockBackupConfigService;
+      mockBackupConfigurationManager;
     (backupSchedulerService as any).backupExecutorService =
       mockBackupExecutorService;
   });

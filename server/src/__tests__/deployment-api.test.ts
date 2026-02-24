@@ -4,7 +4,7 @@ import { testPrisma, createTestUser, createTestApiKey } from "./setup";
 import express from "express";
 import deploymentRoutes from "../routes/deployments";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
-import { DeploymentConfigService } from "../services/deployment-config";
+import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
 import {
   CreateDeploymentConfigRequest,
   DeploymentConfigResponse,
@@ -30,10 +30,10 @@ jest.mock("../services/deployment-orchestrator", () => {
 
 // Get reference to the mocked orchestrator and service
 const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
-const { __mockDeploymentConfigService: mockDeploymentConfigService } = require("../services/deployment-config");
+const { __mockDeploymentConfigurationManager: mockDeploymentConfigurationManager } = require("../services/deployment-configuration-manager");
 
 // Mock the deployment config service
-jest.mock("../services/deployment-config", () => {
+jest.mock("../services/deployment-configuration-manager", () => {
   const mockService = {
     listDeploymentConfigs: jest.fn(),
     createDeploymentConfig: jest.fn(),
@@ -43,8 +43,8 @@ jest.mock("../services/deployment-config", () => {
     deleteDeploymentConfig: jest.fn(),
   };
   return {
-    DeploymentConfigService: jest.fn().mockImplementation(() => mockService),
-    __mockDeploymentConfigService: mockService, // Export for test use
+    DeploymentConfigurationManager: jest.fn().mockImplementation(() => mockService),
+    __mockDeploymentConfigurationManager: mockService, // Export for test use
   };
 });
 
@@ -185,7 +185,7 @@ describe("Deployment API Integration Tests", () => {
     app.use("/api/deployments", deploymentRoutes);
 
     // Setup default mocks
-    mockDeploymentConfigService.listDeploymentConfigs.mockResolvedValue([]);
+    mockDeploymentConfigurationManager.listDeploymentConfigs.mockResolvedValue([]);
     mockOrchestrator.triggerDeployment.mockResolvedValue({
       id: "deployment-123",
       status: "pending",
@@ -269,7 +269,7 @@ describe("Deployment API Integration Tests", () => {
           },
         ];
 
-        mockDeploymentConfigService.listDeploymentConfigs.mockResolvedValue(mockConfigs);
+        mockDeploymentConfigurationManager.listDeploymentConfigs.mockResolvedValue(mockConfigs);
 
         const response = await supertest(app)
           .get("/api/deployments/configs")
@@ -285,7 +285,7 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should handle query parameters correctly", async () => {
-        mockDeploymentConfigService.listDeploymentConfigs.mockResolvedValue([]);
+        mockDeploymentConfigurationManager.listDeploymentConfigs.mockResolvedValue([]);
 
         await supertest(app)
           .get("/api/deployments/configs")
@@ -299,7 +299,7 @@ describe("Deployment API Integration Tests", () => {
           .set("x-user-id", testUserId)
           .expect(200);
 
-        expect(mockDeploymentConfigService.listDeploymentConfigs).toHaveBeenCalledWith(
+        expect(mockDeploymentConfigurationManager.listDeploymentConfigs).toHaveBeenCalledWith(
           { applicationName: "test-app", isActive: true },
           { field: "createdAt", order: "desc" },
           10,
@@ -335,7 +335,7 @@ describe("Deployment API Integration Tests", () => {
           updatedAt: new Date().toISOString(),
         };
 
-        mockDeploymentConfigService.createDeploymentConfig.mockResolvedValue(mockCreatedConfig);
+        mockDeploymentConfigurationManager.createDeploymentConfig.mockResolvedValue(mockCreatedConfig);
 
         const response = await supertest(app)
           .post("/api/deployments/configs")
@@ -349,7 +349,7 @@ describe("Deployment API Integration Tests", () => {
         expect(body.data.applicationName).toBe("test-app");
         expect(body.message).toContain("created successfully");
 
-        expect(mockDeploymentConfigService.createDeploymentConfig).toHaveBeenCalledWith(
+        expect(mockDeploymentConfigurationManager.createDeploymentConfig).toHaveBeenCalledWith(
           configRequest
         );
       });
@@ -374,7 +374,7 @@ describe("Deployment API Integration Tests", () => {
 
       it("should return 409 for duplicate application name", async () => {
         const configRequest = createValidDeploymentConfigRequest();
-        mockDeploymentConfigService.createDeploymentConfig.mockRejectedValue(
+        mockDeploymentConfigurationManager.createDeploymentConfig.mockRejectedValue(
           new Error("Deployment configuration for application 'test-app' already exists")
         );
 
@@ -438,7 +438,7 @@ describe("Deployment API Integration Tests", () => {
           updatedAt: new Date().toISOString(),
         };
 
-        mockDeploymentConfigService.getDeploymentConfig.mockResolvedValue(mockConfig);
+        mockDeploymentConfigurationManager.getDeploymentConfig.mockResolvedValue(mockConfig);
 
         const response = await supertest(app)
           .get("/api/deployments/configs/config-123")
@@ -450,13 +450,13 @@ describe("Deployment API Integration Tests", () => {
         expect(body.success).toBe(true);
         expect(body.data.id).toBe("config-123");
 
-        expect(mockDeploymentConfigService.getDeploymentConfig).toHaveBeenCalledWith(
+        expect(mockDeploymentConfigurationManager.getDeploymentConfig).toHaveBeenCalledWith(
           "config-123"
         );
       });
 
       it("should return 404 for non-existent configuration", async () => {
-        mockDeploymentConfigService.getDeploymentConfig.mockResolvedValue(null);
+        mockDeploymentConfigurationManager.getDeploymentConfig.mockResolvedValue(null);
 
         const response = await supertest(app)
           .get("/api/deployments/configs/non-existent")
@@ -485,7 +485,7 @@ describe("Deployment API Integration Tests", () => {
           updatedAt: new Date().toISOString(),
         };
 
-        mockDeploymentConfigService.updateDeploymentConfig.mockResolvedValue(mockUpdatedConfig);
+        mockDeploymentConfigurationManager.updateDeploymentConfig.mockResolvedValue(mockUpdatedConfig);
 
         const response = await supertest(app)
           .put("/api/deployments/configs/config-123")
@@ -500,14 +500,14 @@ describe("Deployment API Integration Tests", () => {
         expect(body.data.isActive).toBe(false);
         expect(body.message).toContain("updated successfully");
 
-        expect(mockDeploymentConfigService.updateDeploymentConfig).toHaveBeenCalledWith(
+        expect(mockDeploymentConfigurationManager.updateDeploymentConfig).toHaveBeenCalledWith(
           "config-123",
           updateData
         );
       });
 
       it("should return 404 for non-existent configuration", async () => {
-        mockDeploymentConfigService.updateDeploymentConfig.mockRejectedValue(
+        mockDeploymentConfigurationManager.updateDeploymentConfig.mockRejectedValue(
           new Error("Deployment configuration not found or access denied")
         );
 
@@ -538,7 +538,7 @@ describe("Deployment API Integration Tests", () => {
 
     describe("DELETE /api/deployments/configs/:id", () => {
       it("should delete deployment configuration successfully", async () => {
-        mockDeploymentConfigService.deleteDeploymentConfig.mockResolvedValue(undefined);
+        mockDeploymentConfigurationManager.deleteDeploymentConfig.mockResolvedValue(undefined);
 
         const response = await supertest(app)
           .delete("/api/deployments/configs/config-123")
@@ -549,13 +549,13 @@ describe("Deployment API Integration Tests", () => {
         expect(response.body.success).toBe(true);
         expect(response.body.message).toContain("deleted successfully");
 
-        expect(mockDeploymentConfigService.deleteDeploymentConfig).toHaveBeenCalledWith(
+        expect(mockDeploymentConfigurationManager.deleteDeploymentConfig).toHaveBeenCalledWith(
           "config-123"
         );
       });
 
       it("should return 404 for non-existent configuration", async () => {
-        mockDeploymentConfigService.deleteDeploymentConfig.mockRejectedValue(
+        mockDeploymentConfigurationManager.deleteDeploymentConfig.mockRejectedValue(
           new Error("Deployment configuration not found or access denied")
         );
 
@@ -591,7 +591,7 @@ describe("Deployment API Integration Tests", () => {
           startedAt: new Date(),
         };
 
-        mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(mockConfig);
+        mockDeploymentConfigurationManager.getDeploymentConfigByName.mockResolvedValue(mockConfig);
         mockOrchestrator.triggerDeployment.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
@@ -620,7 +620,7 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent application", async () => {
-        mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(null);
+        mockDeploymentConfigurationManager.getDeploymentConfigByName.mockResolvedValue(null);
 
         const response = await supertest(app)
           .post("/api/deployments/trigger")
@@ -644,7 +644,7 @@ describe("Deployment API Integration Tests", () => {
           ...createValidDeploymentConfigRequest(),
         };
 
-        mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(mockConfig);
+        mockDeploymentConfigurationManager.getDeploymentConfigByName.mockResolvedValue(mockConfig);
 
         const response = await supertest(app)
           .post("/api/deployments/trigger")
@@ -682,7 +682,7 @@ describe("Deployment API Integration Tests", () => {
           dockerImage: "nginx:1.20", // Override to ensure correct image
         };
 
-        mockDeploymentConfigService.getDeploymentConfigByName.mockResolvedValue(mockConfig);
+        mockDeploymentConfigurationManager.getDeploymentConfigByName.mockResolvedValue(mockConfig);
         mockOrchestrator.triggerDeployment.mockResolvedValue({
           id: "deployment-123",
           startedAt: new Date(),
@@ -994,7 +994,7 @@ describe("Deployment API Integration Tests", () => {
       });
       sessionApp.use("/api/deployments", deploymentRoutes);
 
-      mockDeploymentConfigService.listDeploymentConfigs.mockResolvedValue([]);
+      mockDeploymentConfigurationManager.listDeploymentConfigs.mockResolvedValue([]);
 
       await supertest(sessionApp)
         .get("/api/deployments/configs")
@@ -1005,7 +1005,7 @@ describe("Deployment API Integration Tests", () => {
 
   describe("Error Handling", () => {
     it("should handle service errors gracefully", async () => {
-      mockDeploymentConfigService.listDeploymentConfigs.mockRejectedValue(
+      mockDeploymentConfigurationManager.listDeploymentConfigs.mockRejectedValue(
         new Error("Database connection failed")
       );
 
@@ -1043,7 +1043,7 @@ describe("Deployment API Integration Tests", () => {
       };
 
       // Should still work with reasonable large payloads
-      mockDeploymentConfigService.createDeploymentConfig.mockResolvedValue({
+      mockDeploymentConfigurationManager.createDeploymentConfig.mockResolvedValue({
         id: "config-123",
         ...largePayload,
         isActive: true,

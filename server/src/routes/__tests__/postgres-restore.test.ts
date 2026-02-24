@@ -19,14 +19,14 @@ jest.mock("../../lib/prisma", () => mockPrismaInstance);
 
 // Mock all services that RestoreExecutorService depends on
 jest.mock("../../services/docker-executor");
-jest.mock("../../services/postgres-config");
+jest.mock("../../services/postgres-database-manager");
 
 // Create mock service instances
 const mockRestoreExecutorService = {
   queueRestore: jest.fn(),
 };
 
-const mockAzureConfigService = {
+const mockAzureStorageService = {
   get: jest.fn(),
 };
 
@@ -41,9 +41,9 @@ jest.mock("../../services/restore-executor-instance", () => ({
   setRestoreExecutorService: jest.fn(),
 }));
 
-// Mock the AzureConfigService
-jest.mock("../../services/azure-config", () => ({
-  AzureConfigService: jest.fn(() => mockAzureConfigService),
+// Mock the AzureStorageService
+jest.mock("../../services/azure-storage-service", () => ({
+  AzureStorageService: jest.fn(() => mockAzureStorageService),
 }));
 
 // Create Azure Storage mock instances
@@ -141,14 +141,14 @@ import request from "supertest";
 import express from "express";
 import { PrismaClient } from "../../generated/prisma";
 import { RestoreExecutorService } from "../../services/restore-executor";
-import { AzureConfigService } from "../../services/azure-config";
+import { AzureStorageService } from "../../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import router from "../postgres-restore";
 
 // Get the mocked instances
 const mockPrismaClient = mockPrismaInstance;
 // Use the shared mock instances defined above
-// mockRestoreExecutorService and mockAzureConfigService are already defined
+// mockRestoreExecutorService and mockAzureStorageService are already defined
 
 // Azure Storage mock instances are now defined above in the mock setup section
 
@@ -523,7 +523,7 @@ describe("PostgreSQL Restore API", () => {
     // Azure Storage mock instances are defined globally above
 
     beforeEach(() => {
-      mockAzureConfigService.get.mockResolvedValue(
+      mockAzureStorageService.get.mockResolvedValue(
         "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key;EndpointSuffix=core.windows.net",
       );
     });
@@ -663,7 +663,7 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should return 500 if Azure connection string not configured", async () => {
-      mockAzureConfigService.get.mockResolvedValue(null);
+      mockAzureStorageService.get.mockResolvedValue(null);
 
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container")

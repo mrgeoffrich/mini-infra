@@ -10,7 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { CloudflareConfigService } from "../services/cloudflare-config";
+import { CloudflareService } from "../services/cloudflare-service";
 import {
   CreateCloudflareSettingRequest,
   UpdateCloudflareSettingRequest,
@@ -27,7 +27,7 @@ import {
 const router = express.Router();
 
 // Create Cloudflare configuration service instance
-const cloudflareConfigService = new CloudflareConfigService(prisma);
+const cloudflareConfigService = new CloudflareService(prisma);
 
 // Cache for tunnel data with 60-second TTL
 interface TunnelCacheEntry {

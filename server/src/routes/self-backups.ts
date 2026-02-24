@@ -2,7 +2,7 @@ import express from "express";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey } from "../middleware/auth";
-import { AzureConfigService } from "../services/azure-config";
+import { AzureStorageService } from "../services/azure-storage-service";
 import type {
   BackupHistoryResponse,
   BackupHealthResponse,
@@ -12,7 +12,7 @@ import type {
 
 const logger = appLogger();
 const router = express.Router();
-const azureConfigService = new AzureConfigService(prisma);
+const azureConfigService = new AzureStorageService(prisma);
 
 /**
  * GET / - List backup history (paginated, filterable)

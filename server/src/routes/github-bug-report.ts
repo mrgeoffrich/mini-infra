@@ -9,7 +9,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
-import { githubConfigService } from "../services/github-config";
+import { githubService } from "../services/github-service";
 import {
   BugReportRequest,
   BugReportResponse,
@@ -139,7 +139,7 @@ router.post("/", requireSessionOrApiKey, (async (
     const { userData, systemInfo } = validationResult.data;
 
     // Check if GitHub is configured
-    const configStatus = await githubConfigService.getConfigStatus();
+    const configStatus = await githubService.getConfigStatus();
     if (!configStatus.isConfigured) {
       logger.warn(
         {
@@ -171,7 +171,7 @@ router.post("/", requireSessionOrApiKey, (async (
     );
 
     // Create the GitHub issue
-    const issue = await githubConfigService.createIssue({
+    const issue = await githubService.createIssue({
       title: userData.title,
       body: issueBody,
       labels: ["bug", "user-reported"],

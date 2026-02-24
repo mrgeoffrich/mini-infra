@@ -7,7 +7,7 @@ import {
 import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
 import { BlobServiceClient } from "@azure/storage-blob";
-import { AzureConfigService } from "../azure-config";
+import { AzureStorageService } from "../azure-storage-service";
 
 /**
  * TLS Configuration Service Settings Keys
@@ -43,11 +43,11 @@ export class TlsConfigService extends ConfigurationService {
   private static readonly DEFAULT_ACME_PROVIDER: AcmeProvider = "letsencrypt";
   private static readonly TIMEOUT_MS = 15000; // 15 seconds
 
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
 
   constructor(prisma: PrismaClient) {
     super(prisma, "tls");
-    this.azureConfigService = new AzureConfigService(prisma);
+    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**

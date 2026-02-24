@@ -7,8 +7,8 @@ import {
 } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
-import { CloudflareConfigService } from "./cloudflare-config";
-import { AzureConfigService } from "./azure-config";
+import { CloudflareService } from "./cloudflare-service";
+import { AzureStorageService } from "./azure-storage-service";
 import { PostgresSettingsConfigService } from "./postgres-settings-config";
 import { TlsConfigService } from "./tls/tls-config";
 
@@ -46,10 +46,10 @@ export class ConfigurationServiceFactory
           return new DockerConfigService(this.prisma);
 
         case "cloudflare":
-          return new CloudflareConfigService(this.prisma);
+          return new CloudflareService(this.prisma);
 
         case "azure":
-          return new AzureConfigService(this.prisma);
+          return new AzureStorageService(this.prisma);
 
         case "postgres":
           return new PostgresSettingsConfigService(this.prisma);

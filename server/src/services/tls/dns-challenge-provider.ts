@@ -10,7 +10,7 @@ import NodeCache from "node-cache";
 import dns from "dns";
 import { promisify } from "util";
 import { tlsLogger } from "../../lib/logger-factory";
-import { CloudflareConfigService } from "../cloudflare-config";
+import { CloudflareService } from "../cloudflare-service";
 
 const resolveTxt = promisify(dns.resolveTxt);
 
@@ -18,11 +18,11 @@ const resolveTxt = promisify(dns.resolveTxt);
  * Service for handling DNS-01 challenges via Cloudflare
  */
 export class DnsChallenge01Provider {
-  private cloudflareConfig: CloudflareConfigService;
+  private cloudflareConfig: CloudflareService;
   private logger: Logger;
   private cache: NodeCache;
 
-  constructor(cloudflareConfig: CloudflareConfigService) {
+  constructor(cloudflareConfig: CloudflareService) {
     this.cloudflareConfig = cloudflareConfig;
     this.logger = tlsLogger();
     // Cache DNS record IDs for 1 hour

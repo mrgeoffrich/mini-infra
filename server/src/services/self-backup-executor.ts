@@ -1,6 +1,6 @@
 import prisma, { PrismaClient } from "../lib/prisma";
 import { selfBackupLogger } from "../lib/logger-factory";
-import { AzureConfigService } from "./azure-config";
+import { AzureStorageService } from "./azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
@@ -14,7 +14,7 @@ import { getDatabaseFilePath } from "../lib/database-url-parser";
  */
 export class SelfBackupExecutor {
   private prisma: PrismaClient;
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
 
   // Paths
   private static readonly TEMP_DIR = path.resolve(process.cwd(), "temp");
@@ -29,7 +29,7 @@ export class SelfBackupExecutor {
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    this.azureConfigService = new AzureConfigService(prisma);
+    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**

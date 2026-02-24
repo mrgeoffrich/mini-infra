@@ -19,7 +19,7 @@ import {
   DatabaseInfo,
 } from "@mini-infra/types";
 
-export class DatabaseConfigService {
+export class PostgresDatabaseManager {
   private prisma: PrismaClient;
   private encryptionKey: string | null;
 

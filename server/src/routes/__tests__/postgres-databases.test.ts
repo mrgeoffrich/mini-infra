@@ -8,8 +8,8 @@ import {
   UpdatePostgresDatabaseRequest,
 } from "@mini-infra/types";
 
-// Mock DatabaseConfigService
-const mockDatabaseConfigService = {
+// Mock PostgresDatabaseManager
+const mockPostgresDatabaseManager = {
   listDatabases: jest.fn(),
   getDatabaseById: jest.fn(),
   createDatabase: jest.fn(),
@@ -19,10 +19,10 @@ const mockDatabaseConfigService = {
   testDatabaseConnection: jest.fn(),
 };
 
-jest.mock("../../services/postgres-config", () => ({
-  DatabaseConfigService: jest
+jest.mock("../../services/postgres-database-manager", () => ({
+  PostgresDatabaseManager: jest
     .fn()
-    .mockImplementation(() => mockDatabaseConfigService),
+    .mockImplementation(() => mockPostgresDatabaseManager),
 }));
 
 // Mock Prisma
@@ -166,7 +166,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
   describe("GET /api/postgres/databases", () => {
     it("should return databases list successfully", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue(mockDatabases);
+      mockPostgresDatabaseManager.listDatabases.mockResolvedValue(mockDatabases);
 
       const response = await request(app)
         .get("/api/postgres/databases")
@@ -183,7 +183,7 @@ describe("PostgreSQL Databases API Routes", () => {
         },
       });
 
-      expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
         { field: "name", order: "asc" },
@@ -193,7 +193,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle pagination parameters", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue([
+      mockPostgresDatabaseManager.listDatabases.mockResolvedValue([
         mockDatabases[0],
       ]);
 
@@ -202,7 +202,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .query({ limit: 10, page: 2 })
         .expect(200);
 
-      expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
         { field: "name", order: "asc" },
@@ -212,7 +212,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle filter parameters", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue([]);
+      mockPostgresDatabaseManager.listDatabases.mockResolvedValue([]);
 
       await request(app)
         .get("/api/postgres/databases")
@@ -223,7 +223,7 @@ describe("PostgreSQL Databases API Routes", () => {
         })
         .expect(200);
 
-      expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {
           name: "prod",
@@ -237,7 +237,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle service errors", async () => {
-      mockDatabaseConfigService.listDatabases.mockRejectedValue(
+      mockPostgresDatabaseManager.listDatabases.mockRejectedValue(
         new Error("Database service error"),
       );
 
@@ -268,7 +268,7 @@ describe("PostgreSQL Databases API Routes", () => {
     const mockDatabase = mockDatabases[0];
 
     it("should return specific database successfully", async () => {
-      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(mockDatabase);
+      mockPostgresDatabaseManager.getDatabaseById.mockResolvedValue(mockDatabase);
 
       const response = await request(app)
         .get("/api/postgres/databases/db-1")
@@ -279,14 +279,14 @@ describe("PostgreSQL Databases API Routes", () => {
         data: mockDatabase,
       });
 
-      expect(mockDatabaseConfigService.getDatabaseById).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.getDatabaseById).toHaveBeenCalledWith(
         "db-1",
         "test-user-id",
       );
     });
 
     it("should return 404 for non-existent database", async () => {
-      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(null);
+      mockPostgresDatabaseManager.getDatabaseById.mockResolvedValue(null);
 
       const response = await request(app)
         .get("/api/postgres/databases/nonexistent")
@@ -299,7 +299,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle service errors", async () => {
-      mockDatabaseConfigService.getDatabaseById.mockRejectedValue(
+      mockPostgresDatabaseManager.getDatabaseById.mockRejectedValue(
         new Error("Database error"),
       );
 
@@ -337,7 +337,7 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should create database successfully", async () => {
-      mockDatabaseConfigService.createDatabase.mockResolvedValue(
+      mockPostgresDatabaseManager.createDatabase.mockResolvedValue(
         mockCreatedDatabase,
       );
 
@@ -352,7 +352,7 @@ describe("PostgreSQL Databases API Routes", () => {
         data: mockCreatedDatabase,
       });
 
-      expect(mockDatabaseConfigService.createDatabase).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.createDatabase).toHaveBeenCalledWith(
         validCreateRequest,
         "test-user-id",
       );
@@ -373,7 +373,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle duplicate database name", async () => {
-      mockDatabaseConfigService.createDatabase.mockRejectedValue(
+      mockPostgresDatabaseManager.createDatabase.mockRejectedValue(
         new Error("Database configuration with name 'new-db' already exists"),
       );
 
@@ -426,7 +426,7 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should update database successfully", async () => {
-      mockDatabaseConfigService.updateDatabase.mockResolvedValue(
+      mockPostgresDatabaseManager.updateDatabase.mockResolvedValue(
         mockUpdatedDatabase,
       );
 
@@ -441,7 +441,7 @@ describe("PostgreSQL Databases API Routes", () => {
         data: mockUpdatedDatabase,
       });
 
-      expect(mockDatabaseConfigService.updateDatabase).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.updateDatabase).toHaveBeenCalledWith(
         "db-1",
         updateRequest,
         "test-user-id",
@@ -449,7 +449,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should return 404 for non-existent database", async () => {
-      mockDatabaseConfigService.updateDatabase.mockRejectedValue(
+      mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
         new Error("Database configuration not found"),
       );
 
@@ -465,7 +465,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle unauthorized access", async () => {
-      mockDatabaseConfigService.updateDatabase.mockRejectedValue(
+      mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
         new Error(
           "Access denied: You can only update your own database configurations",
         ),
@@ -485,10 +485,10 @@ describe("PostgreSQL Databases API Routes", () => {
   describe("DELETE /api/postgres/databases/:id", () => {
     it("should delete database successfully", async () => {
       // Mock getDatabaseById to return a database first (required by the delete endpoint)
-      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(
+      mockPostgresDatabaseManager.getDatabaseById.mockResolvedValue(
         mockDatabases[0],
       );
-      mockDatabaseConfigService.deleteDatabase.mockResolvedValue(undefined);
+      mockPostgresDatabaseManager.deleteDatabase.mockResolvedValue(undefined);
 
       const response = await request(app)
         .delete("/api/postgres/databases/db-1")
@@ -499,7 +499,7 @@ describe("PostgreSQL Databases API Routes", () => {
         message: "Database configuration deleted successfully",
       });
 
-      expect(mockDatabaseConfigService.deleteDatabase).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.deleteDatabase).toHaveBeenCalledWith(
         "db-1",
         "test-user-id",
       );
@@ -507,7 +507,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
     it("should return 404 for non-existent database", async () => {
       // Mock getDatabaseById to return null first (required by the delete endpoint)
-      mockDatabaseConfigService.getDatabaseById.mockResolvedValue(null);
+      mockPostgresDatabaseManager.getDatabaseById.mockResolvedValue(null);
 
       const response = await request(app)
         .delete("/api/postgres/databases/nonexistent")
@@ -530,7 +530,7 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should test database connection successfully", async () => {
-      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(
+      mockPostgresDatabaseManager.testDatabaseConnection.mockResolvedValue(
         mockTestResult,
       );
 
@@ -550,7 +550,7 @@ describe("PostgreSQL Databases API Routes", () => {
       });
 
       expect(
-        mockDatabaseConfigService.testDatabaseConnection,
+        mockPostgresDatabaseManager.testDatabaseConnection,
       ).toHaveBeenCalledWith("db-1", "test-user-id");
     });
 
@@ -561,7 +561,7 @@ describe("PostgreSQL Databases API Routes", () => {
         errorCode: "TIMEOUT",
       };
 
-      mockDatabaseConfigService.testDatabaseConnection.mockResolvedValue(
+      mockPostgresDatabaseManager.testDatabaseConnection.mockResolvedValue(
         failedTestResult,
       );
 
@@ -582,7 +582,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should handle test errors", async () => {
-      mockDatabaseConfigService.testDatabaseConnection.mockRejectedValue(
+      mockPostgresDatabaseManager.testDatabaseConnection.mockRejectedValue(
         new Error("Database configuration not found or access denied"),
       );
 
@@ -615,7 +615,7 @@ describe("PostgreSQL Databases API Routes", () => {
     };
 
     it("should test connection with provided config successfully", async () => {
-      mockDatabaseConfigService.testConnection.mockResolvedValue(
+      mockPostgresDatabaseManager.testConnection.mockResolvedValue(
         mockTestResult,
       );
 
@@ -635,7 +635,7 @@ describe("PostgreSQL Databases API Routes", () => {
         },
       });
 
-      expect(mockDatabaseConfigService.testConnection).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.testConnection).toHaveBeenCalledWith(
         validConnectionConfig,
       );
     });
@@ -661,7 +661,7 @@ describe("PostgreSQL Databases API Routes", () => {
         errorCode: "AUTHENTICATION_FAILED",
       };
 
-      mockDatabaseConfigService.testConnection.mockResolvedValue(failedResult);
+      mockPostgresDatabaseManager.testConnection.mockResolvedValue(failedResult);
 
       const response = await request(app)
         .post("/api/postgres/databases/test-connection")
@@ -681,7 +681,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should redact sensitive data in logs", async () => {
-      mockDatabaseConfigService.testConnection.mockResolvedValue(
+      mockPostgresDatabaseManager.testConnection.mockResolvedValue(
         mockTestResult,
       );
 
@@ -723,7 +723,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
   describe("error handling", () => {
     it("should handle unexpected errors", async () => {
-      mockDatabaseConfigService.listDatabases.mockImplementation(() => {
+      mockPostgresDatabaseManager.listDatabases.mockImplementation(() => {
         throw new Error("Unexpected error");
       });
 
@@ -738,7 +738,7 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should provide request correlation IDs in error responses", async () => {
-      mockDatabaseConfigService.listDatabases.mockRejectedValue(
+      mockPostgresDatabaseManager.listDatabases.mockRejectedValue(
         new Error("Service error"),
       );
 
@@ -799,14 +799,14 @@ describe("PostgreSQL Databases API Routes", () => {
 
   describe("sorting and ordering", () => {
     it("should handle sort parameters", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue([]);
+      mockPostgresDatabaseManager.listDatabases.mockResolvedValue([]);
 
       await request(app)
         .get("/api/postgres/databases")
         .query({ sortBy: "name", sortOrder: "asc" })
         .expect(200);
 
-      expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
         { field: "name", order: "asc" },
@@ -816,11 +816,11 @@ describe("PostgreSQL Databases API Routes", () => {
     });
 
     it("should use default sorting when not specified", async () => {
-      mockDatabaseConfigService.listDatabases.mockResolvedValue([]);
+      mockPostgresDatabaseManager.listDatabases.mockResolvedValue([]);
 
       await request(app).get("/api/postgres/databases").expect(200);
 
-      expect(mockDatabaseConfigService.listDatabases).toHaveBeenCalledWith(
+      expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
         "test-user-id",
         {},
         { field: "name", order: "asc" },

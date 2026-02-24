@@ -1,8 +1,8 @@
 import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
-import { BackupConfigService } from "../backup-config";
-import { AzureConfigService } from "../azure-config";
+import { BackupConfigurationManager } from "../backup-configuration-manager";
+import { AzureStorageService } from "../azure-storage-service";
 import { BackupFormat } from "@mini-infra/types";
 
 // Mock node-cron
@@ -36,8 +36,8 @@ const mockLogger = servicesLogger();
 // Get reference to the mocked cron
 const mockCron = require("node-cron");
 
-// Mock AzureConfigService
-jest.mock("../azure-config");
+// Mock AzureStorageService
+jest.mock("../azure-storage-service");
 
 // Mock Prisma client
 const mockPrisma = {
@@ -53,28 +53,28 @@ const mockPrisma = {
 } as unknown as typeof prisma;
 
 // Mock Azure config service
-const mockAzureConfigService = {
+const mockAzureStorageService = {
   testContainerAccess: jest.fn(),
-} as unknown as AzureConfigService;
+} as unknown as AzureStorageService;
 
-describe("BackupConfigService", () => {
-  let backupConfigService: BackupConfigService;
+describe("BackupConfigurationManager", () => {
+  let backupConfigService: BackupConfigurationManager;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    backupConfigService = new BackupConfigService(mockPrisma);
+    backupConfigService = new BackupConfigurationManager(mockPrisma);
     // Mock the Azure service instance
-    (backupConfigService as any).azureConfigService = mockAzureConfigService;
+    (backupConfigService as any).azureConfigService = mockAzureStorageService;
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
-    AzureConfigService.cleanupCache();
+    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
+    AzureStorageService.cleanupCache();
   });
 
   describe("constructor", () => {
     it("should initialize with Prisma client", () => {
-      expect(backupConfigService).toBeInstanceOf(BackupConfigService);
+      expect(backupConfigService).toBeInstanceOf(BackupConfigurationManager);
     });
   });
 
@@ -97,7 +97,7 @@ describe("BackupConfigService", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: true,
         responseTimeMs: 100,
         cached: false,
@@ -242,7 +242,7 @@ describe("BackupConfigService", () => {
       mockPrisma.backupConfiguration.findUnique = jest
         .fn()
         .mockResolvedValue(null);
-      mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
       });
@@ -398,7 +398,7 @@ describe("BackupConfigService", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: true,
       });
     });
@@ -497,7 +497,7 @@ describe("BackupConfigService", () => {
       mockPrisma.backupConfiguration.findUnique = jest
         .fn()
         .mockResolvedValue(existingConfig);
-      mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
       });
@@ -854,7 +854,7 @@ describe("BackupConfigService", () => {
         .fn()
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
-      mockAzureConfigService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
         accessible: true,
       });
     });
@@ -1023,7 +1023,7 @@ describe("BackupConfigService", () => {
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
 
-      mockAzureConfigService.testContainerAccess = jest
+      mockAzureStorageService.testContainerAccess = jest
         .fn()
         .mockRejectedValue(new Error("Azure service unavailable"));
 

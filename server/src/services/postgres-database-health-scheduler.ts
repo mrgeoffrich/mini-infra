@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { DatabaseConfigService } from "./postgres-config";
+import { PostgresDatabaseManager } from "./postgres-database-manager";
 import { servicesLogger } from "../lib/logger-factory";
 
 /**
@@ -8,14 +8,14 @@ import { servicesLogger } from "../lib/logger-factory";
  */
 export class PostgresDatabaseHealthScheduler {
   private readonly checkInterval: number;
-  private readonly databaseConfigService: DatabaseConfigService;
+  private readonly databaseConfigService: PostgresDatabaseManager;
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
   private readonly logger = servicesLogger();
 
   constructor(checkInterval: number = 10 * 60 * 1000) { // 10 minutes default
     this.checkInterval = checkInterval;
-    this.databaseConfigService = new DatabaseConfigService(prisma);
+    this.databaseConfigService = new PostgresDatabaseManager(prisma);
   }
 
   /**

@@ -106,11 +106,11 @@ const CLOUDFLARE_ERROR_MAPPERS: ErrorMapper[] = [
 ];
 
 /**
- * CloudflareConfigService handles Cloudflare API configuration management
+ * CloudflareService handles Cloudflare API configuration management
  * Extends the base ConfigurationService to provide Cloudflare-specific functionality
  * Implements circuit breaker pattern for resilient API communication
  */
-export class CloudflareConfigService extends ConfigurationService {
+export class CloudflareService extends ConfigurationService {
   private static readonly TIMEOUT_MS = 10000; // 10 second timeout
   private static readonly API_TOKEN_KEY = "api_token";
   private static readonly ACCOUNT_ID_KEY = "account_id";
@@ -164,8 +164,8 @@ export class CloudflareConfigService extends ConfigurationService {
   ): Promise<ValidationResult> {
     try {
       // Use provided settings or fallback to stored settings
-      const apiToken = settings?.apiToken || (await this.get(CloudflareConfigService.API_TOKEN_KEY));
-      const accountId = settings?.accountId || (await this.get(CloudflareConfigService.ACCOUNT_ID_KEY));
+      const apiToken = settings?.apiToken || (await this.get(CloudflareService.API_TOKEN_KEY));
+      const accountId = settings?.accountId || (await this.get(CloudflareService.ACCOUNT_ID_KEY));
 
       servicesLogger().debug(
         this.circuitBreaker.redact({
@@ -205,7 +205,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ])) as any;
@@ -368,7 +368,7 @@ export class CloudflareConfigService extends ConfigurationService {
       throw new Error("Invalid API token format");
     }
 
-    await this.set(CloudflareConfigService.API_TOKEN_KEY, apiToken, userId);
+    await this.set(CloudflareService.API_TOKEN_KEY, apiToken, userId);
 
     // Reset circuit breaker when new credentials are set
     this.circuitBreaker.reset();
@@ -392,7 +392,7 @@ export class CloudflareConfigService extends ConfigurationService {
       throw new Error("Account ID cannot be empty");
     }
 
-    await this.set(CloudflareConfigService.ACCOUNT_ID_KEY, accountId, userId);
+    await this.set(CloudflareService.ACCOUNT_ID_KEY, accountId, userId);
   }
 
   /**
@@ -400,7 +400,7 @@ export class CloudflareConfigService extends ConfigurationService {
    * @returns API token or null if not set
    */
   async getApiToken(): Promise<string | null> {
-    return await this.get(CloudflareConfigService.API_TOKEN_KEY);
+    return await this.get(CloudflareService.API_TOKEN_KEY);
   }
 
   /**
@@ -408,7 +408,7 @@ export class CloudflareConfigService extends ConfigurationService {
    * @returns Account ID or null if not set
    */
   async getAccountId(): Promise<string | null> {
-    return await this.get(CloudflareConfigService.ACCOUNT_ID_KEY);
+    return await this.get(CloudflareService.ACCOUNT_ID_KEY);
   }
 
   /**
@@ -467,7 +467,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel config API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ])) as Response;
@@ -573,7 +573,7 @@ export class CloudflareConfigService extends ConfigurationService {
             new Promise((_, reject) =>
               setTimeout(
                 () => reject(new Error("Tunnel API request timeout")),
-                CloudflareConfigService.TIMEOUT_MS,
+                CloudflareService.TIMEOUT_MS,
               ),
             ),
           ])) as any;
@@ -686,7 +686,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel config update API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ])) as Response;
@@ -935,7 +935,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Get zone API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ])) as any;
@@ -1018,7 +1018,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Create DNS record API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ])) as any;
@@ -1090,7 +1090,7 @@ export class CloudflareConfigService extends ConfigurationService {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error("Delete DNS record API request timeout")),
-            CloudflareConfigService.TIMEOUT_MS,
+            CloudflareService.TIMEOUT_MS,
           ),
         ),
       ]);
@@ -1132,16 +1132,16 @@ export class CloudflareConfigService extends ConfigurationService {
    */
   async removeConfiguration(userId: string): Promise<void> {
     try {
-      await this.delete(CloudflareConfigService.API_TOKEN_KEY, userId);
+      await this.delete(CloudflareService.API_TOKEN_KEY, userId);
     } catch (error) {
       // Token might not exist, continue
     }
 
     try {
       const oldAccountId = await this.get(
-        CloudflareConfigService.ACCOUNT_ID_KEY,
+        CloudflareService.ACCOUNT_ID_KEY,
       );
-      await this.delete(CloudflareConfigService.ACCOUNT_ID_KEY, userId);
+      await this.delete(CloudflareService.ACCOUNT_ID_KEY, userId);
     } catch (error) {
       // Account ID might not exist, continue
     }

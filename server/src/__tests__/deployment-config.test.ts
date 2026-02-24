@@ -1,6 +1,6 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import { testPrisma, createTestUser } from "./setup";
-import { DeploymentConfigService } from "../services/deployment-config";
+import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
 import {
   CreateDeploymentConfigRequest,
   UpdateDeploymentConfigRequest,
@@ -35,8 +35,8 @@ jest.mock("../lib/logger-factory.ts", () => ({
   })),
 }));
 
-describe("DeploymentConfigService", () => {
-  let deploymentConfigService: DeploymentConfigService;
+describe("DeploymentConfigurationManager", () => {
+  let deploymentConfigService: DeploymentConfigurationManager;
   let testEnvironmentId: string;
 
   beforeEach(async () => {
@@ -61,7 +61,7 @@ describe("DeploymentConfigService", () => {
     testEnvironmentId = environment.id;
 
     // Create service instance
-    deploymentConfigService = new DeploymentConfigService(testPrisma);
+    deploymentConfigService = new DeploymentConfigurationManager(testPrisma);
   });
 
   afterEach(async () => {
@@ -776,7 +776,7 @@ describe("DeploymentConfigService", () => {
 
     it("should handle database errors gracefully", async () => {
       // Mock a database error by creating an invalid prisma instance
-      const invalidService = new DeploymentConfigService({} as any);
+      const invalidService = new DeploymentConfigurationManager({} as any);
 
       const result = await invalidService.validateHostname("api.example.com");
 

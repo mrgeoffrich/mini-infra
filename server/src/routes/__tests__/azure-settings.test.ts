@@ -76,8 +76,8 @@ jest.mock("../../lib/auth-middleware", () => ({
 
 // Note: mockLogger is already defined above at line 31-36
 
-// Mock AzureConfigService
-const mockAzureConfigService = {
+// Mock AzureStorageService
+const mockAzureStorageService = {
   getConnectionString: jest.fn(),
   getStorageAccountName: jest.fn(),
   getHealthStatus: jest.fn(),
@@ -89,10 +89,10 @@ const mockAzureConfigService = {
   testContainerAccess: jest.fn(),
 };
 
-jest.mock("../../services/azure-config", () => ({
-  AzureConfigService: jest
+jest.mock("../../services/azure-storage-service", () => ({
+  AzureStorageService: jest
     .fn()
-    .mockImplementation(() => mockAzureConfigService),
+    .mockImplementation(() => mockAzureStorageService),
 }));
 
 import azureSettingsRouter from "../azure-settings";
@@ -262,13 +262,13 @@ describe("Azure Settings API Routes", () => {
         updatedBy: "test-user-id",
       };
 
-      mockAzureConfigService.getConnectionString.mockResolvedValue(
+      mockAzureStorageService.getConnectionString.mockResolvedValue(
         mockConnectionString,
       );
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         mockAccountName,
       );
-      mockAzureConfigService.getHealthStatus.mockResolvedValue(
+      mockAzureStorageService.getHealthStatus.mockResolvedValue(
         mockHealthStatus,
       );
       mockPrisma.systemSettings.findMany.mockResolvedValue([mockSystemSetting]);
@@ -294,15 +294,15 @@ describe("Azure Settings API Routes", () => {
         requestId: testRequestId,
       });
 
-      expect(mockAzureConfigService.getConnectionString).toHaveBeenCalled();
-      expect(mockAzureConfigService.getStorageAccountName).toHaveBeenCalled();
-      expect(mockAzureConfigService.getHealthStatus).toHaveBeenCalled();
+      expect(mockAzureStorageService.getConnectionString).toHaveBeenCalled();
+      expect(mockAzureStorageService.getStorageAccountName).toHaveBeenCalled();
+      expect(mockAzureStorageService.getHealthStatus).toHaveBeenCalled();
     });
 
     test("returns no configuration message when no settings exist", async () => {
-      mockAzureConfigService.getConnectionString.mockResolvedValue(null);
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(null);
-      mockAzureConfigService.getHealthStatus.mockResolvedValue({
+      mockAzureStorageService.getConnectionString.mockResolvedValue(null);
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(null);
+      mockAzureStorageService.getHealthStatus.mockResolvedValue({
         status: "disconnected",
         lastChecked: null,
         errorMessage: "No configuration found",
@@ -325,7 +325,7 @@ describe("Azure Settings API Routes", () => {
     });
 
     test("handles service errors gracefully", async () => {
-      mockAzureConfigService.getConnectionString.mockRejectedValue(
+      mockAzureStorageService.getConnectionString.mockRejectedValue(
         new Error("Database connection failed"),
       );
 
@@ -350,12 +350,12 @@ describe("Azure Settings API Routes", () => {
         updatedBy: "test-user-id",
       };
 
-      mockAzureConfigService.setConnectionString.mockResolvedValue(undefined);
-      mockAzureConfigService.set.mockResolvedValue(undefined);
-      mockAzureConfigService.getConnectionString.mockResolvedValue(
+      mockAzureStorageService.setConnectionString.mockResolvedValue(undefined);
+      mockAzureStorageService.set.mockResolvedValue(undefined);
+      mockAzureStorageService.getConnectionString.mockResolvedValue(
         validConnectionString,
       );
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         "testaccount",
       );
       mockPrisma.systemSettings.findFirst.mockResolvedValue(mockSystemSetting);
@@ -379,11 +379,11 @@ describe("Azure Settings API Routes", () => {
         message: "Azure Storage configuration updated successfully",
       });
 
-      expect(mockAzureConfigService.setConnectionString).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.setConnectionString).toHaveBeenCalledWith(
         validConnectionString,
         "test-user-id",
       );
-      expect(mockAzureConfigService.set).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.set).toHaveBeenCalledWith(
         "storage_account_name",
         "testaccount",
         "test-user-id",
@@ -425,7 +425,7 @@ describe("Azure Settings API Routes", () => {
     });
 
     test("handles service errors during update", async () => {
-      mockAzureConfigService.setConnectionString.mockRejectedValue(
+      mockAzureStorageService.setConnectionString.mockRejectedValue(
         new Error("Failed to encrypt connection string"),
       );
 
@@ -458,9 +458,9 @@ describe("Azure Settings API Routes", () => {
       };
 
       // Mock temporary service creation and cleanup
-      mockAzureConfigService.setConnectionString.mockResolvedValue(undefined);
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
-      mockAzureConfigService.removeConfiguration.mockResolvedValue(undefined);
+      mockAzureStorageService.setConnectionString.mockResolvedValue(undefined);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.removeConfiguration.mockResolvedValue(undefined);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -495,12 +495,12 @@ describe("Azure Settings API Routes", () => {
         message: "Connection successful",
       });
 
-      expect(mockAzureConfigService.setConnectionString).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.setConnectionString).toHaveBeenCalledWith(
         validConnectionString,
         "test-user-id",
       );
-      expect(mockAzureConfigService.validate).toHaveBeenCalled();
-      expect(mockAzureConfigService.removeConfiguration).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.validate).toHaveBeenCalled();
+      expect(mockAzureStorageService.removeConfiguration).toHaveBeenCalledWith(
         "test-user-id",
       );
     });
@@ -516,7 +516,7 @@ describe("Azure Settings API Routes", () => {
         },
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -537,9 +537,9 @@ describe("Azure Settings API Routes", () => {
         },
       });
 
-      expect(mockAzureConfigService.validate).toHaveBeenCalled();
-      expect(mockAzureConfigService.setConnectionString).not.toHaveBeenCalled();
-      expect(mockAzureConfigService.removeConfiguration).not.toHaveBeenCalled();
+      expect(mockAzureStorageService.validate).toHaveBeenCalled();
+      expect(mockAzureStorageService.setConnectionString).not.toHaveBeenCalled();
+      expect(mockAzureStorageService.removeConfiguration).not.toHaveBeenCalled();
     });
 
     test("handles validation failure scenarios", async () => {
@@ -550,7 +550,7 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 5000,
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -578,9 +578,9 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 15000,
       };
 
-      mockAzureConfigService.setConnectionString.mockResolvedValue(undefined);
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
-      mockAzureConfigService.removeConfiguration.mockResolvedValue(undefined);
+      mockAzureStorageService.setConnectionString.mockResolvedValue(undefined);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.removeConfiguration.mockResolvedValue(undefined);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -608,7 +608,7 @@ describe("Azure Settings API Routes", () => {
         });
 
       expect(response.status).toBe(200); // Validation schema allows empty body
-      expect(mockAzureConfigService.validate).toHaveBeenCalled();
+      expect(mockAzureStorageService.validate).toHaveBeenCalled();
     });
   });
 
@@ -617,10 +617,10 @@ describe("Azure Settings API Routes", () => {
     test("removes Azure configuration successfully", async () => {
       const mockAccountName = "testaccount";
 
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         mockAccountName,
       );
-      mockAzureConfigService.removeConfiguration.mockResolvedValue(undefined);
+      mockAzureStorageService.removeConfiguration.mockResolvedValue(undefined);
 
       const response = await request(app).delete("/api/settings/azure");
 
@@ -631,15 +631,15 @@ describe("Azure Settings API Routes", () => {
           "Azure Storage configuration removed successfully (testaccount)",
       });
 
-      expect(mockAzureConfigService.getStorageAccountName).toHaveBeenCalled();
-      expect(mockAzureConfigService.removeConfiguration).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.getStorageAccountName).toHaveBeenCalled();
+      expect(mockAzureStorageService.removeConfiguration).toHaveBeenCalledWith(
         "test-user-id",
       );
     });
 
     test("handles removal when no account name exists", async () => {
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(null);
-      mockAzureConfigService.removeConfiguration.mockResolvedValue(undefined);
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(null);
+      mockAzureStorageService.removeConfiguration.mockResolvedValue(undefined);
 
       const response = await request(app).delete("/api/settings/azure");
 
@@ -651,7 +651,7 @@ describe("Azure Settings API Routes", () => {
     });
 
     test("handles service errors during deletion", async () => {
-      mockAzureConfigService.getStorageAccountName.mockRejectedValue(
+      mockAzureStorageService.getStorageAccountName.mockRejectedValue(
         new Error("Database error"),
       );
 
@@ -686,10 +686,10 @@ describe("Azure Settings API Routes", () => {
         },
       ];
 
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         mockAccountName,
       );
-      mockAzureConfigService.getContainerInfo.mockResolvedValue(mockContainers);
+      mockAzureStorageService.getContainerInfo.mockResolvedValue(mockContainers);
 
       const response = await request(app).get("/api/settings/azure/containers");
 
@@ -723,15 +723,15 @@ describe("Azure Settings API Routes", () => {
         message: "Found 2 containers",
       });
 
-      expect(mockAzureConfigService.getStorageAccountName).toHaveBeenCalled();
-      expect(mockAzureConfigService.getContainerInfo).toHaveBeenCalled();
+      expect(mockAzureStorageService.getStorageAccountName).toHaveBeenCalled();
+      expect(mockAzureStorageService.getContainerInfo).toHaveBeenCalled();
     });
 
     test("handles no containers found", async () => {
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         "emptyaccount",
       );
-      mockAzureConfigService.getContainerInfo.mockResolvedValue([]);
+      mockAzureStorageService.getContainerInfo.mockResolvedValue([]);
 
       const response = await request(app).get("/api/settings/azure/containers");
 
@@ -759,13 +759,13 @@ describe("Azure Settings API Routes", () => {
         leaseStatus: "unlocked",
       };
 
-      mockAzureConfigService.testContainerAccess.mockResolvedValue({
+      mockAzureStorageService.testContainerAccess.mockResolvedValue({
         accessible: true,
         responseTimeMs: 150,
         error: undefined,
         errorCode: undefined,
       });
-      mockAzureConfigService.getContainerInfo.mockResolvedValue([
+      mockAzureStorageService.getContainerInfo.mockResolvedValue([
         mockContainerInfo,
       ]);
 
@@ -788,7 +788,7 @@ describe("Azure Settings API Routes", () => {
         message: `Container '${containerName}' is accessible`,
       });
 
-      expect(mockAzureConfigService.testContainerAccess).toHaveBeenCalledWith(
+      expect(mockAzureStorageService.testContainerAccess).toHaveBeenCalledWith(
         containerName,
       );
     });
@@ -796,7 +796,7 @@ describe("Azure Settings API Routes", () => {
     test("handles container access denied", async () => {
       const containerName = "inaccessible-container";
 
-      mockAzureConfigService.testContainerAccess.mockResolvedValue({
+      mockAzureStorageService.testContainerAccess.mockResolvedValue({
         accessible: false,
         responseTimeMs: 100,
         error: "Container access denied or container does not exist",
@@ -848,7 +848,7 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 1000,
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       // Simulate concurrent requests
       const requests = Array.from({ length: 5 }, () =>
@@ -862,18 +862,18 @@ describe("Azure Settings API Routes", () => {
         expect(response.body.success).toBe(true);
       });
 
-      expect(mockAzureConfigService.validate).toHaveBeenCalledTimes(5);
+      expect(mockAzureStorageService.validate).toHaveBeenCalledTimes(5);
     });
 
     test("handles simultaneous configuration updates", async () => {
       const validConnectionString =
         "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
 
-      mockAzureConfigService.setConnectionString.mockResolvedValue(undefined);
-      mockAzureConfigService.getConnectionString.mockResolvedValue(
+      mockAzureStorageService.setConnectionString.mockResolvedValue(undefined);
+      mockAzureStorageService.getConnectionString.mockResolvedValue(
         validConnectionString,
       );
-      mockAzureConfigService.getStorageAccountName.mockResolvedValue(
+      mockAzureStorageService.getStorageAccountName.mockResolvedValue(
         "testaccount",
       );
       mockPrisma.systemSettings.findFirst.mockResolvedValue({
@@ -898,7 +898,7 @@ describe("Azure Settings API Routes", () => {
         expect(response.body.success).toBe(true);
       });
 
-      expect(mockAzureConfigService.setConnectionString).toHaveBeenCalledTimes(
+      expect(mockAzureStorageService.setConnectionString).toHaveBeenCalledTimes(
         3,
       );
     });
@@ -914,7 +914,7 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 30000,
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -934,7 +934,7 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 2000,
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")
@@ -952,7 +952,7 @@ describe("Azure Settings API Routes", () => {
         responseTimeMs: 10000,
       };
 
-      mockAzureConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockAzureStorageService.validate.mockResolvedValue(mockValidationResult);
 
       const response = await request(app)
         .post("/api/settings/azure/validate")

@@ -3,8 +3,8 @@ import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { RestoreExecutorService } from "../restore-executor";
 import { DockerExecutorService } from "../docker-executor";
-import { DatabaseConfigService } from "../postgres-config";
-import { AzureConfigService } from "../azure-config";
+import { PostgresDatabaseManager } from "../postgres-database-manager";
+import { AzureStorageService } from "../azure-storage-service";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 
 // Mock InMemoryQueue
@@ -32,8 +32,8 @@ jest.mock("../../lib/in-memory-queue", () => {
 
 // Mock all the services
 jest.mock("../docker-executor");
-jest.mock("../postgres-config");
-jest.mock("../azure-config");
+jest.mock("../postgres-database-manager");
+jest.mock("../azure-storage-service");
 
 // Mock logger factory
 jest.mock("../../lib/logger-factory", () => {
@@ -99,15 +99,15 @@ const mockDockerExecutor = {
   executeContainerWithProgress: jest.fn(),
 } as unknown as DockerExecutorService;
 
-const mockDatabaseConfigService = {
+const mockPostgresDatabaseManager = {
   getDatabaseById: jest.fn(),
   getConnectionConfig: jest.fn(),
   testConnection: jest.fn(),
-} as unknown as DatabaseConfigService;
+} as unknown as PostgresDatabaseManager;
 
-const mockAzureConfigService = {
+const mockAzureStorageService = {
   get: jest.fn(),
-} as unknown as AzureConfigService;
+} as unknown as AzureStorageService;
 
 describe("RestoreExecutorService", () => {
   let restoreExecutorService: RestoreExecutorService;
@@ -119,14 +119,14 @@ describe("RestoreExecutorService", () => {
     // Mock service instances
     (restoreExecutorService as any).dockerExecutor = mockDockerExecutor;
     (restoreExecutorService as any).databaseConfigService =
-      mockDatabaseConfigService;
-    (restoreExecutorService as any).azureConfigService = mockAzureConfigService;
+      mockPostgresDatabaseManager;
+    (restoreExecutorService as any).azureConfigService = mockAzureStorageService;
     (restoreExecutorService as any).restoreQueue = mockQueue;
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
-    AzureConfigService.cleanupCache();
+    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
+    AzureStorageService.cleanupCache();
   });
 
   describe("constructor", () => {
@@ -436,7 +436,7 @@ describe("RestoreExecutorService", () => {
       "https://account.blob.core.windows.net/container/backup.sql";
 
     beforeEach(() => {
-      mockAzureConfigService.get = jest
+      mockAzureStorageService.get = jest
         .fn()
         .mockResolvedValue("azure-connection-string");
       mockBlobServiceClient.getContainerClient = jest
@@ -524,7 +524,7 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should handle Azure connection string not configured", async () => {
-      mockAzureConfigService.get = jest.fn().mockResolvedValue(null);
+      mockAzureStorageService.get = jest.fn().mockResolvedValue(null);
 
       const result = await (restoreExecutorService as any).validateBackupFile(
         backupUrl,
@@ -849,7 +849,7 @@ describe("RestoreExecutorService", () => {
     };
 
     it("should verify database successfully", async () => {
-      mockDatabaseConfigService.testConnection = jest.fn().mockResolvedValue({
+      mockPostgresDatabaseManager.testConnection = jest.fn().mockResolvedValue({
         isValid: true,
         message: "Connection successful",
       });
@@ -866,7 +866,7 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should return error when database connection fails", async () => {
-      mockDatabaseConfigService.testConnection = jest.fn().mockResolvedValue({
+      mockPostgresDatabaseManager.testConnection = jest.fn().mockResolvedValue({
         isValid: false,
         message: "Connection failed",
       });
@@ -882,7 +882,7 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should handle test connection errors", async () => {
-      mockDatabaseConfigService.testConnection = jest
+      mockPostgresDatabaseManager.testConnection = jest
         .fn()
         .mockRejectedValue(new Error("Test error"));
 
@@ -900,7 +900,7 @@ describe("RestoreExecutorService", () => {
       "https://account.blob.core.windows.net/rollback-backups/testdb/rollback-123.sql";
 
     beforeEach(() => {
-      mockAzureConfigService.get = jest
+      mockAzureStorageService.get = jest
         .fn()
         .mockResolvedValue("azure-connection-string");
       mockBlobServiceClient.getContainerClient = jest
@@ -947,7 +947,7 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should handle missing Azure connection string", async () => {
-      mockAzureConfigService.get = jest.fn().mockResolvedValue(null);
+      mockAzureStorageService.get = jest.fn().mockResolvedValue(null);
 
       await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
 

@@ -4,17 +4,17 @@ import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
 
-// Mock BackupConfigService
-const mockBackupConfigService = {
+// Mock BackupConfigurationManager
+const mockBackupConfigurationManager = {
   getBackupConfigByDatabaseId: jest.fn(),
   createBackupConfig: jest.fn(),
   deleteBackupConfig: jest.fn(),
 };
 
-jest.mock("../../services/backup-config", () => ({
-  BackupConfigService: jest
+jest.mock("../../services/backup-configuration-manager", () => ({
+  BackupConfigurationManager: jest
     .fn()
-    .mockImplementation(() => mockBackupConfigService),
+    .mockImplementation(() => mockBackupConfigurationManager),
 }));
 
 // Mock Prisma
@@ -124,7 +124,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     };
 
     it("should return backup configuration successfully", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockResolvedValue(
         mockBackupConfig,
       );
 
@@ -138,12 +138,12 @@ describe("PostgreSQL Backup Configs API Routes", () => {
       });
 
       expect(
-        mockBackupConfigService.getBackupConfigByDatabaseId,
+        mockBackupConfigurationManager.getBackupConfigByDatabaseId,
       ).toHaveBeenCalledWith("db-123", "test-user-id");
     });
 
     it("should return 404 when backup config not found", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockResolvedValue(
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockResolvedValue(
         null,
       );
 
@@ -159,7 +159,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle service errors", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockRejectedValue(
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockRejectedValue(
         new Error("Database error"),
       );
 
@@ -205,7 +205,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     };
 
     it("should create backup configuration successfully", async () => {
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue(
         mockCreatedConfig,
       );
 
@@ -220,7 +220,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         data: mockCreatedConfig,
       });
 
-      expect(mockBackupConfigService.createBackupConfig).toHaveBeenCalledWith(
+      expect(mockBackupConfigurationManager.createBackupConfig).toHaveBeenCalledWith(
         "db-123",
         {
           schedule: "0 2 * * *",
@@ -250,7 +250,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle duplicate configuration", async () => {
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Backup configuration already exists for this database"),
       );
 
@@ -266,7 +266,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle database not found", async () => {
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Database not found or access denied"),
       );
 
@@ -282,7 +282,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle invalid cron expression", async () => {
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Invalid cron expression"),
       );
 
@@ -303,7 +303,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle Azure container validation failure", async () => {
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Database not found or access denied"),
       );
 
@@ -330,7 +330,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         nextScheduledAt: null,
       };
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue(
         mockConfigWithoutSchedule,
       );
 
@@ -346,7 +346,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
   describe("DELETE /api/postgres/backup-configs/:id", () => {
     it("should delete backup configuration successfully", async () => {
-      mockBackupConfigService.deleteBackupConfig.mockResolvedValue(undefined);
+      mockBackupConfigurationManager.deleteBackupConfig.mockResolvedValue(undefined);
 
       const response = await request(app)
         .delete("/api/postgres/backup-configs/config-123")
@@ -357,14 +357,14 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         message: "Backup configuration deleted successfully",
       });
 
-      expect(mockBackupConfigService.deleteBackupConfig).toHaveBeenCalledWith(
+      expect(mockBackupConfigurationManager.deleteBackupConfig).toHaveBeenCalledWith(
         "config-123",
         "test-user-id",
       );
     });
 
     it("should return 404 for non-existent configuration", async () => {
-      mockBackupConfigService.deleteBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.deleteBackupConfig.mockRejectedValue(
         new Error("Backup configuration not found"),
       );
 
@@ -379,7 +379,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should handle unauthorized access", async () => {
-      mockBackupConfigService.deleteBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.deleteBackupConfig.mockRejectedValue(
         new Error("Access denied"),
       );
 
@@ -422,7 +422,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         compressionLevel: 15, // Invalid, should be 0-9
       };
 
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Compression level must be between 0 and 9"),
       );
 
@@ -445,7 +445,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         retentionDays: 0, // Invalid, should be at least 1
       };
 
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error("Retention days must be at least 1"),
       );
 
@@ -467,7 +467,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         azurePathPrefix: "db-backups/",
       };
 
-      mockBackupConfigService.createBackupConfig.mockRejectedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
         new Error(
           "Azure container name must be 3-63 characters, contain only lowercase letters, numbers, and hyphens",
         ),
@@ -524,7 +524,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         "0 0 1 * *", // Monthly on 1st
       ];
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue({
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue({
         id: "config-123",
         databaseId: "db-123",
         schedule: "0 2 * * *",
@@ -558,7 +558,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should handle backup format validation", async () => {
       const validFormats: BackupFormat[] = ["custom", "plain", "tar"];
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue({
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue({
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
@@ -592,7 +592,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
   describe("error handling", () => {
     it("should handle unexpected errors", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockImplementation(
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockImplementation(
         () => {
           throw new Error("Unexpected error");
         },
@@ -609,7 +609,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should provide request correlation IDs in error responses", async () => {
-      mockBackupConfigService.getBackupConfigByDatabaseId.mockRejectedValue(
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockRejectedValue(
         new Error("Service error"),
       );
 
@@ -640,7 +640,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
       };
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(mockConfig);
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue(mockConfig);
 
       await request(app)
         .post("/api/postgres/backup-configs")
@@ -665,7 +665,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should log backup configuration deletion events", async () => {
-      mockBackupConfigService.deleteBackupConfig.mockResolvedValue(undefined);
+      mockBackupConfigurationManager.deleteBackupConfig.mockResolvedValue(undefined);
 
       await request(app)
         .delete("/api/postgres/backup-configs/config-123")
@@ -732,7 +732,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
       };
 
-      mockBackupConfigService.createBackupConfig.mockResolvedValue(
+      mockBackupConfigurationManager.createBackupConfig.mockResolvedValue(
         mockMinimalConfig,
       );
 

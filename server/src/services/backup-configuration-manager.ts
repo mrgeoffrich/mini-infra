@@ -2,7 +2,7 @@ import prisma, { PrismaClient } from "../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../lib/logger-factory";
-import { AzureConfigService } from "./azure-config";
+import { AzureStorageService } from "./azure-storage-service";
 import { UserPreferencesService } from "./user-preferences";
 import { BackupSchedulerService } from "./backup-scheduler";
 import {
@@ -11,13 +11,13 @@ import {
   BackupFormat,
 } from "@mini-infra/types";
 
-export class BackupConfigService {
+export class BackupConfigurationManager {
   private prisma: PrismaClient;
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    this.azureConfigService = new AzureConfigService(prisma);
+    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { BlobServiceClient } from "@azure/storage-blob";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { AzureConfigService } from "../azure-config";
+import { AzureStorageService } from "../azure-storage-service";
 import {
   parseBackupUrl,
   extractContainerFromUrl,
@@ -14,11 +14,11 @@ import {
  */
 export class RollbackManager {
   private dockerExecutor: DockerExecutorService;
-  private azureConfigService: AzureConfigService;
+  private azureConfigService: AzureStorageService;
 
   constructor(
     dockerExecutor: DockerExecutorService,
-    azureConfigService: AzureConfigService,
+    azureConfigService: AzureStorageService,
   ) {
     this.dockerExecutor = dockerExecutor;
     this.azureConfigService = azureConfigService;

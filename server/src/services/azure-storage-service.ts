@@ -66,10 +66,10 @@ export interface RetentionEnforcementResult {
 }
 
 /**
- * AzureConfigService handles Azure Storage configuration management
+ * AzureStorageService handles Azure Storage configuration management
  * Extends the base ConfigurationService to provide Azure-specific functionality
  */
-export class AzureConfigService extends ConfigurationService {
+export class AzureStorageService extends ConfigurationService {
   private static readonly CONNECTION_STRING_KEY = "connection_string";
   private static readonly STORAGE_ACCOUNT_KEY = "storage_account_name";
 
@@ -149,7 +149,7 @@ export class AzureConfigService extends ConfigurationService {
 
     try {
       const connectionString = settings?.connectionString || (await this.get(
-        AzureConfigService.CONNECTION_STRING_KEY,
+        AzureStorageService.CONNECTION_STRING_KEY,
       ));
 
       if (!connectionString) {
@@ -227,7 +227,7 @@ export class AzureConfigService extends ConfigurationService {
       // Store account name for future reference
       if (accountName !== "Unknown") {
         await this.set(
-          AzureConfigService.STORAGE_ACCOUNT_KEY,
+          AzureStorageService.STORAGE_ACCOUNT_KEY,
           accountName,
           "system",
         );
@@ -376,7 +376,7 @@ export class AzureConfigService extends ConfigurationService {
     }
 
     await this.set(
-      AzureConfigService.CONNECTION_STRING_KEY,
+      AzureStorageService.CONNECTION_STRING_KEY,
       connectionString,
       userId,
     );
@@ -387,7 +387,7 @@ export class AzureConfigService extends ConfigurationService {
    * @returns Connection string or null if not set
    */
   async getConnectionString(): Promise<string | null> {
-    return await this.get(AzureConfigService.CONNECTION_STRING_KEY);
+    return await this.get(AzureStorageService.CONNECTION_STRING_KEY);
   }
 
   /**
@@ -395,7 +395,7 @@ export class AzureConfigService extends ConfigurationService {
    * @returns Storage account name or null if not set
    */
   async getStorageAccountName(): Promise<string | null> {
-    return await this.get(AzureConfigService.STORAGE_ACCOUNT_KEY);
+    return await this.get(AzureStorageService.STORAGE_ACCOUNT_KEY);
   }
 
   /**
@@ -492,7 +492,7 @@ export class AzureConfigService extends ConfigurationService {
     const cacheKey = `container_access:${containerName}`;
 
     // Check cache first
-    const cached = AzureConfigService.containerAccessCache.get<{
+    const cached = AzureStorageService.containerAccessCache.get<{
       accessible: boolean;
       responseTimeMs: number;
       error?: string;
@@ -521,7 +521,7 @@ export class AzureConfigService extends ConfigurationService {
         };
 
         // Cache negative result for shorter time (1 minute)
-        AzureConfigService.containerAccessCache.set(cacheKey, result, 60);
+        AzureStorageService.containerAccessCache.set(cacheKey, result, 60);
         return result;
       }
 
@@ -564,7 +564,7 @@ export class AzureConfigService extends ConfigurationService {
       };
 
       // Cache successful result
-      AzureConfigService.containerAccessCache.set(cacheKey, result);
+      AzureStorageService.containerAccessCache.set(cacheKey, result);
 
       servicesLogger().info(
         {
@@ -609,7 +609,7 @@ export class AzureConfigService extends ConfigurationService {
       };
 
       // Cache error result for shorter time (2 minutes)
-      AzureConfigService.containerAccessCache.set(cacheKey, result, 120);
+      AzureStorageService.containerAccessCache.set(cacheKey, result, 120);
 
       servicesLogger().warn(
         {
@@ -1222,16 +1222,16 @@ export class AzureConfigService extends ConfigurationService {
    */
   async removeConfiguration(userId: string): Promise<void> {
     try {
-      await this.delete(AzureConfigService.CONNECTION_STRING_KEY, userId);
+      await this.delete(AzureStorageService.CONNECTION_STRING_KEY, userId);
     } catch (error) {
       // Connection string might not exist, continue
     }
 
     try {
       const oldAccountName = await this.get(
-        AzureConfigService.STORAGE_ACCOUNT_KEY,
+        AzureStorageService.STORAGE_ACCOUNT_KEY,
       );
-      await this.delete(AzureConfigService.STORAGE_ACCOUNT_KEY, userId);
+      await this.delete(AzureStorageService.STORAGE_ACCOUNT_KEY, userId);
     } catch (error) {
       // Account name might not exist, continue
     }
@@ -1252,9 +1252,9 @@ export class AzureConfigService extends ConfigurationService {
    * This prevents the NodeCache timer from keeping the process alive
    */
   static cleanupCache(): void {
-    if (AzureConfigService.containerAccessCache) {
-      AzureConfigService.containerAccessCache.flushAll();
-      AzureConfigService.containerAccessCache.close();
+    if (AzureStorageService.containerAccessCache) {
+      AzureStorageService.containerAccessCache.flushAll();
+      AzureStorageService.containerAccessCache.close();
     }
   }
 }

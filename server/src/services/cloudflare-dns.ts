@@ -1,6 +1,6 @@
 import Cloudflare from "cloudflare";
 import { servicesLogger } from "../lib/logger-factory";
-import { CloudflareConfigService } from "./cloudflare-config";
+import { CloudflareService } from "./cloudflare-service";
 import prisma from "../lib/prisma";
 import {
   CloudflareDNSZone,
@@ -16,11 +16,11 @@ const logger = servicesLogger();
  * Provides methods for DNS record lifecycle management
  */
 export class CloudflareDNSService {
-  private cloudflareConfigService: CloudflareConfigService;
+  private cloudflareConfigService: CloudflareService;
   private static readonly TIMEOUT_MS = 10000; // 10 second timeout
 
   constructor() {
-    this.cloudflareConfigService = new CloudflareConfigService(prisma);
+    this.cloudflareConfigService = new CloudflareService(prisma);
   }
 
   /**

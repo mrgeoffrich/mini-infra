@@ -20,8 +20,8 @@ import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
 import { CertificateDistributor } from "../services/tls/certificate-distributor";
-import { CloudflareConfigService } from "../services/cloudflare-config";
-import { AzureConfigService } from "../services/azure-config";
+import { CloudflareService } from "../services/cloudflare-service";
+import { AzureStorageService } from "../services/azure-storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
 
@@ -54,7 +54,7 @@ function parseCertificateData(certificate: any) {
 async function initializeLifecycleManager(): Promise<CertificateLifecycleManager> {
   // Initialize config services
   const tlsConfig = new TlsConfigService(prisma);
-  const azureConfig = new AzureConfigService(prisma);
+  const azureConfig = new AzureStorageService(prisma);
 
   // Get certificate container name
   const containerName = await tlsConfig.getCertificateContainerName();
@@ -68,7 +68,7 @@ async function initializeLifecycleManager(): Promise<CertificateLifecycleManager
   // Initialize services
   const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
   const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
-  const cloudflareConfig = new CloudflareConfigService(prisma);
+  const cloudflareConfig = new CloudflareService(prisma);
   const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
   // Initialize ACME client

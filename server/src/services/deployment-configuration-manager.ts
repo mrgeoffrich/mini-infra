@@ -21,7 +21,7 @@ import {
   RollbackConfig,
   HostnameValidationResult,
 } from "@mini-infra/types";
-import { CloudflareConfigService } from "./cloudflare-config";
+import { CloudflareService } from "./cloudflare-service";
 import { DeploymentOrchestrator } from "./deployment-orchestrator";
 
 // ====================
@@ -129,11 +129,11 @@ export const updateDeploymentConfigSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-export class DeploymentConfigService extends ConfigurationService {
+export class DeploymentConfigurationManager extends ConfigurationService {
   private cache: NodeCache;
   private dockerService: DockerService;
   private containerManager: ContainerLifecycleManager;
-  private cloudflareService: CloudflareConfigService;
+  private cloudflareService: CloudflareService;
   private deploymentOrchestrator: DeploymentOrchestrator;
 
   constructor(prismaInstance: PrismaClient, encryptionKey?: string) {
@@ -149,7 +149,7 @@ export class DeploymentConfigService extends ConfigurationService {
     // Initialize Docker service and container manager for cleanup operations
     this.dockerService = DockerService.getInstance();
     this.containerManager = new ContainerLifecycleManager();
-    this.cloudflareService = new CloudflareConfigService(prismaInstance);
+    this.cloudflareService = new CloudflareService(prismaInstance);
     this.deploymentOrchestrator = new DeploymentOrchestrator();
   }
 

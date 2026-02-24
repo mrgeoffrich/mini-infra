@@ -3,8 +3,8 @@ import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
-import { CloudflareConfigService } from "../cloudflare-config";
-import { AzureConfigService } from "../azure-config";
+import { CloudflareService } from "../cloudflare-service";
+import { AzureStorageService } from "../azure-storage-service";
 import { PostgresSettingsConfigService } from "../postgres-settings-config";
 
 // Create a single mock logger instance
@@ -27,8 +27,8 @@ jest.mock("../../lib/logger-factory", () => ({
 
 // Mock configuration services
 jest.mock("../docker-config");
-jest.mock("../cloudflare-config");
-jest.mock("../azure-config");
+jest.mock("../cloudflare-service");
+jest.mock("../azure-storage-service");
 jest.mock("../postgres-settings-config");
 
 // Mock Prisma client
@@ -58,8 +58,8 @@ describe("ConfigurationServiceFactory", () => {
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureConfigService to prevent timer leaks
-    AzureConfigService.cleanupCache();
+    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
+    AzureStorageService.cleanupCache();
   });
 
   describe("Constructor", () => {
@@ -89,15 +89,15 @@ describe("ConfigurationServiceFactory", () => {
     it("should create Cloudflare configuration service", () => {
       const service = factory.create({ category: "cloudflare" });
 
-      expect(CloudflareConfigService).toHaveBeenCalledWith(mockPrisma);
-      expect(service).toBeInstanceOf(CloudflareConfigService);
+      expect(CloudflareService).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(CloudflareService);
     });
 
     it("should create Azure configuration service", () => {
       const service = factory.create({ category: "azure" });
 
-      expect(AzureConfigService).toHaveBeenCalledWith(mockPrisma);
-      expect(service).toBeInstanceOf(AzureConfigService);
+      expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(AzureStorageService);
     });
 
     it("should create Postgres configuration service", () => {
@@ -154,12 +154,12 @@ describe("ConfigurationServiceFactory", () => {
     });
 
     it("should log error with unknown error message when non-Error thrown", () => {
-      // Mock CloudflareConfigService constructor to throw non-Error
-      const MockedCloudflareConfigService =
-        CloudflareConfigService as jest.MockedClass<
-          typeof CloudflareConfigService
+      // Mock CloudflareService constructor to throw non-Error
+      const MockedCloudflareService =
+        CloudflareService as jest.MockedClass<
+          typeof CloudflareService
         >;
-      MockedCloudflareConfigService.mockImplementationOnce(() => {
+      MockedCloudflareService.mockImplementationOnce(() => {
         throw "String error";
       });
 
@@ -303,14 +303,14 @@ describe("ConfigurationServiceFactory", () => {
 
       // Verify that each service was created with the correct constructor and prisma client
       expect(DockerConfigService).toHaveBeenCalledWith(mockPrisma);
-      expect(CloudflareConfigService).toHaveBeenCalledWith(mockPrisma);
-      expect(AzureConfigService).toHaveBeenCalledWith(mockPrisma);
+      expect(CloudflareService).toHaveBeenCalledWith(mockPrisma);
+      expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
       expect(PostgresSettingsConfigService).toHaveBeenCalledWith(mockPrisma);
 
       // Verify that the services are instances of the correct classes
       expect(dockerService).toBeInstanceOf(DockerConfigService);
-      expect(cloudflareService).toBeInstanceOf(CloudflareConfigService);
-      expect(azureService).toBeInstanceOf(AzureConfigService);
+      expect(cloudflareService).toBeInstanceOf(CloudflareService);
+      expect(azureService).toBeInstanceOf(AzureStorageService);
       expect(postgresService).toBeInstanceOf(PostgresSettingsConfigService);
     });
   });

@@ -3,7 +3,7 @@ import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "@prisma/client";
 import { AzureStorageCertificateStore } from "../tls/azure-storage-certificate-store";
 import { TlsConfigService } from "../tls/tls-config";
-import { AzureConfigService } from "../azure-config";
+import { AzureStorageService } from "../azure-storage-service";
 
 const logger = loadbalancerLogger();
 
@@ -472,7 +472,7 @@ export class HAProxyFrontendManager {
 
       // Step 2: Initialize TLS config and Azure Storage client
       const tlsConfig = new TlsConfigService(prisma);
-      const azureConfig = new AzureConfigService(prisma);
+      const azureConfig = new AzureStorageService(prisma);
 
       const containerName = await tlsConfig.getCertificateContainerName();
       const connectionString = await azureConfig.getConnectionString();
@@ -841,7 +841,7 @@ export class HAProxyFrontendManager {
 
     // Initialize TLS config and Azure Storage client
     const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureConfigService(prisma);
+    const azureConfig = new AzureStorageService(prisma);
 
     const containerName = await tlsConfig.getCertificateContainerName();
     const connectionString = await azureConfig.getConnectionString();
@@ -944,7 +944,7 @@ export class HAProxyFrontendManager {
 
     // Initialize TLS config and Azure Storage client
     const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureConfigService(prisma);
+    const azureConfig = new AzureStorageService(prisma);
 
     const containerName = await tlsConfig.getCertificateContainerName();
     const connectionString = await azureConfig.getConnectionString();

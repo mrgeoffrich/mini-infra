@@ -7,7 +7,7 @@ import express, {
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
-import { DeploymentConfigService } from "../services/deployment-config";
+import { DeploymentConfigurationManager } from "../services/deployment-configuration-manager";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
 import DockerService from "../services/docker";
 import prisma from "../lib/prisma";
@@ -18,8 +18,8 @@ import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
-import { CloudflareConfigService } from "../services/cloudflare-config";
-import { AzureConfigService } from "../services/azure-config";
+import { CloudflareService } from "../services/cloudflare-service";
+import { AzureStorageService } from "../services/azure-storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
 import {
@@ -44,7 +44,7 @@ const logger = appLogger();
 const router = express.Router();
 
 // Initialize services
-const deploymentConfigService = new DeploymentConfigService(prisma, process.env.ENCRYPTION_KEY);
+const deploymentConfigService = new DeploymentConfigurationManager(prisma, process.env.ENCRYPTION_KEY);
 const deploymentOrchestrator = new DeploymentOrchestrator();
 // Initialize the deployment orchestrator
 deploymentOrchestrator.initialize().catch(error => {
@@ -58,7 +58,7 @@ async function initializeCertificateProvisioningService(): Promise<CertificatePr
   try {
     // Initialize config services
     const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureConfigService(prisma);
+    const azureConfig = new AzureStorageService(prisma);
 
     // Get certificate container name
     const containerName = await tlsConfig.get("certificate_blob_container");
@@ -77,7 +77,7 @@ async function initializeCertificateProvisioningService(): Promise<CertificatePr
     // Initialize services
     const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
     const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
-    const cloudflareConfig = new CloudflareConfigService(prisma);
+    const cloudflareConfig = new CloudflareService(prisma);
     const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
     // Initialize ACME client

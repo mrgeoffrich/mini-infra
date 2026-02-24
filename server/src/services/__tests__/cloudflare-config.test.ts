@@ -2,7 +2,7 @@ import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
-import { CloudflareConfigService } from "../cloudflare-config";
+import { CloudflareService } from "../cloudflare-service";
 
 // Mock Cloudflare SDK
 const mockCloudflare = {
@@ -61,12 +61,12 @@ const mockPrisma = {
 
 // Import the mock after the jest.mock calls
 
-describe("CloudflareConfigService", () => {
-  let cloudflareConfigService: CloudflareConfigService;
+describe("CloudflareService", () => {
+  let cloudflareConfigService: CloudflareService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    cloudflareConfigService = new CloudflareConfigService(mockPrisma);
+    cloudflareConfigService = new CloudflareService(mockPrisma);
   });
 
   afterEach(() => {
@@ -76,7 +76,7 @@ describe("CloudflareConfigService", () => {
 
   describe("Constructor", () => {
     it("should initialize with correct category", () => {
-      expect(cloudflareConfigService).toBeInstanceOf(CloudflareConfigService);
+      expect(cloudflareConfigService).toBeInstanceOf(CloudflareService);
       expect((cloudflareConfigService as any).category).toBe("cloudflare");
     });
   });

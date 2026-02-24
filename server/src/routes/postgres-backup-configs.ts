@@ -10,9 +10,9 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { BackupConfigService } from "../services/backup-config";
+import { BackupConfigurationManager } from "../services/backup-configuration-manager";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
-import { DatabaseConfigService } from "../services/postgres-config";
+import { PostgresDatabaseManager } from "../services/postgres-database-manager";
 import { UserPreferencesService } from "../services/user-preferences";
 import {
   CreateBackupConfigurationRequest,
@@ -26,9 +26,9 @@ import {
 const router = express.Router();
 
 // Create service instances
-const backupConfigService = new BackupConfigService(prisma);
+const backupConfigService = new BackupConfigurationManager(prisma);
 const postgresServerService = new PostgresServerService();
-const databaseConfigService = new DatabaseConfigService(prisma);
+const databaseConfigService = new PostgresDatabaseManager(prisma);
 
 // IMPORTANT: Define specific routes BEFORE parameterized routes
 // to prevent Express from matching specific paths as parameters
