@@ -7,6 +7,7 @@ import {
   IconBrandAzure,
   IconBrandGithub,
   IconDatabase,
+  IconHelp,
 } from "@tabler/icons-react";
 import {
   useConnectivityStatus,
@@ -15,6 +16,7 @@ import {
 import { useBackupHealth } from "@/hooks/use-self-backup";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useCurrentPageTitle, usePageTitle } from "@/hooks/use-page-title";
+import { getHelpDocForRoute } from "@/lib/route-config";
 
 
 // Backup health indicator component
@@ -140,6 +142,39 @@ function ConnectivityIndicator({
   );
 }
 
+// Help button - links to contextual help doc or general help page
+function HelpButton() {
+  const location = useLocation();
+  const isHelpPage = location.pathname.startsWith("/help");
+
+  // Don't show the help button when already on help pages
+  if (isHelpPage) {
+    return null;
+  }
+
+  const contextualHelpPath = getHelpDocForRoute(location.pathname);
+  const helpPath = contextualHelpPath ?? "/help";
+  const title = contextualHelpPath
+    ? "View help for this page"
+    : "Documentation";
+
+  return (
+    <>
+      <Separator
+        orientation="vertical"
+        className="mx-1 data-[orientation=vertical]:h-4"
+      />
+      <Link
+        to={helpPath}
+        className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        title={title}
+      >
+        <IconHelp className="size-5" />
+      </Link>
+    </>
+  );
+}
+
 export function SiteHeader() {
   const location = useLocation();
   const pageTitle = useCurrentPageTitle();
@@ -185,6 +220,7 @@ export function SiteHeader() {
               label="GitHub"
             />
             <BackupHealthIndicator />
+            <HelpButton />
           </div>
         </div>
       </header>

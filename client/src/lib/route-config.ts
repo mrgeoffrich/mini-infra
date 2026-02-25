@@ -30,9 +30,9 @@ export interface RouteMetadata {
     | "networking"
     | "monitoring"
     | "connectivity"
-    | "administration"
-    | "help"; // Navigation section for grouping
+    | "administration"; // Navigation section for grouping
   description?: string;
+  helpDoc?: string; // Path to contextual help doc (e.g. "containers/viewing-containers")
 }
 
 export interface RouteConfig extends RouteMetadata {
@@ -59,6 +59,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Docker container management",
+    helpDoc: "getting-started/managing-containers",
   },
 
   "/postgres-server": {
@@ -354,9 +355,8 @@ export const routeConfig: Record<string, RouteConfig> = {
     path: "/help",
     title: "Documentation",
     icon: IconBook,
-    showInNav: true,
+    showInNav: false,
     navGroup: "main",
-    navSection: "help",
     description: "Guides and reference documentation",
     children: {
       doc: {
@@ -424,7 +424,6 @@ export function getNavigationSections(): NavSection[] {
     { id: "monitoring", label: "Monitoring" },
     { id: "connectivity", label: "Connected Services" },
     { id: "administration", label: "Administration" },
-    { id: "help", label: "Help" },
   ];
 
   // Initialize sections
@@ -517,6 +516,22 @@ export function generateBreadcrumbs(pathname: string): Array<{
   buildChain(currentRoute, pathname);
 
   return breadcrumbs;
+}
+
+// Get the contextual help doc path for a given route, if one exists
+export function getHelpDocForRoute(pathname: string): string | null {
+  const metadata = getRouteMetadata(pathname);
+  if (metadata?.helpDoc) {
+    return `/help/${metadata.helpDoc}`;
+  }
+  // Walk up to parent if current route doesn't have a helpDoc
+  if (metadata?.parent) {
+    const parentMetadata = getRouteMetadata(metadata.parent);
+    if (parentMetadata?.helpDoc) {
+      return `/help/${parentMetadata.helpDoc}`;
+    }
+  }
+  return null;
 }
 
 // Simple path matching for dynamic routes

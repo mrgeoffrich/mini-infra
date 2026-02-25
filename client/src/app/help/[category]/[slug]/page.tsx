@@ -1,10 +1,8 @@
-import { useParams, Link, Navigate } from "react-router-dom";
-import { IconBook, IconChevronRight } from "@tabler/icons-react";
+import { useParams, Navigate } from "react-router-dom";
 import { getDocBySlug } from "@/lib/doc-loader";
 import { DocContent } from "@/components/help/DocContent";
 import { DocToc } from "@/components/help/DocToc";
 import { DocNavigation } from "@/components/help/DocNavigation";
-import { HelpDocSidebar } from "@/components/help/HelpDocSidebar";
 import { Badge } from "@/components/ui/badge";
 
 export function HelpDocPage() {
@@ -18,27 +16,8 @@ export function HelpDocPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-          <Link
-            to="/help"
-            className="hover:text-foreground transition-colors flex items-center gap-1"
-          >
-            <IconBook className="size-3.5" />
-            Documentation
-          </Link>
-          <IconChevronRight className="size-3.5" />
-          <span className="text-foreground">{doc.frontmatter.title}</span>
-        </div>
-      </div>
-
-      <div className="px-4 lg:px-6">
         <div className="flex gap-8 items-start">
-          {/* Left: doc tree navigation */}
-          <aside className="hidden lg:block w-52 shrink-0 sticky top-20">
-            <HelpDocSidebar />
-          </aside>
-
-          {/* Center: doc content */}
+          {/* Main: doc content */}
           <main className="min-w-0 flex-1 max-w-3xl">
             <div className="mb-6">
               {doc.frontmatter.tags && doc.frontmatter.tags.length > 0 && (
