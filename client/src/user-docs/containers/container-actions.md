@@ -2,7 +2,7 @@
 title: Container Actions
 description: What Start, Stop, Restart, and Remove do at the Docker level.
 category: Containers
-order: 2
+order: 3
 tags:
   - containers
   - docker

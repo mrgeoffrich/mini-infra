@@ -2,7 +2,7 @@
 title: Container Logs
 description: How real-time log streaming works and what the log viewer controls do.
 category: Containers
-order: 3
+order: 4
 tags:
   - containers
   - docker

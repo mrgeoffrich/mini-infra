@@ -71,6 +71,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "databases",
     description: "PostgreSQL server and database management",
+    helpDoc: "postgres-backups/backup-overview",
     children: {
       detail: {
         path: "/postgres-server/:serverId",
@@ -90,6 +91,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "databases",
     description: "Database backups and restore",
+    helpDoc: "postgres-backups/backup-overview",
     children: {
       restore: {
         path: "/postgres-backup/:databaseId/restore",
@@ -97,6 +99,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Restore",
         parent: "/postgres-backup",
         showInNav: false,
+        helpDoc: "postgres-backups/restoring-backups",
       },
     },
   },
@@ -109,6 +112,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Zero-downtime deployment management",
+    helpDoc: "deployments/deployment-overview",
     children: {
       new: {
         path: "/deployments/new",
@@ -116,6 +120,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "New Configuration",
         parent: "/deployments",
         showInNav: false,
+        helpDoc: "deployments/creating-deployments",
       },
     },
   },
@@ -147,6 +152,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "networking",
     description: "Cloudflare tunnel monitoring",
+    helpDoc: "tunnels/tunnel-monitoring",
   },
 
   "/api-keys": {
@@ -157,6 +163,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "API key management",
+    helpDoc: "settings/api-keys",
   },
 
   "/events": {
@@ -186,6 +193,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "networking",
     description: "HAProxy frontend management",
+    helpDoc: "deployments/deployment-overview",
     children: {
       frontends: {
         path: "/haproxy/frontends",
@@ -239,6 +247,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "connectivity",
     description: "Docker service connectivity and configuration",
+    helpDoc: "connectivity/health-monitoring",
   },
 
   "/connectivity-cloudflare": {
@@ -249,6 +258,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "connectivity",
     description: "Cloudflare service connectivity and configuration",
+    helpDoc: "connectivity/health-monitoring",
   },
 
   "/connectivity-azure": {
@@ -259,6 +269,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "connectivity",
     description: "Azure Storage service connectivity and configuration",
+    helpDoc: "connectivity/health-monitoring",
   },
 
   "/connectivity-github": {
@@ -269,6 +280,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "connectivity",
     description: "GitHub App connectivity for packages, repos, and actions",
+    helpDoc: "connectivity/health-monitoring",
   },
 
   "/settings-system": {
@@ -280,6 +292,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "System configuration and settings",
+    helpDoc: "settings/system-settings",
   },
 
   "/settings-security": {
@@ -302,6 +315,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Docker registry authentication",
+    helpDoc: "settings/system-settings",
   },
 
   "/settings-self-backup": {
@@ -313,6 +327,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Application backup configuration",
+    helpDoc: "postgres-backups/configuring-backups",
   },
 
   "/settings-tls": {
@@ -335,6 +350,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "GitHub integration for bug reporting",
+    helpDoc: "github/github-app-setup",
   },
 
   "/user": {
@@ -348,6 +364,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Settings",
         parent: "/user",
         showInNav: false,
+        helpDoc: "settings/user-preferences",
       },
     },
   },

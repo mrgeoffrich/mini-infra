@@ -63,6 +63,18 @@ export interface DocCategory {
   docs: DocEntry[];
 }
 
+const categoryOrder: string[] = [
+  "getting-started",
+  "containers",
+  "postgres-backups",
+  "deployments",
+  "tunnels",
+  "connectivity",
+  "github",
+  "api",
+  "settings",
+];
+
 export function getDocsByCategory(): DocCategory[] {
   const map = new Map<string, DocEntry[]>();
   for (const doc of docRegistry) {
@@ -70,9 +82,15 @@ export function getDocsByCategory(): DocCategory[] {
     existing.push(doc);
     map.set(doc.category, existing);
   }
-  return Array.from(map.entries()).map(([slug, docs]) => ({
-    slug,
-    label: docs[0]?.frontmatter.category ?? slug,
-    docs,
-  }));
+  return Array.from(map.entries())
+    .map(([slug, docs]) => ({
+      slug,
+      label: docs[0]?.frontmatter.category ?? slug,
+      docs,
+    }))
+    .sort((a, b) => {
+      const ai = categoryOrder.indexOf(a.slug);
+      const bi = categoryOrder.indexOf(b.slug);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
 }
