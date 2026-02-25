@@ -2,7 +2,7 @@
 title: Managing Containers
 description: Learn how to view, start, stop, and inspect Docker containers in Mini Infra.
 category: Getting Started
-order: 1
+order: 2
 tags:
   - docker
   - containers
