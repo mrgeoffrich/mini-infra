@@ -1,3 +1,4 @@
+import React, { Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PublicRoute } from "@/components/public-route";
@@ -42,6 +43,11 @@ import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
 import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
 import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
+
+const HelpPage = React.lazy(() => import("@/app/help/page"));
+const HelpDocPage = React.lazy(
+  () => import("@/app/help/[category]/[slug]/page")
+);
 
 export const router = createBrowserRouter([
   {
@@ -223,6 +229,22 @@ export const router = createBrowserRouter([
       {
         path: "user/settings",
         element: <UserSettingsPage />,
+      },
+      {
+        path: "help",
+        element: (
+          <Suspense>
+            <HelpPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: "help/:category/:slug",
+        element: (
+          <Suspense>
+            <HelpDocPage />
+          </Suspense>
+        ),
       },
       // Development-only routes
       ...(import.meta.env.DEV
