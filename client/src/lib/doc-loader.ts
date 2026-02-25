@@ -1,4 +1,4 @@
-import matter from "gray-matter";
+import fm from "front-matter";
 
 export interface DocFrontmatter {
   title: string;
@@ -32,14 +32,14 @@ function buildRegistry(): DocEntry[] {
       const category = parts[0];
       const slug = parts[parts.length - 1];
 
-      const { data, content } = matter(raw);
-      const frontmatter = data as DocFrontmatter;
+      const { attributes, body } = fm<DocFrontmatter>(raw);
+      const frontmatter = attributes;
 
       return {
         slug,
         category,
         frontmatter,
-        content: content.trim(),
+        content: body.trim(),
         href: `/help/${category}/${slug}`,
       };
     })
