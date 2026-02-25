@@ -609,8 +609,8 @@ export class GitHubAppService extends ConfigurationService {
     // which is for PAT/OAuth user tokens)
     const endpoint =
       ownerType === "Organization"
-        ? `${GITHUB_API_BASE}/orgs/${owner}/packages?package_type=container`
-        : `${GITHUB_API_BASE}/users/${owner}/packages?package_type=container`;
+        ? `${GITHUB_API_BASE}/orgs/${owner}/packages?package_type=docker`
+        : `${GITHUB_API_BASE}/users/${owner}/packages?package_type=docker`;
 
     const response = await this.fetchGitHub(endpoint, {
       method: "GET",
