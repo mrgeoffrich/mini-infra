@@ -167,7 +167,13 @@ export class SelfBackupExecutor {
   }
 
   /**
-   * Create SQLite backup using better-sqlite3
+   * Create SQLite backup using VACUUM INTO
+   *
+   * VACUUM INTO creates a consistent, defragmented copy of the database in a single
+   * atomic operation. Unlike the online backup API (.backup()), it only requires a
+   * shared read lock and writes directly to a new file — avoiding the dual-connection
+   * contention with Prisma that caused SQLITE_IOERR and SQLITE_READONLY errors.
+   *
    * @param sourcePath - Path to dev.db
    * @param destPath - Path to backup file
    */
@@ -175,19 +181,21 @@ export class SelfBackupExecutor {
     let sourceDb: Database.Database | null = null;
 
     try {
-      // Open database for backup - SQLite's backup API handles concurrent access safely
-      // Note: readonly mode cannot be used here as backup() may need write access for WAL checkpointing
+      // Open in readonly mode — VACUUM INTO writes to a *new* file, not the source,
+      // so readonly is safe here and avoids any write contention with Prisma
       sourceDb = new Database(sourcePath, {
         fileMustExist: true,
+        readonly: true,
       });
 
-      // Perform backup using SQLite's backup API
-      await sourceDb.backup(destPath);
+      // VACUUM INTO creates a complete, consistent copy of the database
+      // It acquires a shared lock, reads all pages, and writes to destPath
+      sourceDb.exec(`VACUUM INTO '${destPath}'`);
 
       selfBackupLogger().debug({
         sourcePath,
         destPath,
-      }, "SQLite backup completed via better-sqlite3");
+      }, "SQLite backup completed via VACUUM INTO");
 
     } catch (error) {
       selfBackupLogger().error({

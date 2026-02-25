@@ -1,9 +1,24 @@
 import { PrismaClient } from "@prisma/client";
+import Database from "better-sqlite3";
 import { prismaLogger } from "./logger-factory";
+import { getDatabaseFilePath } from "./database-url-parser";
 // Official Prisma instrumentation is handled in telemetry.ts via auto-instrumentation
 
 // Re-export PrismaClient type for use by other modules
 export { PrismaClient };
+
+// Enable WAL journal mode for better concurrent read/write performance.
+// WAL allows readers to proceed without blocking writers and vice versa,
+// which is important for backup operations and general application responsiveness.
+try {
+  const dbPath = getDatabaseFilePath();
+  const db = new Database(dbPath);
+  const result = db.pragma("journal_mode = WAL");
+  db.close();
+  console.log(`[STARTUP] SQLite journal_mode set to: ${JSON.stringify(result)}`);
+} catch (err) {
+  console.warn("[STARTUP] Failed to set SQLite WAL mode:", err);
+}
 
 declare global {
   // Prevent multiple instances of Prisma Client in development
