@@ -49,6 +49,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     showInNav: true,
     navGroup: "main",
     description: "System overview and status",
+    helpDoc: "getting-started/overview",
   },
 
   "/containers": {
@@ -59,7 +60,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Docker container management",
-    helpDoc: "getting-started/managing-containers",
+    helpDoc: "containers/viewing-containers",
   },
 
   "/postgres-server": {
