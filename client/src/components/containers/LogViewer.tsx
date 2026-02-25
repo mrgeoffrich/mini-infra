@@ -26,6 +26,11 @@ interface LogViewerProps {
   containerName: string;
 }
 
+// Escape regex metacharacters to prevent ReDoS
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 const convert = new Convert({
   fg: "#FFF",
   bg: "#000",
@@ -108,13 +113,20 @@ export function LogViewer({ containerId, containerName }: LogViewerProps) {
     // Convert ANSI codes to HTML
     const htmlMessage = convert.toHtml(log.message);
 
-    // Highlight search matches
+    // Highlight search matches safely:
+    // 1. Escape regex metacharacters to prevent ReDoS
+    // 2. Skip HTML tags to prevent XSS via dangerouslySetInnerHTML
     let displayMessage = htmlMessage;
     if (searchQuery.trim()) {
-      const regex = new RegExp(`(${searchQuery})`, "gi");
+      const escapedQuery = escapeRegExp(searchQuery);
+      // Match HTML tags (to preserve them) OR the search term (to highlight it)
+      const tagOrMatch = new RegExp(`(<[^>]*>)|(${escapedQuery})`, "gi");
       displayMessage = displayMessage.replace(
-        regex,
-        '<span class="bg-yellow-500/30 text-yellow-200">$1</span>'
+        tagOrMatch,
+        (_match, tag, text) =>
+          tag
+            ? tag
+            : `<span class="bg-yellow-500/30 text-yellow-200">${text}</span>`
       );
     }
 
