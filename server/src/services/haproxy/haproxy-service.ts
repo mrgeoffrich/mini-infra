@@ -633,21 +633,26 @@ export class HAProxyService implements IApplicationService {
     sockPath: string,
     command: string
   ): Promise<string> {
-    const cmd = `echo "${command}" | socat stdio unix-connect:${sockPath}`;
-
+    // Pipe command via stdin to socat directly, avoiding shell interpolation
+    // of PEM data and other content that may contain shell metacharacters
     const exec = await container.exec({
-      Cmd: ['sh', '-c', cmd],
+      Cmd: ['socat', 'stdio', `unix-connect:${sockPath}`],
+      AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true
     });
 
-    const stream = await exec.start({ hijack: true, stdin: false });
+    const stream = await exec.start({ hijack: true, stdin: true });
 
     return new Promise((resolve, reject) => {
       let output = '';
       stream.on('data', (chunk: Buffer) => { output += chunk.toString(); });
       stream.on('end', () => resolve(output));
       stream.on('error', reject);
+
+      // Send command via stdin — no shell metacharacter risk
+      stream.write(command + '\n');
+      stream.end();
     });
   }
 

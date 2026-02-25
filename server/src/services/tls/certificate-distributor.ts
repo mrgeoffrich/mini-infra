@@ -287,23 +287,21 @@ export class CertificateDistributor {
     sockPath: string,
     command: string
   ): Promise<string> {
-    // Escape command for shell execution
-    const escapedCommand = command.replace(/"/g, '\\"').replace(/\n/g, "\\n");
-    const cmd = `echo "${escapedCommand}" | socat stdio unix-connect:${sockPath}`;
-
-    this.logger.debug({ command: cmd }, "Executing Runtime API command");
-
+    // Pipe command via stdin to socat directly, avoiding shell interpolation
+    // of PEM data and other content that may contain shell metacharacters
     const exec = await container.exec({
-      Cmd: ["sh", "-c", cmd],
+      Cmd: ["socat", "stdio", `unix-connect:${sockPath}`],
+      AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
     });
 
-    const stream = await exec.start({ hijack: true, stdin: false });
+    this.logger.debug({ command }, "Executing Runtime API command via stdin");
+
+    const stream = await exec.start({ hijack: true, stdin: true });
 
     return new Promise((resolve, reject) => {
       let output = "";
-      let errorOutput = "";
 
       stream.on("data", (chunk: Buffer) => {
         const data = chunk.toString();
@@ -313,9 +311,6 @@ export class CertificateDistributor {
       });
 
       stream.on("end", () => {
-        if (errorOutput) {
-          this.logger.warn({ output, errorOutput }, "Runtime command completed with warnings");
-        }
         // Check for HAProxy Runtime API error responses
         const trimmedOutput = output.trim();
         if (
@@ -335,6 +330,10 @@ export class CertificateDistributor {
       stream.on("error", (error) => {
         reject(error);
       });
+
+      // Send command via stdin — no shell metacharacter risk
+      stream.write(command + "\n");
+      stream.end();
     });
   }
 
@@ -350,17 +349,27 @@ export class CertificateDistributor {
     certPath: string,
     content: string
   ): Promise<void> {
-    // Escape content for shell execution
-    const escapedContent = content.replace(/'/g, "'\\''");
-    const cmd = `echo '${escapedContent}' > ${certPath}`;
-
+    // Use tee with stdin to write file content directly, avoiding shell
+    // interpolation of PEM data that may contain shell metacharacters
     const exec = await container.exec({
-      Cmd: ["sh", "-c", cmd],
+      Cmd: ["tee", certPath],
+      AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
     });
 
-    await exec.start({ hijack: true, stdin: false });
+    const stream = await exec.start({ hijack: true, stdin: true });
+
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", () => {}); // drain tee's stdout echo
+      stream.on("end", () => resolve());
+      stream.on("error", reject);
+
+      // Send content via stdin — no shell metacharacter risk
+      stream.write(content);
+      stream.end();
+    });
+
     this.logger.debug({ certPath }, "Certificate written to container filesystem");
   }
 
