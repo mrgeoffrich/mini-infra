@@ -24,6 +24,10 @@ export interface GitHubAppSetupCompleteResponse {
 
 export interface GitHubAppSettingResponse {
   isConfigured: boolean;
+  /** App was created via manifest but not yet installed on an account */
+  needsInstallation: boolean;
+  /** URL to install the app on the user's account/org */
+  installUrl: string | null;
   appSlug: string | null;
   appId: string | null;
   owner: string | null;

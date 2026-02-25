@@ -210,6 +210,58 @@ router.post("/setup/complete", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 /**
+ * POST /api/settings/github-app/refresh-installation - Re-check for app installations
+ * Called after the user installs the app on their GitHub account/org.
+ */
+router.post("/refresh-installation", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  logger.debug(
+    {
+      requestId,
+      userId,
+    },
+    "GitHub App installation refresh requested",
+  );
+
+  try {
+    const result = await githubAppService.refreshInstallation(userId);
+
+    logger.debug(
+      {
+        requestId,
+        userId,
+        found: result.found,
+        installationId: result.installationId,
+      },
+      "GitHub App installation refresh completed",
+    );
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to refresh GitHub App installation",
+    );
+
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
  * POST /api/settings/github-app/test - Test GitHub App connectivity
  */
 router.post("/test", requireSessionOrApiKey, (async (

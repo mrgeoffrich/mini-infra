@@ -44,6 +44,7 @@ import { useConnectivityStatus } from "@/hooks/use-settings";
 import {
   useGitHubAppSettings,
   useGitHubAppSetupComplete,
+  useRefreshGitHubAppInstallation,
   useTestGitHubApp,
   useDeleteGitHubApp,
   useCreateGhcrCredential,
@@ -290,11 +291,13 @@ function SetupCompletion({
   onComplete: () => void;
 }) {
   const setupComplete = useGitHubAppSetupComplete();
-  const [hasAttempted, setHasAttempted] = useState(false);
+  const hasAttemptedRef = useRef(false);
 
   useEffect(() => {
-    if (code && !hasAttempted) {
-      setHasAttempted(true);
+    // Guard against React strict mode double-mounting.
+    // The GitHub manifest code is single-use, so we must only call once.
+    if (code && !hasAttemptedRef.current) {
+      hasAttemptedRef.current = true;
       setupComplete.mutate(
         { code },
         {
@@ -310,7 +313,8 @@ function SetupCompletion({
         },
       );
     }
-  }, [code, hasAttempted, setupComplete, onComplete]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
   if (setupComplete.isError) {
     return (
@@ -336,6 +340,114 @@ function SetupCompletion({
           </p>
         </div>
       </CardContent>
+    </Card>
+  );
+}
+
+// ====================
+// Needs Installation Card
+// ====================
+
+function NeedsInstallationCard({
+  appSlug,
+  installUrl,
+}: {
+  appSlug: string | null;
+  installUrl: string | null;
+}) {
+  const refreshInstallation = useRefreshGitHubAppInstallation();
+  const deleteApp = useDeleteGitHubApp();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <IconAlertCircle className="h-5 w-5 text-amber-500" />
+          App Created — Installation Required
+        </CardTitle>
+        <CardDescription>
+          Your GitHub App <strong>{appSlug}</strong> has been created, but it
+          still needs to be installed on your GitHub account or organization
+          to grant access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4">
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            Click the button below to install the app on GitHub. After
+            installing, come back here and click &quot;Check Installation&quot;.
+          </p>
+        </div>
+      </CardContent>
+      <CardFooter className="flex gap-2">
+        {installUrl && (
+          <Button asChild>
+            <a href={installUrl} target="_blank" rel="noopener noreferrer">
+              <IconBrandGithub className="h-4 w-4 mr-2" />
+              Install on GitHub
+              <IconExternalLink className="h-3 w-3 ml-1" />
+            </a>
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          onClick={() =>
+            refreshInstallation.mutate(undefined, {
+              onSuccess: (data) => {
+                if (data.found) {
+                  toast.success("Installation found! GitHub App is now connected.");
+                } else {
+                  toast.error(
+                    "No installation found yet. Please install the app on GitHub first.",
+                  );
+                }
+              },
+              onError: (error) => {
+                toast.error(`Failed to check: ${error.message}`);
+              },
+            })
+          }
+          disabled={refreshInstallation.isPending}
+        >
+          {refreshInstallation.isPending ? (
+            <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <IconRefresh className="h-4 w-4 mr-2" />
+          )}
+          Check Installation
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="sm" className="text-destructive ml-auto">
+              <IconTrash className="h-4 w-4 mr-1" />
+              Remove App
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove GitHub App?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove the stored app credentials. You will need to
+                create a new GitHub App to reconnect. The app itself will remain
+                on GitHub and should be deleted manually from your GitHub settings.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  deleteApp.mutate(undefined, {
+                    onSuccess: () => toast.success("GitHub App removed"),
+                    onError: (e) => toast.error(`Failed: ${e.message}`),
+                  })
+                }
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardFooter>
     </Card>
   );
 }
@@ -891,6 +1003,7 @@ export default function GitHubConnectivityPage() {
   );
 
   const isConnected = settings?.isConfigured === true;
+  const needsInstallation = settings?.needsInstallation === true;
 
   const handleSetupComplete = useCallback(() => {
     // Clear the code parameter from the URL
@@ -957,12 +1070,20 @@ export default function GitHubConnectivityPage() {
         )}
 
         {/* Setup Completion (when returning from GitHub with code) */}
-        {!settingsLoading && code && !isConnected && (
+        {!settingsLoading && code && !isConnected && !needsInstallation && (
           <SetupCompletion code={code} onComplete={handleSetupComplete} />
         )}
 
+        {/* Needs Installation (app created but not installed) */}
+        {!settingsLoading && needsInstallation && (
+          <NeedsInstallationCard
+            appSlug={settings?.appSlug ?? null}
+            installUrl={settings?.installUrl ?? null}
+          />
+        )}
+
         {/* Setup Flow (when not configured and no code) */}
-        {!settingsLoading && !isConnected && !code && <SetupCard />}
+        {!settingsLoading && !isConnected && !needsInstallation && !code && <SetupCard />}
 
         {/* Connected State */}
         {!settingsLoading && isConnected && (

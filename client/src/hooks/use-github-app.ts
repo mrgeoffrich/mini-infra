@@ -26,7 +26,8 @@ export function useGitHubAppSettings() {
         throw new Error(errorData.message || "Failed to fetch settings");
       }
 
-      return response.json();
+      const result = await response.json();
+      return result.data;
     },
     staleTime: 30000, // 30 seconds
     retry: (failureCount, error) => {
@@ -71,7 +72,39 @@ export function useGitHubAppSetupComplete() {
         throw new Error(errorData.message || "Setup completion failed");
       }
 
-      return response.json();
+      const result = await response.json();
+      return result.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+    },
+  });
+}
+
+// Hook for refreshing GitHub App installation after user installs on GitHub
+export function useRefreshGitHubAppInstallation() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { found: boolean; installationId?: string },
+    Error
+  >({
+    mutationFn: async () => {
+      const response = await fetch("/api/settings/github-app/refresh-installation", {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to refresh installation",
+        }));
+        throw new Error(errorData.message || "Installation refresh failed");
+      }
+
+      const result = await response.json();
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });

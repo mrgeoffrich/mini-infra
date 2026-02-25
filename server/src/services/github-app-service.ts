@@ -844,6 +844,71 @@ export class GitHubAppService extends ConfigurationService {
   }
 
   // ====================
+  // Installation Management
+  // ====================
+
+  /**
+   * Re-check GitHub for app installations. Called after the user installs
+   * the app on their account/org via the GitHub UI.
+   *
+   * @param userId - The user performing the refresh (for audit trails)
+   * @returns Whether an installation was found and stored
+   */
+  async refreshInstallation(userId: string): Promise<{ found: boolean; installationId?: string }> {
+    const appId = await this.get(SETTING_KEYS.APP_ID);
+    const privateKey = await this.get(SETTING_KEYS.PRIVATE_KEY);
+
+    if (!appId || !privateKey) {
+      throw new Error("GitHub App not configured - missing app ID or private key");
+    }
+
+    const appJwt = this.generateJWT(appId, privateKey);
+
+    const installationsResponse = await this.fetchGitHub(
+      `${GITHUB_API_BASE}/app/installations`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${appJwt}`,
+        },
+      },
+    );
+
+    if (!installationsResponse.ok) {
+      throw new Error(`Failed to fetch installations (${installationsResponse.status})`);
+    }
+
+    const installations = await installationsResponse.json();
+    if (installations.length === 0) {
+      return { found: false };
+    }
+
+    const installationId = String(installations[0].id);
+    await this.set(SETTING_KEYS.INSTALLATION_ID, installationId, userId);
+
+    const permissions = installations[0].permissions || {};
+    await this.set(SETTING_KEYS.PERMISSIONS, JSON.stringify(permissions), userId);
+
+    servicesLogger().info(
+      { installationId, permissionCount: Object.keys(permissions).length },
+      "GitHub App installation found and stored via refresh",
+    );
+
+    // Now that we have an installation, auto-create GHCR credential
+    try {
+      await this.createOrUpdateGhcrCredential(userId);
+    } catch (ghcrError) {
+      servicesLogger().warn(
+        { error: ghcrError instanceof Error ? ghcrError.message : String(ghcrError) },
+        "Failed to auto-create GHCR credential after installation refresh",
+      );
+    }
+
+    return { found: true, installationId };
+  }
+
+  // ====================
   // Config Status
   // ====================
 
@@ -871,9 +936,15 @@ export class GitHubAppService extends ConfigurationService {
     }
 
     const isConfigured = !!appId && !!installationId;
+    const needsInstallation = !!appId && !installationId;
+    const installUrl = needsInstallation && appSlug
+      ? `https://github.com/apps/${appSlug}/installations/new`
+      : null;
 
     return {
       isConfigured,
+      needsInstallation,
+      installUrl,
       appSlug: appSlug || null,
       appId: appId || null,
       owner: owner || null,
