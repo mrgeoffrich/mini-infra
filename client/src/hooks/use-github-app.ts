@@ -10,34 +10,34 @@ import type {
   GitHubAppSetupCompleteResponse,
 } from "@mini-infra/types";
 
+// Helper to unwrap the { success, data } API response envelope
+async function fetchAndUnwrap<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    credentials: "include",
+    ...options,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({
+      message: `Request failed (${response.status})`,
+    }));
+    throw new Error(errorData.message || errorData.error || `Request failed (${response.status})`);
+  }
+
+  const result = await response.json();
+  return result.data !== undefined ? result.data : result;
+}
+
 // Hook for retrieving current GitHub App settings
 export function useGitHubAppSettings() {
   return useQuery<GitHubAppSettingResponse>({
     queryKey: ["github-app-settings"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings/github-app", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch GitHub App settings",
-        }));
-        throw new Error(errorData.message || "Failed to fetch settings");
-      }
-
-      const result = await response.json();
-      return result.data;
-    },
-    staleTime: 30000, // 30 seconds
+    queryFn: () => fetchAndUnwrap<GitHubAppSettingResponse>("/api/settings/github-app"),
+    staleTime: 30000,
     retry: (failureCount, error) => {
-      // Don't retry on 401/403 errors
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden")
-        ) {
+        if (message.includes("unauthorized") || message.includes("forbidden")) {
           return false;
         }
       }
@@ -50,31 +50,16 @@ export function useGitHubAppSettings() {
 export function useGitHubAppSetupComplete() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    GitHubAppSetupCompleteResponse,
-    Error,
-    { code: string }
-  >({
-    mutationFn: async (payload) => {
-      const response = await fetch("/api/settings/github-app/setup/complete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  return useMutation<GitHubAppSetupCompleteResponse, Error, { code: string }>({
+    mutationFn: (payload) =>
+      fetchAndUnwrap<GitHubAppSetupCompleteResponse>(
+        "/api/settings/github-app/setup/complete",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to complete GitHub App setup",
-        }));
-        throw new Error(errorData.message || "Setup completion failed");
-      }
-
-      const result = await response.json();
-      return result.data;
-    },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
@@ -86,26 +71,12 @@ export function useGitHubAppSetupComplete() {
 export function useRefreshGitHubAppInstallation() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { found: boolean; installationId?: string },
-    Error
-  >({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/github-app/refresh-installation", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to refresh installation",
-        }));
-        throw new Error(errorData.message || "Installation refresh failed");
-      }
-
-      const result = await response.json();
-      return result.data;
-    },
+  return useMutation<{ found: boolean; installationId?: string }, Error>({
+    mutationFn: () =>
+      fetchAndUnwrap<{ found: boolean; installationId?: string }>(
+        "/api/settings/github-app/refresh-installation",
+        { method: "POST" },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
@@ -118,21 +89,11 @@ export function useTestGitHubApp() {
   const queryClient = useQueryClient();
 
   return useMutation<GitHubAppValidationResponse, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/github-app/test", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to test GitHub App connection",
-        }));
-        throw new Error(errorData.message || "Connection test failed");
-      }
-
-      return response.json();
-    },
+    mutationFn: () =>
+      fetchAndUnwrap<GitHubAppValidationResponse>(
+        "/api/settings/github-app/test",
+        { method: "POST" },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
     },
@@ -144,21 +105,11 @@ export function useDeleteGitHubApp() {
   const queryClient = useQueryClient();
 
   return useMutation<{ success: boolean; message?: string }, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/github-app", {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to delete GitHub App settings",
-        }));
-        throw new Error(errorData.message || "Failed to delete settings");
-      }
-
-      return response.json();
-    },
+    mutationFn: () =>
+      fetchAndUnwrap<{ success: boolean; message?: string }>(
+        "/api/settings/github-app",
+        { method: "DELETE" },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
@@ -171,23 +122,11 @@ export function useCreateGhcrCredential() {
   const queryClient = useQueryClient();
 
   return useMutation<GitHubAppRegistryTokenResponse, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/github-app/registry-token", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to create GHCR credential",
-        }));
-        throw new Error(
-          errorData.message || "Failed to create registry credential",
-        );
-      }
-
-      return response.json();
-    },
+    mutationFn: () =>
+      fetchAndUnwrap<GitHubAppRegistryTokenResponse>(
+        "/api/settings/github-app/registry-token",
+        { method: "POST" },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
     },
@@ -198,22 +137,9 @@ export function useCreateGhcrCredential() {
 export function useGitHubAppPackages(enabled?: boolean) {
   return useQuery<GitHubAppPackage[]>({
     queryKey: ["github-app-packages"],
-    queryFn: async () => {
-      const response = await fetch("/api/github-app/packages", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch GitHub App packages",
-        }));
-        throw new Error(errorData.message || "Failed to fetch packages");
-      }
-
-      return response.json();
-    },
+    queryFn: () => fetchAndUnwrap<GitHubAppPackage[]>("/api/github-app/packages"),
     enabled: enabled === undefined ? true : enabled,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
     retry: (failureCount, error) => {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
@@ -237,25 +163,12 @@ export function useGitHubAppPackageVersions(
 ) {
   return useQuery<GitHubAppPackageVersion[]>({
     queryKey: ["github-app-package-versions", packageName],
-    queryFn: async () => {
-      const response = await fetch(
+    queryFn: () =>
+      fetchAndUnwrap<GitHubAppPackageVersion[]>(
         `/api/github-app/packages/${encodeURIComponent(packageName)}/versions`,
-        {
-          credentials: "include",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch package versions",
-        }));
-        throw new Error(errorData.message || "Failed to fetch versions");
-      }
-
-      return response.json();
-    },
+      ),
     enabled: (enabled === undefined ? true : enabled) && !!packageName,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
     retry: (failureCount, error) => {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
@@ -276,22 +189,9 @@ export function useGitHubAppPackageVersions(
 export function useGitHubAppRepositories(enabled?: boolean) {
   return useQuery<GitHubAppRepository[]>({
     queryKey: ["github-app-repos"],
-    queryFn: async () => {
-      const response = await fetch("/api/github-app/repos", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch GitHub App repositories",
-        }));
-        throw new Error(errorData.message || "Failed to fetch repositories");
-      }
-
-      return response.json();
-    },
+    queryFn: () => fetchAndUnwrap<GitHubAppRepository[]>("/api/github-app/repos"),
     enabled: enabled === undefined ? true : enabled,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
     retry: (failureCount, error) => {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
@@ -316,25 +216,12 @@ export function useGitHubAppActionRuns(
 ) {
   return useQuery<GitHubAppActionsRun[]>({
     queryKey: ["github-app-action-runs", owner, repo],
-    queryFn: async () => {
-      const response = await fetch(
+    queryFn: () =>
+      fetchAndUnwrap<GitHubAppActionsRun[]>(
         `/api/github-app/repos/${owner}/${repo}/actions/runs`,
-        {
-          credentials: "include",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch GitHub Actions runs",
-        }));
-        throw new Error(errorData.message || "Failed to fetch action runs");
-      }
-
-      return response.json();
-    },
+      ),
     enabled: (enabled === undefined ? true : enabled) && !!owner && !!repo,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
     retry: (failureCount, error) => {
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
