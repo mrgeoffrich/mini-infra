@@ -33,6 +33,8 @@ export interface GitHubAppSettingResponse {
   owner: string | null;
   installationId: string | null;
   permissions: string[] | null;
+  /** OAuth user-to-server token status (needed for GHCR container packages) */
+  oauth: GitHubAppOAuthStatus | null;
 }
 
 export interface GitHubAppValidationResponse {
@@ -110,4 +112,29 @@ export interface GitHubAppRegistryTokenResponse {
   registryUrl: string;
   credentialId?: string;
   expiresAt?: string;
+}
+
+// ====================
+// GitHub App OAuth (User-to-Server) Types
+// ====================
+
+export interface GitHubAppOAuthStatus {
+  /** Whether a user OAuth token is configured */
+  isAuthorized: boolean;
+  /** When the current access token expires */
+  expiresAt: string | null;
+  /** Whether the token is currently expired and needs refresh */
+  isExpired: boolean;
+}
+
+export interface GitHubAppOAuthAuthorizeResponse {
+  /** The URL to redirect the user to for GitHub OAuth authorization */
+  authorizeUrl: string;
+  /** CSRF state parameter — store in sessionStorage and validate on callback */
+  state: string;
+}
+
+export interface GitHubAppOAuthCallbackResponse {
+  success: boolean;
+  message: string;
 }

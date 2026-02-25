@@ -237,3 +237,41 @@ export function useGitHubAppActionRuns(
     },
   });
 }
+
+// Hook for saving a PAT for package access
+export function useGitHubSavePackagePat() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ message: string }, Error, { token: string }>({
+    mutationFn: (payload) =>
+      fetchAndUnwrap<{ message: string }>(
+        "/api/settings/github-app/oauth/pat",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
+    },
+  });
+}
+
+// Hook for revoking GitHub OAuth user token
+export function useGitHubOAuthRevoke() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ message: string }, Error>({
+    mutationFn: () =>
+      fetchAndUnwrap<{ message: string }>(
+        "/api/settings/github-app/oauth/revoke",
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
+    },
+  });
+}

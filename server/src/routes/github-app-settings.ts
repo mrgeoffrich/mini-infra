@@ -420,4 +420,207 @@ router.post("/registry-token", requireSessionOrApiKey, (async (
   }
 }) as RequestHandler);
 
+/**
+ * GET /api/settings/github-app/oauth/authorize - Start OAuth user authorization flow
+ * Returns a URL to redirect the user to GitHub for authorization.
+ */
+router.get("/oauth/authorize", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    const { authorizeUrl, state } = await githubAppService.generateOAuthAuthorizeUrl();
+
+    logger.debug(
+      { requestId, userId },
+      "GitHub OAuth authorization URL generated",
+    );
+
+    res.json({
+      success: true,
+      data: { authorizeUrl, state },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to generate OAuth authorization URL",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/github-app/oauth/callback - Exchange OAuth code for user token
+ * Called by the frontend after GitHub redirects back with a code.
+ */
+const oauthCallbackSchema = z.object({
+  code: z.string().min(1, "Code is required"),
+});
+
+router.post("/oauth/callback", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    const validationResult = oauthCallbackSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request parameters",
+        details: validationResult.error.flatten(),
+      });
+    }
+
+    const { code } = validationResult.data;
+    await githubAppService.exchangeOAuthCode(code, userId);
+
+    logger.info({ requestId, userId }, "GitHub OAuth authorization completed");
+
+    res.json({
+      success: true,
+      data: { message: "GitHub user authorization successful" },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to complete OAuth code exchange",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/github-app/oauth/pat - Save a classic PAT for package access
+ */
+const patSchema = z.object({
+  token: z.string().min(1, "Token is required"),
+});
+
+router.post("/oauth/pat", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    const validationResult = patSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request parameters",
+        details: validationResult.error.flatten(),
+      });
+    }
+
+    const { token } = validationResult.data;
+
+    // Verify the token works by calling the GitHub API
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "mini-infra",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        error: "Token verification failed — please check the token is valid",
+      });
+    }
+
+    // Store the PAT using the OAuth token fields (reusing the same storage)
+    await Promise.all([
+      githubAppService.set("oauth_access_token", token, userId),
+      // Classic PATs don't expire, so set far-future expiry and no refresh token
+      githubAppService.set("oauth_expires_at", "2099-12-31T23:59:59Z", userId),
+    ]);
+
+    // Remove any old refresh token (PATs don't use refresh)
+    try {
+      await githubAppService.delete("oauth_refresh_token", userId);
+    } catch {
+      // ignore if not exists
+    }
+
+    logger.info({ requestId, userId }, "GitHub PAT saved for package access");
+
+    res.json({
+      success: true,
+      data: { message: "Personal access token saved successfully" },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to save PAT",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/github-app/oauth/revoke - Revoke OAuth user token
+ */
+router.post("/oauth/revoke", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    // Clear the stored OAuth tokens
+    await Promise.all([
+      githubAppService.delete("oauth_access_token", userId),
+      githubAppService.delete("oauth_refresh_token", userId),
+      githubAppService.delete("oauth_expires_at", userId),
+    ]);
+
+    logger.info({ requestId, userId }, "GitHub OAuth tokens revoked");
+
+    res.json({
+      success: true,
+      data: { message: "OAuth authorization revoked" },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to revoke OAuth tokens",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
 export default router;
