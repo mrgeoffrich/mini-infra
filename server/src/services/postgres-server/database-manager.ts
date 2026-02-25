@@ -6,9 +6,36 @@ import postgresServerService from "./server-manager";
 const logger = appLogger();
 
 /**
+ * Escape a SQL identifier by doubling internal double quotes.
+ * Prevents SQL injection even for values loaded from the database.
+ */
+function escapeIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+/**
  * DatabaseManagementService - Manages databases on PostgreSQL servers
  * Handles database creation, deletion, syncing, and metadata retrieval
  */
+// Allowlist of valid PostgreSQL encodings
+const VALID_ENCODINGS = new Set([
+  "UTF8", "SQL_ASCII", "LATIN1", "LATIN2", "LATIN3", "LATIN4", "LATIN5",
+  "LATIN6", "LATIN7", "LATIN8", "LATIN9", "LATIN10", "WIN1250", "WIN1251",
+  "WIN1252", "WIN1253", "WIN1254", "WIN1255", "WIN1256", "WIN1257", "WIN1258",
+  "EUC_JP", "EUC_CN", "EUC_KR", "EUC_TW", "EUC_JIS_2004", "SJIS",
+  "BIG5", "GBK", "GB18030", "JOHAB", "UHC", "ISO_8859_5", "ISO_8859_6",
+  "ISO_8859_7", "ISO_8859_8", "KOI8R", "KOI8U", "MULE_INTERNAL",
+]);
+
+// Allowlist of valid PostgreSQL templates
+const VALID_TEMPLATES = new Set(["template0", "template1"]);
+
+// Valid PostgreSQL identifier pattern (used for owner, collation values)
+const VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+// Valid collation pattern (e.g., "en_US.UTF-8", "C", "POSIX", "C.UTF-8")
+const VALID_COLLATION = /^[a-zA-Z][a-zA-Z0-9._-]*$/;
+
 export class DatabaseManagementService {
   /**
    * List all databases from the PostgreSQL server
@@ -126,11 +153,32 @@ export class DatabaseManagementService {
 
     try {
       // Build CREATE DATABASE statement
-      // Note: We cannot use parameterized queries for DDL statements
+      // Note: We cannot use parameterized queries for DDL statements,
+      // so we validate all inputs against allowlists to prevent SQL injection
       const encoding = params.encoding || "UTF8";
       const template = params.template || "template0";
       const owner = params.owner || "postgres";
       const connectionLimit = params.connectionLimit !== undefined ? params.connectionLimit : -1;
+
+      // Validate encoding against allowlist
+      if (!VALID_ENCODINGS.has(encoding.toUpperCase())) {
+        throw new Error(`Invalid encoding: ${encoding}. Must be a valid PostgreSQL encoding.`);
+      }
+
+      // Validate template against allowlist
+      if (!VALID_TEMPLATES.has(template)) {
+        throw new Error(`Invalid template: ${template}. Must be template0 or template1.`);
+      }
+
+      // Validate collation format
+      if (params.collation && !VALID_COLLATION.test(params.collation)) {
+        throw new Error("Collation contains invalid characters");
+      }
+
+      // Validate owner (alphanumeric and underscores only, must start with letter or underscore)
+      if (!VALID_IDENTIFIER.test(owner)) {
+        throw new Error("Owner name contains invalid characters");
+      }
 
       // Sanitize database name (alphanumeric, underscores, hyphens only)
       const sanitizedDbName = params.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
@@ -138,14 +186,14 @@ export class DatabaseManagementService {
         throw new Error("Database name contains invalid characters");
       }
 
-      let createQuery = `CREATE DATABASE "${sanitizedDbName}" ENCODING '${encoding}' TEMPLATE ${template}`;
+      let createQuery = `CREATE DATABASE ${escapeIdentifier(sanitizedDbName)} ENCODING '${encoding}' TEMPLATE ${template}`;
 
       if (params.collation) {
         createQuery += ` LC_COLLATE '${params.collation}'`;
       }
 
       if (params.owner) {
-        createQuery += ` OWNER "${params.owner}"`;
+        createQuery += ` OWNER ${escapeIdentifier(owner)}`;
       }
 
       createQuery += ` CONNECTION LIMIT ${connectionLimit}`;
@@ -214,7 +262,7 @@ export class DatabaseManagementService {
       `, [managedDatabase.databaseName]);
 
       // Drop the database
-      await client.query(`DROP DATABASE IF EXISTS "${managedDatabase.databaseName}"`);
+      await client.query(`DROP DATABASE IF EXISTS ${escapeIdentifier(managedDatabase.databaseName)}`);
 
       await client.end();
 
@@ -270,7 +318,7 @@ export class DatabaseManagementService {
       }
 
       // Change the database owner
-      await client.query(`ALTER DATABASE "${sanitizedDbName}" OWNER TO "${sanitizedOwner}"`);
+      await client.query(`ALTER DATABASE ${escapeIdentifier(sanitizedDbName)} OWNER TO ${escapeIdentifier(sanitizedOwner)}`);
 
       await client.end();
 

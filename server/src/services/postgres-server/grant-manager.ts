@@ -7,6 +7,14 @@ import CryptoJS from "crypto-js";
 const logger = appLogger();
 
 /**
+ * Escape a SQL identifier by doubling internal double quotes.
+ * Prevents SQL injection even for values loaded from the database.
+ */
+function escapeIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+/**
  * GrantManagementService - Manages database access permissions
  * Handles granting and revoking permissions for users on databases
  */
@@ -139,20 +147,22 @@ export class GrantManagementService {
     try {
       const dbName = grant.database.databaseName;
       const username = grant.user.username;
+      const escapedDbName = escapeIdentifier(dbName);
+      const escapedUsername = escapeIdentifier(username);
 
       // Grant CONNECT privilege
       if (grant.canConnect) {
-        await client.query(`GRANT CONNECT ON DATABASE "${dbName}" TO "${username}"`);
+        await client.query(`GRANT CONNECT ON DATABASE ${escapedDbName} TO ${escapedUsername}`);
       }
 
       // Grant CREATE privilege on database
       if (grant.canCreate) {
-        await client.query(`GRANT CREATE ON DATABASE "${dbName}" TO "${username}"`);
+        await client.query(`GRANT CREATE ON DATABASE ${escapedDbName} TO ${escapedUsername}`);
       }
 
       // Grant TEMP privilege
       if (grant.canTemp) {
-        await client.query(`GRANT TEMP ON DATABASE "${dbName}" TO "${username}"`);
+        await client.query(`GRANT TEMP ON DATABASE ${escapedDbName} TO ${escapedUsername}`);
       }
 
       await client.end();
@@ -165,11 +175,11 @@ export class GrantManagementService {
       try {
         // Grant schema privileges
         if (grant.canUsageSchema) {
-          await dbClient.query(`GRANT USAGE ON SCHEMA public TO "${username}"`);
+          await dbClient.query(`GRANT USAGE ON SCHEMA public TO ${escapedUsername}`);
         }
 
         if (grant.canCreateSchema) {
-          await dbClient.query(`GRANT CREATE ON SCHEMA public TO "${username}"`);
+          await dbClient.query(`GRANT CREATE ON SCHEMA public TO ${escapedUsername}`);
         }
 
         // Build table privileges
@@ -181,15 +191,15 @@ export class GrantManagementService {
 
         if (tablePrivileges.length > 0) {
           const privilegesList = tablePrivileges.join(", ");
-          await dbClient.query(`GRANT ${privilegesList} ON ALL TABLES IN SCHEMA public TO "${username}"`);
+          await dbClient.query(`GRANT ${privilegesList} ON ALL TABLES IN SCHEMA public TO ${escapedUsername}`);
           // Grant on future tables
-          await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ${privilegesList} ON TABLES TO "${username}"`);
+          await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ${privilegesList} ON TABLES TO ${escapedUsername}`);
         }
 
         // Grant sequence privileges (for auto-increment columns)
         if (grant.canInsert || grant.canUpdate) {
-          await dbClient.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${username}"`);
-          await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${username}"`);
+          await dbClient.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${escapedUsername}`);
+          await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${escapedUsername}`);
         }
 
         await dbClient.end();
@@ -288,6 +298,8 @@ export class GrantManagementService {
     try {
       const dbName = grant.database.databaseName;
       const username = grant.user.username;
+      const escapedDbName = escapeIdentifier(dbName);
+      const escapedUsername = escapeIdentifier(username);
       const server = grant.database.server;
 
       // Connect to the specific database
@@ -296,15 +308,15 @@ export class GrantManagementService {
 
       try {
         // Revoke table privileges
-        await dbClient.query(`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM "${username}"`);
-        await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM "${username}"`);
+        await dbClient.query(`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${escapedUsername}`);
+        await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM ${escapedUsername}`);
 
         // Revoke sequence privileges
-        await dbClient.query(`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM "${username}"`);
-        await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM "${username}"`);
+        await dbClient.query(`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM ${escapedUsername}`);
+        await dbClient.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM ${escapedUsername}`);
 
         // Revoke schema privileges
-        await dbClient.query(`REVOKE ALL PRIVILEGES ON SCHEMA public FROM "${username}"`);
+        await dbClient.query(`REVOKE ALL PRIVILEGES ON SCHEMA public FROM ${escapedUsername}`);
 
         await dbClient.end();
       } catch (error) {
@@ -315,7 +327,7 @@ export class GrantManagementService {
       // Revoke database-level privileges using a new client to postgres db
       const client = await postgresServerService.getClient(serverId, userId);
       try {
-        await client.query(`REVOKE ALL PRIVILEGES ON DATABASE "${dbName}" FROM "${username}"`);
+        await client.query(`REVOKE ALL PRIVILEGES ON DATABASE ${escapedDbName} FROM ${escapedUsername}`);
         await client.end();
       } catch (error) {
         await client.end();

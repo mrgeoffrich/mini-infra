@@ -7,6 +7,14 @@ import postgresServerService from "./server-manager";
 const logger = appLogger();
 
 /**
+ * Escape a SQL identifier by doubling internal double quotes.
+ * Prevents SQL injection even for values loaded from the database.
+ */
+function escapeIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+/**
  * UserManagementService - Manages users/roles on PostgreSQL servers
  * Handles user creation, deletion, password management, and syncing
  */
@@ -157,10 +165,8 @@ export class UserManagementService {
       const isSuperuser = params.isSuperuser || false;
       const connectionLimit = params.connectionLimit !== undefined ? params.connectionLimit : -1;
 
-      // Escape single quotes in password (double them for SQL string literals)
-      const escapedPassword = params.password.replace(/'/g, "''");
-
-      let createQuery = `CREATE USER "${sanitizedUsername}" WITH PASSWORD '${escapedPassword}'`;
+      // Build CREATE USER statement without password (password set separately via parameterized query)
+      let createQuery = `CREATE USER ${escapeIdentifier(sanitizedUsername)}`;
 
       if (!canLogin) {
         createQuery += " NOLOGIN";
@@ -175,6 +181,9 @@ export class UserManagementService {
       createQuery += ` CONNECTION LIMIT ${connectionLimit}`;
 
       await client.query(createQuery);
+
+      // Set password separately using parameterized query to prevent SQL injection
+      await client.query(`ALTER USER ${escapeIdentifier(sanitizedUsername)} WITH PASSWORD $1`, [params.password]);
 
       await client.end();
 
@@ -226,12 +235,13 @@ export class UserManagementService {
 
     try {
       // Revoke all privileges first
-      await client.query(`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM "${managedUser.username}"`);
-      await client.query(`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM "${managedUser.username}"`);
-      await client.query(`REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM "${managedUser.username}"`);
+      const escapedUsername = escapeIdentifier(managedUser.username);
+      await client.query(`REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM ${escapedUsername}`);
+      await client.query(`REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM ${escapedUsername}`);
+      await client.query(`REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM ${escapedUsername}`);
 
       // Drop the user
-      await client.query(`DROP USER IF EXISTS "${managedUser.username}"`);
+      await client.query(`DROP USER IF EXISTS ${escapedUsername}`);
 
       await client.end();
 
@@ -269,7 +279,7 @@ export class UserManagementService {
     const client = await postgresServerService.getClient(serverId, userId);
 
     try {
-      await client.query(`ALTER USER "${managedUser.username}" WITH PASSWORD $1`, [newPassword]);
+      await client.query(`ALTER USER ${escapeIdentifier(managedUser.username)} WITH PASSWORD $1`, [newPassword]);
 
       await client.end();
 
@@ -323,17 +333,18 @@ export class UserManagementService {
 
     try {
       const alterStatements = [];
+      const escapedUsername = escapeIdentifier(managedUser.username);
 
       if (updates.canLogin !== undefined) {
-        alterStatements.push(`ALTER USER "${managedUser.username}" WITH ${updates.canLogin ? "LOGIN" : "NOLOGIN"}`);
+        alterStatements.push(`ALTER USER ${escapedUsername} WITH ${updates.canLogin ? "LOGIN" : "NOLOGIN"}`);
       }
 
       if (updates.isSuperuser !== undefined) {
-        alterStatements.push(`ALTER USER "${managedUser.username}" WITH ${updates.isSuperuser ? "SUPERUSER" : "NOSUPERUSER"}`);
+        alterStatements.push(`ALTER USER ${escapedUsername} WITH ${updates.isSuperuser ? "SUPERUSER" : "NOSUPERUSER"}`);
       }
 
       if (updates.connectionLimit !== undefined) {
-        alterStatements.push(`ALTER USER "${managedUser.username}" WITH CONNECTION LIMIT ${updates.connectionLimit}`);
+        alterStatements.push(`ALTER USER ${escapedUsername} WITH CONNECTION LIMIT ${updates.connectionLimit}`);
       }
 
       for (const statement of alterStatements) {

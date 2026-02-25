@@ -11,6 +11,15 @@ import type {
 const logger = appLogger();
 
 /**
+ * Escape a SQL identifier by doubling internal double quotes.
+ * This is the SQL standard way to safely quote identifiers and prevents
+ * SQL injection via values like: my"table; DROP TABLE --
+ */
+function escapeIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+/**
  * TableDataService - Retrieves table metadata and data from PostgreSQL databases
  * Handles table listing, column metadata, and paginated data retrieval
  */
@@ -200,8 +209,11 @@ export class TableDataService {
       const pageSize = params.pageSize || 100;
       const offset = (page - 1) * pageSize;
 
-      // Build the query with proper SQL injection prevention
-      const fullTableName = `"${schema}"."${table}"`;
+      // Build the query with proper SQL injection prevention using escaped identifiers
+      const fullTableName = `${escapeIdentifier(schema)}.${escapeIdentifier(table)}`;
+
+      // Build a set of valid column names for validation
+      const validColumnNames = new Set(columns.map((col) => col.name));
 
       // Build WHERE clause from filters
       let whereClause = "";
@@ -210,7 +222,11 @@ export class TableDataService {
 
       if (params.filters && params.filters.length > 0) {
         const filterClauses = params.filters.map((filter) => {
-          const columnName = `"${filter.column}"`;
+          // Validate filter column exists in the table
+          if (!validColumnNames.has(filter.column)) {
+            throw new Error(`Invalid filter column: ${filter.column}`);
+          }
+          const columnName = escapeIdentifier(filter.column);
 
           if (filter.operator === "IS NULL") {
             return `${columnName} IS NULL`;
@@ -219,12 +235,7 @@ export class TableDataService {
           } else {
             whereParams.push(filter.value);
             const placeholder = `$${paramCounter++}`;
-
-            if (filter.operator === "LIKE" || filter.operator === "ILIKE") {
-              return `${columnName} ${filter.operator} ${placeholder}`;
-            } else {
-              return `${columnName} ${filter.operator} ${placeholder}`;
-            }
+            return `${columnName} ${filter.operator} ${placeholder}`;
           }
         });
 
@@ -234,7 +245,11 @@ export class TableDataService {
       // Build ORDER BY clause
       let orderByClause = "";
       if (params.sortColumn) {
-        const sortColumn = `"${params.sortColumn}"`;
+        // Validate sort column exists in the table
+        if (!validColumnNames.has(params.sortColumn)) {
+          throw new Error(`Invalid sort column: ${params.sortColumn}`);
+        }
+        const sortColumn = escapeIdentifier(params.sortColumn);
         const sortDirection = params.sortDirection === "desc" ? "DESC" : "ASC";
         orderByClause = `ORDER BY ${sortColumn} ${sortDirection}`;
       }
