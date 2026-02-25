@@ -242,6 +242,7 @@
     "*.secret",
     "req.headers.authorization",
     "req.headers.cookie",
+    "req.headers[\"x-api-key\"]",
     "req.body.password",
     "res.headers[\"set-cookie\"]"
   ]

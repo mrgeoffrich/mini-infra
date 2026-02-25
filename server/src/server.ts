@@ -350,7 +350,10 @@ const initializeServices = async () => {
           },
           "🔑 Development API key created for Claude",
         );
-        logger.info(`🔑 Claude API Key: ${devApiKeyResult.apiKey}`);
+        logger.info(
+          { apiKey: devApiKeyResult.apiKey },
+          "🔑 Claude API Key (see structured field)",
+        );
         logger.info(
           "💡 Use this API key in Authorization header: Bearer <key> or x-api-key header",
         );
