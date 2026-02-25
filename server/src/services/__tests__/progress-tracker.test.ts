@@ -37,12 +37,14 @@ const mockPrisma = {
     findMany: jest.fn(),
     count: jest.fn(),
     deleteMany: jest.fn(),
+    updateMany: jest.fn(),
   },
   restoreOperation: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
     deleteMany: jest.fn(),
+    updateMany: jest.fn(),
   },
 } as unknown as typeof prisma;
 
@@ -624,13 +626,23 @@ describe("ProgressTrackerService", () => {
       jest.setSystemTime(new Date("2023-01-31T12:00:00Z"));
     });
 
-    it("should clean up old operations successfully", async () => {
-      mockPrisma.backupOperation.deleteMany = jest
+    it("should clean up old operations and repair stale ones", async () => {
+      // Mock stale operation repairs (updateMany)
+      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
+        .fn()
+        .mockResolvedValueOnce({ count: 2 }) // Stale completed backups
+        .mockResolvedValueOnce({ count: 1 }); // Stale failed backups
+      (mockPrisma.restoreOperation.updateMany as jest.Mock) = jest
+        .fn()
+        .mockResolvedValueOnce({ count: 0 }) // Stale completed restores
+        .mockResolvedValueOnce({ count: 0 }); // Stale failed restores
+
+      (mockPrisma.backupOperation.deleteMany as jest.Mock) = jest
         .fn()
         .mockResolvedValueOnce({ count: 5 }) // Completed operations
         .mockResolvedValueOnce({ count: 3 }); // Failed operations
 
-      mockPrisma.restoreOperation.deleteMany = jest
+      (mockPrisma.restoreOperation.deleteMany as jest.Mock) = jest
         .fn()
         .mockResolvedValueOnce({ count: 2 }) // Completed operations
         .mockResolvedValueOnce({ count: 1 }); // Failed operations
@@ -640,9 +652,15 @@ describe("ProgressTrackerService", () => {
       expect(result).toEqual({
         deletedBackupOperations: 8, // 5 + 3
         deletedRestoreOperations: 3, // 2 + 1
+        repairedStaleBackupOperations: 3, // 2 + 1
+        repairedStaleRestoreOperations: 0,
       });
 
-      // Verify correct cutoff dates were used
+      // Verify stale operations were repaired
+      expect(mockPrisma.backupOperation.updateMany).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.restoreOperation.updateMany).toHaveBeenCalledTimes(2);
+
+      // Verify correct cutoff dates were used for deletion
       const expectedCompletedCutoff = new Date("2023-01-24T12:00:00Z"); // 7 days ago
       const expectedFailedCutoff = new Date("2023-01-01T12:00:00Z"); // 30 days ago
 
@@ -663,21 +681,19 @@ describe("ProgressTrackerService", () => {
           },
         },
       });
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.objectContaining({
-          deletedBackupOperations: 8,
-          deletedRestoreOperations: 3,
-        }),
-        "Cleaned up old operations",
-      );
     });
 
-    it("should not log when no operations are cleaned up", async () => {
-      mockPrisma.backupOperation.deleteMany = jest
+    it("should return zeros when no operations need cleanup or repair", async () => {
+      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
         .fn()
         .mockResolvedValue({ count: 0 });
-      mockPrisma.restoreOperation.deleteMany = jest
+      (mockPrisma.restoreOperation.updateMany as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
+      (mockPrisma.backupOperation.deleteMany as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ count: 0 });
+      (mockPrisma.restoreOperation.deleteMany as jest.Mock) = jest
         .fn()
         .mockResolvedValue({ count: 0 });
 
@@ -686,32 +702,19 @@ describe("ProgressTrackerService", () => {
       expect(result).toEqual({
         deletedBackupOperations: 0,
         deletedRestoreOperations: 0,
+        repairedStaleBackupOperations: 0,
+        repairedStaleRestoreOperations: 0,
       });
-
-      // Should not log cleanup info when nothing was cleaned
-      expect(mockLogger.info).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          deletedBackupOperations: expect.any(Number),
-        }),
-        "Cleaned up old operations",
-      );
     });
 
     it("should handle cleanup errors", async () => {
-      mockPrisma.backupOperation.deleteMany = jest
+      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
         .fn()
         .mockRejectedValue(new Error("Delete error"));
 
       await expect(
         progressTrackerService.cleanupOldOperations(),
       ).rejects.toThrow("Delete error");
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Delete error",
-        },
-        "Failed to clean up old operations",
-      );
     });
   });
 

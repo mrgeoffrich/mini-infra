@@ -634,6 +634,11 @@ export class BackupExecutorService {
       );
 
       const containerStartTime = Date.now();
+      // Track the latest pending progress update from the callback to avoid
+      // fire-and-forget race conditions where an unawaited DB write completes
+      // after subsequent awaited writes, overwriting the final status.
+      let pendingProgressUpdate: Promise<void> | undefined;
+
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
           {
@@ -711,13 +716,19 @@ export class BackupExecutorService {
                 );
             }
 
-            this.updateBackupProgress(operationId, {
+            pendingProgressUpdate = this.updateBackupProgress(operationId, {
               status: "running",
               progress: progressValue,
               message,
             });
           },
         );
+
+      // Ensure callback's DB write completes before we continue to avoid
+      // it racing with subsequent writes and overwriting the final status
+      if (pendingProgressUpdate) {
+        await pendingProgressUpdate;
+      }
 
       dockerExecutorLogger().info(
         {
@@ -811,26 +822,23 @@ export class BackupExecutorService {
         );
       }
 
-      // Update backup operation with success status
-      await this.updateBackupProgress(operationId, {
-        status: "completed",
-        progress: 100,
-        message: "Backup completed successfully",
-      });
-
-      // Update backup operation with file details
+      // Update backup operation with success status and file details in a
+      // single atomic write to prevent race conditions where status/progress
+      // and sizeBytes/completedAt end up out of sync.
       servicesLogger().debug(
         {
           operationId,
           sizeBytes: backupVerification.sizeBytes?.toString(),
           blobUrl: backupVerification.blobUrl,
         },
-        "Updating backup operation with file details",
+        "Updating backup operation with completion status and file details",
       );
 
       await this.prisma.backupOperation.update({
         where: { id: operationId },
         data: {
+          status: "completed",
+          progress: 100,
           sizeBytes: backupVerification.sizeBytes,
           azureBlobUrl: backupVerification.blobUrl,
           completedAt: new Date(),
@@ -1015,13 +1023,14 @@ export class BackupExecutorService {
         "Backup progress updated",
       );
     } catch (error) {
-      servicesLogger().error(
+      servicesLogger().warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
           operationId,
           progressData,
         },
-        "Failed to update backup progress",
+        "Failed to update backup progress — this may leave the operation in a stale state",
       );
     }
   }

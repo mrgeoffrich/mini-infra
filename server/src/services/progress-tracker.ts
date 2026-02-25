@@ -73,6 +73,7 @@ export class ProgressTrackerService extends EventEmitter {
   private static readonly CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private static readonly COMPLETED_OPERATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   private static readonly FAILED_OPERATION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  private static readonly STALE_RUNNING_OPERATION_TTL_MS = 60 * 60 * 1000; // 1 hour — running ops older than this are stale
 
   constructor(prisma: PrismaClient) {
     super();
@@ -441,6 +442,8 @@ export class ProgressTrackerService extends EventEmitter {
   public async cleanupOldOperations(): Promise<{
     deletedBackupOperations: number;
     deletedRestoreOperations: number;
+    repairedStaleBackupOperations: number;
+    repairedStaleRestoreOperations: number;
   }> {
     try {
       const now = new Date();
@@ -450,6 +453,93 @@ export class ProgressTrackerService extends EventEmitter {
       const failedCutoff = new Date(
         now.getTime() - ProgressTrackerService.FAILED_OPERATION_TTL_MS,
       );
+      const staleCutoff = new Date(
+        now.getTime() - ProgressTrackerService.STALE_RUNNING_OPERATION_TTL_MS,
+      );
+
+      // Repair stale "running" backup operations that actually completed
+      // (have completedAt and sizeBytes set but status stuck at "running"
+      // due to a race condition in the progress callback)
+      const staleCompletedBackups =
+        await this.prisma.backupOperation.updateMany({
+          where: {
+            status: "running",
+            completedAt: { not: null },
+            sizeBytes: { not: null },
+            startedAt: { lt: staleCutoff },
+          },
+          data: {
+            status: "completed",
+            progress: 100,
+          },
+        });
+
+      // Repair stale "running" backup operations that never finished
+      // (no completedAt/sizeBytes, stuck for over an hour — mark as failed)
+      const staleFailedBackups = await this.prisma.backupOperation.updateMany({
+        where: {
+          status: "running",
+          completedAt: null,
+          startedAt: { lt: staleCutoff },
+        },
+        data: {
+          status: "failed",
+          progress: 0,
+          errorMessage: "Operation timed out — marked as failed during cleanup",
+        },
+      });
+
+      // Repair stale "running" restore operations
+      const staleCompletedRestores =
+        await this.prisma.restoreOperation.updateMany({
+          where: {
+            status: "running",
+            completedAt: { not: null },
+            startedAt: { lt: staleCutoff },
+          },
+          data: {
+            status: "completed",
+            progress: 100,
+          },
+        });
+
+      const staleFailedRestores =
+        await this.prisma.restoreOperation.updateMany({
+          where: {
+            status: "running",
+            completedAt: null,
+            startedAt: { lt: staleCutoff },
+          },
+          data: {
+            status: "failed",
+            progress: 0,
+            errorMessage:
+              "Operation timed out — marked as failed during cleanup",
+          },
+        });
+
+      const repairedStaleBackupOperations =
+        staleCompletedBackups.count + staleFailedBackups.count;
+      const repairedStaleRestoreOperations =
+        staleCompletedRestores.count + staleFailedRestores.count;
+
+      if (
+        repairedStaleBackupOperations > 0 ||
+        repairedStaleRestoreOperations > 0
+      ) {
+        servicesLogger().info(
+          {
+            repairedStaleBackupOperations,
+            repairedStaleRestoreOperations,
+            staleCompletedBackups: staleCompletedBackups.count,
+            staleFailedBackups: staleFailedBackups.count,
+            staleCompletedRestores: staleCompletedRestores.count,
+            staleFailedRestores: staleFailedRestores.count,
+            staleCutoff: staleCutoff.toISOString(),
+          },
+          "Repaired stale running operations",
+        );
+      }
 
       // Delete old completed backup operations
       const deletedBackupCompleted =
@@ -499,18 +589,22 @@ export class ProgressTrackerService extends EventEmitter {
           deletedBackupCompleted.count + deletedBackupFailed.count,
         deletedRestoreOperations:
           deletedRestoreCompleted.count + deletedRestoreFailed.count,
+        repairedStaleBackupOperations,
+        repairedStaleRestoreOperations,
       };
 
       if (
         result.deletedBackupOperations > 0 ||
-        result.deletedRestoreOperations > 0
+        result.deletedRestoreOperations > 0 ||
+        result.repairedStaleBackupOperations > 0 ||
+        result.repairedStaleRestoreOperations > 0
       ) {
         servicesLogger().info(
           {
-            deletedBackupOperations: result.deletedBackupOperations,
-            deletedRestoreOperations: result.deletedRestoreOperations,
+            ...result,
             completedCutoff: completedCutoff.toISOString(),
             failedCutoff: failedCutoff.toISOString(),
+            staleCutoff: staleCutoff.toISOString(),
           },
           "Cleaned up old operations",
         );

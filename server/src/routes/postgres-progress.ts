@@ -462,6 +462,8 @@ router.post(
           userId,
           deletedBackupOperations: result.deletedBackupOperations,
           deletedRestoreOperations: result.deletedRestoreOperations,
+          repairedStaleBackupOperations: result.repairedStaleBackupOperations,
+          repairedStaleRestoreOperations: result.repairedStaleRestoreOperations,
         },
         "Manual cleanup of old operations completed",
       );
@@ -471,6 +473,8 @@ router.post(
         data: {
           deletedBackupOperations: result.deletedBackupOperations,
           deletedRestoreOperations: result.deletedRestoreOperations,
+          repairedStaleBackupOperations: result.repairedStaleBackupOperations,
+          repairedStaleRestoreOperations: result.repairedStaleRestoreOperations,
           message: "Cleanup completed successfully",
         },
         timestamp: new Date().toISOString(),
