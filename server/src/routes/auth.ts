@@ -37,9 +37,13 @@ router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
   logger.debug({ redirect: redirectParam }, "Initiating Google OAuth flow");
 
   // Store redirect URL in query state for OAuth callback
-  const state = redirectParam
-    ? Buffer.from(redirectParam).toString("base64")
-    : "";
+  // Only encode safe relative paths to prevent open redirect via state parameter
+  let state = "";
+  if (redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//") && !redirectParam.includes("://")) {
+    state = Buffer.from(redirectParam).toString("base64");
+  } else if (redirectParam) {
+    logger.warn({ redirect: redirectParam }, "Rejected unsafe redirect parameter in OAuth initiation");
+  }
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
@@ -83,7 +87,14 @@ router.get("/google/callback", ((
       try {
         const state = req.query.state as string;
         if (state) {
-          redirectPath = Buffer.from(state, "base64").toString("utf8");
+          const decoded = Buffer.from(state, "base64").toString("utf8");
+          // Validate the decoded path is a safe relative path to prevent open redirects
+          // Must start with "/" but not "//" (protocol-relative URL), and must not contain "://" (absolute URL)
+          if (decoded.startsWith("/") && !decoded.startsWith("//") && !decoded.includes("://")) {
+            redirectPath = decoded;
+          } else {
+            logger.warn({ decoded }, "Rejected unsafe redirect path from OAuth state");
+          }
         }
       } catch {
         logger.warn("Failed to decode redirect state, using default");
