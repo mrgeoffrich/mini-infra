@@ -107,7 +107,7 @@ export class CertificateDistributor {
           this.logger.info({ certificateName, method: "dataplane-api" }, "Certificate deployed successfully");
           return {
             success: true,
-            certificatePath: `/etc/ssl/certs/${certFileName}`,
+            certificatePath: `/etc/haproxy/ssl/${certFileName}`,
             method: "dataplane-api",
           };
         } catch (dataPlaneError) {
@@ -235,7 +235,7 @@ export class CertificateDistributor {
 
     // Certificate path inside HAProxy container (avoid double .pem extension)
     const certFile = certificateName.endsWith(".pem") ? certificateName : `${certificateName}.pem`;
-    const certPath = `/etc/ssl/certs/${certFile}`;
+    const certPath = `/etc/haproxy/ssl/${certFile}`;
     const sockPath = "/var/run/haproxy.sock";
 
     try {
@@ -315,6 +315,19 @@ export class CertificateDistributor {
       stream.on("end", () => {
         if (errorOutput) {
           this.logger.warn({ output, errorOutput }, "Runtime command completed with warnings");
+        }
+        // Check for HAProxy Runtime API error responses
+        const trimmedOutput = output.trim();
+        if (
+          trimmedOutput.startsWith("Can't") ||
+          trimmedOutput.startsWith("No ") ||
+          trimmedOutput.includes("not found") ||
+          trimmedOutput.includes("error") ||
+          trimmedOutput.includes("Unknown command")
+        ) {
+          this.logger.error({ output: trimmedOutput, command }, "HAProxy Runtime API returned an error");
+          reject(new Error(`HAProxy Runtime API error: ${trimmedOutput}`));
+          return;
         }
         resolve(output);
       });
