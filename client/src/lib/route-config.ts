@@ -1,5 +1,6 @@
 import {
   type Icon,
+  IconBook,
   IconBrandDocker,
   IconBrandCloudflare,
   IconBrandAzure,
@@ -29,7 +30,8 @@ export interface RouteMetadata {
     | "networking"
     | "monitoring"
     | "connectivity"
-    | "administration"; // Navigation section for grouping
+    | "administration"
+    | "help"; // Navigation section for grouping
   description?: string;
 }
 
@@ -337,6 +339,25 @@ export const routeConfig: Record<string, RouteConfig> = {
       },
     },
   },
+
+  "/help": {
+    path: "/help",
+    title: "Documentation",
+    icon: IconBook,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "help",
+    description: "Guides and reference documentation",
+    children: {
+      doc: {
+        path: "/help/:category/:slug",
+        title: "Documentation",
+        breadcrumbLabel: "Article",
+        parent: "/help",
+        showInNav: false,
+      },
+    },
+  },
 };
 
 // Helper functions for working with route config
@@ -393,6 +414,7 @@ export function getNavigationSections(): NavSection[] {
     { id: "monitoring", label: "Monitoring" },
     { id: "connectivity", label: "Connected Services" },
     { id: "administration", label: "Administration" },
+    { id: "help", label: "Help" },
   ];
 
   // Initialize sections
