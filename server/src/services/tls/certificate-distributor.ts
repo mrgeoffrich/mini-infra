@@ -193,19 +193,19 @@ export class CertificateDistributor {
     this.logger.info({ certFileName }, "Deploying certificate via DataPlane API");
 
     try {
-      // Check if certificate already exists
-      const existingCerts = await dpClient.listSSLCertificates();
-      const certExists = existingCerts.includes(certFileName);
-
       // IMPORTANT: Use force_reload=true so HAProxy picks up the certificate for SNI selection
-      if (certExists) {
-        // Update existing certificate
-        this.logger.debug({ certFileName }, "Certificate exists, updating");
+      // Try update first (common case for renewals), fall back to upload if cert doesn't exist
+      try {
+        this.logger.debug({ certFileName }, "Attempting to update existing certificate");
         await dpClient.updateSSLCertificate(certFileName, combinedPem, true);
-      } else {
-        // Upload new certificate
-        this.logger.debug({ certFileName }, "Certificate does not exist, uploading");
-        await dpClient.uploadSSLCertificate(certFileName, combinedPem, true);
+      } catch (updateError: any) {
+        // If update fails with 404 (cert doesn't exist yet), try uploading as new
+        if (updateError?.message?.includes("not found") || updateError?.message?.includes("404")) {
+          this.logger.debug({ certFileName }, "Certificate does not exist, uploading as new");
+          await dpClient.uploadSSLCertificate(certFileName, combinedPem, true);
+        } else {
+          throw updateError;
+        }
       }
 
       this.logger.info({ certFileName }, "Certificate deployed via DataPlane API successfully");
