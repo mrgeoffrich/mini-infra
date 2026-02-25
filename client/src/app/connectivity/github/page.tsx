@@ -471,7 +471,7 @@ function ConnectedStatusCard({
 
   // Fetch connectivity status
   const { data: connectivityData } = useConnectivityStatus({
-    filters: { service: "github" },
+    filters: { service: "github-app" },
     limit: 10,
     refetchInterval: 30000,
   });

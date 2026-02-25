@@ -496,7 +496,7 @@ export class GitHubAppService extends ConfigurationService {
           method: "GET",
           headers: {
             Accept: "application/vnd.github+json",
-            Authorization: `token ${token}`,
+            Authorization: `Bearer ${token}`,
           },
         },
       );
@@ -605,16 +605,18 @@ export class GitHubAppService extends ConfigurationService {
       throw new Error("GitHub App owner not configured");
     }
 
+    // Installation tokens must use /users/{username}/packages (not /user/packages
+    // which is for PAT/OAuth user tokens)
     const endpoint =
       ownerType === "Organization"
         ? `${GITHUB_API_BASE}/orgs/${owner}/packages?package_type=container`
-        : `${GITHUB_API_BASE}/user/packages?package_type=container`;
+        : `${GITHUB_API_BASE}/users/${owner}/packages?package_type=container`;
 
     const response = await this.fetchGitHub(endpoint, {
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `token ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -660,13 +662,13 @@ export class GitHubAppService extends ConfigurationService {
     const endpoint =
       ownerType === "Organization"
         ? `${GITHUB_API_BASE}/orgs/${owner}/packages/container/${encodeURIComponent(packageName)}/versions`
-        : `${GITHUB_API_BASE}/user/packages/container/${encodeURIComponent(packageName)}/versions`;
+        : `${GITHUB_API_BASE}/users/${owner}/packages/container/${encodeURIComponent(packageName)}/versions`;
 
     const response = await this.fetchGitHub(endpoint, {
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",
-        Authorization: `token ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -704,7 +706,7 @@ export class GitHubAppService extends ConfigurationService {
         method: "GET",
         headers: {
           Accept: "application/vnd.github+json",
-          Authorization: `token ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       },
     );
@@ -752,7 +754,7 @@ export class GitHubAppService extends ConfigurationService {
         method: "GET",
         headers: {
           Accept: "application/vnd.github+json",
-          Authorization: `token ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       },
     );
@@ -797,13 +799,11 @@ export class GitHubAppService extends ConfigurationService {
 
     const registryCredentialService = new RegistryCredentialService(this.prisma);
 
-    // Check if a GHCR credential from the GitHub App already exists
+    // Check if any GHCR credential already exists (by registryUrl, regardless of name)
     const existingCredentials =
       await registryCredentialService.getAllCredentials();
     const existingGhcr = existingCredentials.find(
-      (c) =>
-        c.registryUrl === "ghcr.io" &&
-        c.name === "GitHub App (auto-managed)",
+      (c) => c.registryUrl === "ghcr.io",
     );
 
     if (existingGhcr) {
