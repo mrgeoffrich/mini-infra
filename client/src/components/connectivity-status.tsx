@@ -186,6 +186,7 @@ const serviceLabels = {
   deployments: "Deployments",
   tls: "TLS / Certificates",
   github: "GitHub",
+  "github-app": "GitHub App",
 } as const;
 
 export function ServiceStatusCard({

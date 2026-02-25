@@ -31,3 +31,7 @@ server/public/assets/
 .env.local
 .env.*.local
 deployment/**/.env
+
+# SQLite WAL/SHM files
+*.db-shm
+*.db-wal

@@ -102,11 +102,12 @@ router.post("/:service", requireSessionOrApiKey, (async (
         "deployments",
         "haproxy",
         "tls",
+        "github-app",
       ].includes(service)
     ) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls`,
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls, github-app`,
         timestamp: new Date().toISOString(),
         requestId,
       });

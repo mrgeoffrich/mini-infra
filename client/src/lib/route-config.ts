@@ -259,6 +259,16 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: "Azure Storage service connectivity and configuration",
   },
 
+  "/connectivity-github": {
+    path: "/connectivity-github",
+    title: "GitHub",
+    icon: IconBrandGithub,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "connectivity",
+    description: "GitHub App connectivity for packages, repos, and actions",
+  },
+
   "/settings-system": {
     path: "/settings-system",
     title: "System Settings",
