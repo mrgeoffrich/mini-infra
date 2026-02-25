@@ -13,6 +13,7 @@ import { VolumeFileContentPage } from "@/app/containers/volumes/VolumeFileConten
 import DockerSettingsPage from "@/app/connectivity/docker/page";
 import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
 import AzureSettingsPage from "@/app/connectivity/azure/page";
+import GitHubConnectivityPage from "@/app/connectivity/github/page";
 import SystemSettingsPage from "@/app/settings/system/page";
 import SecuritySettingsPage from "@/app/settings/security/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
@@ -201,6 +202,10 @@ export const router = createBrowserRouter([
       {
         path: "connectivity-azure",
         element: <AzureSettingsPage />,
+      },
+      {
+        path: "connectivity-github",
+        element: <GitHubConnectivityPage />,
       },
       {
         path: "settings-system",

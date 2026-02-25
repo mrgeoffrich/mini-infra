@@ -5,6 +5,7 @@ import {
   IconBrandDocker,
   IconBrandCloudflare,
   IconBrandAzure,
+  IconBrandGithub,
   IconDatabase,
 } from "@tabler/icons-react";
 import {
@@ -100,6 +101,8 @@ function ConnectivityIndicator({
         return "/connectivity-cloudflare";
       case "azure":
         return "/connectivity-azure";
+      case "github-app":
+        return "/connectivity-github";
       default:
         return "/dashboard";
     }
@@ -175,6 +178,11 @@ export function SiteHeader() {
               service="azure"
               icon={IconBrandAzure}
               label="Azure"
+            />
+            <ConnectivityIndicator
+              service="github-app"
+              icon={IconBrandGithub}
+              label="GitHub"
             />
             <BackupHealthIndicator />
           </div>

@@ -142,6 +142,8 @@ import tlsRenewalsRoutes from "./routes/tls-renewals";
 import tlsSettingsRoutes from "./routes/tls-settings";
 import eventsRoutes from "./routes/events";
 import haproxyBackendsRoutes from "./routes/haproxy-backends";
+import githubAppSettingsRoutes from "./routes/github-app-settings";
+import githubAppResourcesRoutes from "./routes/github-app-resources";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -157,6 +159,8 @@ const routes = [
   { path: "/api/settings/azure", router: azureSettingsRoutes, name: "azureSettingsRoutes" },
   { path: "/api/settings/cloudflare", router: cloudflareSettingsRoutes, name: "cloudflareSettingsRoutes" },
   { path: "/api/settings/github", router: githubSettingsRoutes, name: "githubSettingsRoutes" },
+  { path: "/api/settings/github-app", router: githubAppSettingsRoutes, name: "githubAppSettingsRoutes" },
+  { path: "/api/github-app", router: githubAppResourcesRoutes, name: "githubAppResourcesRoutes" },
   { path: "/api/github/bug-report", router: githubBugReportRoutes, name: "githubBugReportRoutes" },
   { path: "/api/settings/connectivity", router: settingsConnectivityRoutes, name: "settingsConnectivityRoutes" },
   { path: "/api/settings/validate", router: settingsValidationRoutes, name: "settingsValidationRoutes" },

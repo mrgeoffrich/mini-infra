@@ -23,6 +23,9 @@ export * from "./cloudflare";
 // GitHub types
 export * from "./github";
 
+// GitHub App types
+export * from "./github-app";
+
 // PostgreSQL types
 export * from "./postgres";
 

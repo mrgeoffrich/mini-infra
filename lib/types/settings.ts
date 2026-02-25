@@ -40,7 +40,7 @@ export interface SystemSettingsInfo {
 // Settings Categories
 // ====================
 
-export type SettingsCategory = "docker" | "cloudflare" | "azure" | "postgres" | "system" | "deployments" | "haproxy" | "tls" | "github";
+export type SettingsCategory = "docker" | "cloudflare" | "azure" | "postgres" | "system" | "deployments" | "haproxy" | "tls" | "github" | "github-app";
 
 export type ValidationStatus = "valid" | "invalid" | "pending" | "error";
 
@@ -149,7 +149,7 @@ export interface ConnectivityStatusInfo {
 // Connectivity Status Enums
 // ====================
 
-export type ConnectivityService = "cloudflare" | "docker" | "azure" | "postgres" | "system" | "deployments" | "tls" | "github";
+export type ConnectivityService = "cloudflare" | "docker" | "azure" | "postgres" | "system" | "deployments" | "tls" | "github" | "github-app";
 
 export type ConnectivityStatusType =
   | "connected"
