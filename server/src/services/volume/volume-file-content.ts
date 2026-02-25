@@ -42,8 +42,34 @@ export class VolumeFileContentService {
   }
 
   /**
-   * Fetch contents of multiple files from a volume
-   * Returns a summary of fetched, skipped, and failed files
+   * Validate that a file path does not escape the volume root.
+   * Rejects paths containing ".." segments, paths that don't start with "/",
+   * and paths with null bytes.
+   */
+  private static validateFilePath(filePath: string): string | null {
+    // Reject null bytes (can bypass string checks in some environments)
+    if (filePath.includes("\0")) {
+      return "Path contains null bytes";
+    }
+
+    // Paths must be absolute (relative to the volume root)
+    if (!filePath.startsWith("/")) {
+      return "Path must start with /";
+    }
+
+    // Split on / and reject any ".." component (path traversal)
+    const segments = filePath.split("/");
+    if (segments.some((seg) => seg === "..")) {
+      return "Path must not contain '..' components";
+    }
+
+    return null; // valid
+  }
+
+  /**
+   * Fetch contents of multiple files from a volume.
+   * Returns a summary of fetched, skipped, and failed files.
+   * Validates all paths to prevent path traversal before execution.
    */
   public async fetchFileContents(
     volumeName: string,
@@ -55,14 +81,35 @@ export class VolumeFileContentService {
       return { fetched: 0, skipped: 0, errors: [] };
     }
 
+    // Validate all paths before executing anything
+    const validPaths: string[] = [];
+    const errors: string[] = [];
+
+    for (const fp of filePaths) {
+      const validationError = VolumeFileContentService.validateFilePath(fp);
+      if (validationError) {
+        servicesLogger().warn(
+          { volumeName, filePath: fp, reason: validationError },
+          "Rejected file path due to path traversal validation",
+        );
+        errors.push(`${fp}: ${validationError}`);
+      } else {
+        validPaths.push(fp);
+      }
+    }
+
+    if (validPaths.length === 0) {
+      return { fetched: 0, skipped: filePaths.length, errors };
+    }
+
     try {
       servicesLogger().info(
-        { volumeName, fileCount: filePaths.length },
+        { volumeName, fileCount: validPaths.length },
         "Starting file contents fetch",
       );
 
       // Build shell script to fetch file contents
-      const script = this.buildFetchScript(filePaths);
+      const script = this.buildFetchScript(validPaths);
 
       // Execute Alpine container with volume mounted read-only
       const result = await this.dockerExecutor.executeContainer({
@@ -86,6 +133,10 @@ export class VolumeFileContentService {
         result.stdout,
         result.stderr,
       );
+
+      // Merge pre-validation errors with fetch errors
+      fetchResult.skipped += filePaths.length - validPaths.length;
+      fetchResult.errors = [...errors, ...fetchResult.errors];
 
       servicesLogger().info(
         {
@@ -150,6 +201,21 @@ process_file() {
     echo "---FILE:END---"
     return
   fi
+
+  # Canonicalize the path and verify it stays within /volume/
+  local resolved
+  resolved=$(realpath "$fullpath" 2>/dev/null)
+  case "$resolved" in
+    /volume|/volume/*)
+      # Path is within the volume mount - OK
+      ;;
+    *)
+      echo "---ERROR---"
+      echo "Path resolves outside volume boundary"
+      echo "---FILE:END---"
+      return
+      ;;
+  esac
 
   # Check if it's a regular file
   if [ ! -f "$fullpath" ]; then
