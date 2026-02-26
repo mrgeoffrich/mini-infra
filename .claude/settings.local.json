@@ -84,5 +84,5 @@
     "ask": [],
     "defaultMode": "acceptEdits"
   },
-  "outputStyle": "bug-investigator"
+  "outputStyle": "default"
 }
