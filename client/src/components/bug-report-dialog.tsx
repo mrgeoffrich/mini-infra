@@ -162,7 +162,7 @@ export function BugReportDialog({
             <Button
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = "/settings-github";
+                window.location.href = "/bug-report-settings";
               }}
             >
               <IconBrandGithub className="mr-2 h-4 w-4" />

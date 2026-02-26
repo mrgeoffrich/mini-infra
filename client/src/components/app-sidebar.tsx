@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { IconInnerShadowTop, IconPalette, IconDashboard, IconBook, IconArrowLeft } from "@tabler/icons-react";
+import { IconInnerShadowTop, IconPalette, IconDashboard, IconBook, IconArrowLeft, IconBrandGithub } from "@tabler/icons-react";
 
 import { NavUser } from "@/components/nav-user";
 import {
@@ -175,7 +175,7 @@ function AppSidebarContent() {
       {/* Push dev section to bottom */}
       <div className="mt-auto">
         {/* Development-only Design Tools section */}
-        {import.meta.env.DEV && (
+        {import.meta.env.VITE_SHOW_DEV_MENU === 'true' && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs text-muted-foreground">
               Development
@@ -190,6 +190,17 @@ function AppSidebarContent() {
                     <Link to="/design/icons">
                       <IconPalette className="size-4" />
                       <span>Icon Reference</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === "/bug-report-settings"}
+                  >
+                    <Link to="/bug-report-settings">
+                      <IconBrandGithub className="size-4" />
+                      <span>Bug Report Settings</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

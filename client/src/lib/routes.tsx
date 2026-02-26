@@ -228,7 +228,7 @@ export const router = createBrowserRouter([
         element: <TlsSettingsPage />,
       },
       {
-        path: "settings-github",
+        path: "bug-report-settings",
         element: <GitHubSettingsPage />,
       },
       {
@@ -252,7 +252,7 @@ export const router = createBrowserRouter([
         ),
       },
       // Development-only routes
-      ...(import.meta.env.DEV
+      ...(import.meta.env.VITE_SHOW_DEV_MENU === 'true'
         ? [
             {
               path: "design/icons",

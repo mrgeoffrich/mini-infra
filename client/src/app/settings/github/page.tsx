@@ -156,22 +156,10 @@ export default function GitHubSettingsPage() {
   // Loading state
   if (settingsLoading) {
     return (
-      <div className="container mx-auto py-8 space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <Skeleton className="h-12 w-64" />
         </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-full" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
       </div>
     );
   }
@@ -179,15 +167,17 @@ export default function GitHubSettingsPage() {
   // Error state
   if (settingsError) {
     return (
-      <div className="container mx-auto py-8">
-        <Alert variant="destructive">
-          <IconAlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {settingsError instanceof Error
-              ? settingsError.message
-              : "Failed to load GitHub settings"}
-          </AlertDescription>
-        </Alert>
+      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="px-4 lg:px-6">
+          <Alert variant="destructive">
+            <IconAlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {settingsError instanceof Error
+                ? settingsError.message
+                : "Failed to load GitHub settings"}
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
@@ -195,191 +185,201 @@ export default function GitHubSettingsPage() {
   const isConfigured = settingsData?.data?.isConfigured || false;
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
-      {/* Page Header */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <IconBrandGithub className="h-8 w-8" />
-          <h1 className="text-3xl font-bold">GitHub Settings</h1>
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      {/* Header */}
+      <div className="px-4 lg:px-6">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+            <IconBrandGithub className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Bug Report Settings</h1>
+            <p className="text-muted-foreground">
+              Configure GitHub integration for bug reporting
+            </p>
+          </div>
         </div>
-        <p className="text-muted-foreground">
-          Configure GitHub integration for bug reporting
-        </p>
       </div>
 
       {/* Configuration Status */}
       {isConfigured && (
-        <Alert>
-          <IconCircleCheck className="h-4 w-4 text-green-600" />
-          <AlertDescription>
-            GitHub is configured and ready for bug reporting to{" "}
-            <strong>
-              {settingsData?.data?.repoOwner}/{settingsData?.data?.repoName}
-            </strong>
-          </AlertDescription>
-        </Alert>
+        <div className="px-4 lg:px-6 max-w-7xl">
+          <Alert>
+            <IconCircleCheck className="h-4 w-4 text-green-600" />
+            <AlertDescription>
+              GitHub is configured and ready for bug reporting to{" "}
+              <strong>
+                {settingsData?.data?.repoOwner}/{settingsData?.data?.repoName}
+              </strong>
+            </AlertDescription>
+          </Alert>
+        </div>
       )}
 
       {/* Settings Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Repository Configuration</CardTitle>
-          <CardDescription>
-            Configure your GitHub personal access token and repository for bug
-            reporting. Your token will be encrypted and stored securely.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Personal Access Token */}
-              <FormField
-                control={form.control}
-                name="personal_access_token"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Personal Access Token</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="ghp_xxxxxxxxxxxx"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Your GitHub personal access token with 'repo' and
-                      'issues:write' permissions.{" "}
-                      <a
-                        href="https://github.com/settings/tokens/new?description=Mini%20Infra%20Bug%20Reporter&scopes=repo"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        Create a new token
-                      </a>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Repository Owner */}
-              <FormField
-                control={form.control}
-                name="repo_owner"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Repository Owner</FormLabel>
-                    <FormControl>
-                      <Input placeholder="username or organization" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      The GitHub username or organization that owns the
-                      repository
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Repository Name */}
-              <FormField
-                control={form.control}
-                name="repo_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Repository Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="repository-name" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      The name of the repository where bug reports will be
-                      created
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3">
-                <Button
-                  type="submit"
-                  disabled={isSaving || !form.formState.isValid}
-                >
-                  {isSaving ? (
-                    <>
-                      <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <IconDeviceFloppy className="mr-2 h-4 w-4" />
-                      Save Settings
-                    </>
+      <div className="px-4 lg:px-6 max-w-7xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Repository Configuration</CardTitle>
+            <CardDescription>
+              Configure your GitHub personal access token and repository for bug
+              reporting. Your token will be encrypted and stored securely.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* Personal Access Token */}
+                <FormField
+                  control={form.control}
+                  name="personal_access_token"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Personal Access Token</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder="ghp_xxxxxxxxxxxx"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Your GitHub personal access token with 'repo' and
+                        'issues:write' permissions.{" "}
+                        <a
+                          href="https://github.com/settings/tokens/new?description=Mini%20Infra%20Bug%20Reporter&scopes=repo"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          Create a new token
+                        </a>
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </Button>
+                />
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleTestConnection}
-                  disabled={isTesting || !form.formState.isValid}
-                >
-                  {isTesting ? (
-                    <>
-                      <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Testing...
-                    </>
-                  ) : (
-                    <>
-                      <IconPlugConnected className="mr-2 h-4 w-4" />
-                      Test Connection
-                    </>
+                {/* Repository Owner */}
+                <FormField
+                  control={form.control}
+                  name="repo_owner"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Repository Owner</FormLabel>
+                      <FormControl>
+                        <Input placeholder="username or organization" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        The GitHub username or organization that owns the
+                        repository
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+                />
+
+                {/* Repository Name */}
+                <FormField
+                  control={form.control}
+                  name="repo_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Repository Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="repository-name" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        The name of the repository where bug reports will be
+                        created
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="submit"
+                    disabled={isSaving || !form.formState.isValid}
+                  >
+                    {isSaving ? (
+                      <>
+                        <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <IconDeviceFloppy className="mr-2 h-4 w-4" />
+                        Save Settings
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={isTesting || !form.formState.isValid}
+                  >
+                    {isTesting ? (
+                      <>
+                        <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      <>
+                        <IconPlugConnected className="mr-2 h-4 w-4" />
+                        Test Connection
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Help Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>How to Get a Personal Access Token</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <ol className="list-decimal list-inside space-y-2 text-sm">
-            <li>
-              Go to{" "}
-              <a
-                href="https://github.com/settings/tokens"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                GitHub Settings → Developer settings → Personal access tokens
-              </a>
-            </li>
-            <li>
-              Click "Generate new token" → "Generate new token (classic)"
-            </li>
-            <li>
-              Give it a descriptive name like "Mini Infra Bug Reporter"
-            </li>
-            <li>Select the following scopes:
-              <ul className="list-disc list-inside ml-6 mt-1">
-                <li><code>repo</code> (Full control of private repositories)</li>
-              </ul>
-            </li>
-            <li>Click "Generate token" at the bottom of the page</li>
-            <li>
-              Copy the token (it starts with <code>ghp_</code>) and paste it above
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
+      <div className="px-4 lg:px-6 max-w-7xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>How to Get a Personal Access Token</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ol className="list-decimal list-inside space-y-2 text-sm">
+              <li>
+                Go to{" "}
+                <a
+                  href="https://github.com/settings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  GitHub Settings → Developer settings → Personal access tokens
+                </a>
+              </li>
+              <li>
+                Click "Generate new token" → "Generate new token (classic)"
+              </li>
+              <li>
+                Give it a descriptive name like "Mini Infra Bug Reporter"
+              </li>
+              <li>Select the following scopes:
+                <ul className="list-disc list-inside ml-6 mt-1">
+                  <li><code>repo</code> (Full control of private repositories)</li>
+                </ul>
+              </li>
+              <li>Click "Generate token" at the bottom of the page</li>
+              <li>
+                Copy the token (it starts with <code>ghp_</code>) and paste it above
+              </li>
+            </ol>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

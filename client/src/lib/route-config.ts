@@ -341,14 +341,12 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: "TLS certificate configuration",
   },
 
-  "/settings-github": {
-    path: "/settings-github",
-    title: "GitHub Settings",
-    breadcrumbLabel: "GitHub Settings",
+  "/bug-report-settings": {
+    path: "/bug-report-settings",
+    title: "Bug Report Settings",
+    breadcrumbLabel: "Bug Report Settings",
     icon: IconBrandGithub,
-    showInNav: true,
-    navGroup: "main",
-    navSection: "administration",
+    showInNav: false,
     description: "GitHub integration for bug reporting",
     helpDoc: "github/github-app-setup",
   },
