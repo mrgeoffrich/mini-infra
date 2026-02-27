@@ -115,8 +115,11 @@ COPY server/docker-compose ./server/docker-compose
 # Copy startup script
 COPY server/docker-entrypoint.sh ./server/docker-entrypoint.sh
 
-# Create directories for data and logs with proper permissions
-RUN mkdir -p /app/data /app/server/logs
+# Create agent working directory and copy user documentation
+COPY client/src/user-docs/ /app/agent/docs/
+
+# Create directories for data, logs, and agent with proper permissions
+RUN mkdir -p /app/data /app/server/logs /app/agent
 
 # Make startup script executable
 RUN chmod +x /app/server/docker-entrypoint.sh

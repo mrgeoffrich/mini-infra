@@ -85,6 +85,12 @@ These have sensible defaults and rarely need changing.
 | `CONNECTIVITY_CHECK_INTERVAL` | `300000` | How often (in milliseconds) external service health checks run. Default is 5 minutes. |
 | `ALLOW_INSECURE` | `false` | Disables HTTPS-enforcing headers (HSTS, CSP upgrade-insecure-requests). Auto-set to `true` when `PUBLIC_URL` starts with `http://`. Only use this behind a trusted reverse proxy. |
 
+### AI Assistant (optional)
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | API key from [Anthropic](https://console.anthropic.com/). When set, enables the AI assistant chat feature that can answer questions about your infrastructure and call the Mini Infra API on your behalf. |
+
 ### Observability (optional)
 
 These enable log forwarding to OpenObserve and distributed tracing via OpenTelemetry. Leave them unset if you don't use these services.
@@ -126,6 +132,8 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - PUBLIC_URL=${PUBLIC_URL}
       - LOG_LEVEL=info
+      # Optional: enable AI assistant
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
@@ -148,6 +156,8 @@ ENCRYPTION_SECRET=your-random-encryption-secret
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 PUBLIC_URL=https://infra.example.com
+# Optional: AI assistant
+# ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Then start it:

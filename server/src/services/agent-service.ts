@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import path from "path";
 import type { Response } from "express";
 import {
   query,
@@ -13,6 +14,14 @@ import appConfig from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
 
 const logger = agentLogger();
+
+// Resolve agent working directory based on environment.
+// AGENT_CWD env var can override for non-standard setups.
+const AGENT_CWD =
+  process.env.AGENT_CWD ??
+  (process.env.NODE_ENV === "production"
+    ? "/app/agent"
+    : path.resolve(__dirname, "../../../agent"));
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,11 +135,16 @@ function createBashGuard(port: number): HookCallback {
       };
     }
 
-    // URL must be localhost or 127.0.0.1 on the correct port
+    // URL must be localhost or 127.0.0.1 on the correct port.
+    // Strip -H/--header flag values first so a URL embedded in a header
+    // (e.g. -H "x-api-key: http://localhost:5005/") can't fool the check.
+    const strippedCommand = command
+      .replace(/-(-header|H)\s+(['"]).*?\2/g, "")
+      .replace(/-(-header|H)\s+\S+/g, "");
     const localhostPattern = new RegExp(
       `https?://(localhost|127\\.0\\.0\\.1):${port}(/|\\s|$|"|')`,
     );
-    if (!localhostPattern.test(command)) {
+    if (!localhostPattern.test(strippedCommand)) {
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse" as const,
@@ -169,13 +183,13 @@ ${API_REFERENCE}
 
 ## Documentation
 
-You can read documentation files in /app/agent/docs/ using the Read or Glob tools.
+You can read documentation files in ${AGENT_CWD}/docs/ using the Read or Glob tools.
 
 ## Rules
 
 1. **Only use curl** to interact with the API. Never run other shell commands.
 2. **Always use -s** (silent) flag with curl to avoid progress bars.
-3. **Always pipe through jq** when the output is JSON, for readability: \`curl -s ... | jq .\` — but only if jq is available; fall back to raw output otherwise.
+3. Use \`curl -s\` for all API calls. Present JSON responses in a readable format in your response.
 4. **Be concise.** Summarize API responses for the user rather than dumping raw JSON.
 5. **Be helpful.** If the user asks something vague, suggest what information you can look up.
 6. **Never modify or delete** resources unless the user explicitly asks you to.
@@ -328,7 +342,7 @@ class AgentService {
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           maxTurns: 20,
-          cwd: "/app/agent",
+          cwd: AGENT_CWD,
           includePartialMessages: true,
           abortController: session.abortController,
           persistSession: false,
