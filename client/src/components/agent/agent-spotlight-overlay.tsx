@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useId, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 
 interface HighlightState {
@@ -13,6 +13,7 @@ const RETRY_INTERVAL = 200;
 const MAX_RETRIES = 10;
 
 export function AgentSpotlightOverlay() {
+  const maskId = `spotlight-mask-${useId().replace(/:/g, "")}`;
   const [highlight, setHighlight] = useState<HighlightState | null>(null);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,9 +78,11 @@ export function AgentSpotlightOverlay() {
     };
   }, [measureElement, dismiss]);
 
-  // Update position on scroll/resize
+  // Update position on scroll/resize — depend only on elementId so listeners
+  // aren't torn down and re-registered on every position update.
+  const activeElementId = highlight?.elementId ?? null;
   useEffect(() => {
-    if (!highlight) return;
+    if (!activeElementId) return;
 
     function updateRect() {
       setHighlight((prev) => {
@@ -96,7 +99,7 @@ export function AgentSpotlightOverlay() {
       window.removeEventListener("scroll", updateRect, true);
       window.removeEventListener("resize", updateRect);
     };
-  }, [highlight]);
+  }, [activeElementId]);
 
   if (!highlight?.rect) return null;
 
@@ -115,7 +118,7 @@ export function AgentSpotlightOverlay() {
       {/* Semi-transparent overlay with cutout */}
       <svg className="absolute inset-0 h-full w-full">
         <defs>
-          <mask id="spotlight-mask">
+          <mask id={maskId}>
             <rect width="100%" height="100%" fill="white" />
             <rect
               x={x}
@@ -131,7 +134,7 @@ export function AgentSpotlightOverlay() {
           width="100%"
           height="100%"
           fill="rgba(0,0,0,0.5)"
-          mask="url(#spotlight-mask)"
+          mask={`url(#${maskId})`}
         />
       </svg>
 

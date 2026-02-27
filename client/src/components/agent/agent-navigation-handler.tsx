@@ -21,7 +21,8 @@ export function AgentNavigationHandler() {
       navigate(path);
 
       if (highlightElementId) {
-        // Delay to allow the page to render before highlighting
+        // Short delay for one render cycle; the overlay's retry loop handles
+        // elements that take longer to appear after navigation.
         setTimeout(() => {
           window.dispatchEvent(
             new CustomEvent("agent:highlight", {
@@ -32,7 +33,7 @@ export function AgentNavigationHandler() {
               },
             }),
           );
-        }, 500);
+        }, 100);
       }
     }
 

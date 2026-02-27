@@ -35,7 +35,7 @@ export function createUiToolsMcpServer(broadcast: BroadcastFn) {
         content: [
           {
             type: "text" as const,
-            text: `Highlighted element "${args.elementId}"${args.tooltip ? ` with tooltip "${args.tooltip}"` : ""}.`,
+            text: `Highlight request sent for element "${args.elementId}"${args.tooltip ? ` with tooltip "${args.tooltip}"` : ""}.`,
           },
         ],
       };
@@ -68,12 +68,12 @@ export function createUiToolsMcpServer(broadcast: BroadcastFn) {
           highlightTooltip: args.highlightTooltip ?? null,
         },
       });
-      const parts = [`Navigated to "${args.path}"`];
+      const parts = [`Navigation request sent to "${args.path}"`];
       if (args.highlightElementId) {
-        parts.push(`and will highlight "${args.highlightElementId}"`);
+        parts.push(`will attempt to highlight "${args.highlightElementId}" after navigation`);
       }
       return {
-        content: [{ type: "text" as const, text: parts.join(" ") + "." }],
+        content: [{ type: "text" as const, text: parts.join(". ") + "." }],
       };
     },
     { annotations: { readOnlyHint: true } },
