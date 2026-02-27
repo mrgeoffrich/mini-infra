@@ -156,7 +156,6 @@ const GH_ALLOWED_COMPOUND = new Set([
   "release view",
   "run list",
   "run view",
-  "run watch",
 ]);
 
 /** gh top-level subcommands that are always blocked */
@@ -247,9 +246,19 @@ function validateGhCommand(command: string) {
     return denyResult(`gh ${sub2} is not allowed for security reasons.`);
   }
 
-  // "gh api" is allowed (scoped by token permissions)
+  // "gh api" is allowed for read-only (GET) requests.
+  // Block write methods to prevent mutations via unscoped PATs.
   if (sub1 === "api") {
-    return null; // allowed
+    if (
+      /\s(-X\s*(POST|PUT|PATCH|DELETE)|--method\s*(POST|PUT|PATCH|DELETE))/i.test(
+        command,
+      )
+    ) {
+      return denyResult(
+        "gh api write operations (POST/PUT/PATCH/DELETE) are not allowed. Use gh issue create, gh pr create, etc. for write operations.",
+      );
+    }
+    return null; // GET is allowed
   }
 
   // Check against the compound allowlist
@@ -264,18 +273,43 @@ function validateGhCommand(command: string) {
 
 interface BashGuardOptions {
   port: number;
+  apiKey: string;
   dockerEnabled: boolean;
   ghEnabled: boolean;
 }
 
+function allowWithInjectedHeader(command: string, apiKey: string) {
+  // Inject the x-api-key header into the curl command so the API key
+  // never appears in the system prompt or conversation history.
+  const header = `-H "x-api-key: ${apiKey}"`;
+  // Insert after "curl" (and any flags before the URL) by appending
+  // right after "curl " or "curl -s ".
+  const injected = command.replace(/^(\s*curl\s)/, `$1${header} `);
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse" as const,
+      permissionDecision: "allow" as const,
+      updatedInput: { command: injected },
+    },
+  };
+}
+
 function createBashGuard(options: BashGuardOptions): HookCallback {
-  const { port, dockerEnabled, ghEnabled } = options;
+  const { port, apiKey, dockerEnabled, ghEnabled } = options;
 
   return async (input) => {
     const preInput = input as PreToolUseHookInput;
     const toolInput = preInput.tool_input as { command?: string } | undefined;
     const command = toolInput?.command ?? "";
     const trimmed = command.trimStart();
+
+    // Reject newlines and tabs — a shell treats \n as a command terminator
+    // just like ";", so a multi-line command would bypass the chain guard.
+    if (/[\n\r\t]/.test(command)) {
+      return denyResult(
+        "Newlines and tabs are not allowed in commands.",
+      );
+    }
 
     // Universal: no command chaining characters
     const chainPattern = /[;|`]|\$\(|&&|\|\|/;
@@ -288,7 +322,8 @@ function createBashGuard(options: BashGuardOptions): HookCallback {
     // Determine which tool is being invoked
     if (trimmed.startsWith("curl ")) {
       const result = validateCurlCommand(command, port);
-      return result ?? {};
+      if (result) return result; // denied
+      return allowWithInjectedHeader(command, apiKey);
     }
 
     if (trimmed.startsWith("docker ")) {
@@ -325,7 +360,6 @@ function createBashGuard(options: BashGuardOptions): HookCallback {
 // ---------------------------------------------------------------------------
 
 function buildSystemPrompt(
-  apiKey: string,
   port: number,
   capabilities: AgentCapabilities,
 ): string {
@@ -343,13 +377,11 @@ You have access to: ${toolList.join(", ")}.
 
 ## Mini Infra API (curl)
 
-Use curl to call the Mini Infra API at ${baseUrl}.
-
-**Authentication:** Always include the header \`-H "x-api-key: ${apiKey}"\` in every curl command.
+Use curl to call the Mini Infra API at ${baseUrl}. Authentication is handled automatically — do not include any auth headers.
 
 **Example:**
 \`\`\`bash
-curl -s -H "x-api-key: ${apiKey}" ${baseUrl}/api/containers
+curl -s ${baseUrl}/api/containers
 \`\`\`
 
 ${API_REFERENCE}
@@ -394,8 +426,8 @@ You have access to the GitHub CLI with pre-configured authentication.
 - \`gh pr list\`, \`gh pr view <number>\`, \`gh pr create\` — pull requests
 - \`gh pr checks <number>\`, \`gh pr diff <number>\` — PR checks and diffs
 - \`gh release list\`, \`gh release view <tag>\` — releases
-- \`gh run list\`, \`gh run view <id>\`, \`gh run watch <id>\` — workflow runs
-- \`gh api <endpoint>\` — raw GitHub API calls (e.g. \`gh api repos/owner/repo\`)
+- \`gh run list\`, \`gh run view <id>\` — workflow runs
+- \`gh api <endpoint>\` — read-only GitHub API calls (e.g. \`gh api repos/owner/repo\`)
 
 **Examples:**
 \`\`\`bash
@@ -650,6 +682,7 @@ class AgentService {
       hooks: [
         createBashGuard({
           port: this.port,
+          apiKey: this.apiKey,
           dockerEnabled: capabilities.dockerEnabled,
           ghEnabled: capabilities.ghEnabled,
         }),
@@ -666,7 +699,7 @@ class AgentService {
       const q = query({
         prompt: session.queue,
         options: {
-          systemPrompt: buildSystemPrompt(this.apiKey, this.port, capabilities),
+          systemPrompt: buildSystemPrompt(this.port, capabilities),
           tools: ["Bash", "Read", "Glob"],
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
