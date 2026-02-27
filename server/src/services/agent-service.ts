@@ -11,7 +11,7 @@ import {
   type HookCallbackMatcher,
 } from "@anthropic-ai/claude-agent-sdk";
 import { agentLogger } from "../lib/logger-factory";
-import appConfig from "../lib/config-new";
+import appConfig, { agentConfig } from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
 import { createUiToolsMcpServer } from "./agent-ui-tools";
 import { githubAppService } from "./github-app-service";
@@ -730,14 +730,14 @@ class AgentService {
       const q = query({
         prompt: session.queue,
         options: {
-          model: "claude-sonnet-4-6",
+          model: agentConfig.model,
           systemPrompt: buildSystemPrompt(this.port, capabilities),
           tools: ["Bash", "Read", "Glob"],
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
-          thinking: { type: "adaptive" },
-          effort: "medium",
-          maxTurns: 20,
+          thinking: { type: agentConfig.thinking },
+          effort: agentConfig.effort,
+          maxTurns: agentConfig.maxTurns,
           cwd: AGENT_CWD,
           includePartialMessages: true,
           abortController: session.abortController,

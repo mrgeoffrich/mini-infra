@@ -60,6 +60,12 @@ const configSchema = z.object({
   security: z.object({
     allowInsecure: z.boolean(),
   }),
+  agent: z.object({
+    model: z.string(),
+    thinking: z.enum(["adaptive", "enabled", "disabled"]),
+    effort: z.enum(["low", "medium", "high", "max"]),
+    maxTurns: z.number(),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -171,6 +177,19 @@ const appConfig: Config = {
     resourceAttributes: getConfigValue("telemetry.resourceAttributes", "OTEL_RESOURCE_ATTRIBUTES", undefined),
     samplingRatio: getConfigValue("telemetry.samplingRatio", "OTEL_SAMPLING_RATIO", 1.0),
   },
+  agent: {
+    model: getConfigValue("agent.model", "AGENT_MODEL", "claude-sonnet-4-6"),
+    thinking: getConfigValue("agent.thinking", "AGENT_THINKING", "adaptive") as
+      | "adaptive"
+      | "enabled"
+      | "disabled",
+    effort: getConfigValue("agent.effort", "AGENT_EFFORT", "medium") as
+      | "low"
+      | "medium"
+      | "high"
+      | "max",
+    maxTurns: getConfigValue("agent.maxTurns", "AGENT_MAX_TURNS", 20),
+  },
   security: {
     allowInsecure: (() => {
       const value = getConfigValue<string | boolean>("security.allowInsecure", "ALLOW_INSECURE", false);
@@ -243,4 +262,5 @@ export const {
   connectivity: connectivityConfig,
   telemetry: telemetryConfig,
   security: securityConfig,
+  agent: agentConfig,
 } = validatedConfig;
