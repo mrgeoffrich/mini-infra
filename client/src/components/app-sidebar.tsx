@@ -260,7 +260,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent data-tour="sidebar-nav">
         {isHelpRoute ? <HelpSidebarContent /> : <AppSidebarContent />}
       </SidebarContent>
       <SidebarFooter>

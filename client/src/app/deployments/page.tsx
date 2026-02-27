@@ -178,7 +178,7 @@ export function DeploymentsPage() {
               </TabsList>
             </Tabs>
 
-            <Button onClick={handleCreateConfig}>
+            <Button onClick={handleCreateConfig} data-tour="deployments-new-button">
               <IconPlus className="h-4 w-4 mr-2" />
               New Configuration
             </Button>
@@ -187,7 +187,7 @@ export function DeploymentsPage() {
       </div>
 
       {/* Content */}
-      <div className="px-4 lg:px-6">
+      <div className="px-4 lg:px-6" data-tour="deployments-list">
         {viewMode === "list" ? (
           <DeploymentList
             onEditConfig={handleEditConfig}
