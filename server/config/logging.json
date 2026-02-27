@@ -96,6 +96,17 @@
         "maxFiles": "10",
         "maxSize": "1m"
       }
+    },
+    "agent": {
+      "level": "debug",
+      "destination": "logs/app-agent.log",
+      "prettyPrint": false,
+      "includeCaller": true,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
+      }
     }
   },
   "production": {
@@ -188,6 +199,16 @@
         "maxFiles": "10",
         "maxSize": "1m"
       }
+    },
+    "agent": {
+      "level": "info",
+      "destination": "logs/app-agent.log",
+      "prettyPrint": false,
+      "rotation": {
+        "enabled": true,
+        "maxFiles": "10",
+        "maxSize": "1m"
+      }
     }
   },
   "test": {
@@ -216,6 +237,9 @@
       "level": "silent"
     },
     "tls": {
+      "level": "silent"
+    },
+    "agent": {
       "level": "silent"
     }
   },
