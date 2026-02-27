@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
 import path from "path";
 import type { Response } from "express";
 import {
@@ -12,6 +13,8 @@ import {
 import { agentLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
+import { githubAppService } from "./github-app-service";
+import { githubService } from "./github-service";
 
 const logger = agentLogger();
 
@@ -30,6 +33,13 @@ const AGENT_CWD =
 interface AgentEvent {
   type: string;
   data: Record<string, unknown>;
+}
+
+/** Capabilities resolved at session creation time */
+interface AgentCapabilities {
+  dockerEnabled: boolean;
+  ghEnabled: boolean;
+  ghToken: string | null;
 }
 
 interface AgentSession {
@@ -102,60 +112,211 @@ class AgentMessageQueue implements AsyncIterable<SDKUserMessage> {
 }
 
 // ---------------------------------------------------------------------------
-// bashGuard — PreToolUse hook that restricts Bash to curl-only localhost
+// bashGuard — PreToolUse hook that restricts Bash to allowed commands only
 // ---------------------------------------------------------------------------
 
-function createBashGuard(port: number): HookCallback {
+/** Docker subcommands the agent is allowed to run */
+const DOCKER_ALLOWED_SUBCOMMANDS = new Set([
+  "ps",
+  "logs",
+  "inspect",
+  "images",
+  "stats",
+  "top",
+  "port",
+  "diff",
+  "start",
+  "stop",
+  "restart",
+]);
+
+/** Docker compound subcommands (two-word) the agent is allowed to run */
+const DOCKER_ALLOWED_COMPOUND = new Set([
+  "network ls",
+  "network inspect",
+  "volume ls",
+  "volume inspect",
+  "compose ps",
+  "compose logs",
+]);
+
+/** gh subcommands the agent is allowed to run (two-word minimum) */
+const GH_ALLOWED_COMPOUND = new Set([
+  "repo view",
+  "repo list",
+  "issue list",
+  "issue view",
+  "issue create",
+  "pr list",
+  "pr view",
+  "pr create",
+  "pr checks",
+  "pr diff",
+  "release list",
+  "release view",
+  "run list",
+  "run view",
+  "run watch",
+]);
+
+/** gh top-level subcommands that are always blocked */
+const GH_BLOCKED_SUBCOMMANDS = new Set([
+  "auth",
+  "ssh-key",
+  "gpg-key",
+]);
+
+function denyResult(reason: string) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse" as const,
+      permissionDecision: "deny" as const,
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+function validateCurlCommand(command: string, port: number) {
+  // URL must be localhost or 127.0.0.1 on the correct port.
+  // Strip -H/--header flag values first so a URL embedded in a header
+  // (e.g. -H "x-api-key: http://localhost:5005/") can't fool the check.
+  const strippedCommand = command
+    .replace(/-(-header|H)\s+(['"]).*?\2/g, "")
+    .replace(/-(-header|H)\s+\S+/g, "");
+  const localhostPattern = new RegExp(
+    `https?://(localhost|127\\.0\\.0\\.1):${port}(/|\\s|$|"|')`,
+  );
+  if (!localhostPattern.test(strippedCommand)) {
+    return denyResult(
+      `curl target must be localhost:${port}. External requests are not allowed.`,
+    );
+  }
+  return null; // allowed
+}
+
+function validateDockerCommand(command: string) {
+  // Extract the subcommand(s) after "docker"
+  const args = command.trimStart().replace(/^docker\s+/, "").trim();
+  if (!args) {
+    return denyResult("docker command requires a subcommand.");
+  }
+
+  const parts = args.split(/\s+/);
+  const sub1 = parts[0];
+  const sub2 = parts.length > 1 ? `${parts[0]} ${parts[1]}` : null;
+
+  // Check compound commands first (e.g. "network ls", "compose ps")
+  if (sub2 && DOCKER_ALLOWED_COMPOUND.has(sub2)) {
+    return null; // allowed
+  }
+
+  // Check single subcommands
+  if (DOCKER_ALLOWED_SUBCOMMANDS.has(sub1)) {
+    return null; // allowed
+  }
+
+  return denyResult(
+    `docker subcommand "${sub1}" is not allowed. Allowed: ${[...DOCKER_ALLOWED_SUBCOMMANDS, ...DOCKER_ALLOWED_COMPOUND].join(", ")}`,
+  );
+}
+
+function validateGhCommand(command: string) {
+  const args = command.trimStart().replace(/^gh\s+/, "").trim();
+  if (!args) {
+    return denyResult("gh command requires a subcommand.");
+  }
+
+  const parts = args.split(/\s+/);
+  const sub1 = parts[0];
+  const sub2 = parts.length > 1 ? `${parts[0]} ${parts[1]}` : null;
+
+  // Block dangerous top-level subcommands
+  if (GH_BLOCKED_SUBCOMMANDS.has(sub1)) {
+    return denyResult(
+      `gh subcommand "${sub1}" is not allowed for security reasons.`,
+    );
+  }
+
+  // "gh config set" is blocked but "gh config" generally is fine to read
+  if (sub2 === "config set") {
+    return denyResult("gh config set is not allowed for security reasons.");
+  }
+
+  // "gh repo delete" and "gh repo create" are blocked
+  if (sub2 === "repo delete" || sub2 === "repo create") {
+    return denyResult(`gh ${sub2} is not allowed for security reasons.`);
+  }
+
+  // "gh api" is allowed (scoped by token permissions)
+  if (sub1 === "api") {
+    return null; // allowed
+  }
+
+  // Check against the compound allowlist
+  if (sub2 && GH_ALLOWED_COMPOUND.has(sub2)) {
+    return null; // allowed
+  }
+
+  return denyResult(
+    `gh subcommand "${sub2 || sub1}" is not allowed. Allowed: ${[...GH_ALLOWED_COMPOUND, "api"].join(", ")}`,
+  );
+}
+
+interface BashGuardOptions {
+  port: number;
+  dockerEnabled: boolean;
+  ghEnabled: boolean;
+}
+
+function createBashGuard(options: BashGuardOptions): HookCallback {
+  const { port, dockerEnabled, ghEnabled } = options;
+
   return async (input) => {
     const preInput = input as PreToolUseHookInput;
     const toolInput = preInput.tool_input as { command?: string } | undefined;
     const command = toolInput?.command ?? "";
+    const trimmed = command.trimStart();
 
-    // Must start with curl
-    if (!command.trimStart().startsWith("curl ")) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse" as const,
-          permissionDecision: "deny" as const,
-          permissionDecisionReason: `Only curl commands are allowed. Got: ${command.slice(0, 60)}`,
-        },
-      };
-    }
-
-    // No command chaining characters
+    // Universal: no command chaining characters
     const chainPattern = /[;|`]|\$\(|&&|\|\|/;
     if (chainPattern.test(command)) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse" as const,
-          permissionDecision: "deny" as const,
-          permissionDecisionReason:
-            "Command chaining is not allowed in agent curl commands.",
-        },
-      };
+      return denyResult(
+        "Command chaining is not allowed in agent commands.",
+      );
     }
 
-    // URL must be localhost or 127.0.0.1 on the correct port.
-    // Strip -H/--header flag values first so a URL embedded in a header
-    // (e.g. -H "x-api-key: http://localhost:5005/") can't fool the check.
-    const strippedCommand = command
-      .replace(/-(-header|H)\s+(['"]).*?\2/g, "")
-      .replace(/-(-header|H)\s+\S+/g, "");
-    const localhostPattern = new RegExp(
-      `https?://(localhost|127\\.0\\.0\\.1):${port}(/|\\s|$|"|')`,
+    // Determine which tool is being invoked
+    if (trimmed.startsWith("curl ")) {
+      const result = validateCurlCommand(command, port);
+      return result ?? {};
+    }
+
+    if (trimmed.startsWith("docker ")) {
+      if (!dockerEnabled) {
+        return denyResult("Docker CLI is not available in this environment.");
+      }
+      const result = validateDockerCommand(command);
+      return result ?? {};
+    }
+
+    if (trimmed.startsWith("gh ")) {
+      if (!ghEnabled) {
+        return denyResult(
+          "GitHub CLI is not available. Configure GitHub credentials in Settings to enable it.",
+        );
+      }
+      const result = validateGhCommand(command);
+      return result ?? {};
+    }
+
+    // Build list of allowed commands for the error message
+    const allowed = ["curl"];
+    if (dockerEnabled) allowed.push("docker");
+    if (ghEnabled) allowed.push("gh");
+
+    return denyResult(
+      `Only ${allowed.join(", ")} commands are allowed. Got: ${trimmed.slice(0, 60)}`,
     );
-    if (!localhostPattern.test(strippedCommand)) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse" as const,
-          permissionDecision: "deny" as const,
-          permissionDecisionReason: `curl target must be localhost:${port}. External requests are not allowed.`,
-        },
-      };
-    }
-
-    // Allow
-    return {};
   };
 }
 
@@ -163,14 +324,26 @@ function createBashGuard(port: number): HookCallback {
 // System prompt builder
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(apiKey: string, port: number): string {
+function buildSystemPrompt(
+  apiKey: string,
+  port: number,
+  capabilities: AgentCapabilities,
+): string {
   const baseUrl = `http://localhost:${port}`;
 
-  return `You are the Mini Infra AI assistant. You help users understand and manage their Docker infrastructure, deployments, databases, and services.
+  const toolList = ["curl (Mini Infra API)"];
+  if (capabilities.dockerEnabled) toolList.push("docker (Docker CLI)");
+  if (capabilities.ghEnabled) toolList.push("gh (GitHub CLI)");
 
-## How to interact with the system
+  let prompt = `You are the Mini Infra AI assistant. You help users understand and manage their Docker infrastructure, deployments, databases, and services.
 
-You have access to the Mini Infra API at ${baseUrl}. Use curl to call endpoints.
+## Available Tools
+
+You have access to: ${toolList.join(", ")}.
+
+## Mini Infra API (curl)
+
+Use curl to call the Mini Infra API at ${baseUrl}.
 
 **Authentication:** Always include the header \`-H "x-api-key: ${apiKey}"\` in every curl command.
 
@@ -180,21 +353,120 @@ curl -s -H "x-api-key: ${apiKey}" ${baseUrl}/api/containers
 \`\`\`
 
 ${API_REFERENCE}
+`;
 
+  if (capabilities.dockerEnabled) {
+    prompt += `
+## Docker CLI
+
+You have direct access to the Docker CLI. Use it for container logs, live stats, and detailed inspection.
+
+**Available commands:**
+- \`docker ps\` — list running containers (\`-a\` for all)
+- \`docker logs <container>\` — view container logs (\`--tail 100\`, \`--since 1h\`)
+- \`docker inspect <container>\` — detailed container/image metadata
+- \`docker images\` — list images
+- \`docker stats --no-stream\` — resource usage snapshot
+- \`docker top <container>\` — processes running in a container
+- \`docker port <container>\` — port mappings
+- \`docker diff <container>\` — filesystem changes
+- \`docker start/stop/restart <container>\` — manage container lifecycle
+- \`docker network ls\`, \`docker network inspect <network>\` — networking
+- \`docker volume ls\`, \`docker volume inspect <volume>\` — volumes
+- \`docker compose ps\`, \`docker compose logs\` — Compose services
+
+**When to use Docker CLI vs API:**
+- Use the **API** for structured data, deployments, and operations that need Mini Infra tracking.
+- Use **Docker CLI** for live logs, stats, detailed inspect output, and troubleshooting.
+`;
+  }
+
+  if (capabilities.ghEnabled) {
+    prompt += `
+## GitHub CLI (gh)
+
+You have access to the GitHub CLI with pre-configured authentication.
+
+**Available commands:**
+- \`gh repo view [owner/repo]\` — repository details
+- \`gh repo list [owner]\` — list repositories
+- \`gh issue list\`, \`gh issue view <number>\`, \`gh issue create\` — issues
+- \`gh pr list\`, \`gh pr view <number>\`, \`gh pr create\` — pull requests
+- \`gh pr checks <number>\`, \`gh pr diff <number>\` — PR checks and diffs
+- \`gh release list\`, \`gh release view <tag>\` — releases
+- \`gh run list\`, \`gh run view <id>\`, \`gh run watch <id>\` — workflow runs
+- \`gh api <endpoint>\` — raw GitHub API calls (e.g. \`gh api repos/owner/repo\`)
+
+**Examples:**
+\`\`\`bash
+gh pr list --repo owner/repo --state open
+gh issue view 42 --repo owner/repo
+gh run list --repo owner/repo --limit 5
+\`\`\`
+`;
+  }
+
+  prompt += `
 ## Documentation
 
 You can read documentation files in ${AGENT_CWD}/docs/ using the Read or Glob tools.
 
 ## Rules
 
-1. **Only use curl** to interact with the API. Never run other shell commands.
+1. **Only use allowed commands** (${toolList.map((t) => t.split(" ")[0]).join(", ")}). No other shell commands.
 2. **Always use -s** (silent) flag with curl to avoid progress bars.
-3. Use \`curl -s\` for all API calls. Present JSON responses in a readable format in your response.
-4. **Be concise.** Summarize API responses for the user rather than dumping raw JSON.
+3. Present JSON responses in a readable format in your response.
+4. **Be concise.** Summarize responses for the user rather than dumping raw output.
 5. **Be helpful.** If the user asks something vague, suggest what information you can look up.
 6. **Never modify or delete** resources unless the user explicitly asks you to.
-7. **Report errors clearly.** If an API call fails, explain what went wrong and suggest next steps.
+7. **Report errors clearly.** If a command fails, explain what went wrong and suggest next steps.
 `;
+
+  return prompt;
+}
+
+// ---------------------------------------------------------------------------
+// Session environment builder — allowlist only what the agent needs
+// ---------------------------------------------------------------------------
+
+/** Env vars the agent subprocess is allowed to inherit from the host. */
+const ALLOWED_ENV_VARS = [
+  // Core runtime
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TMPDIR",
+  "TZ",
+  // Node.js
+  "NODE_ENV",
+  // Docker (socket path, host overrides)
+  "DOCKER_HOST",
+  "DOCKER_CONFIG",
+  // Anthropic SDK (needed by the Claude Agent SDK subprocess)
+  "ANTHROPIC_API_KEY",
+];
+
+function buildSessionEnv(
+  capabilities: AgentCapabilities,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+
+  for (const key of ALLOWED_ENV_VARS) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
+  }
+
+  if (capabilities.ghToken) {
+    env.GH_TOKEN = capabilities.ghToken;
+  }
+
+  return env;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +484,42 @@ class AgentService {
     logger.info("AgentService initialized");
   }
 
-  createSession(userId: string, message: string): string {
+  /**
+   * Resolve available capabilities for a new agent session.
+   * Checks Docker socket availability and resolves a GitHub token.
+   */
+  private async resolveCapabilities(): Promise<AgentCapabilities> {
+    // Check if Docker socket is available
+    const dockerEnabled = fs.existsSync("/var/run/docker.sock");
+
+    // Try to resolve a GitHub token
+    let ghToken: string | null = null;
+    try {
+      // Primary: GitHub App installation token (short-lived, scoped)
+      const { token } = await githubAppService.generateInstallationToken();
+      ghToken = token;
+      logger.debug("Resolved GitHub token from GitHub App installation");
+    } catch {
+      // Fallback: Personal Access Token
+      try {
+        const pat = await githubService.get("personal_access_token");
+        if (pat) {
+          ghToken = pat;
+          logger.debug("Resolved GitHub token from Personal Access Token");
+        }
+      } catch (err) {
+        logger.debug({ err }, "No GitHub PAT available");
+      }
+    }
+
+    return {
+      dockerEnabled,
+      ghEnabled: !!ghToken,
+      ghToken,
+    };
+  }
+
+  async createSession(userId: string, message: string): Promise<string> {
     const sessionId = randomUUID();
     const queue = new AgentMessageQueue();
     const abortController = new AbortController();
@@ -229,9 +536,16 @@ class AgentService {
 
     this.sessions.set(sessionId, session);
 
+    // Resolve capabilities (Docker, GitHub) before starting the loop
+    const capabilities = await this.resolveCapabilities();
+    logger.info(
+      { sessionId, dockerEnabled: capabilities.dockerEnabled, ghEnabled: capabilities.ghEnabled },
+      "Agent capabilities resolved",
+    );
+
     // Push initial message and start the query loop
     queue.push(message);
-    this.runQueryLoop(session).catch((err) => {
+    this.runQueryLoop(session, capabilities).catch((err) => {
       logger.error({ err, sessionId }, "Query loop failed");
     });
 
@@ -327,17 +641,32 @@ class AgentService {
     }
   }
 
-  private async runQueryLoop(session: AgentSession): Promise<void> {
+  private async runQueryLoop(
+    session: AgentSession,
+    capabilities: AgentCapabilities,
+  ): Promise<void> {
     const bashGuardHook: HookCallbackMatcher = {
       matcher: "Bash",
-      hooks: [createBashGuard(this.port)],
+      hooks: [
+        createBashGuard({
+          port: this.port,
+          dockerEnabled: capabilities.dockerEnabled,
+          ghEnabled: capabilities.ghEnabled,
+        }),
+      ],
     };
+
+    // Build a minimal env for the agent subprocess. We allowlist only
+    // the variables the CLI tools need — everything else (secrets, DB
+    // credentials, API keys, etc.) is excluded so the agent can never
+    // read them via /proc/self/environ or similar.
+    const sessionEnv = buildSessionEnv(capabilities);
 
     try {
       const q = query({
         prompt: session.queue,
         options: {
-          systemPrompt: buildSystemPrompt(this.apiKey, this.port),
+          systemPrompt: buildSystemPrompt(this.apiKey, this.port, capabilities),
           tools: ["Bash", "Read", "Glob"],
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
@@ -346,6 +675,7 @@ class AgentService {
           includePartialMessages: true,
           abortController: session.abortController,
           persistSession: false,
+          env: sessionEnv,
           hooks: {
             PreToolUse: [bashGuardHook],
           },
