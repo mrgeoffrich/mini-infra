@@ -160,11 +160,7 @@ const GH_ALLOWED_COMPOUND = new Set([
 ]);
 
 /** gh top-level subcommands that are always blocked */
-const GH_BLOCKED_SUBCOMMANDS = new Set([
-  "auth",
-  "ssh-key",
-  "gpg-key",
-]);
+const GH_BLOCKED_SUBCOMMANDS = new Set(["auth", "ssh-key", "gpg-key"]);
 
 function denyResult(reason: string) {
   return {
@@ -196,7 +192,10 @@ function validateCurlCommand(command: string, port: number) {
 
 function validateDockerCommand(command: string) {
   // Extract the subcommand(s) after "docker"
-  const args = command.trimStart().replace(/^docker\s+/, "").trim();
+  const args = command
+    .trimStart()
+    .replace(/^docker\s+/, "")
+    .trim();
   if (!args) {
     return denyResult("docker command requires a subcommand.");
   }
@@ -221,7 +220,10 @@ function validateDockerCommand(command: string) {
 }
 
 function validateGhCommand(command: string) {
-  const args = command.trimStart().replace(/^gh\s+/, "").trim();
+  const args = command
+    .trimStart()
+    .replace(/^gh\s+/, "")
+    .trim();
   if (!args) {
     return denyResult("gh command requires a subcommand.");
   }
@@ -307,17 +309,13 @@ function createBashGuard(options: BashGuardOptions): HookCallback {
     // Reject newlines and tabs — a shell treats \n as a command terminator
     // just like ";", so a multi-line command would bypass the chain guard.
     if (/[\n\r\t]/.test(command)) {
-      return denyResult(
-        "Newlines and tabs are not allowed in commands.",
-      );
+      return denyResult("Newlines and tabs are not allowed in commands.");
     }
 
     // Universal: no command chaining characters
     const chainPattern = /[;|`]|\$\(|&&|\|\|/;
     if (chainPattern.test(command)) {
-      return denyResult(
-        "Command chaining is not allowed in agent commands.",
-      );
+      return denyResult("Command chaining is not allowed in agent commands.");
     }
 
     // Determine which tool is being invoked
@@ -353,6 +351,37 @@ function createBashGuard(options: BashGuardOptions): HookCallback {
     return denyResult(
       `Only ${allowed.join(", ")} commands are allowed. Got: ${trimmed.slice(0, 60)}`,
     );
+  };
+}
+
+// ---------------------------------------------------------------------------
+// pathGuard — PreToolUse hook that restricts Read/Glob to AGENT_CWD
+// ---------------------------------------------------------------------------
+
+function createPathGuard(allowedRoot: string): HookCallback {
+  // Resolve once so relative CWD values are normalised.
+  const resolvedRoot = path.resolve(allowedRoot);
+
+  return async (input) => {
+    const preInput = input as PreToolUseHookInput;
+    const toolInput = preInput.tool_input as Record<string, unknown> | undefined;
+
+    // Read uses "file_path"; Glob uses "path" (optional) and "pattern".
+    // We need to validate any explicit path the agent supplies.
+    const filePath = (toolInput?.file_path ?? toolInput?.path ?? null) as
+      | string
+      | null;
+
+    if (filePath) {
+      const resolved = path.resolve(resolvedRoot, filePath);
+      if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
+        return denyResult(
+          `Access denied: path "${filePath}" is outside the allowed directory.`,
+        );
+      }
+    }
+
+    return {}; // allowed
   };
 }
 
@@ -394,20 +423,6 @@ ${API_REFERENCE}
 
 You have direct access to the Docker CLI. Use it for container logs, live stats, and detailed inspection.
 
-**Available commands:**
-- \`docker ps\` — list running containers (\`-a\` for all)
-- \`docker logs <container>\` — view container logs (\`--tail 100\`, \`--since 1h\`)
-- \`docker inspect <container>\` — detailed container/image metadata
-- \`docker images\` — list images
-- \`docker stats --no-stream\` — resource usage snapshot
-- \`docker top <container>\` — processes running in a container
-- \`docker port <container>\` — port mappings
-- \`docker diff <container>\` — filesystem changes
-- \`docker start/stop/restart <container>\` — manage container lifecycle
-- \`docker network ls\`, \`docker network inspect <network>\` — networking
-- \`docker volume ls\`, \`docker volume inspect <volume>\` — volumes
-- \`docker compose ps\`, \`docker compose logs\` — Compose services
-
 **When to use Docker CLI vs API:**
 - Use the **API** for structured data, deployments, and operations that need Mini Infra tracking.
 - Use **Docker CLI** for live logs, stats, detailed inspect output, and troubleshooting.
@@ -419,16 +434,6 @@ You have direct access to the Docker CLI. Use it for container logs, live stats,
 ## GitHub CLI (gh)
 
 You have access to the GitHub CLI with pre-configured authentication.
-
-**Available commands:**
-- \`gh repo view [owner/repo]\` — repository details
-- \`gh repo list [owner]\` — list repositories
-- \`gh issue list\`, \`gh issue view <number>\`, \`gh issue create\` — issues
-- \`gh pr list\`, \`gh pr view <number>\`, \`gh pr create\` — pull requests
-- \`gh pr checks <number>\`, \`gh pr diff <number>\` — PR checks and diffs
-- \`gh release list\`, \`gh release view <tag>\` — releases
-- \`gh run list\`, \`gh run view <id>\` — workflow runs
-- \`gh api <endpoint>\` — read-only GitHub API calls (e.g. \`gh api repos/owner/repo\`)
 
 **Examples:**
 \`\`\`bash
@@ -578,7 +583,11 @@ class AgentService {
     // Resolve capabilities (Docker, GitHub) before starting the loop
     const capabilities = await this.resolveCapabilities();
     logger.info(
-      { sessionId, dockerEnabled: capabilities.dockerEnabled, ghEnabled: capabilities.ghEnabled },
+      {
+        sessionId,
+        dockerEnabled: capabilities.dockerEnabled,
+        ghEnabled: capabilities.ghEnabled,
+      },
       "Agent capabilities resolved",
     );
 
@@ -696,6 +705,16 @@ class AgentService {
       ],
     };
 
+    const pathGuard = createPathGuard(AGENT_CWD);
+    const readGuardHook: HookCallbackMatcher = {
+      matcher: "Read",
+      hooks: [pathGuard],
+    };
+    const globGuardHook: HookCallbackMatcher = {
+      matcher: "Glob",
+      hooks: [pathGuard],
+    };
+
     // Build a minimal env for the agent subprocess. We allowlist only
     // the variables the CLI tools need — everything else (secrets, DB
     // credentials, API keys, etc.) is excluded so the agent can never
@@ -723,7 +742,7 @@ class AgentService {
           env: sessionEnv,
           mcpServers: { "mini-infra-ui": uiToolsServer },
           hooks: {
-            PreToolUse: [bashGuardHook],
+            PreToolUse: [bashGuardHook, readGuardHook, globGuardHook],
           },
         },
       });
@@ -743,8 +762,7 @@ class AgentService {
         this.broadcast(session, {
           type: "error",
           data: {
-            message:
-              err instanceof Error ? err.message : "Unknown agent error",
+            message: err instanceof Error ? err.message : "Unknown agent error",
           },
         });
       }
@@ -875,8 +893,7 @@ class AgentService {
           data: {
             success: !resultMsg.is_error,
             cost: "total_cost_usd" in resultMsg ? resultMsg.total_cost_usd : 0,
-            duration:
-              "duration_ms" in resultMsg ? resultMsg.duration_ms : 0,
+            duration: "duration_ms" in resultMsg ? resultMsg.duration_ms : 0,
             turns: "num_turns" in resultMsg ? resultMsg.num_turns : 0,
           },
         });
