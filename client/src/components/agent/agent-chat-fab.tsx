@@ -1,0 +1,37 @@
+import { IconRobot, IconX } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useAgentChat } from "@/hooks/use-agent-chat";
+
+export function AgentChatFAB() {
+  const { isOpen, setIsOpen, agentEnabled } = useAgentChat();
+
+  if (!agentEnabled) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-40">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="lg"
+            className="size-14 rounded-full shadow-lg"
+            onClick={() => setIsOpen(!isOpen)}
+          >
+            {isOpen ? (
+              <IconX className="size-6" />
+            ) : (
+              <IconRobot className="size-6" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          {isOpen ? "Close assistant" : "Open assistant"}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
