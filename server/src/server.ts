@@ -26,6 +26,8 @@ import { BackupSchedulerService } from "./services/backup";
 import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
+import { initializeAgentApiKey } from "./services/agent-api-key";
+import { AgentService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
 import { ServiceRecoveryManager, EnvironmentHealthScheduler } from "./services/environment";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
@@ -371,6 +373,24 @@ const initializeServices = async () => {
       }
     }
 
+    // Initialize AI agent service (requires ANTHROPIC_API_KEY)
+    if (process.env.ANTHROPIC_API_KEY) {
+      console.log("[STARTUP] Initializing agent service...");
+      const agentApiKey = await initializeAgentApiKey();
+      if (agentApiKey) {
+        const agentService = new AgentService(agentApiKey);
+        setAgentService(agentService);
+        logger.info("Agent service initialized");
+        console.log("[STARTUP] ✓ Agent service initialized");
+      } else {
+        logger.warn("Agent API key initialization failed, agent features disabled");
+        console.log("[STARTUP] ⚠ Agent API key initialization failed");
+      }
+    } else {
+      logger.info("ANTHROPIC_API_KEY not set, agent features disabled");
+      console.log("[STARTUP] Agent features disabled (no ANTHROPIC_API_KEY)");
+    }
+
     logger.info("All services initialized successfully");
     console.log("[STARTUP] ✓ All services initialized successfully");
   } catch (error) {
@@ -473,6 +493,13 @@ startServer()
       if (tlsRenewalScheduler) {
         tlsRenewalScheduler.stop();
         logger.info("TLS renewal scheduler stopped");
+      }
+
+      // Shutdown agent service
+      const agentService = getAgentService();
+      if (agentService) {
+        await agentService.shutdown();
+        logger.info("Agent service stopped");
       }
 
       // Shutdown OpenTelemetry
