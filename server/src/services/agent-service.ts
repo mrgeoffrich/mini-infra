@@ -853,29 +853,11 @@ class AgentService {
       case "user": {
         const userMsg = msg as Extract<SDKMessage, { type: "user" }>;
         if (userMsg.isSynthetic && userMsg.tool_use_result !== undefined) {
-          // Tool result (synthetic user message)
           const toolResult = userMsg.tool_use_result;
-          // Extract tool_use_id from the message content if available
-          const messageContent = userMsg.message?.content;
-          let toolId: string | undefined;
-          if (Array.isArray(messageContent)) {
-            for (const block of messageContent) {
-              if (
-                typeof block === "object" &&
-                block !== null &&
-                "type" in block &&
-                block.type === "tool_result" &&
-                "tool_use_id" in block
-              ) {
-                toolId = (block as { tool_use_id: string }).tool_use_id;
-                break;
-              }
-            }
-          }
           this.broadcast(session, {
             type: "tool_result",
             data: {
-              toolId,
+              toolId: userMsg.parent_tool_use_id ?? undefined,
               output:
                 typeof toolResult === "string"
                   ? toolResult
