@@ -42,7 +42,7 @@ export function ContainersPage() {
       </div>
 
       <div className="px-4 lg:px-6">
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className="w-full">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabValue)} className="w-full" data-tour="containers-tabs">
           <TabsList>
             <TabsTrigger value="containers" className="gap-2">
               <IconServer className="h-4 w-4" />

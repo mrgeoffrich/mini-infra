@@ -184,6 +184,18 @@ export function useAgentSession(): UseAgentSessionResult {
               break;
             }
 
+            case "ui_highlight":
+              window.dispatchEvent(
+                new CustomEvent("agent:highlight", { detail: data }),
+              );
+              break;
+
+            case "ui_navigate":
+              window.dispatchEvent(
+                new CustomEvent("agent:navigate", { detail: data }),
+              );
+              break;
+
             case "closed":
               closeEventSource();
               setSessionStatus("idle");

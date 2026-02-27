@@ -13,6 +13,7 @@ import {
 import { agentLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
+import { createUiToolsMcpServer } from "./agent-ui-tools";
 import { githubAppService } from "./github-app-service";
 import { githubService } from "./github-service";
 
@@ -439,6 +440,12 @@ gh run list --repo owner/repo --limit 5
   }
 
   prompt += `
+## UI Guidance Tools
+
+You have \`highlight_element\` and \`navigate_to\` tools to visually guide users in the browser.
+- Read manifest files in \`${AGENT_CWD}/docs/ui-elements/\` to discover available element IDs and routes.
+- Use \`navigate_to\` to take the user to a page, and \`highlight_element\` to spotlight a specific element.
+
 ## Documentation
 
 You can read documentation files in ${AGENT_CWD}/docs/ using the Read or Glob tools.
@@ -695,6 +702,11 @@ class AgentService {
     // read them via /proc/self/environ or similar.
     const sessionEnv = buildSessionEnv(capabilities);
 
+    // Create per-session MCP server with UI guidance tools
+    const uiToolsServer = createUiToolsMcpServer((event) =>
+      this.broadcast(session, event),
+    );
+
     try {
       const q = query({
         prompt: session.queue,
@@ -709,6 +721,7 @@ class AgentService {
           abortController: session.abortController,
           persistSession: false,
           env: sessionEnv,
+          mcpServers: { "mini-infra-ui": uiToolsServer },
           hooks: {
             PreToolUse: [bashGuardHook],
           },

@@ -5,6 +5,8 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AgentChatProvider } from "@/components/agent/agent-chat-provider";
 import { AgentChatFAB } from "@/components/agent/agent-chat-fab";
 import { AgentChatSheet } from "@/components/agent/agent-chat-sheet";
+import { AgentSpotlightOverlay } from "@/components/agent/agent-spotlight-overlay";
+import { AgentNavigationHandler } from "@/components/agent/agent-navigation-handler";
 
 export function AppLayout() {
   return (
@@ -29,6 +31,8 @@ export function AppLayout() {
       </SidebarProvider>
       <AgentChatFAB />
       <AgentChatSheet />
+      <AgentSpotlightOverlay />
+      <AgentNavigationHandler />
     </AgentChatProvider>
   );
 }
