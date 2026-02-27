@@ -202,8 +202,11 @@ export function AgentChatMessages() {
 
       {streamingText && (
         <div className="flex justify-start">
-          <div className="max-w-[85%] text-sm whitespace-pre-wrap">
-            {streamingText}
+          <div className="max-w-[85%] text-sm">
+            <DocContent
+              content={streamingText}
+              className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_pre]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm"
+            />
             <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-text-bottom" />
           </div>
         </div>
