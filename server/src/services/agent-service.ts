@@ -730,10 +730,13 @@ class AgentService {
       const q = query({
         prompt: session.queue,
         options: {
+          model: "claude-sonnet-4-6",
           systemPrompt: buildSystemPrompt(this.port, capabilities),
           tools: ["Bash", "Read", "Glob"],
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
+          thinking: { type: "adaptive" },
+          effort: "medium",
           maxTurns: 20,
           cwd: AGENT_CWD,
           includePartialMessages: true,
