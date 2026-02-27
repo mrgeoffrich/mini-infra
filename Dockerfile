@@ -80,8 +80,9 @@ WORKDIR /app
 # ============================================
 FROM node:24-alpine AS production
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init=1.2.5-r3
+# Install dumb-init for proper signal handling, Docker CLI for container management,
+# and GitHub CLI for repository operations
+RUN apk add --no-cache dumb-init=1.2.5-r3 docker-cli github-cli
 
 WORKDIR /app
 

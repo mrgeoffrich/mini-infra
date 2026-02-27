@@ -70,7 +70,7 @@ router.post(
         return;
       }
 
-      const sessionId = service.createSession(userId, parsed.data.message);
+      const sessionId = await service.createSession(userId, parsed.data.message);
       res.status(201).json({ sessionId });
     } catch (error) {
       logger.error(
