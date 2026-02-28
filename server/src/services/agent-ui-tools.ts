@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   tool,
   createSdkMcpServer,
-} from "@anthropic-ai/claude-agent-sdk";
+} from "../lib/agent-sdk";
 
 type BroadcastFn = (event: { type: string; data: Record<string, unknown> }) => void;
 

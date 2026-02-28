@@ -9,7 +9,7 @@ import {
   type HookCallback,
   type PreToolUseHookInput,
   type HookCallbackMatcher,
-} from "@anthropic-ai/claude-agent-sdk";
+} from "../lib/agent-sdk";
 import { agentLogger } from "../lib/logger-factory";
 import appConfig, { agentConfig } from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
