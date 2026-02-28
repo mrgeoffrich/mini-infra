@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   ConnectivityStatus,
@@ -118,7 +118,7 @@ const connectivityQuerySchema = z.object({
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

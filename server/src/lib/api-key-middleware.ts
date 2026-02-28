@@ -60,6 +60,7 @@ export async function requireApiKey(
       id: validationResult.keyId!,
       userId: validationResult.userId!,
       user: validationResult.user!,
+      permissions: validationResult.permissions ?? null,
     };
 
     logger.debug(
@@ -120,6 +121,7 @@ export async function optionalApiKey(
         id: validationResult.keyId!,
         userId: validationResult.userId!,
         user: validationResult.user!,
+        permissions: validationResult.permissions ?? null,
       };
 
       logger.debug(
@@ -204,6 +206,7 @@ export async function requireSessionOrApiKey(
       id: validationResult.keyId!,
       userId: validationResult.userId!,
       user: validationResult.user!,
+      permissions: validationResult.permissions ?? null,
     };
 
     logger.debug(

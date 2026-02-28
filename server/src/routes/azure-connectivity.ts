@@ -9,7 +9,7 @@ import NodeCache from "node-cache";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   ConnectivityStatusListResponse,
@@ -40,7 +40,7 @@ const connectivityHistoryQuerySchema = z.object({
 });
 
 
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -155,7 +155,7 @@ router.get("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.get("/history", requireSessionOrApiKey, (async (
+router.get("/history", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

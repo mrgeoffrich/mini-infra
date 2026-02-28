@@ -3,7 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
 import { AzureStorageService } from "../services/azure-storage-service";
@@ -489,7 +489,7 @@ async function listAvailableBackups(
 
 router.post(
   "/restore/:databaseId",
-  requireSessionOrApiKey,
+  requirePermission('postgres:write'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -686,7 +686,7 @@ router.post(
 
 router.get(
   "/restore/:operationId/status",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -778,7 +778,7 @@ router.get(
 
 router.get(
   "/restore/backups/:containerName",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -858,7 +858,7 @@ router.get(
 
 router.get(
   "/restore/:databaseId/operations",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -967,7 +967,7 @@ router.get(
 
 router.get(
   "/restore/:operationId/progress",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);

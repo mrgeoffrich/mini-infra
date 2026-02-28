@@ -39,7 +39,8 @@ const {
     req.apiKey = {
       userId: "test-user-id",
       id: "test-key-id",
-      user: { id: "test-user-id", email: "test@example.com" }
+      user: { id: "test-user-id", email: "test@example.com" },
+      permissions: null,
     };
     res.locals = {
       requestId: "test-request-id",
@@ -80,6 +81,10 @@ vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
+}));
+
+vi.mock("../../lib/permission-middleware", () => ({
+  requirePermission: () => mockRequireSessionOrApiKey,
 }));
 
 // Mock auth middleware functions
@@ -135,7 +140,8 @@ describe("Azure Settings API Routes", () => {
       req.apiKey = {
         userId: "test-user-id",
         id: "test-key-id",
-        user: { id: "test-user-id", email: "test@example.com" }
+        user: { id: "test-user-id", email: "test@example.com" },
+        permissions: null,
       };
       res.locals = {
         requestId: "test-request-id",
@@ -228,7 +234,8 @@ describe("Azure Settings API Routes", () => {
         req.apiKey = {
           userId: "test-user-id",
           id: "test-key-id",
-          user: { id: "test-user-id", email: "test@example.com" }
+          user: { id: "test-user-id", email: "test@example.com" },
+          permissions: null,
         };
         res.locals = {
           requestId: "test-request-id",

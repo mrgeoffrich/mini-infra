@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Link } from "react-router-dom";
 import { IconKey, IconPlus, IconAlertCircle } from "@tabler/icons-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiKeysList } from "@/components/api-keys/api-keys-list";
 import { ApiKeyStats } from "@/components/api-keys/api-key-stats";
-import { CreateApiKeyDialog } from "@/components/api-keys/create-api-key-dialog";
 import { useApiKeys } from "@/hooks/use-api-keys";
 
 export function ApiKeysPage() {
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  
   const {
     data: apiKeys,
     isLoading,
@@ -134,9 +131,11 @@ export function ApiKeysPage() {
             </div>
           </div>
 
-          <Button onClick={() => setCreateDialogOpen(true)} className="flex items-center gap-2">
-            <IconPlus className="h-4 w-4" />
-            Create API Key
+          <Button asChild className="flex items-center gap-2">
+            <Link to="/api-keys/new">
+              <IconPlus className="h-4 w-4" />
+              Create API Key
+            </Link>
           </Button>
         </div>
       </div>
@@ -164,11 +163,6 @@ export function ApiKeysPage() {
         </div>
       </div>
 
-      {/* Create API Key Dialog */}
-      <CreateApiKeyDialog 
-        open={createDialogOpen} 
-        onOpenChange={setCreateDialogOpen} 
-      />
     </div>
   );
 }

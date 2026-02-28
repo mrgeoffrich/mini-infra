@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { PostgresDatabaseManager } from "../services/postgres";
 import {
@@ -158,7 +158,7 @@ const discoverDatabasesSchema = z.object({
 /**
  * GET /api/postgres/databases - List database configurations with filtering and pagination
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('postgres:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -268,7 +268,7 @@ router.get("/", requireSessionOrApiKey, (async (
 /**
  * GET /api/postgres/databases/:id - Get specific database configuration
  */
-router.get("/:id", requireSessionOrApiKey, (async (
+router.get("/:id", requirePermission('postgres:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -349,7 +349,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
 /**
  * POST /api/postgres/databases - Create new database configuration
  */
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -464,7 +464,7 @@ router.post("/", requireSessionOrApiKey, (async (
 /**
  * PUT /api/postgres/databases/:id - Update database configuration
  */
-router.put("/:id", requireSessionOrApiKey, (async (
+router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -604,7 +604,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/postgres/databases/:id - Delete database configuration
  */
-router.delete("/:id", requireSessionOrApiKey, (async (
+router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -707,7 +707,7 @@ router.delete("/:id", requireSessionOrApiKey, (async (
 /**
  * POST /api/postgres/databases/:id/test - Test database connection
  */
-router.post("/:id/test", requireSessionOrApiKey, (async (
+router.post("/:id/test", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -812,7 +812,7 @@ router.post("/:id/test", requireSessionOrApiKey, (async (
 /**
  * POST /api/postgres/test-connection - Test connection with provided credentials (without saving)
  */
-router.post("/test-connection", requireSessionOrApiKey, (async (
+router.post("/test-connection", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -917,7 +917,7 @@ router.post("/test-connection", requireSessionOrApiKey, (async (
 /**
  * POST /api/postgres/discover-databases - Discover databases on a PostgreSQL server
  */
-router.post("/discover-databases", requireSessionOrApiKey, (async (
+router.post("/discover-databases", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

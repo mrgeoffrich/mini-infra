@@ -45,6 +45,10 @@ vi.mock("../middleware/auth", () => ({
     req.user = { id: "test-user-id" };
     next();
   },
+  requirePermission: () => (req: any, res: any, next: any) => {
+    req.user = { id: "test-user-id" };
+    next();
+  },
   getCurrentUserId: (req: any) => "test-user-id",
   requireAuth: (req: any, res: any, next: any) => next(),
   getAuthenticatedUser: (req: any) => ({ id: "test-user-id" }),

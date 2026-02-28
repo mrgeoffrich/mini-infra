@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubService } from "../services/github-service";
 import {
   CreateGitHubSettingRequest,
@@ -82,7 +82,7 @@ const validateGitHubConnectionSchema = z.object({
 /**
  * GET /api/settings/github - Get current GitHub configuration
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -139,7 +139,7 @@ router.get("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github - Create or update GitHub configuration
  */
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -252,7 +252,7 @@ router.post("/", requireSessionOrApiKey, (async (
 /**
  * PATCH /api/settings/github - Partially update GitHub configuration
  */
-router.patch("/", requireSessionOrApiKey, (async (
+router.patch("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -353,7 +353,7 @@ router.patch("/", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/settings/github - Remove GitHub configuration
  */
-router.delete("/", requireSessionOrApiKey, (async (
+router.delete("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -410,7 +410,7 @@ router.delete("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github/test - Test GitHub API connectivity
  */
-router.post("/test", requireSessionOrApiKey, (async (
+router.post("/test", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

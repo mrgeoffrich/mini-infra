@@ -1,7 +1,7 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
@@ -142,7 +142,7 @@ async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlane
  */
 router.get(
   "/containers",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { environmentId } = req.query;
@@ -190,7 +190,7 @@ router.get(
  */
 router.post(
   "/",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       // Validate request body
@@ -251,7 +251,7 @@ router.post(
  */
 router.get(
   "/:frontendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -301,7 +301,7 @@ router.get(
  */
 router.put(
   "/:frontendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -391,7 +391,7 @@ router.put(
  */
 router.delete(
   "/:frontendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;

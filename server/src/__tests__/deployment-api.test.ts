@@ -112,6 +112,17 @@ vi.mock("../middleware/auth", () => ({
     }
     return res.status(401).json({ success: false, message: "Authentication required" });
   },
+  requirePermission: () => (req: any, res: any, next: any) => {
+    if (req.headers["x-api-key"] && req.headers["x-api-key"].startsWith("test-key")) {
+      req.user = { id: req.headers["x-user-id"] || "test-user-id" };
+      return next();
+    }
+    if (req.session?.user) {
+      req.user = req.session.user;
+      return next();
+    }
+    return res.status(401).json({ success: false, message: "Authentication required" });
+  },
   getAuthenticatedUser: (req: any) => req.user,
 }));
 

@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import {
   DockerNetworkListResponse,
   DockerNetworkApiResponse,
@@ -26,7 +26,7 @@ const router = express.Router();
  */
 router.get(
   "/networks",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
@@ -67,7 +67,7 @@ router.get(
  */
 router.delete(
   "/networks/:id",
-  requireSessionOrApiKey,
+  requirePermission('docker:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
@@ -120,7 +120,7 @@ router.delete(
  */
 router.get(
   "/volumes",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
@@ -161,7 +161,7 @@ router.get(
  */
 router.delete(
   "/volumes/:name",
-  requireSessionOrApiKey,
+  requirePermission('docker:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name } = req.params;
@@ -215,7 +215,7 @@ router.delete(
  */
 router.post(
   "/volumes/:name/inspect",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name } = req.params;
@@ -279,7 +279,7 @@ router.post(
  */
 router.get(
   "/volumes/:name/inspect",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name } = req.params;
@@ -341,7 +341,7 @@ router.get(
  */
 router.post(
   "/volumes/:name/files/fetch",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name } = req.params;
@@ -415,7 +415,7 @@ router.post(
  */
 router.get(
   "/volumes/:name/files",
-  requireSessionOrApiKey,
+  requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name } = req.params;

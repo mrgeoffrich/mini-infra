@@ -1,9 +1,22 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   ChatMessage,
+  ChatMessageThinking,
   SessionStatus,
   AgentSession,
 } from "../lib/agent-chat-types";
+
+const REDACTED_THINKING_PLACEHOLDER = "Thinking content is redacted.";
+
+interface ThinkingIdentity {
+  assistantUuid: string;
+  blockIndex: number;
+}
+
+interface AgentSseEvent {
+  type: string;
+  data?: Record<string, unknown>;
+}
 
 interface UseAgentSessionResult {
   messages: ChatMessage[];
@@ -13,6 +26,54 @@ interface UseAgentSessionResult {
   model: string | null;
   sendMessage: (message: string) => Promise<void>;
   startNewChat: () => void;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function parseAgentSseEvent(raw: string): AgentSseEvent | null {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+
+  const maybeEvent = parsed as { type?: unknown; data?: unknown };
+  if (typeof maybeEvent.type !== "string") {
+    return null;
+  }
+
+  return {
+    type: maybeEvent.type,
+    data:
+      maybeEvent.data && typeof maybeEvent.data === "object"
+        ? (maybeEvent.data as Record<string, unknown>)
+        : undefined,
+  };
+}
+
+function buildThinkingKey({ assistantUuid, blockIndex }: ThinkingIdentity): string {
+  return `${assistantUuid}:${blockIndex}`;
+}
+
+function parseThinkingIdentity(
+  data?: Record<string, unknown>,
+): ThinkingIdentity | null {
+  const assistantUuid = asString(data?.assistantUuid);
+  const blockIndex = asNumber(data?.blockIndex);
+  if (!assistantUuid || blockIndex === undefined) {
+    return null;
+  }
+
+  return { assistantUuid, blockIndex };
 }
 
 export function useAgentSession(currentPath?: string): UseAgentSessionResult {
@@ -26,6 +87,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptedRef = useRef(false);
   const streamingTextRef = useRef("");
+  const thinkingMessageKeyToIdRef = useRef<Map<string, string>>(new Map());
 
   const closeEventSource = useCallback(() => {
     if (eventSourceRef.current) {
@@ -37,6 +99,81 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       reconnectTimeoutRef.current = null;
     }
   }, []);
+
+  const clearThinkingIndex = useCallback(() => {
+    thinkingMessageKeyToIdRef.current.clear();
+  }, []);
+
+  const markAllThinkingComplete = useCallback(() => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.role === "thinking" && msg.status === "streaming"
+          ? { ...msg, status: "complete" }
+          : msg,
+      ),
+    );
+  }, []);
+
+  const markAssistantThinkingComplete = useCallback((assistantUuid: string) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.role === "thinking" &&
+        msg.assistantUuid === assistantUuid &&
+        msg.status === "streaming"
+          ? { ...msg, status: "complete" }
+          : msg,
+      ),
+    );
+
+    const prefix = `${assistantUuid}:`;
+    for (const key of thinkingMessageKeyToIdRef.current.keys()) {
+      if (key.startsWith(prefix)) {
+        thinkingMessageKeyToIdRef.current.delete(key);
+      }
+    }
+  }, []);
+
+  const upsertThinkingMessage = useCallback(
+    (
+      identity: ThinkingIdentity,
+      updater: (
+        existing: ChatMessageThinking | null,
+        messageId: string,
+      ) => ChatMessageThinking,
+    ) => {
+      const key = buildThinkingKey(identity);
+
+      setMessages((prev) => {
+        const mappedId = thinkingMessageKeyToIdRef.current.get(key);
+        const existingIndex = prev.findIndex((msg) => {
+          if (msg.role !== "thinking") return false;
+          if (mappedId) return msg.id === mappedId;
+          return (
+            msg.assistantUuid === identity.assistantUuid &&
+            msg.blockIndex === identity.blockIndex
+          );
+        });
+
+        const existingMessage =
+          existingIndex >= 0 && prev[existingIndex].role === "thinking"
+            ? (prev[existingIndex] as ChatMessageThinking)
+            : null;
+
+        const messageId = existingMessage?.id ?? mappedId ?? crypto.randomUUID();
+        const nextMessage = updater(existingMessage, messageId);
+        thinkingMessageKeyToIdRef.current.set(key, nextMessage.id);
+
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = nextMessage;
+          return next;
+        }
+
+        return [...prev, nextMessage];
+      });
+    },
+    [],
+  );
 
   // Cleanup on unmount
   useEffect(() => {
@@ -77,7 +214,8 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
       eventSource.onmessage = (event) => {
         try {
-          const parsed = JSON.parse(event.data);
+          const parsed = parseAgentSseEvent(event.data);
+          if (!parsed) return;
           const { type, data } = parsed;
 
           switch (type) {
@@ -85,26 +223,29 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               break;
 
             case "init":
-              if (data?.model) {
-                setModel(data.model);
+              {
+                const modelName = asString(data?.model);
+                if (modelName) {
+                  setModel(modelName);
+                }
               }
               setSessionStatus("streaming");
               break;
 
             case "text_delta":
-              streamingTextRef.current += data?.content ?? "";
+              streamingTextRef.current += asString(data?.content) ?? "";
               setStreamingText(streamingTextRef.current);
               setSessionStatus("streaming");
               break;
 
             case "text": {
-              const textContent = data?.content ?? "";
+              const textContent = asString(data?.content) ?? "";
               streamingTextRef.current = "";
               setStreamingText("");
               setMessages((prev) => [
                 ...prev,
                 {
-                  id: data?.uuid ?? crypto.randomUUID(),
+                  id: asString(data?.uuid) ?? crypto.randomUUID(),
                   role: "assistant",
                   content: textContent,
                   timestamp: Date.now(),
@@ -118,10 +259,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               setMessages((prev) => [
                 ...prev,
                 {
-                  id: data?.toolId ?? crypto.randomUUID(),
+                  id: asString(data?.toolId) ?? crypto.randomUUID(),
                   role: "tool_use",
-                  toolId: data?.toolId ?? "",
-                  toolName: data?.toolName ?? "",
+                  toolId: asString(data?.toolId) ?? "",
+                  toolName: asString(data?.toolName) ?? "",
                   timestamp: Date.now(),
                 },
               ]);
@@ -130,8 +271,12 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
             case "tool_use":
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.role === "tool_use" && msg.toolId === data?.toolId
-                    ? { ...msg, input: data?.input }
+                  msg.role === "tool_use" &&
+                  msg.toolId === (asString(data?.toolId) ?? "")
+                    ? {
+                        ...msg,
+                        input: (data?.input as Record<string, unknown>) ?? undefined,
+                      }
                     : msg,
                 ),
               );
@@ -140,21 +285,131 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
             case "tool_result":
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.role === "tool_use" && msg.toolId === data?.toolId
-                    ? { ...msg, output: data?.output }
+                  msg.role === "tool_use" &&
+                  msg.toolId === (asString(data?.toolId) ?? "")
+                    ? { ...msg, output: asString(data?.output) ?? "" }
                     : msg,
                 ),
               );
               setSessionStatus("streaming");
               break;
 
+            case "thinking_start": {
+              const identity = parseThinkingIdentity(data);
+              if (!identity) break;
+
+              upsertThinkingMessage(identity, (existing, messageId) => ({
+                id: messageId,
+                role: "thinking",
+                assistantUuid: identity.assistantUuid,
+                blockIndex: identity.blockIndex,
+                content: existing?.content ?? "",
+                signature: existing?.signature,
+                status: "streaming",
+                redacted: existing?.redacted,
+                timestamp: existing?.timestamp ?? Date.now(),
+              }));
+              setSessionStatus("streaming");
+              break;
+            }
+
+            case "thinking_delta": {
+              const identity = parseThinkingIdentity(data);
+              if (!identity) break;
+
+              const chunk = asString(data?.content) ?? "";
+              upsertThinkingMessage(identity, (existing, messageId) => ({
+                id: messageId,
+                role: "thinking",
+                assistantUuid: identity.assistantUuid,
+                blockIndex: identity.blockIndex,
+                content: `${existing?.content ?? ""}${chunk}`,
+                signature: existing?.signature,
+                status: "streaming",
+                redacted: false,
+                timestamp: existing?.timestamp ?? Date.now(),
+              }));
+              setSessionStatus("streaming");
+              break;
+            }
+
+            case "thinking_signature": {
+              const identity = parseThinkingIdentity(data);
+              if (!identity) break;
+
+              const signature = asString(data?.signature);
+              if (!signature) break;
+
+              upsertThinkingMessage(identity, (existing, messageId) => ({
+                id: messageId,
+                role: "thinking",
+                assistantUuid: identity.assistantUuid,
+                blockIndex: identity.blockIndex,
+                content: existing?.content ?? "",
+                signature,
+                status: existing?.status ?? "streaming",
+                redacted: existing?.redacted,
+                timestamp: existing?.timestamp ?? Date.now(),
+              }));
+              break;
+            }
+
+            case "thinking_complete": {
+              const identity = parseThinkingIdentity(data);
+              if (!identity) break;
+
+              upsertThinkingMessage(identity, (existing, messageId) => ({
+                id: messageId,
+                role: "thinking",
+                assistantUuid: identity.assistantUuid,
+                blockIndex: identity.blockIndex,
+                content: asString(data?.content) ?? existing?.content ?? "",
+                signature: asString(data?.signature) ?? existing?.signature,
+                status: "complete",
+                redacted: false,
+                timestamp: existing?.timestamp ?? Date.now(),
+              }));
+              break;
+            }
+
+            case "thinking_redacted": {
+              const identity = parseThinkingIdentity(data);
+              if (!identity) break;
+
+              upsertThinkingMessage(identity, (existing, messageId) => ({
+                id: messageId,
+                role: "thinking",
+                assistantUuid: identity.assistantUuid,
+                blockIndex: identity.blockIndex,
+                content:
+                  asString(data?.content) ??
+                  existing?.content ??
+                  REDACTED_THINKING_PLACEHOLDER,
+                signature: existing?.signature,
+                status: "complete",
+                redacted: true,
+                timestamp: existing?.timestamp ?? Date.now(),
+              }));
+              break;
+            }
+
+            case "assistant_message_stop": {
+              const assistantUuid = asString(data?.assistantUuid);
+              if (assistantUuid) {
+                markAssistantThinkingComplete(assistantUuid);
+              }
+              break;
+            }
+
             case "error":
+              markAllThinkingComplete();
+              clearThinkingIndex();
               setMessages((prev) => [
                 ...prev,
                 {
                   id: crypto.randomUUID(),
                   role: "error",
-                  content: data?.message ?? "An error occurred",
+                  content: asString(data?.message) ?? "An error occurred",
                   timestamp: Date.now(),
                 },
               ]);
@@ -167,10 +422,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
                 {
                   id: crypto.randomUUID(),
                   role: "result",
-                  success: data?.success ?? false,
-                  cost: data?.cost,
-                  duration: data?.duration,
-                  turns: data?.turns,
+                  success: asBoolean(data?.success) ?? false,
+                  cost: asNumber(data?.cost),
+                  duration: asNumber(data?.duration),
+                  turns: asNumber(data?.turns),
                   timestamp: Date.now(),
                 },
               ]);
@@ -193,6 +448,8 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
                   },
                 ]);
               }
+              markAllThinkingComplete();
+              clearThinkingIndex();
               setSessionStatus("done");
               break;
             }
@@ -211,6 +468,8 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
             case "closed":
               closeEventSource();
+              markAllThinkingComplete();
+              clearThinkingIndex();
               setSessionStatus("idle");
               break;
           }
@@ -230,6 +489,8 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
             connectSSE(sessionId, true);
           }, 3000);
         } else {
+          markAllThinkingComplete();
+          clearThinkingIndex();
           setSessionStatus("error");
           setMessages((prev) => [
             ...prev,
@@ -243,7 +504,13 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
         }
       };
     },
-    [closeEventSource],
+    [
+      closeEventSource,
+      clearThinkingIndex,
+      markAllThinkingComplete,
+      markAssistantThinkingComplete,
+      upsertThinkingMessage,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -311,10 +578,12 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
             timestamp: Date.now(),
           },
         ]);
+        markAllThinkingComplete();
+        clearThinkingIndex();
         setSessionStatus("error");
       }
     },
-    [session, connectSSE],
+    [session, connectSSE, markAllThinkingComplete, clearThinkingIndex],
   );
 
   const startNewChat = useCallback(() => {
@@ -333,10 +602,11 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     setMessages([]);
     streamingTextRef.current = "";
     setStreamingText("");
+    clearThinkingIndex();
     setSessionStatus("idle");
     setSession(null);
     setModel(null);
-  }, [session, closeEventSource]);
+  }, [session, closeEventSource, clearThinkingIndex]);
 
   return {
     messages,

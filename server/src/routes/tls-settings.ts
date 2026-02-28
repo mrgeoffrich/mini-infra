@@ -14,7 +14,7 @@
 import express, { Request, Response, NextFunction, RequestHandler } from "express";
 import { z } from "zod";
 import { tlsLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageService } from "../services/azure-storage-service";
@@ -97,7 +97,7 @@ const testConnectivitySchema = z.object({
  * GET /api/tls/settings
  * Get all TLS configuration settings
  */
-router.get("/settings", requireSessionOrApiKey, (async (
+router.get("/settings", requirePermission('tls:read'), (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -175,7 +175,7 @@ router.get("/settings", requireSessionOrApiKey, (async (
  * PUT /api/tls/settings
  * Update TLS configuration settings
  */
-router.put("/settings", requireSessionOrApiKey, (async (
+router.put("/settings", requirePermission('tls:write'), (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -301,7 +301,7 @@ router.put("/settings", requireSessionOrApiKey, (async (
  * POST /api/tls/connectivity/test
  * Test Azure Storage container connectivity with optional temporary settings
  */
-router.post("/connectivity/test", requireSessionOrApiKey, (async (
+router.post("/connectivity/test", requirePermission('tls:write'), (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -404,7 +404,7 @@ router.post("/connectivity/test", requireSessionOrApiKey, (async (
  * GET /api/tls/containers
  * List available Azure Storage containers
  */
-router.get("/containers", requireSessionOrApiKey, (async (
+router.get("/containers", requirePermission('tls:read'), (async (
   req: Request,
   res: Response,
   next: NextFunction,

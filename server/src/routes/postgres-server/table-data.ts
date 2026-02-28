@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import tableDataService from "../../services/postgres-server/table-data-service";
 
 const logger = appLogger();
@@ -33,7 +33,7 @@ const tableDataRequestSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables
  * List all tables in the database with metadata
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = req.params.serverId;
@@ -74,7 +74,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables/:tableName/data
  * Get paginated data from a specific table with optional filtering and sorting
  */
-router.get("/:tableName/data", requireSessionOrApiKey, async (req, res) => {
+router.get("/:tableName/data", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = req.params.serverId;

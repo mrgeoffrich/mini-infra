@@ -8,7 +8,7 @@
 
 import express from "express";
 import { tlsLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 
 const logger = tlsLogger();
@@ -18,7 +18,7 @@ const router = express.Router();
  * GET /api/tls/renewals
  * List all renewal attempts with optional filtering
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('tls:read'), async (req, res) => {
   try {
     const { certificateId, status, limit } = req.query;
 
@@ -71,7 +71,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/tls/renewals/:id
  * Get renewal attempt details
  */
-router.get("/:id", requireSessionOrApiKey, async (req, res) => {
+router.get("/:id", requirePermission('tls:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -117,7 +117,7 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
  * GET /api/tls/renewals/certificate/:certificateId
  * Get all renewal attempts for a specific certificate
  */
-router.get("/certificate/:certificateId", requireSessionOrApiKey, async (req, res) => {
+router.get("/certificate/:certificateId", requirePermission('tls:read'), async (req, res) => {
   try {
     const { certificateId } = req.params;
 

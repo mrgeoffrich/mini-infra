@@ -7,7 +7,7 @@ import express, {
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubAppService } from "../services/github-app-service";
 
 const router = express.Router();
@@ -15,7 +15,7 @@ const router = express.Router();
 /**
  * GET /api/github-app/packages - List container packages
  */
-router.get("/packages", requireSessionOrApiKey, (async (
+router.get("/packages", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -65,7 +65,7 @@ router.get("/packages", requireSessionOrApiKey, (async (
 /**
  * GET /api/github-app/packages/:packageName/versions - List package versions
  */
-router.get("/packages/:packageName/versions", requireSessionOrApiKey, (async (
+router.get("/packages/:packageName/versions", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -119,7 +119,7 @@ router.get("/packages/:packageName/versions", requireSessionOrApiKey, (async (
 /**
  * GET /api/github-app/repos - List repositories
  */
-router.get("/repos", requireSessionOrApiKey, (async (
+router.get("/repos", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -169,7 +169,7 @@ router.get("/repos", requireSessionOrApiKey, (async (
 /**
  * GET /api/github-app/repos/:owner/:repo/actions/runs - List action runs
  */
-router.get("/repos/:owner/:repo/actions/runs", requireSessionOrApiKey, (async (
+router.get("/repos/:owner/:repo/actions/runs", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

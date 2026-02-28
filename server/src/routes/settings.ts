@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   SettingResponse,
@@ -108,7 +108,7 @@ const updateSettingSchema = z.object({
 /**
  * GET /api/settings - List system settings with filtering and pagination
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -227,7 +227,7 @@ router.get("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings - Create a new system setting
  */
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -356,7 +356,7 @@ router.post("/", requireSessionOrApiKey, (async (
 /**
  * GET /api/settings/:id - Get specific setting by ID
  */
-router.get("/:id", requireSessionOrApiKey, (async (
+router.get("/:id", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -443,7 +443,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
 /**
  * PUT /api/settings/:id - Update an existing system setting
  */
-router.put("/:id", requireSessionOrApiKey, (async (
+router.put("/:id", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -583,7 +583,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/settings/:id - Delete a system setting
  */
-router.delete("/:id", requireSessionOrApiKey, (async (
+router.delete("/:id", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { EnvironmentManager, ServiceRegistry } from '../services/environment';
-import { requireSessionOrApiKey } from '../middleware/auth';
+import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 
@@ -25,7 +25,7 @@ const updateVolumeSchema = z.object({
 });
 
 
-router.get('/', requireSessionOrApiKey, async (req, res) => {
+router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -49,7 +49,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/', requireSessionOrApiKey, async (req, res) => {
+router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const validatedData = createVolumeSchema.parse(req.body);
@@ -108,7 +108,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
+router.put('/:volumeId', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id, volumeId } = req.params;
     const validatedData = updateVolumeSchema.parse(req.body);
@@ -170,7 +170,7 @@ router.put('/:volumeId', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.delete('/:volumeId', requireSessionOrApiKey, async (req, res) => {
+router.delete('/:volumeId', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id, volumeId } = req.params;
 

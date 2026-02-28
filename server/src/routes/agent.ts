@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import {
-  requireSessionOrApiKey,
+  requirePermission,
   getAuthenticatedUser,
   getCurrentUserId,
 } from "../middleware/auth";
@@ -44,7 +44,7 @@ const createSessionSchema = z.object({
 
 router.post(
   "/sessions",
-  requireSessionOrApiKey,
+  requirePermission('agent:use'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -89,7 +89,7 @@ router.post(
 
 router.get(
   "/sessions/:sessionId/stream",
-  requireSessionOrApiKey,
+  requirePermission('agent:use'),
   (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
@@ -152,7 +152,7 @@ const updateContextSchema = z.object({
 
 router.put(
   "/sessions/:sessionId/context",
-  requireSessionOrApiKey,
+  requirePermission('agent:use'),
   (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
@@ -198,7 +198,7 @@ const sendMessageSchema = z.object({
 
 router.post(
   "/sessions/:sessionId/messages",
-  requireSessionOrApiKey,
+  requirePermission('agent:use'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -256,7 +256,7 @@ router.post(
 
 router.delete(
   "/sessions/:sessionId",
-  requireSessionOrApiKey,
+  requirePermission('agent:use'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();

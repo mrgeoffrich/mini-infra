@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction, RequestHandler } from 'expres
 import { z } from 'zod';
 import { appLogger } from '../lib/logger-factory';
 import {
-  requireSessionOrApiKey,
+  requirePermission,
   getAuthenticatedUser,
 } from '../middleware/auth';
 import { UserEventService } from '../services/user-events';
@@ -152,7 +152,7 @@ function buildFilterFromQuery(query: any): UserEventFilter {
  */
 router.get(
   '/',
-  requireSessionOrApiKey,
+  requirePermission('events:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Parse query parameters
@@ -223,7 +223,7 @@ router.get(
  */
 router.get(
   '/statistics',
-  requireSessionOrApiKey,
+  requirePermission('events:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const statistics = await userEventService.getStatistics();
@@ -250,7 +250,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requireSessionOrApiKey,
+  requirePermission('events:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const event = await userEventService.getEventById(req.params.id);
@@ -287,7 +287,7 @@ router.get(
  */
 router.post(
   '/',
-  requireSessionOrApiKey,
+  requirePermission('events:write'),
   validate(createEventSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -324,7 +324,7 @@ router.post(
  */
 router.patch(
   '/:id',
-  requireSessionOrApiKey,
+  requirePermission('events:write'),
   validate(updateEventSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -357,7 +357,7 @@ router.patch(
  */
 router.post(
   '/:id/logs',
-  requireSessionOrApiKey,
+  requirePermission('events:write'),
   validate(appendLogsSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -390,7 +390,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requireSessionOrApiKey,
+  requirePermission('events:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await userEventService.deleteEvent(req.params.id);

@@ -10,6 +10,7 @@ import type {
   ApiKeyInfo,
   ApiKeyValidationResult,
   JWTUser,
+  PermissionScope,
 } from "@mini-infra/types";
 
 /**
@@ -45,6 +46,12 @@ export async function createApiKey(
     const rawKey = generateApiKey();
     const hashedKey = hashApiKey(rawKey);
 
+    // Serialize permissions to JSON string (or null for full access)
+    const permissionsJson =
+      request.permissions != null
+        ? JSON.stringify(request.permissions)
+        : null;
+
     // Store the hashed key in the database
     const apiKey = await prisma.apiKey.create({
       data: {
@@ -52,6 +59,7 @@ export async function createApiKey(
         key: hashedKey,
         userId,
         active: true,
+        permissions: permissionsJson,
       },
       include: {
         user: true,
@@ -63,12 +71,16 @@ export async function createApiKey(
       "API key created successfully",
     );
 
+    // Parse permissions back for response
+    const permissions = parsePermissions(apiKey.permissions);
+
     // Return the response with the raw key (only time we expose it)
     return {
       id: apiKey.id,
       name: apiKey.name,
       key: rawKey, // Only exposed during creation
       active: apiKey.active,
+      permissions,
       lastUsedAt: apiKey.lastUsedAt?.toISOString() || null,
       createdAt: apiKey.createdAt.toISOString(),
       updatedAt: apiKey.updatedAt.toISOString(),
@@ -138,11 +150,15 @@ export async function validateApiKey(
       createdAt: apiKey.user.createdAt,
     };
 
+    // Parse permissions from JSON string
+    const permissions = parsePermissions(apiKey.permissions);
+
     return {
       valid: true,
       userId: apiKey.userId,
       keyId: apiKey.id,
       user: sessionUser,
+      permissions,
     };
   } catch (error) {
     logger.error({ error }, "Error validating API key");
@@ -168,6 +184,7 @@ export async function getUserApiKeys(userId: string): Promise<ApiKeyInfo[]> {
       id: apiKey.id,
       name: apiKey.name,
       active: apiKey.active,
+      permissions: parsePermissions(apiKey.permissions),
       lastUsedAt: apiKey.lastUsedAt?.toISOString() || null,
       createdAt: apiKey.createdAt.toISOString(),
       updatedAt: apiKey.updatedAt.toISOString(),
@@ -232,8 +249,12 @@ export async function rotateApiKey(
       throw new Error("API key not found or not owned by user");
     }
 
-    // Create a new key with the same name
-    const newKey = await createApiKey(userId, { name: existingKey.name });
+    // Create a new key with the same name and permissions
+    const permissions = parsePermissions(existingKey.permissions);
+    const newKey = await createApiKey(userId, {
+      name: existingKey.name,
+      permissions,
+    });
 
     // Deactivate the old key
     await prisma.apiKey.update({
@@ -283,6 +304,26 @@ export async function deleteApiKey(
   } catch (error) {
     logger.error({ error, userId, keyId }, "Failed to delete API key");
     throw error;
+  }
+}
+
+/**
+ * Parse permissions from JSON string stored in database
+ * Returns null for full access (backwards compatibility)
+ * Returns empty array on parse failure (fail-safe: no permissions)
+ */
+function parsePermissions(
+  permissionsJson: string | null,
+): PermissionScope[] | null {
+  if (permissionsJson === null) return null;
+  try {
+    return JSON.parse(permissionsJson);
+  } catch {
+    logger.error(
+      { permissionsJson },
+      "Failed to parse API key permissions, treating as no access",
+    );
+    return [];
   }
 }
 

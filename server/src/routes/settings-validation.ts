@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import {
@@ -62,7 +62,7 @@ const validateServiceSchema = z.object({
 /**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
-router.post("/:service", requireSessionOrApiKey, (async (
+router.post("/:service", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

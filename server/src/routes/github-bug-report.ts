@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubService } from "../services/github-service";
 import {
   BugReportRequest,
@@ -97,7 +97,7 @@ function formatBugReportBody(
 /**
  * POST /api/github/bug-report - Create a bug report as a GitHub issue
  */
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

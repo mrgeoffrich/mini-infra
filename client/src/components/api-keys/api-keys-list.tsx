@@ -46,6 +46,32 @@ import { ApiKey } from "@/lib/auth-types";
 import { useRevokeApiKey, useRotateApiKey, useDeleteApiKey } from "@/hooks/use-api-keys";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
+import { PERMISSION_PRESETS } from "@mini-infra/types";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+function getPermissionSummary(permissions: string[] | null): {
+  label: string;
+  variant: "default" | "secondary" | "outline";
+} {
+  if (permissions === null || (permissions.length === 1 && permissions[0] === "*")) {
+    return { label: "Full Access", variant: "default" };
+  }
+  // Check if it matches a known preset
+  for (const preset of PERMISSION_PRESETS) {
+    if (preset.id === "full-access") continue;
+    const presetSet = new Set(preset.permissions);
+    const permSet = new Set(permissions);
+    if (presetSet.size === permSet.size && [...presetSet].every((s) => permSet.has(s))) {
+      return { label: preset.name, variant: "secondary" };
+    }
+  }
+  return { label: `${permissions.length} permissions`, variant: "outline" };
+}
 
 interface ApiKeysListProps {
   apiKeys: ApiKey[];
@@ -154,6 +180,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Permissions</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>Last Used</TableHead>
               <TableHead>Created</TableHead>
@@ -170,6 +197,37 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                   <Badge variant={apiKey.active ? "default" : "secondary"}>
                     {apiKey.active ? "Active" : "Revoked"}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  {(() => {
+                    const summary = getPermissionSummary(apiKey.permissions);
+                    const perms = apiKey.permissions;
+                    if (perms === null || (perms.length === 1 && perms[0] === "*")) {
+                      return (
+                        <Badge variant={summary.variant}>
+                          {summary.label}
+                        </Badge>
+                      );
+                    }
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant={summary.variant} className="cursor-help">
+                              {summary.label}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-xs">
+                            <div className="space-y-1">
+                              {perms.map((p) => (
+                                <div key={p} className="text-xs font-mono">{p}</div>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">

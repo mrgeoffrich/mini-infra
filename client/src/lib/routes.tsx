@@ -30,6 +30,7 @@ import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/new-and-edit-page";
 import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
+import { CreateApiKeyPage } from "@/app/api-keys/new/page";
 import { EventsPage } from "@/app/events/page";
 import EventDetailPage from "@/app/events/[id]/page";
 import { EnvironmentsPage } from "@/app/environments/page";
@@ -134,6 +135,10 @@ export const router = createBrowserRouter([
       {
         path: "api-keys",
         element: <ApiKeysPage />,
+      },
+      {
+        path: "api-keys/new",
+        element: <CreateApiKeyPage />,
       },
       {
         path: "events",

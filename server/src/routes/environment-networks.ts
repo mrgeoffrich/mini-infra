@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { EnvironmentManager, ServiceRegistry } from '../services/environment';
-import { requireSessionOrApiKey } from '../middleware/auth';
+import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 
@@ -25,7 +25,7 @@ const updateNetworkSchema = z.object({
 });
 
 
-router.get('/', requireSessionOrApiKey, async (req, res) => {
+router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -49,7 +49,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/', requireSessionOrApiKey, async (req, res) => {
+router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const validatedData = createNetworkSchema.parse(req.body);
@@ -108,7 +108,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
+router.put('/:networkId', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id, networkId } = req.params;
     const validatedData = updateNetworkSchema.parse(req.body);
@@ -170,7 +170,7 @@ router.put('/:networkId', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.delete('/:networkId', requireSessionOrApiKey, async (req, res) => {
+router.delete('/:networkId', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id, networkId } = req.params;
 

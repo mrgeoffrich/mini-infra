@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { DockerExecutorService } from "../services/docker-executor";
 import type {
   DockerRegistryTestOptions,
@@ -46,7 +46,7 @@ interface TestDockerRegistryResponse {
 }
 
 
-router.post("/test-docker-registry", requireSessionOrApiKey, (async (
+router.post("/test-docker-registry", requirePermission('settings:write') as RequestHandler, (async (
   req: TestDockerRegistryRequest,
   res: Response<TestDockerRegistryResponse>,
   next: NextFunction,

@@ -81,6 +81,7 @@ vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 // Mock authentication middleware
 vi.mock("../../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => next(),
+  requirePermission: () => (req: any, res: any, next: any) => next(),
 }));
 
 // Import the router after mocking

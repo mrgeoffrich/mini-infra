@@ -1,7 +1,7 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   DeploymentDNSRecordInfo,
@@ -50,7 +50,7 @@ function serializeDNSRecord(record: any): DeploymentDNSRecordInfo {
  */
 router.get(
   "/configs/:configId/dns",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { configId } = req.params;
@@ -107,7 +107,7 @@ router.get(
  */
 router.post(
   "/configs/:configId/dns/sync",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { configId } = req.params;
@@ -186,7 +186,7 @@ router.post(
  */
 router.delete(
   "/configs/:configId/dns",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { configId } = req.params;
@@ -262,7 +262,7 @@ router.delete(
  */
 router.get(
   "/dns",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { status, hostname } = req.query;

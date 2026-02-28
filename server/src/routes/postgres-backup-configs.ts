@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { BackupConfigurationManager } from "../services/backup";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
@@ -105,7 +105,7 @@ const quickBackupSetupSchema = z.object({
  * POST /api/postgres/backup-configs/quick-setup - Quick setup backup for a database on a server
  * IMPORTANT: This route must come BEFORE /:databaseId to prevent "quick-setup" from being matched as a databaseId
  */
-router.post("/quick-setup", requireSessionOrApiKey, (async (
+router.post("/quick-setup", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -300,7 +300,7 @@ router.post("/quick-setup", requireSessionOrApiKey, (async (
   }
 }) as RequestHandler);
 
-router.get("/:databaseId", requireSessionOrApiKey, (async (
+router.get("/:databaseId", requirePermission('postgres:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -382,7 +382,7 @@ router.get("/:databaseId", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -524,7 +524,7 @@ router.post("/", requireSessionOrApiKey, (async (
 /**
  * PUT /api/postgres/backup-configs/:id - Update backup configuration
  */
-router.put("/:id", requireSessionOrApiKey, (async (
+router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -659,7 +659,7 @@ router.put("/:id", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/postgres/backup-configs/:id - Delete backup configuration
  */
-router.delete("/:id", requireSessionOrApiKey, (async (
+router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

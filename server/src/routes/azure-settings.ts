@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { AzureStorageService } from "../services/azure-storage-service";
 import {
@@ -79,7 +79,7 @@ const testContainerAccessSchema = z.object({
 });
 
 
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -167,7 +167,7 @@ router.get("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.put("/", requireSessionOrApiKey, (async (
+router.put("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -298,7 +298,7 @@ router.put("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.post("/validate", requireSessionOrApiKey, (async (
+router.post("/validate", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -475,7 +475,7 @@ router.post("/validate", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.delete("/", requireSessionOrApiKey, (async (
+router.delete("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -537,7 +537,7 @@ router.delete("/", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.get("/containers", requireSessionOrApiKey, (async (
+router.get("/containers", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -608,7 +608,7 @@ router.get("/containers", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.post("/test-container", requireSessionOrApiKey, (async (
+router.post("/test-container", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

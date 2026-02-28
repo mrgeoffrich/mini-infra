@@ -1,7 +1,7 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   HAProxyFrontendInfo,
@@ -61,7 +61,7 @@ function serializeFrontend(frontend: any): HAProxyFrontendInfo {
  */
 router.get(
   "/",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { status, hostname } = req.query;
@@ -131,7 +131,7 @@ const createSharedFrontendSchema = z.object({
  */
 router.post(
   "/shared",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const validationResult = createSharedFrontendSchema.safeParse(req.body);
@@ -273,7 +273,7 @@ const configureSSLSchema = z.object({
  */
 router.post(
   "/:frontendName/ssl",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -410,7 +410,7 @@ router.post(
  */
 router.get(
   "/:frontendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -466,7 +466,7 @@ router.get(
  */
 router.get(
   "/configs/:configId/frontend",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { configId } = req.params;
@@ -523,7 +523,7 @@ router.get(
  */
 router.post(
   "/configs/:configId/frontend/sync",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { configId } = req.params;
@@ -673,7 +673,7 @@ const createRouteSchema = z.object({
  */
 router.get(
   "/:frontendName/routes",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -745,7 +745,7 @@ router.get(
  */
 router.post(
   "/:frontendName/routes",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName } = req.params;
@@ -856,7 +856,7 @@ const patchRouteSchema = z.object({
  */
 router.patch(
   "/:frontendName/routes/:routeId",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName, routeId } = req.params;
@@ -1011,7 +1011,7 @@ router.patch(
  */
 router.delete(
   "/:frontendName/routes/:routeId",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { frontendName, routeId } = req.params;

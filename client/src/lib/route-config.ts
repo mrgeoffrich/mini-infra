@@ -164,6 +164,15 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "administration",
     description: "API key management",
     helpDoc: "settings/api-keys",
+    children: {
+      new: {
+        path: "/api-keys/new",
+        title: "Create API Key",
+        breadcrumbLabel: "New",
+        parent: "/api-keys",
+        showInNav: false,
+      },
+    },
   },
 
   "/events": {

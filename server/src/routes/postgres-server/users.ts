@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import userManagementService from "../../services/postgres-server/user-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 
@@ -40,7 +40,7 @@ const changePasswordSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/users
  * List all users on the server
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = req.params.serverId;
@@ -78,7 +78,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
  * POST /api/postgres-server/servers/:serverId/users
  * Create a new user on the server
  */
-router.post("/", requireSessionOrApiKey, async (req, res) => {
+router.post("/", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = req.params.serverId;
@@ -122,7 +122,7 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/users/:userId
  * Get user details
  */
-router.get("/:userId", requireSessionOrApiKey, async (req, res) => {
+router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = req.params.serverId;
@@ -165,7 +165,7 @@ router.get("/:userId", requireSessionOrApiKey, async (req, res) => {
  * PUT /api/postgres-server/servers/:serverId/users/:userId
  * Update user attributes
  */
-router.put("/:userId", requireSessionOrApiKey, async (req, res) => {
+router.put("/:userId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = req.params.serverId;
@@ -217,7 +217,7 @@ router.put("/:userId", requireSessionOrApiKey, async (req, res) => {
  * DELETE /api/postgres-server/servers/:serverId/users/:userId
  * Drop a user from the server
  */
-router.delete("/:userId", requireSessionOrApiKey, async (req, res) => {
+router.delete("/:userId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = req.params.serverId;
@@ -257,7 +257,7 @@ router.delete("/:userId", requireSessionOrApiKey, async (req, res) => {
  * POST /api/postgres-server/servers/:serverId/users/:userId/password
  * Change user password
  */
-router.post("/:userId/password", requireSessionOrApiKey, async (req, res) => {
+router.post("/:userId/password", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = req.params.serverId;
@@ -306,7 +306,7 @@ router.post("/:userId/password", requireSessionOrApiKey, async (req, res) => {
  * POST /api/postgres-server/servers/:serverId/users/sync
  * Sync users from the server
  */
-router.post("/sync", requireSessionOrApiKey, async (req, res) => {
+router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = req.params.serverId;
@@ -339,7 +339,7 @@ router.post("/sync", requireSessionOrApiKey, async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/users/:userId/grants
  * List grants for a specific user
  */
-router.get("/:userId/grants", requireSessionOrApiKey, async (req, res) => {
+router.get("/:userId/grants", requirePermission('postgres:read'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = req.params.serverId;

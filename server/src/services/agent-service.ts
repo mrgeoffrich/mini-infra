@@ -760,13 +760,37 @@ class AgentService {
       case "stream_event": {
         const streamMsg = msg as Extract<SDKMessage, { type: "stream_event" }>;
         const event = streamMsg.event;
+        const assistantUuid = streamMsg.uuid;
 
         if (event.type === "content_block_delta") {
-          const delta = event.delta as { type: string; text?: string };
+          const delta = event.delta as {
+            type: string;
+            text?: string;
+            thinking?: string;
+            signature?: string;
+          };
           if (delta.type === "text_delta" && delta.text) {
             this.broadcast(session, {
               type: "text_delta",
               data: { content: delta.text },
+            });
+          } else if (delta.type === "thinking_delta" && delta.thinking) {
+            this.broadcast(session, {
+              type: "thinking_delta",
+              data: {
+                assistantUuid,
+                blockIndex: event.index,
+                content: delta.thinking,
+              },
+            });
+          } else if (delta.type === "signature_delta" && delta.signature) {
+            this.broadcast(session, {
+              type: "thinking_signature",
+              data: {
+                assistantUuid,
+                blockIndex: event.index,
+                signature: delta.signature,
+              },
             });
           }
         } else if (event.type === "content_block_start") {
@@ -780,7 +804,20 @@ class AgentService {
               type: "tool_start",
               data: { toolName: block.name, toolId: block.id },
             });
+          } else if (block.type === "thinking") {
+            this.broadcast(session, {
+              type: "thinking_start",
+              data: {
+                assistantUuid,
+                blockIndex: event.index,
+              },
+            });
           }
+        } else if (event.type === "message_stop") {
+          this.broadcast(session, {
+            type: "assistant_message_stop",
+            data: { assistantUuid },
+          });
         }
         break;
       }
@@ -789,13 +826,37 @@ class AgentService {
         const assistantMsg = msg as Extract<SDKMessage, { type: "assistant" }>;
         const content = assistantMsg.message?.content;
         if (Array.isArray(content)) {
-          for (const block of content) {
+          for (const [blockIndex, block] of content.entries()) {
             if (block.type === "text") {
               this.broadcast(session, {
                 type: "text",
                 data: {
                   content: (block as { type: "text"; text: string }).text,
                   uuid: assistantMsg.uuid,
+                },
+              });
+            } else if (block.type === "thinking") {
+              const thinkingBlock = block as {
+                type: "thinking";
+                thinking: string;
+                signature?: string;
+              };
+              this.broadcast(session, {
+                type: "thinking_complete",
+                data: {
+                  assistantUuid: assistantMsg.uuid,
+                  blockIndex,
+                  content: thinkingBlock.thinking,
+                  signature: thinkingBlock.signature,
+                },
+              });
+            } else if (block.type === "redacted_thinking") {
+              this.broadcast(session, {
+                type: "thinking_redacted",
+                data: {
+                  assistantUuid: assistantMsg.uuid,
+                  blockIndex,
+                  content: "Thinking content is redacted.",
                 },
               });
             } else if (block.type === "tool_use") {

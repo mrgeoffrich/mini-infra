@@ -7,7 +7,7 @@ import express, {
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 
 const router = express.Router();
@@ -15,7 +15,7 @@ const router = express.Router();
 /**
  * GET /api/settings/docker-host - Get Docker host IP for connections
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

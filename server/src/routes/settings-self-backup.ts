@@ -1,7 +1,7 @@
 import express from "express";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import { z } from "zod";
 import { SelfBackupScheduler, SelfBackupExecutor } from "../services/backup";
 import type {
@@ -23,7 +23,7 @@ const configSchema = z.object({
 /**
  * GET / - Get current self-backup configuration
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('backups:read'), async (req, res) => {
   try {
     // Load configuration from database
     const settings = await prisma.systemSettings.findMany({
@@ -82,7 +82,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
 /**
  * PUT / - Update configuration (schedule, container, timezone)
  */
-router.put("/", requireSessionOrApiKey, async (req, res) => {
+router.put("/", requirePermission('backups:write'), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -173,7 +173,7 @@ router.put("/", requireSessionOrApiKey, async (req, res) => {
 /**
  * POST /enable - Enable scheduled backups
  */
-router.post("/enable", requireSessionOrApiKey, async (req, res) => {
+router.post("/enable", requirePermission('backups:write'), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -236,7 +236,7 @@ router.post("/enable", requireSessionOrApiKey, async (req, res) => {
 /**
  * POST /disable - Disable scheduled backups
  */
-router.post("/disable", requireSessionOrApiKey, async (req, res) => {
+router.post("/disable", requirePermission('backups:write'), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -299,7 +299,7 @@ router.post("/disable", requireSessionOrApiKey, async (req, res) => {
 /**
  * POST /trigger - Trigger manual backup immediately
  */
-router.post("/trigger", requireSessionOrApiKey, async (req, res) => {
+router.post("/trigger", requirePermission('backups:write'), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -396,7 +396,7 @@ router.post("/trigger", requireSessionOrApiKey, async (req, res) => {
 /**
  * GET /schedule-info - Get next scheduled run time and status
  */
-router.get("/schedule-info", requireSessionOrApiKey, async (req, res) => {
+router.get("/schedule-info", requirePermission('backups:read'), async (req, res) => {
   try {
     const scheduler = SelfBackupScheduler.getInstance();
     const scheduleInfo = scheduler?.getScheduleInfo() || null;

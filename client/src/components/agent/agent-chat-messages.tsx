@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {
   ChatMessage,
+  ChatMessageThinking,
   ChatMessageToolUse,
 } from "@/lib/agent-chat-types";
 
@@ -119,6 +120,48 @@ function ToolUseBlock({ msg }: { msg: ChatMessageToolUse }) {
   );
 }
 
+function ThinkingBlock({ msg }: { msg: ChatMessageThinking }) {
+  const content = msg.redacted
+    ? msg.content || "Thinking content is redacted."
+    : msg.content;
+
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs hover:bg-muted transition-colors text-left">
+        <IconChevronRight className="size-3 shrink-0 transition-transform [[data-state=open]_&]:rotate-90" />
+        <Badge
+          className={cn(
+            "text-[10px] px-1.5 py-0 text-white border-0 shrink-0",
+            msg.redacted ? "bg-gray-500" : "bg-slate-600",
+          )}
+        >
+          Thinking
+        </Badge>
+        <span className="truncate text-muted-foreground">
+          {msg.redacted
+            ? "Redacted"
+            : msg.status === "streaming"
+              ? "Streaming..."
+              : "Complete"}
+        </span>
+        {msg.status === "streaming" && (
+          <span className="ml-auto shrink-0 size-2 rounded-full bg-amber-500 animate-pulse" />
+        )}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1 space-y-1">
+        <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-48">
+          {content || "Waiting for thinking content..."}
+        </pre>
+        {msg.signature && (
+          <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-32">
+            {msg.signature}
+          </pre>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   switch (msg.role) {
     case "user":
@@ -144,6 +187,9 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
     case "tool_use":
       return <ToolUseBlock msg={msg} />;
+
+    case "thinking":
+      return <ThinkingBlock msg={msg} />;
 
     case "error":
       return (

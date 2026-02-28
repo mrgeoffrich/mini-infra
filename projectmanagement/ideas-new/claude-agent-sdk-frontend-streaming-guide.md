@@ -912,3 +912,51 @@ Components re-render with new messages
 6. **One SSE connection per session.** Don't open multiple EventSource connections for the same session.
 
 7. **Clean up on disconnect.** Always handle `req.on("close")` on the backend and `eventSource.close()` on the frontend to prevent orphaned SDK processes.
+
+---
+
+## 10. Thinking SSE Relay Contract
+
+Mini Infra relays normalized thinking events from SDK `stream_event` and final `assistant` messages.
+
+### 10.1 Event Types
+
+- `thinking_start`
+- `thinking_delta`
+- `thinking_signature`
+- `thinking_complete`
+- `thinking_redacted`
+- `assistant_message_stop`
+
+### 10.2 Payload Shape
+
+All thinking events are emitted as standard SSE envelopes:
+
+```json
+{
+  "type": "thinking_delta",
+  "data": {
+    "assistantUuid": "uuid-from-sdk-partial-assistant-message",
+    "blockIndex": 0,
+    "content": "partial thinking text"
+  }
+}
+```
+
+Fields:
+
+- `assistantUuid` (string): assistant turn identifier used to correlate stream and final events.
+- `blockIndex` (number): content block index in the assistant message.
+- `content` (string): text delta or finalized thinking text.
+- `signature` (string, optional): thinking signature emitted by `signature_delta`.
+
+`assistant_message_stop` includes `assistantUuid` only and indicates the assistant turn has stopped streaming.
+
+### 10.3 Frontend Reconciliation Rules
+
+1. Create/update thinking UI blocks by `assistantUuid + blockIndex`.
+2. Append on `thinking_delta`.
+3. Save signature on `thinking_signature`.
+4. Replace with full finalized content on `thinking_complete`.
+5. Show safe placeholder on `thinking_redacted`.
+6. Mark remaining streaming thinking blocks complete when `assistant_message_stop` arrives.

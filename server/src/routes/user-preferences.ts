@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
 import type {
   JWTUser,
@@ -37,11 +37,7 @@ function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
   };
 }
 
-// Apply authentication middleware to all routes
-router.use(requireSessionOrApiKey);
-
-
-router.get("/preferences", async (req: Request, res: Response) => {
+router.get("/preferences", requirePermission('user:read'), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;
@@ -73,7 +69,7 @@ router.get("/preferences", async (req: Request, res: Response) => {
 });
 
 
-router.put("/preferences", async (req: Request, res: Response) => {
+router.put("/preferences", requirePermission('user:write'), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;
@@ -131,7 +127,7 @@ router.put("/preferences", async (req: Request, res: Response) => {
 });
 
 
-router.get("/timezones", async (req: Request, res: Response) => {
+router.get("/timezones", requirePermission('user:read'), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;

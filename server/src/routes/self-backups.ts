@@ -1,7 +1,7 @@
 import express from "express";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import { AzureStorageService } from "../services/azure-storage-service";
 import type {
   BackupHistoryResponse,
@@ -17,7 +17,7 @@ const azureConfigService = new AzureStorageService(prisma);
 /**
  * GET / - List backup history (paginated, filterable)
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('backups:read'), async (req, res) => {
   try {
     const {
       status,
@@ -118,7 +118,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
 /**
  * GET /health - Get backup health status
  */
-router.get("/health", requireSessionOrApiKey, async (req, res) => {
+router.get("/health", requirePermission('backups:read'), async (req, res) => {
   try {
     // Check if configuration exists
     const containerSetting = await prisma.systemSettings.findUnique({
@@ -239,7 +239,7 @@ router.get("/health", requireSessionOrApiKey, async (req, res) => {
 /**
  * GET /:id - Get specific backup details
  */
-router.get("/:id", requireSessionOrApiKey, async (req, res) => {
+router.get("/:id", requirePermission('backups:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -295,7 +295,7 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
 /**
  * GET /:id/download - Generate SAS URL and redirect to download
  */
-router.get("/:id/download", requireSessionOrApiKey, async (req, res) => {
+router.get("/:id/download", requirePermission('backups:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -382,7 +382,7 @@ router.get("/:id/download", requireSessionOrApiKey, async (req, res) => {
 /**
  * DELETE /:id - Delete backup record (not blob itself)
  */
-router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
+router.delete("/:id", requirePermission('backups:write'), async (req, res) => {
   try {
     const { id } = req.params;
 

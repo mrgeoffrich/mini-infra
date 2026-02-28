@@ -5,6 +5,9 @@
 // Authentication types
 export * from "./auth";
 
+// Permission types
+export * from "./permissions";
+
 // Container types
 export * from "./containers";
 

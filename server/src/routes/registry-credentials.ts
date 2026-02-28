@@ -1,6 +1,6 @@
 import express from "express";
 import { z } from "zod";
-import { requireSessionOrApiKey, getCurrentUserId } from "../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import { RegistryCredentialService } from "../services/registry-credential";
 import { appLogger } from "../lib/logger-factory";
 import prisma from "../lib/prisma";
@@ -37,7 +37,7 @@ const testConnectionSchema = z.object({
 });
 
 // GET /api/registry-credentials
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('registry:read'), async (req, res) => {
   try {
     const includeInactive = req.query.includeInactive === "true";
     const credentials =
@@ -59,7 +59,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
 });
 
 // GET /api/registry-credentials/:id
-router.get("/:id", requireSessionOrApiKey, async (req, res) => {
+router.get("/:id", requirePermission('registry:read'), async (req, res) => {
   try {
     const credential = await registryCredentialService.getCredential(
       req.params.id,
@@ -85,7 +85,7 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
 });
 
 // POST /api/registry-credentials
-router.post("/", requireSessionOrApiKey, async (req, res) => {
+router.post("/", requirePermission('registry:write'), async (req, res) => {
   try {
     const validatedData = createSchema.parse(req.body);
     const userId = getCurrentUserId(req);
@@ -126,7 +126,7 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
 });
 
 // PUT /api/registry-credentials/:id
-router.put("/:id", requireSessionOrApiKey, async (req, res) => {
+router.put("/:id", requirePermission('registry:write'), async (req, res) => {
   try {
     const validatedData = updateSchema.parse(req.body);
     const userId = getCurrentUserId(req);
@@ -168,7 +168,7 @@ router.put("/:id", requireSessionOrApiKey, async (req, res) => {
 });
 
 // DELETE /api/registry-credentials/:id
-router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
+router.delete("/:id", requirePermission('registry:write'), async (req, res) => {
   try {
     await registryCredentialService.deleteCredential(req.params.id);
 
@@ -187,7 +187,7 @@ router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
 });
 
 // POST /api/registry-credentials/:id/set-default
-router.post("/:id/set-default", requireSessionOrApiKey, async (req, res) => {
+router.post("/:id/set-default", requirePermission('registry:write'), async (req, res) => {
   try {
     await registryCredentialService.setDefaultCredential(req.params.id);
 
@@ -209,7 +209,7 @@ router.post("/:id/set-default", requireSessionOrApiKey, async (req, res) => {
 });
 
 // POST /api/registry-credentials/:id/test
-router.post("/:id/test", requireSessionOrApiKey, async (req, res) => {
+router.post("/:id/test", requirePermission('registry:write'), async (req, res) => {
   try {
     const testImage = req.body?.testImage; // Optional test image from request body
 
@@ -233,7 +233,7 @@ router.post("/:id/test", requireSessionOrApiKey, async (req, res) => {
 });
 
 // POST /api/registry-credentials/test-connection
-router.post("/test-connection", requireSessionOrApiKey, async (req, res) => {
+router.post("/test-connection", requirePermission('registry:write'), async (req, res) => {
   try {
     const validatedData = testConnectionSchema.parse(req.body);
 

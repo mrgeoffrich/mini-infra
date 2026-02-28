@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { NetworkRequirement, VolumeRequirement } from "../services/interfaces/application-service";
 import { portUtils } from "../services/port-utils";
@@ -27,7 +27,7 @@ const deployInfrastructureSchema = z.object({
 });
 
 
-router.post("/deploy", requireSessionOrApiKey, (async (
+router.post("/deploy", requirePermission('deployments:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -230,7 +230,7 @@ router.post("/deploy", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.get("/status", requireSessionOrApiKey, (async (
+router.get("/status", requirePermission('deployments:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -360,7 +360,7 @@ router.get("/status", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.delete("/cleanup", requireSessionOrApiKey, (async (
+router.delete("/cleanup", requirePermission('deployments:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

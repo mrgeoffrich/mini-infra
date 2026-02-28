@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 
 const router = express.Router();
@@ -19,7 +19,7 @@ const router = express.Router();
  *
  * Response: { session_secret: string, api_key_secret: string }
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -86,7 +86,7 @@ router.get("/", requireSessionOrApiKey, (async (
  * Body: { secret: "session" | "apiKey" }
  * Response: { message: string, warning: string }
  */
-router.post("/regenerate", requireSessionOrApiKey, (async (
+router.post("/regenerate", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

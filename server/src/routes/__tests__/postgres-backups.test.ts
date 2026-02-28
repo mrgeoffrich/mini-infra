@@ -100,6 +100,19 @@ vi.mock("../../middleware/auth", () => ({
     };
     next();
   },
+  requirePermission: () => (req: any, res: any, next: any) => {
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" },
+      permissions: null,
+    };
+    res.locals = {
+      user: { id: "test-user-id", email: "test@example.com" },
+      requestId: "test-request-id",
+    };
+    next();
+  },
 }));
 
 const app = express();

@@ -9,7 +9,13 @@ import {
   getApiKeyStats,
 } from "../lib/api-key-service";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../middleware/auth";
+import { getCurrentUserId } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
+import {
+  PERMISSION_GROUPS,
+  PERMISSION_PRESETS,
+  ALL_PERMISSION_SCOPES,
+} from "@mini-infra/types";
 
 const logger = appLogger();
 import type { CreateApiKeyRequest } from "@mini-infra/types";
@@ -26,212 +32,262 @@ const createApiKeySchema = z.object({
       /^[a-zA-Z0-9\s\-_]+$/,
       "API key name can only contain letters, numbers, spaces, hyphens, and underscores",
     ),
+  permissions: z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .refine(
+      (val) => {
+        if (val === null || val === undefined) return true;
+        // Validate each scope is either "*" or a known scope
+        return val.every(
+          (scope) => scope === "*" || ALL_PERMISSION_SCOPES.includes(scope),
+        );
+      },
+      { message: "Invalid permission scope(s) provided" },
+    ),
 });
 
-// Apply authentication to all routes (allows both session and API key auth)
-router.use(requireSessionOrApiKey as RequestHandler);
-
-
-router.get("/", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const requestId = req.headers["x-request-id"] as string;
-
-  try {
-    logger.debug({ userId, requestId }, "Fetching user API keys");
-
-    const apiKeys = await getUserApiKeys(userId);
-
+// GET /api/keys/permissions - return available permissions and presets
+router.get(
+  "/permissions",
+  requirePermission("api-keys:read") as RequestHandler,
+  (async (_req: Request, res: Response) => {
     res.json({
       success: true,
-      data: apiKeys,
+      data: {
+        groups: PERMISSION_GROUPS,
+        presets: PERMISSION_PRESETS,
+      },
     });
-  } catch (error) {
-    logger.error({ error, userId, requestId }, "Failed to fetch API keys");
+  }) as RequestHandler,
+);
 
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to retrieve API keys",
-    });
-  }
-}) as RequestHandler);
+router.get(
+  "/",
+  requirePermission("api-keys:read") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const requestId = req.headers["x-request-id"] as string;
 
+    try {
+      logger.debug({ userId, requestId }, "Fetching user API keys");
 
-router.post("/", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const requestId = req.headers["x-request-id"] as string;
+      const apiKeys = await getUserApiKeys(userId);
 
-  try {
-    // Validate request body
-    const validationResult = createApiKeySchema.safeParse(req.body);
-    if (!validationResult.success) {
-      logger.warn(
-        { userId, requestId, errors: validationResult.error.issues },
-        "Invalid API key creation request",
+      res.json({
+        success: true,
+        data: apiKeys,
+      });
+    } catch (error) {
+      logger.error({ error, userId, requestId }, "Failed to fetch API keys");
+
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to retrieve API keys",
+      });
+    }
+  }) as RequestHandler,
+);
+
+router.post(
+  "/",
+  requirePermission("api-keys:write") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const requestId = req.headers["x-request-id"] as string;
+
+    try {
+      // Validate request body
+      const validationResult = createApiKeySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        logger.warn(
+          { userId, requestId, errors: validationResult.error.issues },
+          "Invalid API key creation request",
+        );
+        return res.status(400).json({
+          error: "Validation error",
+          message: "Invalid request data",
+          details: validationResult.error.issues,
+        });
+      }
+
+      const createRequest: CreateApiKeyRequest = {
+        name: validationResult.data.name,
+        permissions: validationResult.data.permissions ?? null,
+      };
+
+      logger.debug(
+        { userId, requestId, name: createRequest.name },
+        "Creating new API key",
       );
-      return res.status(400).json({
-        error: "Validation error",
-        message: "Invalid request data",
-        details: validationResult.error.issues,
+
+      const apiKey = await createApiKey(userId, createRequest);
+
+      res.status(201).json({
+        success: true,
+        data: apiKey,
+        message:
+          "API key created successfully. Save this key securely - it won't be shown again.",
+      });
+    } catch (error) {
+      logger.error({ error, userId, requestId }, "Failed to create API key");
+
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to create API key",
       });
     }
+  }) as RequestHandler,
+);
 
-    const createRequest: CreateApiKeyRequest = validationResult.data;
+router.patch(
+  "/:keyId/revoke",
+  requirePermission("api-keys:write") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const { keyId } = req.params;
+    const requestId = req.headers["x-request-id"] as string;
 
-    logger.debug(
-      { userId, requestId, name: createRequest.name },
-      "Creating new API key",
-    );
+    try {
+      logger.debug({ userId, requestId, keyId }, "Revoking API key");
 
-    const apiKey = await createApiKey(userId, createRequest);
+      await revokeApiKey(userId, keyId);
 
-    res.status(201).json({
-      success: true,
-      data: apiKey,
-      message:
-        "API key created successfully. Save this key securely - it won't be shown again.",
-    });
-  } catch (error) {
-    logger.error({ error, userId, requestId }, "Failed to create API key");
+      res.json({
+        success: true,
+        message: "API key revoked successfully",
+      });
+    } catch (error) {
+      logger.error(
+        { error, userId, requestId, keyId },
+        "Failed to revoke API key",
+      );
 
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to create API key",
-    });
-  }
-}) as RequestHandler);
+      if (error instanceof Error && error.message.includes("not found")) {
+        return res.status(404).json({
+          error: "Not found",
+          message: "API key not found or not owned by user",
+        });
+      }
 
-
-router.patch("/:keyId/revoke", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const { keyId } = req.params;
-  const requestId = req.headers["x-request-id"] as string;
-
-  try {
-    logger.debug({ userId, requestId, keyId }, "Revoking API key");
-
-    await revokeApiKey(userId, keyId);
-
-    res.json({
-      success: true,
-      message: "API key revoked successfully",
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId, requestId, keyId },
-      "Failed to revoke API key",
-    );
-
-    if (error instanceof Error && error.message.includes("not found")) {
-      return res.status(404).json({
-        error: "Not found",
-        message: "API key not found or not owned by user",
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to revoke API key",
       });
     }
+  }) as RequestHandler,
+);
 
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to revoke API key",
-    });
-  }
-}) as RequestHandler);
+router.post(
+  "/:keyId/rotate",
+  requirePermission("api-keys:write") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const { keyId } = req.params;
+    const requestId = req.headers["x-request-id"] as string;
 
+    try {
+      logger.debug({ userId, requestId, keyId }, "Rotating API key");
 
-router.post("/:keyId/rotate", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const { keyId } = req.params;
-  const requestId = req.headers["x-request-id"] as string;
+      const newApiKey = await rotateApiKey(userId, keyId);
 
-  try {
-    logger.debug({ userId, requestId, keyId }, "Rotating API key");
+      res.json({
+        success: true,
+        data: newApiKey,
+        message:
+          "API key rotated successfully. Save the new key securely - it won't be shown again.",
+      });
+    } catch (error) {
+      logger.error(
+        { error, userId, requestId, keyId },
+        "Failed to rotate API key",
+      );
 
-    const newApiKey = await rotateApiKey(userId, keyId);
+      if (error instanceof Error && error.message.includes("not found")) {
+        return res.status(404).json({
+          error: "Not found",
+          message: "API key not found or not owned by user",
+        });
+      }
 
-    res.json({
-      success: true,
-      data: newApiKey,
-      message:
-        "API key rotated successfully. Save the new key securely - it won't be shown again.",
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId, requestId, keyId },
-      "Failed to rotate API key",
-    );
-
-    if (error instanceof Error && error.message.includes("not found")) {
-      return res.status(404).json({
-        error: "Not found",
-        message: "API key not found or not owned by user",
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to rotate API key",
       });
     }
+  }) as RequestHandler,
+);
 
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to rotate API key",
-    });
-  }
-}) as RequestHandler);
+router.delete(
+  "/:keyId",
+  requirePermission("api-keys:write") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const { keyId } = req.params;
+    const requestId = req.headers["x-request-id"] as string;
 
+    try {
+      logger.debug(
+        { userId, requestId, keyId },
+        "Deleting API key permanently",
+      );
 
-router.delete("/:keyId", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const { keyId } = req.params;
-  const requestId = req.headers["x-request-id"] as string;
+      await deleteApiKey(userId, keyId);
 
-  try {
-    logger.debug({ userId, requestId, keyId }, "Deleting API key permanently");
+      res.json({
+        success: true,
+        message: "API key deleted permanently",
+      });
+    } catch (error) {
+      logger.error(
+        { error, userId, requestId, keyId },
+        "Failed to delete API key",
+      );
 
-    await deleteApiKey(userId, keyId);
+      if (error instanceof Error && error.message.includes("not found")) {
+        return res.status(404).json({
+          error: "Not found",
+          message: "API key not found or not owned by user",
+        });
+      }
 
-    res.json({
-      success: true,
-      message: "API key deleted permanently",
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId, requestId, keyId },
-      "Failed to delete API key",
-    );
-
-    if (error instanceof Error && error.message.includes("not found")) {
-      return res.status(404).json({
-        error: "Not found",
-        message: "API key not found or not owned by user",
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to delete API key",
       });
     }
+  }) as RequestHandler,
+);
 
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to delete API key",
-    });
-  }
-}) as RequestHandler);
+router.get(
+  "/stats",
+  requirePermission("api-keys:read") as RequestHandler,
+  (async (req: Request, res: Response) => {
+    const userId = getCurrentUserId(req)!;
+    const requestId = req.headers["x-request-id"] as string;
 
+    try {
+      logger.debug({ userId, requestId }, "Fetching API key statistics");
 
-router.get("/stats", (async (req: Request, res: Response) => {
-  const userId = getCurrentUserId(req)!;
-  const requestId = req.headers["x-request-id"] as string;
+      const stats = await getApiKeyStats(userId);
 
-  try {
-    logger.debug({ userId, requestId }, "Fetching API key statistics");
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      logger.error(
+        { error, userId, requestId },
+        "Failed to fetch API key statistics",
+      );
 
-    const stats = await getApiKeyStats(userId);
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId, requestId },
-      "Failed to fetch API key statistics",
-    );
-
-    res.status(500).json({
-      error: "Internal server error",
-      message: "Failed to retrieve API key statistics",
-    });
-  }
-}) as RequestHandler);
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to retrieve API key statistics",
+      });
+    }
+  }) as RequestHandler,
+);
 
 export default router;

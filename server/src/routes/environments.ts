@@ -12,7 +12,7 @@ import {
   ServiceStatusValues
 } from '@mini-infra/types';
 import { EnvironmentManager, ServiceRegistry } from '../services/environment';
-import { requireSessionOrApiKey } from '../middleware/auth';
+import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
@@ -66,7 +66,7 @@ const listEnvironmentsSchema = z.object({
 
 
 
-router.get('/', requireSessionOrApiKey, async (req, res) => {
+router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
     // Validate query parameters
     const validatedQuery = listEnvironmentsSchema.parse(req.query);
@@ -109,7 +109,7 @@ router.get('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/', requireSessionOrApiKey, async (req, res) => {
+router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
     const userId = (req.user as any)?.id;
@@ -156,7 +156,7 @@ router.post('/', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.get('/:id', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -181,7 +181,7 @@ router.get('/:id', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.put('/:id', requireSessionOrApiKey, async (req, res) => {
+router.put('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const request: UpdateEnvironmentRequest = req.body;
@@ -220,7 +220,7 @@ router.put('/:id', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
+router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
@@ -285,7 +285,7 @@ router.delete('/:id', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.get('/:id/status', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/status', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -311,7 +311,7 @@ router.get('/:id/status', requireSessionOrApiKey, async (req, res) => {
 
 
 // Validate ports for environment before starting
-router.get('/:id/validate-ports', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/validate-ports', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -369,7 +369,7 @@ router.get('/:id/validate-ports', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
+router.post('/:id/start', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const userId = (req.user as any)?.id;
@@ -402,7 +402,7 @@ router.post('/:id/start', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
+router.post('/:id/stop', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const userId = (req.user as any)?.id;
@@ -435,7 +435,7 @@ router.post('/:id/stop', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.get('/:id/services', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/services', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -460,7 +460,7 @@ router.get('/:id/services', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.post('/:id/services', requireSessionOrApiKey, async (req, res) => {
+router.post('/:id/services', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const request: AddServiceToEnvironmentRequest = req.body;
@@ -509,7 +509,7 @@ router.post('/:id/services', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.get('/services/available', requireSessionOrApiKey, async (req, res) => {
+router.get('/services/available', requirePermission('environments:read'), async (req, res) => {
   try {
     const services = serviceRegistry.getAllServiceMetadata();
 
@@ -525,7 +525,7 @@ router.get('/services/available', requireSessionOrApiKey, async (req, res) => {
 });
 
 
-router.get('/services/available/:serviceType', requireSessionOrApiKey, async (req, res) => {
+router.get('/services/available/:serviceType', requirePermission('environments:read'), async (req, res) => {
   try {
     const { serviceType } = req.params;
     const { environmentId } = req.query;
@@ -593,7 +593,7 @@ router.get('/services/available/:serviceType', requireSessionOrApiKey, async (re
 });
 
 // Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/networks', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/networks', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -617,7 +617,7 @@ router.get('/:id/networks', requireSessionOrApiKey, async (req, res) => {
 });
 
 // Volumes routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/volumes', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/volumes', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -703,7 +703,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
  * POST /api/environments/:id/remediate-haproxy
  * Trigger full HAProxy remediation for an environment
  */
-router.post('/:id/remediate-haproxy', requireSessionOrApiKey, async (req, res) => {
+router.post('/:id/remediate-haproxy', requirePermission('environments:write'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -772,7 +772,7 @@ router.post('/:id/remediate-haproxy', requireSessionOrApiKey, async (req, res) =
  * GET /api/environments/:id/haproxy-status
  * Get HAProxy configuration status for an environment
  */
-router.get('/:id/haproxy-status', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/haproxy-status', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -866,7 +866,7 @@ router.get('/:id/haproxy-status', requireSessionOrApiKey, async (req, res) => {
  * GET /api/environments/:id/remediation-preview
  * Get preview of what HAProxy remediation would do
  */
-router.get('/:id/remediation-preview', requireSessionOrApiKey, async (req, res) => {
+router.get('/:id/remediation-preview', requirePermission('environments:read'), async (req, res) => {
   try {
     const { id } = req.params;
 

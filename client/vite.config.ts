@@ -12,6 +12,9 @@ export default defineConfig({
       "@mini-infra/types": path.resolve(__dirname, "../lib/dist"),
     },
   },
+  optimizeDeps: {
+    include: ["@mini-infra/types"],
+  },
   server: {
     port: 3005,
     allowedHosts: ["localhost", "mini.dev.blinglabs.tech"],

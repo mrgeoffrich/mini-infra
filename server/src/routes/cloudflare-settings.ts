@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { CloudflareService } from "../services/cloudflare";
 import {
@@ -60,7 +60,7 @@ const validateCloudflareConnectionSchema = z.object({
 /**
  * GET /api/settings/cloudflare - Get current Cloudflare configuration
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -117,7 +117,7 @@ router.get("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/cloudflare - Create or update Cloudflare configuration
  */
-router.post("/", requireSessionOrApiKey, (async (
+router.post("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -220,7 +220,7 @@ router.post("/", requireSessionOrApiKey, (async (
 /**
  * PATCH /api/settings/cloudflare - Partially update Cloudflare configuration
  */
-router.patch("/", requireSessionOrApiKey, (async (
+router.patch("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -317,7 +317,7 @@ router.patch("/", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/settings/cloudflare - Remove Cloudflare configuration
  */
-router.delete("/", requireSessionOrApiKey, (async (
+router.delete("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -373,7 +373,7 @@ router.delete("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/cloudflare/test - Test Cloudflare API connectivity
  */
-router.post("/test", requireSessionOrApiKey, (async (
+router.post("/test", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -470,7 +470,7 @@ router.post("/test", requireSessionOrApiKey, (async (
 /**
  * GET /api/cloudflare/tunnels - List all Cloudflare tunnels
  */
-router.get("/tunnels", requireSessionOrApiKey, (async (
+router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -654,7 +654,7 @@ router.get("/tunnels", requireSessionOrApiKey, (async (
 /**
  * GET /api/cloudflare/tunnels/:id - Get specific tunnel details
  */
-router.get("/tunnels/:id", requireSessionOrApiKey, (async (
+router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -832,7 +832,7 @@ router.get("/tunnels/:id", requireSessionOrApiKey, (async (
 /**
  * GET /api/cloudflare/tunnels/:id/config - Get specific tunnel configuration
  */
-router.get("/tunnels/:id/config", requireSessionOrApiKey, (async (
+router.get("/tunnels/:id/config", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -975,7 +975,7 @@ router.get("/tunnels/:id/config", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/cloudflare/tunnels/:id/hostnames - Add hostname to tunnel
  */
-router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
+router.post("/tunnels/:id/hostnames", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -1159,7 +1159,7 @@ router.post("/tunnels/:id/hostnames", requireSessionOrApiKey, (async (
  */
 router.delete(
   "/tunnels/:id/hostnames/:hostname",
-  requireSessionOrApiKey,
+  requirePermission('settings:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);

@@ -30,6 +30,18 @@ export interface ChatMessageToolUse {
   timestamp: number;
 }
 
+export interface ChatMessageThinking {
+  id: string;
+  role: "thinking";
+  assistantUuid: string;
+  blockIndex: number;
+  content: string;
+  signature?: string;
+  status: "streaming" | "complete";
+  redacted?: boolean;
+  timestamp: number;
+}
+
 export interface ChatMessageError {
   id: string;
   role: "error";
@@ -51,6 +63,7 @@ export type ChatMessage =
   | ChatMessageUser
   | ChatMessageAssistant
   | ChatMessageToolUse
+  | ChatMessageThinking
   | ChatMessageError
   | ChatMessageResult;
 

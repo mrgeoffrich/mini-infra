@@ -1,7 +1,7 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   HAProxyBackendInfo,
@@ -148,7 +148,7 @@ const updateServerSchema = z.object({
  */
 router.get(
   "/",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { environmentId, status, sourceType, name } = req.query;
@@ -201,7 +201,7 @@ router.get(
  */
 router.get(
   "/:backendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { backendName } = req.params;
@@ -265,7 +265,7 @@ router.get(
  */
 router.patch(
   "/:backendName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { backendName } = req.params;
@@ -403,7 +403,7 @@ router.patch(
  */
 router.get(
   "/:backendName/servers",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { backendName } = req.params;
@@ -463,7 +463,7 @@ router.get(
  */
 router.get(
   "/:backendName/servers/:serverName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { backendName, serverName } = req.params;
@@ -536,7 +536,7 @@ router.get(
  */
 router.patch(
   "/:backendName/servers/:serverName",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { backendName, serverName } = req.params;

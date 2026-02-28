@@ -36,10 +36,11 @@ model ApiKey {
   key         String   @unique
   userId      String
   active      Boolean  @default(true)
+  permissions String?  // JSON array of permission scopes, null = full access
   lastUsedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
+
   // Relations
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

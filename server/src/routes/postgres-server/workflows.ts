@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import databaseManagementService from "../../services/postgres-server/database-manager";
 import userManagementService from "../../services/postgres-server/user-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
@@ -32,7 +32,7 @@ const createAppDatabaseSchema = z.object({
  * Quick workflow: Create database + user + grant all permissions
  * Returns connection string for application use
  */
-router.post("/create-app-database", requireSessionOrApiKey, async (req, res) => {
+router.post("/create-app-database", requirePermission('postgres:write'), async (req, res) => {
   let createdDatabase: any = null;
   let createdUser: any = null;
   let createdGrant: any = null;

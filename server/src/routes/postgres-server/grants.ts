@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
-import { requireSessionOrApiKey, getCurrentUserId } from "../../middleware/auth";
+import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 
 const logger = appLogger();
@@ -48,7 +48,7 @@ const updateGrantSchema = z.object({
  * POST /api/postgres-server/grants
  * Create a new grant
  */
-router.post("/", requireSessionOrApiKey, async (req, res) => {
+router.post("/", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const validatedData = createGrantSchema.parse(req.body);
@@ -106,7 +106,7 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/postgres-server/grants/:grantId
  * Get grant details
  */
-router.get("/:grantId", requireSessionOrApiKey, async (req, res) => {
+router.get("/:grantId", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const grantId = req.params.grantId;
@@ -138,7 +138,7 @@ router.get("/:grantId", requireSessionOrApiKey, async (req, res) => {
  * PUT /api/postgres-server/grants/:grantId
  * Update grant permissions
  */
-router.put("/:grantId", requireSessionOrApiKey, async (req, res) => {
+router.put("/:grantId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const grantId = req.params.grantId;
@@ -179,7 +179,7 @@ router.put("/:grantId", requireSessionOrApiKey, async (req, res) => {
  * DELETE /api/postgres-server/grants/:grantId
  * Revoke a grant
  */
-router.delete("/:grantId", requireSessionOrApiKey, async (req, res) => {
+router.delete("/:grantId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
     const grantId = req.params.grantId;

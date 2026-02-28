@@ -4,7 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { BackupExecutorService } from "../services/backup";
 import {
   BackupOperationListResponse,
@@ -125,7 +125,7 @@ function mapBackupOperationToInfo(operation: any) {
 // ====================
 
 
-router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
+router.get("/backups/:databaseId", requirePermission('postgres:read'), async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const { databaseId } = req.params;
@@ -216,7 +216,7 @@ router.get("/backups/:databaseId", requireSessionOrApiKey, async (req, res) => {
 
 router.post(
   "/backups/:databaseId/manual",
-  requireSessionOrApiKey,
+  requirePermission('postgres:write'),
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -346,7 +346,7 @@ router.post(
 
 router.get(
   "/backups/:backupId/status",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -441,7 +441,7 @@ router.get(
 
 router.delete(
   "/backups/:backupId",
-  requireSessionOrApiKey,
+  requirePermission('postgres:write'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;
@@ -539,7 +539,7 @@ router.delete(
 
 router.get(
   "/backups/:backupId/progress",
-  requireSessionOrApiKey,
+  requirePermission('postgres:read'),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;

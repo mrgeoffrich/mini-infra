@@ -11,7 +11,7 @@ import { appLogger } from "../lib/logger-factory";
 import prisma from "../lib/prisma";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import {
   ContainerQueryParams,
   ContainerListResponse,
@@ -107,7 +107,7 @@ const containerQuerySchema = z.object({
 });
 
 
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -314,7 +314,7 @@ router.get("/", requireSessionOrApiKey, (async (
 
 
 // Get PostgreSQL containers (detected by image and env vars)
-router.get("/postgres", requireSessionOrApiKey, (async (
+router.get("/postgres", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -384,7 +384,7 @@ router.get("/postgres", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 // Get managed container IDs (containers linked to PostgreSQL servers)
-router.get("/managed-ids", requireSessionOrApiKey, (async (
+router.get("/managed-ids", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -451,7 +451,7 @@ router.get("/managed-ids", requireSessionOrApiKey, (async (
   }
 }) as RequestHandler);
 
-router.get("/:id", requireSessionOrApiKey, (async (
+router.get("/:id", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -560,7 +560,7 @@ router.get("/:id", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 // Get container environment variables
-router.get("/:id/env", requireSessionOrApiKey, (async (
+router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -672,7 +672,7 @@ router.get("/:id/env", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.get("/stats/cache", requireSessionOrApiKey, (async (
+router.get("/stats/cache", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
 ) => {
@@ -700,7 +700,7 @@ router.get("/stats/cache", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.post("/cache/flush", requireSessionOrApiKey, (async (
+router.post("/cache/flush", requirePermission('containers:write') as RequestHandler, (async (
   req: Request,
   res: Response,
 ) => {
@@ -735,7 +735,7 @@ router.post("/cache/flush", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 
-router.get("/by-deployment/:deploymentId", requireSessionOrApiKey, (async (
+router.get("/by-deployment/:deploymentId", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -853,7 +853,7 @@ const logQuerySchema = z.object({
 });
 
 // Container logs streaming endpoint (Server-Sent Events)
-router.get("/:id/logs/stream", requireSessionOrApiKey, (async (
+router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -1129,7 +1129,7 @@ router.get("/:id/logs/stream", requireSessionOrApiKey, (async (
 }) as RequestHandler);
 
 // Container action endpoint (start/stop/restart)
-router.post("/:id/:action", requireSessionOrApiKey, (async (
+router.post("/:id/:action", requirePermission('containers:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

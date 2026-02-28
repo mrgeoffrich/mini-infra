@@ -74,12 +74,15 @@ export interface GoogleOAuthProfile {
 // API Key Types
 // ====================
 
+import type { PermissionScope } from "./permissions";
+
 export interface ApiKey {
   id: string;
   name: string;
   key: string;
   userId: string;
   active: boolean;
+  permissions: PermissionScope[] | null; // null = full access
   lastUsedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -90,6 +93,7 @@ export interface ApiKeyInfo {
   id: string;
   name: string;
   active: boolean;
+  permissions: PermissionScope[] | null; // null = full access
   lastUsedAt: string | null; // ISO string
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
@@ -97,6 +101,7 @@ export interface ApiKeyInfo {
 
 export interface CreateApiKeyRequest {
   name: string;
+  permissions?: PermissionScope[] | null; // null or omitted = full access
 }
 
 export interface CreateApiKeyResponse extends ApiKeyInfo {
@@ -108,6 +113,7 @@ export interface ApiKeyValidationResult {
   userId?: string;
   keyId?: string;
   user?: JWTUser;
+  permissions?: PermissionScope[] | null; // null = full access
 }
 
 // ====================
@@ -206,6 +212,7 @@ declare module "express-serve-static-core" {
       id: string;
       userId: string;
       user: JWTUser;
+      permissions: PermissionScope[] | null; // null = full access
     };
     logout(done: (err: any) => void): void;
   }

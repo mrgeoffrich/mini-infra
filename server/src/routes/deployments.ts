@@ -6,7 +6,7 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { DeploymentConfigurationManager } from "../services/deployment-config";
 import { DeploymentOrchestrator } from "../services/deployment-orchestrator";
 import DockerService from "../services/docker";
@@ -270,7 +270,7 @@ function serializeDeployment(deployment: any): DeploymentInfo {
 
 router.get(
   "/configs",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -354,7 +354,7 @@ router.get(
 
 router.post(
   "/configs",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -455,7 +455,7 @@ router.post(
 
 router.get(
   "/configs/:id",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -498,7 +498,7 @@ router.get(
 
 router.put(
   "/configs/:id",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -566,7 +566,7 @@ router.put(
 
 router.delete(
   "/configs/:id",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -686,7 +686,7 @@ router.delete(
 
 router.post(
   "/trigger",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -764,7 +764,7 @@ router.post(
 
 router.get(
   "/:id/status",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -866,7 +866,7 @@ router.get(
 
 router.post(
   "/:id/rollback",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -930,7 +930,7 @@ router.post(
 
 router.get(
   "/history",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -1026,7 +1026,7 @@ router.get(
 
 router.post(
   "/configs/validate-hostname",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -1090,7 +1090,7 @@ router.post(
 
 router.get(
   "/:id/containers",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -1156,7 +1156,7 @@ router.get(
 
 router.get(
   "/removal/:removalId/status",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:read') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -1236,7 +1236,7 @@ router.get(
 
 router.delete(
   "/configs/:id/remove-containers",
-  requireSessionOrApiKey as RequestHandler,
+  requirePermission('deployments:write') as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);

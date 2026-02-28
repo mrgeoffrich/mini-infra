@@ -12,7 +12,7 @@
 import express from "express";
 import { z } from "zod";
 import { tlsLogger } from "../lib/logger-factory";
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
@@ -94,7 +94,7 @@ async function initializeLifecycleManager(): Promise<CertificateLifecycleManager
  * POST /api/tls/certificates
  * Issue a new TLS certificate
  */
-router.post("/", requireSessionOrApiKey, async (req, res) => {
+router.post("/", requirePermission('tls:write'), async (req, res) => {
   try {
     const user = getAuthenticatedUser(req);
     const userId = user?.id || "unknown";
@@ -141,7 +141,7 @@ router.post("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/tls/certificates
  * List all certificates
  */
-router.get("/", requireSessionOrApiKey, async (req, res) => {
+router.get("/", requirePermission('tls:read'), async (req, res) => {
   try {
     const certificates = await prisma.tlsCertificate.findMany({
       orderBy: { createdAt: "desc" },
@@ -175,7 +175,7 @@ router.get("/", requireSessionOrApiKey, async (req, res) => {
  * GET /api/tls/certificates/:id
  * Get certificate details
  */
-router.get("/:id", requireSessionOrApiKey, async (req, res) => {
+router.get("/:id", requirePermission('tls:read'), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -217,7 +217,7 @@ router.get("/:id", requireSessionOrApiKey, async (req, res) => {
  * POST /api/tls/certificates/:id/renew
  * Manually renew a certificate
  */
-router.post("/:id/renew", requireSessionOrApiKey, async (req, res) => {
+router.post("/:id/renew", requirePermission('tls:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const user = getAuthenticatedUser(req);
@@ -250,7 +250,7 @@ router.post("/:id/renew", requireSessionOrApiKey, async (req, res) => {
  * DELETE /api/tls/certificates/:id
  * Delete a certificate
  */
-router.delete("/:id", requireSessionOrApiKey, async (req, res) => {
+router.delete("/:id", requirePermission('tls:write'), async (req, res) => {
   try {
     const { id } = req.params;
     const user = getAuthenticatedUser(req);

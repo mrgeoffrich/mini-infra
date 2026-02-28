@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { requireSessionOrApiKey } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
 
@@ -53,7 +53,7 @@ const historyQuerySchema = z.object({
 
 router.get(
   "/cloudflare",
-  requireSessionOrApiKey,
+  requirePermission('settings:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const cacheKey = "cloudflare-connectivity-latest";
@@ -133,7 +133,7 @@ router.get(
 
 router.get(
   "/cloudflare/history",
-  requireSessionOrApiKey,
+  requirePermission('settings:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Validate query parameters

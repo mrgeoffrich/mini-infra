@@ -32,4 +32,6 @@ export {
   getCurrentUser
 } from '../lib/api-key-middleware';
 
+export { requirePermission } from '../lib/permission-middleware';
+
 export type { AuthErrorType, AuthErrorResponse } from '../lib/auth-middleware';

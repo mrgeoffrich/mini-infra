@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requireSessionOrApiKey, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubAppService } from "../services/github-app-service";
 
 const router = express.Router();
@@ -25,7 +25,7 @@ const setupCompleteSchema = z.object({
 /**
  * GET /api/settings/github-app - Get current GitHub App configuration status
  */
-router.get("/", requireSessionOrApiKey, (async (
+router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -75,7 +75,7 @@ router.get("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/manifest - Generate manifest for GitHub App setup flow
  */
-router.post("/manifest", requireSessionOrApiKey, (async (
+router.post("/manifest", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -143,7 +143,7 @@ router.post("/manifest", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/setup/complete - Complete setup after GitHub redirect
  */
-router.post("/setup/complete", requireSessionOrApiKey, (async (
+router.post("/setup/complete", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -213,7 +213,7 @@ router.post("/setup/complete", requireSessionOrApiKey, (async (
  * POST /api/settings/github-app/refresh-installation - Re-check for app installations
  * Called after the user installs the app on their GitHub account/org.
  */
-router.post("/refresh-installation", requireSessionOrApiKey, (async (
+router.post("/refresh-installation", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -264,7 +264,7 @@ router.post("/refresh-installation", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/test - Test GitHub App connectivity
  */
-router.post("/test", requireSessionOrApiKey, (async (
+router.post("/test", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -321,7 +321,7 @@ router.post("/test", requireSessionOrApiKey, (async (
 /**
  * DELETE /api/settings/github-app - Remove GitHub App configuration
  */
-router.delete("/", requireSessionOrApiKey, (async (
+router.delete("/", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -372,7 +372,7 @@ router.delete("/", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/registry-token - Create/update GHCR registry credential
  */
-router.post("/registry-token", requireSessionOrApiKey, (async (
+router.post("/registry-token", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -424,7 +424,7 @@ router.post("/registry-token", requireSessionOrApiKey, (async (
  * GET /api/settings/github-app/oauth/authorize - Start OAuth user authorization flow
  * Returns a URL to redirect the user to GitHub for authorization.
  */
-router.get("/oauth/authorize", requireSessionOrApiKey, (async (
+router.get("/oauth/authorize", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -466,7 +466,7 @@ const oauthCallbackSchema = z.object({
   code: z.string().min(1, "Code is required"),
 });
 
-router.post("/oauth/callback", requireSessionOrApiKey, (async (
+router.post("/oauth/callback", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -514,7 +514,7 @@ const patSchema = z.object({
   token: z.string().min(1, "Token is required"),
 });
 
-router.post("/oauth/pat", requireSessionOrApiKey, (async (
+router.post("/oauth/pat", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -587,7 +587,7 @@ router.post("/oauth/pat", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/oauth/revoke - Revoke OAuth user token
  */
-router.post("/oauth/revoke", requireSessionOrApiKey, (async (
+router.post("/oauth/revoke", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -631,7 +631,7 @@ const agentTokenSchema = z.object({
   accessLevel: z.enum(["read_only", "full_access"]),
 });
 
-router.post("/agent/token", requireSessionOrApiKey, (async (
+router.post("/agent/token", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -695,7 +695,7 @@ router.post("/agent/token", requireSessionOrApiKey, (async (
 /**
  * POST /api/settings/github-app/agent/revoke - Revoke AI assistant GitHub token
  */
-router.post("/agent/revoke", requireSessionOrApiKey, (async (
+router.post("/agent/revoke", requirePermission('settings:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
