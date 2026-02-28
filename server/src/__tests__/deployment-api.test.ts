@@ -93,6 +93,9 @@ vi.mock("../lib/prisma", () => ({
       delete: vi.fn(),
       deleteMany: vi.fn(),
     },
+    hAProxyFrontend: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   },
 }));
 
@@ -514,7 +517,11 @@ describe("Deployment API Integration Tests", () => {
 
     describe("DELETE /api/deployments/configs/:id", () => {
       it("should delete deployment configuration successfully", async () => {
-        mockDeploymentConfigurationManager.deleteDeploymentConfig.mockResolvedValue(undefined);
+        mockDeploymentConfigurationManager.getDeploymentConfig.mockResolvedValue({
+          id: "config-123",
+          applicationName: "test-app",
+          isActive: true,
+        });
 
         const response = await supertest(app)
           .delete("/api/deployments/configs/config-123")
@@ -525,15 +532,15 @@ describe("Deployment API Integration Tests", () => {
         expect(response.body.success).toBe(true);
         expect(response.body.message).toContain("deleted successfully");
 
-        expect(mockDeploymentConfigurationManager.deleteDeploymentConfig).toHaveBeenCalledWith(
-          "config-123"
+        // Route uses prisma.deploymentConfiguration.delete() directly
+        const mockPrisma = prisma as any;
+        expect(mockPrisma.deploymentConfiguration.delete).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: "config-123" } })
         );
       });
 
       it("should return 404 for non-existent configuration", async () => {
-        mockDeploymentConfigurationManager.deleteDeploymentConfig.mockRejectedValue(
-          new Error("Deployment configuration not found or access denied")
-        );
+        mockDeploymentConfigurationManager.getDeploymentConfig.mockResolvedValue(null);
 
         const response = await supertest(app)
           .delete("/api/deployments/configs/non-existent")
@@ -652,10 +659,10 @@ describe("Deployment API Integration Tests", () => {
         const mockConfig = {
           id: "config-123",
           applicationName: "test-app",
-          dockerImage: "nginx:1.20", // Already has tag
           isActive: true,
           ...baseConfig,
-          dockerImage: "nginx:1.20", // Override to ensure correct image
+          dockerImage: "nginx",
+          dockerTag: "1.20",
         };
 
         mockDeploymentConfigurationManager.getDeploymentConfigByName.mockResolvedValue(mockConfig);
@@ -670,13 +677,13 @@ describe("Deployment API Integration Tests", () => {
           .set("x-user-id", testUserId)
           .send({
             applicationName: "test-app",
-            // No tag provided
+            // No tag provided - should use dockerTag from config
           })
           .expect(202);
 
         expect(mockOrchestrator.triggerDeployment).toHaveBeenCalledWith(
           expect.objectContaining({
-            dockerImage: "nginx:1.20", // Should use image from config
+            dockerImage: "nginx:1.20", // Should use image:tag from config
           })
         );
       });
@@ -714,6 +721,7 @@ describe("Deployment API Integration Tests", () => {
               errorMessage: null,
             },
           ],
+          containers: [],
         };
 
         // Mock the prisma query
@@ -736,7 +744,6 @@ describe("Deployment API Integration Tests", () => {
       it("should return 404 for non-existent deployment", async () => {
         const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(null);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .get("/api/deployments/non-existent/status")
@@ -769,11 +776,11 @@ describe("Deployment API Integration Tests", () => {
             errorMessage: null,
             ...step,
           })),
+          containers: [],
         };
 
         const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -870,6 +877,7 @@ describe("Deployment API Integration Tests", () => {
               applicationName: "test-app-2",
               dockerImage: "redis:latest",
             },
+            containers: [],
           },
           {
             id: "deployment-1",
@@ -880,6 +888,7 @@ describe("Deployment API Integration Tests", () => {
               applicationName: "test-app-1",
               dockerImage: "nginx:latest",
             },
+            containers: [],
           },
         ];
 

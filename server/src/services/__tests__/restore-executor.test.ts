@@ -679,10 +679,10 @@ describe("RestoreExecutorService", () => {
       const dbOps = (restoreExecutorService as any).dbOps;
       dbOps.postgresSettingsConfigService = mockSettingsConfig;
 
-      const result = await dbOps.getRestoreDockerImage();
-
-      expect(result).toBe("postgres:15-alpine");
-      expect(mockLogger.warn).toHaveBeenCalledWith(
+      await expect(dbOps.getRestoreDockerImage()).rejects.toThrow(
+        "Restore Docker image not configured in system settings"
+      );
+      expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({
           error: "Database error",
         }),

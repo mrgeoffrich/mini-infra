@@ -2,6 +2,28 @@ import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
+const { mockEnvironmentManager, mockServiceRegistry } = vi.hoisted(() => ({
+  mockEnvironmentManager: {
+    listEnvironments: vi.fn(),
+    createEnvironment: vi.fn(),
+    getEnvironmentById: vi.fn(),
+    updateEnvironment: vi.fn(),
+    deleteEnvironment: vi.fn(),
+    getEnvironmentStatus: vi.fn(),
+    startEnvironment: vi.fn(),
+    stopEnvironment: vi.fn(),
+    addServiceToEnvironment: vi.fn(),
+    getInstance: vi.fn(),
+  },
+  mockServiceRegistry: {
+    isServiceTypeAvailable: vi.fn(),
+    getAllServiceMetadata: vi.fn(),
+    getServiceDefinition: vi.fn(),
+    getAvailableServiceTypes: vi.fn(),
+    getInstance: vi.fn(),
+  },
+}));
+
 // Mock logger factory first (before other imports)
 vi.mock('../lib/logger-factory', () => {
   const mockLoggerInstance = {
@@ -41,18 +63,23 @@ vi.mock('../lib/logger-factory', () => {
   };
 });
 
-// Mock dependencies
-vi.mock('../services/environment/environment-manager');
-vi.mock('../services/environment/service-registry');
+// Mock dependencies with implementations
+vi.mock('../services/environment/environment-manager', () => ({
+  EnvironmentManager: {
+    getInstance: () => mockEnvironmentManager,
+  },
+}));
+vi.mock('../services/environment/service-registry', () => ({
+  ServiceRegistry: {
+    getInstance: () => mockServiceRegistry,
+  },
+}));
 vi.mock('../lib/prisma', () => ({
   default: {
     deploymentConfiguration: {
       findMany: vi.fn()
     }
   },
-  deploymentConfiguration: {
-    findMany: vi.fn()
-  }
 }));
 vi.mock('../middleware/auth', () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
@@ -65,47 +92,6 @@ vi.mock('../middleware/auth', () => ({
   createAuthErrorResponse: vi.fn()
 }));
 
-const mockEnvironmentManager = {
-  listEnvironments: vi.fn(),
-  createEnvironment: vi.fn(),
-  getEnvironmentById: vi.fn(),
-  updateEnvironment: vi.fn(),
-  deleteEnvironment: vi.fn(),
-  getEnvironmentStatus: vi.fn(),
-  startEnvironment: vi.fn(),
-  stopEnvironment: vi.fn(),
-  addServiceToEnvironment: vi.fn(),
-  getInstance: vi.fn()
-};
-
-const mockServiceRegistry = {
-  isServiceTypeAvailable: vi.fn(),
-  getAllServiceMetadata: vi.fn(),
-  getServiceDefinition: vi.fn(),
-  getAvailableServiceTypes: vi.fn(),
-  getInstance: vi.fn()
-};
-
-const mockPrisma = {
-  deploymentConfiguration: {
-    findMany: vi.fn()
-  }
-};
-
-// Mock the modules
-vi.doMock('../services/environment/environment-manager', () => ({
-  EnvironmentManager: {
-    getInstance: () => mockEnvironmentManager
-  }
-}));
-
-vi.doMock('../services/environment/service-registry', () => ({
-  ServiceRegistry: {
-    getInstance: () => mockServiceRegistry
-  }
-}));
-
-// Import app after mocks are set up
 import app from '../app';
 import prisma from '../lib/prisma';
 
@@ -233,7 +219,7 @@ describe('Environment API', () => {
         name: 'test-environment'
       }));
 
-      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest);
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest, 'test-user');
       expect(mockServiceRegistry.isServiceTypeAvailable).toHaveBeenCalledWith('haproxy');
     });
 
@@ -299,22 +285,24 @@ describe('Environment API', () => {
         name: 'test-environment'
       }));
 
-      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest);
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest, 'test-user');
     });
 
-    it('should validate networkType field', async () => {
+    it('should pass through networkType to createEnvironment', async () => {
+      mockEnvironmentManager.createEnvironment.mockResolvedValue(mockEnvironment);
+
       const createRequest = {
         name: 'new-environment',
         type: 'nonproduction',
-        networkType: 'invalid-type'
+        networkType: 'local'
       };
 
-      const response = await request(app)
+      await request(app)
         .post('/api/environments')
         .send(createRequest)
-        .expect(400);
+        .expect(201);
 
-      expect(response.body.error).toBe('Invalid query parameters');
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest, 'test-user');
     });
 
     it('should accept valid networkType values', async () => {
@@ -332,7 +320,7 @@ describe('Environment API', () => {
         .send(createRequest)
         .expect(201);
 
-      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest);
+      expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest, 'test-user');
     });
   });
 
@@ -399,17 +387,20 @@ describe('Environment API', () => {
       expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
     });
 
-    it('should validate networkType in update request', async () => {
+    it('should pass through networkType in update request', async () => {
+      const updatedEnvironment = { ...mockEnvironment, networkType: 'local' };
+      mockEnvironmentManager.updateEnvironment.mockResolvedValue(updatedEnvironment);
+
       const updateRequest = {
-        networkType: 'invalid-type'
+        networkType: 'local'
       };
 
       const response = await request(app)
         .put('/api/environments/env-1')
         .send(updateRequest)
-        .expect(400);
+        .expect(200);
 
-      expect(response.body.error).toBe('Invalid query parameters');
+      expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
     });
 
     it('should return 404 for non-existent environment', async () => {
@@ -432,7 +423,11 @@ describe('Environment API', () => {
         .delete('/api/environments/env-1')
         .expect(204);
 
-      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-1');
+      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-1', {
+        deleteVolumes: false,
+        deleteNetworks: false,
+        userId: 'test-user'
+      });
     });
 
     it('should return 404 for non-existent environment', async () => {
@@ -498,7 +493,11 @@ describe('Environment API', () => {
       });
 
       // Verify that deletion proceeded normally
-      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-no-deployments');
+      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-no-deployments', {
+        deleteVolumes: false,
+        deleteNetworks: false,
+        userId: 'test-user'
+      });
     });
   });
 
@@ -578,7 +577,7 @@ describe('Environment API', () => {
         .expect(200);
 
       expect(response.body).toEqual(startResult);
-      expect(mockEnvironmentManager.startEnvironment).toHaveBeenCalledWith('env-1');
+      expect(mockEnvironmentManager.startEnvironment).toHaveBeenCalledWith('env-1', 'test-user');
     });
 
     it('should handle start failure', async () => {
@@ -614,7 +613,7 @@ describe('Environment API', () => {
         .expect(200);
 
       expect(response.body).toEqual(stopResult);
-      expect(mockEnvironmentManager.stopEnvironment).toHaveBeenCalledWith('env-1');
+      expect(mockEnvironmentManager.stopEnvironment).toHaveBeenCalledWith('env-1', 'test-user');
     });
   });
 

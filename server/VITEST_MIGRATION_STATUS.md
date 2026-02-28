@@ -4,19 +4,12 @@ Migration from Jest 30 + ts-jest to Vitest 4.
 
 ## Current Results
 
-- **Test Files**: 42/49 passing
-- **Individual Tests**: 1187/1242 passing (1 skipped)
+- **Test Files**: 49/49 passing
+- **Individual Tests**: 1241/1242 passing (1 skipped)
 
-## Remaining Failures (7 files)
+## Migration Complete
 
-| File | Failed | Passed | Total |
-|------|--------|--------|-------|
-| `src/__tests__/deployment-api.test.ts` | 6 | 29 | 35 |
-| `src/__tests__/environment-api.test.ts` | 30 | 2 | 32 |
-| `src/__tests__/registry-credentials-api.test.ts` | 13 | 3 | 16 |
-| `src/__tests__/services/tls/acme-client-manager.test.ts` | 1 | 8 | 9 |
-| `src/services/__tests__/configuration-factory.test.ts` | 2 | 24 | 26 |
-| `src/services/__tests__/restore-executor.test.ts` | 1 | 49 | 50 |
+All test files now pass successfully.
 
 ## What Was Done
 
@@ -27,3 +20,7 @@ Migration from Jest 30 + ts-jest to Vitest 4.
 5. **Constructor mocks**: Changed arrow functions to regular functions for Vitest 4 compatibility
 6. **Default export wrapping**: Added `{ default: ... }` to vi.mock() for modules with default exports (prisma, dockerode, node-cache, passport, etc.)
 7. **Test assertion updates**: Updated test expectations to match current source code signatures (removed stale userId parameters, updated API URLs, etc.)
+8. **vi.doMock → vi.mock**: Replaced vi.doMock (which only works with dynamic imports) with vi.mock + vi.hoisted() for static import mocking (environment-api)
+9. **Proxy-based prisma mock**: Used Proxy pattern for prisma mock in registry-credentials-api to defer access until testPrisma is initialized in beforeAll
+10. **Mock data updates**: Added missing fields to mock objects (containers arrays for deployment status/history, hAProxyFrontend model for deployment delete)
+11. **Source code alignment**: Updated test assertions to match current route signatures (userId parameters, deleteEnvironment options object, etc.)

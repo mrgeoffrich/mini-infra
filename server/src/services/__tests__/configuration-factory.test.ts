@@ -74,6 +74,7 @@ describe("ConfigurationServiceFactory", () => {
         "cloudflare",
         "azure",
         "postgres",
+        "tls",
       ]);
     });
   });
@@ -136,7 +137,7 @@ describe("ConfigurationServiceFactory", () => {
       const MockedDockerConfigService = DockerConfigService as MockedClass<
         typeof DockerConfigService
       >;
-      MockedDockerConfigService.mockImplementationOnce(() => {
+      MockedDockerConfigService.mockImplementationOnce(function() {
         throw new Error("Service creation failed");
       });
 
