@@ -10,13 +10,9 @@ import {
 
 const capabilities = [
   "Access all product documentation for accurate, context-aware answers",
-  "Call any API endpoint to query live application state",
+  "Access to all this applications capabilities, equivalent to this applications UI",
   "Interact with GitHub via the gh CLI (repos, issues, pull requests)",
   "View and manage Docker containers (start, stop, restart, inspect, logs)",
-  "Check deployment status and trigger new deployments",
-  "Monitor PostgreSQL backups and database health",
-  "Inspect HAProxy load balancer and routing configuration",
-  "Check Cloudflare tunnel and connectivity status",
   "Guide you through the UI with visual highlights",
 ];
 
@@ -39,10 +35,15 @@ export function AgentChatWelcome() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer"
+        className="mt-1 flex flex-col items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-5 py-3 text-center transition-colors hover:border-primary/40 hover:bg-primary/10 cursor-pointer"
       >
-        <IconHelpCircle className="size-3.5" />
-        What can the assistant help me with?
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+          <IconHelpCircle className="size-4" />
+          What can the assistant help me with?
+        </span>
+        <span className="text-xs text-muted-foreground">
+          See what the agent can do and how it can help you
+        </span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
