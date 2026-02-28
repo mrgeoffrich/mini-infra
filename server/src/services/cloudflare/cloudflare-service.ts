@@ -7,7 +7,6 @@ import {
 import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
-import { createCloudflareSpan } from "../../lib/http-instrumentation";
 import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
 
 /**
@@ -564,25 +563,16 @@ export class CloudflareService extends ConfigurationService {
         apiToken,
       });
 
-      // Fetch tunnels for the account with instrumentation
-      const tunnelsResponse = await createCloudflareSpan(
-        "list_tunnels",
-        async () => {
-          return (await Promise.race([
-            cf.zeroTrust.tunnels.list({ account_id: accountId }),
-            new Promise((_, reject) =>
-              setTimeout(
-                () => reject(new Error("Tunnel API request timeout")),
-                CloudflareService.TIMEOUT_MS,
-              ),
-            ),
-          ])) as any;
-        },
-        {
-          "cloudflare.account.id": accountId,
-          "cloudflare.operation.type": "list_tunnels",
-        }
-      );
+      // Fetch tunnels for the account
+      const tunnelsResponse = (await Promise.race([
+        cf.zeroTrust.tunnels.list({ account_id: accountId }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Tunnel API request timeout")),
+            CloudflareService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as any;
 
       const tunnels = tunnelsResponse.result || [];
 

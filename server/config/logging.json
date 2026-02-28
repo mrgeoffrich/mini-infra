@@ -243,11 +243,6 @@
       "level": "silent"
     }
   },
-  "openobserve": {
-    "batchSize": 1000,
-    "timeThreshold": 5000,
-    "enabled": true
-  },
   "redactionPaths": [
     "password",
     "token",

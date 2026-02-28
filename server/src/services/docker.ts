@@ -6,7 +6,6 @@ import { DockerContainerInfo } from "@mini-infra/types/containers";
 import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
-import { createDockerSpan, createContainerSpan } from "../lib/docker-instrumentation";
 
 class DockerService {
   private static instance: DockerService;
@@ -399,39 +398,30 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createDockerSpan(
-      "list_containers",
-      async () => {
-        const cacheKey = `containers_${all}`;
-        const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
+    const cacheKey = `containers_${all}`;
+    const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
 
-        if (cached) {
-          servicesLogger().debug("Returning cached container list");
-          return cached;
-        }
+    if (cached) {
+      servicesLogger().debug("Returning cached container list");
+      return cached;
+    }
 
-        const containers = await this.raceWithTimeout(
-          this.docker.listContainers({ all }),
-          5000,
-          "Docker API timeout",
-        );
-
-        const containerInfos = await Promise.all(
-          containers.map((container) => this.transformContainerData(container)),
-        );
-
-        this.cache.set(cacheKey, containerInfos);
-        servicesLogger().info(
-          `Retrieved ${containerInfos.length} containers from Docker API`,
-        );
-
-        return containerInfos;
-      },
-      {
-        "docker.list.all": all,
-        "docker.cache.hit": false,
-      }
+    const containers = await this.raceWithTimeout(
+      this.docker.listContainers({ all }),
+      5000,
+      "Docker API timeout",
     );
+
+    const containerInfos = await Promise.all(
+      containers.map((container) => this.transformContainerData(container)),
+    );
+
+    this.cache.set(cacheKey, containerInfos);
+    servicesLogger().info(
+      `Retrieved ${containerInfos.length} containers from Docker API`,
+    );
+
+    return containerInfos;
   }
 
   public async getContainer(id: string): Promise<DockerContainerInfo | null> {
@@ -439,33 +429,26 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createContainerSpan(
-      "inspect",
-      id,
-      async () => {
-        const cacheKey = `container_${id}`;
-        const cached = this.cache.get<DockerContainerInfo>(cacheKey);
+    return (async () => {
+      const cacheKey = `container_${id}`;
+      const cached = this.cache.get<DockerContainerInfo>(cacheKey);
 
-        if (cached) {
-          return cached;
-        }
-
-        const container = this.docker.getContainer(id);
-        const data = await this.raceWithTimeout(
-          container.inspect(),
-          5000,
-          "Docker API timeout",
-        );
-
-        const containerInfo = this.transformDetailedContainerData(data);
-        this.cache.set(cacheKey, containerInfo);
-
-        return containerInfo;
-      },
-      {
-        "docker.cache.hit": false,
+      if (cached) {
+        return cached;
       }
-    ).catch((error) => {
+
+      const container = this.docker.getContainer(id);
+      const data = await this.raceWithTimeout(
+        container.inspect(),
+        5000,
+        "Docker API timeout",
+      );
+
+      const containerInfo = this.transformDetailedContainerData(data);
+      this.cache.set(cacheKey, containerInfo);
+
+      return containerInfo;
+    })().catch((error) => {
       if ((error as any).statusCode === 404) {
         return null;
       }
@@ -516,45 +499,38 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createContainerSpan(
-      "inspect_env",
-      id,
-      async () => {
-        const container = this.docker.getContainer(id);
-        const data = await this.raceWithTimeout(
-          container.inspect(),
-          5000,
-          "Docker API timeout",
-        );
+    return (async () => {
+      const container = this.docker.getContainer(id);
+      const data = await this.raceWithTimeout(
+        container.inspect(),
+        5000,
+        "Docker API timeout",
+      );
 
-        // Extract environment variables from Config.Env
-        // Format: ["KEY1=value1", "KEY2=value2", ...]
-        const envArray: string[] = data.Config?.Env || [];
-        const envVars: Record<string, string> = {};
+      // Extract environment variables from Config.Env
+      // Format: ["KEY1=value1", "KEY2=value2", ...]
+      const envArray: string[] = data.Config?.Env || [];
+      const envVars: Record<string, string> = {};
 
-        for (const envEntry of envArray) {
-          const separatorIndex = envEntry.indexOf('=');
-          if (separatorIndex > 0) {
-            const key = envEntry.substring(0, separatorIndex);
-            const value = envEntry.substring(separatorIndex + 1);
-            envVars[key] = value;
-          }
+      for (const envEntry of envArray) {
+        const separatorIndex = envEntry.indexOf('=');
+        if (separatorIndex > 0) {
+          const key = envEntry.substring(0, separatorIndex);
+          const value = envEntry.substring(separatorIndex + 1);
+          envVars[key] = value;
         }
-
-        servicesLogger().debug(
-          {
-            containerId: id,
-            envVarCount: Object.keys(envVars).length,
-          },
-          "Extracted container environment variables"
-        );
-
-        return envVars;
-      },
-      {
-        "docker.cache.hit": false,
       }
-    ).catch((error) => {
+
+      servicesLogger().debug(
+        {
+          containerId: id,
+          envVarCount: Object.keys(envVars).length,
+        },
+        "Extracted container environment variables"
+      );
+
+      return envVars;
+    })().catch((error) => {
       if ((error as any).statusCode === 404) {
         return null;
       }
@@ -774,39 +750,33 @@ class DockerService {
    * This method can be called when Docker settings are updated
    */
   public async refreshConnection(): Promise<void> {
-    return createDockerSpan(
-      "refresh_connection",
-      async () => {
-        servicesLogger().info(
-          "Refreshing Docker connection with updated settings...",
-        );
+    return (async () => {
+      servicesLogger().info(
+        "Refreshing Docker connection with updated settings...",
+      );
 
-        // Stop current reconnection attempts
-        if (this.reconnectInterval) {
-          clearInterval(this.reconnectInterval);
-          this.reconnectInterval = null;
-        }
-
-        // Ensure Docker configuration service is initialized
-        if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
-          this.dockerConfigService = new DockerConfigService(prisma);
-        }
-
-        // Recreate Docker client with updated settings
-        await this.createDockerClientFromSettings();
-
-        // Attempt new connection
-        await this.connect(true);
-
-        // Setup event listeners for new connection
-        this.setupEventListeners();
-
-        servicesLogger().info("Docker connection refreshed successfully");
-      },
-      {
-        "docker.connection.type": "refresh",
+      // Stop current reconnection attempts
+      if (this.reconnectInterval) {
+        clearInterval(this.reconnectInterval);
+        this.reconnectInterval = null;
       }
-    ).catch((error) => {
+
+      // Ensure Docker configuration service is initialized
+      if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
+        this.dockerConfigService = new DockerConfigService(prisma);
+      }
+
+      // Recreate Docker client with updated settings
+      await this.createDockerClientFromSettings();
+
+      // Attempt new connection
+      await this.connect(true);
+
+      // Setup event listeners for new connection
+      this.setupEventListeners();
+
+      servicesLogger().info("Docker connection refreshed successfully");
+    })().catch((error) => {
       servicesLogger().error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
@@ -829,41 +799,33 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createDockerSpan(
-      "list_networks",
-      async () => {
-        const cacheKey = "networks";
-        const cached = this.cache.get<DockerNetwork[]>(cacheKey);
+    const cacheKey = "networks";
+    const cached = this.cache.get<DockerNetwork[]>(cacheKey);
 
-        if (cached) {
-          servicesLogger().debug("Returning cached network list");
-          return cached;
-        }
+    if (cached) {
+      servicesLogger().debug("Returning cached network list");
+      return cached;
+    }
 
-        const networks = await this.raceWithTimeout(
-          this.docker.listNetworks(),
-          5000,
-          "Docker API timeout while listing networks",
-        );
-
-        // Get all containers to determine which are using each network
-        const containers = await this.docker.listContainers({ all: true });
-
-        const networkInfos = networks.map((network) =>
-          this.transformNetworkData(network, containers),
-        );
-
-        this.cache.set(cacheKey, networkInfos);
-        servicesLogger().info(
-          `Retrieved ${networkInfos.length} networks from Docker API`,
-        );
-
-        return networkInfos;
-      },
-      {
-        "docker.cache.hit": false,
-      }
+    const networks = await this.raceWithTimeout(
+      this.docker.listNetworks(),
+      5000,
+      "Docker API timeout while listing networks",
     );
+
+    // Get all containers to determine which are using each network
+    const containers = await this.docker.listContainers({ all: true });
+
+    const networkInfos = networks.map((network) =>
+      this.transformNetworkData(network, containers),
+    );
+
+    this.cache.set(cacheKey, networkInfos);
+    servicesLogger().info(
+      `Retrieved ${networkInfos.length} networks from Docker API`,
+    );
+
+    return networkInfos;
   }
 
   /**
@@ -874,41 +836,33 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createDockerSpan(
-      "list_volumes",
-      async () => {
-        const cacheKey = "volumes";
-        const cached = this.cache.get<DockerVolume[]>(cacheKey);
+    const cacheKey = "volumes";
+    const cached = this.cache.get<DockerVolume[]>(cacheKey);
 
-        if (cached) {
-          servicesLogger().debug("Returning cached volume list");
-          return cached;
-        }
+    if (cached) {
+      servicesLogger().debug("Returning cached volume list");
+      return cached;
+    }
 
-        const volumeData = await this.raceWithTimeout(
-          this.docker.listVolumes(),
-          5000,
-          "Docker API timeout while listing volumes",
-        );
-
-        // Get all containers to determine which volumes are in use
-        const containers = await this.docker.listContainers({ all: true });
-
-        const volumeInfos = (volumeData.Volumes || []).map((volume) =>
-          this.transformVolumeData(volume, containers),
-        );
-
-        this.cache.set(cacheKey, volumeInfos);
-        servicesLogger().info(
-          `Retrieved ${volumeInfos.length} volumes from Docker API`,
-        );
-
-        return volumeInfos;
-      },
-      {
-        "docker.cache.hit": false,
-      }
+    const volumeData = await this.raceWithTimeout(
+      this.docker.listVolumes(),
+      5000,
+      "Docker API timeout while listing volumes",
     );
+
+    // Get all containers to determine which volumes are in use
+    const containers = await this.docker.listContainers({ all: true });
+
+    const volumeInfos = (volumeData.Volumes || []).map((volume) =>
+      this.transformVolumeData(volume, containers),
+    );
+
+    this.cache.set(cacheKey, volumeInfos);
+    servicesLogger().info(
+      `Retrieved ${volumeInfos.length} volumes from Docker API`,
+    );
+
+    return volumeInfos;
   }
 
   /**
@@ -920,43 +874,35 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createDockerSpan(
-      "remove_network",
-      async () => {
-        // First, inspect the network to check if it has containers
-        const network = this.docker.getNetwork(id);
-        const networkInfo = await this.raceWithTimeout(
-          network.inspect(),
-          5000,
-          "Docker API timeout while inspecting network",
-        );
+    // First, inspect the network to check if it has containers
+    const network = this.docker.getNetwork(id);
+    const networkInfo = await this.raceWithTimeout(
+      network.inspect(),
+      5000,
+      "Docker API timeout while inspecting network",
+    );
 
-        // Check if network has containers
-        const containerCount = Object.keys(networkInfo.Containers || {}).length;
-        if (containerCount > 0) {
-          throw new Error(
-            `Cannot remove network ${networkInfo.Name}: ${containerCount} container(s) are connected`,
-          );
-        }
+    // Check if network has containers
+    const containerCount = Object.keys(networkInfo.Containers || {}).length;
+    if (containerCount > 0) {
+      throw new Error(
+        `Cannot remove network ${networkInfo.Name}: ${containerCount} container(s) are connected`,
+      );
+    }
 
-        // Remove the network
-        await this.raceWithTimeout(
-          network.remove(),
-          5000,
-          "Docker API timeout while removing network",
-        );
+    // Remove the network
+    await this.raceWithTimeout(
+      network.remove(),
+      5000,
+      "Docker API timeout while removing network",
+    );
 
-        // Invalidate cache
-        this.cache.del("networks");
+    // Invalidate cache
+    this.cache.del("networks");
 
-        servicesLogger().info(
-          { networkId: id, networkName: networkInfo.Name },
-          "Network removed successfully",
-        );
-      },
-      {
-        "docker.network.id": id,
-      }
+    servicesLogger().info(
+      { networkId: id, networkName: networkInfo.Name },
+      "Network removed successfully",
     );
   }
 
@@ -969,41 +915,33 @@ class DockerService {
       throw new Error("Docker service not connected");
     }
 
-    return createDockerSpan(
-      "remove_volume",
-      async () => {
-        // Get the volume
-        const volume = this.docker.getVolume(name);
+    // Get the volume
+    const volume = this.docker.getVolume(name);
 
-        // Try to remove it - Docker will fail if it's in use
-        try {
-          await this.raceWithTimeout(
-            volume.remove(),
-            5000,
-            "Docker API timeout while removing volume",
-          );
+    // Try to remove it - Docker will fail if it's in use
+    try {
+      await this.raceWithTimeout(
+        volume.remove(),
+        5000,
+        "Docker API timeout while removing volume",
+      );
 
-          // Invalidate cache
-          this.cache.del("volumes");
+      // Invalidate cache
+      this.cache.del("volumes");
 
-          servicesLogger().info(
-            { volumeName: name },
-            "Volume removed successfully",
-          );
-        } catch (error: any) {
-          // Docker returns a 409 Conflict if volume is in use
-          if (error.statusCode === 409) {
-            throw new Error(
-              `Cannot remove volume ${name}: volume is in use by one or more containers`,
-            );
-          }
-          throw error;
-        }
-      },
-      {
-        "docker.volume.name": name,
+      servicesLogger().info(
+        { volumeName: name },
+        "Volume removed successfully",
+      );
+    } catch (error: any) {
+      // Docker returns a 409 Conflict if volume is in use
+      if (error.statusCode === 409) {
+        throw new Error(
+          `Cannot remove volume ${name}: volume is in use by one or more containers`,
+        );
       }
-    );
+      throw error;
+    }
   }
 
   /**

@@ -2,7 +2,6 @@ import { PrismaClient } from "@prisma/client";
 import Database from "better-sqlite3";
 import { prismaLogger } from "./logger-factory";
 import { getDatabaseFilePath } from "./database-url-parser";
-// Official Prisma instrumentation is handled in telemetry.ts via auto-instrumentation
 
 // Re-export PrismaClient type for use by other modules
 export { PrismaClient };

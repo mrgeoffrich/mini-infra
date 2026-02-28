@@ -32,12 +32,6 @@
   "connectivity": {
     "checkInterval": 300000
   },
-  "telemetry": {
-    "enabled": false,
-    "serviceName": "mini-infra",
-    "serviceVersion": "0.1.0",
-    "samplingRatio": 1.0
-  },
   "agent": {
     "model": "claude-sonnet-4-6",
     "thinking": "adaptive",

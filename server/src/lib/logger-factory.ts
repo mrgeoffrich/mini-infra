@@ -1,28 +1,11 @@
 import pino from "pino";
 import path from "path";
-import { trace, context } from "@opentelemetry/api";
 import {
   getLoggerConfig,
   getRedactionPaths,
   ensureLogDirectory,
-  getOpenObserveConfig,
-  isOpenObserveConfigured,
   type LoggerConfig,
 } from "./logging-config";
-
-// Helper function to inject OpenTelemetry trace context into log records
-export const injectTraceContext = (logObject: any) => {
-  const activeSpan = trace.getActiveSpan();
-  if (activeSpan) {
-    const spanContext = activeSpan.spanContext();
-    if (spanContext.traceId && spanContext.spanId) {
-      logObject.trace_id = spanContext.traceId;
-      logObject.span_id = spanContext.spanId;
-      logObject.trace_flags = spanContext.traceFlags;
-    }
-  }
-  return logObject;
-};
 
 // Helper function to properly serialize errors for logging
 export const serializeError = (error: any) => {
@@ -64,9 +47,6 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
   function asJson(this: any, ...args: any[]) {
     try {
       args[0] = args[0] || Object.create(null);
-
-      // Inject OpenTelemetry trace context
-      injectTraceContext(args[0]);
 
       // Extract caller information from stack trace
       const stack = Error().stack;
@@ -203,27 +183,6 @@ function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
         colorize: true,
         translateTime: "yyyy-mm-dd HH:MM:ss",
         ignore: "pid,hostname",
-      },
-      level: config.level,
-    });
-  }
-
-  // Add OpenObserve target if properly configured
-  if (isOpenObserveConfigured()) {
-    const openobserveConfig = getOpenObserveConfig();
-    targets.push({
-      target: "@openobserve/pino-openobserve",
-      options: {
-        url: process.env.OPENOBSERVE_URL,
-        organization: process.env.OPENOBSERVE_ORGANIZATION_NAME,
-        auth: {
-          username: process.env.OPENOBSERVE_USERNAME,
-          password: process.env.OPENOBSERVE_PASSWORD,
-        },
-        streamName: process.env.OPENOBSERVE_STREAM_NAME,
-        batchSize: openobserveConfig?.batchSize || 100,
-        timeThreshold: openobserveConfig?.timeThreshold || 30000,
-        silentSuccess: true,
       },
       level: config.level,
     });

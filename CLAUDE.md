@@ -283,7 +283,6 @@ The application handles graceful shutdown properly:
 - Listens for `SIGTERM` and `SIGINT` signals
 - Stops schedulers and background services
 - Closes database connections cleanly
-- Shuts down OpenTelemetry exporters
 - 30-second timeout before force termination
 
 Docker respects this behavior:

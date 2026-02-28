@@ -1,10 +1,4 @@
-// Initialize OpenTelemetry FIRST - before any other imports
 console.log("[STARTUP] Starting Mini Infra server...");
-console.log("[STARTUP] Initializing OpenTelemetry...");
-import { initializeTelemetry, shutdownTelemetry } from "./lib/telemetry";
-initializeTelemetry();
-console.log("[STARTUP] ✓ OpenTelemetry initialized");
-
 console.log("[STARTUP] Importing app module...");
 import app from "./app";
 console.log("[STARTUP] ✓ App module imported successfully");
@@ -501,9 +495,6 @@ startServer()
         await agentService.shutdown();
         logger.info("Agent service stopped");
       }
-
-      // Shutdown OpenTelemetry
-      await shutdownTelemetry();
 
       server.close((err) => {
         if (err) {
