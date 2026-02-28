@@ -15,7 +15,7 @@ interface UseAgentSessionResult {
   startNewChat: () => void;
 }
 
-export function useAgentSession(): UseAgentSessionResult {
+export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
@@ -44,6 +44,19 @@ export function useAgentSession(): UseAgentSessionResult {
       closeEventSource();
     };
   }, [closeEventSource]);
+
+  // Notify backend when the user's route changes during an active session
+  useEffect(() => {
+    if (!session || !currentPath) return;
+    fetch(`/api/agent/sessions/${session.sessionId}/context`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPath }),
+    }).catch(() => {
+      // Non-critical — ignore failures
+    });
+  }, [session, currentPath]);
 
   const connectSSE = useCallback(
     (sessionId: string, isRetry = false) => {
@@ -253,7 +266,7 @@ export function useAgentSession(): UseAgentSessionResult {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({ message, currentPath }),
           });
 
           if (!response.ok) {

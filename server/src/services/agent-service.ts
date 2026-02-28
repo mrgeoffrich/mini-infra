@@ -50,6 +50,7 @@ interface AgentSession {
   subscribers: Set<Response>;
   createdAt: Date;
   running: boolean;
+  currentPath: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +411,8 @@ To enable GitHub access, ask the user to go to the **GitHub connectivity page** 
   prompt += `
 ## UI Guidance Tools
 
-You have \`highlight_element\` and \`navigate_to\` tools to visually guide users in the browser.
+You have \`highlight_element\`, \`navigate_to\`, and \`get_current_page\` tools to visually guide users in the browser.
+- Use \`get_current_page\` to find out which page the user is currently viewing.
 - Read manifest files in \`${AGENT_CWD}/docs/ui-elements/\` to discover available element IDs and routes.
 - Use \`navigate_to\` to take the user to a page, and \`highlight_element\` to spotlight a specific element.
 
@@ -517,7 +519,7 @@ class AgentService {
     };
   }
 
-  async createSession(userId: string, message: string): Promise<string> {
+  async createSession(userId: string, message: string, currentPath?: string): Promise<string> {
     const sessionId = randomUUID();
     const queue = new AgentMessageQueue();
     const abortController = new AbortController();
@@ -530,6 +532,7 @@ class AgentService {
       subscribers: new Set(),
       createdAt: new Date(),
       running: true,
+      currentPath: currentPath ?? "",
     };
 
     this.sessions.set(sessionId, session);
@@ -566,6 +569,14 @@ class AgentService {
     }
     session.queue.push(message);
     logger.debug({ sessionId }, "Message pushed to agent queue");
+    return true;
+  }
+
+  updateCurrentPath(sessionId: string, currentPath: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    session.currentPath = currentPath;
+    logger.debug({ sessionId, currentPath }, "Current path updated");
     return true;
   }
 
@@ -676,8 +687,9 @@ class AgentService {
     const sessionEnv = buildSessionEnv(capabilities);
 
     // Create per-session MCP server with UI guidance tools
-    const uiToolsServer = createUiToolsMcpServer((event) =>
-      this.broadcast(session, event),
+    const uiToolsServer = createUiToolsMcpServer(
+      (event) => this.broadcast(session, event),
+      () => session.currentPath,
     );
 
     try {

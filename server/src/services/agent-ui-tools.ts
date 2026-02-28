@@ -5,13 +5,14 @@ import {
 } from "../lib/agent-sdk";
 
 type BroadcastFn = (event: { type: string; data: Record<string, unknown> }) => void;
+type GetCurrentPathFn = () => string;
 
 /**
- * Creates an MCP server with UI guidance tools (highlight_element, navigate_to).
+ * Creates an MCP server with UI guidance tools (highlight_element, navigate_to, get_current_page).
  * The broadcast callback is closed over per-session so events reach the correct
  * browser tab via SSE.
  */
-export function createUiToolsMcpServer(broadcast: BroadcastFn) {
+export function createUiToolsMcpServer(broadcast: BroadcastFn, getCurrentPath: GetCurrentPathFn) {
   const highlightTool = tool(
     "highlight_element",
     "Highlight a UI element in the user's browser. The element is identified by its data-tour ID. " +
@@ -79,9 +80,28 @@ export function createUiToolsMcpServer(broadcast: BroadcastFn) {
     { annotations: { readOnlyHint: true } },
   );
 
+  const getCurrentPageTool = tool(
+    "get_current_page",
+    "Get the route path of the page the user is currently viewing in their browser. " +
+      "Use this to understand what the user is looking at before providing contextual help.",
+    {},
+    async () => {
+      const currentPath = getCurrentPath();
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: currentPath || "unknown",
+          },
+        ],
+      };
+    },
+    { annotations: { readOnlyHint: true } },
+  );
+
   return createSdkMcpServer({
     name: "mini-infra-ui",
     version: "1.0.0",
-    tools: [highlightTool, navigateTool],
+    tools: [highlightTool, navigateTool, getCurrentPageTool],
   });
 }

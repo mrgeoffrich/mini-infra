@@ -39,6 +39,7 @@ router.get(
 
 const createSessionSchema = z.object({
   message: z.string().min(1).max(4000),
+  currentPath: z.string().max(500).optional(),
 });
 
 router.post(
@@ -70,7 +71,7 @@ router.post(
         return;
       }
 
-      const sessionId = await service.createSession(userId, parsed.data.message);
+      const sessionId = await service.createSession(userId, parsed.data.message, parsed.data.currentPath);
       res.status(201).json({ sessionId });
     } catch (error) {
       logger.error(
@@ -138,6 +139,52 @@ router.get(
       clearInterval(heartbeat);
       service.removeSubscriber(sessionId, res);
     });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PUT /sessions/:sessionId/context — update session context (e.g. current page)
+// ---------------------------------------------------------------------------
+
+const updateContextSchema = z.object({
+  currentPath: z.string().max(500),
+});
+
+router.put(
+  "/sessions/:sessionId/context",
+  requireSessionOrApiKey,
+  (req: Request, res: Response) => {
+    const service = getAgentService();
+    if (!service) {
+      res.status(503).json({ error: "Agent service unavailable" });
+      return;
+    }
+
+    const { sessionId } = req.params;
+    const session = service.getSession(sessionId);
+
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const userId = getUserId(req);
+    if (session.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const parsed = updateContextSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation error",
+        details: parsed.error.issues,
+      });
+      return;
+    }
+
+    service.updateCurrentPath(sessionId, parsed.data.currentPath);
+    res.json({ ok: true });
   },
 );
 
