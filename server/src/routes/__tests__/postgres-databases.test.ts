@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
@@ -8,68 +7,71 @@ import {
   UpdatePostgresDatabaseRequest,
 } from "@mini-infra/types";
 
-// Mock PostgresDatabaseManager
-const mockPostgresDatabaseManager = {
-  listDatabases: jest.fn(),
-  getDatabaseById: jest.fn(),
-  createDatabase: jest.fn(),
-  updateDatabase: jest.fn(),
-  deleteDatabase: jest.fn(),
-  testConnection: jest.fn(),
-  testDatabaseConnection: jest.fn(),
-};
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockPostgresDatabaseManager,
+  mockLogger,
+  mockRequireSessionOrApiKey,
+} = vi.hoisted(() => ({
+  mockPostgresDatabaseManager: {
+    listDatabases: vi.fn(),
+    getDatabaseById: vi.fn(),
+    createDatabase: vi.fn(),
+    updateDatabase: vi.fn(),
+    deleteDatabase: vi.fn(),
+    testConnection: vi.fn(),
+    testDatabaseConnection: vi.fn(),
+  },
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+  mockRequireSessionOrApiKey: vi.fn((req: any, res: any, next: any) => {
+    // Set up authenticated user context for tests
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      requestId: "test-request-id",
+    };
+    next();
+  }),
+}));
 
-jest.mock("../../services/postgres/postgres-database-manager", () => ({
-  PostgresDatabaseManager: jest
+// Mock PostgresDatabaseManager
+vi.mock("../../services/postgres/postgres-database-manager", () => ({
+  PostgresDatabaseManager: vi
     .fn()
-    .mockImplementation(() => mockPostgresDatabaseManager),
+    .mockImplementation(function() { return mockPostgresDatabaseManager; }),
 }));
 
 // Mock Prisma
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
+vi.mock("../../lib/prisma", () => ({
   default: {},
 }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
-  // Set up authenticated user context for tests
-  req.apiKey = {
-    userId: "test-user-id",
-    id: "test-key-id",
-    user: { id: "test-user-id", email: "test@example.com" }
-  };
-  res.locals = {
-    requestId: "test-request-id",
-  };
-  next();
-});
-
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id", email: "test@example.com" };
     next();
@@ -125,7 +127,7 @@ describe("PostgreSQL Databases API Routes", () => {
     // Add request ID middleware for testing
     app.use((req: any, res: any, next: any) => {
       req.headers["x-request-id"] = req.headers["x-request-id"] || createId();
-      req.get = jest.fn((header: string) => {
+      req.get = vi.fn((header: string) => {
         if (header === "User-Agent") return "Test Agent";
         if (header === "X-Forwarded-For") return "127.0.0.1";
         return undefined;
@@ -147,7 +149,7 @@ describe("PostgreSQL Databases API Routes", () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Reset the auth middleware mock to its default successful behavior
     mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {
@@ -184,7 +186,6 @@ describe("PostgreSQL Databases API Routes", () => {
       });
 
       expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
-        "test-user-id",
         {},
         { field: "name", order: "asc" },
         20,
@@ -203,7 +204,6 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(200);
 
       expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
-        "test-user-id",
         {},
         { field: "name", order: "asc" },
         10,
@@ -224,7 +224,6 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(200);
 
       expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
-        "test-user-id",
         {
           name: "prod",
           healthStatus: "healthy",
@@ -281,7 +280,6 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(mockPostgresDatabaseManager.getDatabaseById).toHaveBeenCalledWith(
         "db-1",
-        "test-user-id",
       );
     });
 
@@ -354,7 +352,6 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(mockPostgresDatabaseManager.createDatabase).toHaveBeenCalledWith(
         validCreateRequest,
-        "test-user-id",
       );
     });
 
@@ -444,7 +441,6 @@ describe("PostgreSQL Databases API Routes", () => {
       expect(mockPostgresDatabaseManager.updateDatabase).toHaveBeenCalledWith(
         "db-1",
         updateRequest,
-        "test-user-id",
       );
     });
 
@@ -501,7 +497,6 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(mockPostgresDatabaseManager.deleteDatabase).toHaveBeenCalledWith(
         "db-1",
-        "test-user-id",
       );
     });
 
@@ -551,7 +546,7 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(
         mockPostgresDatabaseManager.testDatabaseConnection,
-      ).toHaveBeenCalledWith("db-1", "test-user-id");
+      ).toHaveBeenCalledWith("db-1");
     });
 
     it("should return connection failure result", async () => {
@@ -807,7 +802,6 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(200);
 
       expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
-        "test-user-id",
         {},
         { field: "name", order: "asc" },
         20,
@@ -821,7 +815,6 @@ describe("PostgreSQL Databases API Routes", () => {
       await request(app).get("/api/postgres/databases").expect(200);
 
       expect(mockPostgresDatabaseManager.listDatabases).toHaveBeenCalledWith(
-        "test-user-id",
         {},
         { field: "name", order: "asc" },
         20,

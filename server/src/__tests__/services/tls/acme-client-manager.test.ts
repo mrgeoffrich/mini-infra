@@ -4,84 +4,110 @@
 
 import { AcmeClientManager } from "../../../services/tls/acme-client-manager";
 import { TlsConfigService } from "../../../services/tls/tls-config";
-import { AzureKeyVaultCertificateStore } from "../../../services/tls/azure-keyvault-certificate-store";
+import { AzureStorageCertificateStore } from "../../../services/tls/azure-storage-certificate-store";
 import { DnsChallenge01Provider } from "../../../services/tls/dns-challenge-provider";
+import * as acme from "acme-client";
 
 // Mock acme-client
-jest.mock("acme-client", () => {
+vi.mock("acme-client", () => {
   return {
-    Client: jest.fn().mockImplementation(() => ({
-      auto: jest.fn(),
-      createOrder: jest.fn(),
-      finalizeOrder: jest.fn(),
-    })),
+    Client: vi.fn().mockImplementation(function() { return {
+      auto: vi.fn(),
+      createOrder: vi.fn(),
+      finalizeOrder: vi.fn(),
+    }; }),
     directory: {
       letsencrypt: {
         production: "https://acme-v02.api.letsencrypt.org/directory",
         staging: "https://acme-staging-v02.api.letsencrypt.org/directory",
       },
+      buypass: {
+        production: "https://api.buypass.com/acme/directory",
+      },
+      zerossl: {
+        production: "https://acme.zerossl.com/v2/DV90",
+      },
     },
     crypto: {
-      createPrivateKey: jest.fn().mockResolvedValue({
-        toString: jest.fn().mockReturnValue("MOCK_PRIVATE_KEY"),
+      createPrivateKey: vi.fn().mockResolvedValue({
+        toString: vi.fn().mockReturnValue("MOCK_PRIVATE_KEY"),
       }),
-      createCsr: jest.fn().mockResolvedValue([
-        { toString: jest.fn().mockReturnValue("MOCK_PRIVATE_KEY") },
+      createCsr: vi.fn().mockResolvedValue([
+        { toString: vi.fn().mockReturnValue("MOCK_PRIVATE_KEY") },
         "MOCK_CSR",
       ]),
     },
   };
 });
 
-// Mock logger
-jest.mock("../../../lib/logger-factory", () => ({
-  tlsLogger: jest.fn(() => ({
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  })),
+// Mock prisma
+vi.mock("../../../lib/prisma", () => ({
+  default: {
+    tlsCertificate: {
+      findUnique: vi.fn(),
+    },
+    acmeAccount: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  },
 }));
+
+// Mock logger
+vi.mock("../../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+  return {
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+  };
+});
 
 describe("AcmeClientManager", () => {
   let acmeClientManager: AcmeClientManager;
-  let mockTlsConfig: jest.Mocked<TlsConfigService>;
-  let mockKeyVaultStore: jest.Mocked<AzureKeyVaultCertificateStore>;
-  let mockDnsChallenge: jest.Mocked<DnsChallenge01Provider>;
+  let mockTlsConfig: Mocked<TlsConfigService>;
+  let mockKeyVaultStore: Mocked<AzureStorageCertificateStore>;
+  let mockDnsChallenge: Mocked<DnsChallenge01Provider>;
 
   beforeEach(() => {
     // Create mocks
     mockTlsConfig = {
-      get: jest.fn(),
-      getAll: jest.fn(),
+      get: vi.fn(),
+      getAll: vi.fn(),
+      getAcmeAccountConfig: vi.fn().mockResolvedValue({
+        email: "test@example.com",
+        provider: "letsencrypt-staging",
+      }),
+      getCertificateContainerName: vi.fn().mockResolvedValue("certificates"),
     } as any;
 
     mockKeyVaultStore = {
-      getAccountKey: jest.fn(),
-      storeAccountKey: jest.fn(),
-      storeCertificate: jest.fn(),
-      getCertificate: jest.fn(),
+      getAccountKey: vi.fn(),
+      storeAccountKey: vi.fn(),
+      storeCertificate: vi.fn(),
+      getCertificate: vi.fn(),
     } as any;
 
     mockDnsChallenge = {
-      createChallenge: jest.fn(),
-      removeChallenge: jest.fn(),
+      createChallenge: vi.fn(),
+      removeChallenge: vi.fn(),
     } as any;
-
-    // Setup default config responses
-    mockTlsConfig.get.mockImplementation(async (key: string) => {
-      const config: Record<string, string> = {
-        default_acme_email: "test@example.com",
-        default_acme_provider: "letsencrypt-staging",
-      };
-      return config[key];
-    });
 
     acmeClientManager = new AcmeClientManager(mockTlsConfig, mockKeyVaultStore);
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("initialize", () => {
@@ -91,15 +117,14 @@ describe("AcmeClientManager", () => {
 
       await acmeClientManager.initialize();
 
-      expect(mockTlsConfig.get).toHaveBeenCalledWith("default_acme_email");
+      expect(mockTlsConfig.getAcmeAccountConfig).toHaveBeenCalled();
       expect(mockKeyVaultStore.getAccountKey).toHaveBeenCalledWith("test@example.com");
     });
 
     it("should create new account if no account key exists", async () => {
       mockKeyVaultStore.getAccountKey.mockRejectedValue(new Error("Not found"));
 
-      const acme = require("acme-client");
-      const mockPrivateKey = { toString: jest.fn().mockReturnValue("NEW_KEY") };
+      const mockPrivateKey = { toString: vi.fn().mockReturnValue("NEW_KEY") };
       acme.crypto.createPrivateKey.mockResolvedValue(mockPrivateKey);
 
       await acmeClientManager.initialize();
@@ -115,14 +140,13 @@ describe("AcmeClientManager", () => {
   describe("requestCertificate", () => {
     it("should request certificate with DNS-01 challenge", async () => {
       const domains = ["test.example.com"];
-      const acme = require("acme-client");
 
       // Mock successful certificate request
       const mockCertificate = "-----BEGIN CERTIFICATE-----\nMOCK_CERT\n-----END CERTIFICATE-----";
       const mockClient = {
-        auto: jest.fn().mockResolvedValue(mockCertificate),
+        auto: vi.fn().mockResolvedValue(mockCertificate),
       };
-      acme.Client.mockImplementation(() => mockClient);
+      acme.Client.mockImplementation(function() { return mockClient; });
 
       // Initialize first
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
@@ -138,7 +162,6 @@ describe("AcmeClientManager", () => {
       expect(mockClient.auto).toHaveBeenCalledWith(
         expect.objectContaining({
           csr: "MOCK_CSR",
-          email: "test@example.com",
           termsOfServiceAgreed: true,
           challengePriority: ["dns-01"],
         })
@@ -153,12 +176,11 @@ describe("AcmeClientManager", () => {
 
     it("should handle ACME errors gracefully", async () => {
       const domains = ["test.example.com"];
-      const acme = require("acme-client");
 
       const mockClient = {
-        auto: jest.fn().mockRejectedValue(new Error("ACME rate limit exceeded")),
+        auto: vi.fn().mockRejectedValue(new Error("ACME rate limit exceeded")),
       };
-      acme.Client.mockImplementation(() => mockClient);
+      acme.Client.mockImplementation(function() { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
@@ -170,19 +192,18 @@ describe("AcmeClientManager", () => {
 
     it("should call DNS challenge create and remove functions", async () => {
       const domains = ["test.example.com"];
-      const acme = require("acme-client");
 
       let challengeCreateFn: any;
       let challengeRemoveFn: any;
 
       const mockClient = {
-        auto: jest.fn().mockImplementation((config) => {
+        auto: vi.fn().mockImplementation((config) => {
           challengeCreateFn = config.challengeCreateFn;
           challengeRemoveFn = config.challengeRemoveFn;
           return "MOCK_CERT";
         }),
       };
-      acme.Client.mockImplementation(() => mockClient);
+      acme.Client.mockImplementation(function() { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
@@ -217,18 +238,23 @@ describe("AcmeClientManager", () => {
   describe("renewCertificate", () => {
     it("should renew certificate using existing domains", async () => {
       const certificateId = "cert-123";
-      const acme = require("acme-client");
 
       const mockCertificate = "-----BEGIN CERTIFICATE-----\nRENEWED_CERT\n-----END CERTIFICATE-----";
       const mockClient = {
-        auto: jest.fn().mockResolvedValue(mockCertificate),
+        auto: vi.fn().mockResolvedValue(mockCertificate),
       };
-      acme.Client.mockImplementation(() => mockClient);
+      acme.Client.mockImplementation(function() { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
 
-      // Mock getting existing certificate would happen in CertificateLifecycleManager
+      // Mock prisma to return existing certificate for renewal
+      const prisma = (await import("../../../lib/prisma")).default;
+      (prisma.tlsCertificate.findUnique as any).mockResolvedValue({
+        id: certificateId,
+        domains: ["test.example.com"],
+      });
+
       // For this test, we're testing the ACME renewal flow
       const result = await acmeClientManager.renewCertificate(certificateId, mockDnsChallenge);
 
@@ -243,16 +269,16 @@ describe("AcmeClientManager", () => {
   describe("createAccount", () => {
     it("should create new ACME account and store key in Key Vault", async () => {
       const email = "newuser@example.com";
-      const acme = require("acme-client");
 
-      const mockPrivateKey = { toString: jest.fn().mockReturnValue("NEW_ACCOUNT_KEY") };
+      const mockPrivateKey = { toString: vi.fn().mockReturnValue("NEW_ACCOUNT_KEY") };
       acme.crypto.createPrivateKey.mockResolvedValue(mockPrivateKey);
 
       const mockAccountUrl = "https://acme-v02.api.letsencrypt.org/acme/acct/12345";
       const mockClient = {
-        getAccountUrl: jest.fn().mockResolvedValue(mockAccountUrl),
+        createAccount: vi.fn().mockResolvedValue({ url: mockAccountUrl }),
+        getAccountUrl: vi.fn().mockResolvedValue(mockAccountUrl),
       };
-      acme.Client.mockImplementation(() => mockClient);
+      acme.Client.mockImplementation(function() { return mockClient; });
 
       const result = await acmeClientManager.createAccount(email);
 
@@ -267,18 +293,21 @@ describe("AcmeClientManager", () => {
   });
 
   describe("error handling", () => {
-    it("should throw error if ACME client not initialized", async () => {
-      const freshManager = new AcmeClientManager(mockTlsConfig, mockKeyVaultStore);
+    it("should throw error if ACME client initialization fails", async () => {
+      const failingConfig = {
+        ...mockTlsConfig,
+        getAcmeAccountConfig: vi.fn().mockRejectedValue(new Error("Config not available")),
+      } as any;
+      const freshManager = new AcmeClientManager(failingConfig, mockKeyVaultStore);
       const domains = ["test.example.com"];
 
       await expect(
         freshManager.requestCertificate(domains, mockDnsChallenge)
-      ).rejects.toThrow();
+      ).rejects.toThrow("Config not available");
     });
 
     it("should handle invalid domain names", async () => {
       const invalidDomains = [""];
-      const acme = require("acme-client");
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();

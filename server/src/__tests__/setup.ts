@@ -1,6 +1,5 @@
 import prisma from "../lib/prisma";
 import { PrismaClient } from "@prisma/client";
-import { jest } from "@jest/globals";
 import { createId } from "@paralleldrive/cuid2";
 import { execSync } from "child_process";
 import * as fs from "fs";
@@ -24,7 +23,7 @@ let testPrisma: typeof prisma;
 // Global setup
 beforeAll(async () => {
   // Use worker ID to create separate test databases for parallel execution
-  const workerId = process.env.JEST_WORKER_ID || "1";
+  const workerId = process.env.VITEST_POOL_ID || "1";
   const testDbUrl = `file:./test-${workerId}.db`;
   const testDbPath = path.join(process.cwd(), `test-${workerId}.db`);
 
@@ -106,65 +105,52 @@ export const createTestApiKey = async (
 };
 
 // Mock logger factory to silence logs during tests
-jest.mock("../lib/logger-factory.ts", () => ({
-  createLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  dockerExecutorLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  deploymentLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  loadbalancerLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+vi.mock("../lib/logger-factory.ts", () => {
+  const createMockLogger = () => {
+    const logger: any = {
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      fatal: vi.fn(),
+      trace: vi.fn(),
+      silent: vi.fn(),
+      child: vi.fn(() => logger),
+      level: "info",
+      levels: { values: { fatal: 60, error: 50, warn: 40, info: 30, debug: 20, trace: 10 } },
+    };
+    return logger;
+  };
+  return {
+  createLogger: vi.fn(() => createMockLogger()),
+  appLogger: vi.fn(() => createMockLogger()),
+  httpLogger: vi.fn(() => createMockLogger()),
+  prismaLogger: vi.fn(() => createMockLogger()),
+  servicesLogger: vi.fn(() => createMockLogger()),
+  dockerExecutorLogger: vi.fn(() => createMockLogger()),
+  deploymentLogger: vi.fn(() => createMockLogger()),
+  loadbalancerLogger: vi.fn(() => createMockLogger()),
+  tlsLogger: vi.fn(() => createMockLogger()),
+  agentLogger: vi.fn(() => createMockLogger()),
+};
+});
 
 // Mock Passport for authentication tests
-jest.mock("passport", () => ({
-  use: jest.fn(),
-  initialize: jest.fn(() => (req: any, res: any, next: any) => next()),
-  session: jest.fn(() => (req: any, res: any, next: any) => next()),
-  authenticate: jest.fn(() => (req: any, res: any, next: any) => next()),
-  serializeUser: jest.fn(),
-  deserializeUser: jest.fn(),
+vi.mock("passport", () => ({
+  default: {
+    use: vi.fn(),
+    initialize: vi.fn(() => (req: any, res: any, next: any) => next()),
+    session: vi.fn(() => (req: any, res: any, next: any) => next()),
+    authenticate: vi.fn(() => (req: any, res: any, next: any) => next()),
+    serializeUser: vi.fn(),
+    deserializeUser: vi.fn(),
+  },
+  use: vi.fn(),
+  initialize: vi.fn(() => (req: any, res: any, next: any) => next()),
+  session: vi.fn(() => (req: any, res: any, next: any) => next()),
+  authenticate: vi.fn(() => (req: any, res: any, next: any) => next()),
+  serializeUser: vi.fn(),
+  deserializeUser: vi.fn(),
 }));
 
 export { testPrisma };

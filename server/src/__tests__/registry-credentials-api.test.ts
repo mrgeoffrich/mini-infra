@@ -1,13 +1,13 @@
 import request from "supertest";
 
 // Mock logger factory first (before other imports)
-jest.mock("../lib/logger-factory", () => {
+vi.mock("../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    child: jest.fn(() => mockLoggerInstance), // Required for pino-http
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(function() { return mockLoggerInstance; }), // Required for pino-http
     level: "info",
     levels: {
       values: {
@@ -19,26 +19,28 @@ jest.mock("../lib/logger-factory", () => {
         trace: 10,
       },
     },
-    silent: jest.fn(),
-    fatal: jest.fn(),
-    trace: jest.fn(),
+    silent: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    loadbalancerLogger: jest.fn(() => mockLoggerInstance),
-    deploymentLogger: jest.fn(() => mockLoggerInstance),
-    dockerExecutorLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
 // Mock auth middleware to bypass authentication
-jest.mock("../middleware/auth", () => ({
+vi.mock("../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id" };
     next();
@@ -49,21 +51,21 @@ jest.mock("../middleware/auth", () => ({
 }));
 
 // Mock self-backup services to avoid better-sqlite3 dependency
-jest.mock("../services/backup/self-backup-executor", () => ({
-  SelfBackupExecutor: jest.fn(),
+vi.mock("../services/backup/self-backup-executor", () => ({
+  SelfBackupExecutor: vi.fn(),
 }));
 
-jest.mock("../services/backup/self-backup-scheduler", () => ({
-  SelfBackupScheduler: jest.fn(),
+vi.mock("../services/backup/self-backup-scheduler", () => ({
+  SelfBackupScheduler: vi.fn(),
 }));
 
 import { testPrisma, createTestUser } from "./setup";
 
 // Mock prisma to use testPrisma
-jest.mock("../lib/prisma", () => ({
-  __esModule: true,
-  default: testPrisma,
-}));
+vi.mock("../lib/prisma", async () => {
+  const { testPrisma: tp } = await import("./setup");
+  return { default: tp };
+});
 
 import app from "../app";
 import { RegistryCredentialService } from "../services/registry-credential";
@@ -71,9 +73,11 @@ import { RegistryCredentialService } from "../services/registry-credential";
 describe("Registry Credentials API", () => {
   let authToken: string;
   let userId: string;
-  const registryCredentialService = new RegistryCredentialService(testPrisma);
+  let registryCredentialService: RegistryCredentialService;
 
   beforeEach(async () => {
+    registryCredentialService = new RegistryCredentialService(testPrisma);
+
     // Clean up existing test data
     await testPrisma.registryCredential.deleteMany({});
 

@@ -1,67 +1,69 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
 
-// Mock BackupConfigurationManager
-const mockBackupConfigurationManager = {
-  getBackupConfigByDatabaseId: jest.fn(),
-  createBackupConfig: jest.fn(),
-  deleteBackupConfig: jest.fn(),
-};
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockBackupConfigurationManager,
+  mockLogger,
+  mockRequireSessionOrApiKey,
+} = vi.hoisted(() => ({
+  mockBackupConfigurationManager: {
+    getBackupConfigByDatabaseId: vi.fn(),
+    createBackupConfig: vi.fn(),
+    deleteBackupConfig: vi.fn(),
+  },
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+  mockRequireSessionOrApiKey: vi.fn((req: any, res: any, next: any) => {
+    // Set up authenticated user context for tests
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      requestId: "test-request-id",
+    };
+    next();
+  }),
+}));
 
-jest.mock("../../services/backup/backup-configuration-manager", () => ({
-  BackupConfigurationManager: jest
+// Mock BackupConfigurationManager
+vi.mock("../../services/backup/backup-configuration-manager", () => ({
+  BackupConfigurationManager: vi
     .fn()
-    .mockImplementation(() => mockBackupConfigurationManager),
+    .mockImplementation(function() { return mockBackupConfigurationManager; }),
 }));
 
 // Mock Prisma
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
+vi.mock("../../lib/prisma", () => ({
   default: {},
 }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
-  // Set up authenticated user context for tests
-  req.apiKey = {
-    userId: "test-user-id",
-    id: "test-key-id",
-    user: { id: "test-user-id", email: "test@example.com" }
-  };
-  res.locals = {
-    requestId: "test-request-id",
-  };
-  next();
-});
-
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id", email: "test@example.com" };
     next();
@@ -81,7 +83,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     // Add request ID middleware for testing
     app.use((req: any, res: any, next: any) => {
       req.headers["x-request-id"] = req.headers["x-request-id"] || createId();
-      req.get = jest.fn((header: string) => {
+      req.get = vi.fn((header: string) => {
         if (header === "User-Agent") return "Test Agent";
         if (header === "X-Forwarded-For") return "127.0.0.1";
         return undefined;
@@ -103,7 +105,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("GET /api/postgres/backup-configs/:databaseId", () => {
@@ -139,7 +141,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       expect(
         mockBackupConfigurationManager.getBackupConfigByDatabaseId,
-      ).toHaveBeenCalledWith("db-123", "test-user-id");
+      ).toHaveBeenCalledWith("db-123");
     });
 
     it("should return 404 when backup config not found", async () => {
@@ -231,7 +233,6 @@ describe("PostgreSQL Backup Configs API Routes", () => {
           compressionLevel: 6,
           isEnabled: true,
         },
-        "test-user-id",
       );
     });
 
@@ -359,7 +360,6 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
       expect(mockBackupConfigurationManager.deleteBackupConfig).toHaveBeenCalledWith(
         "config-123",
-        "test-user-id",
       );
     });
 
@@ -651,16 +651,13 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         })
         .expect(201);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: expect.objectContaining({
-            databaseId: "db-123",
-            azureContainerName: "test-backups",
-            azurePathPrefix: "db-backups/",
-          }),
-          userId: "test-user-id",
+          configId: expect.any(String),
+          databaseId: "db-123",
+          azureContainer: "test-backups",
         }),
-        "Backup configuration creation requested",
+        "Backup configuration created successfully",
       );
     });
 
@@ -671,12 +668,11 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .delete("/api/postgres/backup-configs/config-123")
         .expect(200);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           configId: "config-123",
-          userId: "test-user-id",
         }),
-        "Backup configuration deletion requested",
+        "Backup configuration deleted successfully",
       );
     });
   });

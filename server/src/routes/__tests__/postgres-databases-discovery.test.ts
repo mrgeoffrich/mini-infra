@@ -1,30 +1,76 @@
 import request from "supertest";
-import { Express } from "express";
-import { PrismaClient } from "@prisma/client";
-import { createApp } from "../../app";
-import { PostgresDatabaseManager } from "../../services/postgres";
+import express, { Express } from "express";
 import { DatabaseInfo } from "@mini-infra/types";
 
-// Mock the PostgresDatabaseManager
-jest.mock("../../services/postgres/postgres-database-manager");
+const { mockDiscoverDatabases, mockLogger } = vi.hoisted(() => ({
+  mockDiscoverDatabases: vi.fn(),
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
-const mockDiscoverDatabases = jest.fn();
-const MockPostgresDatabaseManager = PostgresDatabaseManager as jest.MockedClass<
-  typeof PostgresDatabaseManager
->;
+// Mock PostgresDatabaseManager
+vi.mock("../../services/postgres/postgres-database-manager", () => ({
+  PostgresDatabaseManager: vi.fn().mockImplementation(function() {
+    return {
+      discoverDatabases: mockDiscoverDatabases,
+    };
+  }),
+}));
+
+// Mock Prisma
+vi.mock("../../lib/prisma", () => ({
+  default: {},
+}));
+
+// Mock logger
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
+}));
+
+// Mock auth middleware
+vi.mock("../../lib/api-key-middleware", () => ({
+  requireSessionOrApiKey: (req: any, res: any, next: any) => {
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      requestId: req.headers["x-request-id"] || undefined,
+    };
+    next();
+  },
+  getCurrentUserId: (req: any) => "test-user-id",
+  getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
+}));
+
+vi.mock("../../lib/auth-middleware", () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    req.user = { id: "test-user-id", email: "test@example.com" };
+    next();
+  },
+  getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
+}));
+
+import postgresDatabasesRouter from "../postgres-databases";
 
 describe("PostgreSQL Database Discovery API", () => {
   let app: Express;
-  let prisma: PrismaClient;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
-    // Mock the discoverDatabases method
-    MockPostgresDatabaseManager.prototype.discoverDatabases = mockDiscoverDatabases;
-
-    app = createApp();
-    prisma = new PrismaClient();
+    app = express();
+    app.use(express.json());
+    app.use("/api/postgres/databases", postgresDatabasesRouter);
   });
 
   describe("POST /api/postgres/databases/discover-databases", () => {

@@ -2,50 +2,74 @@ import axios from 'axios';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig, FrontendConfig } from '../services/haproxy/haproxy-dataplane-client';
 import DockerService from '../services/docker';
 
-// Mock dependencies
-jest.mock('axios');
-jest.mock('../services/docker');
-jest.mock('../lib/logger-factory', () => ({
-  loadbalancerLogger: () => ({
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn()
-  }),
-  prismaLogger: () => ({
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn()
-  })
-}));
-jest.mock('../lib/prisma', () => ({
-  __esModule: true,
-  default: {}
+// Hoist the prisma findFirst mock so we can reference it in both vi.mock and beforeEach
+const { mockFindFirst } = vi.hoisted(() => ({
+  mockFindFirst: vi.fn(),
 }));
 
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-const MockedDockerService = DockerService as jest.MockedClass<typeof DockerService>;
+// Mock dependencies
+vi.mock('axios');
+vi.mock('../services/docker');
+vi.mock('../lib/logger-factory', () => {
+  const mockLoggerInstance = {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+  return {
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    selfBackupLogger: vi.fn(function() { return mockLoggerInstance; }),
+  };
+});
+vi.mock('../lib/prisma', () => ({
+  default: {
+    systemSettings: {
+      findFirst: mockFindFirst,
+    },
+  },
+}));
+
+const mockedAxios = axios as Mocked<typeof axios>;
+const MockedDockerService = DockerService as MockedClass<typeof DockerService>;
 
 // Mock axios.isAxiosError function
-mockedAxios.isAxiosError = jest.fn((payload): payload is any => {
+mockedAxios.isAxiosError = vi.fn((payload): payload is any => {
   return payload && typeof payload === 'object' && payload.isAxiosError === true;
 });
 
 describe('HAProxyDataPlaneClient', () => {
   let client: HAProxyDataPlaneClient;
-  let mockDockerService: jest.Mocked<DockerService>;
-  let mockAxiosInstance: jest.Mocked<any>;
+  let mockDockerService: Mocked<DockerService>;
+  let mockAxiosInstance: Mocked<any>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
+
+    // Set up the default prisma mock to return a docker host IP
+    mockFindFirst.mockResolvedValue({
+      id: 'setting-1',
+      category: 'system',
+      key: 'docker_host_ip',
+      value: '192.168.1.100',
+      isActive: true,
+    });
 
     // Mock axios instance
     mockAxiosInstance = {
-      get: jest.fn(),
-      post: jest.fn(),
-      put: jest.fn(),
-      delete: jest.fn(),
+      get: vi.fn(),
+      post: vi.fn(),
+      put: vi.fn(),
+      delete: vi.fn(),
       defaults: {
         baseURL: '',
         auth: {},
@@ -56,11 +80,16 @@ describe('HAProxyDataPlaneClient', () => {
 
     mockedAxios.create.mockReturnValue(mockAxiosInstance);
 
+    // Re-setup isAxiosError after clearAllMocks
+    mockedAxios.isAxiosError = vi.fn((payload): payload is any => {
+      return payload && typeof payload === 'object' && payload.isAxiosError === true;
+    });
+
     // Mock DockerService
     mockDockerService = {
-      getInstance: jest.fn().mockReturnThis(),
-      initialize: jest.fn().mockResolvedValue(undefined),
-      getDockerInstance: jest.fn()
+      getInstance: vi.fn().mockReturnThis(),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      getDockerInstance: vi.fn()
     } as any;
 
     MockedDockerService.getInstance.mockReturnValue(mockDockerService);
@@ -84,11 +113,11 @@ describe('HAProxyDataPlaneClient', () => {
     };
 
     const mockContainer = {
-      inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+      inspect: vi.fn().mockResolvedValue(mockContainerInfo)
     };
 
     const mockDocker = {
-      getContainer: jest.fn().mockReturnValue(mockContainer)
+      getContainer: vi.fn().mockReturnValue(mockContainer)
     };
 
     beforeEach(() => {
@@ -108,7 +137,7 @@ describe('HAProxyDataPlaneClient', () => {
       expect(mockDockerService.initialize).toHaveBeenCalled();
       expect(mockDocker.getContainer).toHaveBeenCalledWith('container123');
       expect(mockContainer.inspect).toHaveBeenCalled();
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://0.0.0.0:5555/v3');
+      expect(mockAxiosInstance.defaults.baseURL).toBe('http://192.168.1.100:5555/v3');
       expect(mockAxiosInstance.defaults.auth).toEqual({
         username: 'admin',
         password: 'adminpwd'
@@ -116,7 +145,7 @@ describe('HAProxyDataPlaneClient', () => {
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/info');
     });
 
-    it('should initialize with container network IP when no host binding', async () => {
+    it('should throw error when port is not bound to a host port', async () => {
       const mockContainerInfoNoBinding = {
         ...mockContainerInfo,
         NetworkSettings: {
@@ -133,17 +162,17 @@ describe('HAProxyDataPlaneClient', () => {
 
       mockContainer.inspect.mockResolvedValue(mockContainerInfoNoBinding);
 
-      await client.initialize('container123');
-
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v3');
+      await expect(client.initialize('container123')).rejects.toThrow(
+        'DataPlane API port 5555 is not bound to a host port'
+      );
     });
 
-    it('should prefer custom network over bridge network', async () => {
+    it('should use docker host IP from system settings regardless of networks', async () => {
       const mockContainerInfoMultiNetwork = {
         ...mockContainerInfo,
         NetworkSettings: {
           Ports: {
-            '5555/tcp': [{}] // Empty object indicates port exists but no host binding
+            '5555/tcp': [{ HostIp: '0.0.0.0', HostPort: '5555' }]
           },
           Networks: {
             'bridge': {
@@ -160,7 +189,8 @@ describe('HAProxyDataPlaneClient', () => {
 
       await client.initialize('container123');
 
-      expect(mockAxiosInstance.defaults.baseURL).toBe('http://172.18.0.2:5555/v3');
+      // Should use the configured Docker host IP, not container network IPs
+      expect(mockAxiosInstance.defaults.baseURL).toBe('http://192.168.1.100:5555/v3');
     });
 
     it('should throw error when container not found', async () => {
@@ -191,21 +221,14 @@ describe('HAProxyDataPlaneClient', () => {
       );
     });
 
-    it('should throw error when no networks available', async () => {
-      const mockContainerInfoNoNetwork = {
-        ...mockContainerInfo,
-        NetworkSettings: {
-          Ports: {
-            '5555/tcp': [{}] // Port exists but no host binding
-          },
-          Networks: {}
-        }
-      };
-
-      mockContainer.inspect.mockResolvedValue(mockContainerInfoNoNetwork);
+    it('should throw error when docker host IP is not configured', async () => {
+      // Ensure container info has valid ports so we reach the IP lookup
+      mockContainer.inspect.mockResolvedValue(mockContainerInfo);
+      // Override prisma mock to return null for this test
+      mockFindFirst.mockResolvedValue(null);
 
       await expect(client.initialize('container123')).rejects.toThrow(
-        'HAProxy container is not connected to any networks'
+        'Docker host IP not configured'
       );
     });
 
@@ -254,22 +277,24 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
       mockAxiosInstance.get.mockResolvedValue({ status: 200, data: {} });
 
       await client.initialize('container123');
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     describe('createBackend', () => {
       it('should create backend with default configuration', async () => {
+        // getVersion returns a number via get
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({ status: 201 });
 
         const config: BackendConfig = {
@@ -279,7 +304,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.createBackend(config);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends',
+          '/services/haproxy/configuration/backends?version=1',
           {
             name: 'test-backend',
             mode: 'http',
@@ -291,6 +316,7 @@ describe('HAProxyDataPlaneClient', () => {
       });
 
       it('should create backend with custom configuration', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({ status: 201 });
 
         const config: BackendConfig = {
@@ -305,7 +331,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.createBackend(config);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends',
+          '/services/haproxy/configuration/backends?version=1',
           {
             name: 'test-backend',
             mode: 'tcp',
@@ -320,6 +346,7 @@ describe('HAProxyDataPlaneClient', () => {
       });
 
       it('should handle API errors', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         const apiError = {
           isAxiosError: true,
           response: {
@@ -335,7 +362,7 @@ describe('HAProxyDataPlaneClient', () => {
         };
 
         await expect(client.createBackend(config)).rejects.toThrow(
-          'HAProxy create backend failed: Backend already exists (Status: 400)'
+          'Bad request: Backend already exists'
         );
       });
     });
@@ -377,12 +404,13 @@ describe('HAProxyDataPlaneClient', () => {
 
     describe('deleteBackend', () => {
       it('should delete backend successfully', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.delete.mockResolvedValue({ status: 204 });
 
         await client.deleteBackend('test-backend');
 
         expect(mockAxiosInstance.delete).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends/test-backend'
+          '/services/haproxy/configuration/backends/test-backend?version=1'
         );
       });
     });
@@ -435,23 +463,30 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
       mockAxiosInstance.get.mockResolvedValue({ status: 200, data: {} });
 
       await client.initialize('container123');
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     describe('addServer', () => {
-      it('should add server with minimal configuration', async () => {
-        mockAxiosInstance.post.mockResolvedValue({ status: 201 });
+      it('should add server with minimal configuration via transaction', async () => {
+        // getVersion (called by beginTransaction) returns version number
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
+        // beginTransaction: post returns transaction id, then addServer post
+        mockAxiosInstance.post
+          .mockResolvedValueOnce({ status: 201, data: { id: 'txn-add-1' } }) // beginTransaction
+          .mockResolvedValueOnce({ status: 201 }); // addServer post
+        // commitTransaction: put
+        mockAxiosInstance.put.mockResolvedValue({ status: 200 });
 
         const config: ServerConfig = {
           name: 'server1',
@@ -461,8 +496,9 @@ describe('HAProxyDataPlaneClient', () => {
 
         await client.addServer('test-backend', config);
 
+        // Verify the server was added via transaction
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends/test-backend/servers',
+          expect.stringContaining('/services/haproxy/configuration/backends/test-backend/servers'),
           {
             name: 'server1',
             address: '192.168.1.100',
@@ -473,8 +509,12 @@ describe('HAProxyDataPlaneClient', () => {
         );
       });
 
-      it('should add server with full configuration', async () => {
-        mockAxiosInstance.post.mockResolvedValue({ status: 201 });
+      it('should add server with full configuration via transaction', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
+        mockAxiosInstance.post
+          .mockResolvedValueOnce({ status: 201, data: { id: 'txn-add-2' } }) // beginTransaction
+          .mockResolvedValueOnce({ status: 201 }); // addServer post
+        mockAxiosInstance.put.mockResolvedValue({ status: 200 });
 
         const config: ServerConfig = {
           name: 'server1',
@@ -493,7 +533,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.addServer('test-backend', config);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends/test-backend/servers',
+          expect.stringContaining('/services/haproxy/configuration/backends/test-backend/servers'),
           {
             name: 'server1',
             address: '192.168.1.100',
@@ -518,7 +558,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.enableServer('test-backend', 'server1');
 
         expect(mockAxiosInstance.put).toHaveBeenCalledWith(
-          '/services/haproxy/runtime/servers/test-backend/server1',
+          '/services/haproxy/runtime/backends/test-backend/servers/server1',
           { admin_state: 'ready' }
         );
       });
@@ -531,7 +571,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.disableServer('test-backend', 'server1');
 
         expect(mockAxiosInstance.put).toHaveBeenCalledWith(
-          '/services/haproxy/runtime/servers/test-backend/server1',
+          '/services/haproxy/runtime/backends/test-backend/servers/server1',
           { admin_state: 'maint' }
         );
       });
@@ -544,7 +584,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.setServerState('test-backend', 'server1', 'drain');
 
         expect(mockAxiosInstance.put).toHaveBeenCalledWith(
-          '/services/haproxy/runtime/servers/test-backend/server1',
+          '/services/haproxy/runtime/backends/test-backend/servers/server1',
           { admin_state: 'drain' }
         );
       });
@@ -552,12 +592,13 @@ describe('HAProxyDataPlaneClient', () => {
 
     describe('deleteServer', () => {
       it('should delete server successfully', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.delete.mockResolvedValue({ status: 204 });
 
         await client.deleteServer('test-backend', 'server1');
 
         expect(mockAxiosInstance.delete).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/backends/test-backend/servers/server1'
+          '/services/haproxy/configuration/backends/test-backend/servers/server1?version=1'
         );
       });
     });
@@ -576,22 +617,23 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
       mockAxiosInstance.get.mockResolvedValue({ status: 200, data: {} });
 
       await client.initialize('container123');
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     describe('createFrontend', () => {
       it('should create frontend with minimal configuration', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({ status: 201 });
 
         const config: FrontendConfig = {
@@ -601,7 +643,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.createFrontend(config);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/frontends',
+          '/services/haproxy/configuration/frontends?version=1',
           {
             name: 'test-frontend',
             mode: 'http'
@@ -610,6 +652,7 @@ describe('HAProxyDataPlaneClient', () => {
       });
 
       it('should create frontend with full configuration', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({ status: 201 });
 
         const config: FrontendConfig = {
@@ -621,7 +664,7 @@ describe('HAProxyDataPlaneClient', () => {
         await client.createFrontend(config);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/frontends',
+          '/services/haproxy/configuration/frontends?version=1',
           {
             name: 'test-frontend',
             mode: 'tcp',
@@ -633,12 +676,13 @@ describe('HAProxyDataPlaneClient', () => {
 
     describe('addFrontendBind', () => {
       it('should add bind to frontend successfully', async () => {
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({ status: 201 });
 
         await client.addFrontendBind('test-frontend', '*', 80);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/configuration/frontends/test-frontend/binds',
+          '/services/haproxy/configuration/frontends/test-frontend/binds?version=1',
           {
             name: 'bind_80',
             address: '*',
@@ -662,43 +706,47 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
       mockAxiosInstance.get.mockResolvedValue({ status: 200, data: {} });
 
       await client.initialize('container123');
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     describe('getServerStats', () => {
       it('should return server statistics', async () => {
-        const mockStatsData = [{
-          svname: 'server1',
-          status: 'UP',
-          check_status: 'L7OK',
-          check_duration: 1,
-          weight: 1,
-          scur: 5,
-          smax: 10,
-          stot: 100,
-          bin: 1024,
-          bout: 2048,
-          dreq: 0,
-          econ: 0,
-          eresp: 0,
-          wretr: 0,
-          wredis: 0
-        }];
+        const mockStatsResponse = {
+          stats: [{
+            name: 'server1',
+            stats: {
+              status: 'UP',
+              check_status: 'L7OK',
+              check_duration: 1,
+              weight: 1,
+              scur: 5,
+              smax: 10,
+              stot: 100,
+              bin: 1024,
+              bout: 2048,
+              dreq: 0,
+              econ: 0,
+              eresp: 0,
+              wretr: 0,
+              wredis: 0
+            }
+          }]
+        };
 
         mockAxiosInstance.get.mockResolvedValue({
           status: 200,
-          data: mockStatsData
+          data: mockStatsResponse
         });
 
         const result = await client.getServerStats('test-backend', 'server1');
@@ -722,7 +770,7 @@ describe('HAProxyDataPlaneClient', () => {
         });
 
         expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-          '/services/haproxy/stats/native?type=server&name=test-backend/server1'
+          '/services/haproxy/stats/native?type=server&parent=test-backend&name=server1'
         );
       });
 
@@ -742,25 +790,29 @@ describe('HAProxyDataPlaneClient', () => {
 
     describe('getBackendStats', () => {
       it('should return backend statistics', async () => {
-        const mockStatsData = [{
-          pxname: 'test-backend',
-          status: 'UP',
-          scur: 10,
-          smax: 20,
-          stot: 200,
-          bin: 2048,
-          bout: 4096,
-          dreq: 0,
-          econ: 0,
-          eresp: 0,
-          weight: 1,
-          act: 2,
-          bck: 0
-        }];
+        const mockStatsResponse = {
+          stats: [{
+            name: 'test-backend',
+            stats: {
+              status: 'UP',
+              scur: 10,
+              smax: 20,
+              stot: 200,
+              bin: 2048,
+              bout: 4096,
+              dreq: 0,
+              econ: 0,
+              eresp: 0,
+              weight: 1,
+              act: 2,
+              bck: 0
+            }
+          }]
+        };
 
         mockAxiosInstance.get.mockResolvedValue({
           status: 200,
-          data: mockStatsData
+          data: mockStatsResponse
         });
 
         const result = await client.getBackendStats('test-backend');
@@ -801,22 +853,24 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
       mockAxiosInstance.get.mockResolvedValue({ status: 200, data: {} });
 
       await client.initialize('container123');
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     describe('beginTransaction', () => {
       it('should begin transaction and return transaction ID', async () => {
+        // getVersion is called first to get current version
+        mockAxiosInstance.get.mockResolvedValue({ status: 200, data: 1 });
         mockAxiosInstance.post.mockResolvedValue({
           status: 201,
           data: { id: 'txn-123' }
@@ -826,7 +880,7 @@ describe('HAProxyDataPlaneClient', () => {
 
         expect(transactionId).toBe('txn-123');
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-          '/services/haproxy/transactions',
+          '/services/haproxy/transactions?version=1',
           { version: 1 }
         );
       });
@@ -870,11 +924,11 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);
@@ -885,7 +939,7 @@ describe('HAProxyDataPlaneClient', () => {
       const connectionInfo = client.getConnectionInfo();
 
       expect(connectionInfo).toEqual({
-        baseUrl: 'http://0.0.0.0:5555/v3',
+        baseUrl: 'http://192.168.1.100:5555/v3',
         containerName: 'test-haproxy',
         containerId: 'container123'
       });
@@ -909,11 +963,11 @@ describe('HAProxyDataPlaneClient', () => {
       };
 
       const mockContainer = {
-        inspect: jest.fn().mockResolvedValue(mockContainerInfo)
+        inspect: vi.fn().mockResolvedValue(mockContainerInfo)
       };
 
       const mockDocker = {
-        getContainer: jest.fn().mockReturnValue(mockContainer)
+        getContainer: vi.fn().mockReturnValue(mockContainer)
       };
 
       mockDockerService.getDockerInstance.mockResolvedValue(mockDocker);

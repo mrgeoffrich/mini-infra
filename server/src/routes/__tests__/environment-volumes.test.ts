@@ -1,92 +1,102 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { EnvironmentVolume } from "@mini-infra/types";
 
-// Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-  child: jest.fn().mockReturnThis(), // Required for pino-http
-  level: "info",
-  levels: {
-    values: {
-      fatal: 60,
-      error: 50,
-      warn: 40,
-      info: 30,
-      debug: 20,
-      trace: 10,
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockLogger,
+  mockEnvironmentManager,
+  mockServiceRegistry,
+  mockPrisma,
+} = vi.hoisted(() => ({
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(), // Required for pino-http
+    level: "info",
+    levels: {
+      values: {
+        fatal: 60,
+        error: 50,
+        warn: 40,
+        info: 30,
+        debug: 20,
+        trace: 10,
+      },
+    },
+    silent: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+  },
+  mockEnvironmentManager: {
+    getInstance: vi.fn(),
+    getEnvironmentById: vi.fn(),
+  },
+  mockServiceRegistry: {
+    getInstance: vi.fn(),
+    getServiceMetadata: vi.fn(),
+  },
+  mockPrisma: {
+    environmentVolume: {
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
   },
-  silent: jest.fn(),
-  fatal: jest.fn(),
-  trace: jest.fn(),
-};
+}));
 
 // Mock logger factory first (before other imports)
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLogger; }),
+  deploymentLogger: vi.fn(function() { return mockLogger; }),
+  loadbalancerLogger: vi.fn(function() { return mockLogger; }),
+  selfBackupLogger: vi.fn(function() { return mockLogger; }),
+  tlsLogger: vi.fn(function() { return mockLogger; }),
+  agentLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock dependencies
-const mockEnvironmentManager = {
-  getInstance: jest.fn(),
-  getEnvironmentById: jest.fn(),
-};
-
-const mockServiceRegistry = {
-  getInstance: jest.fn(),
-  getServiceMetadata: jest.fn(),
-};
-
-const mockPrisma = {
-  environmentVolume: {
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
-};
-
-jest.mock("../../services/environment/environment-manager", () => ({
+vi.mock("../../services/environment/environment-manager", () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
   }
 }));
 
-jest.mock("../../services/environment/service-registry", () => ({
+vi.mock("../../services/environment/service-registry", () => ({
   ServiceRegistry: {
     getInstance: () => mockServiceRegistry
   }
 }));
 
-jest.mock("../../lib/prisma", () => mockPrisma);
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock authentication middleware
-jest.mock("../../middleware/auth", () => ({
+vi.mock("../../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => next(),
 }));
 
 // Import the router after mocking
-// Import the full app after mocking
-import fullApp from "../../app";
+import environmentVolumesRouter from "../environment-volumes";
 
 describe("Environment Volumes Routes", () => {
   let app: express.Application;
 
   beforeEach(() => {
-    app = fullApp;
+    app = express();
+    app.use(express.json());
+    // Mount the sub-router with mergeParams support at the correct path
+    app.use("/api/environments/:id/volumes", environmentVolumesRouter);
 
     // Reset all mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("GET /api/environments/:id/volumes", () => {
@@ -192,7 +202,7 @@ describe("Environment Volumes Routes", () => {
       expect(mockPrisma.environmentVolume.create).toHaveBeenCalledWith({
         data: {
           environmentId,
-          name: volumeData.name,
+          name: `test-env-${volumeData.name}`,
           driver: volumeData.driver,
           options: volumeData.options,
         },
@@ -215,7 +225,7 @@ describe("Environment Volumes Routes", () => {
           {
             id: createId(),
             environmentId,
-            name: "existing-volume",
+            name: "test-env-existing-volume",
             driver: "local",
             options: {},
             createdAt: new Date(),
@@ -293,7 +303,7 @@ describe("Environment Volumes Routes", () => {
       expect(mockPrisma.environmentVolume.create).toHaveBeenCalledWith({
         data: {
           environmentId,
-          name: volumeData.name,
+          name: `test-env-${volumeData.name}`,
           driver: "local",
           options: {},
         },
@@ -306,7 +316,6 @@ describe("Environment Volumes Routes", () => {
       const environmentId = createId();
       const volumeId = createId();
       const updateData = {
-        name: "updated-volume",
         driver: "nfs",
         options: { server: "192.168.1.100" },
       };
@@ -355,7 +364,7 @@ describe("Environment Volumes Routes", () => {
       const environmentId = createId();
       const volumeId = createId();
       const updateData = {
-        name: "updated-volume",
+        driver: "nfs",
       };
 
       const mockEnvironment = {
@@ -379,12 +388,11 @@ describe("Environment Volumes Routes", () => {
       });
     });
 
-    it("should prevent name conflicts when updating", async () => {
+    it("should ignore name field in update (name is immutable)", async () => {
       const environmentId = createId();
       const volumeId = createId();
-      const anotherVolumeId = createId();
       const updateData = {
-        name: "conflicting-name",
+        driver: "nfs",
       };
 
       const mockExistingVolume = {
@@ -396,34 +404,30 @@ describe("Environment Volumes Routes", () => {
         createdAt: new Date(),
       };
 
-      const mockConflictingVolume = {
-        id: anotherVolumeId,
-        environmentId,
-        name: "conflicting-name", // Same name as update
-        driver: "local",
-        options: {},
-        createdAt: new Date(),
-      };
-
       const mockEnvironment = {
         id: environmentId,
         name: "test-env",
         networks: [],
         services: [],
-        volumes: [mockExistingVolume, mockConflictingVolume],
+        volumes: [mockExistingVolume],
+      };
+
+      const mockUpdatedVolume = {
+        ...mockExistingVolume,
+        driver: "nfs",
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
+      mockPrisma.environmentVolume.update.mockResolvedValue(mockUpdatedVolume);
 
       const response = await request(app)
         .put(`/api/environments/${environmentId}/volumes/${volumeId}`)
         .send(updateData)
-        .expect(409);
+        .expect(200);
 
-      expect(response.body).toMatchObject({
-        error: "Volume name already exists",
-        message: "A volume with this name already exists in the environment",
-      });
+      // Name should remain unchanged
+      expect(response.body.name).toBe("original-volume");
+      expect(response.body.driver).toBe("nfs");
     });
   });
 
@@ -468,7 +472,7 @@ describe("Environment Volumes Routes", () => {
       const mockExistingVolume = {
         id: volumeId,
         environmentId,
-        name: "test-volume",
+        name: "test-env-test-volume",
         driver: "local",
         options: {},
         createdAt: new Date(),

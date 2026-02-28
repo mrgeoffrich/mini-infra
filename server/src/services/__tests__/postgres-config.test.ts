@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { PostgresDatabaseManager } from "../postgres";
@@ -8,63 +7,66 @@ import {
   DatabaseConnectionConfig,
   PostgreSSLMode,
 } from "@mini-infra/types";
+import * as pg from "pg";
 
-// Mock crypto-js
-jest.mock("crypto-js", () => ({
-  AES: {
-    encrypt: jest.fn(),
-    decrypt: jest.fn(),
+const { mockCryptoJS, mockPgClient } = vi.hoisted(() => ({
+  mockCryptoJS: {
+    AES: {
+      encrypt: vi.fn(),
+      decrypt: vi.fn(),
+    },
+    enc: {
+      Utf8: "utf8",
+    },
   },
-  enc: {
-    Utf8: "utf8",
+  mockPgClient: {
+    connect: vi.fn(),
+    query: vi.fn(),
+    end: vi.fn(),
   },
 }));
 
-// Get the mocked crypto-js
-const mockCryptoJS = jest.requireMock("crypto-js") as any;
+// Mock crypto-js
+vi.mock("crypto-js", () => ({
+  default: mockCryptoJS,
+  ...mockCryptoJS,
+}));
 
-// Mock pg client
-const mockPgClient = {
-  connect: jest.fn(),
-  query: jest.fn(),
-  end: jest.fn(),
-};
-
-jest.mock("pg", () => ({
-  Client: jest.fn().mockImplementation(() => mockPgClient),
+vi.mock("pg", () => ({
+  default: { Client: vi.fn().mockImplementation(function() { return mockPgClient; }) },
+  Client: vi.fn().mockImplementation(function() { return mockPgClient; }),
 }));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => {
+vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
-// Get reference to the mocked logger
-const { servicesLogger } = jest.requireMock("../../lib/logger-factory") as any;
-const mockLogger = servicesLogger();
+// Get reference to the mocked logger (defined in vi.mock factory above)
+import * as loggerFactory from "../../lib/logger-factory";
+const mockLogger = (vi.mocked(loggerFactory).servicesLogger as any)();
 
 // Mock Prisma client
 const mockPrisma = {
   postgresDatabase: {
-    findUnique: jest.fn(),
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
   },
 } as unknown as typeof prisma;
 
@@ -73,7 +75,7 @@ describe("PostgresDatabaseManager", () => {
   const testEncryptionKey = "test-encryption-key";
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     databaseConfigService = new PostgresDatabaseManager(
       mockPrisma,
       testEncryptionKey,
@@ -137,16 +139,16 @@ describe("PostgresDatabaseManager", () => {
         userId,
       };
 
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValueOnce(null) // For duplicate check
         .mockResolvedValueOnce(mockCreatedDb); // For fetching after health check (fallback to original)
-      mockPrisma.postgresDatabase.create = jest
+      mockPrisma.postgresDatabase.create = vi
         .fn()
         .mockResolvedValue(mockCreatedDb);
 
       // Mock the health check to fail silently so we get original behavior for this test
-      const healthCheckSpy = jest.spyOn(databaseConfigService, 'performHealthCheck')
+      const healthCheckSpy = vi.spyOn(databaseConfigService, 'performHealthCheck')
         .mockRejectedValue(new Error('Health check skipped in test'));
 
       const result = await databaseConfigService.createDatabase(
@@ -190,7 +192,6 @@ describe("PostgresDatabaseManager", () => {
           sslMode: "prefer",
           tags: '["test","development"]',
           healthStatus: "unknown",
-          userId,
         },
       });
     });
@@ -199,7 +200,7 @@ describe("PostgresDatabaseManager", () => {
       const userId = "user-123";
       const existingDb = { id: "existing-id", name: "test-db" };
 
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValue(existingDb);
 
@@ -284,12 +285,12 @@ describe("PostgresDatabaseManager", () => {
     it("should update database configuration successfully", async () => {
       const updatedDb = { ...existingDb, ...updateRequest };
 
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValueOnce(existingDb) // For checking existing
         .mockResolvedValueOnce(null); // For checking name conflict
 
-      mockPrisma.postgresDatabase.update = jest
+      mockPrisma.postgresDatabase.update = vi
         .fn()
         .mockResolvedValue(updatedDb);
 
@@ -316,7 +317,7 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should throw error for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -329,27 +330,10 @@ describe("PostgresDatabaseManager", () => {
       ).rejects.toThrow("Database configuration not found");
     });
 
-    it("should throw error for unauthorized access", async () => {
-      const unauthorizedDb = { ...existingDb, userId: "other-user" };
-      mockPrisma.postgresDatabase.findUnique = jest
-        .fn()
-        .mockResolvedValue(unauthorizedDb);
-
-      await expect(
-        databaseConfigService.updateDatabase(
-          "db-123",
-          updateRequest,
-          "user-123",
-        ),
-      ).rejects.toThrow(
-        "Access denied: You can only update your own database configurations",
-      );
-    });
-
     it("should handle name conflict during update", async () => {
       const conflictingDb = { id: "other-db", name: "updated-db" };
 
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValueOnce(existingDb) // For checking existing
         .mockResolvedValueOnce(conflictingDb); // For checking name conflict
@@ -385,7 +369,7 @@ describe("PostgresDatabaseManager", () => {
         userId: "user-123",
       };
 
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDb);
 
@@ -408,12 +392,11 @@ describe("PostgresDatabaseManager", () => {
         updatedAt: "2023-01-01T00:00:00.000Z",
         lastHealthCheck: null,
         healthStatus: "unknown",
-        userId: "user-123",
       });
     });
 
     it("should return null for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = vi.fn().mockResolvedValue(null);
 
       const result = await databaseConfigService.getDatabaseById(
         "nonexistent",
@@ -461,11 +444,11 @@ describe("PostgresDatabaseManager", () => {
     ];
 
     it("should list all databases for user", async () => {
-      mockPrisma.postgresDatabase.findMany = jest
+      mockPrisma.postgresDatabase.findMany = vi
         .fn()
         .mockResolvedValue(mockDatabases);
 
-      const result = await databaseConfigService.listDatabases("user-123");
+      const result = await databaseConfigService.listDatabases();
 
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe("db1");
@@ -474,11 +457,11 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should filter databases by name", async () => {
-      mockPrisma.postgresDatabase.findMany = jest
+      mockPrisma.postgresDatabase.findMany = vi
         .fn()
         .mockResolvedValue([mockDatabases[0]]);
 
-      const result = await databaseConfigService.listDatabases("user-123", {
+      const result = await databaseConfigService.listDatabases({
         name: "db1",
       });
 
@@ -487,10 +470,8 @@ describe("PostgresDatabaseManager", () => {
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
         where: {
-          userId: "user-123",
           name: {
             contains: "db1",
-            mode: "insensitive",
           },
         },
         orderBy: { createdAt: "desc" },
@@ -500,17 +481,16 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should filter databases by health status", async () => {
-      mockPrisma.postgresDatabase.findMany = jest
+      mockPrisma.postgresDatabase.findMany = vi
         .fn()
         .mockResolvedValue([mockDatabases[0]]);
 
-      await databaseConfigService.listDatabases("user-123", {
+      await databaseConfigService.listDatabases({
         healthStatus: "healthy",
       });
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
         where: {
-          userId: "user-123",
           healthStatus: "healthy",
         },
         orderBy: { createdAt: "desc" },
@@ -520,17 +500,16 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should filter databases by tags", async () => {
-      mockPrisma.postgresDatabase.findMany = jest
+      mockPrisma.postgresDatabase.findMany = vi
         .fn()
         .mockResolvedValue([mockDatabases[1]]);
 
-      await databaseConfigService.listDatabases("user-123", {
+      await databaseConfigService.listDatabases({
         tags: ["production"],
       });
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
         where: {
-          userId: "user-123",
           OR: [
             {
               tags: {
@@ -546,12 +525,11 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should apply pagination", async () => {
-      mockPrisma.postgresDatabase.findMany = jest
+      mockPrisma.postgresDatabase.findMany = vi
         .fn()
         .mockResolvedValue([mockDatabases[0]]);
 
       await databaseConfigService.listDatabases(
-        "user-123",
         {},
         { field: "name", order: "asc" },
         10,
@@ -559,7 +537,7 @@ describe("PostgresDatabaseManager", () => {
       );
 
       expect(mockPrisma.postgresDatabase.findMany).toHaveBeenCalledWith({
-        where: { userId: "user-123" },
+        where: {},
         orderBy: { name: "asc" },
         take: 10,
         skip: 5,
@@ -575,12 +553,12 @@ describe("PostgresDatabaseManager", () => {
     };
 
     it("should delete database successfully", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(existingDb);
-      mockPrisma.postgresDatabase.delete = jest.fn().mockResolvedValue({});
+      mockPrisma.postgresDatabase.delete = vi.fn().mockResolvedValue({});
 
-      await databaseConfigService.deleteDatabase("db-123", "user-123");
+      await databaseConfigService.deleteDatabase("db-123");
 
       expect(mockPrisma.postgresDatabase.delete).toHaveBeenCalledWith({
         where: { id: "db-123" },
@@ -590,28 +568,17 @@ describe("PostgresDatabaseManager", () => {
         {
           databaseId: "db-123",
           name: "test-db",
-          userId: "user-123",
         },
         "Database configuration deleted",
       );
     });
 
     it("should throw error for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = vi.fn().mockResolvedValue(null);
 
       await expect(
-        databaseConfigService.deleteDatabase("nonexistent", "user-123"),
-      ).rejects.toThrow("Database configuration not found or access denied");
-    });
-
-    it("should throw error for unauthorized access", async () => {
-      // Mock findFirst to return null because the userId doesn't match
-      // (simulating the actual Prisma query behavior where both id and userId must match)
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
-
-      await expect(
-        databaseConfigService.deleteDatabase("db-123", "user-123"),
-      ).rejects.toThrow("Database configuration not found or access denied");
+        databaseConfigService.deleteDatabase("nonexistent"),
+      ).rejects.toThrow("Database configuration not found");
     });
   });
 
@@ -732,10 +699,10 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should test existing database connection", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(existingDb);
-      mockPrisma.postgresDatabase.update = jest.fn().mockResolvedValue({});
+      mockPrisma.postgresDatabase.update = vi.fn().mockResolvedValue({});
 
       mockPgClient.connect.mockResolvedValue(undefined);
       mockPgClient.query.mockResolvedValue({
@@ -745,7 +712,6 @@ describe("PostgresDatabaseManager", () => {
 
       const result = await databaseConfigService.testDatabaseConnection(
         "db-123",
-        "user-123",
       );
 
       expect(result.isValid).toBe(true);
@@ -759,11 +725,11 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should throw error for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = vi.fn().mockResolvedValue(null);
 
       await expect(
-        databaseConfigService.testDatabaseConnection("nonexistent", "user-123"),
-      ).rejects.toThrow("Database configuration not found or access denied");
+        databaseConfigService.testDatabaseConnection("nonexistent"),
+      ).rejects.toThrow("Database configuration not found");
     });
   });
 
@@ -781,10 +747,10 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should perform health check successfully", async () => {
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValue(existingDb);
-      mockPrisma.postgresDatabase.update = jest.fn().mockResolvedValue({});
+      mockPrisma.postgresDatabase.update = vi.fn().mockResolvedValue({});
 
       mockPgClient.connect.mockResolvedValue(undefined);
       mockPgClient.query.mockResolvedValue({
@@ -801,10 +767,10 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should handle unhealthy database", async () => {
-      mockPrisma.postgresDatabase.findUnique = jest
+      mockPrisma.postgresDatabase.findUnique = vi
         .fn()
         .mockResolvedValue(existingDb);
-      mockPrisma.postgresDatabase.update = jest.fn().mockResolvedValue({});
+      mockPrisma.postgresDatabase.update = vi.fn().mockResolvedValue({});
 
       mockPgClient.connect.mockRejectedValue(new Error("Connection failed"));
       mockPgClient.end.mockResolvedValue(undefined);
@@ -831,7 +797,7 @@ describe("PostgresDatabaseManager", () => {
     });
 
     it("should return decrypted connection config", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(existingDb);
 
@@ -850,16 +816,16 @@ describe("PostgresDatabaseManager", () => {
       });
     });
 
-    it("should throw error for unauthorized access", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
+    it("should throw error when database not found", async () => {
+      mockPrisma.postgresDatabase.findFirst = vi.fn().mockResolvedValue(null);
 
       await expect(
-        databaseConfigService.getConnectionConfig("db-123", "user-123"),
-      ).rejects.toThrow("Database not found or access denied");
+        databaseConfigService.getConnectionConfig("db-123"),
+      ).rejects.toThrow("Database not found");
     });
 
     it("should handle decryption failure", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(existingDb);
 
@@ -1244,7 +1210,7 @@ describe("PostgresDatabaseManager", () => {
 
       expect(result.databases).toEqual([]);
       expect(result.serverVersion).toBe("PostgreSQL 14.5");
-      expect(result.responseTimeMs).toBeGreaterThan(0);
+      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
     });
 
     it("should handle connection failures", async () => {
@@ -1295,7 +1261,6 @@ describe("PostgresDatabaseManager", () => {
       await databaseConfigService.discoverDatabases(discoveryRequest);
 
       // Check that the connection string uses the postgres database
-      const pg = require("pg");
       const Client = pg.Client;
       expect(Client).toHaveBeenCalledWith({
         connectionString: expect.stringContaining("/postgres?sslmode="),

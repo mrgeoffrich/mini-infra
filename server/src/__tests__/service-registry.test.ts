@@ -50,7 +50,7 @@ describe('ServiceRegistry', () => {
       expect(metadata!.version).toBe('3.2.0');
       expect(metadata!.dependencies).toContain('docker');
       expect(metadata!.requiredNetworks).toHaveLength(1);
-      expect(metadata!.requiredVolumes).toHaveLength(3);
+      expect(metadata!.requiredVolumes).toHaveLength(4);
       expect(metadata!.exposedPorts).toHaveLength(4);
     });
   });
@@ -142,10 +142,11 @@ describe('ServiceRegistry', () => {
     it('should return volume requirements for haproxy', () => {
       const volumes = serviceRegistry.getServiceVolumeRequirements('haproxy');
 
-      expect(volumes).toHaveLength(3);
+      expect(volumes).toHaveLength(4);
       expect(volumes.map(v => v.name)).toContain('haproxy_data');
       expect(volumes.map(v => v.name)).toContain('haproxy_run');
       expect(volumes.map(v => v.name)).toContain('haproxy_config');
+      expect(volumes.map(v => v.name)).toContain('haproxy_certs');
     });
 
     it('should return empty arrays for unknown service requirements', () => {

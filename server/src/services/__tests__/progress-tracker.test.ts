@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ProgressTrackerService } from "../progress-tracker";
@@ -9,22 +8,23 @@ import {
   RestoreOperationStatus,
 } from "@mini-infra/types";
 
-// Mock logger functions
-const mockLoggerFunctions = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
+// Hoist mock variables used inside vi.mock() factory functions
+const { mockLoggerFunctions } = vi.hoisted(() => ({
+  mockLoggerFunctions: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLoggerFunctions),
-  servicesLogger: jest.fn(() => mockLoggerFunctions),
-  httpLogger: jest.fn(() => mockLoggerFunctions),
-  prismaLogger: jest.fn(() => mockLoggerFunctions),
-  __esModule: true,
-  default: jest.fn(() => mockLoggerFunctions),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  servicesLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  httpLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  prismaLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  default: vi.fn(function() { return mockLoggerFunctions; }),
 }));
 
 // Get reference to the mocked logger
@@ -33,18 +33,18 @@ const mockLogger = mockLoggerFunctions;
 // Mock Prisma client
 const mockPrisma = {
   backupOperation: {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-    deleteMany: jest.fn(),
-    updateMany: jest.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
   },
   restoreOperation: {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-    deleteMany: jest.fn(),
-    updateMany: jest.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
   },
 } as unknown as typeof prisma;
 
@@ -52,16 +52,16 @@ describe("ProgressTrackerService", () => {
   let progressTrackerService: ProgressTrackerService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers();
-    jest.clearAllTimers();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.clearAllTimers();
     progressTrackerService = new ProgressTrackerService(mockPrisma);
   });
 
   afterEach(async () => {
     await progressTrackerService.shutdown();
-    jest.useRealTimers();
-    jest.clearAllTimers();
+    vi.useRealTimers();
+    vi.clearAllTimers();
   });
 
   describe("constructor", () => {
@@ -115,7 +115,7 @@ describe("ProgressTrackerService", () => {
     };
 
     it("should return backup operation progress", async () => {
-      mockPrisma.backupOperation.findFirst = jest
+      mockPrisma.backupOperation.findFirst = vi
         .fn()
         .mockResolvedValue(mockBackupOperation);
 
@@ -144,9 +144,6 @@ describe("ProgressTrackerService", () => {
       expect(mockPrisma.backupOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "operation-123",
-          database: {
-            userId: "user-123",
-          },
         },
         include: {
           database: {
@@ -159,7 +156,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should return null for non-existent operation", async () => {
-      mockPrisma.backupOperation.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupOperation.findFirst = vi.fn().mockResolvedValue(null);
 
       const result = await progressTrackerService.getBackupProgress(
         "nonexistent",
@@ -175,7 +172,7 @@ describe("ProgressTrackerService", () => {
         metadata: "invalid-json",
       };
 
-      mockPrisma.backupOperation.findFirst = jest
+      mockPrisma.backupOperation.findFirst = vi
         .fn()
         .mockResolvedValue(operationWithInvalidMetadata);
 
@@ -192,7 +189,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle database query errors", async () => {
-      mockPrisma.backupOperation.findFirst = jest
+      mockPrisma.backupOperation.findFirst = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -204,7 +201,6 @@ describe("ProgressTrackerService", () => {
         {
           error: "Database error",
           operationId: "operation-123",
-          userId: "user-123",
         },
         "Failed to get backup progress",
       );
@@ -227,7 +223,7 @@ describe("ProgressTrackerService", () => {
     };
 
     it("should return restore operation progress", async () => {
-      mockPrisma.restoreOperation.findFirst = jest
+      mockPrisma.restoreOperation.findFirst = vi
         .fn()
         .mockResolvedValue(mockRestoreOperation);
 
@@ -248,7 +244,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should return null for non-existent operation", async () => {
-      mockPrisma.restoreOperation.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.restoreOperation.findFirst = vi.fn().mockResolvedValue(null);
 
       const result = await progressTrackerService.getRestoreProgress(
         "nonexistent",
@@ -292,10 +288,10 @@ describe("ProgressTrackerService", () => {
     ];
 
     it("should return active operations for user", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockActiveBackups);
-      mockPrisma.restoreOperation.findMany = jest
+      mockPrisma.restoreOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockActiveRestores);
 
@@ -326,7 +322,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle query errors", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -370,10 +366,10 @@ describe("ProgressTrackerService", () => {
     ];
 
     it("should return operation history with all operations", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockBackupOperations);
-      mockPrisma.restoreOperation.findMany = jest
+      mockPrisma.restoreOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockRestoreOperations);
 
@@ -393,10 +389,10 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should filter by operation type", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockBackupOperations);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
+      mockPrisma.restoreOperation.findMany = vi.fn().mockResolvedValue([]);
 
       const result = await progressTrackerService.getOperationHistory({
         operationType: "backup",
@@ -410,10 +406,10 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should filter by database ID", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockResolvedValue(mockBackupOperations);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
+      mockPrisma.restoreOperation.findMany = vi.fn().mockResolvedValue([]);
 
       await progressTrackerService.getOperationHistory({
         databaseId: "db-1",
@@ -430,8 +426,8 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should filter by status", async () => {
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue([]);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
+      mockPrisma.backupOperation.findMany = vi.fn().mockResolvedValue([]);
+      mockPrisma.restoreOperation.findMany = vi.fn().mockResolvedValue([]);
 
       await progressTrackerService.getOperationHistory({
         status: "completed",
@@ -451,8 +447,8 @@ describe("ProgressTrackerService", () => {
       const startDate = new Date("2023-01-01T00:00:00Z");
       const endDate = new Date("2023-01-02T00:00:00Z");
 
-      mockPrisma.backupOperation.findMany = jest.fn().mockResolvedValue([]);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
+      mockPrisma.backupOperation.findMany = vi.fn().mockResolvedValue([]);
+      mockPrisma.restoreOperation.findMany = vi.fn().mockResolvedValue([]);
 
       await progressTrackerService.getOperationHistory({
         startedAfter: startDate,
@@ -490,12 +486,12 @@ describe("ProgressTrackerService", () => {
         database: { name: "test-db" },
       }));
 
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockResolvedValue(manyOperations);
-      mockPrisma.restoreOperation.findMany = jest.fn().mockResolvedValue([]);
-      mockPrisma.backupOperation.count = jest.fn().mockResolvedValue(60);
-      mockPrisma.restoreOperation.count = jest.fn().mockResolvedValue(0);
+      mockPrisma.restoreOperation.findMany = vi.fn().mockResolvedValue([]);
+      mockPrisma.backupOperation.count = vi.fn().mockResolvedValue(60);
+      mockPrisma.restoreOperation.count = vi.fn().mockResolvedValue(0);
 
       const result = await progressTrackerService.getOperationHistory({
         limit: 20,
@@ -508,7 +504,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle query errors", async () => {
-      mockPrisma.backupOperation.findMany = jest
+      mockPrisma.backupOperation.findMany = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -542,7 +538,7 @@ describe("ProgressTrackerService", () => {
     };
 
     it("should emit backup progress events", () => {
-      const progressListener = jest.fn();
+      const progressListener = vi.fn();
       progressTrackerService.on("backup-progress", progressListener);
 
       progressTrackerService.broadcastProgressUpdate("backup", backupUpdate);
@@ -560,7 +556,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should emit restore progress events", () => {
-      const progressListener = jest.fn();
+      const progressListener = vi.fn();
       progressTrackerService.on("restore-progress", progressListener);
 
       progressTrackerService.broadcastProgressUpdate("restore", restoreUpdate);
@@ -569,7 +565,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should emit operation completed events", () => {
-      const completedListener = jest.fn();
+      const completedListener = vi.fn();
       progressTrackerService.on("operation-completed", completedListener);
 
       progressTrackerService.broadcastProgressUpdate("restore", restoreUpdate);
@@ -581,7 +577,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should emit operation failed events", () => {
-      const failedListener = jest.fn();
+      const failedListener = vi.fn();
       progressTrackerService.on("operation-failed", failedListener);
 
       const failedUpdate: BackupProgressUpdate = {
@@ -601,7 +597,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle broadcast errors gracefully", () => {
-      const errorListener = jest.fn().mockImplementation(() => {
+      const errorListener = vi.fn().mockImplementation(() => {
         throw new Error("Listener error");
       });
       progressTrackerService.on("backup-progress", errorListener);
@@ -623,26 +619,26 @@ describe("ProgressTrackerService", () => {
   describe("cleanupOldOperations", () => {
     beforeEach(() => {
       // Mock current time
-      jest.setSystemTime(new Date("2023-01-31T12:00:00Z"));
+      vi.setSystemTime(new Date("2023-01-31T12:00:00Z"));
     });
 
     it("should clean up old operations and repair stale ones", async () => {
       // Mock stale operation repairs (updateMany)
-      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
+      (mockPrisma.backupOperation.updateMany as Mock) = vi
         .fn()
         .mockResolvedValueOnce({ count: 2 }) // Stale completed backups
         .mockResolvedValueOnce({ count: 1 }); // Stale failed backups
-      (mockPrisma.restoreOperation.updateMany as jest.Mock) = jest
+      (mockPrisma.restoreOperation.updateMany as Mock) = vi
         .fn()
         .mockResolvedValueOnce({ count: 0 }) // Stale completed restores
         .mockResolvedValueOnce({ count: 0 }); // Stale failed restores
 
-      (mockPrisma.backupOperation.deleteMany as jest.Mock) = jest
+      (mockPrisma.backupOperation.deleteMany as Mock) = vi
         .fn()
         .mockResolvedValueOnce({ count: 5 }) // Completed operations
         .mockResolvedValueOnce({ count: 3 }); // Failed operations
 
-      (mockPrisma.restoreOperation.deleteMany as jest.Mock) = jest
+      (mockPrisma.restoreOperation.deleteMany as Mock) = vi
         .fn()
         .mockResolvedValueOnce({ count: 2 }) // Completed operations
         .mockResolvedValueOnce({ count: 1 }); // Failed operations
@@ -684,16 +680,16 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should return zeros when no operations need cleanup or repair", async () => {
-      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
+      (mockPrisma.backupOperation.updateMany as Mock) = vi
         .fn()
         .mockResolvedValue({ count: 0 });
-      (mockPrisma.restoreOperation.updateMany as jest.Mock) = jest
+      (mockPrisma.restoreOperation.updateMany as Mock) = vi
         .fn()
         .mockResolvedValue({ count: 0 });
-      (mockPrisma.backupOperation.deleteMany as jest.Mock) = jest
+      (mockPrisma.backupOperation.deleteMany as Mock) = vi
         .fn()
         .mockResolvedValue({ count: 0 });
-      (mockPrisma.restoreOperation.deleteMany as jest.Mock) = jest
+      (mockPrisma.restoreOperation.deleteMany as Mock) = vi
         .fn()
         .mockResolvedValue({ count: 0 });
 
@@ -708,7 +704,7 @@ describe("ProgressTrackerService", () => {
     });
 
     it("should handle cleanup errors", async () => {
-      (mockPrisma.backupOperation.updateMany as jest.Mock) = jest
+      (mockPrisma.backupOperation.updateMany as Mock) = vi
         .fn()
         .mockRejectedValue(new Error("Delete error"));
 
@@ -736,14 +732,22 @@ describe("ProgressTrackerService", () => {
       const backupCalls: any[] = [];
       const restoreCalls: any[] = [];
 
-      mockPrisma.backupOperation.deleteMany = jest
+      mockPrisma.backupOperation.updateMany = vi
+        .fn()
+        .mockResolvedValue({ count: 0 });
+
+      mockPrisma.restoreOperation.updateMany = vi
+        .fn()
+        .mockResolvedValue({ count: 0 });
+
+      mockPrisma.backupOperation.deleteMany = vi
         .fn()
         .mockImplementation((args) => {
           backupCalls.push(args);
           return Promise.resolve({ count: 0 });
         });
 
-      mockPrisma.restoreOperation.deleteMany = jest
+      mockPrisma.restoreOperation.deleteMany = vi
         .fn()
         .mockImplementation((args) => {
           restoreCalls.push(args);
@@ -753,16 +757,16 @@ describe("ProgressTrackerService", () => {
       await progressTrackerService.initialize();
 
       // Fast forward time to trigger cleanup
-      jest.advanceTimersByTime(60 * 60 * 1000); // 1 hour
+      vi.advanceTimersByTime(60 * 60 * 1000); // 1 hour
 
       // Run all pending timers to execute the cleanup callback
-      jest.runOnlyPendingTimers();
+      vi.runOnlyPendingTimers();
 
       // Wait for async operations to complete
       await new Promise((resolve) => {
-        jest.useRealTimers();
+        vi.useRealTimers();
         setTimeout(() => {
-          jest.useFakeTimers();
+          vi.useFakeTimers();
           resolve(void 0);
         }, 50);
       });
@@ -791,7 +795,7 @@ describe("ProgressTrackerService", () => {
       let periodicErrorCount = 0;
 
       // Override the mock logger to track calls
-      mockLogger.error = jest.fn().mockImplementation((context, message) => {
+      mockLogger.error = vi.fn().mockImplementation((context, message) => {
         if (message === "Failed to clean up old operations") {
           cleanupErrorCount++;
         } else if (message === "Periodic cleanup failed") {
@@ -799,23 +803,35 @@ describe("ProgressTrackerService", () => {
         }
       });
 
-      mockPrisma.backupOperation.deleteMany = jest
+      mockPrisma.backupOperation.updateMany = vi
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
+
+      mockPrisma.restoreOperation.updateMany = vi
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
+
+      mockPrisma.backupOperation.deleteMany = vi
+        .fn()
+        .mockRejectedValue(new Error("Database error"));
+
+      mockPrisma.restoreOperation.deleteMany = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
       await progressTrackerService.initialize();
 
       // Fast forward time to trigger cleanup
-      jest.advanceTimersByTime(60 * 60 * 1000);
+      vi.advanceTimersByTime(60 * 60 * 1000);
 
       // Run all pending timers to execute the cleanup callback
-      jest.runOnlyPendingTimers();
+      vi.runOnlyPendingTimers();
 
       // Wait a bit for async error handling to complete
       await new Promise((resolve) => {
-        jest.useRealTimers();
+        vi.useRealTimers();
         setTimeout(() => {
-          jest.useFakeTimers();
+          vi.useFakeTimers();
           resolve(void 0);
         }, 10);
       });
@@ -845,7 +861,7 @@ describe("ProgressTrackerService", () => {
       await progressTrackerService.initialize();
 
       // Add some event listeners
-      const listener = jest.fn();
+      const listener = vi.fn();
       progressTrackerService.on("backup-progress", listener);
 
       await progressTrackerService.shutdown();
@@ -1003,7 +1019,7 @@ describe("ProgressTrackerService", () => {
 
   describe("event handling edge cases", () => {
     it("should handle failed operations without error message", () => {
-      const failedListener = jest.fn();
+      const failedListener = vi.fn();
       progressTrackerService.on("operation-failed", failedListener);
 
       const updateWithoutMessage: BackupProgressUpdate = {

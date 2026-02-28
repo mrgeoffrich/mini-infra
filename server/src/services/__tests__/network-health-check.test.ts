@@ -3,45 +3,51 @@ import { DockerExecutorService } from "../docker-executor";
 import type { ContainerExecutionResult } from "../docker-executor";
 import prisma from "../../lib/prisma";
 
-// Mock dependencies
-jest.mock("../docker-executor");
-jest.mock("../../lib/prisma", () => ({
-  systemSettings: {
-    findFirst: jest.fn(),
+const { mockLoggerInstance, mockDockerExecutor } = vi.hoisted(() => ({
+  mockLoggerInstance: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+  mockDockerExecutor: {
+    initialize: vi.fn(),
+    executeContainer: vi.fn(),
+    getDockerNetworkName: vi.fn(),
   },
 }));
-jest.mock("../../lib/logger-factory", () => ({
-  servicesLogger: () => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  }),
-  dockerExecutorLogger: () => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  }),
+
+// Mock dependencies
+vi.mock("../docker-executor");
+vi.mock("../../lib/prisma", () => ({
+  default: {
+    systemSettings: {
+      findFirst: vi.fn(),
+    },
+  },
+}));
+vi.mock("../../lib/logger-factory", () => ({
+  createLogger: vi.fn(function() { return mockLoggerInstance; }),
+  appLogger: vi.fn(function() { return mockLoggerInstance; }),
+  httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+  prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+  servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+  deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+  loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+  tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
 }));
 
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
-
-// Mock Docker Executor
-const mockDockerExecutor = {
-  initialize: jest.fn(),
-  executeContainer: jest.fn(),
-  getDockerNetworkName: jest.fn(),
-} as unknown as DockerExecutorService;
+const mockPrisma = prisma as Mocked<typeof prisma>;
 
 // Mock the constructor
-(DockerExecutorService as jest.MockedClass<typeof DockerExecutorService>).mockImplementation(() => mockDockerExecutor);
+(DockerExecutorService as MockedClass<typeof DockerExecutorService>).mockImplementation(function() { return mockDockerExecutor as unknown as DockerExecutorService; });
 
 describe("NetworkHealthCheckService", () => {
   let networkHealthCheckService: NetworkHealthCheckService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     networkHealthCheckService = new NetworkHealthCheckService();
   });
 
@@ -260,8 +266,8 @@ TIME_TOTAL:0.123456`;
         updatedAt: new Date(),
       });
 
-      (mockDockerExecutor.executeContainer as jest.Mock).mockResolvedValueOnce(mockExecutionResult);
-      (mockDockerExecutor.getDockerNetworkName as jest.Mock).mockResolvedValueOnce("test-network");
+      (mockDockerExecutor.executeContainer as Mock).mockResolvedValueOnce(mockExecutionResult);
+      (mockDockerExecutor.getDockerNetworkName as Mock).mockResolvedValueOnce("test-network");
     });
 
     it("should perform successful network health check", async () => {
@@ -311,7 +317,7 @@ TIME_TOTAL:0.123456`;
 
     it("should validate response status codes", async () => {
       // Mock the internal performSingleNetworkHealthCheck method to avoid retry delays
-      jest.spyOn(networkHealthCheckService as any, 'performSingleNetworkHealthCheck').mockResolvedValue({
+      vi.spyOn(networkHealthCheckService as any, 'performSingleNetworkHealthCheck').mockResolvedValue({
         success: false,
         statusCode: 200,
         responseTime: 123,
@@ -344,7 +350,7 @@ TIME_TOTAL:0.123456`;
 
     it("should validate response body pattern", async () => {
       // Mock the internal performSingleNetworkHealthCheck method to avoid retry delays
-      jest.spyOn(networkHealthCheckService as any, 'performSingleNetworkHealthCheck').mockResolvedValue({
+      vi.spyOn(networkHealthCheckService as any, 'performSingleNetworkHealthCheck').mockResolvedValue({
         success: false,
         statusCode: 200,
         responseTime: 123,
@@ -383,7 +389,7 @@ TIME_TOTAL:0.123456`;
         responseBody: "OK",
       };
 
-      jest.spyOn(networkHealthCheckService, "performNetworkHealthCheck").mockResolvedValue(mockResult);
+      vi.spyOn(networkHealthCheckService, "performNetworkHealthCheck").mockResolvedValue(mockResult);
 
       const result = await networkHealthCheckService.performBasicNetworkHealthCheck(
         "test-app",

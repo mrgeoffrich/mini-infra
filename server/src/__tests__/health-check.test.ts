@@ -1,4 +1,3 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import axios, { AxiosResponse, AxiosError } from "axios";
 import {
   HealthCheckService,
@@ -7,31 +6,30 @@ import {
 } from "../services/health-check";
 
 // Mock axios
-jest.mock("axios");
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+vi.mock("axios");
+const mockedAxios = axios as Mocked<typeof axios>;
 
 // Mock axios.isAxiosError
 Object.defineProperty(axios, 'isAxiosError', {
-  value: jest.fn((error: any) => {
+  value: vi.fn((error: any) => {
     return error && error.isAxiosError === true;
   }),
   writable: true,
 });
 
 // Mock logger factory
-jest.mock("../lib/logger-factory.ts", () => ({
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+vi.mock("../lib/logger-factory.ts", () => ({
+  servicesLogger: vi.fn(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+  default: vi.fn(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   })),
 }));
 
@@ -41,7 +39,7 @@ describe("HealthCheckService", () => {
 
   beforeEach(() => {
     healthCheckService = new HealthCheckService();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     
     // Setup axios defaults mock
     mockedAxios.defaults = {
@@ -51,22 +49,22 @@ describe("HealthCheckService", () => {
     // Mock Date.now() for consistent response time testing - default 150ms response
     mockStartTime = 1000;
     let callCount = 0;
-    jest.spyOn(Date, 'now').mockImplementation(() => {
+    vi.spyOn(Date, 'now').mockImplementation(() => {
       // Alternate between start time and end time to simulate response time
       callCount++;
       return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
     });
 
     // Mock the sleep function to avoid real delays
-    jest.spyOn(healthCheckService as any, 'sleep').mockImplementation(async () => {
+    vi.spyOn(healthCheckService as any, 'sleep').mockImplementation(async () => {
       // Return immediately instead of waiting
       return Promise.resolve();
     });
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
-    jest.restoreAllMocks();
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   // Helper function to create a mock axios response
@@ -124,9 +122,9 @@ describe("HealthCheckService", () => {
 
     it("should fail basic health check for non-200 status", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -145,9 +143,9 @@ describe("HealthCheckService", () => {
 
     it("should handle connection errors", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -168,9 +166,9 @@ describe("HealthCheckService", () => {
 
     it("should handle timeout errors", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -188,9 +186,9 @@ describe("HealthCheckService", () => {
 
     it("should handle DNS resolution errors", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -248,9 +246,9 @@ describe("HealthCheckService", () => {
 
     it("should fail validation for unexpected status code", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -287,9 +285,9 @@ describe("HealthCheckService", () => {
 
     it("should fail validation for non-matching body pattern", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -312,8 +310,8 @@ describe("HealthCheckService", () => {
       const mockResponse = createMockResponse(200, "OK");
       
       // Mock slow response time (200ms)
-      jest.spyOn(Date, 'now').mockRestore();
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(1000) // Start time
         .mockReturnValueOnce(1200); // End time (200ms response)
       
@@ -334,9 +332,9 @@ describe("HealthCheckService", () => {
 
     it("should handle invalid regex patterns gracefully", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -407,7 +405,7 @@ describe("HealthCheckService", () => {
       };
 
       // Mock Date.now calls for multiple attempts
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(1000).mockReturnValueOnce(1150) // First attempt (150ms)
         .mockReturnValueOnce(2000).mockReturnValueOnce(2150) // Second attempt (150ms)
         .mockReturnValueOnce(3000).mockReturnValueOnce(3150); // Third attempt (150ms)
@@ -437,7 +435,7 @@ describe("HealthCheckService", () => {
   describe("Circuit Breaker", () => {
     it("should open circuit breaker after consecutive failures", async () => {
       // Reset Date.now() mock to allow circuit breaker timing to work properly
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       
       const error = createMockAxiosError("ECONNREFUSED");
       mockedAxios.mockRejectedValue(error);
@@ -676,9 +674,9 @@ describe("HealthCheckService", () => {
   describe("Error Handling", () => {
     it("should handle different axios error types correctly", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
@@ -708,9 +706,9 @@ describe("HealthCheckService", () => {
 
     it("should handle non-axios errors", async () => {
       // Reset Date.now() mock for this specific test
-      jest.spyOn(Date, 'now').mockRestore();
+      vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
-      jest.spyOn(Date, 'now').mockImplementation(() => {
+      vi.spyOn(Date, 'now').mockImplementation(() => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });

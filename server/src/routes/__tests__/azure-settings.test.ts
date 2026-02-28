@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
@@ -10,89 +9,89 @@ import {
   ValidationResult,
 } from "@mini-infra/types";
 
-// Mock Prisma client
-const mockPrisma = {
-  systemSettings: {
-    findMany: jest.fn(),
-    findFirst: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
+const {
+  mockPrisma,
+  mockLogger,
+  mockRequireSessionOrApiKey,
+  mockGetAuthenticatedUser,
+  mockAzureStorageService,
+} = vi.hoisted(() => ({
+  mockPrisma: {
+    systemSettings: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    connectivityStatus: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+    },
   },
-  connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   },
-};
+  mockRequireSessionOrApiKey: vi.fn((req: any, res: any, next: any) => {
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      requestId: "test-request-id",
+    };
+    next();
+  }),
+  mockGetAuthenticatedUser: vi.fn(() => ({
+    id: "test-user-id",
+    email: "test@example.com",
+  })),
+  mockAzureStorageService: {
+    getConnectionString: vi.fn(),
+    getStorageAccountName: vi.fn(),
+    getHealthStatus: vi.fn(),
+    setConnectionString: vi.fn(),
+    set: vi.fn(),
+    removeConfiguration: vi.fn(),
+    validate: vi.fn(),
+    getContainerInfo: vi.fn(),
+    testContainerAccess: vi.fn(),
+  },
+}));
 
-jest.mock("../../lib/prisma", () => mockPrisma);
+// Mock Prisma client
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
-  // Set up authenticated user context for tests
-  req.apiKey = {
-    userId: "test-user-id",
-    id: "test-key-id",
-    user: { id: "test-user-id", email: "test@example.com" }
-  };
-  res.locals = {
-    requestId: "test-request-id",
-  };
-  next();
-});
-
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
 }));
 
-const mockGetAuthenticatedUser = jest.fn(() => ({
-  id: "test-user-id",
-  email: "test@example.com",
-}));
-
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   getAuthenticatedUser: mockGetAuthenticatedUser,
 }));
 
-// Note: mockLogger is already defined above at line 31-36
-
 // Mock AzureStorageService
-const mockAzureStorageService = {
-  getConnectionString: jest.fn(),
-  getStorageAccountName: jest.fn(),
-  getHealthStatus: jest.fn(),
-  setConnectionString: jest.fn(),
-  set: jest.fn(),
-  removeConfiguration: jest.fn(),
-  validate: jest.fn(),
-  getContainerInfo: jest.fn(),
-  testContainerAccess: jest.fn(),
-};
-
-jest.mock("../../services/azure-storage-service", () => ({
-  AzureStorageService: jest
+vi.mock("../../services/azure-storage-service", () => ({
+  AzureStorageService: vi
     .fn()
-    .mockImplementation(() => mockAzureStorageService),
+    .mockImplementation(function () { return mockAzureStorageService; }),
 }));
 
 import azureSettingsRouter from "../azure-settings";
@@ -108,7 +107,7 @@ describe("Azure Settings API Routes", () => {
     // Add request ID middleware for testing
     app.use((req: any, res: any, next: any) => {
       req.headers["x-request-id"] = testRequestId;
-      req.get = jest.fn((header: string) => {
+      req.get = vi.fn((header: string) => {
         if (header === "User-Agent") return "Test Agent";
         return undefined;
       });
@@ -129,7 +128,7 @@ describe("Azure Settings API Routes", () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Reset auth mocks to successful state
     mockRequireSessionOrApiKey.mockImplementation((req: any, res: any, next: any) => {

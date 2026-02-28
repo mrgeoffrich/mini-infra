@@ -8,23 +8,34 @@ import { SecretClient } from "@azure/keyvault-secrets";
 import { TokenCredential } from "@azure/identity";
 
 // Mock Azure SDK
-jest.mock("@azure/keyvault-certificates");
-jest.mock("@azure/keyvault-secrets");
+vi.mock("@azure/keyvault-certificates");
+vi.mock("@azure/keyvault-secrets");
 
 // Mock logger
-jest.mock("../../../lib/logger-factory", () => ({
-  tlsLogger: jest.fn(() => ({
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  })),
-}));
+vi.mock("../../../lib/logger-factory", () => {
+  const mockLoggerInstance = {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+  return {
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+  };
+});
 
 describe("AzureKeyVaultCertificateStore", () => {
   let store: AzureKeyVaultCertificateStore;
-  let mockCertificateClient: jest.Mocked<CertificateClient>;
-  let mockSecretClient: jest.Mocked<SecretClient>;
+  let mockCertificateClient: Mocked<CertificateClient>;
+  let mockSecretClient: Mocked<SecretClient>;
   let mockCredential: TokenCredential;
 
   const mockKeyVaultUrl = "https://test-vault.vault.azure.net/";
@@ -33,26 +44,28 @@ describe("AzureKeyVaultCertificateStore", () => {
     mockCredential = {} as TokenCredential;
 
     mockCertificateClient = {
-      getCertificate: jest.fn(),
-      listPropertiesOfCertificates: jest.fn(),
-      deleteCertificate: jest.fn(),
-      purgeCertificate: jest.fn(),
+      getCertificate: vi.fn(),
+      listPropertiesOfCertificates: vi.fn(),
+      deleteCertificate: vi.fn(),
+      purgeCertificate: vi.fn(),
     } as any;
 
     mockSecretClient = {
-      setSecret: jest.fn(),
-      getSecret: jest.fn(),
-      deleteSecret: jest.fn(),
+      setSecret: vi.fn(),
+      getSecret: vi.fn(),
+      deleteSecret: vi.fn(),
+      beginDeleteSecret: vi.fn(),
+      purgeDeletedSecret: vi.fn(),
     } as any;
 
-    (CertificateClient as jest.Mock).mockImplementation(() => mockCertificateClient);
-    (SecretClient as jest.Mock).mockImplementation(() => mockSecretClient);
+    (CertificateClient as Mock).mockImplementation(function() { return mockCertificateClient; });
+    (SecretClient as Mock).mockImplementation(function() { return mockSecretClient; });
 
     store = new AzureKeyVaultCertificateStore(mockKeyVaultUrl, mockCredential);
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("storeCertificate", () => {
@@ -175,8 +188,12 @@ describe("AzureKeyVaultCertificateStore", () => {
       const name = "test-cert";
       const version = "v2";
 
+      const combinedPem =
+        "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----" +
+        "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----";
+
       mockSecretClient.getSecret.mockResolvedValue({
-        value: "CERT+KEY",
+        value: combinedPem,
         properties: { tags: {} },
       } as any);
 
@@ -312,17 +329,17 @@ describe("AzureKeyVaultCertificateStore", () => {
     it("should soft delete certificate", async () => {
       const name = "test-cert";
 
-      mockSecretClient.deleteSecret.mockResolvedValue({
+      mockSecretClient.beginDeleteSecret.mockResolvedValue({
         properties: { name },
       } as any);
 
       await store.deleteCertificate(name);
 
-      expect(mockSecretClient.deleteSecret).toHaveBeenCalledWith(name);
+      expect(mockSecretClient.beginDeleteSecret).toHaveBeenCalledWith(name);
     });
 
     it("should handle delete errors gracefully", async () => {
-      mockSecretClient.deleteSecret.mockRejectedValue(new Error("Not found"));
+      mockSecretClient.beginDeleteSecret.mockRejectedValue(new Error("Not found"));
 
       await expect(store.deleteCertificate("nonexistent")).rejects.toThrow("Not found");
     });
@@ -332,11 +349,11 @@ describe("AzureKeyVaultCertificateStore", () => {
     it("should permanently delete certificate", async () => {
       const name = "test-cert";
 
-      mockCertificateClient.purgeCertificate.mockResolvedValue({} as any);
+      mockSecretClient.purgeDeletedSecret.mockResolvedValue({} as any);
 
       await store.purgeCertificate(name);
 
-      expect(mockCertificateClient.purgeCertificate).toHaveBeenCalledWith(name);
+      expect(mockSecretClient.purgeDeletedSecret).toHaveBeenCalledWith(name);
     });
   });
 });

@@ -1,67 +1,71 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupConfigurationManager } from "../backup";
 import { AzureStorageService } from "../azure-storage-service";
 import { BackupFormat } from "@mini-infra/types";
+import * as loggerFactory from "../../lib/logger-factory";
+import * as nodeCron from "node-cron";
 
-// Mock node-cron
-jest.mock("node-cron", () => ({
-  validate: jest.fn(),
+const { mockLoggerInstance } = vi.hoisted(() => ({
+  mockLoggerInstance: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
-// Mock logger factory - create the mock instance inline
-jest.mock("../../lib/logger-factory", () => {
-  const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  };
+// Mock node-cron
+vi.mock("node-cron", () => ({
+  validate: vi.fn(),
+}));
 
-  return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
-  };
-});
+// Mock logger factory
+vi.mock("../../lib/logger-factory", () => ({
+  createLogger: vi.fn(function() { return mockLoggerInstance; }),
+  appLogger: vi.fn(function() { return mockLoggerInstance; }),
+  httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+  prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+  servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+  deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+  loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+  tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+  default: vi.fn(function() { return mockLoggerInstance; }),
+}));
 
 // Get reference to the mocked logger
-const { servicesLogger } = require("../../lib/logger-factory");
-const mockLogger = servicesLogger();
+const mockLogger = mockLoggerInstance;
 
 // Get reference to the mocked cron
-const mockCron = require("node-cron");
+const mockCron = nodeCron as any;
 
 // Mock AzureStorageService
-jest.mock("../azure-storage-service");
+vi.mock("../azure-storage-service");
 
 // Mock Prisma client
 const mockPrisma = {
   postgresDatabase: {
-    findFirst: jest.fn(),
+    findFirst: vi.fn(),
   },
   backupConfiguration: {
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
   },
 } as unknown as typeof prisma;
 
 // Mock Azure config service
 const mockAzureStorageService = {
-  testContainerAccess: jest.fn(),
+  testContainerAccess: vi.fn(),
 } as unknown as AzureStorageService;
 
 describe("BackupConfigurationManager", () => {
   let backupConfigService: BackupConfigurationManager;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     backupConfigService = new BackupConfigurationManager(mockPrisma);
     // Mock the Azure service instance
     (backupConfigService as any).azureConfigService = mockAzureStorageService;
@@ -97,7 +101,7 @@ describe("BackupConfigurationManager", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
         accessible: true,
         responseTimeMs: 100,
         cached: false,
@@ -105,10 +109,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should create backup configuration successfully", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -128,7 +132,7 @@ describe("BackupConfigurationManager", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest
+      mockPrisma.backupConfiguration.create = vi
         .fn()
         .mockResolvedValue(mockCreatedConfig);
 
@@ -171,7 +175,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should throw error for non-existent database", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
+      mockPrisma.postgresDatabase.findFirst = vi.fn().mockResolvedValue(null);
 
       await expect(
         backupConfigService.createBackupConfig(
@@ -179,28 +183,14 @@ describe("BackupConfigurationManager", () => {
           validConfig,
           "user-123",
         ),
-      ).rejects.toThrow("Database not found or access denied");
-    });
-
-    it("should throw error for unauthorized database access", async () => {
-      // Since the service queries with both databaseId AND userId,
-      // unauthorized access should return null (no matching record)
-      mockPrisma.postgresDatabase.findFirst = jest.fn().mockResolvedValue(null);
-
-      await expect(
-        backupConfigService.createBackupConfig(
-          "db-123",
-          validConfig,
-          "user-123",
-        ),
-      ).rejects.toThrow("Database not found or access denied");
+      ).rejects.toThrow("Database not found");
     });
 
     it("should throw error for existing backup configuration", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.backupConfiguration.findUnique = vi.fn().mockResolvedValue({
         id: "existing-config",
       });
 
@@ -216,10 +206,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should throw error for invalid cron expression", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(false);
@@ -236,13 +226,13 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should throw error for inaccessible Azure container", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
-      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
       });
@@ -259,10 +249,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should validate required fields", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -286,10 +276,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should create configuration without schedule", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -314,7 +304,7 @@ describe("BackupConfigurationManager", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest
+      mockPrisma.backupConfiguration.create = vi
         .fn()
         .mockResolvedValue(mockCreatedConfig);
 
@@ -329,10 +319,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should create disabled configuration with no next scheduled time", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -354,7 +344,7 @@ describe("BackupConfigurationManager", () => {
         updatedAt: new Date("2023-01-01T00:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.create = jest
+      mockPrisma.backupConfiguration.create = vi
         .fn()
         .mockResolvedValue(mockCreatedConfig);
 
@@ -398,13 +388,13 @@ describe("BackupConfigurationManager", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
         accessible: true,
       });
     });
 
     it("should update backup configuration successfully", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
 
@@ -415,7 +405,7 @@ describe("BackupConfigurationManager", () => {
         updatedAt: new Date("2023-01-01T01:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.update = jest
+      mockPrisma.backupConfiguration.update = vi
         .fn()
         .mockResolvedValue(updatedConfig);
 
@@ -443,7 +433,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should throw error for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -456,28 +446,8 @@ describe("BackupConfigurationManager", () => {
       ).rejects.toThrow("Backup configuration not found");
     });
 
-    it("should throw error for unauthorized access", async () => {
-      const unauthorizedConfig = {
-        ...existingConfig,
-        database: { ...existingConfig.database, userId: "other-user" },
-      };
-      mockPrisma.backupConfiguration.findUnique = jest
-        .fn()
-        .mockResolvedValue(unauthorizedConfig);
-
-      await expect(
-        backupConfigService.updateBackupConfig(
-          "config-123",
-          updateData,
-          "user-123",
-        ),
-      ).rejects.toThrow(
-        "Access denied: You can only update backup configurations for your own databases",
-      );
-    });
-
     it("should validate cron expression on update", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
       mockCron.validate.mockReturnValue(false);
@@ -494,10 +464,10 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should validate Azure container on update", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
-      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
         accessible: false,
         error: "Container not found",
       });
@@ -514,7 +484,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should validate retention days and compression level", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
 
@@ -536,7 +506,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should handle schedule removal", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
 
@@ -547,7 +517,7 @@ describe("BackupConfigurationManager", () => {
         updatedAt: new Date("2023-01-01T01:00:00Z"),
       };
 
-      mockPrisma.backupConfiguration.update = jest
+      mockPrisma.backupConfiguration.update = vi
         .fn()
         .mockResolvedValue(updatedConfig);
 
@@ -583,7 +553,7 @@ describe("BackupConfigurationManager", () => {
     };
 
     it("should return backup configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(mockConfig);
 
@@ -610,7 +580,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should return null for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -622,22 +592,6 @@ describe("BackupConfigurationManager", () => {
       expect(result).toBeNull();
     });
 
-    it("should return null for unauthorized access", async () => {
-      const unauthorizedConfig = {
-        ...mockConfig,
-        database: { userId: "other-user" },
-      };
-      mockPrisma.backupConfiguration.findUnique = jest
-        .fn()
-        .mockResolvedValue(unauthorizedConfig);
-
-      const result = await backupConfigService.getBackupConfigByDatabaseId(
-        "db-123",
-        "user-123",
-      );
-
-      expect(result).toBeNull();
-    });
   });
 
   describe("deleteBackupConfig", () => {
@@ -650,12 +604,12 @@ describe("BackupConfigurationManager", () => {
     };
 
     it("should delete backup configuration successfully", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(mockConfig);
-      mockPrisma.backupConfiguration.delete = jest.fn().mockResolvedValue({});
+      mockPrisma.backupConfiguration.delete = vi.fn().mockResolvedValue({});
 
-      await backupConfigService.deleteBackupConfig("config-123", "user-123");
+      await backupConfigService.deleteBackupConfig("config-123");
 
       expect(mockPrisma.backupConfiguration.delete).toHaveBeenCalledWith({
         where: { id: "config-123" },
@@ -665,34 +619,19 @@ describe("BackupConfigurationManager", () => {
         {
           configId: "config-123",
           databaseId: "db-123",
-          userId: "user-123",
         },
         "Backup configuration deleted",
       );
     });
 
     it("should throw error for non-existent configuration", async () => {
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
 
       await expect(
-        backupConfigService.deleteBackupConfig("nonexistent", "user-123"),
+        backupConfigService.deleteBackupConfig("nonexistent"),
       ).rejects.toThrow("Backup configuration not found");
-    });
-
-    it("should throw error for unauthorized access", async () => {
-      const unauthorizedConfig = {
-        ...mockConfig,
-        database: { userId: "other-user" },
-      };
-      mockPrisma.backupConfiguration.findUnique = jest
-        .fn()
-        .mockResolvedValue(unauthorizedConfig);
-
-      await expect(
-        backupConfigService.deleteBackupConfig("config-123", "user-123"),
-      ).rejects.toThrow("Access denied");
     });
   });
 
@@ -751,7 +690,7 @@ describe("BackupConfigurationManager", () => {
 
       // Mock the service's calculateNextScheduledTime to simulate an error
       const originalMethod = backupConfigService.calculateNextScheduledTime;
-      jest
+      vi
         .spyOn(backupConfigService, "calculateNextScheduledTime")
         .mockImplementation(() => {
           try {
@@ -767,13 +706,13 @@ describe("BackupConfigurationManager", () => {
       expect(result).toBeNull();
 
       // Restore original method
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
   });
 
   describe("updateLastBackupTime", () => {
     it("should update last backup time successfully", async () => {
-      mockPrisma.backupConfiguration.update = jest.fn().mockResolvedValue({});
+      mockPrisma.backupConfiguration.update = vi.fn().mockResolvedValue({});
 
       await backupConfigService.updateLastBackupTime("config-123");
 
@@ -795,7 +734,7 @@ describe("BackupConfigurationManager", () => {
     });
 
     it("should handle update errors", async () => {
-      mockPrisma.backupConfiguration.update = jest
+      mockPrisma.backupConfiguration.update = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -815,22 +754,22 @@ describe("BackupConfigurationManager", () => {
 
   describe("calculateRetentionCutoffDate", () => {
     it("should calculate correct cutoff date", () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const fixedDate = new Date("2023-01-15T12:00:00Z");
-      jest.setSystemTime(fixedDate);
+      vi.setSystemTime(fixedDate);
 
       const result = backupConfigService.calculateRetentionCutoffDate(7);
 
       const expectedDate = new Date("2023-01-08T12:00:00Z");
       expect(result).toEqual(expectedDate);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it("should handle different retention periods", () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const fixedDate = new Date("2023-01-31T12:00:00Z");
-      jest.setSystemTime(fixedDate);
+      vi.setSystemTime(fixedDate);
 
       const result30 = backupConfigService.calculateRetentionCutoffDate(30);
       const result90 = backupConfigService.calculateRetentionCutoffDate(90);
@@ -839,7 +778,7 @@ describe("BackupConfigurationManager", () => {
       expect(result90.getMonth()).toBe(10); // 90 days before Jan 31, 2023 = November 2, 2022 (month 10)
       expect(result90.getFullYear()).toBe(2022);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -847,14 +786,14 @@ describe("BackupConfigurationManager", () => {
     const mockDatabase = { id: "db-123", userId: "user-123" };
 
     beforeEach(() => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = jest.fn().mockResolvedValue({
+      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
         accessible: true,
       });
     });
@@ -910,7 +849,7 @@ describe("BackupConfigurationManager", () => {
         "test-123-container",
       ];
 
-      mockPrisma.backupConfiguration.create = jest.fn().mockResolvedValue({
+      mockPrisma.backupConfiguration.create = vi.fn().mockResolvedValue({
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
@@ -942,7 +881,7 @@ describe("BackupConfigurationManager", () => {
       const invalidFormats = ["invalid", "json", "sql"];
 
       // Valid formats should work
-      mockPrisma.backupConfiguration.create = jest.fn().mockResolvedValue({
+      mockPrisma.backupConfiguration.create = vi.fn().mockResolvedValue({
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
@@ -991,7 +930,7 @@ describe("BackupConfigurationManager", () => {
 
   describe("error handling and logging", () => {
     it("should log and rethrow database errors", async () => {
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockRejectedValue(new Error("Database connection failed"));
 
@@ -1006,7 +945,6 @@ describe("BackupConfigurationManager", () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         {
           databaseId: "db-123",
-          userId: "user-123",
           error: "Database connection failed",
         },
         "Failed to create backup configuration",
@@ -1015,15 +953,15 @@ describe("BackupConfigurationManager", () => {
 
     it("should handle Azure service errors", async () => {
       const mockDatabase = { id: "db-123", userId: "user-123" };
-      mockPrisma.postgresDatabase.findFirst = jest
+      mockPrisma.postgresDatabase.findFirst = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockPrisma.backupConfiguration.findUnique = jest
+      mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
 
-      mockAzureStorageService.testContainerAccess = jest
+      mockAzureStorageService.testContainerAccess = vi
         .fn()
         .mockRejectedValue(new Error("Azure service unavailable"));
 

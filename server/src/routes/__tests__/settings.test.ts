@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
@@ -7,39 +6,39 @@ import {
   SettingsCategory,
 } from "@mini-infra/types";
 
-// Mock Prisma client
-const mockPrisma = {
-  systemSettings: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    count: jest.fn(),
+const { mockPrisma, mockLogger } = vi.hoisted(() => ({
+  mockPrisma: {
+    systemSettings: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
   },
-};
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
-jest.mock("../../lib/prisma", () => mockPrisma);
+// Mock Prisma client
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -57,7 +56,7 @@ jest.mock("../../lib/api-key-middleware", () => ({
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id", email: "test@example.com" };
     next();
@@ -77,7 +76,7 @@ describe("Settings API Routes", () => {
     // Add request ID middleware for testing
     app.use((req: any, res: any, next: any) => {
       req.headers["x-request-id"] = req.headers["x-request-id"] || createId();
-      req.get = jest.fn((header: string) => {
+      req.get = vi.fn((header: string) => {
         if (header === "User-Agent") return "Test Agent";
         return undefined;
       });
@@ -98,7 +97,7 @@ describe("Settings API Routes", () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("GET /api/settings", () => {
@@ -1041,7 +1040,7 @@ describe("Settings API Routes", () => {
       ];
 
       for (const endpoint of endpoints) {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
         endpoint.setupMock();
 
         const response = await request(app)

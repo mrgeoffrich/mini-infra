@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import Docker, { Container } from "dockerode";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
@@ -6,59 +5,57 @@ import { DockerExecutorService } from "../docker-executor";
 import { DockerConfigService } from "../docker-config";
 import { Readable } from "stream";
 
+const { mockContainer, mockLoggerFunctions } = vi.hoisted(() => ({
+  mockContainer: {
+    id: "container-123",
+    attach: vi.fn(),
+    start: vi.fn(),
+    wait: vi.fn(),
+    inspect: vi.fn(),
+    remove: vi.fn(),
+    kill: vi.fn(),
+    stop: vi.fn(),
+  },
+  mockLoggerFunctions: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 // Mock dockerode
-const mockContainer = {
-  id: "container-123",
-  attach: jest.fn(),
-  start: jest.fn(),
-  wait: jest.fn(),
-  inspect: jest.fn(),
-  remove: jest.fn(),
-  kill: jest.fn(),
-  stop: jest.fn(),
-};
-
 const mockDocker = {
-  createContainer: jest.fn(),
-  ping: jest.fn(),
-  getContainer: jest.fn(() => mockContainer),
+  createContainer: vi.fn(),
+  ping: vi.fn(),
+  getContainer: vi.fn(function() { return mockContainer; }),
 };
 
-jest.mock("dockerode", () => {
-  return jest.fn().mockImplementation(() => ({
-    createContainer: jest.fn(),
-    ping: jest.fn(),
-    getContainer: jest.fn(() => mockContainer),
-  }));
-});
+vi.mock("dockerode", () => ({
+  default: vi.fn().mockImplementation(function() { return {
+    createContainer: vi.fn(),
+    ping: vi.fn(),
+    getContainer: vi.fn(function() { return mockContainer; }),
+  }; }),
+}));
 
 // Mock DockerConfigService
-jest.mock("../docker-config");
+vi.mock("../docker-config");
 
 // Mock Prisma
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
+vi.mock("../../lib/prisma", () => ({
   default: {} as typeof prisma,
 }));
 
-// Mock logger functions
-const mockLoggerFunctions = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLoggerFunctions),
-  servicesLogger: jest.fn(() => mockLoggerFunctions),
-  httpLogger: jest.fn(() => mockLoggerFunctions),
-  prismaLogger: jest.fn(() => mockLoggerFunctions),
-  dockerExecutorLogger: jest.fn(() => mockLoggerFunctions),
-  deploymentLogger: jest.fn(() => mockLoggerFunctions),
-  __esModule: true,
-  default: jest.fn(() => mockLoggerFunctions),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  servicesLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  httpLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  prismaLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  deploymentLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  default: vi.fn(function() { return mockLoggerFunctions; }),
 }));
 
 // Get reference to the mocked logger
@@ -66,14 +63,14 @@ const mockLogger = mockLoggerFunctions;
 
 // Mock DockerConfigService
 const mockDockerConfigService = {
-  get: jest.fn(),
+  get: vi.fn(),
 } as unknown as DockerConfigService;
 
 describe("DockerExecutorService", () => {
   let dockerExecutorService: DockerExecutorService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     dockerExecutorService = new DockerExecutorService();
     // Mock the docker config service instance
     (dockerExecutorService as any).dockerConfigService =
@@ -81,9 +78,9 @@ describe("DockerExecutorService", () => {
 
     // Set up the docker client mock properly
     const mockDockerInstance = {
-      createContainer: jest.fn().mockResolvedValue(mockContainer),
-      ping: jest.fn(),
-      getContainer: jest.fn(() => mockContainer),
+      createContainer: vi.fn().mockResolvedValue(mockContainer),
+      ping: vi.fn(),
+      getContainer: vi.fn(function() { return mockContainer; }),
     };
     (dockerExecutorService as any).docker = mockDockerInstance;
 
@@ -99,16 +96,16 @@ describe("DockerExecutorService", () => {
 
   describe("initialize", () => {
     beforeEach(() => {
-      mockDockerConfigService.get = jest
+      mockDockerConfigService.get = vi
         .fn()
         .mockResolvedValueOnce("unix:///var/run/docker.sock") // host
         .mockResolvedValueOnce("1.41"); // apiVersion
     });
 
     it("should initialize Docker client successfully", async () => {
-      const mockPing = jest.fn().mockResolvedValue({});
+      const mockPing = vi.fn().mockResolvedValue({});
       // Mock the createDockerClient method to return our mock docker instance
-      jest
+      vi
         .spyOn(dockerExecutorService as any, "createDockerClient")
         .mockReturnValue({
           ping: mockPing,
@@ -125,7 +122,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should throw error when Docker host not configured", async () => {
-      mockDockerConfigService.get = jest
+      mockDockerConfigService.get = vi
         .fn()
         .mockResolvedValueOnce(null) // No host configured
         .mockResolvedValueOnce("1.41");
@@ -136,10 +133,10 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle Docker ping failure", async () => {
-      const mockPing = jest
+      const mockPing = vi
         .fn()
         .mockRejectedValue(new Error("Docker not available"));
-      jest
+      vi
         .spyOn(dockerExecutorService as any, "createDockerClient")
         .mockReturnValue({
           ping: mockPing,
@@ -173,26 +170,26 @@ describe("DockerExecutorService", () => {
       // Reset all mock functions
       Object.assign(mockContainer, {
         id: "container-123",
-        attach: jest.fn(),
-        start: jest.fn().mockResolvedValue(undefined),
-        wait: jest.fn().mockResolvedValue({ StatusCode: 0 }),
-        inspect: jest.fn().mockResolvedValue({
+        attach: vi.fn(),
+        start: vi.fn().mockResolvedValue(undefined),
+        wait: vi.fn().mockResolvedValue({ StatusCode: 0 }),
+        inspect: vi.fn().mockResolvedValue({
           State: { Status: "exited" },
         }),
-        remove: jest.fn().mockResolvedValue(undefined),
-        kill: jest.fn(),
-        stop: jest.fn(),
+        remove: vi.fn().mockResolvedValue(undefined),
+        kill: vi.fn(),
+        stop: vi.fn(),
       });
 
       // Update the docker instance mock
       const dockerInstance = (dockerExecutorService as any).docker;
-      dockerInstance.createContainer = jest
+      dockerInstance.createContainer = vi
         .fn()
         .mockResolvedValue(mockContainer);
 
       // Mock attach stream
       const mockStream = new Readable({ read() {} });
-      mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
+      mockContainer.attach = vi.fn().mockResolvedValue(mockStream);
 
       // Simulate stream data for testing with proper timing
       process.nextTick(() => {
@@ -219,7 +216,7 @@ describe("DockerExecutorService", () => {
       const mockStream = new Readable({ read() {} });
 
       // Mock attach to return our stream and immediately emit events
-      mockContainer.attach = jest.fn().mockImplementation(async () => {
+      mockContainer.attach = vi.fn().mockImplementation(async () => {
         // Emit data on the next tick to ensure event listeners are set up
         process.nextTick(() => {
           // Simulate stdout data with Docker stream format
@@ -242,7 +239,7 @@ describe("DockerExecutorService", () => {
       });
 
       // Mock container.wait to resolve after stream events
-      mockContainer.wait = jest.fn().mockImplementation(() => {
+      mockContainer.wait = vi.fn().mockImplementation(() => {
         return new Promise((resolve) => {
           setTimeout(() => resolve({ StatusCode: 0 }), 100);
         });
@@ -284,7 +281,7 @@ describe("DockerExecutorService", () => {
 
     it("should handle container creation failure", async () => {
       const dockerInstance = (dockerExecutorService as any).docker;
-      dockerInstance.createContainer = jest
+      dockerInstance.createContainer = vi
         .fn()
         .mockRejectedValue(new Error("Image not found"));
 
@@ -310,7 +307,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container start failure", async () => {
-      mockContainer.start = jest
+      mockContainer.start = vi
         .fn()
         .mockRejectedValue(new Error("Start failed"));
 
@@ -323,7 +320,7 @@ describe("DockerExecutorService", () => {
 
     it("should handle container wait timeout", async () => {
       // Mock a long-running container
-      mockContainer.wait = jest.fn().mockImplementation(
+      mockContainer.wait = vi.fn().mockImplementation(
         () => new Promise(() => {}), // Never resolves
       );
 
@@ -357,10 +354,10 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle cleanup errors gracefully", async () => {
-      mockContainer.inspect = jest.fn().mockResolvedValue({
+      mockContainer.inspect = vi.fn().mockResolvedValue({
         State: { Status: "exited" },
       });
-      mockContainer.remove = jest
+      mockContainer.remove = vi
         .fn()
         .mockRejectedValue(new Error("Remove failed"));
 
@@ -378,7 +375,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container already removed (404 error)", async () => {
-      mockContainer.inspect = jest.fn().mockRejectedValue({
+      mockContainer.inspect = vi.fn().mockRejectedValue({
         statusCode: 404,
         message: "No such container",
       });
@@ -394,13 +391,13 @@ describe("DockerExecutorService", () => {
     });
 
     it("should call output handler when provided", async () => {
-      const outputHandler = jest.fn();
+      const outputHandler = vi.fn();
 
       // Set up the stream with immediate data emission
       const mockStream = new Readable({ read() {} });
 
       // Mock attach to return our stream and call output handler immediately
-      mockContainer.attach = jest.fn().mockImplementation(async () => {
+      mockContainer.attach = vi.fn().mockImplementation(async () => {
         // Call the output handler if provided
         if (outputHandler) {
           process.nextTick(() => {
@@ -423,7 +420,7 @@ describe("DockerExecutorService", () => {
       });
 
       // Mock container.wait to resolve after stream events
-      mockContainer.wait = jest.fn().mockImplementation(() => {
+      mockContainer.wait = vi.fn().mockImplementation(() => {
         return new Promise((resolve) => {
           setTimeout(() => resolve({ StatusCode: 0 }), 50);
         });
@@ -446,16 +443,16 @@ describe("DockerExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
-      mockContainer.start = jest.fn().mockResolvedValue(undefined);
-      mockContainer.wait = jest.fn().mockResolvedValue({ StatusCode: 0 });
-      mockContainer.inspect = jest.fn().mockResolvedValue({
+      mockDocker.createContainer = vi.fn().mockResolvedValue(mockContainer);
+      mockContainer.start = vi.fn().mockResolvedValue(undefined);
+      mockContainer.wait = vi.fn().mockResolvedValue({ StatusCode: 0 });
+      mockContainer.inspect = vi.fn().mockResolvedValue({
         State: { Status: "exited" },
       });
-      mockContainer.remove = jest.fn().mockResolvedValue(undefined);
+      mockContainer.remove = vi.fn().mockResolvedValue(undefined);
 
       const mockStream = new Readable({ read() {} });
-      mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
+      mockContainer.attach = vi.fn().mockResolvedValue(mockStream);
 
       setTimeout(() => {
         mockStream.emit("end");
@@ -463,7 +460,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should call progress callback with correct statuses", async () => {
-      const progressCallback = jest.fn();
+      const progressCallback = vi.fn();
 
       const result = await dockerExecutorService.executeContainerWithProgress(
         containerOptions,
@@ -486,8 +483,8 @@ describe("DockerExecutorService", () => {
     });
 
     it("should report failed status on non-zero exit code", async () => {
-      mockContainer.wait = jest.fn().mockResolvedValue({ StatusCode: 1 });
-      const progressCallback = jest.fn();
+      mockContainer.wait = vi.fn().mockResolvedValue({ StatusCode: 1 });
+      const progressCallback = vi.fn();
 
       const result = await dockerExecutorService.executeContainerWithProgress(
         containerOptions,
@@ -508,10 +505,10 @@ describe("DockerExecutorService", () => {
     it("should handle execution errors and report failed status", async () => {
       // Get the actual docker instance used by the service
       const dockerInstance = (dockerExecutorService as any).docker;
-      dockerInstance.createContainer = jest
+      dockerInstance.createContainer = vi
         .fn()
         .mockRejectedValue(new Error("Container creation failed"));
-      const progressCallback = jest.fn();
+      const progressCallback = vi.fn();
 
       const result = await dockerExecutorService.executeContainerWithProgress(
         containerOptions,
@@ -543,7 +540,7 @@ describe("DockerExecutorService", () => {
 
   describe("getContainerStatus", () => {
     it("should return container status successfully", async () => {
-      mockContainer.inspect = jest.fn().mockResolvedValue({
+      mockContainer.inspect = vi.fn().mockResolvedValue({
         State: {
           Status: "running",
           Running: true,
@@ -565,7 +562,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle container not found", async () => {
-      mockContainer.inspect = jest
+      mockContainer.inspect = vi
         .fn()
         .mockRejectedValue(new Error("No such container"));
 
@@ -585,7 +582,7 @@ describe("DockerExecutorService", () => {
 
   describe("stopContainer", () => {
     it("should stop container gracefully", async () => {
-      mockContainer.stop = jest.fn().mockResolvedValue(undefined);
+      mockContainer.stop = vi.fn().mockResolvedValue(undefined);
 
       await dockerExecutorService.stopContainer("container-123", false);
 
@@ -598,7 +595,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should force kill container when forceKill is true", async () => {
-      mockContainer.kill = jest.fn().mockResolvedValue(undefined);
+      mockContainer.kill = vi.fn().mockResolvedValue(undefined);
 
       await dockerExecutorService.stopContainer("container-123", true);
 
@@ -611,7 +608,7 @@ describe("DockerExecutorService", () => {
     });
 
     it("should handle stop/kill errors", async () => {
-      mockContainer.stop = jest
+      mockContainer.stop = vi
         .fn()
         .mockRejectedValue(new Error("Stop failed"));
 
@@ -732,7 +729,7 @@ describe("DockerExecutorService", () => {
   describe("stream demultiplexing", () => {
     it("should ignore unknown stream types", async () => {
       const mockStream = new Readable({ read() {} });
-      mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
+      mockContainer.attach = vi.fn().mockResolvedValue(mockStream);
 
       const containerOptions = {
         image: "test:latest",
@@ -761,12 +758,12 @@ describe("DockerExecutorService", () => {
   describe("container lifecycle", () => {
     beforeEach(() => {
       // Reset mocks for each test
-      jest.clearAllMocks();
+      vi.clearAllMocks();
     });
 
     it("should handle attach failure", async () => {
-      mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
-      mockContainer.attach = jest
+      mockDocker.createContainer = vi.fn().mockResolvedValue(mockContainer);
+      mockContainer.attach = vi
         .fn()
         .mockRejectedValue(new Error("Attach failed"));
 
@@ -787,16 +784,16 @@ describe("DockerExecutorService", () => {
     });
 
     it("should use default timeout when not specified", async () => {
-      mockDocker.createContainer = jest.fn().mockResolvedValue(mockContainer);
-      mockContainer.start = jest.fn().mockResolvedValue(undefined);
-      mockContainer.wait = jest.fn().mockResolvedValue({ StatusCode: 0 });
-      mockContainer.inspect = jest.fn().mockResolvedValue({
+      mockDocker.createContainer = vi.fn().mockResolvedValue(mockContainer);
+      mockContainer.start = vi.fn().mockResolvedValue(undefined);
+      mockContainer.wait = vi.fn().mockResolvedValue({ StatusCode: 0 });
+      mockContainer.inspect = vi.fn().mockResolvedValue({
         State: { Status: "exited" },
       });
-      mockContainer.remove = jest.fn().mockResolvedValue(undefined);
+      mockContainer.remove = vi.fn().mockResolvedValue(undefined);
 
       const mockStream = new Readable({ read() {} });
-      mockContainer.attach = jest.fn().mockResolvedValue(mockStream);
+      mockContainer.attach = vi.fn().mockResolvedValue(mockStream);
 
       setTimeout(() => mockStream.emit("end"), 10);
 
@@ -817,7 +814,7 @@ describe("DockerExecutorService", () => {
   describe("captureContainerLogs", () => {
     it("should capture container logs successfully", async () => {
       const mockLogStream = new Readable({ read() {} });
-      mockContainer.logs = jest.fn().mockResolvedValue(mockLogStream);
+      mockContainer.logs = vi.fn().mockResolvedValue(mockLogStream);
 
       // Simulate docker log stream with multiplexed stdout/stderr
       setTimeout(() => {
@@ -857,7 +854,7 @@ describe("DockerExecutorService", () => {
       // Skipping this test as it takes 30+ seconds to complete
       // The timeout functionality is tested implicitly by the implementation
       const mockLogStream = new Readable({ read() {} });
-      mockContainer.logs = jest.fn().mockResolvedValue(mockLogStream);
+      mockContainer.logs = vi.fn().mockResolvedValue(mockLogStream);
 
       await expect(dockerExecutorService.captureContainerLogs("container-123"))
         .rejects.toThrow("Log capture timeout");
@@ -865,7 +862,7 @@ describe("DockerExecutorService", () => {
 
     it("should handle log capture with custom options", async () => {
       const mockLogStream = new Readable({ read() {} });
-      mockContainer.logs = jest.fn().mockResolvedValue(mockLogStream);
+      mockContainer.logs = vi.fn().mockResolvedValue(mockLogStream);
 
       setTimeout(() => {
         mockLogStream.emit("end");

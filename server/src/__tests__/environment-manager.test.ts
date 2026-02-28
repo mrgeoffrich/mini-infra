@@ -5,20 +5,36 @@ import { DockerExecutorService } from '../services/docker-executor';
 import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
 // Mock dependencies
-jest.mock('../services/environment/service-registry');
-jest.mock('../services/application-service-factory');
-jest.mock('../services/docker-executor');
+vi.mock('../services/environment/service-registry');
+vi.mock('../services/application-service-factory');
+vi.mock('../services/docker-executor');
+vi.mock('../services/user-events', () => {
+  const MockUserEventService = class {
+    createEvent = vi.fn().mockResolvedValue({ id: 'user-event-1' });
+    updateEvent = vi.fn().mockResolvedValue({});
+    appendLogs = vi.fn().mockResolvedValue({});
+  };
+  return { UserEventService: MockUserEventService };
+});
+vi.mock('../services/port-utils', () => ({
+  portUtils: {
+    validatePortsForEnvironment: vi.fn().mockResolvedValue({
+      config: {},
+      validation: { isValid: true, message: 'OK', unavailablePorts: [], conflicts: [] },
+    }),
+  },
+}));
 
-const MockServiceRegistry = ServiceRegistry as jest.MockedClass<typeof ServiceRegistry>;
-const MockApplicationServiceFactory = ApplicationServiceFactory as jest.MockedClass<typeof ApplicationServiceFactory>;
-const MockDockerExecutorService = DockerExecutorService as jest.MockedClass<typeof DockerExecutorService>;
+const MockServiceRegistry = ServiceRegistry as MockedClass<typeof ServiceRegistry>;
+const MockApplicationServiceFactory = ApplicationServiceFactory as MockedClass<typeof ApplicationServiceFactory>;
+const MockDockerExecutorService = DockerExecutorService as MockedClass<typeof DockerExecutorService>;
 
 describe('EnvironmentManager', () => {
   let environmentManager: EnvironmentManager;
-  let mockPrisma: jest.Mocked<PrismaClient>;
-  let mockServiceRegistry: jest.Mocked<ServiceRegistry>;
-  let mockServiceFactory: jest.Mocked<ApplicationServiceFactory>;
-  let mockDockerExecutor: jest.Mocked<DockerExecutorService>;
+  let mockPrisma: Mocked<PrismaClient>;
+  let mockServiceRegistry: Mocked<ServiceRegistry>;
+  let mockServiceFactory: Mocked<ApplicationServiceFactory>;
+  let mockDockerExecutor: Mocked<DockerExecutorService>;
 
   beforeEach(() => {
     // Reset singletons
@@ -27,29 +43,29 @@ describe('EnvironmentManager', () => {
     // Create mock Prisma client
     mockPrisma = {
       environment: {
-        create: jest.fn(),
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        count: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
+        create: vi.fn(),
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
       },
       environmentService: {
-        create: jest.fn(),
-        update: jest.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
       },
       environmentNetwork: {
-        upsert: jest.fn(),
+        upsert: vi.fn(),
       },
       environmentVolume: {
-        upsert: jest.fn(),
+        upsert: vi.fn(),
       },
     } as any;
 
     // Create mock instances
     mockServiceRegistry = {
-      isServiceTypeAvailable: jest.fn().mockReturnValue(true),
-      getServiceMetadata: jest.fn().mockReturnValue({
+      isServiceTypeAvailable: vi.fn().mockReturnValue(true),
+      getServiceMetadata: vi.fn().mockReturnValue({
         name: 'haproxy',
         version: '3.2.0',
         description: 'HAProxy service',
@@ -59,44 +75,44 @@ describe('EnvironmentManager', () => {
         requiredVolumes: [{ name: 'haproxy_data' }],
         exposedPorts: []
       }),
-      resolveDependencyOrder: jest.fn().mockImplementation((services) => services),
+      resolveDependencyOrder: vi.fn().mockImplementation((services) => services),
     } as any;
 
     mockServiceFactory = {
-      createService: jest.fn().mockResolvedValue({
+      createService: vi.fn().mockResolvedValue({
         success: true,
         service: {
-          initialize: jest.fn().mockResolvedValue(undefined),
-          start: jest.fn().mockResolvedValue({ success: true, duration: 1000 }),
-          stopAndCleanup: jest.fn().mockResolvedValue(undefined),
-          getStatus: jest.fn().mockResolvedValue({
+          initialize: vi.fn().mockResolvedValue(undefined),
+          start: vi.fn().mockResolvedValue({ success: true, duration: 1000 }),
+          stopAndCleanup: vi.fn().mockResolvedValue(undefined),
+          getStatus: vi.fn().mockResolvedValue({
             status: ServiceStatusValues.RUNNING,
             health: { status: ApplicationServiceHealthStatusValues.HEALTHY, details: {} }
           })
         }
       }),
-      getService: jest.fn(),
-      stopService: jest.fn().mockResolvedValue(undefined),
+      getService: vi.fn(),
+      stopService: vi.fn().mockResolvedValue(undefined),
     } as any;
 
     mockDockerExecutor = {
-      initialize: jest.fn().mockResolvedValue(undefined),
-      networkExists: jest.fn().mockResolvedValue(false),
-      volumeExists: jest.fn().mockResolvedValue(false),
-      createNetwork: jest.fn().mockResolvedValue(undefined),
-      createVolume: jest.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      networkExists: vi.fn().mockResolvedValue(false),
+      volumeExists: vi.fn().mockResolvedValue(false),
+      createNetwork: vi.fn().mockResolvedValue(undefined),
+      createVolume: vi.fn().mockResolvedValue(undefined),
     } as any;
 
     // Mock singleton instances
     MockServiceRegistry.getInstance.mockReturnValue(mockServiceRegistry);
     MockApplicationServiceFactory.getInstance.mockReturnValue(mockServiceFactory);
-    MockDockerExecutorService.mockImplementation(() => mockDockerExecutor);
+    MockDockerExecutorService.mockImplementation(function() { return mockDockerExecutor; });
 
     environmentManager = EnvironmentManager.getInstance(mockPrisma);
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getInstance', () => {
@@ -399,7 +415,12 @@ describe('EnvironmentManager', () => {
       expect(result).toEqual(mockUpdatedEnvironment);
       expect(mockPrisma.environment.update).toHaveBeenCalledWith({
         where: { id: 'env-1' },
-        data: request,
+        data: {
+          description: 'Updated description',
+          type: 'production',
+          networkType: undefined,
+          isActive: undefined
+        },
         include: {
           services: true,
           networks: true,
@@ -534,7 +555,7 @@ describe('EnvironmentManager', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Environment stopped successfully');
-      expect(mockServiceFactory.stopService).toHaveBeenCalledWith('my-haproxy');
+      expect(mockServiceFactory.stopService).toHaveBeenCalledWith('test-env-my-haproxy', 'env-1');
     });
 
     it('should return success if environment already stopped', async () => {
@@ -563,6 +584,16 @@ describe('EnvironmentManager', () => {
         config: { setting: 'value' }
       };
 
+      mockPrisma.environment.findUnique.mockResolvedValue({
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        status: ServiceStatusValues.UNINITIALIZED,
+        isActive: false,
+        services: [],
+        networks: [],
+        volumes: []
+      } as any);
       mockPrisma.environmentNetwork.upsert.mockResolvedValue({} as any);
       mockPrisma.environmentVolume.upsert.mockResolvedValue({} as any);
       mockPrisma.environmentService.create.mockResolvedValue({} as any);

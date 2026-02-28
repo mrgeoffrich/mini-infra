@@ -265,7 +265,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('initialization', () => {
     it('should initialize client successfully', () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -276,7 +276,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should have valid connection info', () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -305,7 +305,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should create, retrieve, and delete backend', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -343,7 +343,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should handle duplicate backend creation gracefully', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -399,7 +399,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should add, manage, and remove server', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -467,7 +467,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should handle server state transitions', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -518,7 +518,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should create frontend and add bind', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -595,7 +595,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should retrieve server statistics', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -630,7 +630,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should retrieve backend statistics', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -658,7 +658,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should return null for non-existent server stats', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -668,7 +668,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should return null for non-existent backend stats', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -680,7 +680,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('transaction management', () => {
     it('should create, commit, and rollback transactions', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -701,7 +701,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should handle multiple concurrent transactions', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -731,7 +731,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('error handling', () => {
     it('should handle network timeouts gracefully', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -753,7 +753,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should handle invalid operations gracefully', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -774,7 +774,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('version management', () => {
     it('should get configuration version', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -785,7 +785,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should include version in configuration operations', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -817,7 +817,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('transaction manager', () => {
     it('should execute atomic operations', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -877,7 +877,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     it('should rollback on transaction failure', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -913,7 +913,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('retryable client', () => {
     it('should handle basic operations with retry logic', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -947,7 +947,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('error handling improvements', () => {
     it('should provide specific error messages for different status codes', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -982,7 +982,7 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
   describe('real-world scenarios', () => {
     it('should handle complete deployment scenario', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 

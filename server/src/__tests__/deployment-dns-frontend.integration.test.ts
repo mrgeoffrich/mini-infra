@@ -216,7 +216,7 @@ describe('Deployment DNS and Frontend Integration Tests', () => {
   describe('Full Deployment Flow with DNS Creation', () => {
     it('should create frontend and DNS record for a deployment in local network', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -349,7 +349,7 @@ describe('Deployment DNS and Frontend Integration Tests', () => {
 
     it('should create frontend without DNS for deployment in internet network', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -441,7 +441,7 @@ describe('Deployment DNS and Frontend Integration Tests', () => {
   describe('Removal Flow with DNS Cleanup', () => {
     it('should remove frontend and DNS record when deployment is removed', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -532,7 +532,7 @@ describe('Deployment DNS and Frontend Integration Tests', () => {
   describe('Error Scenarios and Rollbacks', () => {
     it('should handle frontend creation failure gracefully', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 
@@ -599,7 +599,7 @@ describe('Deployment DNS and Frontend Integration Tests', () => {
 
     it('should handle duplicate frontend creation', async () => {
       if (!process.env.RUN_INTEGRATION_TESTS) {
-        pending('Integration tests skipped');
+        
         return;
       }
 

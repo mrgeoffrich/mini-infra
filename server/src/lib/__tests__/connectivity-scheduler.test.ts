@@ -1,87 +1,92 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ConnectivityScheduler } from "../connectivity-scheduler";
 import { ConfigurationServiceFactory } from "../../services/configuration-factory";
 import { ValidationResult } from "@mini-infra/types";
+import * as loggerFactory from "../../lib/logger-factory";
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => {
+vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
-// Mock ConfigurationServiceFactory
-const mockConfigServiceFactory = {
-  getSupportedCategories: jest.fn(),
-  create: jest.fn(),
-};
+// Hoist mock variables used inside vi.mock() factories
+const { mockConfigServiceFactory } = vi.hoisted(() => ({
+  mockConfigServiceFactory: {
+    getSupportedCategories: vi.fn(),
+    create: vi.fn(),
+  },
+}));
 
 // Mock configuration services
 const mockDockerService = {
-  validate: jest.fn(),
+  validate: vi.fn(),
 };
 
 const mockCloudflareService = {
-  validate: jest.fn(),
+  validate: vi.fn(),
 };
 
 const mockAzureService = {
-  validate: jest.fn(),
+  validate: vi.fn(),
 };
 
-jest.mock("../../services/configuration-factory", () => ({
-  ConfigurationServiceFactory: jest
+vi.mock("../../services/configuration-factory", () => ({
+  ConfigurationServiceFactory: vi
     .fn()
-    .mockImplementation(() => mockConfigServiceFactory),
+    .mockImplementation(function() { return mockConfigServiceFactory; }),
 }));
 
 // Mock Prisma client
 const mockPrisma = {
   systemSettings: {
-    findUnique: jest.fn(),
-    upsert: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
   },
   connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
   },
   settingsAudit: {
-    create: jest.fn(),
+    create: vi.fn(),
   },
 } as unknown as typeof prisma;
 
-// Import the mock after the jest.mock calls
+// Import the mock after the vi.mock calls
 
 describe("ConnectivityScheduler", () => {
   let scheduler: ConnectivityScheduler;
-  let fakeDelayFn: jest.Mock<Promise<void>, [number]>;
+  let fakeDelayFn: Mock<(ms: number) => Promise<void>>;
   let mockLogger: any;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
 
     // Get reference to the mocked logger after clearing mocks
-    const loggerFactory = require("../../lib/logger-factory");
     mockLogger = loggerFactory.appLogger();
 
     // Create a fake delay function that resolves immediately for tests
-    fakeDelayFn = jest.fn().mockResolvedValue(undefined);
+    fakeDelayFn = vi.fn().mockResolvedValue(undefined);
 
     // Setup mock factory to return supported categories
     mockConfigServiceFactory.getSupportedCategories.mockReturnValue([
@@ -112,7 +117,7 @@ describe("ConnectivityScheduler", () => {
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
     if (scheduler.isSchedulerRunning()) {
       scheduler.stop();
     }
@@ -210,7 +215,7 @@ describe("ConnectivityScheduler", () => {
       scheduler.start();
 
       // Fast-forward to trigger interval
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
         {
@@ -389,7 +394,7 @@ describe("ConnectivityScheduler", () => {
       let callCount = 0;
 
       const createMockValidate = (service: string) =>
-        jest.fn().mockImplementation(async () => {
+        vi.fn().mockImplementation(async () => {
           callCount++;
           return { isValid: true, responseTimeMs: 100 };
         });

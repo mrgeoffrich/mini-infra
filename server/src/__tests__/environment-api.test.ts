@@ -3,13 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { ServiceStatusValues, ApplicationServiceHealthStatusValues } from '@mini-infra/types';
 
 // Mock logger factory first (before other imports)
-jest.mock('../lib/logger-factory', () => {
+vi.mock('../lib/logger-factory', () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    child: jest.fn(() => mockLoggerInstance), // Required for pino-http
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(function() { return mockLoggerInstance; }), // Required for pino-http
     level: 'info',
     levels: {
       values: {
@@ -21,33 +21,40 @@ jest.mock('../lib/logger-factory', () => {
         trace: 10,
       },
     },
-    silent: jest.fn(),
-    fatal: jest.fn(),
-    trace: jest.fn(),
+    silent: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    loadbalancerLogger: jest.fn(() => mockLoggerInstance),
-    deploymentLogger: jest.fn(() => mockLoggerInstance),
-    dockerExecutorLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
 // Mock dependencies
-jest.mock('../services/environment/environment-manager');
-jest.mock('../services/environment/service-registry');
-jest.mock('../lib/prisma', () => ({
+vi.mock('../services/environment/environment-manager');
+vi.mock('../services/environment/service-registry');
+vi.mock('../lib/prisma', () => ({
+  default: {
+    deploymentConfiguration: {
+      findMany: vi.fn()
+    }
+  },
   deploymentConfiguration: {
-    findMany: jest.fn()
+    findMany: vi.fn()
   }
 }));
-jest.mock('../middleware/auth', () => ({
+vi.mock('../middleware/auth', () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     req.user = { id: 'test-user', email: 'test@example.com' };
     next();
@@ -55,44 +62,44 @@ jest.mock('../middleware/auth', () => ({
   getAuthenticatedUser: (req: any) => ({ id: 'test-user', email: 'test@example.com' }),
   getCurrentUserId: (req: any) => 'test-user',
   AuthErrorType: {},
-  createAuthErrorResponse: jest.fn()
+  createAuthErrorResponse: vi.fn()
 }));
 
 const mockEnvironmentManager = {
-  listEnvironments: jest.fn(),
-  createEnvironment: jest.fn(),
-  getEnvironmentById: jest.fn(),
-  updateEnvironment: jest.fn(),
-  deleteEnvironment: jest.fn(),
-  getEnvironmentStatus: jest.fn(),
-  startEnvironment: jest.fn(),
-  stopEnvironment: jest.fn(),
-  addServiceToEnvironment: jest.fn(),
-  getInstance: jest.fn()
+  listEnvironments: vi.fn(),
+  createEnvironment: vi.fn(),
+  getEnvironmentById: vi.fn(),
+  updateEnvironment: vi.fn(),
+  deleteEnvironment: vi.fn(),
+  getEnvironmentStatus: vi.fn(),
+  startEnvironment: vi.fn(),
+  stopEnvironment: vi.fn(),
+  addServiceToEnvironment: vi.fn(),
+  getInstance: vi.fn()
 };
 
 const mockServiceRegistry = {
-  isServiceTypeAvailable: jest.fn(),
-  getAllServiceMetadata: jest.fn(),
-  getServiceDefinition: jest.fn(),
-  getAvailableServiceTypes: jest.fn(),
-  getInstance: jest.fn()
+  isServiceTypeAvailable: vi.fn(),
+  getAllServiceMetadata: vi.fn(),
+  getServiceDefinition: vi.fn(),
+  getAvailableServiceTypes: vi.fn(),
+  getInstance: vi.fn()
 };
 
 const mockPrisma = {
   deploymentConfiguration: {
-    findMany: jest.fn()
+    findMany: vi.fn()
   }
 };
 
 // Mock the modules
-jest.doMock('../services/environment/environment-manager', () => ({
+vi.doMock('../services/environment/environment-manager', () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
   }
 }));
 
-jest.doMock('../services/environment/service-registry', () => ({
+vi.doMock('../services/environment/service-registry', () => ({
   ServiceRegistry: {
     getInstance: () => mockServiceRegistry
   }
@@ -141,9 +148,9 @@ describe('Environment API', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     // Reset Prisma mock
-    (prisma.deploymentConfiguration.findMany as jest.Mock).mockReset();
+    (prisma.deploymentConfiguration.findMany as Mock).mockReset();
   });
 
   describe('GET /api/environments', () => {
@@ -418,7 +425,7 @@ describe('Environment API', () => {
   describe('DELETE /api/environments/:id', () => {
     it('should delete environment successfully', async () => {
       // Mock no deployment configurations to allow deletion
-      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
 
       await request(app)
@@ -430,7 +437,7 @@ describe('Environment API', () => {
 
     it('should return 404 for non-existent environment', async () => {
       // Mock no deployment configurations
-      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(false);
 
       await request(app)
@@ -440,7 +447,7 @@ describe('Environment API', () => {
 
     it('should handle running environment deletion error', async () => {
       // Mock no deployment configurations to pass the first check
-      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       const runningError = new Error('Cannot delete a running environment. Stop it first.');
       mockEnvironmentManager.deleteEnvironment.mockRejectedValue(runningError);
 
@@ -458,7 +465,7 @@ describe('Environment API', () => {
         { id: 'deploy-2', applicationName: 'other-app' }
       ];
 
-      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue(mockDeploymentConfigs);
+      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue(mockDeploymentConfigs);
 
       const response = await request(app)
         .delete('/api/environments/env-with-deployments')
@@ -477,7 +484,7 @@ describe('Environment API', () => {
 
     it('should allow deletion when environment has no deployment configurations', async () => {
       // Mock no deployment configurations
-      (prisma.deploymentConfiguration.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
 
       await request(app)

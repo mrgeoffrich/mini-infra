@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupExecutorService, BackupConfigurationManager } from "../backup";
@@ -6,118 +5,120 @@ import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
+import * as loggerFactory from "../../lib/logger-factory";
 
-// Mock InMemoryQueue
-const mockQueue = {
-  add: jest.fn(),
-  process: jest.fn(),
-  getJobs: jest.fn(),
-  close: jest.fn(),
-  on: jest.fn(),
-  remove: jest.fn(),
-  getStats: jest.fn().mockReturnValue({
-    pending: 0,
-    active: 0,
-    completed: 0,
-    failed: 0,
-    total: 0,
-  }),
-};
+// Hoist mock variables used inside vi.mock() factory functions
+const { mockQueue, mockBlobServiceClient, mockBlobClient, mockContainerClient } = vi.hoisted(() => {
+  const mockBlobClient = {
+    getProperties: vi.fn(),
+    url: "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
+  };
 
-jest.mock("../../lib/in-memory-queue", () => {
   return {
-    InMemoryQueue: jest.fn().mockImplementation(() => mockQueue),
+    mockQueue: {
+      add: vi.fn(),
+      process: vi.fn(),
+      getJobs: vi.fn(),
+      close: vi.fn(),
+      on: vi.fn(),
+      remove: vi.fn(),
+      getStats: vi.fn().mockReturnValue({
+        pending: 0,
+        active: 0,
+        completed: 0,
+        failed: 0,
+        total: 0,
+      }),
+    },
+    mockBlobServiceClient: {
+      accountName: "testaccount",
+      getContainerClient: vi.fn(),
+    },
+    mockBlobClient,
+    mockContainerClient: {
+      listBlobsFlat: vi.fn(),
+      getBlobClient: vi.fn(function() { return mockBlobClient; }),
+    },
+  };
+});
+
+vi.mock("../../lib/in-memory-queue", () => {
+  return {
+    InMemoryQueue: vi.fn().mockImplementation(function() { return mockQueue; }),
   };
 });
 
 // Mock all the services
-jest.mock("../docker-executor");
-jest.mock("../backup/backup-configuration-manager");
-jest.mock("../postgres/postgres-database-manager");
-jest.mock("../azure-storage-service");
+vi.mock("../docker-executor");
+vi.mock("../backup/backup-configuration-manager");
+vi.mock("../postgres/postgres-database-manager");
+vi.mock("../azure-storage-service");
 
 // Mock logger factory - create the mock instance inline
-jest.mock("../../lib/logger-factory", () => {
+vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
-// Mock Azure Storage Blob
-const mockBlobServiceClient = {
-  accountName: "testaccount",
-  getContainerClient: jest.fn(),
-};
-
-const mockBlobClient = {
-  getProperties: jest.fn(),
-  url: "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
-};
-
-const mockContainerClient = {
-  listBlobsFlat: jest.fn(),
-  getBlobClient: jest.fn(() => mockBlobClient),
-};
-
-jest.mock("@azure/storage-blob", () => ({
+vi.mock("@azure/storage-blob", () => ({
   BlobServiceClient: {
-    fromConnectionString: jest.fn(() => mockBlobServiceClient),
+    fromConnectionString: vi.fn(function() { return mockBlobServiceClient; }),
   },
 }));
 
 // Get reference to the mocked logger
-const { servicesLogger } = require("../../lib/logger-factory");
+const { servicesLogger } = loggerFactory as any;
 const mockLogger = servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
   backupOperation: {
-    create: jest.fn(),
-    findUnique: jest.fn(),
-    update: jest.fn(),
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
   },
   systemSettings: {
-    findFirst: jest.fn(),
+    findFirst: vi.fn(),
   },
 } as unknown as typeof prisma;
 
 // Mock service instances
 const mockDockerExecutor = {
-  initialize: jest.fn(),
-  executeContainerWithProgress: jest.fn(),
+  initialize: vi.fn(),
+  executeContainerWithProgress: vi.fn(),
 } as unknown as DockerExecutorService;
 
 const mockBackupConfigurationManager = {
-  getBackupConfigByDatabaseId: jest.fn(),
-  updateLastBackupTime: jest.fn(),
+  getBackupConfigByDatabaseId: vi.fn(),
+  updateLastBackupTime: vi.fn(),
 } as unknown as BackupConfigurationManager;
 
 const mockPostgresDatabaseManager = {
-  getDatabaseById: jest.fn(),
-  getConnectionConfig: jest.fn(),
+  getDatabaseById: vi.fn(),
+  getConnectionConfig: vi.fn(),
 } as unknown as PostgresDatabaseManager;
 
 const mockAzureStorageService = {
-  get: jest.fn(),
+  get: vi.fn(),
 } as unknown as AzureStorageService;
 
 describe("BackupExecutorService", () => {
   let backupExecutorService: BackupExecutorService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     backupExecutorService = new BackupExecutorService(mockPrisma);
 
     // Mock service instances
@@ -157,7 +158,7 @@ describe("BackupExecutorService", () => {
 
   describe("initialize", () => {
     it("should initialize Docker executor successfully", async () => {
-      mockDockerExecutor.initialize = jest.fn().mockResolvedValue(undefined);
+      mockDockerExecutor.initialize = vi.fn().mockResolvedValue(undefined);
 
       await backupExecutorService.initialize();
 
@@ -174,7 +175,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle initialization failure", async () => {
-      mockDockerExecutor.initialize = jest
+      mockDockerExecutor.initialize = vi
         .fn()
         .mockRejectedValue(new Error("Docker initialization failed"));
 
@@ -190,7 +191,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should not reinitialize if already initialized", async () => {
-      mockDockerExecutor.initialize = jest.fn().mockResolvedValue(undefined);
+      mockDockerExecutor.initialize = vi.fn().mockResolvedValue(undefined);
 
       // Initialize twice
       await backupExecutorService.initialize();
@@ -217,14 +218,14 @@ describe("BackupExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockDockerExecutor.initialize = jest.fn().mockResolvedValue(undefined);
+      mockDockerExecutor.initialize = vi.fn().mockResolvedValue(undefined);
     });
 
     it("should create and queue backup operation", async () => {
-      mockPrisma.backupOperation.create = jest
+      mockPrisma.backupOperation.create = vi
         .fn()
         .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = jest.fn().mockResolvedValue({ id: "job-123" });
+      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
 
       const result = await backupExecutorService.queueBackup(
         "db-123",
@@ -271,10 +272,10 @@ describe("BackupExecutorService", () => {
       // Set as not initialized
       (backupExecutorService as any).isInitialized = false;
 
-      mockPrisma.backupOperation.create = jest
+      mockPrisma.backupOperation.create = vi
         .fn()
         .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = jest.fn().mockResolvedValue({ id: "job-123" });
+      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
 
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
@@ -282,7 +283,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle database operation creation failure", async () => {
-      mockPrisma.backupOperation.create = jest
+      mockPrisma.backupOperation.create = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -303,10 +304,10 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle queue add failure", async () => {
-      mockPrisma.backupOperation.create = jest
+      mockPrisma.backupOperation.create = vi
         .fn()
         .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = jest.fn().mockRejectedValue(new Error("Queue error"));
+      mockQueue.add = vi.fn().mockRejectedValue(new Error("Queue error"));
 
       await expect(
         backupExecutorService.queueBackup("db-123", "manual", "user-123"),
@@ -330,7 +331,7 @@ describe("BackupExecutorService", () => {
     };
 
     it("should return backup operation status", async () => {
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockResolvedValue(mockOperation);
 
@@ -353,7 +354,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should return null for non-existent operation", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await backupExecutorService.getBackupStatus("nonexistent");
 
@@ -361,7 +362,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle database query errors", async () => {
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -389,15 +390,15 @@ describe("BackupExecutorService", () => {
     const mockJob = {
       id: "job-123",
       data: { backupOperationId: "operation-123" },
-      remove: jest.fn(),
+      remove: vi.fn(),
     };
 
     it("should cancel backup operation successfully", async () => {
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockResolvedValue(mockOperation);
-      mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
-      mockQueue.getJobs = jest.fn().mockResolvedValue([mockJob]);
+      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
+      mockQueue.getJobs = vi.fn().mockResolvedValue([mockJob]);
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
@@ -414,7 +415,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should return false for non-existent operation", async () => {
-      mockPrisma.backupOperation.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await backupExecutorService.cancelBackup("nonexistent");
 
@@ -423,7 +424,7 @@ describe("BackupExecutorService", () => {
 
     it("should return false for completed operation", async () => {
       const completedOperation = { ...mockOperation, status: "completed" };
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockResolvedValue(completedOperation);
 
@@ -433,11 +434,11 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle cancellation when job not in queue", async () => {
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockResolvedValue(mockOperation);
-      mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
-      mockQueue.getJobs = jest.fn().mockResolvedValue([]); // No jobs in queue
+      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
+      mockQueue.getJobs = vi.fn().mockResolvedValue([]); // No jobs in queue
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
@@ -446,7 +447,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle errors during cancellation", async () => {
-      mockPrisma.backupOperation.findUnique = jest
+      mockPrisma.backupOperation.findUnique = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -486,27 +487,27 @@ describe("BackupExecutorService", () => {
     };
 
     beforeEach(() => {
-      mockPostgresDatabaseManager.getDatabaseById = jest
+      mockPostgresDatabaseManager.getDatabaseById = vi
         .fn()
         .mockResolvedValue(mockDatabase);
-      mockBackupConfigurationManager.getBackupConfigByDatabaseId = jest
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId = vi
         .fn()
         .mockResolvedValue(mockBackupConfig);
-      mockPostgresDatabaseManager.getConnectionConfig = jest
+      mockPostgresDatabaseManager.getConnectionConfig = vi
         .fn()
         .mockResolvedValue(mockConnectionConfig);
-      mockAzureStorageService.get = jest
+      mockAzureStorageService.get = vi
         .fn()
         .mockResolvedValue("azure-connection-string");
-      mockPrisma.systemSettings.findFirst = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findFirst = vi.fn().mockResolvedValue({
         value: "postgres:15-alpine",
       });
-      mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
+      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
     });
 
     it("should execute backup successfully", async () => {
       // Mock container execution
-      mockDockerExecutor.executeContainerWithProgress = jest
+      mockDockerExecutor.executeContainerWithProgress = vi
         .fn()
         .mockImplementation(async (config, progressCallback) => {
           // Simulate progress updates
@@ -522,7 +523,7 @@ describe("BackupExecutorService", () => {
         });
 
       // Mock Azure verification
-      mockBlobServiceClient.getContainerClient = jest
+      mockBlobServiceClient.getContainerClient = vi
         .fn()
         .mockReturnValue(mockContainerClient);
       const mockBlobs = [
@@ -550,16 +551,16 @@ describe("BackupExecutorService", () => {
         },
       };
 
-      mockContainerClient.listBlobsFlat = jest
+      mockContainerClient.listBlobsFlat = vi
         .fn()
         .mockReturnValue(mockAsyncIterator);
 
-      mockBackupConfigurationManager.updateLastBackupTime = jest
+      mockBackupConfigurationManager.updateLastBackupTime = vi
         .fn()
         .mockResolvedValue(undefined);
 
       // Test the private executeBackup method through queueBackup
-      mockPrisma.backupOperation.create = jest.fn().mockResolvedValue({
+      mockPrisma.backupOperation.create = vi.fn().mockResolvedValue({
         id: "operation-123",
         databaseId: "db-123",
         operationType: "manual",
@@ -573,7 +574,7 @@ describe("BackupExecutorService", () => {
         metadata: null,
       });
 
-      mockQueue.add = jest.fn().mockResolvedValue({ id: "job-123" });
+      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
 
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
@@ -587,16 +588,16 @@ describe("BackupExecutorService", () => {
 
   describe("verifyBackupInAzure", () => {
     beforeEach(() => {
-      mockAzureStorageService.get = jest
+      mockAzureStorageService.get = vi
         .fn()
         .mockResolvedValue("azure-connection-string");
-      mockBlobServiceClient.getContainerClient = jest
+      mockBlobServiceClient.getContainerClient = vi
         .fn()
         .mockReturnValue(mockContainerClient);
     });
 
     it("should verify backup files exist", async () => {
-      mockBlobClient.getProperties = jest.fn().mockResolvedValue({
+      mockBlobClient.getProperties = vi.fn().mockResolvedValue({
         contentLength: 1000000,
       });
 
@@ -613,7 +614,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should return error when no backup files found", async () => {
-      mockBlobClient.getProperties = jest.fn().mockRejectedValue(new Error("Blob not found"));
+      mockBlobClient.getProperties = vi.fn().mockRejectedValue(new Error("Blob not found"));
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -625,7 +626,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle Azure connection string not configured", async () => {
-      mockAzureStorageService.get = jest.fn().mockResolvedValue(null);
+      mockAzureStorageService.get = vi.fn().mockResolvedValue(null);
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -638,7 +639,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle Azure storage errors", async () => {
-      mockBlobServiceClient.getContainerClient = jest.fn().mockImplementation(() => {
+      mockBlobServiceClient.getContainerClient = vi.fn().mockImplementation(() => {
         throw new Error("Azure storage error");
       });
 
@@ -656,7 +657,7 @@ describe("BackupExecutorService", () => {
     it("should return Docker image from PostgreSQL settings when configured", async () => {
       // Mock the PostgreSQL settings service to return a configured image
       const mockPostgresSettingsService = {
-        getBackupDockerImage: jest.fn().mockResolvedValue("custom-postgres:latest"),
+        getBackupDockerImage: vi.fn().mockResolvedValue("custom-postgres:latest"),
       };
 
       (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
@@ -672,7 +673,7 @@ describe("BackupExecutorService", () => {
     it("should throw error when setting not found", async () => {
       // Mock the PostgreSQL settings service to throw an error when not configured
       const mockPostgresSettingsService = {
-        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
+        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
       };
 
       (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
@@ -685,7 +686,7 @@ describe("BackupExecutorService", () => {
     it("should throw error when setting has no value", async () => {
       // Mock the PostgreSQL settings service to throw an error when value is empty
       const mockPostgresSettingsService = {
-        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
+        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
       };
 
       (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
@@ -698,7 +699,7 @@ describe("BackupExecutorService", () => {
     it("should handle PostgreSQL settings service errors", async () => {
       // Mock the PostgreSQL settings service to throw a database error
       const mockPostgresSettingsService = {
-        getBackupDockerImage: jest.fn().mockRejectedValue(new Error("Database error")),
+        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Database error")),
       };
 
       (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
@@ -711,7 +712,7 @@ describe("BackupExecutorService", () => {
 
   describe("updateBackupProgress", () => {
     it("should update progress successfully", async () => {
-      mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
+      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
 
       await (backupExecutorService as any).updateBackupProgress(
         "operation-123",
@@ -743,17 +744,17 @@ describe("BackupExecutorService", () => {
     });
 
     it("should set completedAt when status is completed", async () => {
-      mockPrisma.backupOperation.update = jest.fn().mockResolvedValue({});
+      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
 
       // Mock Date constructor
       const RealDate = Date;
-      const fixedDate = new Date("2023-01-01T12:00:00.000Z");
-      jest.spyOn(global, "Date").mockImplementation((dateString?: any) => {
+      const fixedDate = new RealDate("2023-01-01T12:00:00.000Z");
+      vi.spyOn(global, "Date").mockImplementation(function(this: any, dateString?: any) {
         if (dateString) {
           return new RealDate(dateString);
         }
         return fixedDate;
-      }) as any;
+      } as any) as any;
 
       await (backupExecutorService as any).updateBackupProgress(
         "operation-123",
@@ -773,11 +774,11 @@ describe("BackupExecutorService", () => {
         },
       });
 
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     it("should handle update errors gracefully", async () => {
-      mockPrisma.backupOperation.update = jest
+      mockPrisma.backupOperation.update = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
@@ -791,8 +792,8 @@ describe("BackupExecutorService", () => {
         },
       );
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
           error: "Database error",
           operationId: "operation-123",
           progressData: {
@@ -800,15 +801,15 @@ describe("BackupExecutorService", () => {
             progress: 0,
             errorMessage: "Test error",
           },
-        },
-        "Failed to update backup progress",
+        }),
+        "Failed to update backup progress — this may leave the operation in a stale state",
       );
     });
   });
 
   describe("shutdown", () => {
     it("should close queue successfully", async () => {
-      mockQueue.close = jest.fn().mockResolvedValue(undefined);
+      mockQueue.close = vi.fn().mockResolvedValue(undefined);
 
       await backupExecutorService.shutdown();
 
@@ -819,7 +820,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle shutdown errors", async () => {
-      mockQueue.close = jest.fn().mockRejectedValue(new Error("Close error"));
+      mockQueue.close = vi.fn().mockRejectedValue(new Error("Close error"));
 
       await backupExecutorService.shutdown();
 

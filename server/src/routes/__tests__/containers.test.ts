@@ -1,111 +1,114 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 
-// Mock dependencies
-const mockDockerService = {
-  getInstance: jest.fn(),
-  isConnected: jest.fn(),
-  listContainers: jest.fn(),
-  getContainer: jest.fn(),
-  getCacheStats: jest.fn(),
-  flushCache: jest.fn(),
-  initialize: jest.fn().mockResolvedValue(undefined),
-  refreshConnection: jest.fn().mockResolvedValue(undefined),
-};
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockDockerService,
+  mockDockerConfigService,
+  mockConfig,
+  mockPrisma,
+  mockLogger,
+  mockRequireSessionOrApiKey,
+} = vi.hoisted(() => ({
+  mockDockerService: {
+    getInstance: vi.fn(),
+    isConnected: vi.fn(),
+    listContainers: vi.fn(),
+    getContainer: vi.fn(),
+    getCacheStats: vi.fn(),
+    flushCache: vi.fn(),
+    initialize: vi.fn().mockResolvedValue(undefined),
+    refreshConnection: vi.fn().mockResolvedValue(undefined),
+  },
+  mockDockerConfigService: {
+    get: vi.fn(),
+    set: vi.fn(),
+    validate: vi.fn(),
+    getHealthStatus: vi.fn(),
+    testConnection: vi.fn(),
+    recordConnectivityStatus: vi.fn().mockResolvedValue(undefined),
+  },
+  mockConfig: {
+    CONTAINER_CACHE_TTL: 3000,
+    DOCKER_HOST: "/var/run/docker.sock",
+    DOCKER_API_VERSION: "1.51",
+  },
+  mockPrisma: {
+    systemSettings: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    connectivityStatus: {
+      create: vi.fn().mockResolvedValue({}),
+      findFirst: vi.fn(),
+    },
+    settingsAudit: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  },
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+  mockRequireSessionOrApiKey: vi.fn((req: any, res: any, next: any) => {
+    // Set up authenticated user context for tests
+    req.apiKey = {
+      userId: "test-user-id",
+      id: "test-key-id",
+      user: { id: "test-user-id", email: "test@example.com" }
+    };
+    res.locals = {
+      requestId: "test-request-id",
+    };
+    next();
+  }),
+}));
 
-jest.mock("../../services/docker", () => mockDockerService);
+// Mock dependencies
+vi.mock("../../services/docker", () => ({ default: mockDockerService }));
 
 // Mock DockerConfigService
-const mockDockerConfigService = {
-  get: jest.fn(),
-  set: jest.fn(),
-  validate: jest.fn(),
-  getHealthStatus: jest.fn(),
-  testConnection: jest.fn(),
-  recordConnectivityStatus: jest.fn().mockResolvedValue(undefined),
-};
-
-jest.mock("../../services/docker-config", () => ({
-  DockerConfigService: jest
+vi.mock("../../services/docker-config", () => ({
+  DockerConfigService: vi
     .fn()
-    .mockImplementation(() => mockDockerConfigService),
+    .mockImplementation(function() { return mockDockerConfigService; }),
 }));
 
 // Mock configuration base
-jest.mock("../../services/configuration-base", () => ({
-  ConfigurationService: jest.fn().mockImplementation(() => ({})),
+vi.mock("../../services/configuration-base", () => ({
+  ConfigurationService: vi.fn().mockImplementation(function() { return {}; }),
 }));
 
 // Mock config
-const mockConfig = {
-  CONTAINER_CACHE_TTL: 3000,
-  DOCKER_HOST: "/var/run/docker.sock",
-  DOCKER_API_VERSION: "1.51",
-};
-
-jest.mock("../../lib/config", () => mockConfig);
+vi.mock("../../lib/config", () => ({ default: mockConfig }));
 
 // Mock prisma
-const mockPrisma = {
-  systemSettings: {
-    findFirst: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
-  connectivityStatus: {
-    create: jest.fn().mockResolvedValue({}),
-    findFirst: jest.fn(),
-  },
-  settingsAudit: {
-    create: jest.fn().mockResolvedValue({}),
-  },
-};
-
-jest.mock("../../lib/prisma", () => mockPrisma);
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-const mockRequireSessionOrApiKey = jest.fn((req: any, res: any, next: any) => {
-  // Set up authenticated user context for tests
-  req.apiKey = {
-    userId: "test-user-id",
-    id: "test-key-id",
-    user: { id: "test-user-id", email: "test@example.com" }
-  };
-  res.locals = {
-    requestId: "test-request-id",
-  };
-  next();
-});
-
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: mockRequireSessionOrApiKey,
   getCurrentUserId: (req: any) => "test-user-id",
   getCurrentUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" })
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
 }));
 
@@ -139,20 +142,20 @@ describe("Container Routes", () => {
 
     // Set up Docker service mock
     mockDockerInstance = {
-      isConnected: jest.fn().mockReturnValue(true),
-      listContainers: jest.fn(),
-      getContainer: jest.fn(),
-      getCacheStats: jest.fn(),
-      flushCache: jest.fn(),
-      initialize: jest.fn().mockResolvedValue(undefined),
-      refreshConnection: jest.fn().mockResolvedValue(undefined),
+      isConnected: vi.fn().mockReturnValue(true),
+      listContainers: vi.fn(),
+      getContainer: vi.fn(),
+      getCacheStats: vi.fn(),
+      flushCache: vi.fn(),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      refreshConnection: vi.fn().mockResolvedValue(undefined),
     };
 
     mockDockerService.getInstance.mockReturnValue(mockDockerInstance);
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockDockerInstance.isConnected.mockReturnValue(true);
     mockDockerConfigService.get.mockResolvedValue(null);
     mockDockerConfigService.recordConnectivityStatus.mockResolvedValue(
@@ -229,7 +232,7 @@ describe("Container Routes", () => {
       });
 
       expect(mockDockerInstance.listContainers).toHaveBeenCalledWith(true);
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           event: "container_list_viewed",
           userId: "test-user-id",
@@ -448,7 +451,7 @@ describe("Container Routes", () => {
       expect(mockDockerInstance.getContainer).toHaveBeenCalledWith(
         "test-container-id",
       );
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           containerId: "test-container-id",
           containerName: "test-container",
@@ -561,13 +564,13 @@ describe("Container Routes", () => {
       });
 
       expect(mockDockerInstance.flushCache).toHaveBeenCalled();
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "test-user-id",
         }),
         "Container cache flush requested",
       );
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "test-user-id",
         }),
@@ -603,7 +606,7 @@ describe("Container Routes", () => {
 
       await request(app).get("/api/containers").expect(200);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: testUserId,
         }),
@@ -622,7 +625,7 @@ describe("Container Routes", () => {
         .set("x-request-id", requestId)
         .expect(200);
 
-      expect(mockLogger.info).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
           requestId,
         }),

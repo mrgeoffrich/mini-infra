@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import {
@@ -10,32 +9,31 @@ import { ConfigurationService } from "../configuration-base";
 
 // Create a single mock logger instance that will be reused
 const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
 };
 
 // Mock logger factory to always return the same mock instances
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock Prisma client
 const mockPrisma = {
   systemSettings: {
-    findUnique: jest.fn(),
-    upsert: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
   },
   connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
   },
 } as unknown as typeof prisma;
 
@@ -62,13 +60,13 @@ class TestConfigurationService extends ConfigurationService {
   }
 }
 
-// Import the mock after the jest.mock calls
+// Import the mock after the vi.mock calls
 
 describe("ConfigurationService", () => {
   let configService: TestConfigurationService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     configService = new TestConfigurationService(mockPrisma, "docker");
   });
 
@@ -81,7 +79,7 @@ describe("ConfigurationService", () => {
 
   describe("set", () => {
     it("should create new setting when not exists", async () => {
-      mockPrisma.systemSettings.upsert = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.upsert = vi.fn().mockResolvedValue({
         id: "setting-1",
         category: "docker",
         key: "host",
@@ -124,7 +122,7 @@ describe("ConfigurationService", () => {
     });
 
     it("should update existing setting", async () => {
-      mockPrisma.systemSettings.upsert = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.upsert = vi.fn().mockResolvedValue({
         id: "setting-1",
         category: "docker",
         key: "host",
@@ -159,7 +157,7 @@ describe("ConfigurationService", () => {
 
     it("should handle database errors", async () => {
       const dbError = new Error("Database connection failed");
-      mockPrisma.systemSettings.upsert = jest.fn().mockRejectedValue(dbError);
+      mockPrisma.systemSettings.upsert = vi.fn().mockRejectedValue(dbError);
 
       await expect(
         configService.set("host", "tcp://localhost:2375", "user1"),
@@ -177,7 +175,7 @@ describe("ConfigurationService", () => {
 
     it("should handle non-Error exceptions", async () => {
       const unknownError = "Unknown error";
-      mockPrisma.systemSettings.upsert = jest
+      mockPrisma.systemSettings.upsert = vi
         .fn()
         .mockRejectedValue(unknownError);
 
@@ -207,7 +205,7 @@ describe("ConfigurationService", () => {
         isActive: true,
       };
 
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValue(mockSetting);
 
@@ -225,7 +223,7 @@ describe("ConfigurationService", () => {
     });
 
     it("should return null when setting not found", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await configService.get("nonexistent");
 
@@ -242,7 +240,7 @@ describe("ConfigurationService", () => {
         isActive: true,
       };
 
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValue(mockSetting);
 
@@ -253,7 +251,7 @@ describe("ConfigurationService", () => {
 
     it("should handle database errors", async () => {
       const dbError = new Error("Database query failed");
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockRejectedValue(dbError);
 
@@ -273,7 +271,7 @@ describe("ConfigurationService", () => {
 
     it("should handle non-Error exceptions", async () => {
       const unknownError = { message: "Unknown database error" };
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockRejectedValue(unknownError);
 
@@ -292,7 +290,7 @@ describe("ConfigurationService", () => {
 
   describe("delete", () => {
     it("should delete existing setting", async () => {
-      mockPrisma.systemSettings.delete = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.delete = vi.fn().mockResolvedValue({
         id: "setting-1",
         category: "docker",
         key: "host",
@@ -321,7 +319,7 @@ describe("ConfigurationService", () => {
 
     it("should handle database errors", async () => {
       const dbError = new Error("Database delete failed");
-      mockPrisma.systemSettings.delete = jest.fn().mockRejectedValue(dbError);
+      mockPrisma.systemSettings.delete = vi.fn().mockRejectedValue(dbError);
 
       await expect(configService.delete("host", "user1")).rejects.toThrow(
         "Database delete failed",
@@ -339,7 +337,7 @@ describe("ConfigurationService", () => {
 
     it("should handle non-Error exceptions", async () => {
       const unknownError = "Delete failed";
-      mockPrisma.systemSettings.delete = jest
+      mockPrisma.systemSettings.delete = vi
         .fn()
         .mockRejectedValue(unknownError);
 
@@ -360,7 +358,7 @@ describe("ConfigurationService", () => {
 
   describe("recordConnectivityStatus", () => {
     it("should record successful connectivity status", async () => {
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({
         id: "status-1",
       });
 
@@ -389,7 +387,7 @@ describe("ConfigurationService", () => {
     });
 
     it("should record failed connectivity status", async () => {
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({
         id: "status-1",
       });
 
@@ -418,7 +416,7 @@ describe("ConfigurationService", () => {
     });
 
     it("should record status without optional parameters", async () => {
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({
         id: "status-1",
       });
 
@@ -441,7 +439,7 @@ describe("ConfigurationService", () => {
 
     it("should handle database errors gracefully", async () => {
       const dbError = new Error("Database insert failed");
-      mockPrisma.connectivityStatus.create = jest
+      mockPrisma.connectivityStatus.create = vi
         .fn()
         .mockRejectedValue(dbError);
 
@@ -462,7 +460,7 @@ describe("ConfigurationService", () => {
 
     it("should handle non-Error exceptions", async () => {
       const unknownError = { code: "DB_ERROR" };
-      mockPrisma.connectivityStatus.create = jest
+      mockPrisma.connectivityStatus.create = vi
         .fn()
         .mockRejectedValue(unknownError);
 
@@ -492,7 +490,7 @@ describe("ConfigurationService", () => {
         lastSuccessfulAt: new Date("2023-01-01T12:00:00Z"),
       };
 
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(mockStatus);
 
@@ -510,7 +508,7 @@ describe("ConfigurationService", () => {
     });
 
     it("should return null when no status exists", async () => {
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -521,7 +519,7 @@ describe("ConfigurationService", () => {
 
     it("should handle database errors gracefully", async () => {
       const dbError = new Error("Database query failed");
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockRejectedValue(dbError);
 
@@ -539,7 +537,7 @@ describe("ConfigurationService", () => {
 
     it("should handle non-Error exceptions", async () => {
       const unknownError = "Query error";
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockRejectedValue(unknownError);
 

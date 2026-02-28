@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ConfigurationServiceFactory } from "../configuration-factory";
@@ -7,53 +6,54 @@ import { CloudflareService } from "../cloudflare";
 import { AzureStorageService } from "../azure-storage-service";
 import { PostgresSettingsConfigService } from "../postgres";
 
-// Create a single mock logger instance
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock configuration services
-jest.mock("../docker-config");
-jest.mock("../cloudflare/cloudflare-service");
-jest.mock("../azure-storage-service");
-jest.mock("../postgres/postgres-settings-config");
+vi.mock("../docker-config");
+vi.mock("../cloudflare/cloudflare-service");
+vi.mock("../azure-storage-service");
+vi.mock("../postgres/postgres-settings-config");
+vi.mock("../tls/tls-config");
 
 // Mock Prisma client
 const mockPrisma = {
   systemSettings: {
-    findUnique: jest.fn(),
-    upsert: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
   },
   connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
   },
   settingsAudit: {
-    create: jest.fn(),
+    create: vi.fn(),
   },
 } as unknown as typeof prisma;
 
-// Import the mock after the jest.mock calls
+// Import the mock after the vi.mock calls
 
 describe("ConfigurationServiceFactory", () => {
   let factory: ConfigurationServiceFactory;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     factory = new ConfigurationServiceFactory(mockPrisma);
   });
 
@@ -133,7 +133,7 @@ describe("ConfigurationServiceFactory", () => {
 
     it("should log error when service creation fails", () => {
       // Mock DockerConfigService constructor to throw
-      const MockedDockerConfigService = DockerConfigService as jest.MockedClass<
+      const MockedDockerConfigService = DockerConfigService as MockedClass<
         typeof DockerConfigService
       >;
       MockedDockerConfigService.mockImplementationOnce(() => {
@@ -156,10 +156,10 @@ describe("ConfigurationServiceFactory", () => {
     it("should log error with unknown error message when non-Error thrown", () => {
       // Mock CloudflareService constructor to throw non-Error
       const MockedCloudflareService =
-        CloudflareService as jest.MockedClass<
+        CloudflareService as MockedClass<
           typeof CloudflareService
         >;
-      MockedCloudflareService.mockImplementationOnce(() => {
+      MockedCloudflareService.mockImplementationOnce(function() {
         throw "String error";
       });
 
@@ -187,12 +187,14 @@ describe("ConfigurationServiceFactory", () => {
         "cloudflare",
         "azure",
         "postgres",
+        "tls",
       ]);
       expect(categories2).toEqual([
         "docker",
         "cloudflare",
         "azure",
         "postgres",
+        "tls",
       ]);
 
       // Should be different array instances
@@ -200,7 +202,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Modifying one shouldn't affect the other
       categories1.push("test" as any);
-      expect(categories2).toHaveLength(4);
+      expect(categories2).toHaveLength(5);
     });
   });
 
@@ -210,6 +212,7 @@ describe("ConfigurationServiceFactory", () => {
       expect(factory.isSupported("cloudflare")).toBe(true);
       expect(factory.isSupported("azure")).toBe(true);
       expect(factory.isSupported("postgres")).toBe(true);
+      expect(factory.isSupported("tls")).toBe(true);
     });
 
     it("should return false for unsupported categories", () => {
@@ -237,7 +240,7 @@ describe("ConfigurationServiceFactory", () => {
   describe("Integration with actual service classes", () => {
     beforeEach(() => {
       // Reset mocks to use actual implementations for integration tests
-      jest.resetModules();
+      vi.resetModules();
     });
 
     it("should create services that extend base configuration service", () => {
@@ -321,7 +324,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Should still create factory but services might fail at runtime
       expect(nullFactory).toBeInstanceOf(ConfigurationServiceFactory);
-      expect(nullFactory.getSupportedCategories()).toHaveLength(4);
+      expect(nullFactory.getSupportedCategories()).toHaveLength(5);
     });
 
     it("should handle factory with corrupted supported categories", () => {

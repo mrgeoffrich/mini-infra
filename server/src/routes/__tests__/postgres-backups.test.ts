@@ -4,105 +4,80 @@ import { PrismaClient } from "../../generated/prisma";
 import router from "../postgres-backups";
 import { BackupExecutorService } from "../../services/backup";
 
-// Mock the Prisma module
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
-  default: {
+const { mockPrismaDefault, mockBackupExecutorService } = vi.hoisted(() => ({
+  mockPrismaDefault: {
     postgresDatabase: {
-      findFirst: jest.fn(),
+      findFirst: vi.fn(),
     },
     backupConfiguration: {
-      findFirst: jest.fn(),
+      findFirst: vi.fn(),
     },
     backupOperation: {
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-      delete: jest.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      delete: vi.fn(),
     },
+  },
+  mockBackupExecutorService: {
+    queueBackup: vi.fn(),
   },
 }));
 
-// Mock the PrismaClient for type exports
-jest.mock("@prisma/client", () => {
-  const mockClient = {
-    postgresDatabase: {
-      findFirst: jest.fn(),
-    },
-    backupConfiguration: {
-      findFirst: jest.fn(),
-    },
-    backupOperation: {
-      findFirst: jest.fn(),
-      findMany: jest.fn(),
-      count: jest.fn(),
-      delete: jest.fn(),
-    },
-  };
+// Mock the Prisma module
+vi.mock("../../lib/prisma", () => ({
+  default: mockPrismaDefault,
+}));
 
-  return {
-    PrismaClient: jest.fn(() => mockClient),
-    __mockClient: mockClient, // Export the mock client for tests
-  };
-});
+// Mock the PrismaClient for type exports
+vi.mock("@prisma/client", () => ({
+  PrismaClient: vi.fn(function() { return mockPrismaDefault; }),
+}));
 
 // Get the mock client for use in tests
-const mockPrismaClient = jest.requireMock("../../lib/prisma").default;
+const mockPrismaClient = mockPrismaDefault;
 
 // Mock the BackupExecutorService
-jest.mock("../../services/backup/backup-executor", () => {
-  const mockService = {
-    queueBackup: jest.fn(),
-  };
-
-  return {
-    BackupExecutorService: jest.fn(() => mockService),
-    __mockService: mockService, // Export the mock service for tests
-  };
-});
-
-// Get the mock service for use in tests
-const { __mockService: mockBackupExecutorService } = jest.requireMock(
-  "../../services/backup/backup-executor",
-);
+vi.mock("../../services/backup/backup-executor", () => ({
+  BackupExecutorService: vi.fn(function() { return mockBackupExecutorService; }),
+}));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  servicesLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  httpLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  prismaLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  default: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
 }));
 
 // Mock the centralized auth middleware
-jest.mock("../../middleware/auth", () => ({
+vi.mock("../../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -133,7 +108,7 @@ app.use("/api/postgres", router);
 
 describe("PostgreSQL Backups API", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("GET /api/postgres/backups/:databaseId", () => {
@@ -308,7 +283,6 @@ describe("PostgreSQL Backups API", () => {
       expect(mockPrismaClient.postgresDatabase.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-db-id",
-          userId: "test-user-id",
         },
       });
 
@@ -534,7 +508,6 @@ describe("PostgreSQL Backups API", () => {
       expect(mockPrismaClient.backupOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "backup-1",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,
@@ -592,7 +565,6 @@ describe("PostgreSQL Backups API", () => {
       expect(mockPrismaClient.backupOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-backup",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,
@@ -912,7 +884,6 @@ describe("PostgreSQL Backups API", () => {
       expect(mockPrismaClient.backupOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-backup",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,

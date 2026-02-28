@@ -1,92 +1,102 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { EnvironmentNetwork } from "@mini-infra/types";
 
-// Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-  child: jest.fn().mockReturnThis(), // Required for pino-http
-  level: "info",
-  levels: {
-    values: {
-      fatal: 60,
-      error: 50,
-      warn: 40,
-      info: 30,
-      debug: 20,
-      trace: 10,
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockLogger,
+  mockEnvironmentManager,
+  mockServiceRegistry,
+  mockPrisma,
+} = vi.hoisted(() => ({
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(), // Required for pino-http
+    level: "info",
+    levels: {
+      values: {
+        fatal: 60,
+        error: 50,
+        warn: 40,
+        info: 30,
+        debug: 20,
+        trace: 10,
+      },
+    },
+    silent: vi.fn(),
+    fatal: vi.fn(),
+    trace: vi.fn(),
+  },
+  mockEnvironmentManager: {
+    getInstance: vi.fn(),
+    getEnvironmentById: vi.fn(),
+  },
+  mockServiceRegistry: {
+    getInstance: vi.fn(),
+    getServiceMetadata: vi.fn(),
+  },
+  mockPrisma: {
+    environmentNetwork: {
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
   },
-  silent: jest.fn(),
-  fatal: jest.fn(),
-  trace: jest.fn(),
-};
+}));
 
 // Mock logger factory first (before other imports)
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLogger; }),
+  deploymentLogger: vi.fn(function() { return mockLogger; }),
+  loadbalancerLogger: vi.fn(function() { return mockLogger; }),
+  selfBackupLogger: vi.fn(function() { return mockLogger; }),
+  tlsLogger: vi.fn(function() { return mockLogger; }),
+  agentLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock dependencies
-const mockEnvironmentManager = {
-  getInstance: jest.fn(),
-  getEnvironmentById: jest.fn(),
-};
-
-const mockServiceRegistry = {
-  getInstance: jest.fn(),
-  getServiceMetadata: jest.fn(),
-};
-
-const mockPrisma = {
-  environmentNetwork: {
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  },
-};
-
-jest.mock("../../services/environment/environment-manager", () => ({
+vi.mock("../../services/environment/environment-manager", () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
   }
 }));
 
-jest.mock("../../services/environment/service-registry", () => ({
+vi.mock("../../services/environment/service-registry", () => ({
   ServiceRegistry: {
     getInstance: () => mockServiceRegistry
   }
 }));
 
-jest.mock("../../lib/prisma", () => mockPrisma);
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock authentication middleware
-jest.mock("../../middleware/auth", () => ({
+vi.mock("../../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => next(),
 }));
 
 // Import the router after mocking
-// Import the full app after mocking
-import fullApp from "../../app";
+import environmentNetworksRouter from "../environment-networks";
 
 describe("Environment Networks Routes", () => {
   let app: express.Application;
 
   beforeEach(() => {
-    app = fullApp;
+    app = express();
+    app.use(express.json());
+    // Mount the sub-router with mergeParams support at the correct path
+    app.use("/api/environments/:id/networks", environmentNetworksRouter);
 
     // Reset all mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("GET /api/environments/:id/networks", () => {
@@ -192,7 +202,7 @@ describe("Environment Networks Routes", () => {
       expect(mockPrisma.environmentNetwork.create).toHaveBeenCalledWith({
         data: {
           environmentId,
-          name: networkData.name,
+          name: `test-env-${networkData.name}`,
           driver: networkData.driver,
           options: networkData.options,
         },
@@ -213,7 +223,7 @@ describe("Environment Networks Routes", () => {
           {
             id: createId(),
             environmentId,
-            name: "existing-network",
+            name: "test-env-existing-network",
             driver: "bridge",
             options: {},
             createdAt: new Date(),
@@ -260,7 +270,6 @@ describe("Environment Networks Routes", () => {
       const environmentId = createId();
       const networkId = createId();
       const updateData = {
-        name: "updated-network",
         driver: "host",
       };
 
@@ -283,7 +292,7 @@ describe("Environment Networks Routes", () => {
 
       const mockUpdatedNetwork = {
         ...mockExistingNetwork,
-        ...updateData,
+        driver: "host",
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
@@ -300,7 +309,10 @@ describe("Environment Networks Routes", () => {
       });
       expect(mockPrisma.environmentNetwork.update).toHaveBeenCalledWith({
         where: { id: networkId },
-        data: updateData,
+        data: {
+          driver: "host",
+          options: undefined,
+        },
       });
     });
 
@@ -308,7 +320,7 @@ describe("Environment Networks Routes", () => {
       const environmentId = createId();
       const networkId = createId();
       const updateData = {
-        name: "updated-network",
+        driver: "overlay",
       };
 
       const mockEnvironment = {
@@ -374,7 +386,7 @@ describe("Environment Networks Routes", () => {
       const mockExistingNetwork = {
         id: networkId,
         environmentId,
-        name: "test-network",
+        name: "test-env-test-network",
         driver: "bridge",
         options: {},
         createdAt: new Date(),

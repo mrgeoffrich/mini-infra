@@ -1,4 +1,3 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import supertest from "supertest";
 import { testPrisma, createTestUser, createTestApiKey } from "./setup";
 import express from "express";
@@ -12,121 +11,93 @@ import {
   DeploymentResponse,
   DeploymentListResponse,
 } from "@mini-infra/types";
+import prisma from "../lib/prisma";
 
-// Mock the deployment orchestrator
-jest.mock("../services/deployment-orchestrator", () => {
-  const mockOrchestrator = {
-    triggerDeployment: jest.fn(),
-    rollbackDeployment: jest.fn(),
-    getDeploymentStatus: jest.fn(),
-    initialize: jest.fn().mockResolvedValue(undefined),
-  };
-
-  return {
-    DeploymentOrchestrator: jest.fn().mockImplementation(() => mockOrchestrator),
-    __mockOrchestrator: mockOrchestrator, // Export for test use
-  };
-});
-
-// Get reference to the mocked orchestrator and service
-const { __mockOrchestrator: mockOrchestrator } = require("../services/deployment-orchestrator");
-const { __mockDeploymentConfigurationManager: mockDeploymentConfigurationManager } = require("../services/deployment-config");
-
-// Mock the deployment config service
-jest.mock("../services/deployment-config", () => {
-  const mockService = {
-    listDeploymentConfigs: jest.fn(),
-    createDeploymentConfig: jest.fn(),
-    getDeploymentConfig: jest.fn(),
-    getDeploymentConfigByName: jest.fn(),
-    updateDeploymentConfig: jest.fn(),
-    deleteDeploymentConfig: jest.fn(),
-  };
-  return {
-    DeploymentConfigurationManager: jest.fn().mockImplementation(() => mockService),
-    __mockDeploymentConfigurationManager: mockService, // Export for test use
-  };
-});
-
-// Mock logger factory
-jest.mock("../lib/logger-factory.ts", () => ({
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
+const { mockOrchestrator, mockDeploymentConfigurationManager } = vi.hoisted(() => ({
+  mockOrchestrator: {
+    triggerDeployment: vi.fn(),
+    rollbackDeployment: vi.fn(),
+    getDeploymentStatus: vi.fn(),
+    initialize: vi.fn().mockResolvedValue(undefined),
+  },
+  mockDeploymentConfigurationManager: {
+    listDeploymentConfigs: vi.fn(),
+    createDeploymentConfig: vi.fn(),
+    getDeploymentConfig: vi.fn(),
+    getDeploymentConfigByName: vi.fn(),
+    updateDeploymentConfig: vi.fn(),
+    deleteDeploymentConfig: vi.fn(),
+  },
 }));
 
+// Mock the deployment orchestrator
+vi.mock("../services/deployment-orchestrator", () => ({
+  DeploymentOrchestrator: vi.fn().mockImplementation(function() { return mockOrchestrator; }),
+}));
+
+// Mock the deployment config service
+vi.mock("../services/deployment-config", () => ({
+  DeploymentConfigurationManager: vi.fn().mockImplementation(function() { return mockDeploymentConfigurationManager; }),
+}));
+
+// Mock logger factory
+vi.mock("../lib/logger-factory.ts", () => {
+  const mockLoggerInstance = {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  };
+  return {
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
+  };
+});
+
 // Mock prisma with full model methods
-jest.mock("../lib/prisma", () => ({
-  deploymentConfiguration: {
-    count: jest.fn().mockResolvedValue(0),
-    findMany: jest.fn().mockResolvedValue([]),
-    findFirst: jest.fn().mockResolvedValue(null),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    deleteMany: jest.fn(),
-  },
-  deployment: {
-    count: jest.fn().mockResolvedValue(0),
-    findMany: jest.fn().mockResolvedValue([]),
-    findFirst: jest.fn().mockResolvedValue(null),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    deleteMany: jest.fn(),
-  },
-  deploymentStep: {
-    count: jest.fn().mockResolvedValue(0),
-    findMany: jest.fn().mockResolvedValue([]),
-    findFirst: jest.fn().mockResolvedValue(null),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    deleteMany: jest.fn(),
-  },
+vi.mock("../lib/prisma", () => ({
   default: {
     deploymentConfiguration: {
-      count: jest.fn().mockResolvedValue(0),
-      findMany: jest.fn().mockResolvedValue([]),
-      findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      deleteMany: jest.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     deployment: {
-      count: jest.fn().mockResolvedValue(0),
-      findMany: jest.fn().mockResolvedValue([]),
-      findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      deleteMany: jest.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     deploymentStep: {
-      count: jest.fn().mockResolvedValue(0),
-      findMany: jest.fn().mockResolvedValue([]),
-      findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      deleteMany: jest.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
 
 // Mock middleware functions
-jest.mock("../middleware/auth", () => ({
+vi.mock("../middleware/auth", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     if (req.headers["x-api-key"] && req.headers["x-api-key"].startsWith("test-key")) {
       req.user = { id: req.headers["x-user-id"] || "test-user-id" };
@@ -148,7 +119,7 @@ describe("Deployment API Integration Tests", () => {
   let apiKey: string;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Set environment variable for encryption key
     process.env.ENCRYPTION_KEY = "test-encryption-key-12345678901234567890123456";
@@ -350,7 +321,12 @@ describe("Deployment API Integration Tests", () => {
         expect(body.message).toContain("created successfully");
 
         expect(mockDeploymentConfigurationManager.createDeploymentConfig).toHaveBeenCalledWith(
-          configRequest
+          expect.objectContaining({
+            applicationName: configRequest.applicationName,
+            dockerImage: configRequest.dockerImage,
+            dockerRegistry: configRequest.dockerRegistry,
+            environmentId: configRequest.environmentId,
+          })
         );
       });
 
@@ -502,7 +478,7 @@ describe("Deployment API Integration Tests", () => {
 
         expect(mockDeploymentConfigurationManager.updateDeploymentConfig).toHaveBeenCalledWith(
           "config-123",
-          updateData
+          expect.objectContaining(updateData)
         );
       });
 
@@ -741,9 +717,8 @@ describe("Deployment API Integration Tests", () => {
         };
 
         // Mock the prisma query
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .get("/api/deployments/deployment-123/status")
@@ -759,7 +734,7 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(null);
         mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
@@ -796,7 +771,7 @@ describe("Deployment API Integration Tests", () => {
           })),
         };
 
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
         mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
@@ -829,9 +804,8 @@ describe("Deployment API Integration Tests", () => {
           status: "rolling_back",
         };
 
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
         mockOrchestrator.rollbackDeployment.mockResolvedValue(mockRolledBackDeployment);
 
         const response = await supertest(app)
@@ -849,9 +823,8 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should return 404 for non-existent deployment", async () => {
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(null);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(null);
 
         const response = await supertest(app)
           .post("/api/deployments/non-existent/rollback")
@@ -871,9 +844,8 @@ describe("Deployment API Integration Tests", () => {
           startedAt: new Date(),
         };
 
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findFirst.mockResolvedValue(mockDeployment);
-        mockPrisma.default.deployment.findFirst.mockResolvedValue(mockDeployment);
 
         const response = await supertest(app)
           .post("/api/deployments/deployment-123/rollback")
@@ -911,11 +883,9 @@ describe("Deployment API Integration Tests", () => {
           },
         ];
 
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findMany.mockResolvedValue(mockDeployments);
-        mockPrisma.default.deployment.findMany.mockResolvedValue(mockDeployments);
         mockPrisma.deployment.count.mockResolvedValue(2);
-        mockPrisma.default.deployment.count.mockResolvedValue(2);
 
         const response = await supertest(app)
           .get("/api/deployments/history")
@@ -931,11 +901,9 @@ describe("Deployment API Integration Tests", () => {
       });
 
       it("should handle pagination correctly", async () => {
-        const mockPrisma = require("../lib/prisma");
+        const mockPrisma = prisma as any;
         mockPrisma.deployment.findMany.mockResolvedValue([]);
-        mockPrisma.default.deployment.findMany.mockResolvedValue([]);
         mockPrisma.deployment.count.mockResolvedValue(0);
-        mockPrisma.default.deployment.count.mockResolvedValue(0);
 
         await supertest(app)
           .get("/api/deployments/history")

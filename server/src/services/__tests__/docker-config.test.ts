@@ -1,39 +1,38 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
 import { DockerConfigService } from "../docker-config";
+import Dockerode from "dockerode";
+
+const { mockDocker, mockLoggerFunctions } = vi.hoisted(() => ({
+  mockDocker: {
+    ping: vi.fn(),
+    info: vi.fn(),
+    version: vi.fn(),
+  },
+  mockLoggerFunctions: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
 
 // Mock dockerode before importing
-const mockDocker = {
-  ping: jest.fn(),
-  info: jest.fn(),
-  version: jest.fn(),
-};
-
-jest.mock("dockerode", () => {
-  return jest.fn().mockImplementation(() => mockDocker);
-});
-
-// Mock logger functions
-const mockLoggerFunctions = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
+vi.mock("dockerode", () => ({
+  default: vi.fn().mockImplementation(function() { return mockDocker; }),
+}));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLoggerFunctions),
-  servicesLogger: jest.fn(() => mockLoggerFunctions),
-  httpLogger: jest.fn(() => mockLoggerFunctions),
-  prismaLogger: jest.fn(() => mockLoggerFunctions),
-  dockerExecutorLogger: jest.fn(() => mockLoggerFunctions),
-  deploymentLogger: jest.fn(() => mockLoggerFunctions),
-  loadbalancerLogger: jest.fn(() => mockLoggerFunctions),
-  __esModule: true,
-  default: jest.fn(() => mockLoggerFunctions),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  servicesLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  httpLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  prismaLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  dockerExecutorLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  deploymentLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  loadbalancerLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  default: vi.fn(function() { return mockLoggerFunctions; }),
 }));
 
 // Get reference to the mocked logger
@@ -42,32 +41,32 @@ const mockLogger = mockLoggerFunctions;
 // Mock Prisma client
 const mockPrisma = {
   systemSettings: {
-    findUnique: jest.fn(),
-    upsert: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
   },
   connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
   },
   settingsAudit: {
-    create: jest.fn(),
+    create: vi.fn(),
   },
 } as unknown as typeof prisma;
 
-// Import the mock after the jest.mock calls
+// Import the mock after the vi.mock calls
 
 describe("DockerConfigService", () => {
   let dockerConfigService: DockerConfigService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     dockerConfigService = new DockerConfigService(mockPrisma);
   });
 
   afterEach(() => {
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   describe("Constructor", () => {
@@ -80,7 +79,7 @@ describe("DockerConfigService", () => {
   describe("validate", () => {
     it("should validate Docker connectivity successfully", async () => {
       // Mock settings retrieval
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce(null) // host setting not found
         .mockResolvedValueOnce(null); // apiVersion setting not found
@@ -98,7 +97,7 @@ describe("DockerConfigService", () => {
         ApiVersion: "1.41",
       });
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result: ValidationResult = await dockerConfigService.validate();
 
@@ -130,12 +129,12 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker ping timeout", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       // Mock timeout scenario by directly rejecting with timeout error
       mockDocker.ping.mockRejectedValue(new Error("Docker API timeout"));
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await dockerConfigService.validate();
 
@@ -145,13 +144,13 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker connection refused error", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       const connectionError = new Error("connect ECONNREFUSED");
       (connectionError as any).code = "ECONNREFUSED";
       mockDocker.ping.mockRejectedValue(connectionError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await dockerConfigService.validate();
 
@@ -177,7 +176,7 @@ describe("DockerConfigService", () => {
 
     it("should use custom Docker host from settings", async () => {
       // Mock custom host setting
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "tcp://192.168.1.100:2376",
@@ -198,7 +197,7 @@ describe("DockerConfigService", () => {
         ApiVersion: "1.40",
       });
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await dockerConfigService.validate();
 
@@ -213,7 +212,7 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker info/version API errors gracefully", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       mockDocker.ping.mockResolvedValue(true);
       mockDocker.info.mockRejectedValue(new Error("Docker info failed"));
@@ -242,7 +241,7 @@ describe("DockerConfigService", () => {
         }),
       };
 
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(mockConnectivityStatus);
 
@@ -265,7 +264,7 @@ describe("DockerConfigService", () => {
     });
 
     it("should return unreachable status when no connectivity data exists", async () => {
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(null);
 
@@ -289,7 +288,7 @@ describe("DockerConfigService", () => {
         metadata: null,
       };
 
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(mockConnectivityStatus);
 
@@ -331,7 +330,7 @@ describe("DockerConfigService", () => {
 
     it("should test connection with stored settings when no parameters provided", async () => {
       // Mock stored settings
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "tcp://stored-host:2376",
@@ -373,7 +372,7 @@ describe("DockerConfigService", () => {
         "1.41",
       );
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         socketPath: "/var/run/docker.sock",
         version: "v1.41",
       });
@@ -385,7 +384,7 @@ describe("DockerConfigService", () => {
         "1.41",
       );
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         socketPath: "//./pipe/docker_engine",
         version: "v1.41",
       });
@@ -397,7 +396,7 @@ describe("DockerConfigService", () => {
         "1.41",
       );
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         host: "192.168.1.100",
         port: 2376,
         protocol: "http",
@@ -411,7 +410,7 @@ describe("DockerConfigService", () => {
         "1.41",
       );
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         host: "secure-docker",
         port: 2376,
         protocol: "https",
@@ -425,7 +424,7 @@ describe("DockerConfigService", () => {
         null,
       );
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         socketPath: "/var/run/docker.sock",
       });
     });
@@ -433,7 +432,7 @@ describe("DockerConfigService", () => {
     it("should handle host:port format", () => {
       (dockerConfigService as any).createDockerClient("localhost:2375");
 
-      expect(require("dockerode")).toHaveBeenCalledWith({
+      expect(Dockerode).toHaveBeenCalledWith({
         host: "localhost",
         port: 2375,
         protocol: "http",
@@ -542,7 +541,7 @@ describe("DockerConfigService", () => {
   describe("set method override", () => {
     it("should call parent set method and invalidate Docker client", async () => {
       // Mock parent set method
-      const parentSetSpy = jest.spyOn(
+      const parentSetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(dockerConfigService)),
         "set",
       );
@@ -586,7 +585,7 @@ describe("DockerConfigService", () => {
       mockDocker.info.mockResolvedValue(mockInfo);
 
       // Mock getDockerClient to return the mocked docker instance
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await dockerConfigService.getDockerInfo();
 
@@ -601,7 +600,7 @@ describe("DockerConfigService", () => {
       };
       mockDocker.version.mockResolvedValue(mockVersion);
 
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       const result = await dockerConfigService.getDockerVersion();
 
@@ -613,7 +612,7 @@ describe("DockerConfigService", () => {
       const dockerError = new Error("Docker API error");
       mockDocker.info.mockRejectedValue(dockerError);
 
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       await expect(dockerConfigService.getDockerInfo()).rejects.toThrow(
         "Docker API error",
@@ -631,7 +630,7 @@ describe("DockerConfigService", () => {
       const dockerError = new Error("Version API error");
       mockDocker.version.mockRejectedValue(dockerError);
 
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
 
       await expect(dockerConfigService.getDockerVersion()).rejects.toThrow(
         "Version API error",

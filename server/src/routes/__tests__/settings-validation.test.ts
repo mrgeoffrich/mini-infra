@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
@@ -6,44 +5,56 @@ import {
   ValidationResult,
 } from "@mini-infra/types";
 
-// Mock Prisma client
-const mockPrisma = {
-  systemSettings: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    updateMany: jest.fn(),
-    delete: jest.fn(),
-    count: jest.fn(),
+const { mockPrisma, mockLogger, mockConfigService, mockConfigFactory } = vi.hoisted(() => ({
+  mockPrisma: {
+    systemSettings: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
+    connectivityStatus: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+    },
   },
-  connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+  mockLogger: {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   },
-};
+  mockConfigService: {
+    validate: vi.fn(),
+    getHealthStatus: vi.fn(),
+    set: vi.fn(),
+    get: vi.fn(),
+    delete: vi.fn(),
+  },
+  mockConfigFactory: {
+    create: vi.fn(),
+    getSupportedCategories: vi.fn(),
+    isSupported: vi.fn(),
+  },
+}));
 
-jest.mock("../../lib/prisma", () => mockPrisma);
+// Mock Prisma client
+vi.mock("../../lib/prisma", () => ({ default: mockPrisma }));
 
 // Mock logger
-const mockLogger = {
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn(),
-};
-
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => mockLogger),
-  servicesLogger: jest.fn(() => mockLogger),
-  httpLogger: jest.fn(() => mockLogger),
-  prismaLogger: jest.fn(() => mockLogger),
-  __esModule: true,
-  default: jest.fn(() => mockLogger),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(function() { return mockLogger; }),
+  servicesLogger: vi.fn(function() { return mockLogger; }),
+  httpLogger: vi.fn(function() { return mockLogger; }),
+  prismaLogger: vi.fn(function() { return mockLogger; }),
+  default: vi.fn(function() { return mockLogger; }),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -61,7 +72,7 @@ jest.mock("../../lib/api-key-middleware", () => ({
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id", email: "test@example.com" };
     next();
@@ -70,24 +81,10 @@ jest.mock("../../lib/auth-middleware", () => ({
 }));
 
 // Mock configuration factory
-const mockConfigService = {
-  validate: jest.fn(),
-  getHealthStatus: jest.fn(),
-  set: jest.fn(),
-  get: jest.fn(),
-  delete: jest.fn(),
-};
-
-const mockConfigFactory = {
-  create: jest.fn(),
-  getSupportedCategories: jest.fn(),
-  isSupported: jest.fn(),
-};
-
-jest.mock("../../services/configuration-factory", () => ({
-  ConfigurationServiceFactory: jest
+vi.mock("../../services/configuration-factory", () => ({
+  ConfigurationServiceFactory: vi
     .fn()
-    .mockImplementation(() => mockConfigFactory),
+    .mockImplementation(function() { return mockConfigFactory; }),
 }));
 
 import settingsValidationRouter from "../settings-validation";
@@ -102,7 +99,7 @@ describe("Settings Validation API Routes", () => {
     // Add request ID middleware for testing
     app.use((req: any, res: any, next: any) => {
       req.headers["x-request-id"] = req.headers["x-request-id"] || createId();
-      req.get = jest.fn((header: string) => {
+      req.get = vi.fn((header: string) => {
         if (header === "User-Agent") return "Test Agent";
         return undefined;
       });
@@ -123,7 +120,7 @@ describe("Settings Validation API Routes", () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Set up default mock returns
     mockConfigFactory.create.mockReturnValue(mockConfigService);
@@ -308,7 +305,7 @@ describe("Settings Validation API Routes", () => {
       expect(response.body).toMatchObject({
         error: "Bad Request",
         message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls",
+          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls, github-app",
       });
     });
 

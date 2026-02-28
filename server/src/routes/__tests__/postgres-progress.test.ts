@@ -1,65 +1,65 @@
 import request from "supertest";
 import express from "express";
 
+const { mockProgressTrackerInstance } = vi.hoisted(() => ({
+  mockProgressTrackerInstance: {
+    initialize: vi.fn(),
+    getBackupProgress: vi.fn(),
+    getRestoreProgress: vi.fn(),
+    getActiveOperations: vi.fn(),
+    getOperationHistory: vi.fn(),
+    cleanupOldOperations: vi.fn(),
+  },
+}));
+
 // Mock prisma
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
+vi.mock("../../lib/prisma", () => ({
   default: {},
 }));
 
 // Mock the ProgressTrackerService - create a shared mock instance
-const mockProgressTrackerInstance = {
-  initialize: jest.fn(),
-  getBackupProgress: jest.fn(),
-  getRestoreProgress: jest.fn(),
-  getActiveOperations: jest.fn(),
-  getOperationHistory: jest.fn(),
-  cleanupOldOperations: jest.fn(),
-};
-
-jest.mock("../../services/progress-tracker", () => ({
-  ProgressTrackerService: jest
+vi.mock("../../services/progress-tracker", () => ({
+  ProgressTrackerService: vi
     .fn()
-    .mockImplementation(() => mockProgressTrackerInstance),
+    .mockImplementation(function() { return mockProgressTrackerInstance; }),
 }));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  servicesLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  httpLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  prismaLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  default: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -77,7 +77,7 @@ jest.mock("../../lib/api-key-middleware", () => ({
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   requireAuth: (req: any, res: any, next: any) => {
     req.user = { id: "test-user-id" };
     next();
@@ -90,7 +90,7 @@ import router from "../postgres-progress";
 import { ProgressTrackerService } from "../../services/progress-tracker";
 
 // Get the mocked constructor for type safety
-const MockedProgressTrackerService = ProgressTrackerService as jest.MockedClass<
+const MockedProgressTrackerService = ProgressTrackerService as MockedClass<
   typeof ProgressTrackerService
 >;
 
@@ -170,7 +170,7 @@ describe("PostgreSQL Progress API", () => {
       expect(mockProgressTrackerInstance.initialize).toHaveBeenCalled();
       expect(
         mockProgressTrackerInstance.getBackupProgress,
-      ).toHaveBeenCalledWith("backup-1", "test-user-id");
+      ).toHaveBeenCalledWith("backup-1");
     });
 
     it("should return 404 if backup operation not found", async () => {
@@ -256,7 +256,7 @@ describe("PostgreSQL Progress API", () => {
       expect(mockProgressTrackerInstance.initialize).toHaveBeenCalled();
       expect(
         mockProgressTrackerInstance.getRestoreProgress,
-      ).toHaveBeenCalledWith("restore-1", "test-user-id");
+      ).toHaveBeenCalledWith("restore-1");
     });
 
     it("should return 404 if restore operation not found", async () => {
@@ -383,7 +383,7 @@ describe("PostgreSQL Progress API", () => {
       expect(mockProgressTrackerInstance.initialize).toHaveBeenCalled();
       expect(
         mockProgressTrackerInstance.getActiveOperations,
-      ).toHaveBeenCalledWith("test-user-id");
+      ).toHaveBeenCalledWith();
     });
 
     it("should return empty operations when no active operations", async () => {
@@ -470,7 +470,6 @@ describe("PostgreSQL Progress API", () => {
       expect(
         mockProgressTrackerInstance.getOperationHistory,
       ).toHaveBeenCalledWith({
-        userId: "test-user-id",
         operationType: "all",
         limit: 50,
         offset: 0,
@@ -502,7 +501,6 @@ describe("PostgreSQL Progress API", () => {
       expect(
         mockProgressTrackerInstance.getOperationHistory,
       ).toHaveBeenCalledWith({
-        userId: "test-user-id",
         databaseId: "test-db-id",
         operationType: "backup",
         status: "completed",
@@ -525,7 +523,6 @@ describe("PostgreSQL Progress API", () => {
       expect(
         mockProgressTrackerInstance.getOperationHistory,
       ).toHaveBeenCalledWith({
-        userId: "test-user-id",
         operationType: "all",
         startedAfter: new Date("2024-01-01T00:00:00Z"),
         startedBefore: new Date("2024-01-02T00:00:00Z"),
@@ -585,7 +582,6 @@ describe("PostgreSQL Progress API", () => {
       expect(
         mockProgressTrackerInstance.getOperationHistory,
       ).toHaveBeenCalledWith({
-        userId: "test-user-id",
         operationType: "all",
         limit: 50,
         offset: 0,
@@ -671,40 +667,39 @@ describe("PostgreSQL Progress API", () => {
   describe("Authentication", () => {
     it("should return 401 for unauthenticated requests", async () => {
       // Reset module cache to allow re-mocking
-      jest.resetModules();
+      vi.resetModules();
 
       // Re-mock the auth middleware to not set user
-      jest.doMock("../../lib/auth-middleware", () => ({
+      vi.doMock("../../lib/auth-middleware", () => ({
         requireAuth: (req: any, res: any, next: any) => {
           // Don't set req.user to simulate unauthenticated request
           next();
         },
-        getAuthenticatedUser: jest.fn(),
+        getAuthenticatedUser: vi.fn(),
       }));
 
       // Re-mock other dependencies that the router needs
-      jest.doMock("../../lib/prisma", () => ({
-        __esModule: true,
+      vi.doMock("../../lib/prisma", () => ({
         default: {},
       }));
 
-      jest.doMock("../../services/progress-tracker", () => ({
-        ProgressTrackerService: jest
+      vi.doMock("../../services/progress-tracker", () => ({
+        ProgressTrackerService: vi
           .fn()
-          .mockImplementation(() => mockProgressTrackerInstance),
+          .mockImplementation(function() { return mockProgressTrackerInstance; }),
       }));
 
-      jest.doMock("../../lib/logger-factory", () => ({
-        appLogger: jest.fn(() => ({
-          info: jest.fn(),
-          warn: jest.fn(),
-          error: jest.fn(),
-          debug: jest.fn(),
+      vi.doMock("../../lib/logger-factory", () => ({
+        appLogger: vi.fn(() => ({
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+          debug: vi.fn(),
         })),
       }));
 
       // Now import the router with the new mocks
-      const unauthRouter = require("../postgres-progress").default;
+      const { default: unauthRouter } = await import("../postgres-progress");
 
       // Create a new app with the re-mocked router
       const unauthApp = express();
@@ -723,7 +718,7 @@ describe("PostgreSQL Progress API", () => {
       expect(response.body.error).toBe("Authentication required");
 
       // Reset modules again to restore original state
-      jest.resetModules();
+      vi.resetModules();
     });
   });
 

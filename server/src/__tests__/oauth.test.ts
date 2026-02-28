@@ -1,76 +1,86 @@
-import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { testPrisma, createTestUser } from "./setup";
 import type { GoogleOAuthProfile } from "@mini-infra/types";
 
+// Store reference to testPrisma that persists across resetModules
+const { prismaRef } = vi.hoisted(() => ({
+  prismaRef: { current: null as any },
+}));
+
 // Mock passport and logger before importing the module
-jest.mock("passport", () => ({
-  use: jest.fn(),
-  serializeUser: jest.fn(),
-  deserializeUser: jest.fn(),
-  __esModule: true,
+vi.mock("passport", () => ({
+  use: vi.fn(),
+  serializeUser: vi.fn(),
+  deserializeUser: vi.fn(),
   default: {
-    use: jest.fn(),
-    serializeUser: jest.fn(),
-    deserializeUser: jest.fn(),
+    use: vi.fn(),
+    serializeUser: vi.fn(),
+    deserializeUser: vi.fn(),
   },
 }));
 
-jest.mock("../lib/logger-factory.ts", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-  })),
-}));
+vi.mock("../lib/logger-factory.ts", () => {
+  const mockLoggerInstance = {
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  };
+  return {
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
+  };
+});
 
-jest.mock("../lib/config.ts", () => ({
+vi.mock("../lib/config.ts", () => ({
   GOOGLE_CLIENT_ID: "test-client-id",
   GOOGLE_CLIENT_SECRET: "test-client-secret",
-  __esModule: true,
   default: {
     GOOGLE_CLIENT_ID: "test-client-id",
     GOOGLE_CLIENT_SECRET: "test-client-secret",
   },
 }));
 
-// Mock prisma to use our test instance
-jest.mock("../lib/prisma.ts", () => ({
-  __esModule: true,
-  default: testPrisma,
+// Mock config-new which passport.ts imports
+vi.mock("../lib/config-new", () => ({
+  authConfig: {
+    google: {
+      clientId: "test-client-id",
+      clientSecret: "test-client-secret",
+    },
+    session: { secret: "test-session-secret" },
+    apiKey: { secret: "test-api-key-secret" },
+  },
+  serverConfig: {
+    nodeEnv: "test",
+    port: 5005,
+    publicUrl: "http://localhost:5005",
+  },
+  default: {},
+}));
+
+// Mock prisma to use our test instance - use prismaRef so the same instance persists across resetModules
+vi.mock("../lib/prisma.ts", () => ({
+  default: prismaRef.current,
 }));
 
 describe("OAuth Strategy and Callback Handling", () => {
-  let mockDone: jest.MockedFunction<any>;
+  let mockDone: MockedFunction<any>;
 
   beforeEach(async () => {
-    mockDone = jest.fn();
-    jest.clearAllMocks();
+    mockDone = vi.fn();
+    vi.clearAllMocks();
+
+    // Set the prisma reference so the mock uses the real test database
+    prismaRef.current = testPrisma;
 
     // Clean up any existing users to ensure test isolation
     await testPrisma.apiKey.deleteMany();
@@ -88,12 +98,12 @@ describe("OAuth Strategy and Callback Handling", () => {
 
     it("should create a new user when no existing user found", async () => {
       // Mock the Google OAuth strategy constructor
-      const mockVerifyCallback = jest.fn();
+      const mockVerifyCallback = vi.fn();
 
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest
+      const GoogleStrategy = vi
         .fn()
-        .mockImplementation((options, callback) => {
+        .mockImplementation(function(options: any, callback: any) {
           mockVerifyCallback.mockImplementation(callback);
           return {
             name: "google",
@@ -102,12 +112,12 @@ describe("OAuth Strategy and Callback Handling", () => {
         });
 
       // Temporarily mock the passport-google-oauth20 module
-      jest.doMock("passport-google-oauth20", () => ({
+      vi.doMock("passport-google-oauth20", () => ({
         Strategy: GoogleStrategy,
       }));
 
       // Re-import the passport module to trigger strategy registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the strategy callback directly
@@ -141,12 +151,12 @@ describe("OAuth Strategy and Callback Handling", () => {
       });
 
       // Mock the Google OAuth strategy constructor
-      const mockVerifyCallback = jest.fn();
+      const mockVerifyCallback = vi.fn();
 
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest
+      const GoogleStrategy = vi
         .fn()
-        .mockImplementation((options, callback) => {
+        .mockImplementation(function(options: any, callback: any) {
           mockVerifyCallback.mockImplementation(callback);
           return {
             name: "google",
@@ -155,12 +165,12 @@ describe("OAuth Strategy and Callback Handling", () => {
         });
 
       // Temporarily mock the passport-google-oauth20 module
-      jest.doMock("passport-google-oauth20", () => ({
+      vi.doMock("passport-google-oauth20", () => ({
         Strategy: GoogleStrategy,
       }));
 
       // Re-import the passport module to trigger strategy registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the strategy callback directly
@@ -191,12 +201,12 @@ describe("OAuth Strategy and Callback Handling", () => {
       });
 
       // Mock the Google OAuth strategy constructor
-      const mockVerifyCallback = jest.fn();
+      const mockVerifyCallback = vi.fn();
 
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest
+      const GoogleStrategy = vi
         .fn()
-        .mockImplementation((options, callback) => {
+        .mockImplementation(function(options: any, callback: any) {
           mockVerifyCallback.mockImplementation(callback);
           return {
             name: "google",
@@ -205,12 +215,12 @@ describe("OAuth Strategy and Callback Handling", () => {
         });
 
       // Temporarily mock the passport-google-oauth20 module
-      jest.doMock("passport-google-oauth20", () => ({
+      vi.doMock("passport-google-oauth20", () => ({
         Strategy: GoogleStrategy,
       }));
 
       // Re-import the passport module to trigger strategy registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the strategy callback directly
@@ -241,12 +251,12 @@ describe("OAuth Strategy and Callback Handling", () => {
       };
 
       // Mock the Google OAuth strategy constructor
-      const mockVerifyCallback = jest.fn();
+      const mockVerifyCallback = vi.fn();
 
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest
+      const GoogleStrategy = vi
         .fn()
-        .mockImplementation((options, callback) => {
+        .mockImplementation(function(options: any, callback: any) {
           mockVerifyCallback.mockImplementation(callback);
           return {
             name: "google",
@@ -255,12 +265,12 @@ describe("OAuth Strategy and Callback Handling", () => {
         });
 
       // Temporarily mock the passport-google-oauth20 module
-      jest.doMock("passport-google-oauth20", () => ({
+      vi.doMock("passport-google-oauth20", () => ({
         Strategy: GoogleStrategy,
       }));
 
       // Re-import the passport module to trigger strategy registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the strategy callback directly
@@ -282,17 +292,17 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should handle database errors gracefully", async () => {
       // Create a mock that will throw an error
       const originalFindUnique = testPrisma.user.findUnique;
-      (testPrisma.user as any).findUnique = jest
+      (testPrisma.user as any).findUnique = vi
         .fn()
         .mockRejectedValue(new Error("Database error") as any);
 
       // Mock the Google OAuth strategy constructor
-      const mockVerifyCallback = jest.fn();
+      const mockVerifyCallback = vi.fn();
 
       // Mock the GoogleStrategy class to capture the verify callback
-      const GoogleStrategy = jest
+      const GoogleStrategy = vi
         .fn()
-        .mockImplementation((options, callback) => {
+        .mockImplementation(function(options: any, callback: any) {
           mockVerifyCallback.mockImplementation(callback);
           return {
             name: "google",
@@ -301,12 +311,12 @@ describe("OAuth Strategy and Callback Handling", () => {
         });
 
       // Temporarily mock the passport-google-oauth20 module
-      jest.doMock("passport-google-oauth20", () => ({
+      vi.doMock("passport-google-oauth20", () => ({
         Strategy: GoogleStrategy,
       }));
 
       // Re-import the passport module to trigger strategy registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the strategy callback directly
@@ -334,31 +344,30 @@ describe("OAuth Strategy and Callback Handling", () => {
       const testUser = await createTestUser();
 
       // Mock the passport serializeUser function
-      const mockSerializeUser = jest.fn();
+      const mockSerializeUser = vi.fn();
       let serializeFunction: any;
 
       // Mock passport to capture the serialize function
       const mockPassport = {
-        use: jest.fn(),
-        serializeUser: jest.fn().mockImplementation((fn) => {
+        use: vi.fn(),
+        serializeUser: vi.fn().mockImplementation((fn) => {
           serializeFunction = fn;
         }),
-        deserializeUser: jest.fn(),
+        deserializeUser: vi.fn(),
       };
 
       // Mock the passport module
-      jest.doMock("passport", () => ({
-        __esModule: true,
+      vi.doMock("passport", () => ({
         default: mockPassport,
       }));
 
       // Re-import to trigger registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the serialization function
       if (serializeFunction) {
-        const mockSerializeDone = jest.fn();
+        const mockSerializeDone = vi.fn();
         serializeFunction(testUser, mockSerializeDone);
 
         expect(mockSerializeDone).toHaveBeenCalledWith(null, testUser.id);
@@ -375,26 +384,25 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock passport to capture the deserialize function
       const mockPassport = {
-        use: jest.fn(),
-        serializeUser: jest.fn(),
-        deserializeUser: jest.fn().mockImplementation((fn) => {
+        use: vi.fn(),
+        serializeUser: vi.fn(),
+        deserializeUser: vi.fn().mockImplementation((fn) => {
           deserializeFunction = fn;
         }),
       };
 
       // Mock the passport module
-      jest.doMock("passport", () => ({
-        __esModule: true,
+      vi.doMock("passport", () => ({
         default: mockPassport,
       }));
 
       // Re-import to trigger registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the deserialization function
       if (deserializeFunction) {
-        const mockDeserializeDone = jest.fn();
+        const mockDeserializeDone = vi.fn();
         await deserializeFunction(testUser.id, mockDeserializeDone);
 
         expect(mockDeserializeDone).toHaveBeenCalledWith(
@@ -414,26 +422,25 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock passport to capture the deserialize function
       const mockPassport = {
-        use: jest.fn(),
-        serializeUser: jest.fn(),
-        deserializeUser: jest.fn().mockImplementation((fn) => {
+        use: vi.fn(),
+        serializeUser: vi.fn(),
+        deserializeUser: vi.fn().mockImplementation((fn) => {
           deserializeFunction = fn;
         }),
       };
 
       // Mock the passport module
-      jest.doMock("passport", () => ({
-        __esModule: true,
+      vi.doMock("passport", () => ({
         default: mockPassport,
       }));
 
       // Re-import to trigger registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the deserialization function
       if (deserializeFunction) {
-        const mockDeserializeDone = jest.fn();
+        const mockDeserializeDone = vi.fn();
         await deserializeFunction("non-existent-id", mockDeserializeDone);
 
         expect(mockDeserializeDone).toHaveBeenCalledWith(null, null);
@@ -443,7 +450,7 @@ describe("OAuth Strategy and Callback Handling", () => {
     it("should handle database errors during deserialization", async () => {
       // Mock database error
       const originalFindUnique = testPrisma.user.findUnique;
-      (testPrisma.user as any).findUnique = jest
+      (testPrisma.user as any).findUnique = vi
         .fn()
         .mockRejectedValue(new Error("Database error") as any);
 
@@ -452,26 +459,25 @@ describe("OAuth Strategy and Callback Handling", () => {
 
       // Mock passport to capture the deserialize function
       const mockPassport = {
-        use: jest.fn(),
-        serializeUser: jest.fn(),
-        deserializeUser: jest.fn().mockImplementation((fn) => {
+        use: vi.fn(),
+        serializeUser: vi.fn(),
+        deserializeUser: vi.fn().mockImplementation((fn) => {
           deserializeFunction = fn;
         }),
       };
 
       // Mock the passport module
-      jest.doMock("passport", () => ({
-        __esModule: true,
+      vi.doMock("passport", () => ({
         default: mockPassport,
       }));
 
       // Re-import to trigger registration
-      jest.resetModules();
+      vi.resetModules();
       await import("../lib/passport");
 
       // Execute the deserialization function
       if (deserializeFunction) {
-        const mockDeserializeDone = jest.fn();
+        const mockDeserializeDone = vi.fn();
         await deserializeFunction("test-user-id", mockDeserializeDone);
 
         expect(mockDeserializeDone).toHaveBeenCalledWith(

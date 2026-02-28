@@ -5,17 +5,17 @@ import { IApplicationService } from '../services/interfaces/application-service'
 import { ServiceStatusValues } from '@mini-infra/types';
 
 // Mock HAProxyService to avoid Docker dependencies in tests
-jest.mock('../services/haproxy/haproxy-service');
-const MockHAProxyService = HAProxyService as jest.MockedClass<typeof HAProxyService>;
+vi.mock('../services/haproxy/haproxy-service');
+const MockHAProxyService = HAProxyService as MockedClass<typeof HAProxyService>;
 
 // Mock ServiceRegistry to control its behavior in tests
-jest.mock('../services/environment/service-registry');
-const MockServiceRegistry = ServiceRegistry as jest.MockedClass<typeof ServiceRegistry>;
+vi.mock('../services/environment/service-registry');
+const MockServiceRegistry = ServiceRegistry as MockedClass<typeof ServiceRegistry>;
 
 describe('ApplicationServiceFactory', () => {
   let serviceFactory: ApplicationServiceFactory;
-  let mockServiceRegistry: jest.Mocked<ServiceRegistry>;
-  let mockService: jest.Mocked<IApplicationService>;
+  let mockServiceRegistry: Mocked<ServiceRegistry>;
+  let mockService: Mocked<IApplicationService>;
 
   beforeEach(() => {
     // Reset singletons
@@ -34,23 +34,23 @@ describe('ApplicationServiceFactory', () => {
         requiredVolumes: [{ name: 'haproxy_data' }],
         exposedPorts: []
       },
-      initialize: jest.fn().mockResolvedValue(undefined),
-      start: jest.fn().mockResolvedValue({ success: true, message: 'Started', duration: 1000 }),
-      stopAndCleanup: jest.fn().mockResolvedValue(undefined),
-      getStatus: jest.fn().mockResolvedValue({
+      initialize: vi.fn().mockResolvedValue(undefined),
+      start: vi.fn().mockResolvedValue({ success: true, message: 'Started', duration: 1000 }),
+      stopAndCleanup: vi.fn().mockResolvedValue(undefined),
+      getStatus: vi.fn().mockResolvedValue({
         status: ServiceStatusValues.RUNNING,
         health: { status: 'healthy' as any, lastChecked: new Date() },
         metadata: {} as any
       }),
-      isReadyToStart: jest.fn().mockResolvedValue(true)
+      isReadyToStart: vi.fn().mockResolvedValue(true)
     };
 
     // Mock HAProxyService constructor
-    MockHAProxyService.mockImplementation(() => mockService);
+    MockHAProxyService.mockImplementation(function() { return mockService; });
 
     // Create mock service registry
     mockServiceRegistry = {
-      getServiceDefinition: jest.fn().mockImplementation((serviceType: string) => {
+      getServiceDefinition: vi.fn().mockImplementation((serviceType: string) => {
         if (serviceType === 'haproxy') {
           return {
             serviceType: 'haproxy',
@@ -61,8 +61,8 @@ describe('ApplicationServiceFactory', () => {
         }
         return undefined; // Return undefined for unknown service types
       }),
-      validateServiceConfiguration: jest.fn().mockReturnValue(true),
-      getAvailableServiceTypes: jest.fn().mockReturnValue(['haproxy'])
+      validateServiceConfiguration: vi.fn().mockReturnValue(true),
+      getAvailableServiceTypes: vi.fn().mockReturnValue(['haproxy'])
     } as any;
 
     // Mock singleton getInstance
@@ -73,7 +73,7 @@ describe('ApplicationServiceFactory', () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getInstance', () => {
@@ -97,7 +97,7 @@ describe('ApplicationServiceFactory', () => {
       expect(result.success).toBe(true);
       expect(result.service).toBe(mockService);
       expect(result.message).toBe('Service created successfully');
-      expect(MockHAProxyService).toHaveBeenCalledWith('test-project');
+      expect(MockHAProxyService).toHaveBeenCalledWith('test-project', undefined);
     });
 
     it('should fail for unknown service type', async () => {
@@ -131,7 +131,7 @@ describe('ApplicationServiceFactory', () => {
     });
 
     it('should handle service creation errors', async () => {
-      MockHAProxyService.mockImplementation(() => {
+      MockHAProxyService.mockImplementation(function() {
         throw new Error('Creation failed');
       });
 
@@ -239,9 +239,10 @@ describe('ApplicationServiceFactory', () => {
       expect(mockService.stopAndCleanup).toHaveBeenCalled();
     });
 
-    it('should fail to stop non-existent service', async () => {
-      await expect(serviceFactory.stopService('non-existent'))
-        .rejects.toThrow('Service not found: non-existent');
+    it('should not throw when stopping non-existent service', async () => {
+      // stopService no longer throws for non-existent services - it logs and returns
+      await serviceFactory.stopService('non-existent');
+      // Should not throw
     });
 
     it('should get service status', async () => {

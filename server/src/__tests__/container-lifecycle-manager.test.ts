@@ -1,4 +1,3 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import {
   ContainerLifecycleManager,
   ContainerCreateOptions,
@@ -11,75 +10,102 @@ import {
   ContainerEnvVar,
 } from "@mini-infra/types";
 
-// Mock DockerService
-const mockDockerService = {
-  getInstance: jest.fn(),
-  isConnected: jest.fn(),
-  docker: {
-    createContainer: jest.fn(),
-    getContainer: jest.fn(),
-    listContainers: jest.fn(),
+const { mockDockerService, mockContainer, mockLabelManager } = vi.hoisted(() => ({
+  // Mock DockerService
+  mockDockerService: {
+    getInstance: vi.fn(),
+    isConnected: vi.fn(),
+    docker: {
+      createContainer: vi.fn(),
+      getContainer: vi.fn(),
+      listContainers: vi.fn(),
+    },
   },
-};
-
-// Mock the container object
-const mockContainer = {
-  id: "mock-container-id",
-  start: jest.fn(),
-  stop: jest.fn(),
-  remove: jest.fn(),
-  inspect: jest.fn(),
-};
-
-// Mock ContainerLabelManager
-const mockLabelManager = {
-  generateDeploymentLabels: jest.fn(),
-  parseContainerLabels: jest.fn(),
-  shouldCleanupContainer: jest.fn(),
-};
-
-jest.mock('../services/container/container-label-manager', () => ({
-  __esModule: true,
-  default: jest.fn(() => mockLabelManager),
+  // Mock the container object
+  mockContainer: {
+    id: "mock-container-id",
+    start: vi.fn(),
+    stop: vi.fn(),
+    remove: vi.fn(),
+    inspect: vi.fn(),
+  },
+  // Mock ContainerLabelManager
+  mockLabelManager: {
+    generateDeploymentLabels: vi.fn(),
+    parseContainerLabels: vi.fn(),
+    shouldCleanupContainer: vi.fn(),
+  },
 }));
 
-jest.mock("../services/docker", () => ({
-  __esModule: true,
+vi.mock('../services/container/container-label-manager', () => ({
+  default: vi.fn(function() { return mockLabelManager; }),
+}));
+
+vi.mock("../services/docker", () => ({
   default: {
     getInstance: () => mockDockerService,
   },
 }));
 
+// Mock DockerExecutorService so initialize() doesn't hit the database
+vi.mock("../services/docker-executor", () => ({
+  DockerExecutorService: vi.fn(function() {
+    return {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      pullImageWithAutoAuth: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
+}));
+
 // Mock logger factory
-jest.mock("../lib/logger-factory", () => {
+vi.mock("../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   return {
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    appLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    createLogger: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    agentLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
 // Mock prisma module
-jest.mock("../lib/prisma", () => {
+vi.mock("../lib/prisma", () => {
   const mockPrisma = {
     deployment: {
-      create: jest.fn(),
-      update: jest.fn(),
-      findUnique: jest.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    systemSettings: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      findFirst: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    connectivityStatus: {
+      create: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    settingsAudit: {
+      create: vi.fn(),
     },
   };
   return {
-    __esModule: true,
     default: mockPrisma,
   };
 });
@@ -88,7 +114,7 @@ describe("ContainerLifecycleManager", () => {
   let containerManager: ContainerLifecycleManager;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Setup default mocks
     mockDockerService.getInstance.mockReturnValue(mockDockerService);
@@ -127,7 +153,7 @@ describe("ContainerLifecycleManager", () => {
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   // Helper function to create valid container config

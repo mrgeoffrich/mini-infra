@@ -1,77 +1,78 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
 import { CloudflareService } from "../cloudflare";
+import * as loggerFactory from "../../lib/logger-factory";
 
-// Mock Cloudflare SDK
-const mockCloudflare = {
-  user: {
-    get: jest.fn(),
-  },
-  accounts: {
-    get: jest.fn(),
-  },
-  zeroTrust: {
-    tunnels: {
-      list: jest.fn(),
+const { mockCloudflare } = vi.hoisted(() => ({
+  mockCloudflare: {
+    user: {
+      get: vi.fn(),
+    },
+    accounts: {
+      get: vi.fn(),
+    },
+    zeroTrust: {
+      tunnels: {
+        list: vi.fn(),
+      },
     },
   },
-};
+}));
 
-jest.mock("cloudflare", () => {
-  return jest.fn().mockImplementation(() => mockCloudflare);
-});
+// Mock Cloudflare SDK
+vi.mock("cloudflare", () => ({
+  default: vi.fn().mockImplementation(function() { return mockCloudflare; }),
+}));
 
 // Mock logger factory - create the mock instance inline
-jest.mock("../../lib/logger-factory", () => {
+vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
 // Get reference to the mocked logger
-const { servicesLogger } = require("../../lib/logger-factory");
+const { servicesLogger } = loggerFactory as any;
 const mockLogger = servicesLogger();
 
 // Mock Prisma client
 const mockPrisma = {
   systemSettings: {
-    findUnique: jest.fn(),
-    upsert: jest.fn(),
-    delete: jest.fn(),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
   },
   connectivityStatus: {
-    create: jest.fn(),
-    findFirst: jest.fn(),
+    create: vi.fn(),
+    findFirst: vi.fn(),
   },
 } as unknown as typeof prisma;
 
-// Import the mock after the jest.mock calls
+// Import the mock after the vi.mock calls
 
 describe("CloudflareService", () => {
   let cloudflareConfigService: CloudflareService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     cloudflareConfigService = new CloudflareService(mockPrisma);
   });
 
   afterEach(() => {
-    jest.clearAllTimers();
-    jest.useRealTimers();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   describe("Constructor", () => {
@@ -83,8 +84,8 @@ describe("CloudflareService", () => {
 
   describe("validate", () => {
     it("should fail validation when API token is not configured", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue(null);
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result: ValidationResult = await cloudflareConfigService.validate();
 
@@ -111,7 +112,7 @@ describe("CloudflareService", () => {
 
     it("should validate successfully with valid API token", async () => {
       // Mock API token setting
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "valid-api-token-123",
@@ -128,7 +129,7 @@ describe("CloudflareService", () => {
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -162,7 +163,7 @@ describe("CloudflareService", () => {
 
     it("should validate API token and include account information", async () => {
       // Mock API token and account ID settings
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "valid-api-token-123",
@@ -187,7 +188,7 @@ describe("CloudflareService", () => {
       };
       mockCloudflare.accounts.get.mockResolvedValue(mockAccountResponse);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -206,7 +207,7 @@ describe("CloudflareService", () => {
     });
 
     it("should handle account API failure gracefully when user API succeeds", async () => {
-      mockPrisma.systemSettings.findUnique = jest
+      mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "valid-api-token-123",
@@ -228,7 +229,7 @@ describe("CloudflareService", () => {
       const accountError = new Error("Account not found");
       mockCloudflare.accounts.get.mockRejectedValue(accountError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -246,7 +247,7 @@ describe("CloudflareService", () => {
     });
 
     it("should handle API timeout", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token-123",
       });
 
@@ -255,7 +256,7 @@ describe("CloudflareService", () => {
         new Error("API request timeout"),
       );
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -265,14 +266,14 @@ describe("CloudflareService", () => {
     });
 
     it("should handle unauthorized API token", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "invalid-api-token",
       });
 
       const authError = new Error("Unauthorized");
       mockCloudflare.user.get.mockRejectedValue(authError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -282,14 +283,14 @@ describe("CloudflareService", () => {
     });
 
     it("should handle network errors", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
 
       const networkError = new Error("ENOTFOUND api.cloudflare.com");
       mockCloudflare.user.get.mockRejectedValue(networkError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -313,14 +314,14 @@ describe("CloudflareService", () => {
     });
 
     it("should handle rate limiting", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
 
       const rateLimitError = new Error("Rate limit exceeded");
       mockCloudflare.user.get.mockRejectedValue(rateLimitError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -329,14 +330,14 @@ describe("CloudflareService", () => {
     });
 
     it("should handle forbidden access", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "limited-api-token",
       });
 
       const forbiddenError = new Error("Forbidden");
       mockCloudflare.user.get.mockRejectedValue(forbiddenError);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
@@ -361,7 +362,7 @@ describe("CloudflareService", () => {
         }),
       };
 
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(mockConnectivityStatus);
 
@@ -384,12 +385,12 @@ describe("CloudflareService", () => {
     });
 
     it("should perform validation when no connectivity data exists", async () => {
-      mockPrisma.connectivityStatus.findFirst = jest
+      mockPrisma.connectivityStatus.findFirst = vi
         .fn()
         .mockResolvedValue(null);
 
       // Mock validation call
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "test-token",
       });
 
@@ -401,7 +402,7 @@ describe("CloudflareService", () => {
         suspended: false,
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.getHealthStatus();
 
@@ -413,7 +414,7 @@ describe("CloudflareService", () => {
 
   describe("setApiToken", () => {
     it("should set API token successfully", async () => {
-      const parentSetSpy = jest.spyOn(
+      const parentSetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "set",
       );
@@ -452,7 +453,7 @@ describe("CloudflareService", () => {
 
   describe("setAccountId", () => {
     it("should set account ID successfully", async () => {
-      const parentSetSpy = jest.spyOn(
+      const parentSetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "set",
       );
@@ -478,7 +479,7 @@ describe("CloudflareService", () => {
 
   describe("getApiToken and getAccountId", () => {
     it("should retrieve API token from settings", async () => {
-      const parentGetSpy = jest.spyOn(
+      const parentGetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "get",
       );
@@ -493,7 +494,7 @@ describe("CloudflareService", () => {
     });
 
     it("should retrieve account ID from settings", async () => {
-      const parentGetSpy = jest.spyOn(
+      const parentGetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "get",
       );
@@ -511,10 +512,10 @@ describe("CloudflareService", () => {
   describe("getTunnelInfo", () => {
     it("should retrieve tunnel information successfully", async () => {
       // Mock stored settings
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getApiToken")
         .mockResolvedValue("valid-token");
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getAccountId")
         .mockResolvedValue("account-123");
 
@@ -585,7 +586,7 @@ describe("CloudflareService", () => {
     });
 
     it("should return empty array when API token not configured", async () => {
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getApiToken")
         .mockResolvedValue(null);
 
@@ -598,10 +599,10 @@ describe("CloudflareService", () => {
     });
 
     it("should return empty array when account ID not configured", async () => {
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getApiToken")
         .mockResolvedValue("valid-token");
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getAccountId")
         .mockResolvedValue(null);
 
@@ -614,10 +615,10 @@ describe("CloudflareService", () => {
     });
 
     it("should handle tunnel API timeout", async () => {
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getApiToken")
         .mockResolvedValue("valid-token");
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getAccountId")
         .mockResolvedValue("account-123");
 
@@ -640,10 +641,10 @@ describe("CloudflareService", () => {
     });
 
     it("should handle tunnel API errors", async () => {
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getApiToken")
         .mockResolvedValue("valid-token");
-      jest
+      vi
         .spyOn(cloudflareConfigService, "getAccountId")
         .mockResolvedValue("account-123");
 
@@ -666,14 +667,14 @@ describe("CloudflareService", () => {
 
   describe("Circuit Breaker Functionality", () => {
     it("should open circuit after 5 consecutive failures", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
 
       // Mock 5 consecutive failures
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make 5 failed requests
       for (let i = 0; i < 5; i++) {
@@ -695,14 +696,14 @@ describe("CloudflareService", () => {
     });
 
     it("should reset circuit breaker on successful request", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
 
       // First cause some failures (but not enough to open circuit)
       const networkError = new Error("ECONNREFUSED");
       mockCloudflare.user.get.mockRejectedValue(networkError);
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make 3 failed requests
       for (let i = 0; i < 3; i++) {
@@ -739,10 +740,10 @@ describe("CloudflareService", () => {
     });
 
     it("should not count non-retriable errors toward circuit breaker", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "invalid-api-token",
       });
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Mock 401 errors (non-retriable)
       const authError = new Error("Unauthorized") as any;
@@ -762,7 +763,7 @@ describe("CloudflareService", () => {
     });
 
     it("should handle request deduplication within 1-second window", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
 
@@ -774,7 +775,7 @@ describe("CloudflareService", () => {
         suspended: false,
       };
       mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make multiple concurrent requests
       const promises = [
@@ -798,10 +799,10 @@ describe("CloudflareService", () => {
     });
 
     it("should properly categorize different HTTP error codes", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Test 403 Forbidden
       const forbiddenError = new Error("Forbidden") as any;
@@ -830,12 +831,12 @@ describe("CloudflareService", () => {
 
     it("should transition circuit from open to half-open after cooldown", async () => {
       // Use fake timers for this test
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "valid-api-token",
       });
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Cause 5 failures to open circuit
       const networkError = new Error("ECONNREFUSED");
@@ -850,14 +851,14 @@ describe("CloudflareService", () => {
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
 
       // Advance time by 4 minutes (less than cooldown)
-      jest.advanceTimersByTime(4 * 60 * 1000);
+      vi.advanceTimersByTime(4 * 60 * 1000);
 
       // Circuit should still be open
       result = await cloudflareConfigService.validate();
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
 
       // Advance time by 2 more minutes (total 6 minutes, past cooldown)
-      jest.advanceTimersByTime(2 * 60 * 1000);
+      vi.advanceTimersByTime(2 * 60 * 1000);
 
       // Now mock a successful response for half-open test
       const mockUserResponse = {
@@ -877,14 +878,14 @@ describe("CloudflareService", () => {
       result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it("should reset circuit breaker when new API token is set", async () => {
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "bad-token",
       });
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Cause failures to open circuit
       const networkError = new Error("ECONNREFUSED");
@@ -899,7 +900,7 @@ describe("CloudflareService", () => {
       expect(result.errorCode).toBe("CIRCUIT_BREAKER_OPEN");
 
       // Set new API token
-      const parentSetSpy = jest.spyOn(
+      const parentSetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "set",
       );
@@ -911,7 +912,7 @@ describe("CloudflareService", () => {
       );
 
       // Mock successful response with new token
-      mockPrisma.systemSettings.findUnique = jest.fn().mockResolvedValue({
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
         value: "new-valid-token-12345678901234567890",
       });
 
@@ -935,19 +936,19 @@ describe("CloudflareService", () => {
 
   describe("removeConfiguration", () => {
     it("should remove both API token and account ID", async () => {
-      const parentDeleteSpy = jest.spyOn(
+      const parentDeleteSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "delete",
       );
       parentDeleteSpy.mockResolvedValue(undefined);
 
-      const parentGetSpy = jest.spyOn(
+      const parentGetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "get",
       );
       parentGetSpy.mockResolvedValue("old-account-id");
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       await cloudflareConfigService.removeConfiguration("user1");
 
@@ -974,7 +975,7 @@ describe("CloudflareService", () => {
     });
 
     it("should continue even if token or account ID deletion fails", async () => {
-      const parentDeleteSpy = jest.spyOn(
+      const parentDeleteSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "delete",
       );
@@ -982,13 +983,13 @@ describe("CloudflareService", () => {
         .mockRejectedValueOnce(new Error("Token not found"))
         .mockRejectedValueOnce(new Error("Account ID not found"));
 
-      const parentGetSpy = jest.spyOn(
+      const parentGetSpy = vi.spyOn(
         Object.getPrototypeOf(Object.getPrototypeOf(cloudflareConfigService)),
         "get",
       );
       parentGetSpy.mockResolvedValue(null);
 
-      mockPrisma.connectivityStatus.create = jest.fn().mockResolvedValue({});
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Should not throw
       await expect(

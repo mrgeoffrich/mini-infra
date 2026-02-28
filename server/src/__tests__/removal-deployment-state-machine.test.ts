@@ -1,16 +1,15 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { createActor } from 'xstate';
 import { removalDeploymentMachine } from '../services/haproxy/removal-deployment-state-machine';
 
 // Mock all action classes to prevent actual execution
-jest.mock('../services/haproxy/actions/remove-container-from-lb');
-jest.mock('../services/haproxy/actions/remove-frontend');
-jest.mock('../services/haproxy/actions/remove-dns');
-jest.mock('../services/haproxy/actions/stop-application');
-jest.mock('../services/haproxy/actions/remove-application');
-jest.mock('../services/haproxy/actions/log-deployment-success');
-jest.mock('../services/haproxy/actions/alert-operations-team');
-jest.mock('../services/haproxy/actions/cleanup-temp-resources');
+vi.mock('../services/haproxy/actions/remove-container-from-lb');
+vi.mock('../services/haproxy/actions/remove-frontend');
+vi.mock('../services/haproxy/actions/remove-dns');
+vi.mock('../services/haproxy/actions/stop-application');
+vi.mock('../services/haproxy/actions/remove-application');
+vi.mock('../services/haproxy/actions/log-deployment-success');
+vi.mock('../services/haproxy/actions/alert-operations-team');
+vi.mock('../services/haproxy/actions/cleanup-temp-resources');
 
 describe('RemovalDeploymentStateMachine', () => {
     let actor: any;
@@ -34,7 +33,7 @@ describe('RemovalDeploymentStateMachine', () => {
     };
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
         actor = createActor(removalDeploymentMachine, {
             input: mockContext
         });

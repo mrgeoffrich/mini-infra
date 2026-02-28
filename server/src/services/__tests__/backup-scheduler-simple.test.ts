@@ -1,79 +1,80 @@
-import { jest } from "@jest/globals";
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma";
 import { BackupSchedulerService, BackupConfigurationManager, BackupExecutorService } from "../backup";
+import * as loggerFactory from "../../lib/logger-factory";
+import * as nodeCron from "node-cron";
 
-// Mock objects that need to be referenced in tests
-const mockScheduledTask = {
-  start: jest.fn(),
-  stop: jest.fn(),
-  destroy: jest.fn(),
-};
+// Hoist mock variables used inside vi.mock() factory functions
+const { mockScheduledTask } = vi.hoisted(() => ({
+  mockScheduledTask: {
+    start: vi.fn(),
+    stop: vi.fn(),
+    destroy: vi.fn(),
+  },
+}));
 
 // Mock node-cron
-jest.mock("node-cron", () => ({
-  validate: jest.fn(),
-  schedule: jest.fn(() => mockScheduledTask),
+vi.mock("node-cron", () => ({
+  validate: vi.fn(),
+  schedule: vi.fn(function() { return mockScheduledTask; }),
 }));
 
 // Mock services
-jest.mock("../backup/backup-configuration-manager");
-jest.mock("../backup/backup-executor");
-jest.mock("../../lib/prisma", () => ({
-  __esModule: true,
+vi.mock("../backup/backup-configuration-manager");
+vi.mock("../backup/backup-executor");
+vi.mock("../../lib/prisma", () => ({
   default: {
     backupConfiguration: {
-      findMany: jest.fn(),
-      updateMany: jest.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }));
 
 // Mock logger factory - create the mock instance inline
-jest.mock("../../lib/logger-factory", () => {
+vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
   };
 
   return {
-    appLogger: jest.fn(() => mockLoggerInstance),
-    servicesLogger: jest.fn(() => mockLoggerInstance),
-    httpLogger: jest.fn(() => mockLoggerInstance),
-    prismaLogger: jest.fn(() => mockLoggerInstance),
-    __esModule: true,
-    default: jest.fn(() => mockLoggerInstance),
+    appLogger: vi.fn(function() { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
+    default: vi.fn(function() { return mockLoggerInstance; }),
   };
 });
 
 // Get references to the mocked objects
-const { servicesLogger } = require("../../lib/logger-factory");
+const { servicesLogger } = loggerFactory as any;
 const mockLogger = servicesLogger();
-const mockCron = require("node-cron");
+const mockCron = nodeCron as any;
 
 // Mock Prisma client
 const mockPrisma = {
   backupConfiguration: {
-    findMany: jest.fn(),
-    updateMany: jest.fn(),
+    findMany: vi.fn(),
+    updateMany: vi.fn(),
   },
 } as unknown as typeof prisma;
 
 // Mock service instances
 const mockBackupConfigurationManager = {} as unknown as BackupConfigurationManager;
 const mockBackupExecutorService = {
-  initialize: jest.fn(),
-  queueBackup: jest.fn(),
-  shutdown: jest.fn(),
+  initialize: vi.fn(),
+  queueBackup: vi.fn(),
+  shutdown: vi.fn(),
 } as unknown as BackupExecutorService;
 
 describe("BackupSchedulerService - Memory Test", () => {
   let backupSchedulerService: BackupSchedulerService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Reset mock objects completely
     mockScheduledTask.start.mockReset();
@@ -81,8 +82,8 @@ describe("BackupSchedulerService - Memory Test", () => {
     mockScheduledTask.destroy.mockReset();
 
     // Set default mock return values
-    mockPrisma.backupConfiguration.findMany = jest.fn().mockResolvedValue([]);
-    mockPrisma.backupConfiguration.updateMany = jest.fn().mockResolvedValue({});
+    mockPrisma.backupConfiguration.findMany = vi.fn().mockResolvedValue([]);
+    mockPrisma.backupConfiguration.updateMany = vi.fn().mockResolvedValue({});
     mockCron.validate.mockReturnValue(true);
     mockCron.schedule.mockReturnValue(mockScheduledTask);
 
@@ -113,7 +114,7 @@ describe("BackupSchedulerService - Memory Test", () => {
     mockScheduledTask.destroy.mockReset();
 
     // Force garbage collection of mock call history
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     // Clear mock return values to prevent accumulation
     mockCron.schedule.mockReset();

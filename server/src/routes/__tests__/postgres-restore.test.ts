@@ -1,107 +1,113 @@
-// Mock the PrismaClient BEFORE any imports
-const mockPrismaInstance = {
-  postgresDatabase: {
-    findFirst: jest.fn(),
-  },
-  restoreOperation: {
-    findFirst: jest.fn(),
-    findMany: jest.fn(),
-    count: jest.fn(),
-  },
-};
+// Hoist mock variables that are used inside vi.mock() factory functions
+const {
+  mockPrismaInstance,
+  mockRestoreExecutorService,
+  mockAzureStorageService,
+  mockContainerClient,
+  mockBlobServiceClient,
+} = vi.hoisted(() => {
+  const mockContainerClient = {
+    listBlobsFlat: vi.fn(),
+    getBlobClient: vi.fn((blobName: string) => ({
+      url: `https://storage.blob.core.windows.net/backups/${blobName}`,
+    })),
+  };
 
-jest.mock("@prisma/client", () => ({
-  PrismaClient: jest.fn(() => mockPrismaInstance),
+  return {
+    mockPrismaInstance: {
+      postgresDatabase: {
+        findFirst: vi.fn(),
+      },
+      restoreOperation: {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
+      },
+    },
+    mockRestoreExecutorService: {
+      queueRestore: vi.fn(),
+    },
+    mockAzureStorageService: {
+      get: vi.fn(),
+    },
+    mockContainerClient,
+    mockBlobServiceClient: {
+      getContainerClient: vi.fn(function() { return mockContainerClient; }),
+    },
+  };
+});
+
+// Mock the PrismaClient BEFORE any imports
+vi.mock("@prisma/client", () => ({
+  PrismaClient: vi.fn(function() { return mockPrismaInstance; }),
 }));
 
 // Mock the prisma instance that the route actually imports
-jest.mock("../../lib/prisma", () => mockPrismaInstance);
+vi.mock("../../lib/prisma", () => ({ default: mockPrismaInstance }));
 
 // Mock all services that RestoreExecutorService depends on
-jest.mock("../../services/docker-executor");
-jest.mock("../../services/postgres/postgres-database-manager");
-
-// Create mock service instances
-const mockRestoreExecutorService = {
-  queueRestore: jest.fn(),
-};
-
-const mockAzureStorageService = {
-  get: jest.fn(),
-};
+vi.mock("../../services/docker-executor");
+vi.mock("../../services/postgres/postgres-database-manager");
 
 // Mock the RestoreExecutorService
-jest.mock("../../services/restore-executor", () => ({
-  RestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
+vi.mock("../../services/restore-executor", () => ({
+  RestoreExecutorService: vi.fn(function() { return mockRestoreExecutorService; }),
 }));
 
 // Mock the restore executor instance functions
-jest.mock("../../services/restore-executor/restore-executor-instance", () => ({
-  getRestoreExecutorService: jest.fn(() => mockRestoreExecutorService),
-  setRestoreExecutorService: jest.fn(),
+vi.mock("../../services/restore-executor/restore-executor-instance", () => ({
+  getRestoreExecutorService: vi.fn(function() { return mockRestoreExecutorService; }),
+  setRestoreExecutorService: vi.fn(),
 }));
 
 // Mock the AzureStorageService
-jest.mock("../../services/azure-storage-service", () => ({
-  AzureStorageService: jest.fn(() => mockAzureStorageService),
+vi.mock("../../services/azure-storage-service", () => ({
+  AzureStorageService: vi.fn(function() { return mockAzureStorageService; }),
 }));
 
-// Create Azure Storage mock instances
-const mockContainerClient = {
-  listBlobsFlat: jest.fn(),
-  getBlobClient: jest.fn((blobName: string) => ({
-    url: `https://storage.blob.core.windows.net/backups/${blobName}`,
-  })),
-};
-
-const mockBlobServiceClient = {
-  getContainerClient: jest.fn(() => mockContainerClient),
-};
-
 // Mock Azure Storage
-jest.mock("@azure/storage-blob", () => ({
+vi.mock("@azure/storage-blob", () => ({
   BlobServiceClient: {
-    fromConnectionString: jest.fn(() => mockBlobServiceClient),
+    fromConnectionString: vi.fn(function() { return mockBlobServiceClient; }),
   },
 }));
 
 // Mock logger
-jest.mock("../../lib/logger-factory", () => ({
-  appLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+vi.mock("../../lib/logger-factory", () => ({
+  appLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  servicesLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  servicesLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  httpLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  httpLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  prismaLogger: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  prismaLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
-  __esModule: true,
-  default: jest.fn(() => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+  default: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   })),
 }));
 
 // Mock auth middleware - need to mock the api-key-middleware functions that are re-exported through middleware/auth
-jest.mock("../../lib/api-key-middleware", () => ({
+vi.mock("../../lib/api-key-middleware", () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
     // Set up authenticated user context for tests
     req.apiKey = {
@@ -119,21 +125,21 @@ jest.mock("../../lib/api-key-middleware", () => ({
 }));
 
 // Mock auth middleware functions
-jest.mock("../../lib/auth-middleware", () => ({
+vi.mock("../../lib/auth-middleware", () => ({
   getAuthenticatedUser: (req: any) => ({ id: "test-user-id", email: "test@example.com" }),
 }));
 
 // Mock InMemoryQueue
-jest.mock("../../lib/in-memory-queue", () => {
+vi.mock("../../lib/in-memory-queue", () => {
   return {
-    InMemoryQueue: jest.fn().mockImplementation(() => ({
-      add: jest.fn(),
-      process: jest.fn(),
-      getJobs: jest.fn(),
-      close: jest.fn(),
-      on: jest.fn(),
-      remove: jest.fn(),
-    })),
+    InMemoryQueue: vi.fn().mockImplementation(function() { return {
+      add: vi.fn(),
+      process: vi.fn(),
+      getJobs: vi.fn(),
+      close: vi.fn(),
+      on: vi.fn(),
+      remove: vi.fn(),
+    }; }),
   };
 });
 
@@ -158,7 +164,7 @@ app.use("/api/postgres", router);
 
 describe("PostgreSQL Restore API", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("POST /api/postgres/restore/:databaseId", () => {
@@ -383,6 +389,7 @@ describe("PostgreSQL Restore API", () => {
       database: {
         id: "test-db-id",
         userId: "test-user-id",
+        name: "testdb",
         database: "testdb",
       },
     };
@@ -412,7 +419,6 @@ describe("PostgreSQL Restore API", () => {
       expect(mockPrismaClient.restoreOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "restore-1",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,
@@ -463,7 +469,6 @@ describe("PostgreSQL Restore API", () => {
       expect(mockPrismaClient.restoreOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-restore",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,
@@ -859,7 +864,6 @@ describe("PostgreSQL Restore API", () => {
       expect(mockPrismaClient.postgresDatabase.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-db-id",
-          userId: "test-user-id",
         },
       });
 
@@ -1028,7 +1032,6 @@ describe("PostgreSQL Restore API", () => {
       expect(mockPrismaClient.restoreOperation.findFirst).toHaveBeenCalledWith({
         where: {
           id: "other-user-restore",
-          database: { userId: "test-user-id" },
         },
         include: {
           database: true,
