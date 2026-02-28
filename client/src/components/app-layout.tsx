@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AgentChatProvider } from "@/components/agent/agent-chat-provider";
 import { AgentChatFAB } from "@/components/agent/agent-chat-fab";
-import { AgentChatSheet } from "@/components/agent/agent-chat-sheet";
+import { AgentChatPanel } from "@/components/agent/agent-chat-panel";
 import { AgentSpotlightOverlay } from "@/components/agent/agent-spotlight-overlay";
 import { AgentNavigationHandler } from "@/components/agent/agent-navigation-handler";
 
@@ -28,9 +28,9 @@ export function AppLayout() {
             </div>
           </div>
         </SidebarInset>
+        <AgentChatPanel />
+        <AgentChatFAB />
       </SidebarProvider>
-      <AgentChatFAB />
-      <AgentChatSheet />
       <AgentSpotlightOverlay />
       <AgentNavigationHandler />
     </AgentChatProvider>

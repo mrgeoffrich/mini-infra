@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { IconAlertTriangle, IconChevronRight } from "@tabler/icons-react";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { DocContent } from "@/components/help/DocContent";
+import { AgentChatWelcome } from "./agent-chat-welcome";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -190,11 +191,7 @@ export function AgentChatMessages() {
       onScroll={checkNearBottom}
       className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
     >
-      {messages.length === 0 && !streamingText && (
-        <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-2">
-          <span>Ask me anything about your infrastructure.</span>
-        </div>
-      )}
+      {messages.length === 0 && !streamingText && <AgentChatWelcome />}
 
       {messages.map((msg) => (
         <MessageBubble key={msg.id} msg={msg} />

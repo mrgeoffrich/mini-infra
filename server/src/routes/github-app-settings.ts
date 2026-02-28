@@ -623,4 +623,110 @@ router.post("/oauth/revoke", requireSessionOrApiKey, (async (
   }
 }) as RequestHandler);
 
+/**
+ * POST /api/settings/github-app/agent/token - Save a PAT for AI assistant GitHub access
+ */
+const agentTokenSchema = z.object({
+  token: z.string().min(1, "Token is required"),
+  accessLevel: z.enum(["read_only", "full_access"]),
+});
+
+router.post("/agent/token", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    const validationResult = agentTokenSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request parameters",
+        details: validationResult.error.flatten(),
+      });
+    }
+
+    const { token, accessLevel } = validationResult.data;
+
+    // Verify the token works by calling the GitHub API
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "mini-infra",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        error: "Token verification failed — please check the token is valid",
+      });
+    }
+
+    await Promise.all([
+      githubAppService.set("agent_github_token", token, userId),
+      githubAppService.set("agent_github_access_level", accessLevel, userId),
+    ]);
+
+    logger.info({ requestId, userId, accessLevel }, "Agent GitHub token saved");
+
+    res.json({
+      success: true,
+      data: { message: "Assistant GitHub token saved successfully" },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to save agent GitHub token",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/github-app/agent/revoke - Revoke AI assistant GitHub token
+ */
+router.post("/agent/revoke", requireSessionOrApiKey, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    await Promise.all([
+      githubAppService.delete("agent_github_token", userId),
+      githubAppService.delete("agent_github_access_level", userId),
+    ]);
+
+    logger.info({ requestId, userId }, "Agent GitHub token revoked");
+
+    res.json({
+      success: true,
+      data: { message: "Assistant GitHub token revoked" },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to revoke agent GitHub token",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
 export default router;

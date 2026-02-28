@@ -15,7 +15,6 @@ import appConfig, { agentConfig } from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
 import { createUiToolsMcpServer } from "./agent-ui-tools";
 import { githubAppService } from "./github-app-service";
-import { githubService } from "./github-service";
 
 const logger = agentLogger();
 
@@ -141,25 +140,7 @@ const DOCKER_ALLOWED_COMPOUND = new Set([
   "compose logs",
 ]);
 
-/** gh subcommands the agent is allowed to run (two-word minimum) */
-const GH_ALLOWED_COMPOUND = new Set([
-  "repo view",
-  "repo list",
-  "issue list",
-  "issue view",
-  "issue create",
-  "pr list",
-  "pr view",
-  "pr create",
-  "pr checks",
-  "pr diff",
-  "release list",
-  "release view",
-  "run list",
-  "run view",
-]);
-
-/** gh top-level subcommands that are always blocked */
+/** gh top-level subcommands that are always blocked (security-sensitive) */
 const GH_BLOCKED_SUBCOMMANDS = new Set(["auth", "ssh-key", "gpg-key"]);
 
 function denyResult(reason: string) {
@@ -230,48 +211,16 @@ function validateGhCommand(command: string) {
 
   const parts = args.split(/\s+/);
   const sub1 = parts[0];
-  const sub2 = parts.length > 1 ? `${parts[0]} ${parts[1]}` : null;
 
-  // Block dangerous top-level subcommands
+  // Block security-sensitive subcommands; everything else is allowed
+  // and scoped by the token's permissions.
   if (GH_BLOCKED_SUBCOMMANDS.has(sub1)) {
     return denyResult(
       `gh subcommand "${sub1}" is not allowed for security reasons.`,
     );
   }
 
-  // "gh config set" is blocked but "gh config" generally is fine to read
-  if (sub2 === "config set") {
-    return denyResult("gh config set is not allowed for security reasons.");
-  }
-
-  // "gh repo delete" and "gh repo create" are blocked
-  if (sub2 === "repo delete" || sub2 === "repo create") {
-    return denyResult(`gh ${sub2} is not allowed for security reasons.`);
-  }
-
-  // "gh api" is allowed for read-only (GET) requests.
-  // Block write methods to prevent mutations via unscoped PATs.
-  if (sub1 === "api") {
-    if (
-      /\s(-X\s*(POST|PUT|PATCH|DELETE)|--method\s*(POST|PUT|PATCH|DELETE))/i.test(
-        command,
-      )
-    ) {
-      return denyResult(
-        "gh api write operations (POST/PUT/PATCH/DELETE) are not allowed. Use gh issue create, gh pr create, etc. for write operations.",
-      );
-    }
-    return null; // GET is allowed
-  }
-
-  // Check against the compound allowlist
-  if (sub2 && GH_ALLOWED_COMPOUND.has(sub2)) {
-    return null; // allowed
-  }
-
-  return denyResult(
-    `gh subcommand "${sub2 || sub1}" is not allowed. Allowed: ${[...GH_ALLOWED_COMPOUND, "api"].join(", ")}`,
-  );
+  return null; // allowed — token permissions control what actually succeeds
 }
 
 interface BashGuardOptions {
@@ -433,14 +382,28 @@ You have direct access to the Docker CLI. Use it for container logs, live stats,
     prompt += `
 ## GitHub CLI (gh)
 
-You have access to the GitHub CLI with pre-configured authentication.
+You have full access to the GitHub CLI with pre-configured authentication.
+The token's permissions control what operations are available.
+The only blocked subcommands are \`auth\`, \`ssh-key\`, and \`gpg-key\`.
 
 **Examples:**
 \`\`\`bash
 gh pr list --repo owner/repo --state open
 gh issue view 42 --repo owner/repo
+gh issue create --repo owner/repo --title "Bug" --body "Details"
+gh pr create --repo owner/repo --title "Fix" --body "Description"
+gh api repos/owner/repo/actions/runs
 gh run list --repo owner/repo --limit 5
 \`\`\`
+`;
+  }
+
+  if (!capabilities.ghEnabled) {
+    prompt += `
+## GitHub CLI
+
+GitHub CLI (\`gh\`) is **not available** in this session. No assistant GitHub token has been configured.
+To enable GitHub access, ask the user to go to the **GitHub connectivity page** (\`/connectivity-github\`) and configure an **Assistant Access** token under the "Assistant Access" section.
 `;
   }
 
@@ -536,24 +499,15 @@ class AgentService {
     // Check if Docker socket is available
     const dockerEnabled = fs.existsSync("/var/run/docker.sock");
 
-    // Try to resolve a GitHub token
+    // Only use a dedicated agent token — no implicit fallback chain
     let ghToken: string | null = null;
     try {
-      // Primary: GitHub App installation token (short-lived, scoped)
-      const { token } = await githubAppService.generateInstallationToken();
-      ghToken = token;
-      logger.debug("Resolved GitHub token from GitHub App installation");
-    } catch {
-      // Fallback: Personal Access Token
-      try {
-        const pat = await githubService.get("personal_access_token");
-        if (pat) {
-          ghToken = pat;
-          logger.debug("Resolved GitHub token from Personal Access Token");
-        }
-      } catch (err) {
-        logger.debug({ err }, "No GitHub PAT available");
+      ghToken = await githubAppService.getAgentToken();
+      if (ghToken) {
+        logger.debug("Resolved GitHub token from dedicated agent token");
       }
+    } catch (err) {
+      logger.debug({ err }, "Failed to retrieve agent GitHub token");
     }
 
     return {
@@ -854,19 +808,28 @@ class AgentService {
       }
 
       case "user": {
+        // Extract tool results from the message content array.
+        // The SDK emits user messages containing tool_result blocks after
+        // executing tools. Each block has a tool_use_id that correlates
+        // back to the assistant's tool_use content block.
         const userMsg = msg as Extract<SDKMessage, { type: "user" }>;
-        if (userMsg.isSynthetic && userMsg.tool_use_result !== undefined) {
-          const toolResult = userMsg.tool_use_result;
-          this.broadcast(session, {
-            type: "tool_result",
-            data: {
-              toolId: userMsg.parent_tool_use_id ?? undefined,
-              output:
-                typeof toolResult === "string"
-                  ? toolResult
-                  : JSON.stringify(toolResult),
-            },
-          });
+        const content = userMsg.message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            const b = block as { type: string; tool_use_id?: string; content?: unknown };
+            if (b.type === "tool_result" && b.tool_use_id) {
+              const output = typeof b.content === "string"
+                ? b.content
+                : JSON.stringify(b.content ?? "");
+              this.broadcast(session, {
+                type: "tool_result",
+                data: {
+                  toolId: b.tool_use_id,
+                  output,
+                },
+              });
+            }
+          }
         }
         break;
       }

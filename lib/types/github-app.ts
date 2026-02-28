@@ -35,6 +35,8 @@ export interface GitHubAppSettingResponse {
   permissions: string[] | null;
   /** OAuth user-to-server token status (needed for GHCR container packages) */
   oauth: GitHubAppOAuthStatus | null;
+  /** AI assistant GitHub access status */
+  agentAccess: GitHubAgentAccessStatus | null;
 }
 
 export interface GitHubAppValidationResponse {
@@ -125,6 +127,17 @@ export interface GitHubAppOAuthStatus {
   expiresAt: string | null;
   /** Whether the token is currently expired and needs refresh */
   isExpired: boolean;
+}
+
+// ====================
+// GitHub Agent Access Types
+// ====================
+
+export type GitHubAgentAccessLevel = "read_only" | "full_access";
+
+export interface GitHubAgentAccessStatus {
+  isConfigured: boolean;
+  accessLevel: GitHubAgentAccessLevel | null;
 }
 
 export interface GitHubAppOAuthAuthorizeResponse {

@@ -8,6 +8,7 @@ import type {
   GitHubAppActionsRun,
   GitHubAppRegistryTokenResponse,
   GitHubAppSetupCompleteResponse,
+  GitHubAgentAccessLevel,
 } from "@mini-infra/types";
 
 // Helper to unwrap the { success, data } API response envelope
@@ -255,6 +256,46 @@ export function useGitHubSavePackagePat() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
+    },
+  });
+}
+
+// Hook for saving an agent GitHub token
+export function useGitHubSaveAgentToken() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { message: string },
+    Error,
+    { token: string; accessLevel: GitHubAgentAccessLevel }
+  >({
+    mutationFn: (payload) =>
+      fetchAndUnwrap<{ message: string }>(
+        "/api/settings/github-app/agent/token",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+    },
+  });
+}
+
+// Hook for revoking agent GitHub token
+export function useGitHubRevokeAgentToken() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ message: string }, Error>({
+    mutationFn: () =>
+      fetchAndUnwrap<{ message: string }>(
+        "/api/settings/github-app/agent/revoke",
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
     },
   });
 }

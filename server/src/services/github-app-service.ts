@@ -10,6 +10,8 @@ import {
   GitHubAppRepository,
   GitHubAppActionsRun,
   GitHubAppOAuthStatus,
+  GitHubAgentAccessStatus,
+  GitHubAgentAccessLevel,
 } from "@mini-infra/types";
 import crypto from "crypto";
 import { ConfigurationService } from "./configuration-base";
@@ -88,6 +90,8 @@ const SETTING_KEYS = {
   OAUTH_ACCESS_TOKEN: "oauth_access_token",
   OAUTH_REFRESH_TOKEN: "oauth_refresh_token",
   OAUTH_EXPIRES_AT: "oauth_expires_at",
+  AGENT_GITHUB_TOKEN: "agent_github_token",
+  AGENT_GITHUB_ACCESS_LEVEL: "agent_github_access_level",
 } as const;
 
 /**
@@ -804,6 +808,31 @@ export class GitHubAppService extends ConfigurationService {
   }
 
   // ====================
+  // Agent Access Methods
+  // ====================
+
+  /**
+   * Get the current agent GitHub access status.
+   */
+  async getAgentAccessStatus(): Promise<GitHubAgentAccessStatus> {
+    const token = await this.get(SETTING_KEYS.AGENT_GITHUB_TOKEN);
+    const accessLevel = await this.get(SETTING_KEYS.AGENT_GITHUB_ACCESS_LEVEL);
+
+    return {
+      isConfigured: !!token,
+      accessLevel: (accessLevel as GitHubAgentAccessLevel) || null,
+    };
+  }
+
+  /**
+   * Get the stored agent GitHub token.
+   * Returns null if no dedicated agent token is configured.
+   */
+  async getAgentToken(): Promise<string | null> {
+    return (await this.get(SETTING_KEYS.AGENT_GITHUB_TOKEN)) || null;
+  }
+
+  // ====================
   // Resource Methods
   // ====================
 
@@ -1200,6 +1229,7 @@ export class GitHubAppService extends ConfigurationService {
       : null;
 
     const oauthStatus = await this.getOAuthStatus();
+    const agentAccess = await this.getAgentAccessStatus();
 
     return {
       isConfigured,
@@ -1211,6 +1241,7 @@ export class GitHubAppService extends ConfigurationService {
       installationId: installationId || null,
       permissions,
       oauth: oauthStatus,
+      agentAccess,
     };
   }
 
