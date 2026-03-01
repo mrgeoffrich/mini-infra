@@ -538,19 +538,29 @@ class AgentService {
     const queue = new AgentMessageQueue();
     const abortController = new AbortController();
 
-    // Resolve or create a conversation record
+    // Resolve or create a conversation record. No fallback UUID — let DB
+    // failures propagate so the caller gets a real error instead of silently
+    // persisting messages to a non-existent conversation.
     let conversationId: string;
+    let initialSequence = 0;
+
     if (existingConversationId) {
-      // Verify the conversation belongs to this user
+      // Verify the conversation belongs to this user and get its current length
       const existing = await agentConversationService.getConversationDetail(
         existingConversationId,
         userId,
-      ).catch(() => null);
-      conversationId = existing
-        ? existingConversationId
-        : await agentConversationService.createConversation(userId, message).catch(() => randomUUID());
+      );
+      if (existing) {
+        conversationId = existingConversationId;
+        // Start sequence after the last persisted message so resumed
+        // conversations never produce duplicate or out-of-order sequence numbers
+        initialSequence = existing.messages.length;
+      } else {
+        // Supplied conversationId doesn't belong to this user — start fresh
+        conversationId = await agentConversationService.createConversation(userId, message);
+      }
     } else {
-      conversationId = await agentConversationService.createConversation(userId, message).catch(() => randomUUID());
+      conversationId = await agentConversationService.createConversation(userId, message);
     }
 
     const session: AgentSession = {
@@ -565,7 +575,7 @@ class AgentService {
       currentPath: currentPath ?? "",
       currentTurnUuid: null,
       pendingToolUse: new Map(),
-      nextSequence: 0,
+      nextSequence: initialSequence,
     };
 
     this.sessions.set(sessionId, session);
@@ -675,7 +685,7 @@ class AgentService {
   // Private
   // -------------------------------------------------------------------------
 
-  /** Fire-and-forget message persistence. Never throws, never blocks streaming. */
+  /** Fire-and-forget message persistence with up to 3 retries. Never throws, never blocks streaming. */
   private persistMessage(
     session: AgentSession,
     role: "user" | "assistant" | "tool_use" | "error" | "result",
@@ -692,21 +702,32 @@ class AgentService {
     },
   ): void {
     const sequence = session.nextSequence++;
-    agentConversationService
-      .addMessage({
-        conversationId: session.conversationId,
-        role,
-        content: content ?? undefined,
-        sequence,
-        ...extra,
-      })
-      .then(() => {
-        // Touch updatedAt so the conversation sorts to the top of the list
-        return agentConversationService.touchConversation(session.conversationId);
-      })
-      .catch((err: unknown) => {
-        logger.warn({ err, sessionId: session.id }, "Failed to persist agent message");
-      });
+    const messageData = {
+      conversationId: session.conversationId,
+      role,
+      content: content ?? undefined,
+      sequence,
+      ...extra,
+    };
+
+    const attempt = (tries: number): void => {
+      agentConversationService
+        .addMessage(messageData)
+        .then(() => agentConversationService.touchConversation(session.conversationId))
+        .catch((err: unknown) => {
+          if (tries < 3) {
+            const delay = 200 * tries; // 200ms, 400ms
+            setTimeout(() => attempt(tries + 1), delay);
+          } else {
+            logger.error(
+              { err, sessionId: session.id, sequence, role },
+              "Failed to persist agent message after 3 attempts",
+            );
+          }
+        });
+    };
+
+    attempt(1);
   }
 
   private broadcast(session: AgentSession, event: AgentEvent): void {

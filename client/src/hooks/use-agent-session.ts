@@ -621,6 +621,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
   const sendMessage = useCallback(
     async (message: string) => {
+      // Block any in-flight restore from clobbering this new message.
+      // Must happen before any async work so the guard is set synchronously.
+      hasRestoredRef.current = true;
+
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",

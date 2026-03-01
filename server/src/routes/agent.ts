@@ -329,6 +329,14 @@ router.get(
 );
 
 // ---------------------------------------------------------------------------
+// Shared param validation for conversation ID routes
+// ---------------------------------------------------------------------------
+
+const conversationIdParamSchema = z.object({
+  id: z.string().min(1).max(100),
+});
+
+// ---------------------------------------------------------------------------
 // GET /conversations/:id — get messages for a conversation
 // ---------------------------------------------------------------------------
 
@@ -337,6 +345,12 @@ router.get(
   requirePermission("agent:use"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const paramParsed = conversationIdParamSchema.safeParse(req.params);
+      if (!paramParsed.success) {
+        res.status(400).json({ error: "Invalid conversation ID" });
+        return;
+      }
+
       const userId = getUserId(req);
       if (!userId) {
         res.status(401).json({ error: "Authentication required" });
@@ -344,7 +358,7 @@ router.get(
       }
 
       const conversation = await agentConversationService.getConversationDetail(
-        req.params.id,
+        paramParsed.data.id,
         userId,
       );
 
@@ -373,13 +387,22 @@ router.delete(
   requirePermission("agent:use"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const paramParsed = conversationIdParamSchema.safeParse(req.params);
+      if (!paramParsed.success) {
+        res.status(400).json({ error: "Invalid conversation ID" });
+        return;
+      }
+
       const userId = getUserId(req);
       if (!userId) {
         res.status(401).json({ error: "Authentication required" });
         return;
       }
 
-      const deleted = await agentConversationService.deleteConversation(req.params.id, userId);
+      const deleted = await agentConversationService.deleteConversation(
+        paramParsed.data.id,
+        userId,
+      );
       if (!deleted) {
         res.status(404).json({ error: "Conversation not found" });
         return;

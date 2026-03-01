@@ -92,7 +92,19 @@ export class AgentConversationService {
       content: m.content,
       toolId: m.toolId,
       toolName: m.toolName,
-      toolInput: m.toolInput ? (JSON.parse(m.toolInput) as Record<string, unknown>) : null,
+      toolInput: m.toolInput
+        ? (() => {
+            try {
+              return JSON.parse(m.toolInput!) as Record<string, unknown>;
+            } catch {
+              logger.warn(
+                { conversationId: m.conversationId, messageId: m.id },
+                "Failed to parse toolInput JSON — returning null",
+              );
+              return null;
+            }
+          })()
+        : null,
       toolOutput: m.toolOutput,
       success: m.success,
       cost: m.cost,
