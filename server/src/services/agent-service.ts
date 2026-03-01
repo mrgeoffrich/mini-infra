@@ -59,6 +59,8 @@ interface AgentSession {
   pendingToolUse: Map<string, { toolName: string; input: Record<string, unknown> }>;
   /** Monotonically increasing message sequence counter. */
   nextSequence: number;
+  /** Number of in-flight fire-and-forget persist calls currently outstanding. */
+  pendingPersistCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +578,7 @@ class AgentService {
       currentTurnUuid: null,
       pendingToolUse: new Map(),
       nextSequence: initialSequence,
+      pendingPersistCount: 0,
     };
 
     this.sessions.set(sessionId, session);
@@ -701,6 +704,15 @@ class AgentService {
       turns?: number;
     },
   ): void {
+    const MAX_IN_FLIGHT = 20;
+    if (session.pendingPersistCount >= MAX_IN_FLIGHT) {
+      logger.warn(
+        { sessionId: session.id, pendingPersistCount: session.pendingPersistCount },
+        "Max in-flight persist operations reached — dropping message",
+      );
+      return;
+    }
+
     const sequence = session.nextSequence++;
     const messageData = {
       conversationId: session.conversationId,
@@ -710,15 +722,21 @@ class AgentService {
       ...extra,
     };
 
+    session.pendingPersistCount++;
+
     const attempt = (tries: number): void => {
       agentConversationService
         .addMessage(messageData)
         .then(() => agentConversationService.touchConversation(session.conversationId))
+        .then(() => {
+          session.pendingPersistCount--;
+        })
         .catch((err: unknown) => {
           if (tries < 3) {
             const delay = 200 * tries; // 200ms, 400ms
             setTimeout(() => attempt(tries + 1), delay);
           } else {
+            session.pendingPersistCount--;
             logger.error(
               { err, sessionId: session.id, sequence, role },
               "Failed to persist agent message after 3 attempts",

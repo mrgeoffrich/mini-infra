@@ -26,7 +26,7 @@ export interface CreateMessageData {
 
 export class AgentConversationService {
   async createConversation(userId: string, firstMessage: string): Promise<string> {
-    const title = firstMessage.slice(0, 80);
+    const title = firstMessage.trim().replace(/\s+/g, " ").slice(0, 80) || "New conversation";
     const conv = await prisma.agentConversation.create({
       data: { userId, title },
     });
@@ -62,7 +62,7 @@ export class AgentConversationService {
 
   async listConversations(userId: string, limit = 50): Promise<AgentConversationSummary[]> {
     const convs = await prisma.agentConversation.findMany({
-      where: { userId },
+      where: { userId, deletedAt: null },
       orderBy: { updatedAt: "desc" },
       take: limit,
     });
@@ -80,7 +80,7 @@ export class AgentConversationService {
     userId: string,
   ): Promise<AgentConversationDetail | null> {
     const conv = await prisma.agentConversation.findFirst({
-      where: { id: conversationId, userId },
+      where: { id: conversationId, userId, deletedAt: null },
       include: { messages: { orderBy: { sequence: "asc" } } },
     });
     if (!conv) return null;
@@ -126,11 +126,14 @@ export class AgentConversationService {
 
   async deleteConversation(conversationId: string, userId: string): Promise<boolean> {
     const conv = await prisma.agentConversation.findFirst({
-      where: { id: conversationId, userId },
+      where: { id: conversationId, userId, deletedAt: null },
     });
     if (!conv) return false;
-    await prisma.agentConversation.delete({ where: { id: conversationId } });
-    logger.debug({ conversationId, userId }, "Agent conversation deleted");
+    await prisma.agentConversation.update({
+      where: { id: conversationId },
+      data: { deletedAt: new Date() },
+    });
+    logger.debug({ conversationId, userId }, "Agent conversation soft-deleted");
     return true;
   }
 }
