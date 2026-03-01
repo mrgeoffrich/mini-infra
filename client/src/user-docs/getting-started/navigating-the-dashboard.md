@@ -1,71 +1,66 @@
 ---
 title: Navigating the Dashboard
-description: How the dashboard layout, sidebar, and header controls work.
+description: A guide to finding your way around the Mini Infra interface.
 category: Getting Started
-order: 3
+order: 2
 tags:
-  - dashboard
+  - getting-started
   - navigation
-  - sidebar
-  - theme
-  - timezone
+  - dashboard
+  - ui
 ---
 
 # Navigating the Dashboard
 
-This page covers the layout of Mini Infra: sidebar navigation, header controls, and personalisation options like dark mode and timezone settings.
+Mini Infra's interface is organized around a persistent sidebar navigation and a main content area. Every major feature is one click away from the sidebar.
 
-## Sidebar
+## The sidebar
 
-The sidebar on the left is your primary navigation. It groups features into collapsible sections:
+The sidebar groups features into sections:
 
-- **Applications** — Containers, Deployments, Environments
-- **Databases** — PostgreSQL Servers, PostgreSQL Backups
-- **Networking** — Cloudflare Tunnels, Load Balancer (with Frontends and Backends sub-pages), TLS Certificates
-- **Monitoring** — Events
-- **Connected Services** — Docker, Cloudflare, Azure Storage, GitHub
-- **Administration** — System Settings, Security Settings, Registry Credentials, Self-Backup, TLS Settings, GitHub Settings
+| Section | Pages |
+|---------|-------|
+| **Dashboard** | Overview of containers and deployments |
+| **Applications** | Containers, Deployments, Environments |
+| **Databases** | Postgres Servers, Postgres Backups |
+| **Networking** | Cloudflare Tunnels, Load Balancer (HAProxy), TLS Certificates |
+| **Monitoring** | Events |
+| **Connected Services** | Docker, Cloudflare, Azure Storage, GitHub |
+| **Administration** | API Keys, System Settings, Security Settings, Registry Credentials, TLS Settings, Self-Backup Settings, Bug Report Settings |
+| **User** | User Settings |
 
-Click the hamburger menu icon at the top-left to collapse the sidebar on smaller screens. The sidebar slides away as an offcanvas panel and reappears when you open it again.
+## The Dashboard page
 
-When you navigate to the **Documentation** section, the sidebar switches to show help article navigation instead of the app menu. A **Back to app** button at the top returns you to normal navigation.
+The **Dashboard** at `/dashboard` is the home screen. It shows:
 
-## Header
+- **Container summary cards** — Running, Stopped, and Paused container counts, plus a total. A **Recently Died Containers** alert appears if any containers exited in the last 24 hours.
+- **Deployment summary cards** — counts of active configurations, currently running deployments, and failed deployments that need attention.
+- **Recent Deployments card** — the last few deployments with status badges and timestamps. Click any row to go to that deployment's detail page.
 
-The header bar across the top shows:
+The container data refreshes automatically. If Docker is not connected, the container section shows a prompt to configure the Docker connection.
 
-- **Breadcrumbs** — The current page path. On the dashboard itself, the page title is shown instead.
-- **Connectivity indicators** — Small coloured dots for Docker, Cloudflare, Azure, and GitHub. Green means connected and healthy. Red means the service check failed. Click any indicator to go to that service's connectivity page for details.
-- **Backup health indicator** — Shows the status of your most recent backup operations.
-- **Help button** — The **?** icon links to the help article most relevant to the current page. If the page doesn't have a specific help article, it links to the general documentation index.
-- **User menu** — Your profile picture or initial. Click to access User Settings or log out.
+## Contextual help
 
-## Dashboard cards
+Most pages show a help icon or link to a relevant help article. Click it to open the article in a side panel without leaving the current page.
 
-The main dashboard page shows a container health overview:
+## Breadcrumbs and back navigation
 
-- **Total** — The number of containers Docker knows about (running, stopped, and paused combined).
-- **Running** — Containers currently in the `running` state (green).
-- **Stopped** — Containers in the `exited` state (red).
-- **Paused** — Containers in the `paused` state (yellow).
+Detail pages (e.g., a single container, deployment, or certificate) show a **back button** in the top-left that returns you to the parent list page. Some pages also show a breadcrumb trail (e.g., PostgreSQL → server name → database name).
 
-Below the summary cards, a **Recently Died** section lists containers that exited in the last 24 hours (up to 3 shown). This helps you spot containers that crashed or stopped unexpectedly.
+## Status badges
 
-## Dark mode and light mode
+Status badges appear throughout the interface. Their color conveys meaning at a glance:
 
-Click the theme toggle in the sidebar footer to switch between dark and light mode. Your preference is saved in the browser and persists across sessions.
-
-## Timezone settings
-
-By default, timestamps throughout Mini Infra display in your browser's local timezone. To change this:
-
-1. Click your user avatar in the header and select **User Settings**.
-2. Use the timezone selector to search for and choose your preferred timezone.
-3. Click **Save**.
-
-All timestamps across the app — container uptimes, backup times, event logs — will display in your chosen timezone after saving.
+| Color | Meaning |
+|-------|---------|
+| Green | Healthy, Running, Completed, Active |
+| Yellow | Paused, Pending, Degraded, Scheduled |
+| Blue | In progress, Deploying, Restarting |
+| Red | Exited, Failed, Unhealthy, Error |
+| Gray | Stopped, Inactive, Removed, Unknown |
+| Orange | Rolling back |
 
 ## What to watch out for
 
-- The connectivity indicators in the header only reflect the most recent health check. If a service was briefly unreachable but recovered, the dot turns green again on the next check cycle.
-- Timezone changes affect display only. Cron schedules for backups are configured independently with their own timezone setting.
+- The sidebar navigation is always visible on desktop. On smaller screens it may collapse — use the menu icon to open it.
+- The **Dashboard** page does not auto-navigate elsewhere on errors; check the **Connected Services** section if data is not loading.

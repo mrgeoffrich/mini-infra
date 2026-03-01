@@ -1,90 +1,124 @@
 ---
 title: API Overview
-description: How to authenticate with the Mini Infra API using API keys.
+description: An overview of how to use the Mini Infra REST API with API keys.
 category: API
 order: 1
 tags:
   - api
-  - api-keys
   - authentication
-  - rest
-  - curl
+  - api-keys
+  - configuration
 ---
 
 # API Overview
 
-Mini Infra exposes a REST API that powers the web interface. You can use the same API with your own tools and scripts by authenticating with an API key.
+Mini Infra exposes a REST API at `/api/` that gives programmatic access to all features available in the UI. Authenticate with API keys to automate deployments, query container status, trigger backups, and more.
 
 ## Authentication
 
-All API requests require authentication. There are two ways to include your API key:
-
-**Authorization header:**
-
-```
-Authorization: Bearer mk_your_api_key_here
-```
-
-**x-api-key header:**
-
-```
-x-api-key: mk_your_api_key_here
-```
-
-Both methods are equivalent. Use whichever fits your tooling.
-
-## Creating an API key
-
-Navigate to **API Keys** under Administration in the sidebar. Click **Create API Key**, give it a descriptive name, and click create.
-
-The key is displayed once. Copy it immediately — it won't be shown again. API keys are stored as hashes in the database, so Mini Infra can verify them but can't retrieve the original value.
-
-Keys use the format `mk_` followed by 64 hexadecimal characters.
-
-## Managing API keys
-
-The API Keys page shows all keys with their name, prefix (`mk_xxxx...`), status, creation date, and last used timestamp.
-
-Available actions:
-
-- **Rotate** — Generates a new key value. The old key continues to work during a grace period, giving you time to update your scripts.
-- **Revoke** — Disables the key so it can no longer authenticate. The key record is preserved for audit purposes.
-- **Delete** — Permanently removes the key.
-
-The page also shows summary statistics: total keys, active keys, and when any key was last used.
-
-## Example usage
+All API requests must include an API key. Use one of these two headers:
 
 ```bash
-# List all containers
-curl -H "x-api-key: mk_your_key" http://localhost:5005/api/containers
+# Option 1 — Authorization header
+curl -H "Authorization: Bearer <your-api-key>" http://your-host:5000/api/containers
 
-# List deployment configurations
-curl -H "x-api-key: mk_your_key" http://localhost:5005/api/deployments/configs
-
-# Trigger a deployment
-curl -X POST \
-  -H "x-api-key: mk_your_key" \
-  -H "Content-Type: application/json" \
-  -d '{"applicationName": "myapp"}' \
-  http://localhost:5005/api/deployments/trigger
+# Option 2 — x-api-key header
+curl -H "x-api-key: <your-api-key>" http://your-host:5000/api/containers
 ```
 
-Replace `localhost:5005` with your Mini Infra host and port.
+Both header formats are equivalent. Choose whichever fits your tooling.
+
+## Getting an API key
+
+Create API keys at [/api-keys/new](/api-keys/new). See [Managing API Keys](/settings/api-keys) for a full guide.
+
+## Permissions
+
+Each API key has a set of permission scopes that control what it can access. Requests for resources outside the key's permissions return `403 Forbidden`.
+
+Example: a key with `containers:read` can `GET /api/containers` but cannot `POST /api/containers/:id/start`.
+
+See [API Key Permission Presets](/settings/permission-presets) for a summary of available scopes.
+
+## Common API endpoints
+
+### Containers
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|-----------|-------------|
+| GET | `/api/containers` | `containers:read` | List all containers |
+| POST | `/api/containers/:id/start` | `containers:write` | Start a container |
+| POST | `/api/containers/:id/stop` | `containers:write` | Stop a container |
+| POST | `/api/containers/:id/restart` | `containers:write` | Restart a container |
+
+### Deployments
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|-----------|-------------|
+| GET | `/api/deployments/configs` | `deployments:read` | List deployment configurations |
+| POST | `/api/deployments/configs` | `deployments:write` | Create a deployment configuration |
+| POST | `/api/deployments/configs/:id/deploy` | `deployments:write` | Trigger a deployment |
+
+### PostgreSQL Backups
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|-----------|-------------|
+| GET | `/api/postgres/databases` | `postgres:read` | List database configurations |
+| POST | `/api/postgres/databases/:id/backup` | `postgres:write` | Trigger a manual backup |
+
+### Settings
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|-----------|-------------|
+| GET | `/api/settings/system` | `settings:read` | Get system settings |
+| PATCH | `/api/settings/system` | `settings:write` | Update system settings |
+
+## Response format
+
+All API responses use a consistent JSON envelope:
+
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+Errors return:
+
+```json
+{
+  "success": false,
+  "error": "Error message here"
+}
+```
+
+## HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | Success |
+| 201 | Resource created |
+| 400 | Bad request (validation error) |
+| 401 | Missing or invalid API key |
+| 403 | Insufficient permissions |
+| 404 | Resource not found |
+| 409 | Conflict (e.g., duplicate name) |
+| 500 | Internal server error |
 
 ## Development API key
 
-In development mode (`NODE_ENV=development`), Mini Infra automatically creates a development API key at startup. Run this command from the server directory to display it:
+In development mode, Mini Infra automatically creates a development API key with full access. To display it:
 
 ```bash
 cd server && npm run show-dev-key
 ```
 
-This key only works in development mode and should not be used in production.
+This key only works in development mode (`NODE_ENV=development`).
 
 ## What to watch out for
 
-- API keys provide the same level of access as a logged-in user. Treat them like passwords.
-- Revoked keys cannot be re-enabled. If you revoke a key by accident, create a new one.
-- The API follows the same endpoints that the web interface uses. The routes are not separately documented yet, but you can observe them in browser developer tools.
-- Rate limiting is not enforced by default, but the server does log all API requests.
+- API key values are shown **only once** at creation. Store them securely in a secrets manager or environment variable.
+- Rotate API keys regularly for long-lived integrations. See [Managing API Keys](/settings/api-keys) for how to revoke and replace keys.
+- The `*` (full access) permission scope bypasses all permission checks. Only grant it to fully trusted automation.
+- Rate limiting is not currently enforced, but treat the API as a shared resource — avoid polling endpoints more frequently than necessary.

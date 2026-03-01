@@ -1,119 +1,131 @@
 ---
-title: Health Monitoring
-description: What the Connected Services pages monitor and what each status means.
+title: Connected Services Health Monitoring
+description: How to configure and monitor external service connections in Mini Infra.
 category: Connectivity
 order: 1
 tags:
   - connectivity
-  - health
-  - monitoring
+  - health-checks
   - docker
   - azure
   - cloudflare
   - github
+  - monitoring
 ---
 
-# Health Monitoring
+# Connected Services Health Monitoring
 
-The Connected Services section in the sidebar shows the health of external services that Mini Infra depends on. Each service has its own configuration page where you can set up credentials and verify connectivity.
+Mini Infra integrates with four external services: Docker, Azure Storage, Cloudflare, and GitHub. The **Connected Services** section in the sidebar has a page for each, where you configure credentials and verify connectivity.
 
-## How monitoring works
+## Docker
 
-Mini Infra checks each configured service periodically (every 30 seconds) by making a lightweight API call or connection test. The result is cached for 5 minutes and displayed as a status badge throughout the app. The header bar shows small status dots for each service — green means connected, red means something is wrong.
+**Page:** [/connectivity-docker](/connectivity-docker)
 
-## Services monitored
+Configure how Mini Infra connects to the Docker daemon.
 
-### Docker
+### Configuration fields
 
-**What it checks:** Whether Mini Infra can communicate with the Docker daemon through the Docker socket or configured URL.
+| Field | Description |
+|-------|-------------|
+| **Docker Host URL** | Connection URL for the Docker daemon |
+| **Docker API Version** | Docker API version to use (e.g., `1.41`) |
+| **Docker Host IP Address** | IPv4 address of the Docker host, used for creating DNS A records |
 
-**Configuration page:** **Docker** under Connected Services.
+### Docker Host URL examples
 
-**Settings:**
+| Environment | URL |
+|-------------|-----|
+| Local socket (Linux/Mac) | `unix:///var/run/docker.sock` |
+| Remote Docker daemon | `tcp://host:2376` |
+| Docker Desktop (Windows) | `npipe:////./pipe/dockerDesktopLinuxEngine` |
 
-- **Docker Host IP Address** — The IP address of your Docker host. Used when creating DNS records that point to deployed services.
-- **Docker Host URL** — The Docker daemon endpoint. Common values:
-  - `unix:///var/run/docker.sock` (local socket, most common)
-  - `tcp://host:2376` (remote Docker over TCP)
-  - `npipe:////./pipe/dockerDesktopLinuxEngine` (Windows with Docker Desktop)
-- **Docker API Version** — The Docker Engine API version (e.g. `1.41`).
+Click **Validate & Save** (green button) to test the connection and save if successful.
 
-Click **Validate & Save** to test the connection and store the settings. If validation fails, the error message explains what went wrong.
+---
 
-**Status meanings:**
+## Azure Storage
 
-| Status | Meaning |
-|--------|---------|
-| Connected | Docker daemon is reachable and responding |
-| Failed | Connection attempt returned an error |
-| Timeout | Docker daemon didn't respond in time |
-| Unreachable | Can't establish a connection at all |
+**Page:** [/connectivity-azure](/connectivity-azure)
 
-### Azure
+Configure Azure Blob Storage for PostgreSQL backups, self-backups, and TLS certificate storage.
 
-**What it checks:** Whether Mini Infra can authenticate with Azure Blob Storage using the configured connection string.
+### Configuration fields
 
-**Configuration page:** **Azure** under Connected Services.
+| Field | Description |
+|-------|-------------|
+| **Connection String** | Azure Storage Account connection string from the Azure portal |
 
-**Settings:**
+Find the connection string in the Azure portal under **Storage Account → Access Keys**.
 
-- **Connection String** — An Azure Storage Account connection string. Find this in the Azure Portal under Storage Account > Access Keys. The string must include `DefaultEndpointsProtocol`, `AccountName`, and `AccountKey`.
+Click **Validate & Save** to test and save. If connected, a list of available Azure containers appears below the form, and you can select a **Default Postgres Backup Container**.
 
-After connecting, the page shows:
+---
 
-- **Available Containers** — A list of blob containers in the storage account.
-- **Default Postgres Backup Container** — A dropdown to select which container new backup configurations should use by default.
+## Cloudflare
 
-**Why it matters:** Azure Storage is where PostgreSQL backups are stored and where TLS certificates can be kept. If Azure is disconnected, backups will fail at the upload step.
+**Page:** [/connectivity-cloudflare](/connectivity-cloudflare)
 
-### Cloudflare
+Configure Cloudflare API access for tunnel monitoring and DNS management.
 
-**What it checks:** Whether Mini Infra can reach the Cloudflare API with the configured token.
+### Configuration fields
 
-**Configuration page:** **Cloudflare** under Connected Services.
+| Field | Description |
+|-------|-------------|
+| **API Token** | Cloudflare API token with Zone:Read and Tunnel:Read permissions |
+| **Account ID** | Your 32-character Cloudflare Account ID |
 
-**Settings:**
+Generate an API token at `https://dash.cloudflare.com/profile/api-tokens`. Find your Account ID in the URL when logged into the Cloudflare dashboard.
 
-- **API Token** — A Cloudflare API token with permissions for tunnel management and DNS.
-- **Account ID** — Your Cloudflare account ID (found in the dashboard URL).
+---
 
-After connecting, a link to **Tunnel Management** appears for navigating directly to the tunnels page.
+## GitHub
 
-**Why it matters:** Cloudflare credentials are used for tunnel monitoring and for creating DNS records during deployments.
+**Page:** [/connectivity-github](/connectivity-github)
 
-### GitHub
+Connect Mini Infra to GitHub using a GitHub App for browsing packages, repositories, and workflow runs.
 
-**What it checks:** Whether the GitHub App installation is active and can access your account's resources.
+### Setup flow
 
-**Configuration page:** **GitHub** under Connected Services.
+GitHub connectivity uses a GitHub App installation:
 
-GitHub uses a multi-step setup flow:
+1. Click **Connect to GitHub** — you are redirected to GitHub to review and approve the app's permissions.
+2. After approval, return to Mini Infra and the setup completes automatically.
+3. If the app needs to be installed on your account or organization, follow the install prompt.
 
-1. **Connect** — Initiates GitHub App creation via the manifest flow.
-2. **Install** — Install the app on your GitHub account or organisation after it's created.
-3. **Configure** — Set up a Package Access Token for GitHub Container Registry access.
+### Permissions requested
 
-Once connected, the page shows three tabs:
+The GitHub App requests **read-only** permissions for:
+- Packages
+- Actions
+- Contents
+- Metadata
 
-- **Packages** — Docker images and other packages from GitHub Container Registry.
-- **Repositories** — Repositories accessible to the installed app.
-- **Actions** — Recent workflow runs from your repositories.
+### Additional tokens
 
-**Why it matters:** GitHub integration provides access to container images in GHCR for deployments, and gives visibility into repository activity and CI/CD runs.
+Once connected, you can optionally configure:
 
-## Status indicators across the app
+| Token | Purpose |
+|-------|---------|
+| **Package Access Token** | Personal access token with `read:packages` scope — required to browse GitHub Container Registry (GHCR) packages |
+| **Assistant Access Token** | Personal access token for AI agent GitHub access; can be `Read Only` or `Full Access` |
 
-The header bar shows compact status dots for all configured services. These update automatically and give you an at-a-glance view of infrastructure health. Click any dot to navigate to that service's configuration page.
+### Data visible once connected
 
-Each service status card on the configuration pages shows:
+- **Packages tab** — container images in GHCR
+- **Repositories tab** — all repositories accessible to the GitHub App
+- **Actions tab** — GitHub Actions workflow runs (select a repository from the dropdown)
 
-- Connection status badge with response time.
-- When the last check ran (e.g. "2 minutes ago").
-- Last successful connection time.
-- Error message and error code if the connection is failing.
+---
+
+## Connection validation
+
+Each service page shows a **Validate & Save** button that tests the connection before saving. If validation fails, an error message describes the problem.
+
+After validation, a success alert confirms the connection is active.
 
 ## What to watch out for
 
-- A service showing as "connected" means Mini Infra can reach the API. It doesn't guarantee that all operations will succeed — for example, Azure may be connected but a specific container might have restricted permissions.
-- Status checks are cached for 5 minutes. If you fix a connectivity issue, it may take up to 5 minutes for the status to update, or you can click the refresh button on the service's page.
-- If Docker shows as unreachable, most features in Mini Infra will be impaired — containers, deployments, and backups all depend on Docker access.
+- Credentials are **stored encrypted** in the Mini Infra database.
+- Changing connection credentials (e.g., regenerating an Azure access key) requires re-entering and re-validating them in Mini Infra.
+- All features that depend on a service (backups, tunnels, deployments with DNS) stop working if that service's connection is removed or becomes invalid.
+- GitHub App tokens expire. If the GitHub connection stops working, try **Test Connection** or disconnect and reconnect.

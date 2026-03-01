@@ -1,84 +1,64 @@
 ---
-title: Managing Containers
-description: Learn how to view, start, stop, and inspect Docker containers in Mini Infra.
+title: Managing a Container
+description: How to view details, run actions, and inspect a specific container.
 category: Containers
-order: 1
+order: 2
 tags:
-  - docker
   - containers
-  - getting-started
+  - docker
+  - configuration
 ---
 
-# Managing Containers
+# Managing a Container
 
-Mini Infra gives you a unified view of all Docker containers running on your host. From the Containers page you can monitor status, manage lifecycle operations, and drill into container details including logs, environment variables, and volume mounts.
+Click any container name in the container list to open its **detail page** at `/containers/:id`. The detail page gives you full information about a single container and lets you control its lifecycle.
 
-## Viewing Containers
+## Container information
 
-Navigate to **Containers** in the sidebar. The page opens on the **Containers** tab, which displays a table of every container Docker knows about — including stopped containers.
+The top of the page shows:
 
-Each row shows:
+- Container **name** and **ID**
+- Current **status badge**
 
-| Column | Description |
-|--------|-------------|
-| Name | The container name as assigned by Docker |
-| Image | The image and tag the container was started from |
-| Status | Running, Exited, Paused, or Restarting |
-| Uptime | How long the container has been in its current state |
-| Ports | Published port mappings |
+Below that, a two-column card displays:
 
-Use the search box to filter by name or image. Use the **Status** dropdown to show only running or only stopped containers.
+| Field | Description |
+|-------|-------------|
+| **Image** | Full image name and tag |
+| **IP Address** | Container's IP on its Docker network, or `N/A` |
+| **Created** | Date and time the container was created |
+| **Started** | Date and time the container last started |
+| **Ports** | All port mappings in `host:container/protocol` format |
+| **Environment** | Associated environment (if any) |
+| **Deployment** | Associated deployment configuration and container role (if any) |
 
-## Starting and Stopping Containers
+## Action buttons
 
-Click the three-dot menu on any container row to reveal lifecycle actions:
+The top-right of the page has action buttons to control the container:
 
-- **Start** — starts a stopped container
-- **Stop** — sends `SIGTERM` then `SIGKILL` after a grace period
-- **Restart** — equivalent to stop + start
-- **Remove** — removes the container (not the image)
+| Button | Available when | Effect |
+|--------|---------------|--------|
+| **Start** | Container is stopped or exited | Starts the container |
+| **Stop** | Container is running | Stops the container gracefully |
+| **Restart** | Any state | Restarts the container |
+| **Delete** | Container is stopped or exited | Permanently removes the container |
 
-> **Note**: Remove is irreversible. Any data stored inside the container filesystem (not in a named volume) will be lost.
+Buttons show a loading spinner while the action is in progress and disable themselves to prevent double-clicks.
 
-## Inspecting a Container
+## Volumes
 
-Click the container **Name** or choose **View Details** from the row menu to open the container detail page. This page is divided into sections:
+If the container has mounted volumes, a **Volumes** card appears below the container info. Each volume shows:
 
-### Overview
+- **Source** path (on the host)
+- **Destination** path (inside the container)
+- **Mode** badge: `Read/Write` or `Read Only`
 
-Shows the full container metadata: image digest, creation time, restart policy, network mode, and entry point command.
+## Container logs
 
-### Logs
+The bottom of the page embeds a log viewer showing the container's standard output and error streams. See [Viewing Container Logs](/containers/container-logs) for details on using the log viewer.
 
-The **Logs** tab streams recent output from the container's stdout and stderr. You can:
+## What to watch out for
 
-- Toggle timestamps on each log line
-- Filter log output using the search box (supports plain text)
-- Set the number of lines to tail (50, 100, 500)
-
-Logs update in real time using a server-sent events (SSE) connection.
-
-### Environment Variables
-
-Lists all environment variables passed to the container at start time. Values are shown in plain text — take care when sharing screenshots.
-
-### Volumes
-
-Shows all volume mounts attached to the container. Click **Inspect** on any named volume to browse its contents.
-
-## Networks and Volumes Tabs
-
-The Containers page also includes **Networks** and **Volumes** tabs in the top tab bar.
-
-- **Networks** lists all Docker networks, their driver, scope, and which containers are attached
-- **Volumes** lists all named volumes with size, creation time, and which containers reference them
-
-## Filtering and Sorting
-
-The container table supports column sorting. Click any column header to sort ascending; click again to sort descending. Sort state persists for the duration of your session.
-
-The **Status** filter is additive with the search box — you can combine `status=running` with a search term to find running containers by name.
-
-## Refreshing Data
-
-Data is fetched from the Docker API when you load the page and refreshed every 30 seconds automatically. Click the **Refresh** button in the top-right of the table to force an immediate update.
+- **Delete is permanent.** Removing a container deletes it from Docker; any data stored inside the container's writable layer is lost. Persistent data in named volumes is not affected.
+- You can only delete a container that is **stopped or exited**. Stop it first if it is running.
+- If the container is managed by a deployment, stopping or deleting it outside of the deployment workflow may cause the deployment to show an inconsistent state. Use the deployment's **Remove** action instead.

@@ -1,60 +1,55 @@
 ---
-title: Packages and Registries
-description: Using GitHub Container Registry with Mini Infra for deployment image discovery and pulling.
+title: GitHub Packages and Container Registries
+description: How to browse GitHub Container Registry packages connected through the GitHub App.
 category: GitHub
 order: 2
 tags:
   - github
-  - packages
-  - ghcr
-  - container-registry
   - docker
-  - deployments
+  - containers
+  - configuration
 ---
 
-# Packages and Registries
+# GitHub Packages and Container Registries
 
-Mini Infra can browse packages from GitHub Container Registry (ghcr.io) and use them as Docker images for deployments.
-
-## How it works
-
-When the GitHub integration is fully configured (including the Package Access Token), Mini Infra queries GHCR for packages associated with your GitHub account. These packages — typically Docker images — appear in the Packages tab on the GitHub connectivity page and can be referenced in deployment configurations.
-
-The Package Access Token is also used to create a Docker registry credential for `ghcr.io` automatically. This means deployments can pull private images from GHCR without additional credential setup.
+Once the GitHub App is connected and a **Package Access Token** is configured, Mini Infra can display your GitHub Container Registry (GHCR) packages on the [GitHub connectivity page](/connectivity-github).
 
 ## Viewing packages
 
-Navigate to **GitHub** under Connected Services and select the **Packages** tab. The table shows:
+Navigate to [Connected Services → GitHub](/connectivity-github) and click the **Packages** tab.
 
-| Column | What it shows |
-|--------|--------------|
-| **Name** | The package name as it appears in GHCR |
-| **Type** | Package type — usually `docker` for container images, but can also be `npm` or others |
-| **Visibility** | Whether the package is public or private |
-| **Owner** | The GitHub user or organisation that owns the package |
-| **Updated** | When the package was last updated |
+The packages table shows:
 
-Each row has an external link icon that opens the package page on GitHub.
+| Column | Description |
+|--------|-------------|
+| **Name** | Package name with a link to GitHub |
+| **Type** | Package type (e.g., container) |
+| **Visibility** | `Private` (with lock icon) or `Public` |
+| **Owner** | GitHub user or organization that owns the package |
+| **Updated** | When the package was last updated (relative time) |
+
+Click the link icon on any package to open it on GitHub in a new tab.
+
+## Prerequisites
+
+Browsing packages requires a **Package Access Token** (personal access token with `read:packages` scope) to be configured. Without it, the Packages tab will be empty or show an error.
+
+See [Setting Up the GitHub App](/github/github-app-setup) for instructions on adding the Package Access Token.
 
 ## Using GHCR images in deployments
 
-When creating or editing a deployment configuration:
+Container images hosted on GHCR (`ghcr.io`) can be used in deployment configurations. To authenticate pulls from private GHCR repositories:
 
-1. Set the **Docker Registry** to `ghcr.io`.
-2. Set the **Docker Image** to the package name (e.g. `myorg/myapp`).
-3. Set the **Docker Tag** to the desired version tag.
+1. Go to [Settings → Registry Credentials](/settings-registry-credentials).
+2. Add a credential with:
+   - **Registry URL**: `ghcr.io`
+   - **Username**: your GitHub username
+   - **Password**: a GitHub Personal Access Token with `read:packages` scope
 
-The registry credential for GHCR was created automatically during GitHub setup, so private images are pulled without extra configuration. You can verify the credential exists on the **Registry Credentials** page under Administration.
-
-## Registry credentials
-
-Mini Infra supports credentials for any Docker-compatible registry, not just GHCR. The **Registry Credentials** page under Administration lets you manage credentials for Docker Hub, AWS ECR, Azure Container Registry, or any private registry.
-
-When a deployment configuration specifies a registry, Mini Infra matches it against stored credentials and uses the appropriate one for image pulls.
+Once the credential is saved and active, Mini Infra will automatically use it when pulling images from `ghcr.io` during deployments.
 
 ## What to watch out for
 
-- The GHCR registry credential is created from your Package Access Token. If you revoke or regenerate the PAT on the GitHub connectivity page, the credential is updated automatically.
-- Package visibility (public/private) is determined by the GitHub repository's settings. Making a repository public makes its packages public too.
-- The Packages tab shows all package types, not just Docker images. Only Docker-type packages can be used in deployments.
-- If the Package Access Token isn't configured, the Packages tab still shows public packages but private ones won't appear, and deployments can't pull private images.
+- The Packages tab only shows packages accessible to the configured GitHub App and Package Access Token. Private packages owned by organizations the token does not have access to will not appear.
+- The Package Access Token is separate from the GitHub App — it must be configured independently even if the GitHub App is connected.
+- GHCR registry credentials for deployment pulls are configured under **Registry Credentials**, not on the GitHub connectivity page.

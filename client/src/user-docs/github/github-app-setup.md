@@ -1,89 +1,97 @@
 ---
-title: GitHub App Setup
-description: How to install and configure the GitHub App integration for packages, repositories, and actions.
+title: Setting Up the GitHub App
+description: How to connect Mini Infra to GitHub using the GitHub App integration.
 category: GitHub
 order: 1
 tags:
   - github
-  - integration
-  - setup
   - authentication
-  - app
+  - configuration
+  - getting-started
 ---
 
-# GitHub App Setup
+# Setting Up the GitHub App
 
-Mini Infra integrates with GitHub through a GitHub App. This gives access to GitHub Container Registry packages, repository data, and GitHub Actions workflow runs.
+Mini Infra integrates with GitHub to browse container packages, repositories, and GitHub Actions workflow runs. The integration uses a GitHub App for secure, scoped access.
 
-## What the integration provides
+## Prerequisites
 
-Once connected, you get:
+Before setting up the GitHub App, Mini Infra must be accessible at a public or network-reachable URL so GitHub can complete the OAuth callback.
 
-- **Packages** — Browse Docker images and other packages in GitHub Container Registry (ghcr.io). Link them to deployment configurations for pulling images.
-- **Repositories** — View accessible repositories with metadata like language, visibility, and default branch.
-- **Actions** — Monitor recent GitHub Actions workflow runs across your repositories, with status and branch information.
+## Connecting to GitHub
 
-## Permissions requested
+1. Go to [Connected Services → GitHub](/connectivity-github).
+2. Click **Connect to GitHub**.
+3. You are redirected to GitHub, where you can review the permissions the app requests and approve them.
+4. After approval, GitHub redirects you back to Mini Infra and the setup completes automatically.
 
-The GitHub App requests these read-only permissions:
+### Permissions requested
 
-- **Packages** (read) — Access to GitHub Container Registry packages.
-- **Actions** (read) — Access to workflow run data.
-- **Contents** (read) — Access to repository file contents.
-- **Metadata** (read) — Basic repository metadata.
+The GitHub App requests **read-only** access to:
 
-No write permissions are requested. Mini Infra reads data from GitHub but doesn't modify repositories, packages, or workflows.
+- Packages (GitHub Container Registry)
+- Actions (workflow runs)
+- Contents (repository files)
+- Metadata (repository info)
 
-## Setup process
+## Installing the app on your account
 
-Navigate to **GitHub** under Connected Services. The setup has three stages:
+After the app is created on GitHub, you may be prompted to **install** it on your personal account or organization. Click **Install on GitHub** and follow the prompts. Then return to Mini Infra and click **Check Installation** to verify.
 
-### Stage 1: Create the GitHub App
+## App status indicators
 
-Click **Connect to GitHub**. This redirects you to GitHub where a new GitHub App is created using a manifest flow. GitHub asks you to confirm the app creation and approve the permissions. After approval, you're redirected back to Mini Infra.
+Once connected, the page shows:
 
-### Stage 2: Install the app
+| Field | Description |
+|-------|-------------|
+| **App Name** | Name of the installed GitHub App |
+| **Connected Account** | GitHub account or organization the app is installed on |
+| **App ID** | Numeric identifier of the GitHub App |
+| **Connection status** | Real-time health badge showing connection state |
 
-After the app is created, Mini Infra prompts you to install it on your GitHub account or organisation. Click **Install on GitHub** to open the GitHub installation page. Choose which account to install on and which repositories to grant access to (all repositories or selected ones).
+## Configuring additional access tokens
 
-After installing, return to Mini Infra and click **Check Installation** to verify the installation was detected.
+The GitHub App provides read-only access to repositories and actions. For additional capabilities, you can configure two optional personal access tokens:
 
-### Stage 3: Configure Package Access Token
+### Package Access Token
 
-The GitHub App token provides access to repositories and actions, but accessing GitHub Container Registry packages requires a separate Personal Access Token (PAT).
+Required to browse **GitHub Container Registry (GHCR)** packages. GitHub App tokens cannot access GHCR, so a separate personal access token with `read:packages` scope is needed.
 
-On the GitHub connectivity page, in the **Package Access** section:
+1. Click **Generate Token on GitHub** to open GitHub's token creation page with the `read:packages` scope pre-selected.
+2. Generate the token, copy it.
+3. Paste the token into the input field and click **Save**.
 
-1. Click the link to generate a token on GitHub. The token needs the `read:packages` scope.
-2. Copy the generated token.
-3. Paste it into the input field and save.
+The status changes to **Configured** (green) when saved.
 
-Mini Infra uses this token to create a Docker registry credential for `ghcr.io` automatically, making GHCR images available for deployments.
+### Assistant Access Token
 
-## After setup
+Optional personal access token for AI agent GitHub integration.
 
-Once fully connected, the GitHub connectivity page shows:
+Choose an access level:
 
-- **App Name** — The name of the created GitHub App.
-- **Connected Account** — Which GitHub account or organisation the app is installed on.
-- **App ID** — The GitHub App's numeric identifier.
-- **Package Access** status — Whether the PAT for GHCR is configured.
+| Level | Scopes | Allows |
+|-------|--------|--------|
+| **Read Only** | `repo:status`, `public_repo`, `read:org` | View repos, PRs, issues, org info |
+| **Full Access** | `repo`, `workflow`, `read:org`, `write:org` | Full repo access, workflow dispatch, org writes |
 
-Three tabs display the available data:
+Click **Generate Token on GitHub**, copy the token, paste it, and click **Save**.
 
-- **Packages** — Table of GHCR packages with name, type, visibility, owner, and last updated date.
-- **Repositories** — Table of accessible repos with name, description, language, visibility, and default branch.
-- **Actions** — Dropdown to select a repository, then a table of recent workflow runs with status, branch, run number, event trigger, and creation date.
+## Testing the connection
 
-## Managing the connection
+Click **Test Connection** to verify the GitHub App is working. The button shows the response time in milliseconds if successful.
 
-- **Test Connection** — Verifies the GitHub App can still authenticate and access resources.
-- **Refresh GHCR Token** — Re-creates the Docker registry credential from the current PAT.
-- **Disconnect** — Removes the GitHub App configuration from Mini Infra. The app still exists on GitHub and would need to be uninstalled separately from GitHub's settings.
+Click **Refresh GHCR Token** to regenerate the container registry token from the GitHub App.
+
+## Disconnecting
+
+Click **Disconnect** to remove the GitHub App configuration from Mini Infra. A confirmation dialog appears. This removes all stored tokens and app credentials.
+
+## Bug Report Settings
+
+Mini Infra also has a separate **Bug Report** integration at [Settings → Bug Report Settings](/bug-report-settings) that uses a simple Personal Access Token (not the GitHub App) to create GitHub Issues for bug reports. See [GitHub Repository Integration](/github/repository-integration) for details.
 
 ## What to watch out for
 
-- The GitHub App and the Package Access Token are separate credentials. The app provides repo and actions access; the PAT provides package access. Both are needed for full functionality.
-- If you install the app on selected repositories only, Mini Infra only sees those repositories. To add more later, update the installation settings on GitHub.
-- The PAT for package access is a classic or fine-grained token — either works as long as it has `read:packages` scope.
-- Disconnecting from Mini Infra doesn't uninstall the GitHub App from your account. You should uninstall it from GitHub's settings if you no longer need it.
+- The GitHub App OAuth flow must be completed in one session — do not close the browser tab while the GitHub redirect is in progress.
+- GitHub App tokens expire periodically. If the GitHub connection stops working, use **Test Connection** to check — you may need to disconnect and reconnect.
+- The Package Access Token is separate from the GitHub App and must be created manually with the `read:packages` scope.

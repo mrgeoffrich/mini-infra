@@ -1,108 +1,85 @@
 ---
 title: Deployment Lifecycle
-description: What happens during a deployment from image pull to traffic switch, and how rollback works.
+description: A step-by-step guide to what happens during a deployment in Mini Infra.
 category: Deployments
 order: 3
 tags:
   - deployments
-  - lifecycle
+  - docker
   - blue-green
-  - rollback
-  - haproxy
   - health-checks
-  - progress
+  - haproxy
 ---
 
 # Deployment Lifecycle
 
-This page covers what happens from the moment you click Deploy to the point where your new container is serving traffic.
+When you trigger a deployment in Mini Infra, it runs through a series of steps to replace your running container with a new one without dropping any incoming traffic.
 
-## Initial deployment steps
+## Triggering a deployment
 
-The first deployment of an application follows this sequence:
+Click **Deploy** on a deployment configuration row, or click **New** if the previous deployment completed successfully. The deployment starts immediately and a progress panel tracks it in real time.
 
-1. **Pull Docker image** — Downloads the image from the configured registry. If using a private registry, credentials from Registry Credentials settings are used automatically.
-2. **Create container** — Creates a Docker container with the configured environment variables, volume mounts, and network settings.
-3. **Start container** — Starts the container and waits for it to reach a running state.
-4. **Register with HAProxy** — Adds the container as a backend server in HAProxy using the container's internal IP address.
-5. **Health check** — Sends HTTP requests to the configured health endpoint. Retries according to the retry and interval settings until the check passes or all retries are exhausted.
-6. **Configure frontend** — If a hostname is configured, creates an HAProxy frontend with hostname-based routing.
-7. **Configure DNS** — If Cloudflare is connected and a hostname is set, creates or updates the DNS record.
-8. **Enable traffic** — Opens the HAProxy route so incoming requests reach the container.
+## Deployment steps
 
-## Blue-green deployment steps
+| Step | Description |
+|------|-------------|
+| **Pull Docker Image** | Downloads the configured image and tag from the registry |
+| **Create Container** | Creates a new container alongside the current one (if any) |
+| **Start Container** | Starts the new container |
+| **Health Check** | Polls the health check endpoint until it passes or the max wait time is reached |
+| **Switch Traffic** | Updates the HAProxy frontend to route traffic to the new container |
+| **Cleanup Old Container** | Stops and removes the previous container |
 
-Subsequent deployments add traffic draining and old container cleanup:
+Each step shows its status, duration, and any error messages in the progress panel.
 
-1. **Pull Docker image** — Same as initial.
-2. **Create green container** — The new container is created alongside the existing (blue) one.
-3. **Start green container** — Both containers are now running.
-4. **Register green with HAProxy** — The new container is added as a backend server, but doesn't receive traffic yet.
-5. **Health check green** — Validates the new container is responding correctly.
-6. **Configure frontend** — Updates HAProxy routing to point to the green container.
-7. **Configure DNS** — Updates DNS if needed.
-8. **Switch traffic** — HAProxy begins sending new requests to the green container. This is the zero-downtime moment — the switch is instant from the client's perspective.
-9. **Drain blue** — HAProxy stops sending new connections to the old container while allowing in-flight requests to complete.
-10. **Monitor drain** — Waits for all active connections on the blue container to finish.
-11. **Remove blue from HAProxy** — Unregisters the old container from the load balancer.
-12. **Stop blue container** — Stops the old container.
-13. **Remove blue container** — Deletes the old container.
-14. **Cleanup** — Marks the deployment as complete.
+## Progress tracking
 
-## Monitoring progress
+The deployment detail page at `/deployments/:id` shows:
 
-While a deployment is running, the deployment detail page shows real-time progress:
-
-- **Status text** — The current phase (Deploying, Health Checking, Switching Traffic, etc.).
-- **Progress bar** — Visual progress with percentage.
-- **Step list** — Each step shows its status (pending, running, completed, or failed) with timestamps and duration.
-- **Error details** — If a step fails, the error message appears inline.
-- **Logs** — A scrollable terminal-style log showing all deployment messages as they happen.
-
-The deployments list page also shows the latest deployment status for each configuration, with active deployments polling every 5 seconds for updates.
+- **Overall progress bar** — colored by status (blue for in progress, green for complete, red for failed, orange for rolling back)
+- **Step list** — each step with its status badge, timing, and expandable log output
+- **Metrics** — total duration and traffic downtime
+- **Real-time logs** — a live log stream from the deployment process
 
 ## Rollback
 
-Rollback can happen automatically or manually.
+If the health check fails and automatic rollback is enabled (the default), Mini Infra runs a **Rollback** step:
 
-### Automatic rollback
+1. Removes the new container
+2. Leaves the old container running and in service in HAProxy
+3. Marks the deployment as `rolledback`
 
-If a health check fails during a blue-green deployment, the system automatically rolls back:
+If the deployment is still in progress (in the `deploying`, `health_checking`, `switching_traffic`, or `failed` states), you can trigger a manual rollback by clicking the **Rollback** button on the deployment detail page.
 
-1. Traffic is restored to the blue (old) container.
-2. The green (new) container's traffic is disabled.
-3. HAProxy configuration for the green container is removed.
-4. The green container is stopped and removed.
-5. The deployment is marked as "rolled back".
+## Status progression
 
-The blue container continues serving traffic as if nothing happened.
+```
+pending → preparing → deploying → health_checking → switching_traffic → cleanup → completed
+                                                    ↓ (if health check fails)
+                                               rolling_back → rolledback
+```
 
-### Manual rollback
+## After a successful deployment
 
-While a deployment is in progress (during the deploying, health checking, or switching traffic phases), a **Rollback** button appears on the deployment detail page. Clicking it triggers the same rollback sequence as an automatic rollback.
+- The new container is running and serving traffic.
+- The old container has been removed (unless **Keep Old Container** was enabled).
+- The **Last Deployment** column on the deployments list shows `completed` in green.
+- A **New** button appears on the configuration row to trigger another deployment.
 
-The rollback button is disabled once the deployment completes successfully, since the old container has already been removed.
+## DNS configuration
 
-## Deployment states
+If the deployment has a **hostname** configured, the detail page shows a **DNS Configuration** section that tracks DNS record status for each hostname. DNS status values:
 
-A deployment moves through these states:
-
-| State | Meaning |
-|-------|---------|
-| **Pending** | Queued, waiting to start |
-| **Preparing** | Setting up the environment context |
-| **Deploying** | Pulling image, creating and starting the container |
-| **Health Checking** | Running health checks against the new container |
-| **Switching Traffic** | Reconfiguring HAProxy to route to the new container |
-| **Cleanup** | Draining and removing the old container |
-| **Completed** | Deployment finished successfully |
-| **Failed** | Something went wrong; check the error details |
-| **Rolling Back** | Reverting to the previous container |
-| **Rolled Back** | Rollback completed, old container is serving traffic again |
+| Status | Meaning |
+|--------|---------|
+| `active` | DNS record is resolving correctly |
+| `pending` | Record has been created but not yet propagated |
+| `failed` | Record creation or update failed |
+| `removed` | Record was deleted |
 
 ## What to watch out for
 
-- During a blue-green deployment, both containers are running simultaneously. Make sure the host has enough resources (memory, CPU) for two instances of your application.
-- The drain phase waits for active connections to finish. Long-lived connections (like WebSockets) may delay the cleanup step.
-- If a deployment fails after traffic has switched but before the old container is removed, you may end up with both containers running. Use **Remove Deployment** to clean up.
-- Rollback is only possible during a deployment. Once a deployment completes and the old container is removed, the only way to go back is to deploy the previous image tag.
+- **Health check timeouts** are the most common cause of deployment failures. If the new container takes longer than the configured timeout to become ready, the deployment fails and rolls back.
+- Traffic downtime should be near zero, but it is not guaranteed to be exactly zero. A small number of in-flight requests during the HAProxy switch may be dropped.
+- If HAProxy is not configured, the deployment creates and starts the container but traffic routing does not occur. The deployment will still show as `completed` but no external traffic will reach the container.
+- Deployments cannot be paused — once started, they run to completion or failure.

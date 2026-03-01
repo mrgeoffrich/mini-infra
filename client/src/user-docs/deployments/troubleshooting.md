@@ -1,145 +1,92 @@
 ---
 title: Deployment Troubleshooting
-description: Common deployment issues and how to diagnose them.
+description: Common deployment issues and how to resolve them in Mini Infra.
 category: Deployments
-order: 4
+order: 7
 tags:
   - deployments
   - troubleshooting
-  - errors
-  - health-checks
   - haproxy
-  - rollback
+  - blue-green
+  - health-checks
 ---
 
 # Deployment Troubleshooting
 
-Common issues with deployments in Mini Infra and how to investigate them.
+---
+
+## Deployment fails at the Pull Docker Image step
+
+**Symptom:** The deployment fails during the **Pull Docker Image** step with an authentication error or "image not found" message.
+
+**Likely cause:** The Docker image name or tag is incorrect, or registry authentication is missing.
+
+**What to check:** Review the Docker image, tag, and registry fields on the deployment configuration. If using a private registry, check [Registry Credentials](/settings/system-settings) to ensure credentials are configured.
+
+**Fix:** Edit the deployment configuration to correct the image name. If the registry requires authentication, add credentials at [Settings → Registry Credentials](/settings-registry-credentials).
 
 ---
 
-## Deployment fails at image pull
+## Deployment fails at the Health Check step
 
-**Symptom:** The deployment fails in the first step with an error about pulling the Docker image.
+**Symptom:** The deployment reaches the **Health Check** step but fails after retrying, then rolls back.
 
-**Likely cause:** The image doesn't exist, the tag is wrong, or registry credentials are missing or invalid.
+**Likely cause:** The container is starting but the health check endpoint is not returning a successful response within the configured timeout.
 
 **What to check:**
+1. Open the deployment detail page and expand the **Health Check** step to see the error message.
+2. Check the container's logs to see if the application started successfully.
+3. Verify the **Health Check Endpoint** path and port match what your application actually exposes.
+4. Check the **Timeout**, **Retries**, and **Interval** settings — they may be too aggressive for a slow-starting application.
 
-- Verify the image name and tag in the deployment configuration. Check for typos.
-- If using a private registry (like `ghcr.io`), go to **Registry Credentials** under Administration and verify the credentials are active and the connection test passes.
-- Check the Docker connectivity indicator. If Docker is unreachable, no images can be pulled.
-
-**Fix:** Correct the image name or tag, or update the registry credentials. Then trigger a new deployment.
+**Fix:** Edit the deployment configuration: increase the timeout, add more retries, or fix the health check endpoint path. If the application takes more than 30 seconds to start, increase the **Max Wait Time** in the Rollback tab.
 
 ---
 
-## Health check fails
+## Deployment shows "completed" but traffic is not routed to the new container
 
-**Symptom:** The deployment progresses through image pull and container start, then fails at the health check step and rolls back.
+**Symptom:** The deployment completes successfully but the application is not reachable at its hostname.
 
-**Likely cause:** The application inside the container isn't responding at the configured health endpoint, or it's returning an unexpected status code.
+**Likely cause:** HAProxy is not configured, or the frontend was not created.
 
-**What to check:**
+**What to check:** Open the deployment detail page and look at the **HAProxy Frontend** section. If it shows "No HAProxy frontend configured", the environment does not have a running HAProxy service or no hostname was set.
 
-- Look at the deployment logs on the detail page. The health check error usually shows the HTTP status received vs. expected.
-- Check the container logs for application startup errors. The container may be crashing or taking longer to start than the health check timeout allows.
-- Verify the health check endpoint path is correct (e.g. `/health`, not `/api/health`).
-- Confirm the listening port in the deployment configuration matches the port your application actually listens on.
-
-**Fix:** Correct the health check configuration (endpoint, port, timeout, retries). If the application needs more startup time, increase the timeout and retry count.
+**Fix:** Ensure the environment has a running HAProxy service. If no hostname was configured, edit the deployment configuration and add one, then redeploy.
 
 ---
 
-## HAProxy not switching traffic
+## Cannot trigger a new deployment — Deploy button is disabled
 
-**Symptom:** The deployment appears to complete, but requests still go to the old container or return errors.
+**Symptom:** The **Deploy** button on a deployment configuration is grayed out.
 
-**Likely cause:** HAProxy configuration is out of sync, or the frontend routing rule doesn't match the incoming requests.
+**Likely cause:** Another deployment is already in progress, or the configuration is set to Inactive.
 
-**What to check:**
+**What to check:** Look at the **Last Deployment** column. If the status is blue (in-progress), wait for it to complete. If the configuration shows **Inactive**, activate it.
 
-- Open the deployment detail page and look at the **HAProxy Frontend Configuration** section.
-- Click **Sync Configuration** to reconcile the stored configuration with the actual HAProxy state.
-- Verify the hostname in the frontend matches what clients are requesting.
-
-**Fix:** Use the Sync Configuration button to repair the state. If that doesn't resolve it, check the HAProxy frontends and backends pages under Networking for more detail.
+**Fix:** Wait for the in-progress deployment to complete or fail. If the configuration is inactive, edit it and set it to active.
 
 ---
 
-## Deployment stuck in progress
+## Deployment rolled back unexpectedly
 
-**Symptom:** The deployment shows as "deploying" or "health checking" for an unusually long time.
+**Symptom:** A deployment that previously worked now rolls back automatically.
 
-**Likely cause:** The container is taking a long time to start, or the health check is failing silently (timing out rather than returning an error).
+**Likely cause:** The new image version has a longer startup time, a new dependency that is not available, or a misconfigured health check.
 
-**What to check:**
+**What to check:** Open the deployment detail page, expand the **Health Check** step, and review the error. Check the container's log output (visible in the deployment progress log stream) for errors during startup.
 
-- Check the deployment step list on the detail page. Identify which step is currently running.
-- If stuck at health checking, the container may be starting slowly. Look at the container's logs for startup messages.
-- Check whether the host has sufficient resources (memory, CPU, disk) for the new container.
-
-**Fix:** If the deployment is genuinely stuck, use the **Rollback** button to abort and revert. Then investigate the container's startup behaviour before trying again.
+**Fix:** Fix the underlying application issue. If startup time increased, raise the **Timeout** or **Max Wait Time** in the deployment configuration.
 
 ---
 
-## Deploy succeeds but application returns errors
+## Frontend shows status "failed"
 
-**Symptom:** The deployment completes and health checks pass, but the application returns errors to real users.
+**Symptom:** A frontend in the HAProxy frontends list shows a red `failed` badge.
 
-**Likely cause:** The health check endpoint is too simple — it confirms the server is running but doesn't verify that the application is fully functional (e.g. database connections, external APIs).
+**Likely cause:** HAProxy could not apply the frontend configuration — possibly a conflict with another frontend using the same hostname, or a certificate issue.
 
-**What to check:**
+**What to check:** Open the frontend detail page and look at the error message in the **Overview** card.
 
-- Look at the application logs in the container detail page.
-- Verify environment variables are set correctly in the deployment configuration.
-- Check if the container can reach external dependencies (databases, APIs) from within the Docker network.
-
-**Fix:** Improve the health check endpoint so it validates critical dependencies, not just HTTP liveness. Update the deployment configuration's health check settings and redeploy.
+**Fix:** Resolve the error shown in the overview card. Common fixes: remove a conflicting frontend using the same hostname, or issue a valid TLS certificate if SSL is enabled.
 
 ---
-
-## Environment not available for deployment
-
-**Symptom:** When creating a deployment configuration, the environment dropdown is empty or your environment doesn't appear.
-
-**Likely cause:** The environment isn't running, or it doesn't have an HAProxy service.
-
-**What to check:**
-
-- Go to **Environments** in the sidebar. Verify the environment exists and its status is "Running".
-- Check that the environment has an HAProxy service listed in its services tab.
-- If the environment shows as "Degraded" or "Failed", the HAProxy service may be unhealthy.
-
-**Fix:** Start the environment if it's stopped. If HAProxy is unhealthy, use the **Remediate HAProxy** button on the environment detail page to repair its configuration.
-
----
-
-## DNS records not created
-
-**Symptom:** The deployment completes and traffic works by IP, but the configured hostname doesn't resolve.
-
-**Likely cause:** Cloudflare isn't connected, or the DNS record creation failed.
-
-**What to check:**
-
-- Go to **Cloudflare** under Connected Services and verify the connection is green.
-- On the deployment detail page, check the DNS Configuration section for error messages.
-- Click **Sync DNS** to force a refresh.
-
-**Fix:** Ensure Cloudflare is configured with a valid API token and account ID. The token needs DNS edit permissions. After fixing the connection, sync DNS from the deployment detail page.
-
----
-
-## Containers left behind after failed deployment
-
-**Symptom:** After a failed or rolled-back deployment, orphaned containers remain on the host.
-
-**Likely cause:** The cleanup step didn't complete, or the deployment failed between creating the container and the rollback catching it.
-
-**What to check:**
-
-- Go to **Containers** in the sidebar and look for containers named after your application.
-- On the deployment detail page, check if a **Remove Deployment** button is available.
-
-**Fix:** Click **Remove Deployment** on the deployment detail page to clean up all associated containers, HAProxy configuration, and DNS records. If that doesn't cover everything, you can stop and remove orphaned containers from the Containers page.

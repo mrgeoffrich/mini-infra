@@ -1,6 +1,6 @@
 ---
-title: Connectivity Troubleshooting
-description: Common connectivity issues with external services and how to resolve them.
+title: Connected Services Troubleshooting
+description: Common issues with external service connections and how to resolve them.
 category: Connectivity
 order: 2
 tags:
@@ -10,106 +10,80 @@ tags:
   - azure
   - cloudflare
   - github
-  - errors
 ---
 
-# Connectivity Troubleshooting
-
-Common issues with external service connections and how to investigate them.
+# Connected Services Troubleshooting
 
 ---
 
-## Docker shows as unreachable
+## Docker validation fails with "connection refused"
 
-**Symptom:** The Docker status dot in the header is red, and the Docker connectivity page shows "Unreachable".
+**Symptom:** Clicking **Validate & Save** on the Docker configuration page returns a connection refused error.
 
-**Likely cause:** The Docker daemon isn't running, or Mini Infra can't access the Docker socket.
+**Likely cause:** The Docker Host URL is incorrect, or the Docker daemon is not running.
 
-**What to check:**
+**What to check:** Verify the Docker daemon is running on the host. For socket-based connections, ensure the socket file exists and is accessible.
 
-- Verify the Docker daemon is running on the host: `systemctl status docker` or `docker info`.
-- If Mini Infra runs inside a container, confirm the Docker socket is mounted: `-v /var/run/docker.sock:/var/run/docker.sock`.
-- Check the Docker Host URL on the Docker connectivity page. For local setups, it should be `unix:///var/run/docker.sock`.
-
-**Fix:** Start the Docker daemon or fix the socket mount. Then click **Validate & Save** on the Docker connectivity page.
+**Fix:** Use `unix:///var/run/docker.sock` for a local socket connection. If Mini Infra is running inside Docker, ensure the socket is mounted with `-v /var/run/docker.sock:/var/run/docker.sock`.
 
 ---
 
-## Azure shows as failed
+## Docker Host IP Address is required but shows an error
 
-**Symptom:** The Azure status shows "Failed" or "Not Connected", and backups are failing.
+**Symptom:** Saving Docker settings fails with a validation error about the IP address.
 
-**Likely cause:** The connection string is invalid, expired, or the storage account access keys were rotated.
+**Likely cause:** The Docker Host IP Address field is empty or contains an invalid IPv4 address.
 
-**What to check:**
+**What to check:** The field must contain a valid IPv4 address. It is used to create DNS A records when deployments set up hostnames.
 
-- Go to the **Azure** connectivity page and look at the error message.
-- In the Azure Portal, go to your Storage Account > Access Keys and compare the connection string.
-- Verify the storage account still exists and isn't disabled.
-
-**Fix:** Copy a fresh connection string from the Azure Portal and paste it into the Azure connectivity page. Click **Validate & Save**.
+**Fix:** Enter the public or private IPv4 address of the machine running Docker (e.g., `192.168.1.100`).
 
 ---
 
-## Cloudflare shows as failed
+## Azure validation fails with "authentication error"
 
-**Symptom:** The Cloudflare status is red, and the tunnels page shows no data.
+**Symptom:** Azure validation returns an authentication or authorization error.
 
-**Likely cause:** The API token is invalid, expired, or lacks the required permissions.
+**Likely cause:** The connection string is incorrect, the storage account key has been rotated, or the connection string is from a different storage account.
 
-**What to check:**
+**What to check:** In the Azure portal, go to **Storage Account → Access Keys** and copy the full connection string (not just the key).
 
-- Go to the **Cloudflare** connectivity page and look at the error message.
-- In the Cloudflare dashboard, verify the API token is still active and has the correct permissions (Account-level Tunnel Read, Zone-level DNS Edit if using DNS features).
-- Confirm the Account ID is correct.
-
-**Fix:** Generate a new API token in Cloudflare with the required permissions and update it on the connectivity page.
+**Fix:** Paste the complete connection string including `DefaultEndpointsProtocol`, `AccountName`, `AccountKey`, and `EndpointSuffix`.
 
 ---
 
-## GitHub shows as not connected
+## Cloudflare validation succeeds but no tunnels appear
 
-**Symptom:** The GitHub connectivity page shows a "Connect to GitHub" prompt, or shows that the app needs installation.
+**Symptom:** The Cloudflare connection validates successfully but the Tunnels page shows no tunnels.
 
-**Likely cause:** The GitHub App setup wasn't completed, or the app was uninstalled from GitHub.
+**Likely cause:** The Account ID is for a different Cloudflare account than where the tunnels are configured, or no tunnels have been created yet.
 
-**What to check:**
+**What to check:** Confirm the Account ID matches the account where your tunnels are set up. Check the Cloudflare dashboard directly to verify tunnels exist.
 
-- If you see "Connect to GitHub", the app hasn't been created yet. Start the setup flow.
-- If you see "Needs Installation", the app was created but not installed on a GitHub account. Click **Install on GitHub**.
-- If you see "Connected" but tests fail, the app's permissions may have been changed on GitHub.
-
-**Fix:** Follow the setup prompts to complete the GitHub App installation. If the app was removed from GitHub, you may need to disconnect and reconnect from scratch.
+**Fix:** Update the Account ID to match the correct Cloudflare account.
 
 ---
 
-## Service showing as connected but operations fail
+## GitHub App setup fails or returns to a broken state
 
-**Symptom:** The connectivity status is green, but specific operations (backups, deployments, tunnel management) return errors.
+**Symptom:** After clicking **Connect to GitHub** and approving on GitHub, the setup page shows an error or a loading spinner that never completes.
 
-**Likely cause:** The connectivity check only tests basic API access. The operation may need additional permissions or access to a specific resource.
+**Likely cause:** The OAuth callback failed, the code expired, or the network request timed out.
 
-**What to check:**
+**What to check:** Look at the error message on the GitHub connectivity page. Check if the Mini Infra application logs show any errors.
 
-- Read the error message from the failing operation — it usually identifies the permission or resource issue.
-- For Azure: the storage account may be connected, but the specific container might not exist or might have restricted access.
-- For Cloudflare: the token may have tunnel read access but not DNS edit access.
-- For GitHub: the app may be installed but the Package Access Token might not be configured.
-
-**Fix:** Address the specific permission or configuration gap. Each service's connectivity page has settings for the commonly needed credentials and access levels.
+**Fix:** Click **Remove App** (if shown) to clear the partial state, then try **Connect to GitHub** again. Ensure you complete the GitHub approval quickly — the OAuth code expires after a few minutes.
 
 ---
 
-## Intermittent connectivity
+## Package Access Token shows "Not Configured" after saving
 
-**Symptom:** A service alternates between connected and failed status, or operations succeed sometimes and fail other times.
+**Symptom:** You entered a GitHub Personal Access Token for package access but it still shows "Not Configured".
 
-**Likely cause:** Network instability between Mini Infra and the external service, or the service is rate-limiting requests.
+**Likely cause:** The token may have been entered incorrectly, or the save operation failed silently.
 
-**What to check:**
+**What to check:** Re-enter the token in the input field and click **Save**. Ensure the token starts with `ghp_` or `github_pat_` and has the `read:packages` scope.
 
-- Look at the response time shown on the connectivity page. High or variable response times suggest network issues.
-- Check if the issue correlates with high load or specific times of day.
-- For API-based services (Cloudflare, GitHub), check whether you're hitting rate limits.
+**Fix:** Generate a new token in GitHub settings with `read:packages` scope and paste it into the field.
 
-**Fix:** For network issues, check the host's connectivity and DNS resolution. For rate limiting, reduce the frequency of operations or check the service's rate limit documentation.
+---

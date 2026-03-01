@@ -1,59 +1,62 @@
 ---
-title: What is Mini Infra?
-description: An overview of Mini Infra and what it manages on your Docker host.
+title: Getting Started with Mini Infra
+description: An introduction to Mini Infra and what you can do with it.
 category: Getting Started
 order: 1
 tags:
-  - overview
   - getting-started
-  - introduction
+  - dashboard
+  - overview
+  - docker
 ---
 
-# What is Mini Infra?
+# Getting Started with Mini Infra
 
-Mini Infra is a web application for managing a single Docker host and the infrastructure around it. It gives you a unified interface for Docker containers, PostgreSQL database backups, zero-downtime deployments via HAProxy, and Cloudflare tunnel monitoring — without the overhead of Kubernetes or full-featured platforms like Portainer.
+Mini Infra is a web application for managing a single Docker host and its supporting infrastructure. It brings container management, PostgreSQL backups, zero-downtime deployments, load balancer configuration, and external service monitoring into one place.
 
-## What it manages
+## What Mini Infra manages
 
-Mini Infra covers five areas of your infrastructure:
+Mini Infra connects to your Docker host and provides a UI and API for the following:
 
-- **Docker containers** — View, start, stop, restart, and inspect every container on the host. Stream logs in real time and browse volume contents.
-- **PostgreSQL backups** — Schedule automated backups of PostgreSQL databases to Azure Blob Storage. Browse stored backups and restore them to the same or a new database.
-- **Zero-downtime deployments** — Deploy Docker images using a blue-green model with HAProxy handling traffic switching. Health checks run before cutover, and rollback is automatic if they fail.
-- **Cloudflare tunnels** — Monitor the status of Cloudflare tunnels that expose your services to the internet.
-- **Connectivity monitoring** — Track the health of external service connections: Docker daemon, Azure Storage, Cloudflare API, and GitHub.
+| Feature | What you can do |
+|---------|----------------|
+| **Containers** | View, start, stop, restart, and delete Docker containers. Inspect volumes and networks. |
+| **Deployments** | Configure and run zero-downtime blue-green deployments with health checks and automatic rollback. |
+| **Environments** | Group containers and services into named environments (e.g., production, staging). |
+| **PostgreSQL Backups** | Schedule and restore encrypted backups of PostgreSQL databases to Azure Blob Storage. |
+| **Load Balancer** | Manage HAProxy frontends and backends that route traffic to your containers. |
+| **TLS Certificates** | Issue and auto-renew SSL/TLS certificates using Let's Encrypt. |
+| **Tunnels** | Monitor Cloudflare tunnel health and manage public hostname routing. |
+| **Events** | Track long-running operations like deployments, backups, and certificate renewals. |
+| **API Keys** | Create programmatic access keys with fine-grained permissions. |
 
-## Logging in
+## The Dashboard
 
-Mini Infra uses Google OAuth for authentication. On the login page, click **Continue with Google** and sign in with your Google account. After authentication, you're redirected to the dashboard.
+When you first log in, the **Dashboard** at `/dashboard` gives you an at-a-glance view of your infrastructure:
 
-Sessions last 24 hours. When your session expires, you'll be redirected to the login page automatically.
+- **Container summary** — total container count plus counts for Running, Stopped, and Paused containers. If any containers exited in the last 24 hours, a **Recently Died Containers** alert appears with links to the affected containers.
+- **Deployment summary** — counts for active deployment configurations, currently running deployments, and deployments that require attention.
+- **Recent deployments** — a list of the last few deployments with status and timestamps.
 
-## The dashboard
+If Docker is not yet connected, the dashboard shows a configuration prompt instead of container data. Go to [/connectivity-docker](/connectivity-docker) to configure the Docker connection.
 
-After login, the dashboard shows a high-level summary of your Docker host:
+## Prerequisites
 
-- **Container summary cards** — Total containers, running count, stopped count, and paused count at a glance.
-- **Recently died containers** — An alert showing containers that exited in the last 24 hours, so you can spot unexpected failures quickly.
-- **Connectivity indicators** — Small status dots in the header for Docker, Cloudflare, Azure, and GitHub. Green means connected; red means the service is unreachable.
+Before using most features, you need to connect Mini Infra to external services:
 
-## Finding your way around
+| Service | Required for | Where to configure |
+|---------|-------------|-------------------|
+| **Docker** | All container and deployment features | [Connected Services → Docker](/connectivity-docker) |
+| **Azure Blob Storage** | PostgreSQL backups, self-backups, TLS certificate storage | [Connected Services → Azure Storage](/connectivity-azure) |
+| **Cloudflare** | Tunnel monitoring, DNS record management | [Connected Services → Cloudflare](/connectivity-cloudflare) |
+| **GitHub** | Bug reporting, package registry integration | [Connected Services → GitHub](/connectivity-github) |
 
-The sidebar organises features into sections:
+## Navigating the application
 
-| Section | What's there |
-|---------|-------------|
-| **Applications** | Containers, Deployments, Environments |
-| **Databases** | PostgreSQL Servers, PostgreSQL Backups |
-| **Networking** | Cloudflare Tunnels, Load Balancer (HAProxy), TLS Certificates |
-| **Monitoring** | Events log |
-| **Connected Services** | Docker, Cloudflare, Azure, GitHub connectivity status |
-| **Administration** | System Settings, Security, Registry Credentials, Self-Backup, TLS Settings, GitHub Settings |
+The main navigation links to all major sections. See [Navigating the Dashboard](/getting-started/navigating-the-dashboard) for a full walkthrough of the interface.
 
-Each page has a **?** button in the top-right corner of the header. Click it to open the relevant help article for the page you're on.
+## What to watch out for
 
-## What to know before you start
-
-- Mini Infra connects directly to the Docker daemon on the host via the Docker socket. It can see and control all containers.
-- Backup and restore operations require Docker images for `pg_dump` and `pg_restore` to be configured in System Settings before use.
-- Deployment configs define how an application is deployed but don't trigger a deploy on their own — you start deploys manually from the deployment detail page.
+- Mini Infra manages a **single Docker host**. It is not designed for multi-host or Kubernetes environments.
+- The **Docker connection must be configured first**. Features that depend on Docker — containers, deployments, environments, and volumes — will show errors or empty states until Docker is connected.
+- Running Mini Infra with direct access to `/var/run/docker.sock` gives it full control of the Docker daemon. Only deploy it in environments where that level of access is appropriate.

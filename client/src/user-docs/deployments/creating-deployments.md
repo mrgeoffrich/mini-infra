@@ -1,98 +1,80 @@
 ---
-title: Creating Deployments
-description: How to set up a deployment configuration with Docker image, health checks, and hostname routing.
+title: Creating a Deployment Configuration
+description: How to create and configure a new zero-downtime deployment in Mini Infra.
 category: Deployments
 order: 2
 tags:
   - deployments
-  - configuration
   - docker
-  - health-checks
-  - hostname
-  - ssl
+  - blue-green
+  - configuration
+  - haproxy
 ---
 
-# Creating Deployments
+# Creating a Deployment Configuration
 
-A deployment configuration tells Mini Infra everything it needs to deploy your application: which image to pull, how to verify it's working, and how to route traffic to it.
+A deployment configuration defines how Mini Infra should deploy, health-check, and route traffic to a Docker container. Create one at [/deployments/new](/deployments/new).
 
-## Creating a configuration
+## Step 1 — Select an environment
 
-Click **New Configuration** on the Deployments page. The form has two tabs: Docker and Health Check.
+Before filling in the Docker tab, select the **environment** this application belongs to. The environment determines which HAProxy instance manages traffic routing. The environment cannot be changed after the configuration is saved.
 
-### Docker tab
+## Step 2 — Docker tab
 
-| Field | Description |
-|-------|-------------|
-| **Application Name** | A unique name for this deployment. Lowercase letters, numbers, hyphens, and underscores only. |
-| **Environment** | Which environment to deploy into. Must have a running HAProxy instance. Cannot be changed after creation. |
-| **Docker Registry** | Optional. Leave blank for Docker Hub, or enter a registry URL like `ghcr.io`. |
-| **Docker Image** | The image name without the tag (e.g. `myapp` or `myorg/myapp`). |
-| **Docker Tag** | The image tag. Defaults to `latest`. |
-| **Listening Port** | The port your application listens on inside the container. HAProxy uses this to route traffic. |
-| **Hostname** | Optional. A public hostname like `app.example.com`. If set, HAProxy creates hostname-based routing so requests to this domain reach your application. |
-| **SSL/TLS** | Appears when a hostname is set. Enable to serve traffic over HTTPS. |
-| **Volume Mounts** | Optional. Map host paths to container paths. Each mount can be read-write or read-only. |
-| **Environment Variables** | Optional. Key-value pairs passed to the container at startup. |
+### Application settings
 
-### Health Check tab
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Application Name** | Yes | Lowercase alphanumeric and hyphens, max 255 characters. Used as the container name prefix. |
+| **Docker Registry** | No | Registry hostname (e.g., `ghcr.io`). Leave blank to use Docker Hub. |
+| **Docker Image** | Yes | Image name without tag (e.g., `nginx`, `myorg/myapp`). |
+| **Docker Tag** | Yes | Image tag to deploy (default: `latest`). |
+| **Listening Port** | No | The port your application listens on inside the container. Used for health checks and traffic routing. |
 
-Health checks determine whether the new container is ready to receive traffic. Every deployment configuration needs a health check.
+### Hostname
 
-| Field | Description |
-|-------|-------------|
-| **Health Check Endpoint** | The URL path to check (e.g. `/health` or `/api/status`). |
-| **HTTP Method** | GET or POST. |
-| **Response Validation Pattern** | Optional regex to match against the response body. |
-| **Timeout** | How long to wait for a response before considering the check failed. 1–60 seconds. |
-| **Retries** | How many times to retry a failed check before giving up. 0–10. |
-| **Interval** | Time between retry attempts. 1–300 seconds. |
+Enter a public **hostname** (e.g., `api.example.com`) if you want HAProxy to route external traffic to this application. Leave it blank to deploy without public routing.
 
-Click **Create** to save the configuration. This does not start a deployment — it only saves the definition.
+Enable **SSL/TLS** to automatically provision and manage a certificate for the hostname using Let's Encrypt (requires TLS settings to be configured).
 
-## Editing a configuration
+### Ports, volumes, and environment variables
 
-Click the edit button on any deployment configuration. All fields except the environment can be changed. Changes take effect on the next deployment — they don't affect any currently running containers.
+Use the **Port Editor**, **Volume Editor**, and **Environment Variable Editor** sections to configure:
 
-## Triggering a deployment
+- Additional port mappings (`containerPort:hostPort/protocol`)
+- Volume mounts (`hostPath:containerPath` with read/write or read-only mode)
+- Environment variables (uppercase names, any value)
 
-### First deployment
+## Step 3 — Health Check tab
 
-Click **Deploy** on a configuration that hasn't been deployed before. Mini Infra pulls the image, starts a container, runs health checks, and opens traffic through HAProxy.
+The health check determines whether the new container is ready to receive traffic before HAProxy switches over.
 
-### Subsequent deployments
+| Field | Default | Description |
+|-------|---------|-------------|
+| **Health Check Endpoint** | — | URL path the new container must respond to (e.g., `/health`) |
+| **HTTP Method** | GET | HTTP method to use for the check |
+| **Response Validation Pattern** | — | Optional regex the response body must match |
+| **Timeout** | 10000 ms | How long to wait for each response |
+| **Retries** | 3 | Number of failed checks before giving up |
+| **Interval** | 5000 ms | Time between checks |
 
-After the first deployment, click **New** to start a blue-green deployment. A dialog lets you optionally customize:
+## Step 4 — Rollback tab (optional)
 
-- **Container name** — Defaults to the application name.
-- **Container label** — Optional metadata in `key=value` format.
+| Field | Default | Description |
+|-------|---------|-------------|
+| **Enable Automatic Rollback** | On | If the health check fails, automatically remove the new container |
+| **Max Wait Time** | 300000 ms | Maximum time to wait for the health check before failing |
+| **Keep Old Container** | Off | Keep the old container stopped rather than removing it after a successful deployment |
 
-The dialog shows a summary of what will happen: which image will be pulled, which health check endpoint will be used, and whether rollback is enabled. Click **Deploy** to start.
+## Saving and deploying
 
-## DNS and hostname configuration
+Click **Create Configuration** to save. You are returned to the deployments list.
 
-When a deployment configuration has a hostname and Cloudflare is connected, Mini Infra automatically creates DNS records pointing the hostname to the HAProxy instance.
-
-The deployment detail page shows DNS records under the **DNS Configuration** section:
-
-- Hostname, provider (Cloudflare or External), IP address, status, and last updated time.
-- **Sync DNS** refreshes records from Cloudflare.
-- DNS records can be deleted individually if needed.
-
-## HAProxy frontend configuration
-
-The deployment detail page also shows the **HAProxy Frontend Configuration**:
-
-- Frontend name, hostname routing rule, backend name, bind address and ports, and SSL status.
-- **Sync Configuration** reconciles the UI state with the actual HAProxy configuration. Use this if you suspect configuration drift.
-
-## Removing a deployment
-
-Click **Remove Deployment** to tear down a deployed application. This stops and removes all containers, deletes the HAProxy frontend configuration, and cleans up DNS records. The deployment configuration itself is preserved — you can deploy again later.
+To start a deployment, click **Deploy** on the configuration row. See [Deployment Lifecycle](/deployments/deployment-lifecycle) for what happens next.
 
 ## What to watch out for
 
-- The health check endpoint must return a success response (HTTP 200 by default) for the deployment to complete. If your app takes time to start up, set a generous timeout and retry count.
-- Environment selection is permanent. If you need to move an application to a different environment, create a new configuration and remove the old one.
-- Hostname validation checks against existing deployments and Cloudflare. You can't assign the same hostname to two different deployments.
-- Volume mounts use host paths, which must exist on the Docker host before deploying.
+- The **Application Name** must be unique within its environment.
+- If you enter `image:tag` in the Docker Image field (with a colon), Mini Infra will split it automatically into image and tag fields.
+- **Environment variables** with sensitive values (passwords, API keys) are stored in the database. Use Docker secrets or a secrets management tool for highly sensitive values in production.
+- The **Listening Port** is used for the health check URL. If your application's health endpoint is on a different port than its main traffic port, set the listening port to the health check port.

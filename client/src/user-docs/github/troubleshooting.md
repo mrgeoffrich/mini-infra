@@ -1,125 +1,86 @@
 ---
-title: GitHub Troubleshooting
+title: GitHub Integration Troubleshooting
 description: Common GitHub integration issues and how to resolve them.
 category: GitHub
 order: 4
 tags:
   - github
   - troubleshooting
-  - errors
   - authentication
-  - packages
-  - actions
 ---
 
-# GitHub Troubleshooting
-
-Common issues with the GitHub integration in Mini Infra and how to investigate them.
+# GitHub Integration Troubleshooting
 
 ---
 
-## GitHub App setup fails at redirect
+## GitHub App setup redirects back but shows an error
 
-**Symptom:** Clicking "Connect to GitHub" redirects to GitHub, but the process doesn't complete or returns an error.
+**Symptom:** After approving the GitHub App on GitHub, you are redirected back to Mini Infra but the page shows an error instead of a connected state.
 
-**Likely cause:** The browser blocked the redirect, or the GitHub manifest flow encountered a permissions issue.
+**Likely cause:** The OAuth callback code expired (they are valid for only a few minutes), or the setup request failed.
 
-**What to check:**
+**What to check:** Look at the error message on the page. Check if there is a "Remove App" button — if so, the app was partially created.
 
-- Ensure your browser isn't blocking pop-ups or redirects from Mini Infra.
-- Check that you're signed into GitHub with an account that has permission to create GitHub Apps (account owner or organisation admin).
-
-**Fix:** Try the setup flow again. If you're setting up for an organisation, you may need admin privileges.
+**Fix:** Click **Remove App** to clear the partial state, then click **Connect to GitHub** again and complete the flow promptly without delay.
 
 ---
 
-## App created but installation not detected
+## Packages tab is empty or shows an error
 
-**Symptom:** The GitHub connectivity page says "Needs Installation" even after you installed the app on GitHub.
+**Symptom:** The Packages tab shows no packages or an error message about authentication.
 
-**Likely cause:** The installation check hasn't detected the new installation yet.
+**Likely cause:** The **Package Access Token** is not configured, or the token does not have the `read:packages` scope.
 
-**What to check:**
+**What to check:** On the GitHub connectivity page, look at the **Package Access Token** status badge. If it shows "Not Configured" (amber), the token is missing.
 
-- Click **Check Installation** to force a re-check.
-- On GitHub, go to Settings > Applications (or your organisation's settings) and verify the app is installed and has access to the expected repositories.
-
-**Fix:** Click Check Installation. If it still isn't detected, verify the installation on GitHub's side. In rare cases, you may need to disconnect and reconnect.
+**Fix:** Generate a new Personal Access Token on GitHub with the `read:packages` scope, then paste it into the Package Access Token field and save.
 
 ---
 
-## Packages tab is empty
+## Repositories tab shows "No repositories found"
 
-**Symptom:** The Packages tab shows no entries, even though you have packages in GHCR.
+**Symptom:** The Repositories tab is empty even though you have repositories on GitHub.
 
-**Likely cause:** The Package Access Token isn't configured, or the token doesn't have the `read:packages` scope.
+**Likely cause:** The GitHub App is not installed on the account or organization that owns the repositories, or the app installation was not granted access to those repositories.
 
-**What to check:**
+**What to check:** In the GitHub App installation settings on GitHub, check which repositories the app has access to.
 
-- Look at the **Package Access** section on the GitHub connectivity page. It should show "Configured" with a green badge.
-- If it says "Not Configured", you need to create and enter a Personal Access Token.
-- If configured but still empty, the token may have been revoked on GitHub.
-
-**Fix:** Generate a new PAT on GitHub with the `read:packages` scope and enter it in the Package Access section. Private packages only appear when the token has the correct scope.
+**Fix:** Reinstall or update the GitHub App installation to grant access to the desired repositories.
 
 ---
 
-## Repositories tab is empty or missing repos
+## Actions tab shows "No workflow runs found"
 
-**Symptom:** The Repositories tab shows no repos, or specific repos you expect to see are missing.
+**Symptom:** After selecting a repository, the Actions tab shows no workflow runs.
 
-**Likely cause:** The GitHub App installation doesn't have access to the repositories.
+**Likely cause:** The repository has no workflow runs, or GitHub Actions has not been enabled for that repository.
 
-**What to check:**
+**What to check:** Open the repository on GitHub and check the Actions tab directly to verify runs exist.
 
-- On GitHub, go to your GitHub App installation settings and check which repositories the app can access.
-- If you selected "Only select repositories" during installation, the missing repos weren't included.
-
-**Fix:** Update the GitHub App installation on GitHub to include additional repositories, or switch to "All repositories" access.
+**Fix:** If Actions are enabled and runs exist on GitHub but not in Mini Infra, try refreshing. If the issue persists, disconnect and reconnect the GitHub App.
 
 ---
 
-## Actions tab shows no workflow runs
+## Bug report test connection fails
 
-**Symptom:** You select a repository from the dropdown but no workflow runs appear.
+**Symptom:** Clicking **Test Connection** on the Bug Report Settings page returns an error.
 
-**Likely cause:** The repository has no GitHub Actions workflows defined, or no runs have executed recently.
+**Likely cause:** The Personal Access Token is invalid, expired, or does not have the `repo` scope. The repository owner or name may also be incorrect.
 
-**What to check:**
+**What to check:** Verify the token starts with `ghp_` and has not expired. Check the owner and repository name fields for typos.
 
-- Verify the repository has workflow files in the `.github/workflows/` directory.
-- Check GitHub directly to see if there are recent runs.
-- Make sure the GitHub App has Actions (read) permission.
-
-**Fix:** If workflows exist and have run on GitHub but don't appear in Mini Infra, try the **Test Connection** button to verify API access. If the test passes, the data should appear on the next refresh.
+**Fix:** Generate a new token with the `repo` scope and update the settings. Verify the repository URL on GitHub to confirm owner and name are correct.
 
 ---
 
-## GHCR image pull fails during deployment
+## "Test Connection" passes but creating a bug report fails
 
-**Symptom:** A deployment fails at the image pull step when using a `ghcr.io` image.
+**Symptom:** The test connection succeeds but bug reports are not created.
 
-**Likely cause:** The GHCR registry credential is missing, expired, or has insufficient permissions.
+**Likely cause:** The token has read access (`repo:status`) but not write access (`repo`). Issues require write access.
 
-**What to check:**
+**What to check:** Review the token's scopes on GitHub — go to **Settings → Developer settings → Personal access tokens** and check which scopes are granted.
 
-- Go to **Registry Credentials** under Administration. Look for a `ghcr.io` credential and verify it's active.
-- Click the test connection button on the credential to verify it works.
-- On the GitHub connectivity page, check if the Package Access Token is still configured.
-
-**Fix:** If the credential is missing, go to the GitHub connectivity page and click **Refresh GHCR Token** to recreate it. If the PAT was revoked, generate a new one and enter it in the Package Access section.
+**Fix:** Regenerate the token with the full `repo` scope (not just `repo:status` or `public_repo`).
 
 ---
-
-## Rate limiting errors
-
-**Symptom:** GitHub-related requests fail intermittently with errors mentioning rate limits.
-
-**Likely cause:** The GitHub API has rate limits for authenticated requests (5,000/hour for app installations, 5,000/hour for PATs).
-
-**What to check:**
-
-- The error message usually includes rate limit details.
-- Consider how frequently you're accessing the GitHub pages.
-
-**Fix:** Rate limits reset hourly. Reduce the frequency of page refreshes if you're hitting limits. For most use cases, the default polling interval is well within limits.

@@ -1,93 +1,86 @@
 ---
 title: Container Troubleshooting
-description: Common container issues and how to diagnose them.
+description: Common container issues and how to resolve them in Mini Infra.
 category: Containers
-order: 5
+order: 6
 tags:
   - containers
   - docker
   - troubleshooting
-  - errors
-  - debugging
 ---
 
 # Container Troubleshooting
 
-Common issues with Docker containers in Mini Infra and how to investigate them.
+---
+
+## Containers page shows "Configure Docker" instead of containers
+
+**Symptom:** The Containers page shows a prompt to configure Docker rather than any container data.
+
+**Likely cause:** Mini Infra has not been connected to a Docker daemon, or the connection settings are incorrect.
+
+**What to check:** Go to [Connected Services → Docker](/connectivity-docker) and review the Docker Host URL and API version settings.
+
+**Fix:** Enter a valid Docker Host URL (e.g., `unix:///var/run/docker.sock` for a local socket or `tcp://host:2376` for a remote daemon) and click **Validate & Save**. Return to the Containers page once the connection is confirmed.
 
 ---
 
-## Container won't start
+## A container is stuck in the Restarting state
 
-**Symptom:** You click Start but the container immediately returns to a stopped state, or never transitions to Running.
+**Symptom:** A container shows status `Restarting` for an extended period.
 
-**Likely cause:** The container's entrypoint or command is failing on startup. Common reasons include a missing configuration file, a required environment variable that isn't set, or a port conflict with another container.
+**Likely cause:** The container's process is crashing on startup and Docker's restart policy is repeatedly restarting it.
 
-**What to check:**
+**What to check:** Open the container detail page and view the logs. Look for error messages at the end of the log output that indicate why the process is exiting.
 
-- Open the container detail page and look at the **Logs** section. Docker captures output from the failed start attempt — error messages usually appear there.
-- Check if another container is already using the same published port. Filter the container list by `running` status and look for port conflicts.
-- Verify the Docker image still exists on the host. If the image was removed, Docker can't start the container.
-
-**Fix:** Address the issue shown in the logs. For port conflicts, stop the conflicting container first or change the port mapping by recreating the container.
+**Fix:** Fix the underlying crash (missing environment variable, missing dependency, misconfiguration). If you need to stop the restart loop without fixing it immediately, use the **Stop** action on the container detail page.
 
 ---
 
-## Container keeps restarting
+## Cannot delete a container — Delete button is disabled
 
-**Symptom:** The container status cycles between Running and Restarting, or the container runs for a few seconds before exiting and restarting.
+**Symptom:** The **Delete** button is grayed out or not visible on the container detail page.
 
-**Likely cause:** The application inside the container is crashing. If the container has a restart policy of `always` or `unless-stopped`, Docker keeps restarting it automatically.
+**Likely cause:** The container is still running. Docker requires containers to be stopped before they can be removed.
 
-**What to check:**
+**What to check:** Check the status badge at the top of the container detail page.
 
-- Check the container logs for crash output. Look for stack traces, out-of-memory errors, or "killed" messages.
-- On the container detail page, check the restart count. A high number confirms the restart loop.
-- If the logs mention "OOM" or "Killed", the container may be exceeding its memory limit.
-
-**Fix:** Fix the underlying application error. If you need to stop the restart loop to investigate, use **Stop** to halt the container and then read the logs from the last run.
+**Fix:** Click **Stop** to stop the container first, then click **Delete**.
 
 ---
 
-## Logs not appearing
+## A container shows status Exited with a non-zero exit code
 
-**Symptom:** The log viewer shows "Connected" but no log lines appear, or it shows "Disconnected".
+**Symptom:** A container is in the `Exited` state and the dashboard shows it in the "Recently Died Containers" alert.
 
-**Likely cause:** The container isn't producing output on stdout/stderr, or the container is stopped.
+**Likely cause:** The container's process crashed or was terminated abnormally.
 
-**What to check:**
+**What to check:** Open the container detail page and view the logs. The last lines of output usually contain the crash reason or error message.
 
-- Verify the container is in the **Running** state. Stopped containers don't produce new log output.
-- Check the **tail lines** setting. If set to 50, and the container hasn't produced 50 lines of recent output, you might see fewer lines than expected.
-- Some applications write to log files inside the container instead of stdout. Docker can only capture stdout and stderr — file-based logs won't appear in the viewer.
-
-**Fix:** If the container writes to files, you may be able to access them through a volume mount. Check the **Volumes** section on the container detail page. If the application can be configured to log to stdout instead, that's the more reliable approach for Docker environments.
+**Fix:** Resolve the underlying error in the container's application, then use **Start** to restart it.
 
 ---
 
-## Stale container status
+## Volume delete button is disabled
 
-**Symptom:** The container list shows a status that doesn't match what you expect (e.g. showing as Running when you know it was stopped).
+**Symptom:** The **Delete** button for a volume is grayed out.
 
-**Likely cause:** The auto-refresh hasn't run since the state changed. The container list refreshes every 30 seconds.
+**Likely cause:** At least one container — running or stopped — is using the volume.
 
-**What to check:**
+**What to check:** In the volumes list, check the **In Use** column. If it shows a container count, that container must be removed before the volume can be deleted.
 
-- Click the **Refresh** button to force an immediate update.
-- Check the Docker connectivity indicator in the header. If it's red, Mini Infra can't reach the Docker daemon, and status information is stale.
-
-**Fix:** If a manual refresh updates the status correctly, this was a timing issue. If the Docker connectivity indicator is red, investigate the Docker daemon connection from the **Docker** page under Connected Services.
+**Fix:** Find and remove all containers using the volume, then retry the deletion.
 
 ---
 
-## Container removed but still showing
+## Container name or image is truncated and hard to read
 
-**Symptom:** A container you removed via `docker rm` on the command line still appears in the Mini Infra list.
+**Symptom:** Container names or image names appear cut off in the table.
 
-**Likely cause:** Same as stale status — the list hasn't refreshed yet.
+**Likely cause:** The name is longer than the column width.
 
-**What to check:**
+**What to check:** Hover over the truncated text — a tooltip shows the full value. For images, the full name including tag is visible on the container detail page.
 
-- Click **Refresh** in the container list.
+**Fix:** No fix required; use the detail page for complete information.
 
-**Fix:** The container will disappear on the next refresh. Mini Infra doesn't cache container state — it reads directly from Docker on each request.
+---

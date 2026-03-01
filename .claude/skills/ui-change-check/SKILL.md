@@ -13,7 +13,8 @@ Scan what changed on this branch versus `main` and produce an actionable checkli
 | Artifact | Path | Update when... |
 |---|---|---|
 | User help articles | `client/src/user-docs/` | A user-visible feature is added, changed, or removed |
-| Help category structure | `docs/help-page-structure.md` | A new help category is needed, or a category is restructured |
+| Docs structure plan | `client/src/user-docs-structure/user-docs-structure.md` | A new route is added, removed, or renamed; or a new help category is needed |
+| Extra docs definitions | `client/src/user-docs-structure/extra-docs-defined.md` | A new supplemental article (troubleshooting, reference, etc.) needs to be planned |
 | Route registry | `client/src/lib/routes.tsx` | A new page is added or a page is removed/renamed |
 | Component README | `client/src/components/[name]/README.md` | A complex component's public API or behavior changes significantly |
 | Layout design guide | `claude-guidance/page-layout-design-guide.md` | A new layout pattern is established that other pages should follow |
@@ -39,7 +40,7 @@ Map changed files to the artifacts they affect:
 | `client/src/lib/routes.tsx` | Are the help articles in `user-docs/` still aligned with the current route structure? |
 | `client/src/components/**/*.tsx` (significant behavior change) | Component-level README if one exists for that component |
 | `client/src/hooks/**/*.ts` (new hook for a major feature) | Check if the feature has user docs coverage |
-| New category or section visible in the UI | `docs/help-page-structure.md` may need a new category definition |
+| New category or section visible in the UI | `client/src/user-docs-structure/user-docs-structure.md` may need a new route entry; `extra-docs-defined.md` if a new supplemental article is planned |
 
 If no files in `client/src/app/` or `client/src/components/` changed, say so and skip the relevant checks.
 
@@ -49,17 +50,7 @@ If no files in `client/src/app/` or `client/src/components/` changed, say so and
 
 This is the most important check. Read the changed page files to understand what user-visible feature was added or changed. Then look in `client/src/user-docs/` for a corresponding article.
 
-The `user-docs/` directory is organized into categories:
-- `getting-started/` — overview, navigating-the-dashboard, running-with-docker
-- `containers/` — container management features
-- `postgres-backups/` — backup and restore features
-- `deployments/` — zero-downtime deployment features
-- `tunnels/` — Cloudflare tunnel monitoring
-- `connectivity/` — service health monitoring
-- `github/` — GitHub integration features
-- `api/` — API key management
-- `settings/` — system configuration
-- `ui-elements/` — UI component help
+Read `client/src/user-docs-structure/user-docs-structure.md` to understand the current category structure, which routes are already covered, and what articles are planned. This file is the source of truth — do not rely on a hardcoded category list. Also read `client/src/user-docs-structure/extra-docs-defined.md` to see which supplemental (non-route-linked) articles are planned.
 
 Each article uses YAML frontmatter:
 ```yaml
@@ -86,7 +77,7 @@ If a page was removed or its path changed, check for stale route entries.
 
 **Help category structure check**
 
-Read `docs/help-page-structure.md`. If the UI change introduces a feature area that doesn't map to any existing help category, flag it as a candidate for a new category definition.
+Read `client/src/user-docs-structure/user-docs-structure.md`. If the UI change introduces a route or feature area not listed there, flag it — the structure doc needs a new entry and the route's `helpDoc` field in `route-config.ts` should be set. If a new supplemental article (troubleshooting guide, reference doc) is warranted, flag it as a candidate for `extra-docs-defined.md`.
 
 **Component README check**
 

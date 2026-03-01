@@ -1,74 +1,80 @@
 ---
-title: Deployment Overview
-description: How zero-downtime deployments work with the blue-green model and HAProxy traffic switching.
+title: Deployments Overview
+description: An overview of how zero-downtime deployments work in Mini Infra.
 category: Deployments
 order: 1
 tags:
   - deployments
+  - docker
   - blue-green
   - haproxy
-  - zero-downtime
-  - overview
 ---
 
-# Deployment Overview
+# Deployments Overview
 
-Mini Infra deploys Docker images using a blue-green model with HAProxy handling traffic switching. The goal is zero downtime — your application keeps serving requests while a new version starts up and takes over.
+Mini Infra's deployment system lets you deploy Docker containers to your host with zero downtime using a blue-green strategy. Each deployment replaces the old container only after the new one passes health checks, then routes traffic to the new container through HAProxy.
 
-## How it works
+## How deployments work
 
-A deployment in Mini Infra has two parts: a **deployment configuration** that defines what to deploy, and the **deployment itself** which is the act of pulling the image, starting the container, and switching traffic.
+A **deployment configuration** defines what to deploy and how to deploy it:
 
-### Deployment configurations
+- Which Docker image and tag to use
+- Which **environment** the application belongs to (production, staging, etc.)
+- How to perform a **health check** on the new container before switching traffic
+- Whether to **automatically roll back** if the health check fails
+- The public **hostname** the application is reachable at
 
-A deployment configuration describes an application:
+When you trigger a deployment, Mini Infra runs these steps in order:
 
-- Which Docker image and tag to use.
-- Which environment to deploy into (an environment is a group of Docker resources with an HAProxy instance).
-- Health check settings so Mini Infra can verify the new container is working before sending it traffic.
-- An optional hostname for public access, with optional SSL/TLS.
+1. **Pull Docker Image** — pulls the configured image and tag
+2. **Create Container** — creates a new container alongside the existing one
+3. **Start Container** — starts the new container
+4. **Health Check** — polls the health check endpoint until it passes or times out
+5. **Switch Traffic** — updates HAProxy to route traffic to the new container
+6. **Cleanup Old Container** — stops and removes the previous container
 
-Configurations are reusable. You define them once and trigger deployments from them as many times as needed.
-
-### Environments
-
-Deployments run inside environments. Each environment is a logical grouping of Docker services, networks, and volumes, with an HAProxy instance acting as the load balancer. The environment must be running and its HAProxy service must be healthy before you can deploy into it.
-
-Navigate to **Environments** in the sidebar to manage them.
-
-## The blue-green model
-
-When you deploy an application that's already running, Mini Infra uses a blue-green deployment strategy:
-
-1. **Blue** is the currently running container, actively serving traffic.
-2. **Green** is the new container being deployed.
-
-Both containers run simultaneously during the deployment. Traffic switches from blue to green only after the green container passes health checks. If anything goes wrong, the blue container is still there as a fallback.
-
-The first deployment of an application is simpler — there's no existing container, so Mini Infra starts the container, runs health checks, and opens traffic.
-
-## What HAProxy does
-
-HAProxy is the load balancer that sits in front of your deployed applications. During a deployment:
-
-- It registers the new container as a backend server.
-- After health checks pass, it routes incoming traffic to the new container.
-- It drains connections from the old container gracefully — existing requests finish before the old container is shut down.
-- If a hostname is configured, HAProxy sets up hostname-based routing so requests to `app.example.com` reach the right container.
+If any step fails (and automatic rollback is enabled), Mini Infra rolls back by removing the new container and keeping the old one in service.
 
 ## The Deployments page
 
-Navigate to **Deployments** in the sidebar. The page shows all deployment configurations in either a list view or a card view.
+Go to [/deployments](/deployments) to see all deployment configurations. The page shows:
 
-**List view** shows a table with application name, environment, Docker image, status, and last deployment time.
+| Column | Description |
+|--------|-------------|
+| **Application Name** | Name of the deployed application |
+| **Environment** | Environment the application runs in |
+| **Docker Image** | Configured image and tag |
+| **Status** | Whether the configuration is Active or Inactive |
+| **Last Deployment** | Status and timestamp of the most recent deployment |
 
-**Card view** shows richer information per application: the latest deployment status, container details, quick stats (last deploy, duration, success/failure), and action buttons.
+## Deployment status values
 
-Both views support filtering by application name, Docker image, and active/inactive status.
+| Status | Color | Meaning |
+|--------|-------|---------|
+| `completed` | Green | Deployment finished successfully |
+| `failed` | Red | Deployment failed; review logs |
+| `rolling_back` | Orange | Automatic rollback in progress |
+| `rolledback` | Orange | Rollback completed |
+| `pending` | Yellow | Deployment queued |
+| `preparing` | Yellow | Setting up before pulling image |
+| `deploying` | Blue | Pulling image or creating container |
+| `health_checking` | Blue | Waiting for health check to pass |
+| `switching_traffic` | Blue | Updating HAProxy routing |
+| `uninstalled` | Gray | Application removed from HAProxy |
+
+## Actions on a deployment configuration
+
+From the deployments list you can:
+
+- **Deploy** — trigger a new deployment immediately
+- **New** — trigger a new deployment when the last one completed successfully
+- **Remove** — stop and remove the currently running containers (only available if a deployment is complete and containers are running)
+- **View Details** — open the deployment detail page
+- **Edit Configuration** — change the Docker image, health check, or rollback settings
+- **Delete Configuration** — remove the configuration entirely (only if no containers are running)
 
 ## What to watch out for
 
-- The environment must be running with a healthy HAProxy instance before deploying. If HAProxy is down, the deployment will fail during the traffic switching step.
-- Health checks are mandatory. If your application doesn't respond to the configured health endpoint, the deployment will fail and roll back.
-- Deployments are triggered manually. Creating or updating a configuration doesn't start a deployment on its own.
-- Each deployment configuration is tied to one environment. To deploy the same application to multiple environments, create separate configurations.
+- You need a running **HAProxy environment** and **HAProxy frontend** for traffic switching to work. If HAProxy is not configured, the deployment will create and start the container but traffic routing will not be set up.
+- The **environment** for a deployment configuration **cannot be changed** after creation.
+- Deleting a configuration while containers are running is blocked. Remove the deployment first, then delete the configuration.

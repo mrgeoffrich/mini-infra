@@ -12,9 +12,10 @@ Do a full reconciliation of all UI documentation artifacts against the actual so
 
 1. **`client/src/user-docs/`** — help articles; audit coverage against every user-visible page
 2. **`client/src/lib/routes.tsx`** — route registry; verify all registered routes have real page files and vice versa
-3. **`docs/help-page-structure.md`** — help category definitions; verify it reflects the actual `user-docs/` structure
-4. **`claude-guidance/page-layout-design-guide.md`** — spot-check example pages still exist and are accurate
-5. **`client/src/components/*/README.md`** — spot-check for components that have grown significantly but lack docs
+3. **`client/src/user-docs-structure/user-docs-structure.md`** — the source of truth for planned doc structure; verify it reflects the actual `user-docs/` content and all current routes
+4. **`client/src/user-docs-structure/extra-docs-defined.md`** — supplemental article definitions; verify planned articles are accounted for in `user-docs-structure.md`
+5. **`claude-guidance/page-layout-design-guide.md`** — spot-check example pages still exist and are accurate
+6. **`client/src/components/*/README.md`** — spot-check for components that have grown significantly but lack docs
 
 ---
 
@@ -76,15 +77,19 @@ Also check for routes where the path has drifted from the directory structure �
 
 ---
 
-## Phase 3: Help category structure check
+## Phase 3: Docs structure plan check
 
-Read `docs/help-page-structure.md`. It defines the intended categories and article outlines for the help system.
+Read `client/src/user-docs-structure/user-docs-structure.md`. This is the source of truth for the planned documentation structure — it maps every route to its coverage status and lists all planned articles.
 
-Compare against the actual `user-docs/` directory structure:
-- Categories defined in the doc but missing as directories in `user-docs/`
-- Directories in `user-docs/` not mentioned in the doc
-- Articles outlined in the doc that don't exist yet as `.md` files
-- Articles that exist but whose content has drifted significantly from the outline (spot-check a few)
+Also read `client/src/user-docs-structure/extra-docs-defined.md` for the supplemental (non-route-linked) articles that are planned.
+
+Compare both against the actual `user-docs/` directory:
+- Routes listed in `user-docs-structure.md` as ❌ missing — are these still missing, or have they been created since the doc was generated?
+- Articles marked ❌ in `extra-docs-defined.md` — same check
+- Directories or articles that exist in `user-docs/` but are not accounted for in either file (orphans)
+- Routes in `route-config.ts` that were added after `user-docs-structure.md` was last generated (the structure doc may be stale — re-run `/generate-docs-structure` if significant new routes exist)
+
+Update `user-docs-structure.md` if the coverage status has changed.
 
 ---
 
@@ -108,8 +113,8 @@ Missing articles: [list with suggested paths]
 ### Route Registry
 [✅ All routes have matching page files / ❌ list any broken or orphaned entries]
 
-### Help Category Structure (docs/help-page-structure.md)
-[List gaps between the doc and actual user-docs/ structure, or ✅ Aligned]
+### Docs Structure Plan (user-docs-structure.md)
+[List gaps between the plan and actual user-docs/ content, stale coverage statuses, or ✅ Aligned]
 
 ### Guidance Docs
 [List any stale examples or component README gaps, or ✅ No issues found]

@@ -1,78 +1,72 @@
 ---
-title: Restoring Backups
-description: How to browse available backups and restore them to an existing or new database.
+title: Restoring a PostgreSQL Backup
+description: How to browse backups and restore a PostgreSQL database in Mini Infra.
 category: PostgreSQL Backups
 order: 3
 tags:
   - postgres
-  - backups
+  - backup
   - restore
   - azure
-  - recovery
 ---
 
-# Restoring Backups
+# Restoring a PostgreSQL Backup
 
-Mini Infra can restore any backup stored in Azure Blob Storage back to the original database or to a new database on the same server.
+Mini Infra lets you browse your Azure Blob Storage backups and restore them to an existing database or a new database.
 
 ## Opening the restore page
 
-Click the download button on a database row in the PostgreSQL Backups page. This opens the restore page for that database, which has two tabs: **Browse Backups** and **Restore History**.
+From the [PostgreSQL Backups](/postgres-backup) page, click the **Download** icon on a database row to open the restore page at `/postgres-backup/:databaseId/restore`.
 
 ## Browsing available backups
 
-The **Browse Backups** tab lists all backup files in Azure for the selected database. Each entry shows:
+The **Browse Backups** tab lists all backup files stored in the configured Azure container for this database. Each row shows:
 
-- **Backup Name** — The filename in Azure storage.
-- **Created** — When the backup was made.
-- **Size** — The file size.
+| Column | Description |
+|--------|-------------|
+| **Backup Name** | File name of the backup archive |
+| **Created** | Date and time the backup was created |
+| **Size** | File size |
+| **Actions** | Restore button |
 
-Click **Refresh** to reload the list from Azure. Backups appear in reverse chronological order (newest first).
+Click **Restore** on any backup to open the restore confirmation dialog.
 
-## Starting a restore
+## Restore confirmation dialog
 
-Click **Restore** on any backup in the list. A confirmation dialog opens showing:
+Before restoring, you must choose where to restore to:
 
-- The backup file name, creation date, size, and age.
-- An estimated restore time based on the file size.
+### Option 1 — Overwrite the existing database
 
-You then choose a restore destination:
+Replaces all data in the existing database with the contents of the backup. This is the most common option for disaster recovery.
 
-### Overwrite the existing database
+> **Warning: This cannot be undone.** All current data in the database is replaced by the backup.
 
-Select **Overwrite [database name]** to replace all data in the original database with the backup contents. This is destructive — the current data in the target database is replaced entirely.
+### Option 2 — Restore to a new database
 
-### Restore to a new database
+Creates a new database and populates it with the backup data. The existing database is not affected. You must enter a name for the new database.
 
-Select **Restore to new database** and enter a name for the new database. Mini Infra creates the database on the same PostgreSQL server and loads the backup into it. The original database is untouched.
+The dialog also shows:
+- Backup file name, creation date, and size
+- Estimated restore time (based on file size)
 
-Click **Restore** (or **Create & Restore** for new databases) to start the operation.
+After choosing your option, click **Overwrite Database** or **Create & Restore** to start the restore.
 
 ## Monitoring a restore
 
-After confirming, the restore operation begins. You can track progress in two places:
+The restore runs as a background operation. While running, its status is visible in the **Restore History** tab:
 
-- **Active Operations tab** on the main PostgreSQL Backups page — shows the running restore with a progress bar, current step, and time estimate.
-- **Restore History tab** on the restore page — shows all past and current restore operations for the database.
+| Status | Color | Meaning |
+|--------|-------|---------|
+| `running` | Blue | Restore is in progress |
+| `completed` | Green | Restore finished successfully |
+| `failed` | Red | Restore encountered an error |
+| `pending` | Yellow | Restore is queued |
 
-Restore operations run one at a time. If you trigger a second restore while one is already running, it queues behind the first.
-
-## Restore history
-
-The **Restore History** tab shows every restore operation for the database with:
-
-| Column | What it shows |
-|--------|--------------|
-| **Started** | When the restore began |
-| **Status** | Completed, Failed, Running, or Pending |
-| **Backup URL** | Which backup file was used |
-| **Duration** | How long the restore took |
-| **Error** | Error message if the restore failed |
+Each history row shows the start time, status, source backup URL, duration, and error message (if failed).
 
 ## What to watch out for
 
-- Restoring to the existing database is destructive. All current data is replaced. There is no undo — if you need the current data, back it up first.
-- The restore Docker image must be compatible with the PostgreSQL version of the backup. A backup made with PostgreSQL 16 may not restore into a PostgreSQL 12 server.
-- Restore operations have a 2-hour timeout. Very large databases may need the timeout adjusted or may need to be restored outside Mini Infra.
-- Only one restore runs at a time (concurrency of 1). Additional restore requests are queued.
-- Restoring to a new database requires that the PostgreSQL user configured in Mini Infra has permission to create databases on the server.
+- **Restoring to the existing database destroys all current data.** Make a manual backup of the current database before restoring if you need to preserve it.
+- The restore runs inside a Docker container using the **restore Docker image** configured in System Settings. Ensure this image is available.
+- Restoring a large backup takes time. The dialog shows an estimated duration based on file size, but actual time depends on database schema complexity and index rebuilding.
+- If the target database is actively being used during a restore, connections may be interrupted or data written during the restore may be lost.

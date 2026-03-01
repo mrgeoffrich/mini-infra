@@ -1,67 +1,95 @@
 ---
-title: Repository Integration
-description: What repository and Actions data Mini Infra pulls from GitHub and how it's displayed.
+title: GitHub Repository Integration
+description: How to view repositories, monitor GitHub Actions, and configure bug reporting with GitHub.
 category: GitHub
 order: 3
 tags:
   - github
-  - repositories
-  - actions
-  - workflows
-  - ci-cd
+  - configuration
+  - monitoring
 ---
 
-# Repository Integration
+# GitHub Repository Integration
 
-Mini Infra provides read-only visibility into your GitHub repositories and their Actions workflow runs.
+Mini Infra's GitHub integration lets you browse repositories and monitor GitHub Actions workflow runs. A separate bug reporting integration lets Mini Infra create GitHub Issues automatically.
 
-## Repositories tab
+## Viewing repositories
 
-Navigate to **GitHub** under Connected Services and select the **Repositories** tab. The table lists all repositories accessible to the installed GitHub App:
+Navigate to [Connected Services → GitHub](/connectivity-github) and click the **Repositories** tab.
 
-| Column | What it shows |
-|--------|--------------|
-| **Name** | Repository name |
-| **Description** | The repository's description, if set |
+The repositories table shows:
+
+| Column | Description |
+|--------|-------------|
+| **Name** | Repository name with a link to GitHub |
+| **Description** | Repository description (truncated) |
 | **Language** | Primary programming language |
-| **Visibility** | Public or private |
-| **Default Branch** | The default branch (e.g. `main`) |
-| **Updated** | Last update timestamp |
+| **Visibility** | `Private` (with lock icon) or `Public` |
+| **Default Branch** | Default branch name |
+| **Updated** | When the repository was last updated |
 
-Each row links to the repository on GitHub.
+Click the link icon to open a repository on GitHub.
 
-Which repositories appear depends on how you installed the GitHub App. If you chose "All repositories", every repo in the account is listed. If you chose specific repositories, only those appear. To change this, update the app's installation settings on GitHub.
+## Monitoring GitHub Actions
 
-## Actions tab
+Click the **Actions** tab on the GitHub connectivity page to view workflow runs.
 
-Select the **Actions** tab to monitor GitHub Actions workflow runs. A dropdown at the top lets you select which repository to view runs for.
+1. Select a **repository** from the dropdown at the top of the tab.
+2. The table shows recent workflow runs for that repository.
 
-The table shows recent workflow runs:
+### Workflow run table
 
-| Column | What it shows |
-|--------|--------------|
-| **Workflow Name** | The name of the workflow (from the YAML file) |
-| **Status** | Colour-coded badge: green (success), red (failure), grey (cancelled), yellow (in progress), orange (timed out), blue (queued), purple (waiting) |
-| **Branch** | Which branch the workflow ran on |
-| **Run #** | The sequential run number |
-| **Event** | What triggered the run (push, pull_request, schedule, workflow_dispatch, etc.) |
+| Column | Description |
+|--------|-------------|
+| **Workflow** | Workflow name |
+| **Status** | Run conclusion (see status values below) |
+| **Branch** | Branch the workflow ran on |
+| **Run #** | Workflow run number |
+| **Event** | Trigger event (push, pull_request, etc.) |
 | **Created** | When the run started |
 
-Each row links to the workflow run on GitHub for full details and logs.
+### Workflow run status values
 
-## How the data is used
+| Status | Color | Meaning |
+|--------|-------|---------|
+| `Success` | Green | Workflow completed successfully |
+| `Failure` | Red | Workflow failed |
+| `Cancelled` | Gray | Workflow was cancelled |
+| `Skipped` | Gray | Workflow was skipped |
+| `Timed Out` | Orange | Workflow exceeded its time limit |
+| `In Progress` | Yellow | Workflow is currently running |
+| `Queued` | Blue | Workflow is waiting to start |
+| `Waiting` | Purple | Workflow is waiting for approval |
 
-Repository and Actions data in Mini Infra is informational. It gives you visibility into your CI/CD pipeline alongside your infrastructure without switching to GitHub. There's no automation triggered from this data — deployments are still triggered manually from the Deployments page.
+Click the link icon on a run to open it on GitHub.
 
-The integration is useful for:
+## Bug Report Settings
 
-- Checking whether a CI build passed before triggering a deployment.
-- Seeing which repositories are active and recently updated.
-- Monitoring workflow failures without leaving Mini Infra.
+Mini Infra includes a bug reporting feature that creates GitHub Issues. This is configured separately from the GitHub App at [Settings → Bug Report Settings](/bug-report-settings).
+
+### Configuration
+
+| Field | Description |
+|-------|-------------|
+| **Personal Access Token** | GitHub PAT with `repo` scope (starts with `ghp_`) |
+| **Repository Owner** | GitHub username or organization that owns the target repository |
+| **Repository Name** | Repository where bug reports will be created as Issues |
+
+#### How to get a Personal Access Token
+
+1. Go to **GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)**
+2. Click **Generate new token (classic)**
+3. Name it (e.g., "Mini Infra Bug Reporter")
+4. Select the `repo` scope (Full control of private repositories)
+5. Click **Generate token**
+6. Copy the token (starts with `ghp_`) and paste it into Mini Infra
+
+After saving, the settings page shows a confirmation: "GitHub is configured and ready for bug reporting to `owner/repo`".
+
+Click **Test Connection** to verify the token and repository are accessible.
 
 ## What to watch out for
 
-- Mini Infra reads data from GitHub but doesn't trigger or modify workflows.
-- The Actions tab shows runs from the selected repository only. Switch the dropdown to view runs from a different repo.
-- Workflow runs update frequently. The page polls for updates, but there may be a brief delay between a run completing on GitHub and the status updating in Mini Infra.
-- If a repository doesn't appear in the list, check whether the GitHub App installation has access to it. You may need to update the installation settings on GitHub to include additional repositories.
+- The bug reporting PAT is stored encrypted but grants full repository access (`repo` scope). Use a dedicated GitHub account or a fine-grained token limited to the specific repository if possible.
+- The GitHub App must be installed on the account or organization that owns the repositories you want to view. Repositories owned by other accounts will not appear.
+- Workflow run history requires the GitHub App to have access to the selected repository. If a repository is not visible in the repository dropdown, the app may not be installed on that organization.

@@ -1,142 +1,88 @@
 ---
-title: Backup Troubleshooting
-description: Common backup and restore issues and how to diagnose them.
+title: PostgreSQL Backup Troubleshooting
+description: Common PostgreSQL backup and restore issues and how to resolve them.
 category: PostgreSQL Backups
-order: 4
+order: 5
 tags:
   - postgres
-  - backups
+  - backup
   - restore
   - troubleshooting
-  - errors
   - azure
 ---
 
-# Backup Troubleshooting
-
-Common issues with PostgreSQL backups and restores in Mini Infra and how to investigate them.
+# PostgreSQL Backup Troubleshooting
 
 ---
 
-## Backup fails immediately
+## Backup fails with "PostgreSQL containers not configured"
 
-**Symptom:** A manual or scheduled backup starts but fails within seconds.
+**Symptom:** An alert on the PostgreSQL pages says "PostgreSQL containers not configured: Backup and restore operations require Docker images to be configured in system settings."
 
-**Likely cause:** The Docker images for pg_dump aren't configured, or the configured image can't be pulled.
+**Likely cause:** The backup and/or restore Docker image has not been set in System Settings.
 
-**What to check:**
+**What to check:** Go to [Settings → System Settings](/settings-system) and look for the **Backup Container Settings** and **Restore Container Settings** sections.
 
-- Go to **System Settings** under Administration. Verify that the backup Docker image is set to a valid PostgreSQL image (e.g. `postgres:16`).
-- Check the Docker connectivity indicator in the header. If it's red, Mini Infra can't reach the Docker daemon.
-- Look at the error message in the Active Operations tab or History tab — it usually says what went wrong.
-
-**Fix:** Set a valid PostgreSQL Docker image in System Settings. Make sure the image is available on the host (or can be pulled from a configured registry).
+**Fix:** Enter a valid PostgreSQL Docker image (e.g., `postgres:15-alpine`) in both fields and save.
 
 ---
 
-## Backup stuck or taking too long
+## Database shows "Unhealthy" status
 
-**Symptom:** The progress bar sits at a low percentage for an extended period, or the backup has been running for over an hour.
+**Symptom:** A database connection shows the `Unhealthy` health badge.
 
-**Likely cause:** The database is very large, or there's a network bottleneck between the backup container and the PostgreSQL server or Azure storage.
+**Likely cause:** Mini Infra cannot connect to the PostgreSQL server. Possible causes: wrong host/port, wrong credentials, network connectivity issues, or SSL mode mismatch.
 
-**What to check:**
+**What to check:** Click the pencil icon to open the edit dialog, review the connection details, and click **Test Connection**.
 
-- Check the Active Operations tab for the current progress percentage and step.
-- For large databases, backups can legitimately take a long time. The 2-hour timeout is the hard limit.
-- Check whether the PostgreSQL server is under heavy load, which can slow down pg_dump.
-
-**Fix:** For very large databases, consider running backups during off-peak hours. If the backup consistently times out, you may need to run pg_dump manually outside Mini Infra.
+**Fix:** Correct the host, port, username, password, or SSL mode. Ensure the PostgreSQL server is running and accessible from the Mini Infra host.
 
 ---
 
-## Azure connection errors
+## Backup fails with Azure authentication error
 
-**Symptom:** Backup completes the dump step but fails during upload, with an error mentioning Azure or blob storage.
+**Symptom:** A backup operation fails and the error mentions Azure authentication, access denied, or missing container.
 
-**Likely cause:** The Azure Storage connection string is invalid, expired, or the target container doesn't exist.
+**Likely cause:** The Azure Storage connection is not configured, the connection string is invalid, or the configured Azure container does not exist.
 
-**What to check:**
+**What to check:** Go to [Connected Services → Azure Storage](/connectivity-azure) and verify the connection is healthy. Also check the backup configuration to ensure a valid Azure container is selected.
 
-- Go to the **Azure** page under Connected Services and verify the connection status is green.
-- Check that the Azure container specified in the backup configuration exists. Open the Azure page to see available containers.
-- Verify the connection string hasn't been rotated in the Azure portal without updating it in Mini Infra.
-
-**Fix:** Update the Azure connection string on the Azure connectivity page, then retry the backup.
+**Fix:** Re-enter and validate the Azure connection string. Ensure the selected container exists in Azure. Create the container in Azure Portal if needed.
 
 ---
 
-## Credential errors
+## No backups appear in the Browse Backups tab
 
-**Symptom:** Backup fails with authentication or permission errors.
+**Symptom:** The restore page shows "No backups found" even though backups appear to have run successfully.
 
-**Likely cause:** The PostgreSQL username or password stored in Mini Infra is wrong, or the user doesn't have sufficient permissions.
+**Likely cause:** The **Path Prefix** in the backup configuration does not match where the files were stored, or the Azure container was changed.
 
-**What to check:**
+**What to check:** In the backup configuration, check the **Container** and **Path Prefix** values. The path prefix is the folder within the container where backup files are stored.
 
-- Edit the database connection and click **Test Connection** to verify credentials still work.
-- The PostgreSQL user needs at least `SELECT` permission on all tables and `USAGE` on schemas to run pg_dump.
-
-**Fix:** Update the credentials on the database connection, or grant the necessary permissions on the PostgreSQL server.
+**Fix:** Verify that the path prefix matches the prefix used when the backups were created. If you changed the container or prefix, use the Azure portal to browse for the files.
 
 ---
 
-## Restore fails with version mismatch
+## Restore fails with "database is being accessed by other users"
 
-**Symptom:** Restore fails with an error about incompatible archive versions or unsupported features.
+**Symptom:** A restore operation fails with a message about active database connections.
 
-**Likely cause:** The restore Docker image is a different PostgreSQL major version than the one used to create the backup.
+**Likely cause:** Other applications or users are connected to the database while the restore is running.
 
-**What to check:**
+**What to check:** Review the error in the Restore History tab.
 
-- Note the PostgreSQL version of the server that created the backup.
-- Check the restore Docker image configured in **System Settings**.
-
-**Fix:** Set the restore Docker image to match the PostgreSQL version of the backup. For example, if backups were made with PostgreSQL 16, use `postgres:16` as the restore image.
+**Fix:** Stop all connections to the target database before restoring. If this is a production database, plan the restore during a maintenance window or restore to a new database instead of overwriting.
 
 ---
 
-## Restore to new database fails with permission error
+## Backup history shows "in_progress" but backup appears stuck
 
-**Symptom:** Choosing "Restore to new database" fails with a permission denied or CREATE DATABASE error.
+**Symptom:** A backup operation has shown `In Progress` status for an unusually long time.
 
-**Likely cause:** The PostgreSQL user configured in Mini Infra doesn't have permission to create databases on the server.
+**Likely cause:** The backup Docker container may have exited unexpectedly, or there is a network issue communicating with Azure.
 
-**What to check:**
+**What to check:** Check the Docker containers list for any backup-related containers. Check the Mini Infra application logs for errors.
 
-- Connect to the PostgreSQL server directly and check the user's role: `SELECT rolcreatedb FROM pg_roles WHERE rolname = 'your_user';`
-
-**Fix:** Grant the CREATEDB privilege: `ALTER ROLE your_user CREATEDB;` Or restore to an existing database instead.
+**Fix:** If the container is no longer running but the status is still `in_progress`, the operation may have been interrupted. Trigger a new manual backup to verify functionality.
 
 ---
-
-## Health status shows Unhealthy
-
-**Symptom:** A database connection shows a red "Unhealthy" badge in the table.
-
-**Likely cause:** Mini Infra can't connect to the PostgreSQL server with the stored credentials.
-
-**What to check:**
-
-- Click edit on the database and use **Test Connection** to see the specific error.
-- Verify the PostgreSQL server is running and accessible from the Docker host.
-- Check if the server's `pg_hba.conf` allows connections from the Mini Infra host.
-- If using SSL mode "Require", confirm the server supports TLS connections.
-
-**Fix:** Address the connection issue identified by the test. Common fixes include restarting the PostgreSQL server, updating credentials, or adjusting firewall rules.
-
----
-
-## Scheduled backups not running
-
-**Symptom:** The backup schedule is configured and enabled, but no backups appear in the history at the expected times.
-
-**Likely cause:** The cron expression or timezone may be misconfigured, or the Mini Infra server was restarted and the scheduler hasn't picked up the configuration.
-
-**What to check:**
-
-- Open the backup configuration and verify the cron expression and timezone are correct. The dialog shows when the next backup is scheduled.
-- Check the **History** tab to see if backups ran at unexpected times (timezone confusion).
-- Look at the Mini Infra server logs for scheduler errors.
-
-**Fix:** Correct the cron expression or timezone. If the scheduler seems stuck, restarting the Mini Infra server forces it to reload all backup configurations.

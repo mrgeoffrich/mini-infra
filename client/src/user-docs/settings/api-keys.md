@@ -1,76 +1,95 @@
 ---
-title: API Keys
-description: Creating, managing, rotating, and revoking API keys for programmatic access.
+title: Managing API Keys
+description: How to create, manage, and revoke API keys for programmatic access to Mini Infra.
 category: Settings
-order: 2
+order: 1
 tags:
   - api-keys
   - authentication
+  - settings
   - security
-  - administration
 ---
 
-# API Keys
+# Managing API Keys
 
-API keys provide programmatic access to Mini Infra's API. Use them in scripts, CI/CD pipelines, or external tools that need to interact with Mini Infra without a browser session.
-
-## Creating a key
-
-Navigate to **API Keys** under Administration. Click **Create API Key** and enter a descriptive name (e.g. "CI Pipeline" or "Monitoring Script").
-
-After creation, the full key is displayed once in a dialog. Copy it immediately. The key is hashed before storage, so Mini Infra cannot show it again.
-
-Keys follow the format `mk_` followed by 64 hexadecimal characters.
-
-## Using a key
-
-Include the key in HTTP requests using either header format:
-
-```
-Authorization: Bearer mk_your_key_here
-```
-
-or:
-
-```
-x-api-key: mk_your_key_here
-```
-
-The key authenticates the request with the same access level as a logged-in user.
+API keys let you access Mini Infra's API programmatically without Google OAuth. You can assign fine-grained permissions to each key so that automated tools and integrations only have the access they need.
 
 ## The API Keys page
 
-The page shows a statistics summary at the top: total keys, active keys, and when any key was last used.
+Go to [/api-keys](/api-keys) to view all API keys associated with your account. The page shows:
 
-The table lists each key with:
+- A summary of all keys (count, active keys)
+- A table of individual keys with their names, creation dates, and last-used timestamps
+- Action buttons to manage each key
 
-| Column | What it shows |
-|--------|--------------|
-| **Name** | The descriptive name you gave the key |
-| **Key Prefix** | The first few characters (`mk_xxxx...`) for identification |
-| **Status** | Active or Revoked |
-| **Created** | When the key was created |
-| **Last Used** | When the key last authenticated a request |
+## Creating an API key
 
-## Rotating a key
+Click **Create API Key** to go to [/api-keys/new](/api-keys/new).
 
-Click **Rotate** on a key to generate a new key value. The old key continues to work for a grace period, giving you time to update scripts and configurations that use it. After the grace period, only the new key works.
+### Key Details
 
-Rotation history is tracked — you can see when a key was last rotated.
+| Field | Required | Description |
+|-------|----------|-------------|
+| **Name** | Yes | A descriptive name (1–100 characters, alphanumeric plus spaces, hyphens, and underscores) |
 
-## Revoking a key
+### Permissions
 
-Click **Revoke** to disable a key. Revoked keys cannot authenticate requests. The key record is preserved in the table with a "Revoked" status for audit purposes.
+Select the permissions this key will have. You can:
 
-Revocation is immediate and irreversible. If you revoke a key by accident, create a new one.
+- **Choose a preset** — select a pre-defined permission set from the dropdown
+- **Customize manually** — expand permission groups and select individual permissions
 
-## Deleting a key
+Permissions are grouped by domain. Each domain has a `read` scope and a `write` scope (write implies read). A key with no permissions selected cannot be created.
 
-Click **Delete** to permanently remove a key from the system. Unlike revocation, this removes the key entirely — it won't appear in the table.
+### After creation
+
+Mini Infra shows the generated API key value **once**. Copy it immediately — you will never be able to see it again.
+
+An alert confirms: "This is the only time you'll be able to see this API key."
+
+## Using API keys
+
+Add the key to HTTP requests using either header:
+
+```
+Authorization: Bearer <your-api-key>
+```
+
+or
+
+```
+x-api-key: <your-api-key>
+```
+
+## Permission domains
+
+| Domain | Read scope | Write scope |
+|--------|-----------|------------|
+| Containers | View containers, logs | Start, stop, restart, delete |
+| Docker Resources | List networks, volumes | Remove networks, volumes |
+| Deployments | View configurations, history | Create, trigger, delete |
+| Environments | View environments, services | Create, update, delete |
+| Load Balancer | View frontends, backends | Create, update, delete |
+| PostgreSQL | View databases, backups | Create databases, trigger backups, restore |
+| TLS Certificates | View certificates | Issue, renew, revoke |
+| Settings | View all settings | Update settings, test connections |
+| Events | View events | Create, delete events |
+| API Keys | List keys | Create, revoke, delete keys |
+| User Preferences | View preferences | Update preferences |
+| AI Agent | — | Create agent sessions |
+| Self-Backups | View backup history | Trigger, delete backups |
+| Registry Credentials | View credentials | Create, update, delete |
+
+## Revoking and deleting keys
+
+From the API Keys page, use the actions on each key to:
+
+- **Revoke** — disables the key immediately (it can no longer be used)
+- **Delete** — permanently removes the key record
 
 ## What to watch out for
 
-- Keys provide full API access. Don't commit them to version control or share them in plain text.
-- The "Last Used" timestamp updates on each API request. Use it to identify unused keys that should be cleaned up.
-- If the API Key Secret is regenerated in Security settings, all existing keys stop working. New keys must be created.
-- There's no limit on the number of keys you can create, but each active key is a credential that needs to be managed. Create keys for specific purposes and revoke them when no longer needed.
+- **Save your key immediately after creation.** There is no way to retrieve the key value after you leave the creation page.
+- Keys are scoped to the user who created them. If that user account is removed, the keys are also removed.
+- Granting `settings:write` to a key effectively gives it access to all external service credentials. Only grant this permission to trusted automation.
+- The `*` (full access) scope bypasses all permission checks. Reserve it for admin tools only.

@@ -1,67 +1,103 @@
 ---
-title: Viewing Containers
-description: How the container list works, what each column means, and how to filter and sort.
+title: Viewing and Filtering Containers
+description: How to view, search, and filter Docker containers in Mini Infra.
 category: Containers
-order: 2
+order: 1
 tags:
   - containers
   - docker
-  - filtering
-  - sorting
-  - status
+  - monitoring
 ---
 
-# Viewing Containers
+# Viewing and Filtering Containers
 
-The Containers page shows every container on your Docker host — running, stopped, and paused. Navigate to **Containers** in the sidebar to open it.
+The **Containers** page at `/containers` gives you a real-time view of all Docker containers on your host. Data refreshes automatically every 5 seconds.
 
-## How it works
+## Page layout
 
-Mini Infra queries the Docker daemon directly through the Docker socket. The container list reflects the actual state of Docker on the host, not a cached copy. Data refreshes automatically every 30 seconds, and you can force an immediate refresh with the **Refresh** button in the top-right corner of the table.
+The Containers page has three tabs:
 
-## The container table
+| Tab | Contents |
+|-----|---------|
+| **Containers** | List of all Docker containers with status, image, and ports |
+| **Networks** | Docker networks with connected container counts |
+| **Volumes** | Docker volumes with mount points and usage status |
 
-The main **Containers** tab displays a paginated table with up to 50 containers per page. Each row shows:
+## Container table
 
-| Column | What it shows |
-|--------|--------------|
-| **Name** | The container name as assigned by Docker or the compose project |
-| **Status** | A coloured badge — green for Running, red for Exited, yellow for Paused, blue for Restarting |
-| **Image** | The image name and tag the container was started from |
-| **Ports** | Published port mappings (e.g. `8080:3000/tcp`). If a container publishes more than two ports, a popover shows the full list |
+Each row in the container table shows:
 
-Click any container name to open its detail page.
+| Column | Description |
+|--------|-------------|
+| **Container Name** | The name of the container |
+| **Status** | Current runtime status (see Status values below) |
+| **Image** | Docker image name and tag |
+| **Ports** | Published port mappings (hover for full list if more than 3) |
+| **Actions** | Context-specific actions (e.g., Manage for PostgreSQL containers) |
 
-## Filtering
+## Status values
 
-Two filters work together to narrow the list:
+| Status | Color | Meaning |
+|--------|-------|---------|
+| `Running` | Green | Container is active and executing |
+| `Stopped` | Gray | Container was stopped cleanly |
+| `Exited` | Red | Container exited (check exit code for errors) |
+| `Paused` | Yellow | Container processes are suspended |
+| `Restarting` | Blue | Container is in a restart loop |
 
-- **Search box** — Filters by container name or image name. Type part of a name and the table updates immediately.
-- **Status dropdown** — Show only containers in a specific state (running, stopped, etc.).
+## Filtering and searching
 
-These filters are additive. You can search for `api` with the status set to `running` to find only running containers with "api" in the name or image.
+Use the filter bar above the table to narrow down the container list:
 
-## Sorting
+- **Search by container name** — type to filter by name
+- **Search by image name** — type to filter by Docker image
+- **Status filter** — dropdown: All Statuses, Running, Stopped, Exited, Paused, Restarting
+- **Deployment filter** — dropdown: All Containers, Deployment-managed, Not managed
+- **Sort by** — sort by name, status, creation time, or image name (ascending or descending)
 
-Click any column header to sort the table by that column. Click the same header again to reverse the sort direction. The current sort state persists for the duration of your browser session.
+To clear all active filters, click the **Reset** button (appears when any filter is active). Active filters are shown as chips above the table.
 
-## Pagination
+## Quick filters
 
-When you have more than 50 containers, pagination controls appear at the bottom of the table. The display shows which range of containers you're viewing (e.g. "Showing 1 to 50 of 73 containers").
+At the top of the container card, **Running Only** and **All** buttons let you toggle between showing all containers and showing only running ones.
 
-## Networks and Volumes tabs
+## Container groups
 
-The Containers page has two additional tabs alongside the main container list:
+Containers are grouped in the table:
 
-- **Networks** — Lists all Docker networks with their driver type, scope, and which containers are attached to each.
-- **Volumes** — Lists all named Docker volumes with their size, creation time, and which containers reference them.
+- **Managed Postgres Servers** — PostgreSQL containers that have been added to Mini Infra's postgres management
+- **Environment name** — containers belonging to a named environment (production, staging, etc.)
+- **Unmanaged** — containers not associated with any environment
 
-## Auto-refresh
+Environment groups show a badge indicating the environment type (red for production, blue for others) and a container count.
 
-The container list fetches fresh data from Docker every 30 seconds. The refresh happens in the background without disrupting your current scroll position or filter state. To refresh immediately, click the **Refresh** button.
+## Networks tab
+
+The Networks tab lists all Docker networks with:
+
+- **Name** — network name
+- **Driver** — Docker network driver (bridge, overlay, host, etc.)
+- **Scope** — local or swarm
+- **Containers** — count of connected containers and their names
+- **Subnet** — IP subnet in CIDR notation
+
+You can delete networks that have no connected containers and are not system networks (bridge, host, none). A confirmation dialog appears before deletion.
+
+## Volumes tab
+
+The Volumes tab lists all Docker volumes with:
+
+- **Name** — volume name
+- **Driver** — Docker volume driver
+- **Mount Point** — path on the host filesystem
+- **Size** — disk usage (if inspected)
+- **In Use** — whether any container is currently using the volume
+
+You can **Inspect** a volume to load its size and file details, **View** its file listing, or **Delete** it if it has no connected containers.
 
 ## What to watch out for
 
-- Containers created outside Mini Infra (via `docker run` or `docker compose`) still appear in the list. Mini Infra sees everything Docker sees.
-- The status shown is the Docker-reported state. A container showing as "Running" might still be unhealthy at the application level if its health check is failing.
-- Port mappings only show published ports. Containers using host networking or exposing ports without publishing them won't display port information.
+- Deleting a network or volume is **permanent and cannot be undone**.
+- Volumes in use cannot be deleted until all containers using them are stopped and removed.
+- System networks (`bridge`, `host`, `none`) cannot be deleted.
+- Container data refreshes every 5 seconds automatically; the filter state is preserved between refreshes.
