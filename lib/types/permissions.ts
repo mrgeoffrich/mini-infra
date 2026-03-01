@@ -50,6 +50,28 @@ export interface PermissionPreset {
   permissions: PermissionScope[];
 }
 
+/** DB-backed permission preset record */
+export interface PermissionPresetRecord {
+  id: string;
+  name: string;
+  description: string;
+  permissions: PermissionScope[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePermissionPresetRequest {
+  name: string;
+  description: string;
+  permissions: PermissionScope[];
+}
+
+export interface UpdatePermissionPresetRequest {
+  name?: string;
+  description?: string;
+  permissions?: PermissionScope[];
+}
+
 // ====================
 // Permission Definitions
 // ====================

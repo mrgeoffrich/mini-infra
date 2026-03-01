@@ -13,9 +13,9 @@ import { getCurrentUserId } from "../middleware/auth";
 import { requirePermission } from "../middleware/auth";
 import {
   PERMISSION_GROUPS,
-  PERMISSION_PRESETS,
   ALL_PERMISSION_SCOPES,
 } from "@mini-infra/types";
+import { getAllPresets } from "../services/permission-preset-service";
 
 const logger = appLogger();
 import type { CreateApiKeyRequest } from "@mini-infra/types";
@@ -53,13 +53,19 @@ router.get(
   "/permissions",
   requirePermission("api-keys:read") as RequestHandler,
   (async (_req: Request, res: Response) => {
-    res.json({
-      success: true,
-      data: {
-        groups: PERMISSION_GROUPS,
-        presets: PERMISSION_PRESETS,
-      },
-    });
+    try {
+      const presets = await getAllPresets();
+      res.json({
+        success: true,
+        data: {
+          groups: PERMISSION_GROUPS,
+          presets,
+        },
+      });
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch permissions");
+      res.status(500).json({ error: "Internal server error", message: "Failed to fetch permissions" });
+    }
   }) as RequestHandler,
 );
 

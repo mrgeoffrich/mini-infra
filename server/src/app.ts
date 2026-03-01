@@ -145,6 +145,7 @@ import haproxyBackendsRoutes from "./routes/haproxy-backends";
 import githubAppSettingsRoutes from "./routes/github-app-settings";
 import githubAppResourcesRoutes from "./routes/github-app-resources";
 import agentRoutes from "./routes/agent";
+import permissionPresetsRoutes from "./routes/permission-presets";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -193,6 +194,7 @@ const routes = [
   { path: "/api/tls/certificates", router: tlsCertificatesRoutes, name: "tlsCertificatesRoutes" },
   { path: "/api/tls/renewals", router: tlsRenewalsRoutes, name: "tlsRenewalsRoutes" },
   { path: "/api/events", router: eventsRoutes, name: "eventsRoutes" },
+  { path: "/api/permission-presets", router: permissionPresetsRoutes, name: "permissionPresetsRoutes" },
 ];
 
 // Conditionally register agent routes when ANTHROPIC_API_KEY is configured

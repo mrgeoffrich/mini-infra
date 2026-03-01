@@ -20,6 +20,7 @@ import { BackupSchedulerService } from "./services/backup";
 import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
+import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey } from "./services/agent-api-key";
 import { AgentService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
@@ -332,6 +333,11 @@ const initializeServices = async () => {
       logger.warn({ error }, "Failed to initialize TLS renewal scheduler (non-fatal)");
       console.log("[STARTUP] ⚠ TLS renewal scheduler initialization failed (non-fatal)");
     }
+
+    // Seed default permission presets if not already present
+    console.log("[STARTUP] Seeding default permission presets...");
+    await seedDefaultPresets();
+    console.log("[STARTUP] ✓ Permission presets seeded");
 
     // Initialize development API key (development mode only)
     console.log("[STARTUP] Initializing development API key...");

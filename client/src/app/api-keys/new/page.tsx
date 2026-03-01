@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { useCreateApiKey } from "@/hooks/use-api-keys";
+import { usePermissionPresets } from "@/hooks/use-permission-presets";
 import { toast } from "sonner";
 import {
   IconLoader2,
@@ -50,10 +52,7 @@ import {
   IconEyeOff,
   IconArrowLeft,
 } from "@tabler/icons-react";
-import {
-  PERMISSION_GROUPS,
-  PERMISSION_PRESETS,
-} from "@mini-infra/types";
+import { PERMISSION_GROUPS } from "@mini-infra/types";
 import type { PermissionScope } from "@mini-infra/types";
 
 const CreateApiKeySchema = z.object({
@@ -74,12 +73,13 @@ export function CreateApiKeyPage() {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string>("full-access");
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [selectedPermissions, setSelectedPermissions] = useState<
     Set<PermissionScope>
   >(new Set());
 
   const createApiKeyMutation = useCreateApiKey();
+  const { data: dbPresets, isLoading: presetsLoading } = usePermissionPresets();
 
   const form = useForm<CreateApiKeyFormData>({
     resolver: zodResolver(CreateApiKeySchema),
@@ -88,18 +88,28 @@ export function CreateApiKeyPage() {
     },
   });
 
+  // Set default preset once DB presets load
   useEffect(() => {
-    if (selectedPreset === "custom") return;
-    const preset = PERMISSION_PRESETS.find((p) => p.id === selectedPreset);
+    if (dbPresets && dbPresets.length > 0 && !selectedPreset) {
+      const fullAccess = dbPresets.find((p) => p.permissions.includes("*"));
+      setSelectedPreset(fullAccess?.id ?? dbPresets[0].id);
+    }
+  }, [dbPresets, selectedPreset]);
+
+  // Apply selected preset's permissions
+  useEffect(() => {
+    if (selectedPreset === "custom" || !dbPresets) return;
+    const preset = dbPresets.find((p) => p.id === selectedPreset);
     if (preset) {
       setSelectedPermissions(new Set(preset.permissions));
     }
-  }, [selectedPreset]);
+  }, [selectedPreset, dbPresets]);
 
   const handleSubmit = async (data: CreateApiKeyFormData) => {
     try {
       let permissions: PermissionScope[] | null = null;
-      if (selectedPreset === "full-access") {
+      if (selectedPermissions.has("*")) {
+        // Wildcard = full access, send null for backwards compatibility
         permissions = null;
       } else {
         permissions = Array.from(selectedPermissions);
@@ -174,9 +184,8 @@ export function CreateApiKeyPage() {
     : "";
 
   const isCustom = selectedPreset === "custom";
-  const permissionCount = selectedPermissions.has("*")
-    ? "All"
-    : selectedPermissions.size.toString();
+  const isFullAccess = selectedPermissions.has("*");
+  const permissionCount = isFullAccess ? "All" : selectedPermissions.size.toString();
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -250,33 +259,32 @@ export function CreateApiKeyPage() {
                   {/* Preset selector */}
                   <div className="space-y-3">
                     <Label>Preset</Label>
-                    <Select
-                      value={selectedPreset}
-                      onValueChange={setSelectedPreset}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a permission preset" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PERMISSION_PRESETS.map((preset) => (
-                          <SelectItem key={preset.id} value={preset.id}>
-                            <div className="flex flex-col">
+                    {presetsLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Select
+                        value={selectedPreset}
+                        onValueChange={setSelectedPreset}
+                        disabled={presetsLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a permission preset" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dbPresets?.map((preset) => (
+                            <SelectItem key={preset.id} value={preset.id}>
                               <span>{preset.name}</span>
-                            </div>
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="custom">
+                            <span>Custom</span>
                           </SelectItem>
-                        ))}
-                        <SelectItem value="custom">
-                          <span>Custom</span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {!isCustom && selectedPreset !== "full-access" && (
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {!isCustom && !selectedPermissions.has("*") && (
                       <p className="text-sm text-muted-foreground">
-                        {
-                          PERMISSION_PRESETS.find(
-                            (p) => p.id === selectedPreset,
-                          )?.description
-                        }
+                        {dbPresets?.find((p) => p.id === selectedPreset)?.description}
                       </p>
                     )}
                     {isCustom && (
@@ -425,8 +433,8 @@ export function CreateApiKeyPage() {
                   type="submit"
                   disabled={
                     createApiKeyMutation.isPending ||
-                    (selectedPreset !== "full-access" &&
-                      selectedPermissions.size === 0)
+                    presetsLoading ||
+                    (!isFullAccess && selectedPermissions.size === 0)
                   }
                   className="flex items-center gap-2"
                 >

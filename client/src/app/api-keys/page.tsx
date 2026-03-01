@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { IconKey, IconPlus, IconAlertCircle } from "@tabler/icons-react";
+import { IconKey, IconPlus, IconAlertCircle, IconShieldCheck } from "@tabler/icons-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -131,12 +131,20 @@ export function ApiKeysPage() {
             </div>
           </div>
 
-          <Button asChild className="flex items-center gap-2">
-            <Link to="/api-keys/new">
-              <IconPlus className="h-4 w-4" />
-              Create API Key
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" className="flex items-center gap-2">
+              <Link to="/api-keys/presets">
+                <IconShieldCheck className="h-4 w-4" />
+                Manage Presets
+              </Link>
+            </Button>
+            <Button asChild className="flex items-center gap-2">
+              <Link to="/api-keys/new">
+                <IconPlus className="h-4 w-4" />
+                Create API Key
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
 

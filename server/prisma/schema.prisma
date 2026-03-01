@@ -917,6 +917,19 @@ model AcmeAccount {
   @@map("acme_accounts")
 }
 
+// Permission Preset Management
+
+model PermissionPreset {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  permissions String   // JSON array, e.g. ["containers:read","*"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("permission_presets")
+}
+
 // User Events - Centralized event tracking for long-running operations
 
 /// UserEvent model for tracking logs and outcomes of important long-running processes
