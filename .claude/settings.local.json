@@ -78,7 +78,13 @@
       "Bash(cross-env NODE_ENV=production node:*)",
       "Bash(timeout 15 cross-env NODE_ENV=production node:*)",
       "Bash(cross-env NODE_ENV=production timeout 15 node:*)",
-      "Bash(initial_migration.sql)"
+      "Bash(initial_migration.sql)",
+      "Bash(xargs ls:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": [],
