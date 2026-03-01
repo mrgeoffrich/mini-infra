@@ -6,10 +6,11 @@ description: |
 
 ## Purpose
 
-Produce a `docs/user-docs-structure.md` file that gives a complete, current picture of:
+Produce a `client/src/user-docs-structure/user-docs-structure.md` file that gives a complete, current picture of:
 - Every user-visible route in the app
 - Which routes already have help articles
 - Which routes are missing coverage
+- All extra (non-route) articles defined in `extra-docs-defined.md` and their coverage status
 - A proposed target structure for any missing articles
 
 This document becomes the source of truth for planning doc writing sessions. It is generated fresh each time this skill runs — don't worry about the previous version.
@@ -39,6 +40,14 @@ Walk `client/src/user-docs/` and for each `.md` file, read its frontmatter to ex
 
 Build a map of: **directory → list of files with their titles**.
 
+Also read `client/src/user-docs-structure/extra-docs-defined.md`. Parse each entry to extract:
+- The **file path** (from the `## path/to/file.md` heading)
+- The **title** (from the `**Title**:` field)
+- The **category** (from the `**Category**:` field)
+- The **content to cover** bullet list
+
+Build a list of extra-defined articles. For each, check whether its file already exists in `client/src/user-docs/`. Mark as ✅ exists or ❌ not yet created.
+
 ---
 
 ## Phase 3: Cross-reference
@@ -64,9 +73,10 @@ Generated: [today's date]
 ## Coverage Summary
 
 - Total user-visible routes: N
-- Fully covered: N ✅
-- Partially covered / inferred: N ⚠️
-- Missing coverage: N ❌
+- Routes fully covered: N ✅
+- Routes partially covered / inferred: N ⚠️
+- Routes missing coverage: N ❌
+- Extra defined articles (from extra-docs-defined.md): N total, N ✅ exist, N ❌ not yet created
 
 ---
 
@@ -82,6 +92,19 @@ Generated: [today's date]
 | `/deployments/new` | New Deployment | ❌ | — |
 
 [Repeat for each section]
+
+---
+
+## Extra Docs Coverage
+
+These articles are defined in `extra-docs-defined.md` and supplement the route-driven docs. They are not directly linked from a route `helpDoc` field.
+
+| File | Title | Category | Status |
+|------|-------|----------|--------|
+| `getting-started/navigating-the-dashboard.md` | Navigating the Dashboard | getting-started | ✅ |
+| `containers/troubleshooting.md` | Container Troubleshooting | containers | ❌ |
+
+[List all entries from extra-docs-defined.md with their status]
 
 ---
 
@@ -107,9 +130,19 @@ For each ❌ missing route, propose the article to create:
 
 ---
 
+## Extra Docs Still To Create
+
+Extra articles defined in `extra-docs-defined.md` that do not yet exist in `client/src/user-docs/`:
+
+| File | Title | Category |
+|------|-------|----------|
+| `containers/troubleshooting.md` | Container Troubleshooting | containers |
+
+---
+
 ## Orphaned Docs
 
-Docs that exist in `user-docs/` but are not referenced by any route in route-config.ts:
+Docs that exist in `user-docs/` but are not referenced by any route in route-config.ts AND are not listed in extra-docs-defined.md:
 
 | File | Title | Notes |
 |------|-------|-------|
@@ -120,6 +153,7 @@ Docs that exist in `user-docs/` but are not referenced by any route in route-con
 ## Notes
 
 - Write the file even if coverage is good — it's useful as a reference for the current state
-- Do not modify any files in `client/src/user-docs/` — this skill is read-only except for writing the structure doc
-- If `docs/` directory doesn't exist, create it
-- The "Proposed New Articles" section is the primary input for a follow-up doc-writing session using the `write-user-docs` skill
+- Do not modify any files in `client/src/user-docs/` or `client/src/user-docs-structure/extra-docs-defined.md` — this skill is read-only except for writing the structure doc
+- If `client/src/user-docs-structure/` doesn't exist, create it
+- A doc is only "orphaned" if it is not referenced by any route helpDoc AND is not listed in `extra-docs-defined.md` — extra-defined articles are intentional even without a route link
+- The "Proposed New Articles" and "Extra Docs Still To Create" sections together are the primary input for a follow-up doc-writing session using the `write-user-docs` skill
