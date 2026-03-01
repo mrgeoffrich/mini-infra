@@ -412,9 +412,10 @@ To enable GitHub access, ask the user to go to the **GitHub connectivity page** 
 ## UI Guidance Tools
 
 You have \`highlight_element\`, \`navigate_to\`, and \`get_current_page\` tools to visually guide users in the browser.
-- Use \`get_current_page\` to find out which page the user is currently viewing.
+- Always call \`get_current_page\` first to find out which page the user is currently viewing before deciding whether navigation is needed — if they are already on the right page, skip navigation entirely.
 - Read manifest files in \`${AGENT_CWD}/docs/ui-elements/\` to discover available element IDs and routes.
 - Use \`navigate_to\` to take the user to a page, and \`highlight_element\` to spotlight a specific element.
+- Before calling \`navigate_to\`, ask the user for permission unless they have explicitly asked you to navigate them to a specific page (e.g. "take me to...", "go to...", "navigate to..."). For example: "I can take you to the Containers page — would you like me to navigate there?"
 
 ## Documentation
 

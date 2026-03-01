@@ -18,6 +18,7 @@
     "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\"",
     "start": "cd server && npm start",
     "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
+    "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
     "format": "cd server && npm run format",
     "format:check": "cd server && npm run format:check"
   },
