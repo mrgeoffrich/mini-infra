@@ -7,6 +7,7 @@ import {
   getCurrentUserId,
 } from "../middleware/auth";
 import { getAgentService } from "../services/agent-service";
+import { agentConversationService } from "../services/agent-conversation-service";
 
 const logger = appLogger();
 const router = express.Router();
@@ -40,6 +41,7 @@ router.get(
 const createSessionSchema = z.object({
   message: z.string().min(1).max(4000),
   currentPath: z.string().max(500).optional(),
+  conversationId: z.string().optional(),
 });
 
 router.post(
@@ -71,8 +73,13 @@ router.post(
         return;
       }
 
-      const sessionId = await service.createSession(userId, parsed.data.message, parsed.data.currentPath);
-      res.status(201).json({ sessionId });
+      const result = await service.createSession(
+        userId,
+        parsed.data.message,
+        parsed.data.currentPath,
+        parsed.data.conversationId,
+      );
+      res.status(201).json({ sessionId: result.sessionId, conversationId: result.conversationId });
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : "Unknown error" },
@@ -285,6 +292,104 @@ router.delete(
       logger.error(
         { error: error instanceof Error ? error.message : "Unknown error" },
         "Failed to delete agent session",
+      );
+      next(error);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /conversations — list the authenticated user's conversations
+// ---------------------------------------------------------------------------
+
+router.get(
+  "/conversations",
+  requirePermission("agent:use"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: "Authentication required" });
+        return;
+      }
+
+      const limitParam = req.query.limit;
+      const limit = limitParam ? Math.min(parseInt(String(limitParam), 10) || 50, 200) : 50;
+
+      const conversations = await agentConversationService.listConversations(userId, limit);
+      res.json({ conversations });
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : "Unknown error" },
+        "Failed to list agent conversations",
+      );
+      next(error);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /conversations/:id — get messages for a conversation
+// ---------------------------------------------------------------------------
+
+router.get(
+  "/conversations/:id",
+  requirePermission("agent:use"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: "Authentication required" });
+        return;
+      }
+
+      const conversation = await agentConversationService.getConversationDetail(
+        req.params.id,
+        userId,
+      );
+
+      if (!conversation) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      res.json({ conversation });
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : "Unknown error" },
+        "Failed to get agent conversation",
+      );
+      next(error);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// DELETE /conversations/:id — delete a conversation
+// ---------------------------------------------------------------------------
+
+router.delete(
+  "/conversations/:id",
+  requirePermission("agent:use"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: "Authentication required" });
+        return;
+      }
+
+      const deleted = await agentConversationService.deleteConversation(req.params.id, userId);
+      if (!deleted) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : "Unknown error" },
+        "Failed to delete agent conversation",
       );
       next(error);
     }

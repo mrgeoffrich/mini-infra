@@ -4,10 +4,11 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { AgentChatHeader } from "./agent-chat-header";
 import { AgentChatMessages } from "./agent-chat-messages";
 import { AgentChatInput } from "./agent-chat-input";
+import { AgentChatHistory } from "./agent-chat-history";
 import { cn } from "@/lib/utils";
 
 export function AgentChatPanel() {
-  const { isOpen, agentEnabled } = useAgentChat();
+  const { isOpen, agentEnabled, isHistoryOpen } = useAgentChat();
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useSidebar();
 
   const previousSidebarState = useRef<boolean | null>(null);
@@ -36,20 +37,30 @@ export function AgentChatPanel() {
 
   if (!agentEnabled) return null;
 
+  // Total panel width: history (280px when open) + chat (420px)
+  const totalWidth = isOpen
+    ? isHistoryOpen
+      ? "w-[700px]"
+      : "w-[420px]"
+    : "w-0";
+
   return (
-    <aside
+    <div
       className={cn(
-        "sticky top-0 h-svh shrink-0 border-l bg-background transition-[width] duration-300 ease-in-out",
-        isOpen ? "w-[420px]" : "w-0 overflow-hidden",
+        "sticky top-0 flex h-svh shrink-0 transition-[width] duration-300 ease-in-out",
+        isOpen ? totalWidth : "w-0 overflow-hidden",
       )}
     >
       {isOpen && (
-        <div className="flex h-full w-[420px] flex-col">
-          <AgentChatHeader />
-          <AgentChatMessages />
-          <AgentChatInput />
-        </div>
+        <>
+          <AgentChatHistory />
+          <aside className="flex h-full w-[420px] shrink-0 flex-col border-l bg-background">
+            <AgentChatHeader />
+            <AgentChatMessages />
+            <AgentChatInput />
+          </aside>
+        </>
       )}
-    </aside>
+    </div>
   );
 }

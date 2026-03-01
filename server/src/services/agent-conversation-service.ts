@@ -1,0 +1,126 @@
+import prisma from "../lib/prisma";
+import { agentLogger } from "../lib/logger-factory";
+import type {
+  AgentConversationSummary,
+  AgentConversationDetail,
+  AgentPersistedMessage,
+  AgentMessageRole,
+} from "@mini-infra/types";
+
+const logger = agentLogger();
+
+export interface CreateMessageData {
+  conversationId: string;
+  role: AgentMessageRole;
+  content?: string;
+  toolId?: string;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolOutput?: string;
+  success?: boolean;
+  cost?: number;
+  duration?: number;
+  turns?: number;
+  sequence: number;
+}
+
+export class AgentConversationService {
+  async createConversation(userId: string, firstMessage: string): Promise<string> {
+    const title = firstMessage.slice(0, 80);
+    const conv = await prisma.agentConversation.create({
+      data: { userId, title },
+    });
+    logger.debug({ conversationId: conv.id, userId }, "Agent conversation created");
+    return conv.id;
+  }
+
+  async addMessage(data: CreateMessageData): Promise<void> {
+    await prisma.agentConversationMessage.create({
+      data: {
+        conversationId: data.conversationId,
+        role: data.role,
+        content: data.content ?? null,
+        toolId: data.toolId ?? null,
+        toolName: data.toolName ?? null,
+        toolInput: data.toolInput ? JSON.stringify(data.toolInput) : null,
+        toolOutput: data.toolOutput ?? null,
+        success: data.success ?? null,
+        cost: data.cost ?? null,
+        duration: data.duration ?? null,
+        turns: data.turns ?? null,
+        sequence: data.sequence,
+      },
+    });
+  }
+
+  async touchConversation(conversationId: string): Promise<void> {
+    await prisma.agentConversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() },
+    });
+  }
+
+  async listConversations(userId: string, limit = 50): Promise<AgentConversationSummary[]> {
+    const convs = await prisma.agentConversation.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    });
+    return convs.map((c) => ({
+      id: c.id,
+      userId: c.userId,
+      title: c.title,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    }));
+  }
+
+  async getConversationDetail(
+    conversationId: string,
+    userId: string,
+  ): Promise<AgentConversationDetail | null> {
+    const conv = await prisma.agentConversation.findFirst({
+      where: { id: conversationId, userId },
+      include: { messages: { orderBy: { sequence: "asc" } } },
+    });
+    if (!conv) return null;
+
+    const messages: AgentPersistedMessage[] = conv.messages.map((m) => ({
+      id: m.id,
+      conversationId: m.conversationId,
+      role: m.role as AgentMessageRole,
+      content: m.content,
+      toolId: m.toolId,
+      toolName: m.toolName,
+      toolInput: m.toolInput ? (JSON.parse(m.toolInput) as Record<string, unknown>) : null,
+      toolOutput: m.toolOutput,
+      success: m.success,
+      cost: m.cost,
+      duration: m.duration,
+      turns: m.turns,
+      sequence: m.sequence,
+      createdAt: m.createdAt.toISOString(),
+    }));
+
+    return {
+      id: conv.id,
+      userId: conv.userId,
+      title: conv.title,
+      createdAt: conv.createdAt.toISOString(),
+      updatedAt: conv.updatedAt.toISOString(),
+      messages,
+    };
+  }
+
+  async deleteConversation(conversationId: string, userId: string): Promise<boolean> {
+    const conv = await prisma.agentConversation.findFirst({
+      where: { id: conversationId, userId },
+    });
+    if (!conv) return false;
+    await prisma.agentConversation.delete({ where: { id: conversationId } });
+    logger.debug({ conversationId, userId }, "Agent conversation deleted");
+    return true;
+  }
+}
+
+export const agentConversationService = new AgentConversationService();

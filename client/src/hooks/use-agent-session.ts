@@ -5,6 +5,8 @@ import {
   SessionStatus,
   AgentSession,
 } from "../lib/agent-chat-types";
+import type { AgentPersistedMessage } from "@mini-infra/types";
+import { fetchConversationDetail } from "./use-agent-conversations";
 
 const REDACTED_THINKING_PLACEHOLDER = "Thinking content is redacted.";
 
@@ -24,8 +26,10 @@ interface UseAgentSessionResult {
   sessionStatus: SessionStatus;
   session: AgentSession | null;
   model: string | null;
+  activeConversationId: string | null;
   sendMessage: (message: string) => Promise<void>;
   startNewChat: () => void;
+  loadConversation: (conversationId: string, messages: ChatMessage[]) => void;
 }
 
 function asString(value: unknown): string | undefined {
@@ -76,18 +80,80 @@ function parseThinkingIdentity(
   return { assistantUuid, blockIndex };
 }
 
+/** Convert persisted DB messages back to ChatMessage objects for display. */
+export function persistedMessagesToChatMessages(
+  messages: AgentPersistedMessage[],
+): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  for (const m of messages) {
+    const timestamp = new Date(m.createdAt).getTime();
+    switch (m.role) {
+      case "user":
+        result.push({
+          id: m.id,
+          role: "user",
+          content: m.content ?? "",
+          timestamp,
+        });
+        break;
+      case "assistant":
+        result.push({
+          id: m.id,
+          role: "assistant",
+          content: m.content ?? "",
+          timestamp,
+        });
+        break;
+      case "tool_use":
+        result.push({
+          id: m.id,
+          role: "tool_use",
+          toolId: m.toolId ?? m.id,
+          toolName: m.toolName ?? "Tool",
+          input: m.toolInput ?? undefined,
+          output: m.toolOutput ?? undefined,
+          timestamp,
+        });
+        break;
+      case "error":
+        result.push({
+          id: m.id,
+          role: "error",
+          content: m.content ?? "An error occurred",
+          timestamp,
+        });
+        break;
+      case "result":
+        result.push({
+          id: m.id,
+          role: "result",
+          success: m.success ?? false,
+          cost: m.cost ?? undefined,
+          duration: m.duration ?? undefined,
+          turns: m.turns ?? undefined,
+          timestamp,
+        });
+        break;
+    }
+  }
+  return result;
+}
+
 export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
   const [session, setSession] = useState<AgentSession | null>(null);
   const [model, setModel] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptedRef = useRef(false);
   const streamingTextRef = useRef("");
   const thinkingMessageKeyToIdRef = useRef<Map<string, string>>(new Map());
+  // Track whether we've done the initial restore so we don't clobber user state
+  const hasRestoredRef = useRef(false);
 
   const closeEventSource = useCallback(() => {
     if (eventSourceRef.current) {
@@ -188,6 +254,40 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     };
   }, [closeEventSource]);
 
+  // Restore most recent conversation on mount (once only, before user interacts)
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreMostRecent() {
+      try {
+        const res = await fetch("/api/agent/conversations?limit=1", {
+          credentials: "include",
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { conversations: Array<{ id: string }> };
+        if (!data.conversations?.length || cancelled) return;
+
+        const latest = data.conversations[0];
+        const detail = await fetchConversationDetail(latest.id);
+        if (cancelled) return;
+
+        const restored = persistedMessagesToChatMessages(detail.messages);
+        if (!cancelled && !hasRestoredRef.current) {
+          hasRestoredRef.current = true;
+          setMessages(restored);
+          setActiveConversationId(latest.id);
+        }
+      } catch {
+        // Non-critical — silently ignore restore failures
+      }
+    }
+
+    void restoreMostRecent();
+    return () => {
+      cancelled = true;
+    };
+  }, []); // intentional: fire once on mount only
+
   // Notify backend when the user's route changes during an active session
   useEffect(() => {
     if (!session || !currentPath) return;
@@ -220,7 +320,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
       eventSource.onmessage = (event) => {
         try {
-          const parsed = parseAgentSseEvent(event.data);
+          const parsed = parseAgentSseEvent(event.data as string);
           if (!parsed) return;
           const { type, data } = parsed;
 
@@ -534,12 +634,16 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
       try {
         if (!session) {
-          // Create new session
+          // Create new session, optionally linked to an existing conversation
           const response = await fetch("/api/agent/sessions", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, currentPath }),
+            body: JSON.stringify({
+              message,
+              currentPath,
+              conversationId: activeConversationId ?? undefined,
+            }),
           });
 
           if (!response.ok) {
@@ -547,9 +651,14 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
             throw new Error(`Failed to create session: ${errorText}`);
           }
 
-          const data = await response.json();
-          const newSession: AgentSession = { sessionId: data.sessionId };
+          const data = (await response.json()) as { sessionId: string; conversationId: string };
+          const newSession: AgentSession = {
+            sessionId: data.sessionId,
+            conversationId: data.conversationId,
+          };
           setSession(newSession);
+          setActiveConversationId(data.conversationId);
+          hasRestoredRef.current = true;
           connectSSE(newSession.sessionId);
         } else {
           // Send follow-up message
@@ -589,7 +698,8 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
         setSessionStatus("error");
       }
     },
-    [session, connectSSE, markAllThinkingComplete, clearThinkingIndex],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentPath is intentionally omitted to avoid recreating on every navigation
+    [session, activeConversationId, connectSSE, markAllThinkingComplete, clearThinkingIndex],
   );
 
   const startNewChat = useCallback(() => {
@@ -612,7 +722,34 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     setSessionStatus("idle");
     setSession(null);
     setModel(null);
+    setActiveConversationId(null);
+    hasRestoredRef.current = true; // prevent restore from firing again
   }, [session, closeEventSource, clearThinkingIndex]);
+
+  const loadConversation = useCallback(
+    (conversationId: string, msgs: ChatMessage[]) => {
+      closeEventSource();
+
+      // Delete any active session
+      if (session) {
+        fetch(`/api/agent/sessions/${session.sessionId}`, {
+          method: "DELETE",
+          credentials: "include",
+        }).catch(() => {});
+      }
+
+      setMessages(msgs);
+      streamingTextRef.current = "";
+      setStreamingText("");
+      clearThinkingIndex();
+      setSession(null);
+      setModel(null);
+      setSessionStatus("idle");
+      setActiveConversationId(conversationId);
+      hasRestoredRef.current = true;
+    },
+    [session, closeEventSource, clearThinkingIndex],
+  );
 
   return {
     messages,
@@ -620,7 +757,9 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     sessionStatus,
     session,
     model,
+    activeConversationId,
     sendMessage,
     startNewChat,
+    loadConversation,
   };
 }
