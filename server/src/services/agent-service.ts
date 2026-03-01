@@ -51,6 +51,8 @@ interface AgentSession {
   createdAt: Date;
   running: boolean;
   currentPath: string;
+  /** Stable API message ID for the current streaming turn, set from message_start. */
+  currentTurnUuid: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +536,7 @@ class AgentService {
       createdAt: new Date(),
       running: true,
       currentPath: currentPath ?? "",
+      currentTurnUuid: null,
     };
 
     this.sessions.set(sessionId, session);
@@ -761,7 +764,19 @@ class AgentService {
       case "stream_event": {
         const streamMsg = msg as Extract<SDKMessage, { type: "stream_event" }>;
         const event = streamMsg.event;
-        const assistantUuid = streamMsg.uuid;
+
+        // Capture the stable API message ID from message_start so all
+        // thinking events in a turn share the same UUID — the SDK docs note
+        // that each stream_event wrapper may carry its own unique uuid, so
+        // we cannot rely on streamMsg.uuid being consistent across events.
+        if (event.type === "message_start") {
+          const startEvent = event as { type: "message_start"; message?: { id?: string } };
+          session.currentTurnUuid = startEvent.message?.id ?? streamMsg.uuid;
+        }
+
+        // Use the stable turn UUID established at message_start; fall back to
+        // the per-event uuid only when no turn has started yet.
+        const assistantUuid = session.currentTurnUuid ?? streamMsg.uuid;
 
         if (event.type === "content_block_delta") {
           const delta = event.delta as {
@@ -819,6 +834,8 @@ class AgentService {
             type: "assistant_message_stop",
             data: { assistantUuid },
           });
+          // Clear the stable turn UUID; the next turn will set a new one.
+          session.currentTurnUuid = null;
         }
         break;
       }
@@ -827,13 +844,22 @@ class AgentService {
         const assistantMsg = msg as Extract<SDKMessage, { type: "assistant" }>;
         const content = assistantMsg.message?.content;
         if (Array.isArray(content)) {
+          // Use the turn UUID that was established during streaming so that
+          // thinking_complete can find the blocks already in the client's
+          // messages list.  Fall back to the SDK message uuid when no streaming
+          // turn preceded this message (e.g. thinking is disabled).
+          const assistantUuid = session.currentTurnUuid ?? assistantMsg.uuid;
+          // Now that we have emitted the final assistant message, clear the
+          // turn UUID so it cannot leak into the next turn.
+          session.currentTurnUuid = null;
+
           for (const [blockIndex, block] of content.entries()) {
             if (block.type === "text") {
               this.broadcast(session, {
                 type: "text",
                 data: {
                   content: (block as { type: "text"; text: string }).text,
-                  uuid: assistantMsg.uuid,
+                  uuid: assistantUuid,
                 },
               });
             } else if (block.type === "thinking") {
@@ -845,7 +871,7 @@ class AgentService {
               this.broadcast(session, {
                 type: "thinking_complete",
                 data: {
-                  assistantUuid: assistantMsg.uuid,
+                  assistantUuid,
                   blockIndex,
                   content: thinkingBlock.thinking,
                   signature: thinkingBlock.signature,
@@ -855,7 +881,7 @@ class AgentService {
               this.broadcast(session, {
                 type: "thinking_redacted",
                 data: {
-                  assistantUuid: assistantMsg.uuid,
+                  assistantUuid,
                   blockIndex,
                   content: "Thinking content is redacted.",
                 },

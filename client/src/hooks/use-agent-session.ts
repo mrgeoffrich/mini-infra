@@ -148,10 +148,16 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
         const existingIndex = prev.findIndex((msg) => {
           if (msg.role !== "thinking") return false;
           if (mappedId) return msg.id === mappedId;
-          return (
+          // Exact match: same turn UUID and block index.
+          if (
             msg.assistantUuid === identity.assistantUuid &&
             msg.blockIndex === identity.blockIndex
-          );
+          ) return true;
+          // Fallback: if the turn UUID differs (e.g. SDK assigns per-event
+          // UUIDs) match any currently-streaming block at this index.  A
+          // streaming block can only belong to the current turn so there is
+          // no risk of matching a completed block from an earlier turn.
+          return msg.status === "streaming" && msg.blockIndex === identity.blockIndex;
         });
 
         const existingMessage =

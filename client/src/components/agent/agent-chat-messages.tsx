@@ -1,5 +1,12 @@
 import { useEffect, useRef, useCallback } from "react";
-import { IconAlertTriangle, IconChevronRight } from "@tabler/icons-react";
+import type { ComponentType } from "react";
+import {
+  IconAlertTriangle,
+  IconChevronRight,
+  IconNavigation,
+  IconFocusCentered,
+  IconEye,
+} from "@tabler/icons-react";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { DocContent } from "@/components/help/DocContent";
 import { AgentChatWelcome } from "./agent-chat-welcome";
@@ -16,8 +23,49 @@ import type {
   ChatMessageToolUse,
 } from "@/lib/agent-chat-types";
 
-function parseToolDisplay(msg: ChatMessageToolUse) {
+interface ToolDisplay {
+  method: string;
+  endpoint: string;
+  detail: string;
+  color: string;
+  icon?: ComponentType<{ className?: string }>;
+}
+
+function parseToolDisplay(msg: ChatMessageToolUse): ToolDisplay {
   const input = msg.input as Record<string, unknown> | undefined;
+
+  // MCP UI tools
+  if (msg.toolName === "mcp__mini-infra-ui__navigate_to") {
+    const path = (input?.path as string) ?? "";
+    return {
+      method: "Navigate",
+      endpoint: path,
+      detail: JSON.stringify(input, null, 2),
+      color: "bg-indigo-600",
+      icon: IconNavigation,
+    };
+  }
+
+  if (msg.toolName === "mcp__mini-infra-ui__highlight_element") {
+    const elementId = (input?.elementId as string) ?? "";
+    return {
+      method: "Highlight",
+      endpoint: elementId,
+      detail: JSON.stringify(input, null, 2),
+      color: "bg-amber-600",
+      icon: IconFocusCentered,
+    };
+  }
+
+  if (msg.toolName === "mcp__mini-infra-ui__get_current_page") {
+    return {
+      method: "Get Page",
+      endpoint: "",
+      detail: "",
+      color: "bg-teal-600",
+      icon: IconEye,
+    };
+  }
 
   // For Bash tool with a command
   if (msg.toolName === "Bash" && input?.command) {
@@ -83,7 +131,7 @@ function methodColor(method: string): string {
 }
 
 function ToolUseBlock({ msg }: { msg: ChatMessageToolUse }) {
-  const { method, endpoint, detail, color } = parseToolDisplay(msg);
+  const { method, endpoint, detail, color, icon: Icon } = parseToolDisplay(msg);
 
   return (
     <Collapsible>
@@ -91,10 +139,11 @@ function ToolUseBlock({ msg }: { msg: ChatMessageToolUse }) {
         <IconChevronRight className="size-3 shrink-0 transition-transform [[data-state=open]_&]:rotate-90" />
         <Badge
           className={cn(
-            "text-[10px] px-1.5 py-0 text-white border-0 shrink-0",
+            "text-[10px] px-1.5 py-0 text-white border-0 shrink-0 flex items-center gap-1",
             color,
           )}
         >
+          {Icon && <Icon className="size-3" />}
           {method}
         </Badge>
         <span className="truncate font-mono text-muted-foreground">
@@ -152,11 +201,6 @@ function ThinkingBlock({ msg }: { msg: ChatMessageThinking }) {
         <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-48">
           {content || "Waiting for thinking content..."}
         </pre>
-        {msg.signature && (
-          <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-32">
-            {msg.signature}
-          </pre>
-        )}
       </CollapsibleContent>
     </Collapsible>
   );
