@@ -31,8 +31,24 @@ export class DockerConfigService extends ConfigurationService {
       const dockerHost = settings?.host || (await this.get("host"));
       const apiVersion = settings?.version || (await this.get("apiVersion"));
 
-      // Use default if no host configured
-      const host = dockerHost || this.getDefaultDockerHost();
+      // Fail if no host is configured - require explicit configuration
+      if (!dockerHost) {
+        const errorMessage = "Docker host not configured";
+        await this.recordConnectivityStatus(
+          "failed",
+          Date.now() - startTime,
+          errorMessage,
+          "NOT_CONFIGURED",
+        );
+        return {
+          isValid: false,
+          message: errorMessage,
+          errorCode: "NOT_CONFIGURED",
+          responseTimeMs: Date.now() - startTime,
+        };
+      }
+
+      const host = dockerHost;
 
       dockerExecutorLogger().info(
         {
@@ -208,8 +224,16 @@ export class DockerConfigService extends ConfigurationService {
     host?: string,
     apiVersion?: string,
   ): Promise<ValidationResult> {
-    const testHost =
-      host || (await this.get("host")) || this.getDefaultDockerHost();
+    const testHost = host || (await this.get("host"));
+
+    if (!testHost) {
+      return {
+        isValid: false,
+        message: "Docker host not configured",
+        errorCode: "NOT_CONFIGURED",
+        responseTimeMs: 0,
+      };
+    }
     const testApiVersion = apiVersion || (await this.get("apiVersion"));
 
     const startTime = Date.now();
@@ -358,25 +382,17 @@ export class DockerConfigService extends ConfigurationService {
    */
   private async getDockerClient(): Promise<Docker> {
     if (!this.docker) {
-      const host = (await this.get("host")) || this.getDefaultDockerHost();
+      const host = await this.get("host");
+      if (!host) {
+        throw new Error("Docker host not configured");
+      }
       const apiVersion = await this.get("apiVersion");
       this.docker = this.createDockerClient(host, apiVersion);
     }
     return this.docker;
   }
 
-  /**
-   * Get default Docker host based on platform
-   */
-  private getDefaultDockerHost(): string {
-    if (process.platform === "win32") {
-      // Windows: Use named pipe for Docker Desktop
-      return "//./pipe/docker_engine";
-    } else {
-      // Unix/Linux/Mac: Use Unix socket
-      return "/var/run/docker.sock";
-    }
-  }
+
 
   /**
    * Map Docker errors to connectivity status

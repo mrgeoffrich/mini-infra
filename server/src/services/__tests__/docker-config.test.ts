@@ -77,11 +77,41 @@ describe("DockerConfigService", () => {
   });
 
   describe("validate", () => {
-    it("should validate Docker connectivity successfully", async () => {
-      // Mock settings retrieval
+    it("should fail validation when no host is configured", async () => {
+      // Mock settings retrieval - no host configured
       mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce(null) // host setting not found
+        .mockResolvedValueOnce(null); // apiVersion setting not found
+
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
+
+      const result: ValidationResult = await dockerConfigService.validate();
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toBe("Docker host not configured");
+      expect(result.errorCode).toBe("NOT_CONFIGURED");
+
+      // Verify failed connectivity status was recorded
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            service: "docker",
+            status: "failed",
+            errorMessage: "Docker host not configured",
+            errorCode: "NOT_CONFIGURED",
+          }),
+        }),
+      );
+    });
+
+    it("should validate Docker connectivity successfully with configured host", async () => {
+      // Mock settings retrieval with configured host
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: "/var/run/docker.sock",
+        }) // host setting
         .mockResolvedValueOnce(null); // apiVersion setting not found
 
       // Mock successful Docker operations
@@ -129,7 +159,9 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker ping timeout", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn()
+        .mockResolvedValueOnce({ value: "/var/run/docker.sock" })
+        .mockResolvedValueOnce(null);
 
       // Mock timeout scenario by directly rejecting with timeout error
       mockDocker.ping.mockRejectedValue(new Error("Docker API timeout"));
@@ -144,7 +176,9 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker connection refused error", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn()
+        .mockResolvedValueOnce({ value: "/var/run/docker.sock" })
+        .mockResolvedValueOnce(null);
 
       const connectionError = new Error("connect ECONNREFUSED");
       (connectionError as any).code = "ECONNREFUSED";
@@ -212,11 +246,15 @@ describe("DockerConfigService", () => {
     });
 
     it("should handle Docker info/version API errors gracefully", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
+      mockPrisma.systemSettings.findUnique = vi.fn()
+        .mockResolvedValueOnce({ value: "/var/run/docker.sock" })
+        .mockResolvedValueOnce(null);
 
       mockDocker.ping.mockResolvedValue(true);
       mockDocker.info.mockRejectedValue(new Error("Docker info failed"));
       mockDocker.version.mockRejectedValue(new Error("Docker version failed"));
+
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await dockerConfigService.validate();
 
@@ -354,11 +392,21 @@ describe("DockerConfigService", () => {
       });
     });
 
+    it("should fail when no host configured and no params provided", async () => {
+      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue(null);
+
+      const result = await dockerConfigService.testConnection();
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toBe("Docker host not configured");
+      expect(result.errorCode).toBe("NOT_CONFIGURED");
+    });
+
     it("should handle connection test timeout", async () => {
       // Mock timeout scenario by directly rejecting with timeout error
       mockDocker.ping.mockRejectedValue(new Error("Connection timeout"));
 
-      const result = await dockerConfigService.testConnection();
+      const result = await dockerConfigService.testConnection("tcp://localhost:2375");
 
       expect(result.isValid).toBe(false);
       expect(result.message).toContain("Connection timeout");
@@ -436,36 +484,6 @@ describe("DockerConfigService", () => {
         host: "localhost",
         port: 2375,
         protocol: "http",
-      });
-    });
-  });
-
-  describe("getDefaultDockerHost", () => {
-    it("should return Windows pipe for win32 platform", () => {
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", {
-        value: "win32",
-      });
-
-      const host = (dockerConfigService as any).getDefaultDockerHost();
-      expect(host).toBe("//./pipe/docker_engine");
-
-      Object.defineProperty(process, "platform", {
-        value: originalPlatform,
-      });
-    });
-
-    it("should return Unix socket for non-Windows platforms", () => {
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", {
-        value: "linux",
-      });
-
-      const host = (dockerConfigService as any).getDefaultDockerHost();
-      expect(host).toBe("/var/run/docker.sock");
-
-      Object.defineProperty(process, "platform", {
-        value: originalPlatform,
       });
     });
   });

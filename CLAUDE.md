@@ -77,7 +77,7 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Package Manager**: npm with workspaces
 - **Linting**: ESLint 9.33.0+ with TypeScript ESLint 8.39.0+
 - **Code Formatting**: Prettier 3.6.2
-- **Testing**: Jest 30.1.1 with Supertest 7.1.4 for API testing
+- **Testing**: Vitest 4.x with Supertest 7.1.4 for API testing
 - **Build & Development**:
   - tsx 3.12.7 for TypeScript execution and watching
   - cross-env 10.0.0 for cross-platform environment variables
@@ -190,10 +190,10 @@ The backend implements a sophisticated service layer with dependency injection, 
 - `npm run dev` - Start development server with hot reload (tsx watch)
 - `npm run build` - Build TypeScript to JavaScript
 - `npm start` - Start production server
-- `npm test` - Run Jest test suite
+- `npm test` - Run Vitest test suite
 - `npm run test:watch` - Run tests in watch mode
 - `npm run test:coverage` - Run tests with coverage report
-- `npx jest <filename>` - Run a single test file (e.g., `npx jest src/__tests__/environment-manager.test.ts`)
+- `npx vitest run <filename>` - Run a single test file (e.g., `npx vitest run src/__tests__/environment-manager.test.ts`)
 - `npm run lint` - Run ESLint on TypeScript files
 - `npm run lint:fix` - Run ESLint with auto-fix
 - `npm run format` - Format code with Prettier
