@@ -41,7 +41,7 @@ router.get(
 const createSessionSchema = z.object({
   message: z.string().min(1).max(4000),
   currentPath: z.string().max(500).optional(),
-  conversationId: z.string().optional(),
+  conversationId: z.string().min(1).max(100).optional(),
 });
 
 router.post(

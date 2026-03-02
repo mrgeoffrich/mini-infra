@@ -1,5 +1,6 @@
 import { IconTrash, IconMessageCircle } from "@tabler/icons-react";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -74,12 +75,16 @@ export function AgentChatHistory() {
       const msgs = persistedMessagesToChatMessages(detail.messages);
       loadConversation(conversationId, msgs);
     } catch {
-      // Silently ignore — the conversation may have been deleted
+      toast.error("Failed to load conversation");
     }
   }
 
   async function handleDelete(conversationId: string) {
-    await deleteConversation(conversationId);
+    try {
+      await deleteConversation(conversationId);
+    } catch {
+      toast.error("Failed to delete conversation");
+    }
   }
 
   return (

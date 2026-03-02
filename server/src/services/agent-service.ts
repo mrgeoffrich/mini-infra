@@ -554,9 +554,10 @@ class AgentService {
       );
       if (existing) {
         conversationId = existingConversationId;
-        // Start sequence after the last persisted message so resumed
+        // Start sequence after the highest persisted sequence so resumed
         // conversations never produce duplicate or out-of-order sequence numbers
-        initialSequence = existing.messages.length;
+        const maxSeq = existing.messages.reduce((max, m) => Math.max(max, m.sequence), -1);
+        initialSequence = maxSeq + 1;
       } else {
         // Supplied conversationId doesn't belong to this user — start fresh
         conversationId = await agentConversationService.createConversation(userId, message);
@@ -727,9 +728,17 @@ class AgentService {
     const attempt = (tries: number): void => {
       agentConversationService
         .addMessage(messageData)
-        .then(() => agentConversationService.touchConversation(session.conversationId))
         .then(() => {
           session.pendingPersistCount--;
+          // Touch is best-effort metadata only; never retry addMessage based on touch failures.
+          void agentConversationService
+            .touchConversation(session.conversationId)
+            .catch((touchErr: unknown) => {
+              logger.warn(
+                { touchErr, sessionId: session.id, conversationId: session.conversationId },
+                "Failed to touch agent conversation updatedAt",
+              );
+            });
         })
         .catch((err: unknown) => {
           if (tries < 3) {
