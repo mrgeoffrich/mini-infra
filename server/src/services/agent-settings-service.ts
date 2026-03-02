@@ -2,7 +2,7 @@ import fs from "fs";
 import prisma from "../lib/prisma";
 import { agentLogger } from "../lib/logger-factory";
 import { agentConfig } from "../lib/config-new";
-import { githubAppService } from "./github-app-service";
+import { githubAppService } from "./github-app";
 import {
   AgentService,
   setAgentService,

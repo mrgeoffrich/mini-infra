@@ -14,7 +14,7 @@ import { agentLogger } from "../lib/logger-factory";
 import appConfig, { agentConfig } from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
 import { createUiToolsMcpServer } from "./agent-ui-tools";
-import { githubAppService } from "./github-app-service";
+import { githubAppService } from "./github-app";
 import { agentConversationService } from "./agent-conversation-service";
 import { getEffectiveModel } from "./agent-settings-service";
 

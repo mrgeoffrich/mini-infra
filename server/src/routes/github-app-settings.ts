@@ -9,7 +9,7 @@ import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
-import { githubAppService } from "../services/github-app-service";
+import { githubAppService } from "../services/github-app";
 
 const router = express.Router();
 
