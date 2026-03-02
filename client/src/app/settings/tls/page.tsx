@@ -59,10 +59,10 @@ export default function TlsSettingsPage() {
     },
   });
 
-  // Update form when settings load
+  // Update form when settings load, merging with defaults so unset fields keep their default values
   useEffect(() => {
     if (settings) {
-      form.reset(settings);
+      form.reset({ ...form.formState.defaultValues, ...settings });
     }
   }, [settings, form]);
 

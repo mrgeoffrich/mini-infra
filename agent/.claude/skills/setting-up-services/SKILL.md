@@ -204,7 +204,7 @@ Still on the `/connectivity-azure` page, below the container list, there is a **
 
 **What it does:** Manages SSL/TLS certificates using ACME providers (Let's Encrypt, etc.), stores them in Azure Blob Storage, and deploys them to HAProxy.
 
-**Page:** `/settings/tls`
+**Page:** `/settings-tls`
 
 **Prerequisites:** Azure Storage must be configured first. Cloudflare is needed if using DNS challenges.
 
@@ -239,7 +239,7 @@ Still on the `/connectivity-azure` page, below the container list, there is a **
 
 **What it does:** Automatically backs up Mini Infra's own SQLite database to Azure Blob Storage on a schedule.
 
-**Page:** `/settings/self-backup`
+**Page:** `/settings-self-backup`
 
 **Prerequisites:** Azure Storage must be configured first.
 
