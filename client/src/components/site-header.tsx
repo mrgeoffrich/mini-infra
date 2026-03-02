@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -8,12 +9,15 @@ import {
   IconBrandGithub,
   IconDatabase,
   IconHelp,
+  IconRobot,
+  IconX,
 } from "@tabler/icons-react";
 import {
   useConnectivityStatus,
   ConnectivityService,
 } from "@/hooks/use-settings";
 import { useBackupHealth } from "@/hooks/use-self-backup";
+import { useAgentChat } from "@/hooks/use-agent-chat";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { useCurrentPageTitle, usePageTitle } from "@/hooks/use-page-title";
 import { getHelpDocForRoute } from "@/lib/route-config";
@@ -175,6 +179,80 @@ function HelpButton() {
   );
 }
 
+// Assisted setup button - appears when AI agent is available and services are disconnected
+const ASSISTED_SETUP_DISMISSED_KEY = "assisted-setup-dismissed";
+
+function AssistedSetupButton() {
+  const [dismissed, setDismissed] = useState(
+    () => sessionStorage.getItem(ASSISTED_SETUP_DISMISSED_KEY) === "true"
+  );
+  const { agentEnabled, setIsOpen, sendMessage, startNewChat } =
+    useAgentChat();
+
+  const { data: dockerData } = useConnectivityStatus({
+    filters: { service: "docker" },
+    limit: 1,
+  });
+  const { data: cloudflareData } = useConnectivityStatus({
+    filters: { service: "cloudflare" },
+    limit: 1,
+  });
+  const { data: azureData } = useConnectivityStatus({
+    filters: { service: "azure" },
+    limit: 1,
+  });
+  const { data: githubData } = useConnectivityStatus({
+    filters: { service: "github-app" },
+    limit: 1,
+  });
+
+  const hasDisconnected = [dockerData, cloudflareData, azureData, githubData].some(
+    (data) => data?.data?.[0] && data.data[0].status !== "connected"
+  );
+
+  if (dismissed || !agentEnabled || !hasDisconnected) {
+    return null;
+  }
+
+  const handleClick = () => {
+    startNewChat();
+    setIsOpen(true);
+    sendMessage("Help me set up my disconnected services");
+  };
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    sessionStorage.setItem(ASSISTED_SETUP_DISMISSED_KEY, "true");
+    setDismissed(true);
+  };
+
+  return (
+    <>
+      <Separator
+        orientation="vertical"
+        className="mx-1 data-[orientation=vertical]:h-4"
+      />
+      <div className="flex items-center">
+        <button
+          onClick={handleClick}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors cursor-pointer"
+          title="Open AI assistant to help configure disconnected services"
+        >
+          <IconRobot className="size-4" />
+          <span className="hidden sm:inline">Assisted Setup</span>
+        </button>
+        <button
+          onClick={handleDismiss}
+          className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+          title="Dismiss"
+        >
+          <IconX className="size-3.5" />
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function SiteHeader() {
   const location = useLocation();
   const pageTitle = useCurrentPageTitle();
@@ -220,6 +298,7 @@ export function SiteHeader() {
               label="GitHub"
             />
             <BackupHealthIndicator />
+            <AssistedSetupButton />
             <HelpButton />
           </div>
         </div>
