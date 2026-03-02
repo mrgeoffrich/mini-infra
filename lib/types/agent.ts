@@ -35,3 +35,41 @@ export interface AgentConversationSummary {
 export interface AgentConversationDetail extends AgentConversationSummary {
   messages: AgentPersistedMessage[];
 }
+
+// Agent settings types
+
+export type AgentConfigSource = "environment" | "database" | "default" | "none";
+
+export interface AgentSettingsResponse {
+  apiKey: {
+    configured: boolean;
+    source: AgentConfigSource;
+    maskedKey: string | null; // e.g. "sk-ant-...abcd"
+  };
+  model: {
+    current: string;
+    source: AgentConfigSource;
+    available: { id: string; label: string }[];
+  };
+  capabilities: {
+    docker: { available: boolean; socketPath: string };
+    github: { available: boolean };
+    api: { available: boolean };
+  };
+  advanced: {
+    thinking: string;
+    effort: string;
+    maxTurns: number;
+  };
+}
+
+export interface UpdateAgentSettingsRequest {
+  apiKey?: string;
+  model?: string;
+}
+
+export interface AgentApiKeyValidationResponse {
+  success: boolean;
+  valid: boolean;
+  message: string;
+}

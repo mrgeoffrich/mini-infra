@@ -10,6 +10,7 @@ import {
   IconDatabase,
   IconKey,
   IconNetwork,
+  IconRobot,
   IconRocket,
   IconServer,
   IconSettings,
@@ -348,6 +349,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "TLS certificate configuration",
+  },
+
+  "/settings-ai-assistant": {
+    path: "/settings-ai-assistant",
+    title: "AI Assistant",
+    breadcrumbLabel: "AI Assistant",
+    icon: IconRobot,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "AI assistant API key, model, and capabilities",
   },
 
   "/bug-report-settings": {

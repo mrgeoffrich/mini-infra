@@ -39,6 +39,7 @@ import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
 import CertificatesPage from "@/app/certificates/page";
 import CertificateDetailsPage from "@/app/certificates/[id]/page";
 import TlsSettingsPage from "@/app/settings/tls/page";
+import AiAssistantSettingsPage from "@/app/settings/ai-assistant/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
 import FrontendsListPage from "@/app/haproxy/frontends/page";
 import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
@@ -236,6 +237,10 @@ export const router = createBrowserRouter([
       {
         path: "settings-tls",
         element: <TlsSettingsPage />,
+      },
+      {
+        path: "settings-ai-assistant",
+        element: <AiAssistantSettingsPage />,
       },
       {
         path: "bug-report-settings",

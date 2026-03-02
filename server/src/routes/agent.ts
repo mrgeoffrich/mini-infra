@@ -8,9 +8,13 @@ import {
 } from "../middleware/auth";
 import { getAgentService } from "../services/agent-service";
 import { agentConversationService } from "../services/agent-conversation-service";
+import agentSettingsRouter from "./agent-settings";
 
 const logger = appLogger();
 const router = express.Router();
+
+// Mount settings sub-router
+router.use("/settings", agentSettingsRouter);
 
 // ---------------------------------------------------------------------------
 // Helpers

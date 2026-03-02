@@ -197,10 +197,9 @@ const routes = [
   { path: "/api/permission-presets", router: permissionPresetsRoutes, name: "permissionPresetsRoutes" },
 ];
 
-// Conditionally register agent routes when ANTHROPIC_API_KEY is configured
-if (process.env.ANTHROPIC_API_KEY) {
-  routes.push({ path: "/api/agent", router: agentRoutes, name: "agentRoutes" });
-}
+// Agent routes are always registered — the settings endpoint must be accessible
+// to configure the API key, and session endpoints return 503 when the service is null.
+routes.push({ path: "/api/agent", router: agentRoutes, name: "agentRoutes" });
 
 for (const route of routes) {
   try {

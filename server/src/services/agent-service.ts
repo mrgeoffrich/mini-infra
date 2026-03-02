@@ -16,6 +16,7 @@ import { API_REFERENCE } from "./agent-api-reference";
 import { createUiToolsMcpServer } from "./agent-ui-tools";
 import { githubAppService } from "./github-app-service";
 import { agentConversationService } from "./agent-conversation-service";
+import { getEffectiveModel } from "./agent-settings-service";
 
 const logger = agentLogger();
 
@@ -853,10 +854,11 @@ class AgentService {
     );
 
     try {
+      const effectiveModel = await getEffectiveModel();
       const q = query({
         prompt: session.queue,
         options: {
-          model: agentConfig.model,
+          model: effectiveModel,
           systemPrompt: buildSystemPrompt(this.port, capabilities),
           tools: ["Bash", "Read", "Glob", "Skill"],
           settingSources: ["project"],
@@ -1118,7 +1120,7 @@ class AgentService {
 
 let agentServiceInstance: AgentService | null = null;
 
-export function setAgentService(service: AgentService): void {
+export function setAgentService(service: AgentService | null): void {
   agentServiceInstance = service;
 }
 

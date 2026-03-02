@@ -22,6 +22,7 @@ import { setRestoreExecutorService } from "./services/restore-executor/restore-e
 import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey } from "./services/agent-api-key";
+import { getEffectiveApiKey } from "./services/agent-settings-service";
 import { AgentService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
 import { ServiceRecoveryManager, EnvironmentHealthScheduler } from "./services/environment";
@@ -373,8 +374,20 @@ const initializeServices = async () => {
       }
     }
 
-    // Initialize AI agent service (requires ANTHROPIC_API_KEY)
-    if (process.env.ANTHROPIC_API_KEY) {
+    // Initialize AI agent service (requires ANTHROPIC_API_KEY from env or DB)
+    let anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      // Check database for a previously configured API key
+      const dbKey = await getEffectiveApiKey();
+      if (dbKey) {
+        process.env.ANTHROPIC_API_KEY = dbKey;
+        anthropicKey = dbKey;
+        logger.info("Loaded ANTHROPIC_API_KEY from database settings");
+        console.log("[STARTUP] Loaded ANTHROPIC_API_KEY from database settings");
+      }
+    }
+
+    if (anthropicKey) {
       console.log("[STARTUP] Initializing agent service...");
       const agentApiKey = await initializeAgentApiKey();
       if (agentApiKey) {
@@ -388,7 +401,7 @@ const initializeServices = async () => {
       }
     } else {
       logger.info("ANTHROPIC_API_KEY not set, agent features disabled");
-      console.log("[STARTUP] Agent features disabled (no ANTHROPIC_API_KEY)");
+      console.log("[STARTUP] Agent features disabled (no ANTHROPIC_API_KEY — configure via Settings)");
     }
 
     logger.info("All services initialized successfully");

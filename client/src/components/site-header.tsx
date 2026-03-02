@@ -65,6 +65,7 @@ function BackupHealthIndicator() {
         to="/settings-self-backup"
         className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
         title={`Self-Backup: ${message} - Click to configure`}
+        data-tour="header-backup-health"
       >
         {content}
       </Link>
@@ -73,7 +74,11 @@ function BackupHealthIndicator() {
 
   // If healthy, just show the status without link
   return (
-    <div className="flex items-center gap-1.5" title={`Self-Backup: ${message}`}>
+    <div
+      className="flex items-center gap-1.5"
+      title={`Self-Backup: ${message}`}
+      data-tour="header-backup-health"
+    >
       {content}
     </div>
   );
@@ -84,10 +89,12 @@ function ConnectivityIndicator({
   service,
   icon: Icon,
   label,
+  tourId,
 }: {
   service: ConnectivityService;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
+  tourId?: string;
 }) {
   const { data: connectivityData } = useConnectivityStatus({
     filters: { service: service },
@@ -132,6 +139,7 @@ function ConnectivityIndicator({
         to={getConnectivityRoute(service)}
         className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
         title={`${label}: Disconnected - Click to configure`}
+        {...(tourId ? { "data-tour": tourId } : {})}
       >
         {content}
       </Link>
@@ -140,7 +148,11 @@ function ConnectivityIndicator({
 
   // If connected, just show the status without link
   return (
-    <div className="flex items-center gap-1.5" title={`${label}: Connected`}>
+    <div
+      className="flex items-center gap-1.5"
+      title={`${label}: Connected`}
+      {...(tourId ? { "data-tour": tourId } : {})}
+    >
       {content}
     </div>
   );
@@ -172,6 +184,7 @@ function HelpButton() {
         to={helpPath}
         className="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         title={title}
+        data-tour="header-help"
       >
         <IconHelp className="size-5" />
       </Link>
@@ -232,7 +245,7 @@ function AssistedSetupButton() {
         orientation="vertical"
         className="mx-1 data-[orientation=vertical]:h-4"
       />
-      <div className="flex items-center">
+      <div className="flex items-center" data-tour="header-assisted-setup">
         <button
           onClick={handleClick}
           className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-foreground hover:bg-accent transition-colors cursor-pointer"
@@ -277,26 +290,32 @@ export function SiteHeader() {
 
           {/* Connectivity Status Indicators */}
           <div className="ml-auto flex items-center gap-3">
-            <ConnectivityIndicator
-              service="docker"
-              icon={IconBrandDocker}
-              label="Docker"
-            />
-            <ConnectivityIndicator
-              service="cloudflare"
-              icon={IconBrandCloudflare}
-              label="Cloudflare"
-            />
-            <ConnectivityIndicator
-              service="azure"
-              icon={IconBrandAzure}
-              label="Azure"
-            />
-            <ConnectivityIndicator
-              service="github-app"
-              icon={IconBrandGithub}
-              label="GitHub"
-            />
+            <div className="flex items-center gap-3" data-tour="header-connectivity">
+              <ConnectivityIndicator
+                service="docker"
+                icon={IconBrandDocker}
+                label="Docker"
+                tourId="header-docker"
+              />
+              <ConnectivityIndicator
+                service="cloudflare"
+                icon={IconBrandCloudflare}
+                label="Cloudflare"
+                tourId="header-cloudflare"
+              />
+              <ConnectivityIndicator
+                service="azure"
+                icon={IconBrandAzure}
+                label="Azure"
+                tourId="header-azure"
+              />
+              <ConnectivityIndicator
+                service="github-app"
+                icon={IconBrandGithub}
+                label="GitHub"
+                tourId="header-github"
+              />
+            </div>
             <BackupHealthIndicator />
             <AssistedSetupButton />
             <HelpButton />
