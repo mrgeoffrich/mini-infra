@@ -858,7 +858,8 @@ class AgentService {
         options: {
           model: agentConfig.model,
           systemPrompt: buildSystemPrompt(this.port, capabilities),
-          tools: ["Bash", "Read", "Glob"],
+          tools: ["Bash", "Read", "Glob", "Skill"],
+          settingSources: ["project"],
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           thinking: { type: agentConfig.thinking },
