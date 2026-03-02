@@ -1,3 +1,5 @@
+import type { AgentConversationSummary } from "@mini-infra/types";
+
 export type SessionStatus =
   | "idle"
   | "connecting"
@@ -69,6 +71,7 @@ export type ChatMessage =
 
 export interface AgentSession {
   sessionId: string;
+  conversationId?: string;
   model?: string;
 }
 
@@ -83,4 +86,14 @@ export interface AgentChatContextType {
   model: string | null;
   sendMessage: (message: string) => Promise<void>;
   startNewChat: () => void;
+  // Conversation history
+  activeConversationId: string | null;
+  conversations: AgentConversationSummary[];
+  isHistoryOpen: boolean;
+  setIsHistoryOpen: (open: boolean) => void;
+  loadConversation: (conversationId: string, messages: ChatMessage[]) => void;
+  deleteConversation: (conversationId: string) => Promise<void>;
 }
+
+// Re-export for convenience
+export type { AgentConversationSummary };

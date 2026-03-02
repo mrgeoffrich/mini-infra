@@ -1,4 +1,4 @@
-import { IconRobot, IconPlus, IconX } from "@tabler/icons-react";
+import { IconRobot, IconPlus, IconX, IconHistory } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,7 +10,8 @@ import { useAgentChat } from "@/hooks/use-agent-chat";
 import { cn } from "@/lib/utils";
 
 export function AgentChatHeader() {
-  const { model, sessionStatus, startNewChat, setIsOpen } = useAgentChat();
+  const { model, sessionStatus, startNewChat, setIsOpen, isHistoryOpen, setIsHistoryOpen } =
+    useAgentChat();
 
   const statusColor =
     sessionStatus === "streaming"
@@ -35,6 +36,19 @@ export function AgentChatHeader() {
         />
       </div>
       <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("size-7", isHistoryOpen && "bg-muted")}
+              onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+            >
+              <IconHistory className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Chat history</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="size-7" onClick={startNewChat}>

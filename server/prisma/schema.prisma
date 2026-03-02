@@ -21,10 +21,11 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   // Relations
-  apiKeys        ApiKey[]
-  userPreference UserPreference?
-  postgresServers PostgresServer[]
-  userEvents     UserEvent[]
+  apiKeys             ApiKey[]
+  userPreference      UserPreference?
+  postgresServers     PostgresServer[]
+  userEvents          UserEvent[]
+  agentConversations  AgentConversation[]
 
   @@map("users")
 }
@@ -1053,6 +1054,49 @@ model VolumeFileContent {
   @@index([volumeName])
   @@index([fetchedAt])
   @@map("volume_file_contents")
+}
+
+// Agent Conversations - Persisted AI assistant chat history
+
+/// AgentConversation model for storing per-user AI assistant conversation threads
+model AgentConversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String    // First ~80 chars of first user message
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft-delete timestamp; null = active
+
+  messages  AgentConversationMessage[]
+
+  @@index([userId])
+  @@index([userId, updatedAt])
+  @@index([deletedAt])
+  @@map("agent_conversations")
+}
+
+/// AgentConversationMessage model for storing individual messages in an agent conversation
+model AgentConversationMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String            // 'user' | 'assistant' | 'tool_use' | 'error' | 'result'
+  content        String?           // Text content for user/assistant/error messages
+  toolId         String?
+  toolName       String?
+  toolInput      String?           // JSON stringified tool input
+  toolOutput     String?
+  success        Boolean?
+  cost           Float?
+  duration       Float?
+  turns          Int?
+  sequence       Int               // Monotonic ordering counter per conversation
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId])
+  @@index([conversationId, sequence])
+  @@map("agent_conversation_messages")
 }
 
 // Enums

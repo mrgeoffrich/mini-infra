@@ -15,6 +15,7 @@ import appConfig, { agentConfig } from "../lib/config-new";
 import { API_REFERENCE } from "./agent-api-reference";
 import { createUiToolsMcpServer } from "./agent-ui-tools";
 import { githubAppService } from "./github-app-service";
+import { agentConversationService } from "./agent-conversation-service";
 
 const logger = agentLogger();
 
@@ -45,6 +46,7 @@ interface AgentCapabilities {
 interface AgentSession {
   id: string;
   userId: string;
+  conversationId: string;
   queue: AgentMessageQueue;
   abortController: AbortController;
   subscribers: Set<Response>;
@@ -53,6 +55,12 @@ interface AgentSession {
   currentPath: string;
   /** Stable API message ID for the current streaming turn, set from message_start. */
   currentTurnUuid: string | null;
+  /** Buffered tool_use input keyed by toolId, flushed on tool_result. */
+  pendingToolUse: Map<string, { toolName: string; input: Record<string, unknown> }>;
+  /** Monotonically increasing message sequence counter. */
+  nextSequence: number;
+  /** Number of in-flight fire-and-forget persist calls currently outstanding. */
+  pendingPersistCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -522,14 +530,46 @@ class AgentService {
     };
   }
 
-  async createSession(userId: string, message: string, currentPath?: string): Promise<string> {
+  async createSession(
+    userId: string,
+    message: string,
+    currentPath?: string,
+    existingConversationId?: string,
+  ): Promise<{ sessionId: string; conversationId: string }> {
     const sessionId = randomUUID();
     const queue = new AgentMessageQueue();
     const abortController = new AbortController();
 
+    // Resolve or create a conversation record. No fallback UUID — let DB
+    // failures propagate so the caller gets a real error instead of silently
+    // persisting messages to a non-existent conversation.
+    let conversationId: string;
+    let initialSequence = 0;
+
+    if (existingConversationId) {
+      // Verify the conversation belongs to this user and get its current length
+      const existing = await agentConversationService.getConversationDetail(
+        existingConversationId,
+        userId,
+      );
+      if (existing) {
+        conversationId = existingConversationId;
+        // Start sequence after the highest persisted sequence so resumed
+        // conversations never produce duplicate or out-of-order sequence numbers
+        const maxSeq = existing.messages.reduce((max, m) => Math.max(max, m.sequence), -1);
+        initialSequence = maxSeq + 1;
+      } else {
+        // Supplied conversationId doesn't belong to this user — start fresh
+        conversationId = await agentConversationService.createConversation(userId, message);
+      }
+    } else {
+      conversationId = await agentConversationService.createConversation(userId, message);
+    }
+
     const session: AgentSession = {
       id: sessionId,
       userId,
+      conversationId,
       queue,
       abortController,
       subscribers: new Set(),
@@ -537,9 +577,15 @@ class AgentService {
       running: true,
       currentPath: currentPath ?? "",
       currentTurnUuid: null,
+      pendingToolUse: new Map(),
+      nextSequence: initialSequence,
+      pendingPersistCount: 0,
     };
 
     this.sessions.set(sessionId, session);
+
+    // Persist the initial user message (fire-and-forget)
+    this.persistMessage(session, "user", message);
 
     // Resolve capabilities (Docker, GitHub) before starting the loop
     const capabilities = await this.resolveCapabilities();
@@ -558,8 +604,8 @@ class AgentService {
       logger.error({ err, sessionId }, "Query loop failed");
     });
 
-    logger.info({ sessionId, userId }, "Agent session created");
-    return sessionId;
+    logger.info({ sessionId, userId, conversationId }, "Agent session created");
+    return { sessionId, conversationId };
   }
 
   getSession(sessionId: string): AgentSession | undefined {
@@ -572,6 +618,8 @@ class AgentService {
       return false;
     }
     session.queue.push(message);
+    // Persist follow-up user message (fire-and-forget)
+    this.persistMessage(session, "user", message);
     logger.debug({ sessionId }, "Message pushed to agent queue");
     return true;
   }
@@ -641,6 +689,74 @@ class AgentService {
   // Private
   // -------------------------------------------------------------------------
 
+  /** Fire-and-forget message persistence with up to 3 retries. Never throws, never blocks streaming. */
+  private persistMessage(
+    session: AgentSession,
+    role: "user" | "assistant" | "tool_use" | "error" | "result",
+    content: string | null,
+    extra?: {
+      toolId?: string;
+      toolName?: string;
+      toolInput?: Record<string, unknown>;
+      toolOutput?: string;
+      success?: boolean;
+      cost?: number;
+      duration?: number;
+      turns?: number;
+    },
+  ): void {
+    const MAX_IN_FLIGHT = 20;
+    if (session.pendingPersistCount >= MAX_IN_FLIGHT) {
+      logger.warn(
+        { sessionId: session.id, pendingPersistCount: session.pendingPersistCount },
+        "Max in-flight persist operations reached — dropping message",
+      );
+      return;
+    }
+
+    const sequence = session.nextSequence++;
+    const messageData = {
+      conversationId: session.conversationId,
+      role,
+      content: content ?? undefined,
+      sequence,
+      ...extra,
+    };
+
+    session.pendingPersistCount++;
+
+    const attempt = (tries: number): void => {
+      agentConversationService
+        .addMessage(messageData)
+        .then(() => {
+          session.pendingPersistCount--;
+          // Touch is best-effort metadata only; never retry addMessage based on touch failures.
+          void agentConversationService
+            .touchConversation(session.conversationId)
+            .catch((touchErr: unknown) => {
+              logger.warn(
+                { touchErr, sessionId: session.id, conversationId: session.conversationId },
+                "Failed to touch agent conversation updatedAt",
+              );
+            });
+        })
+        .catch((err: unknown) => {
+          if (tries < 3) {
+            const delay = 200 * tries; // 200ms, 400ms
+            setTimeout(() => attempt(tries + 1), delay);
+          } else {
+            session.pendingPersistCount--;
+            logger.error(
+              { err, sessionId: session.id, sequence, role },
+              "Failed to persist agent message after 3 attempts",
+            );
+          }
+        });
+    };
+
+    attempt(1);
+  }
+
   private broadcast(session: AgentSession, event: AgentEvent): void {
     const data = JSON.stringify(event);
     const failed: Response[] = [];
@@ -655,6 +771,46 @@ class AgentService {
 
     for (const res of failed) {
       session.subscribers.delete(res);
+    }
+
+    // Persistence side-effects (fire-and-forget, never blocks)
+    switch (event.type) {
+      case "tool_use":
+        // Buffer tool input; it will be flushed when the tool result arrives
+        session.pendingToolUse.set(event.data.toolId as string, {
+          toolName: event.data.toolName as string,
+          input: (event.data.input as Record<string, unknown>) ?? {},
+        });
+        break;
+
+      case "tool_result": {
+        const pending = session.pendingToolUse.get(event.data.toolId as string);
+        session.pendingToolUse.delete(event.data.toolId as string);
+        this.persistMessage(session, "tool_use", null, {
+          toolId: event.data.toolId as string,
+          toolName: pending?.toolName,
+          toolInput: pending?.input,
+          toolOutput: event.data.output as string | undefined,
+        });
+        break;
+      }
+
+      case "text":
+        this.persistMessage(session, "assistant", event.data.content as string);
+        break;
+
+      case "result":
+        this.persistMessage(session, "result", null, {
+          success: event.data.success as boolean,
+          cost: event.data.cost as number | undefined,
+          duration: event.data.duration as number | undefined,
+          turns: event.data.turns as number | undefined,
+        });
+        break;
+
+      case "error":
+        this.persistMessage(session, "error", event.data.message as string);
+        break;
     }
   }
 
@@ -711,7 +867,7 @@ class AgentService {
           cwd: AGENT_CWD,
           includePartialMessages: true,
           abortController: session.abortController,
-          persistSession: false,
+          persistSession: true,
           env: sessionEnv,
           mcpServers: { "mini-infra-ui": uiToolsServer },
           hooks: {

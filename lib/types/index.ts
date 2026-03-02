@@ -59,6 +59,9 @@ export * from "./user-events";
 // API response types
 export * from "./api";
 
+// Agent conversation types
+export * from "./agent";
+
 // ====================
 // Type Utilities
 // ====================
