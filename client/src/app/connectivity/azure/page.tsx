@@ -48,7 +48,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { AzureContainerList } from "@/components/AzureContainerList";
+import { AzureContainerList } from "@/components/azure";
 import { AzureContainerSelector } from "@/components/AzureContainerSelector";
 
 // Azure settings schema
