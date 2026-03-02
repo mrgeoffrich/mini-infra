@@ -59,6 +59,7 @@ async function setDbSetting(key: string, value: string): Promise<void> {
     },
     update: {
       value,
+      isActive: true,
       updatedBy: "system",
       updatedAt: new Date(),
     },
@@ -222,8 +223,10 @@ export async function updateSettings(data: {
     await setDbSetting(API_KEY_KEY, data.apiKey);
     logger.info("Agent API key saved to database");
 
-    // If env var isn't set, make the key available to subprocesses
-    if (!process.env.ANTHROPIC_API_KEY) {
+    // Update process.env so new agent subprocesses use the latest key.
+    // Skip only if the key was originally provided via environment variable
+    // (those should only be changed by restarting with a new env value).
+    if (!ENV_HAD_API_KEY) {
       process.env.ANTHROPIC_API_KEY = data.apiKey;
     }
 

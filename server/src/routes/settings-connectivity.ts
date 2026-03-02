@@ -257,4 +257,70 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   }
 }) as RequestHandler);
 
+/**
+ * GET /api/settings/connectivity/summary - Latest status per service (one row each)
+ */
+router.get("/summary", requirePermission('settings:read') as RequestHandler, (async (
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const services = [
+      "docker",
+      "cloudflare",
+      "azure",
+      "postgres",
+      "github-app",
+      "tls",
+    ];
+
+    const [results, defaultContainerSetting] = await Promise.all([
+      Promise.all(
+        services.map((service) =>
+          prisma.connectivityStatus.findFirst({
+            where: { service },
+            orderBy: { checkedAt: "desc" },
+          }),
+        ),
+      ),
+      prisma.systemSettings.findFirst({
+        where: {
+          category: "system",
+          key: "default_postgres_backup_container",
+          isActive: true,
+        },
+      }),
+    ]);
+
+    const summary: Record<string, { status: string; checkedAt: string; errorMessage: string | null; defaultPostgresContainer?: string | null }> = {};
+    for (let i = 0; i < services.length; i++) {
+      const entry = results[i];
+      if (entry) {
+        summary[services[i]] = {
+          status: entry.status,
+          checkedAt: entry.checkedAt.toISOString(),
+          errorMessage: entry.errorMessage,
+        };
+      } else {
+        summary[services[i]] = {
+          status: "unknown",
+          checkedAt: "",
+          errorMessage: "No connectivity check recorded",
+        };
+      }
+    }
+
+    // Add default postgres backup container to the azure entry
+    if (summary["azure"]) {
+      summary["azure"].defaultPostgresContainer =
+        defaultContainerSetting?.value || null;
+    }
+
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    next(error);
+  }
+}) as RequestHandler);
+
 export default router;

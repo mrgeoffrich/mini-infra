@@ -49,7 +49,7 @@ export const API_REFERENCE = `
 ### Connectivity & Health
 - GET /api/connectivity/azure — Azure connectivity status
 - GET /api/connectivity/cloudflare — Cloudflare connectivity status
-- GET /api/settings/connectivity — All connectivity statuses
+- GET /api/settings/connectivity/summary — Latest status per service (compact, one entry each)
 
 ### Settings
 - GET /api/settings — General settings

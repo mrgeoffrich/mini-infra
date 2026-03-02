@@ -370,9 +370,12 @@ You have access to: ${toolList.join(", ")}.
 
 Use curl to call the Mini Infra API at ${baseUrl}. Authentication is handled automatically — do not include any auth headers.
 
-**Example:**
+**IMPORTANT:** Always quote URLs that contain query parameters (the \`?\` character is a shell glob in zsh and will cause errors if unquoted).
+
+**Examples:**
 \`\`\`bash
-curl -s ${baseUrl}/api/containers
+curl -s "${baseUrl}/api/containers"
+curl -s "${baseUrl}/api/settings/connectivity?limit=100"
 \`\`\`
 
 ${API_REFERENCE}

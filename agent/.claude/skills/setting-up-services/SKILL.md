@@ -9,19 +9,20 @@ You are guiding the user through configuring Mini Infra's external service integ
 
 ## Step 1: Assess Current State
 
-Before giving any guidance, always check the current connectivity status of all services by calling these endpoints:
+Before giving any guidance, check the current connectivity status by calling:
 
-- `GET /api/settings/connectivity?limit=100` - all connectivity statuses
-- `GET /api/settings/docker-host` - Docker config
-- `GET /api/settings/azure` - Azure config
-- `GET /api/settings/cloudflare` - Cloudflare config
-- `GET /api/settings/github-app` - GitHub App config
-- `GET /api/tls/settings` - TLS config
-- `GET /api/settings/self-backup` - Self-backup config
+- `GET /api/settings/connectivity/summary` — returns the latest status for each service in one compact object
 
-Parse the responses to determine which services have status `"connected"` and which are `"failed"`, `"unreachable"`, or missing entirely.
+The response has a `data` object keyed by service name (docker, cloudflare, azure, postgres, github-app, tls), each with `status` (connected/failed/unknown), `checkedAt`, and `errorMessage`.
 
-Present a clear summary to the user showing what is connected and what needs attention. Use the UI guidance tools to navigate the user to the relevant pages.
+Present a **compact summary** as a short bulleted list — one line per service with a checkmark or X and the service name. For Azure, also include the `defaultPostgresContainer` field from the summary to show whether the default backup container is set. For example:
+
+- x Docker — not configured
+- ✓ Azure — connected (default backup container: postgres-backups)
+- ✓ Azure — connected (no default backup container set)
+- x Cloudflare — not configured
+
+Do NOT use a table. Keep it brief — the user just needs to see what's connected and what isn't at a glance. Then ask which service they'd like to set up first (or suggest the recommended order).
 
 ## Step 2: Guide Through Services
 
@@ -45,9 +46,9 @@ Only guide the user through services they actually need or ask about. Don't forc
 **Page:** `/connectivity-docker`
 
 **What the user needs:** A Docker host connection string. Common formats:
-- Local socket: `/var/run/docker.sock` (Linux/Mac with Docker Desktop)
+- Local socket: `unix:///var/run/docker.sock` (Linux/Mac with Docker Desktop)
 - TCP: `tcp://192.168.1.100:2375` (remote Docker host)
-- Named pipe: `//./pipe/docker_engine` (Windows)
+- Named pipe: `npipe:////./pipe/dockerDesktopLinuxEngine` (Windows)
 
 **Check status:** `GET /api/settings/docker-host`
 
@@ -117,7 +118,18 @@ Walk the user through these steps in the Azure Portal (https://portal.azure.com)
 **Important:** Remember the container names the user created - they will be needed later when configuring:
 - **TLS settings** (`/settings/tls`) - select the certificates container
 - **Self-backup settings** (`/settings/self-backup`) - select the self-backups container
-- **PostgreSQL backup configs** - select the postgres backups container when setting up database backup schedules
+- **Default Postgres Backup Container** - set on this same page (see below)
+
+#### Selecting the Default Postgres Backup Container
+
+Still on the `/connectivity-azure` page, below the container list, there is a **Default Postgres Backup Container** dropdown. This setting controls which Azure container is pre-selected when creating new PostgreSQL backup configurations.
+
+**Setup steps:**
+1. After connecting Azure Storage and verifying the containers are visible, scroll down to the **Default Postgres Backup Container** section
+2. Select the postgres backups container (e.g., `postgres-backups`) from the dropdown
+3. The setting saves automatically
+
+**Check status:** `GET /api/settings?category=system&key=default_postgres_backup_container` — returns the setting if configured. The connectivity summary (`GET /api/settings/connectivity/summary`) also includes a `defaultPostgresContainer` field in the `azure` entry.
 
 ---
 
