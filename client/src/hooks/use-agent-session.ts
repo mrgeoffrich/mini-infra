@@ -523,18 +523,6 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               break;
 
             case "result":
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: crypto.randomUUID(),
-                  role: "result",
-                  success: asBoolean(data?.success) ?? false,
-                  cost: asNumber(data?.cost),
-                  duration: asNumber(data?.duration),
-                  turns: asNumber(data?.turns),
-                  timestamp: Date.now(),
-                },
-              ]);
               setSessionStatus("done");
               break;
 

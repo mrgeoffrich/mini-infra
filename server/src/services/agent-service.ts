@@ -869,7 +869,6 @@ class AgentService {
           allowDangerouslySkipPermissions: true,
           thinking: { type: agentConfig.thinking },
           effort: agentConfig.effort,
-          maxTurns: agentConfig.maxTurns,
           cwd: AGENT_CWD,
           includePartialMessages: true,
           abortController: session.abortController,

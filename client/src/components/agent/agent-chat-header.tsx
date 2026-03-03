@@ -13,12 +13,10 @@ export function AgentChatHeader() {
   const { model, sessionStatus, startNewChat, setIsOpen, isHistoryOpen, setIsHistoryOpen } =
     useAgentChat();
 
-  const statusColor =
-    sessionStatus === "streaming"
-      ? "bg-green-500"
-      : sessionStatus === "waiting" || sessionStatus === "connecting"
-        ? "bg-amber-500"
-        : "bg-gray-400";
+  const isProcessing =
+    sessionStatus === "streaming" ||
+    sessionStatus === "waiting" ||
+    sessionStatus === "connecting";
 
   return (
     <div className="flex items-center justify-between border-b px-4 py-3">
@@ -31,8 +29,15 @@ export function AgentChatHeader() {
           </Badge>
         )}
         <span
-          className={cn("size-2 rounded-full", statusColor)}
-          title={sessionStatus}
+          className="size-2 rounded-full bg-green-500"
+          title="Available"
+        />
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            isProcessing ? "bg-green-500 animate-pulse" : "bg-gray-400",
+          )}
+          title={isProcessing ? "Processing" : "Idle"}
         />
       </div>
       <div className="flex items-center gap-1">
