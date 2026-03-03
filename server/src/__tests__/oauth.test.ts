@@ -58,6 +58,7 @@ vi.mock("../lib/config-new", () => ({
     },
     session: { secret: "test-session-secret" },
     apiKey: { secret: "test-api-key-secret" },
+    allowedEmails: ["test@example.com", "existing@example.com"],
   },
   serverConfig: {
     nodeEnv: "test",

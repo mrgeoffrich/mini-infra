@@ -62,6 +62,25 @@ passport.use(
           return done(new Error("No email found in Google profile"), null);
         }
 
+        // Check if user's email is in the allowed list
+        const allowedEmails = authConfig.allowedEmails;
+        if (!allowedEmails || allowedEmails.length === 0) {
+          logger.error(
+            "Login rejected - ALLOWED_ADMIN_EMAILS is not configured",
+          );
+          return done(
+            new Error("ALLOWED_ADMIN_EMAILS must be configured"),
+            null,
+          );
+        }
+        if (!allowedEmails.includes(email.toLowerCase())) {
+          logger.warn(
+            { email },
+            "Login rejected - email not in ALLOWED_ADMIN_EMAILS list",
+          );
+          return done(new Error("Email not authorized"), null);
+        }
+
         // Find or create user in database
         let user = await prisma.user.findUnique({
           where: { googleId: profile.id },
@@ -135,6 +154,17 @@ if (
   logger.warn("Google OAuth not configured - missing client ID or secret");
 } else {
   logger.info("Google OAuth strategy registered successfully");
+}
+
+if (authConfig.allowedEmails && authConfig.allowedEmails.length > 0) {
+  logger.info(
+    { count: authConfig.allowedEmails.length },
+    "Admin email allowlist is active - only specified emails can log in",
+  );
+} else {
+  logger.error(
+    "ALLOWED_ADMIN_EMAILS is not set - all Google OAuth logins will be rejected",
+  );
 }
 
 // Serialization functions (needed for testing even if using JWT for production)

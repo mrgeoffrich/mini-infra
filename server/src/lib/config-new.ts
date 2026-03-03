@@ -26,6 +26,7 @@ const configSchema = z.object({
     apiKey: z.object({
       secret: z.string(),
     }),
+    allowedEmails: z.array(z.string()).nullable(),
   }),
   logging: z.object({
     level: z.enum([
@@ -123,6 +124,13 @@ const appConfig: Config = {
         "default-secret-change-in-production",
       ),
     },
+    allowedEmails: (() => {
+      const envValue = process.env.ALLOWED_ADMIN_EMAILS;
+      if (envValue) {
+        return envValue.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+      }
+      return null;
+    })(),
   },
   logging: {
     level: getConfigValue("logging.level", "LOG_LEVEL", "info") as
