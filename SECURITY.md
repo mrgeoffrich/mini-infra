@@ -12,7 +12,7 @@ If you discover a security vulnerability in Mini Infra, please report it respons
 
 **Please do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email: **security@geoffrich.net**
+Instead, please email: **geoff.rich@gmail.com**
 
 Include the following in your report:
 
