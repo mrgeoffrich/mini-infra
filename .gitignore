@@ -35,6 +35,7 @@ deployment/**/.env
 # Sensitive configuration
 postgres-config.json
 
-# SQLite WAL/SHM files
+# SQLite database files
+*.db
 *.db-shm
 *.db-wal
