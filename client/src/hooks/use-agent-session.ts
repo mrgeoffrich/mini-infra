@@ -40,10 +40,6 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function asBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
-
 function parseAgentSseEvent(raw: string): AgentSseEvent | null {
   const parsed = JSON.parse(raw) as unknown;
   if (!parsed || typeof parsed !== "object") {
