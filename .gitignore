@@ -32,6 +32,9 @@ server/public/assets/
 .env.*.local
 deployment/**/.env
 
+# Sensitive configuration
+postgres-config.json
+
 # SQLite WAL/SHM files
 *.db-shm
 *.db-wal
