@@ -35,6 +35,9 @@ deployment/**/.env
 # Sensitive configuration
 postgres-config.json
 
+# Project management notes
+projectmanagement/
+
 # SQLite database files
 *.db
 *.db-shm
