@@ -44,23 +44,6 @@ services:
       - AZURE_API_TIMEOUT=${AZURE_API_TIMEOUT:-15000}
       - CONNECTIVITY_CHECK_INTERVAL=${CONNECTIVITY_CHECK_INTERVAL:-300000}
 
-      # OpenObserve Integration (Optional)
-      - OPENOBSERVE_URL=${OPENOBSERVE_URL:-http://openobserve:5080}
-      - OPENOBSERVE_ORGANIZATION_NAME=${OPENOBSERVE_ORGANIZATION_NAME:-}
-      - OPENOBSERVE_USERNAME=${OPENOBSERVE_USERNAME:-}
-      - OPENOBSERVE_PASSWORD=${OPENOBSERVE_PASSWORD:-}
-      - OPENOBSERVE_STREAM_NAME=${OPENOBSERVE_STREAM_NAME:-mini-infra-logs}
-
-      # OpenTelemetry Configuration (Optional)
-      - OTEL_ENABLED=${OTEL_ENABLED:-false}
-      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-mini-infra}
-      - OTEL_SERVICE_VERSION=${OTEL_SERVICE_VERSION:-0.1.0}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      - OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS:-}
-      - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=production,service.namespace=mini-infra}
-      - OTEL_SAMPLING_RATIO=${OTEL_SAMPLING_RATIO:-1.0}
-      - OTEL_DEBUG=${OTEL_DEBUG:-false}
-
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
@@ -68,25 +51,8 @@ services:
       start_period: 40s
       retries: 3
 
-    depends_on:
-      - openobserve
-
-  openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:latest
-    container_name: openobserve
-    restart: unless-stopped
-    environment:
-      ZO_ROOT_USER_EMAIL: "geoff@altitude-devops.com.au"
-      ZO_ROOT_USER_PASSWORD: "observe"
-    ports:
-      - "5080:5080"
-    volumes:
-      - openobserve_data:/data
-
 volumes:
   mini-infra-data:
     driver: local
   mini-infra-logs:
-    driver: local
-  openobserve_data:
     driver: local
