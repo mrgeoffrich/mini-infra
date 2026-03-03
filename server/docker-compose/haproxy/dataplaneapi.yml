@@ -1,0 +1,43 @@
+---
+config_version: 2
+name: haproxy-dataplaneapi
+dataplaneapi:
+  host: 0.0.0.0
+  port: 5555
+
+  # Show system info
+  show_system_info: true
+
+  user:
+    - name: admin
+      password: adminpwd
+      insecure: true
+
+  # Security settings
+  scheme:
+    - http
+
+  # Transaction settings
+  transaction:
+    transaction_dir: /tmp/haproxy_transactions
+
+# HAProxy configuration
+haproxy:
+  config_file: /usr/local/etc/haproxy/haproxy.cfg
+  haproxy_bin: /usr/local/sbin/haproxy
+  master_worker_mode: true
+  master_runtime: /var/run/haproxy.sock
+  reload:
+    reload_delay: 5
+    reload_strategy: custom
+    reload_cmd: "kill -USR2 1"
+    restart_cmd: "kill -TERM 1"
+
+# Logging configuration
+log_targets:
+  - log_to: stdout
+    log_level: info
+    log_format: text
+    log_types:
+      - app
+      - access

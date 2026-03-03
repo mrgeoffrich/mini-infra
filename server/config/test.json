@@ -1,0 +1,20 @@
+{
+  "server": {
+    "nodeEnv": "test",
+    "port": 0
+  },
+  "database": {
+    "url": "file:./test.db"
+  },
+  "logging": {
+    "level": "silent"
+  },
+  "auth": {
+    "session": {
+      "secret": "test-secret"
+    },
+    "apiKey": {
+      "secret": "test-api-key-secret"
+    }
+  }
+}

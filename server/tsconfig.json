@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "outDir": "./dist",
+    "strict": true,
+    "types": ["vitest/globals"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mini-infra/types": ["../lib/types"],
+      "@mini-infra/types/*": ["../lib/types/*"]
+    }
+  },
+  "include": ["src/**/*", "../lib/types/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/__tests__", "src/**/*.test.ts"]
+}

@@ -1,0 +1,65 @@
+{
+  "generated": "2026-03-01",
+  "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
+  "routes": {
+    "/containers": {
+      "title": "Containers",
+      "elements": [
+        {
+          "id": "containers-table",
+          "label": "Containers Table",
+          "elementType": "div",
+          "file": "client/src/app/containers/ContainerDashboard.tsx"
+        },
+        {
+          "id": "containers-tabs",
+          "label": "Containers Tabs",
+          "elementType": "Tabs",
+          "file": "client/src/app/containers/page.tsx"
+        }
+      ]
+    },
+    "/dashboard": {
+      "title": "Dashboard",
+      "elements": [
+        {
+          "id": "dashboard-header",
+          "label": "Dashboard Header",
+          "elementType": "div",
+          "file": "client/src/app/dashboard/page.tsx"
+        }
+      ]
+    },
+    "/deployments": {
+      "title": "Deployments",
+      "elements": [
+        {
+          "id": "deployments-new-button",
+          "label": "Deployments New Button",
+          "elementType": "Button",
+          "file": "client/src/app/deployments/page.tsx"
+        },
+        {
+          "id": "deployments-list",
+          "label": "Deployments List",
+          "elementType": "div",
+          "file": "client/src/app/deployments/page.tsx"
+        }
+      ]
+    }
+  },
+  "global": [
+    {
+      "id": "agent-chat-fab",
+      "label": "Agent Chat Fab",
+      "elementType": "div",
+      "file": "client/src/components/agent/agent-chat-fab.tsx"
+    },
+    {
+      "id": "sidebar-nav",
+      "label": "Sidebar Nav",
+      "elementType": "SidebarContent",
+      "file": "client/src/components/app-sidebar.tsx"
+    }
+  ]
+}

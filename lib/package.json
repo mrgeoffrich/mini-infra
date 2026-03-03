@@ -1,0 +1,17 @@
+{
+  "name": "@mini-infra/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for Mini Infra client and server",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "typescript": "^5.1.6"
+  }
+}

@@ -1,0 +1,1126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for Google OAuth authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  googleId      String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  apiKeys             ApiKey[]
+  userPreference      UserPreference?
+  postgresServers     PostgresServer[]
+  userEvents          UserEvent[]
+  agentConversations  AgentConversation[]
+
+  @@map("users")
+}
+
+// ApiKey model for webhook authentication
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  userId      String
+  active      Boolean  @default(true)
+  permissions String?  // JSON array of permission scopes, null = full access
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// UserPreference model for storing user-specific preferences
+model UserPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Container dashboard preferences
+  containerSortField    String?  @default("name")
+  containerSortOrder    String?  @default("asc")
+  containerFilters      Json?    // Stored filter preferences
+  containerColumns      Json?    // Visible columns configuration
+  
+  // User preferences
+  timezone              String?  @default("UTC")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+// ContainerCache model for caching container data
+model ContainerCache {
+  id        String   @id @default(cuid())
+  data      Json     // Cached container data
+  expiresAt DateTime
+  
+  createdAt DateTime @default(now())
+  
+  @@index([expiresAt])
+  @@map("container_cache")
+}
+
+// SystemSettings model for storing system configuration
+model SystemSettings {
+  id                    String   @id @default(cuid())
+  category              String   // 'docker', 'cloudflare', 'azure'
+  key                   String   // Specific setting key within category
+  value                 String   // Encrypted value for sensitive data
+  isEncrypted           Boolean  @default(false)
+  isActive              Boolean  @default(true)
+  lastValidatedAt       DateTime?
+  validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'
+  validationMessage     String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String   // User ID who created the setting
+  updatedBy            String   // User ID who last updated the setting
+  
+  @@unique([category, key])
+  @@index([category])
+  @@index([validationStatus])
+  @@index([isActive])
+  @@map("system_settings")
+}
+
+
+// ConnectivityStatus model for tracking external service connectivity
+model ConnectivityStatus {
+  id                    String   @id @default(cuid())
+  service               String   // 'cloudflare', 'docker', 'azure'
+  status                String   // 'connected', 'failed', 'timeout', 'unreachable'
+  responseTimeMs        BigInt?  // Response time in milliseconds for successful connections
+  errorMessage          String?  // Detailed error message for failed connections
+  errorCode             String?  // Service-specific error code
+  lastSuccessfulAt      DateTime? // Last successful connection timestamp
+  checkedAt             DateTime @default(now()) // When this check was performed
+  checkInitiatedBy      String?  // User ID who initiated manual check (null for scheduled checks)
+  
+  // Service-specific metadata (JSON stored as string)
+  metadata              String?  // Additional service-specific information
+  
+  @@index([service])
+  @@index([status])
+  @@index([checkedAt])
+  @@index([service, checkedAt])
+  @@map("connectivity_status")
+}
+
+// PostgreSQL Database Management Models
+
+// PostgresDatabase model for managing database configurations
+model PostgresDatabase {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  connectionString String   // Encrypted
+  host             String
+  port             Int
+  database         String
+  username         String
+  sslMode          String   @default("prefer")
+  tags             String   // JSON array
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastHealthCheck  DateTime?
+  healthStatus     String   @default("unknown")
+
+  backupConfig     BackupConfiguration?
+  backupOperations BackupOperation[]
+  restoreOperations RestoreOperation[]
+
+  @@map("postgres_databases")
+}
+
+// BackupConfiguration model for managing backup scheduling and settings
+model BackupConfiguration {
+  id                String   @id @default(cuid())
+  databaseId        String   @unique
+  database          PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  schedule          String?  // Cron expression
+  timezone          String   @default("UTC")
+  azureContainerName String
+  azurePathPrefix   String
+  retentionDays     Int      @default(30)
+  backupFormat      String   @default("custom")
+  compressionLevel  Int      @default(6)
+  isEnabled         Boolean  @default(true)
+  lastBackupAt      DateTime?
+  nextScheduledAt   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([databaseId])
+  @@map("backup_configurations")
+}
+
+// BackupOperation model for tracking backup job execution
+model BackupOperation {
+  id              String   @id @default(cuid())
+  databaseId      String
+  database        PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  operationType   String   // manual, scheduled
+  status          String   // pending, running, completed, failed
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  sizeBytes       BigInt?
+  azureBlobUrl    String?
+  errorMessage    String?
+  progress        Int      @default(0)
+  metadata        String?  // JSON for additional data
+  
+  @@index([databaseId, status])
+  @@index([startedAt])
+  @@map("backup_operations")
+}
+
+// RestoreOperation model for tracking restore job execution
+model RestoreOperation {
+  id              String   @id @default(cuid())
+  databaseId      String
+  database        PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  backupUrl       String
+  status          String   // pending, running, completed, failed
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  errorMessage    String?
+  progress        Int      @default(0)
+  
+  @@index([databaseId, status])
+  @@map("restore_operations")
+}
+
+// Self-Backup Model for Mini Infra database backups
+model SelfBackup {
+  id                String   @id @default(cuid())
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  status            String   // 'in_progress', 'completed', 'failed'
+  filePath          String?  // Temp file path during backup
+  azureBlobUrl      String?  // URL after successful upload
+  azureContainerName String
+  fileName          String   // mini-infra-{timestamp}.db.zip
+  fileSize          Int?     // Bytes
+  errorMessage      String?
+  errorCode         String?
+  triggeredBy       String   // 'scheduled' or 'manual'
+  userId            String?  // If manual trigger
+  durationMs        Int?     // Backup duration in milliseconds
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([azureContainerName])
+  @@map("self_backups")
+}
+
+// Zero-Downtime Deployment System Models
+
+// DeploymentConfiguration model for managing per-application deployment settings
+model DeploymentConfiguration {
+  id                String   @id @default(cuid())
+  applicationName   String   @unique
+  dockerImage       String
+  dockerTag         String   @default("latest")
+  dockerRegistry    String?
+  containerConfig   Json     // Ports, volumes, env vars
+  healthCheckConfig Json     // Endpoint, validation rules
+  rollbackConfig    Json     // Rollback settings
+  listeningPort     Int?     // Port used for health checks
+  hostname          String?  // Public hostname for Cloudflare routing
+  isActive          Boolean  @default(true)
+  environmentId     String   // Required environment assignment (immutable)
+  environment       Environment @relation(fields: [environmentId], references: [id])
+
+  // TLS/SSL configuration
+  enableSsl         Boolean  @default(false) // Enable SSL/TLS for this deployment
+  tlsCertificateId  String?  // Associated TLS certificate
+  tlsCertificate    TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
+  certificateStatus String?  // Certificate provisioning status: 'PENDING', 'ACTIVE', 'ERROR'
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  deployments       Deployment[]
+  dnsRecords        DeploymentDNSRecord[]
+  haproxyFrontend   HAProxyFrontend?
+
+  @@index([environmentId])
+  @@index([hostname])
+  @@index([tlsCertificateId])
+  @@map("deployment_configurations")
+}
+
+// Deployment model for tracking individual deployments
+model Deployment {
+  id                String   @id @default(cuid())
+  configurationId   String
+  configuration     DeploymentConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  triggerType       String   // 'manual', 'webhook', 'scheduled'
+  triggeredBy       String?  // User ID or API key ID
+  dockerImage       String   // Full image with tag
+  status            String   // 'pending', 'deploying', 'health_checking', etc.
+  currentState      String   // State machine state
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  
+  // Container tracking
+  oldContainerId    String?
+  newContainerId    String?
+  
+  // Health check results
+  healthCheckPassed Boolean  @default(false)
+  healthCheckLogs   Json?
+  
+  // Error tracking
+  errorMessage      String?
+  errorDetails      Json?
+  
+  // Metrics
+  deploymentTime    Int?     // Seconds
+  downtime          Int      @default(0) // Milliseconds
+
+  deploymentSteps   DeploymentStep[]
+  containers        DeploymentContainer[]
+  
+  @@index([configurationId, status])
+  @@index([startedAt])
+  @@map("deployments")
+}
+
+// DeploymentStep model for granular progress tracking
+model DeploymentStep {
+  id              String   @id @default(cuid())
+  deploymentId    String
+  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  stepName        String   // 'pull_image', 'create_container', etc.
+  status          String   // 'pending', 'running', 'completed', 'failed'
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  duration        Int?     // Milliseconds
+  output          String?  // Step output/logs
+  errorMessage    String?
+
+  @@index([deploymentId])
+  @@map("deployment_steps")
+}
+
+// DeploymentContainer model for tracking detailed container information per deployment
+model DeploymentContainer {
+  id              String   @id @default(cuid())
+  deploymentId    String
+  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  // Container identification
+  containerId     String   // Docker container ID
+  containerName   String   // Container name
+  containerRole   String   // 'old', 'new', 'blue', 'green'
+
+  // Image information
+  dockerImage     String   // Full image:tag
+  imageId         String?  // Docker image ID (sha256:...)
+
+  // Container configuration at deployment time (sanitized)
+  containerConfig Json     // Container config excluding environment variables (ports, volumes, labels, etc.)
+
+  // Runtime information
+  status          String   // Container status when captured
+  ipAddress       String?  // Container IP address
+  createdAt       DateTime // When container was created
+  startedAt       DateTime? // When container started
+
+  // Deployment metadata
+  capturedAt      DateTime @default(now()) // When this record was created
+
+  @@index([deploymentId])
+  @@index([containerId])
+  @@index([deploymentId, containerRole])
+  @@map("deployment_containers")
+}
+
+// Environment Management Models
+
+// Environment model - Core entity for managing service collections
+model Environment {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  type        String   // 'production', 'nonproduction'
+  networkType String   @default("local") // 'local', 'internet'
+  status      String   @default("uninitialized") // Maps to ServiceStatus enum
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  services    EnvironmentService[]
+  networks    EnvironmentNetwork[]
+  volumes     EnvironmentVolume[]
+  deploymentConfigurations DeploymentConfiguration[]
+  haproxyFrontends HAProxyFrontend[]
+  haproxyBackends  HAProxyBackend[]
+
+  @@index([type])
+  @@index([networkType])
+  @@index([status])
+  @@map("environments")
+}
+
+// EnvironmentService - Tracks services within an environment
+model EnvironmentService {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  serviceName   String   // e.g., 'haproxy', 'redis', 'rabbitmq'
+  serviceType   String   // Class name implementing IApplicationService
+  status        String   @default("uninitialized") // ServiceStatus
+  health        String   @default("unknown") // HealthStatus
+  config        Json     // Service-specific configuration
+  startedAt     DateTime?
+  stoppedAt     DateTime?
+  lastError     Json?    // Error details
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([environmentId, serviceName])
+  @@index([environmentId])
+  @@index([status])
+  @@map("environment_services")
+}
+
+// EnvironmentNetwork - Tracks Docker networks for environments
+model EnvironmentNetwork {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  name          String
+  driver        String   @default("bridge")
+  options       Json?    // Network options
+  dockerId      String?  // Docker network ID when created
+  createdAt     DateTime @default(now())
+
+  @@unique([environmentId, name])
+  @@index([environmentId])
+  @@map("environment_networks")
+}
+
+// EnvironmentVolume - Tracks Docker volumes for environments
+model EnvironmentVolume {
+  id            String   @id @default(cuid())
+  environmentId String
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  name          String
+  driver        String   @default("local")
+  options       Json?    // Volume options
+  dockerId      String?  // Docker volume ID when created
+  createdAt     DateTime @default(now())
+
+  @@unique([environmentId, name])
+  @@index([environmentId])
+  @@map("environment_volumes")
+}
+
+// DeploymentDNSRecord model for tracking DNS records created for deployments
+model DeploymentDNSRecord {
+  id                    String   @id @default(cuid())
+  deploymentConfigId    String
+  deploymentConfig      DeploymentConfiguration @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+  hostname              String
+  dnsProvider           String   // 'cloudflare', 'external'
+  dnsRecordId           String?  // Provider's record ID (e.g., CloudFlare record ID)
+  ipAddress             String?  // IP address set in DNS
+  zoneId                String?  // CloudFlare zone ID
+  zoneName              String?  // CloudFlare zone name
+  status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
+  errorMessage          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([deploymentConfigId])
+  @@index([hostname])
+  @@index([status])
+  @@map("deployment_dns_records")
+}
+
+// HAProxyFrontend model for tracking HAProxy frontends created for deployments or manually
+model HAProxyFrontend {
+  id                    String   @id @default(cuid())
+
+  // Deployment association (optional for manual frontends)
+  deploymentConfigId    String?  @unique
+  deploymentConfig      DeploymentConfiguration? @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
+
+  // Frontend type discriminator
+  frontendType          String   @default("deployment") // "deployment" | "manual" | "shared"
+
+  // Manual frontend fields
+  containerName         String?  // Docker container name (for manual frontends)
+  containerId           String?  // Docker container ID (for manual frontends)
+  containerPort         Int?     // Container listening port (for manual frontends)
+  environmentId         String?  // Environment association
+
+  // Environment relation
+  environment           Environment? @relation(fields: [environmentId], references: [id])
+
+  // Frontend configuration
+  frontendName          String   @unique
+  backendName           String
+  hostname              String
+  bindPort              Int      @default(80)
+  bindAddress           String   @default("*")
+  useSSL                Boolean  @default(false)
+
+  // TLS/SSL configuration
+  tlsCertificateId      String?  // Associated TLS certificate
+  tlsCertificate        TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
+  sslBindPort           Int      @default(443)
+
+  // Shared frontend support
+  isSharedFrontend      Boolean  @default(false)
+  sharedFrontendId      String?  // Reference to parent shared frontend (for routes)
+
+  // Relations
+  routes                HAProxyRoute[]
+
+  status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
+  errorMessage          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([deploymentConfigId])
+  @@index([frontendName])
+  @@index([hostname])
+  @@index([status])
+  @@index([tlsCertificateId])
+  @@index([frontendType])
+  @@index([environmentId])
+  @@index([isSharedFrontend])
+  @@map("haproxy_frontends")
+}
+
+// HAProxyRoute model for tracking individual hostname routes within a shared frontend
+model HAProxyRoute {
+  id                    String   @id @default(cuid())
+  sharedFrontendId      String   // FK to shared HAProxyFrontend
+  sharedFrontend        HAProxyFrontend @relation(fields: [sharedFrontendId], references: [id], onDelete: Cascade)
+
+  // Route configuration
+  hostname              String
+  aclName               String   // e.g., "acl_pilltracker_app"
+  backendName           String   // e.g., "pilltracker"
+  priority              Int      @default(0)  // For rule ordering
+
+  // Source tracking
+  sourceType            String   // "deployment" | "manual"
+  deploymentConfigId    String?  // For deployment routes
+  manualFrontendId      String?  // For manual routes (legacy migration)
+
+  // SSL per-route (for SNI)
+  useSSL                Boolean  @default(false)
+  tlsCertificateId      String?
+
+  status                String   @default("active")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([sharedFrontendId, hostname])
+  @@index([sharedFrontendId])
+  @@index([hostname])
+  @@index([status])
+  @@index([sourceType])
+  @@map("haproxy_routes")
+}
+
+// HAProxyBackend model for tracking HAProxy backend configurations
+model HAProxyBackend {
+  id                    String   @id @default(cuid())
+  name                  String   // Backend name in HAProxy
+  environmentId         String
+  environment           Environment @relation(fields: [environmentId], references: [id])
+
+  // Backend configuration
+  mode                  String   @default("http") // "http" | "tcp"
+  balanceAlgorithm      String   @default("roundrobin") // "roundrobin" | "leastconn" | "source"
+  checkTimeout          Int?     // Health check timeout in ms
+  connectTimeout        Int?     // Connection timeout in ms
+  serverTimeout         Int?     // Server timeout in ms
+
+  // Source tracking
+  sourceType            String   // "deployment" | "manual"
+  deploymentConfigId    String?  // For deployment-created backends
+  manualFrontendId      String?  // For manually-created backends
+
+  // Status tracking
+  status                String   @default("active") // "active" | "removed" | "failed"
+  errorMessage          String?
+
+  // Relations
+  servers               HAProxyServer[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([name, environmentId])
+  @@index([environmentId])
+  @@index([status])
+  @@index([sourceType])
+  @@index([deploymentConfigId])
+  @@map("haproxy_backends")
+}
+
+// HAProxyServer model for tracking HAProxy server configurations within backends
+model HAProxyServer {
+  id                    String   @id @default(cuid())
+  name                  String   // Server name in HAProxy
+  backendId             String
+  backend               HAProxyBackend @relation(fields: [backendId], references: [id], onDelete: Cascade)
+
+  // Server configuration
+  address               String   // Container name or IP address
+  port                  Int
+  check                 String   @default("enabled") // "enabled" | "disabled"
+  checkPath             String?  // Health check endpoint
+  inter                 Int?     // Health check interval in ms
+  rise                  Int?     // Consecutive successful checks to mark UP
+  fall                  Int?     // Consecutive failed checks to mark DOWN
+  weight                Int      @default(100)
+  enabled               Boolean  @default(true)
+  maintenance           Boolean  @default(false)
+
+  // Container tracking
+  containerId           String?  // Docker container ID
+  containerName         String?  // Docker container name
+  deploymentId          String?  // Deployment that created this server
+
+  // Status tracking
+  status                String   @default("active") // "active" | "removed" | "draining"
+  errorMessage          String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([name, backendId])
+  @@index([backendId])
+  @@index([status])
+  @@index([containerId])
+  @@map("haproxy_servers")
+}
+
+// Registry Credentials Management
+
+// RegistryCredential model for managing Docker registry authentication
+model RegistryCredential {
+  id                    String   @id @default(cuid())
+  name                  String   // Friendly name (e.g., "GitHub Container Registry", "Docker Hub Production")
+  registryUrl           String   // Registry address (e.g., "ghcr.io", "registry.hub.docker.com")
+  username              String   // Registry username
+  password              String   // Encrypted password
+  isDefault             Boolean  @default(false) // Default registry for unmatched images
+  isActive              Boolean  @default(true)  // Enable/disable without deletion
+
+  // Metadata
+  description           String?  // Optional description
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdBy             String   // User ID
+  updatedBy             String   // User ID
+
+  // Validation tracking
+  lastValidatedAt       DateTime?
+  validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'
+  validationMessage     String?
+
+  @@unique([registryUrl])
+  @@map("registry_credentials")
+}
+
+// PostgreSQL Server Management Models (Phase 1.1)
+
+// PostgresServer model for managing PostgreSQL server connections with admin credentials
+model PostgresServer {
+  id                String   @id @default(cuid())
+  name              String   @unique // User-friendly name
+  host              String
+  port              Int      @default(5432)
+  adminUsername     String   // Admin user (e.g., 'postgres')
+  connectionString  String   // Encrypted connection string with admin password
+  sslMode           String   @default("prefer") // prefer/require/disable
+  tags              String?  // JSON array of tags
+
+  // Health monitoring
+  healthStatus      String   @default("unknown") // healthy/unhealthy/unknown
+  lastHealthCheck   DateTime?
+  serverVersion     String?  // e.g., "PostgreSQL 15.3"
+  
+  // Container linking (optional)
+  linkedContainerId   String?  // Docker container ID
+  linkedContainerName String?  // Docker container name (for display)
+
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  databases         ManagedDatabase[]
+  users             ManagedDatabaseUser[]
+
+  @@index([userId])
+  @@index([healthStatus])
+  @@map("postgres_servers")
+}
+
+// ManagedDatabase model for tracking databases managed on a PostgreSQL server
+model ManagedDatabase {
+  id               String   @id @default(cuid())
+  serverId         String
+  server           PostgresServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // Database info
+  databaseName     String   // Name on the server
+  owner            String   // Database owner role
+  encoding         String   @default("UTF8")
+  collation        String?
+  template         String   @default("template0")
+
+  // Metadata from server
+  sizeBytes        BigInt?  // Database size
+  connectionLimit  Int      @default(-1) // -1 = unlimited
+
+  // Tracking
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastSyncedAt     DateTime? // Last time we synced with server
+
+  // Relationships
+  grants           DatabaseGrant[]
+
+  @@unique([serverId, databaseName])
+  @@index([serverId])
+  @@map("managed_databases")
+}
+
+// ManagedDatabaseUser model for tracking users/roles on a PostgreSQL server
+model ManagedDatabaseUser {
+  id              String   @id @default(cuid())
+  serverId        String
+  server          PostgresServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // User info
+  username        String
+  canLogin        Boolean  @default(true)
+  isSuperuser     Boolean  @default(false)
+  connectionLimit Int      @default(-1)
+
+  // Password management
+  passwordHash    String?  // Encrypted - for our records only
+  passwordSetAt   DateTime?
+
+  // Tracking
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSyncedAt    DateTime?
+
+  // Relationships
+  grants          DatabaseGrant[]
+
+  @@unique([serverId, username])
+  @@index([serverId])
+  @@map("managed_database_users")
+}
+
+// DatabaseGrant model for tracking permissions granted to users on databases
+model DatabaseGrant {
+  id          String   @id @default(cuid())
+  databaseId  String
+  database    ManagedDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  userId      String
+  user        ManagedDatabaseUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Permissions
+  canConnect  Boolean  @default(true)
+  canCreate   Boolean  @default(false)
+  canTemp     Boolean  @default(false)
+
+  // Schema-level privileges (on public schema)
+  canCreateSchema   Boolean @default(false)
+  canUsageSchema    Boolean @default(true)
+
+  // Table-level privileges (ALL TABLES)
+  canSelect   Boolean  @default(true)
+  canInsert   Boolean  @default(true)
+  canUpdate   Boolean  @default(true)
+  canDelete   Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([databaseId, userId])
+  @@index([databaseId])
+  @@index([userId])
+  @@map("database_grants")
+}
+
+// TLS Certificate Management Models
+
+/// Managed TLS certificate records
+model TlsCertificate {
+  id                    String   @id @default(cuid())
+
+  // Certificate identification
+  domains               String   // JSON array of domains (e.g., ["example.com", "*.example.com"])
+  primaryDomain         String   // Main domain for certificate
+  certificateType       CertificateType @default(ACME) // "ACME" | "MANUAL"
+
+  // ACME-specific fields
+  acmeProvider          String?  // "letsencrypt" | "buypass" | "zerossl"
+  acmeAccountId         String?  // ACME account identifier
+  acmeOrderUrl          String?  // ACME order URL for renewals
+
+  // Azure Blob Storage references (optional during migration from Key Vault)
+  blobContainerName     String?  // Azure Storage container name
+  blobName              String?  @unique // Blob name (cert_{id}.pem)
+
+  // Certificate metadata
+  issuer                String?
+  serialNumber          String?
+  fingerprint           String?  @unique
+
+  // Lifecycle dates
+  issuedAt              DateTime
+  notBefore             DateTime
+  notAfter              DateTime
+  renewAfter            DateTime // Calculated: notAfter - renewalDaysBeforeExpiry
+  lastRenewedAt         DateTime?
+
+  // Status tracking
+  status                CertificateStatus @default(PENDING) // "PENDING" | "ACTIVE" | "RENEWING" | "EXPIRED" | "REVOKED" | "ERROR"
+  lastError             String?
+  lastErrorAt           DateTime?
+
+  // Configuration
+  autoRenew             Boolean  @default(true)
+  renewalDaysBeforeExpiry Int   @default(30)
+
+  // Associated HAProxy frontends (legacy JSON field - deprecated in favor of relation)
+  haproxyFrontendNames  String?  // JSON array of frontend names using this cert
+
+  // Audit trail
+  createdBy             String
+  updatedBy             String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  renewalHistory        TlsCertificateRenewal[]
+  deploymentConfigurations DeploymentConfiguration[]
+  haproxyFrontends      HAProxyFrontend[]
+
+  @@index([primaryDomain])
+  @@index([status])
+  @@index([renewAfter])
+  @@index([notAfter])
+  @@map("tls_certificates")
+}
+
+/// Certificate renewal history and audit log
+model TlsCertificateRenewal {
+  id              String   @id @default(cuid())
+  certificateId   String
+  certificate     TlsCertificate @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  // Renewal attempt details
+  attemptNumber   Int      // Retry attempt number (1, 2, 3...)
+  status          RenewalStatus // "INITIATED" | "DNS_CHALLENGE_CREATED" | "CHALLENGE_VALIDATED" | "CERTIFICATE_ISSUED" | "STORED_IN_VAULT" | "DEPLOYED_TO_HAPROXY" | "COMPLETED" | "FAILED"
+
+  // Timing
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+
+  // ACME details
+  acmeOrderUrl    String?
+  acmeChallengeType String? // "dns-01"
+  dnsRecordName   String?  // e.g., "_acme-challenge.example.com"
+  dnsRecordValue  String?
+
+  // Azure Blob Storage details
+  blobETag        String?  // New ETag after upload to Azure Storage
+
+  // HAProxy deployment
+  haproxyReloadMethod String? // "runtime-api" | "graceful-reload"
+  haproxyReloadSuccess Boolean @default(false)
+
+  // Error tracking
+  errorMessage    String?
+  errorCode       String?
+  errorDetails    String?  // JSON stringified detailed error
+
+  // Metadata
+  triggeredBy     String   // "auto-renewal" | "manual" | userId
+  metadata        String?  // JSON stringified additional data
+
+  @@index([certificateId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("tls_certificate_renewals")
+}
+
+/// ACME account management
+model AcmeAccount {
+  id              String   @id @default(cuid())
+
+  // Account identification
+  email           String   @unique
+  provider        String   // "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl"
+  accountUrl      String   @unique // ACME account URL
+
+  // Key storage in Azure Blob Storage (optional during migration from Key Vault)
+  blobContainerName String? // Azure Storage container name
+  blobName        String?  @unique // Blob name (acme-account-{email}.key)
+  keyAlgorithm    String   @default("RSA-2048") // "RSA-2048" | "ECDSA-P256"
+
+  // Status
+  status          String   @default("ACTIVE") // "ACTIVE" | "DEACTIVATED"
+  termsOfServiceUrl String?
+  agreedToTermsAt DateTime?
+
+  // Audit
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([email])
+  @@index([provider])
+  @@map("acme_accounts")
+}
+
+// Permission Preset Management
+
+model PermissionPreset {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  permissions String   // JSON array, e.g. ["containers:read","*"]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("permission_presets")
+}
+
+// User Events - Centralized event tracking for long-running operations
+
+/// UserEvent model for tracking logs and outcomes of important long-running processes
+model UserEvent {
+  id                String   @id @default(cuid())
+
+  // Event classification
+  eventType         String   // 'deployment', 'environment_start', 'environment_stop', 'certificate_create', 'certificate_renew', 'backup', 'restore', 'container_cleanup', etc.
+  eventCategory     String   // 'infrastructure', 'database', 'security', 'maintenance'
+  eventName         String   // Human-readable name
+
+  // User/trigger information
+  userId            String?  // User who triggered (nullable for automated events)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  triggeredBy       String   // 'manual', 'scheduled', 'webhook', 'api'
+
+  // Status tracking
+  status            String   // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  progress          Int      @default(0) // 0-100 percentage
+
+  // Timing
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+  durationMs        Int?     // Duration in milliseconds
+
+  // Resource identification (optional, for linking to specific resources)
+  resourceId        String?  // ID of deployment config, database, container, environment, certificate, etc.
+  resourceType      String?  // 'deployment', 'database', 'container', 'certificate', 'environment'
+  resourceName      String?  // Human-readable resource name
+
+  // Detailed information
+  description       String?  // Brief description
+  metadata          String?  // JSON stringified flexible metadata (config, parameters, steps, etc.)
+
+  // Output/results
+  resultSummary     String?  // Brief result description
+  errorMessage      String?  // Error message if failed
+  errorDetails      String?  // JSON stringified detailed error information
+
+  // Logs/output - Full text logs stored directly
+  logs              String?  // Text logs (may contain newlines, structured log entries, etc.)
+
+  // Retention
+  expiresAt         DateTime? // Optional expiration for auto-cleanup
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([eventType])
+  @@index([eventCategory])
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([resourceType, resourceId])
+  @@index([expiresAt])
+  @@map("user_events")
+}
+
+// Volume Inspection - Stores the latest inspection results for Docker volumes
+
+/// VolumeInspection model for tracking Docker volume file system inspection results
+model VolumeInspection {
+  id              String   @id @default(cuid())
+
+  // Volume identification
+  volumeName      String   @unique // Docker volume name
+
+  // Inspection status
+  status          String   // 'pending', 'running', 'completed', 'failed'
+
+  // Timing
+  inspectedAt     DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?     // Inspection duration in milliseconds
+
+  // Results
+  fileCount       Int?     // Total number of files found
+  totalSize       BigInt?  // Total size in bytes
+  files           String?  // JSON array of file information (path, size, permissions, owner, modified timestamp)
+
+  // Output
+  stdout          String?  // Standard output from inspection container
+  stderr          String?  // Standard error from inspection container
+
+  // Error tracking
+  errorMessage    String?  // Error message if failed
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([volumeName])
+  @@index([status])
+  @@index([inspectedAt])
+  @@map("volume_inspections")
+}
+
+// Volume File Content - Stores cached file contents from volume inspections
+
+/// VolumeFileContent model for storing individual file contents from volume inspections
+model VolumeFileContent {
+  id              String   @id @default(cuid())
+
+  // File identification
+  volumeName      String   // Docker volume name
+  filePath        String   // File path within volume (e.g., "/app/config.json")
+
+  // File content and metadata
+  content         String   // Text content (up to 1MB, base64-decoded from Alpine output)
+  size            Int      // Original file size in bytes
+
+  // Timing
+  fetchedAt       DateTime @default(now())
+
+  // Error tracking (if fetch failed for this specific file)
+  errorMessage    String?  // Error message if fetch failed
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([volumeName, filePath]) // One content record per file per volume
+  @@index([volumeName])
+  @@index([fetchedAt])
+  @@map("volume_file_contents")
+}
+
+// Agent Conversations - Persisted AI assistant chat history
+
+/// AgentConversation model for storing per-user AI assistant conversation threads
+model AgentConversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String    // First ~80 chars of first user message
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft-delete timestamp; null = active
+
+  messages  AgentConversationMessage[]
+
+  @@index([userId])
+  @@index([userId, updatedAt])
+  @@index([deletedAt])
+  @@map("agent_conversations")
+}
+
+/// AgentConversationMessage model for storing individual messages in an agent conversation
+model AgentConversationMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String            // 'user' | 'assistant' | 'tool_use' | 'error' | 'result'
+  content        String?           // Text content for user/assistant/error messages
+  toolId         String?
+  toolName       String?
+  toolInput      String?           // JSON stringified tool input
+  toolOutput     String?
+  success        Boolean?
+  cost           Float?
+  duration       Float?
+  turns          Int?
+  sequence       Int               // Monotonic ordering counter per conversation
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId])
+  @@index([conversationId, sequence])
+  @@map("agent_conversation_messages")
+}
+
+// Enums
+enum CertificateType {
+  ACME    // Let's Encrypt via ACME protocol
+  MANUAL  // Manually uploaded certificate
+}
+
+enum CertificateStatus {
+  PENDING   // Certificate order initiated
+  ACTIVE    // Certificate issued and active
+  RENEWING  // Renewal in progress
+  EXPIRED   // Certificate expired
+  REVOKED   // Certificate revoked
+  ERROR     // Error state
+}
+
+enum RenewalStatus {
+  INITIATED
+  DNS_CHALLENGE_CREATED
+  DNS_CHALLENGE_VALIDATED
+  CERTIFICATE_ISSUED
+  STORED_IN_VAULT
+  DEPLOYED_TO_HAPROXY
+  COMPLETED
+  FAILED
+}

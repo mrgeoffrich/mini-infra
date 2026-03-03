@@ -1,0 +1,41 @@
+{
+  "server": {
+    "nodeEnv": "development",
+    "port": 5005,
+    "publicUrl": "http://localhost:5005"
+  },
+  "database": {
+    "url": "file:./dev.db"
+  },
+  "auth": {
+    "google": {
+      "clientId": null,
+      "clientSecret": null
+    },
+    "session": {
+      "secret": null
+    },
+    "apiKey": {
+      "secret": "default-secret-change-in-production"
+    }
+  },
+  "logging": {
+    "level": "info"
+  },
+  "docker": {
+    "containerCacheTtl": 3000,
+    "containerPollInterval": 5000
+  },
+  "azure": {
+    "apiTimeout": 15000
+  },
+  "connectivity": {
+    "checkInterval": 300000
+  },
+  "agent": {
+    "model": "claude-sonnet-4-6",
+    "thinking": "adaptive",
+    "effort": "medium",
+    "maxTurns": 20
+  }
+}
