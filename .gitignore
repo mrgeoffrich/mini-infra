@@ -42,3 +42,16 @@ projectmanagement/
 *.db
 *.db-shm
 *.db-wal
+
+# TLS/SSL key material
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# Windows
+Thumbs.db
+
+# Test coverage
+coverage/
