@@ -62,6 +62,32 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "applications",
     description: "Docker container management",
     helpDoc: "containers/viewing-containers",
+    children: {
+      detail: {
+        path: "/containers/:id",
+        title: "Container Details",
+        breadcrumbLabel: "Details",
+        parent: "/containers",
+        showInNav: false,
+        helpDoc: "containers/managing-containers",
+      },
+      volumeInspect: {
+        path: "/containers/volumes/:name/inspect",
+        title: "Volume Inspect",
+        breadcrumbLabel: "Inspect",
+        parent: "/containers",
+        showInNav: false,
+        helpDoc: "containers/volume-management",
+      },
+      volumeFiles: {
+        path: "/containers/volumes/:name/files/*",
+        title: "Volume File Content",
+        breadcrumbLabel: "Files",
+        parent: "/containers",
+        showInNav: false,
+        helpDoc: "containers/volume-management",
+      },
+    },
   },
 
   "/postgres-server": {
@@ -80,6 +106,14 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Server Details",
         parent: "/postgres-server",
         showInNav: false,
+      },
+      database: {
+        path: "/postgres-server/:serverId/databases/:dbId",
+        title: "Database Details",
+        breadcrumbLabel: "Database",
+        parent: "/postgres-server",
+        showInNav: false,
+        helpDoc: "postgres-backups/database-management",
       },
     },
   },
@@ -123,6 +157,14 @@ export const routeConfig: Record<string, RouteConfig> = {
         showInNav: false,
         helpDoc: "deployments/creating-deployments",
       },
+      detail: {
+        path: "/deployments/:id",
+        title: "Deployment Details",
+        breadcrumbLabel: "Details",
+        parent: "/deployments",
+        showInNav: false,
+        helpDoc: "deployments/deployment-lifecycle",
+      },
     },
   },
 
@@ -134,6 +176,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Environment configuration management",
+    helpDoc: "deployments/environments",
     children: {
       detail: {
         path: "/environments/:id",
@@ -173,7 +216,25 @@ export const routeConfig: Record<string, RouteConfig> = {
         parent: "/api-keys",
         showInNav: false,
       },
+      presets: {
+        path: "/api-keys/presets",
+        title: "Permission Presets",
+        breadcrumbLabel: "Presets",
+        parent: "/api-keys",
+        showInNav: false,
+        helpDoc: "settings/permission-presets",
+      },
     },
+  },
+
+  "/logs": {
+    path: "/logs",
+    title: "Activity Logs",
+    icon: IconHistory,
+    showInNav: false,
+    navSection: "monitoring",
+    description: "Activity log viewer",
+    helpDoc: "monitoring/events",
   },
 
   "/events": {
@@ -184,6 +245,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "monitoring",
     description: "Track and monitor system operations",
+    helpDoc: "monitoring/events",
     children: {
       detail: {
         path: "/events/:id",
@@ -209,16 +271,35 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: "/haproxy/frontends",
         title: "Frontends",
         showInNav: true,
+        helpDoc: "deployments/haproxy-frontends",
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
         title: "Connect Container",
         showInNav: false,
+        helpDoc: "deployments/haproxy-frontends",
+      },
+      "frontends/detail": {
+        path: "/haproxy/frontends/:frontendName",
+        title: "Frontend Details",
+        breadcrumbLabel: "Details",
+        parent: "/haproxy/frontends",
+        showInNav: false,
+        helpDoc: "deployments/haproxy-frontends",
+      },
+      "frontends/edit": {
+        path: "/haproxy/frontends/:frontendName/edit",
+        title: "Edit Frontend",
+        breadcrumbLabel: "Edit",
+        parent: "/haproxy/frontends",
+        showInNav: false,
+        helpDoc: "deployments/haproxy-frontends",
       },
       backends: {
         path: "/haproxy/backends",
         title: "Backends",
         showInNav: true,
+        helpDoc: "deployments/haproxy-backends",
       },
       "backends/detail": {
         path: "/haproxy/backends/:backendName",
@@ -226,6 +307,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/haproxy/backends",
         showInNav: false,
+        helpDoc: "deployments/haproxy-backends",
       },
     },
   },
@@ -238,6 +320,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "networking",
     description: "Manage SSL/TLS certificates and renewals",
+    helpDoc: "networking/tls-certificates",
     children: {
       detail: {
         path: "/certificates/:id",
@@ -314,6 +397,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Security configuration and API keys",
+    helpDoc: "settings/security-settings",
   },
 
   "/settings-registry-credentials": {
@@ -349,6 +433,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "TLS certificate configuration",
+    helpDoc: "settings/tls-settings",
   },
 
   "/settings-ai-assistant": {
@@ -360,6 +445,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "AI assistant API key, model, and capabilities",
+    helpDoc: "settings/ai-assistant",
   },
 
   "/bug-report-settings": {
