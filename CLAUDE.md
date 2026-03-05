@@ -1,5 +1,9 @@
 # Mini Infra - Claude Code Context
 
+## Browser Automation & Testing
+
+For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
+
 ## Important Instructions
 
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
@@ -68,9 +72,6 @@ Mini Infra is a web application designed to manage a single Docker host and its 
   - pg 8.16.3 for PostgreSQL connectivity
 - **Scheduling**: node-cron 4.2.1 with cron-parser 5.3.1
 - **Caching**: node-cache 5.1.2 for in-memory caching
-- **Deployment Infrastructure**:
-  - js-yaml 4.1.0 for YAML configuration parsing
-  - HAProxy v3.2 for load balancing and traffic routing
 
 ### Development Tools
 - **Language**: TypeScript 5.8.3 (client) / 5.1.6 (server/lib)
@@ -95,59 +96,8 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 ```
 mini-infra/
 ├── client/                   # Vite + React 19 frontend application
-│   ├── src/
-│   │   ├── app/             # Application pages (route-based)
-│   │   │   ├── dashboard/   # Main dashboard overview
-│   │   │   ├── login/       # Authentication page
-│   │   │   ├── containers/  # Docker container management
-│   │   │   ├── postgres/    # PostgreSQL database management
-│   │   │   ├── tunnels/     # Cloudflare tunnel monitoring
-│   │   │   ├── connectivity/ # Service health monitoring
-│   │   │   │   ├── overview/ # Connectivity dashboard
-│   │   │   │   ├── docker/   # Docker service status
-│   │   │   │   ├── azure/    # Azure service status
-│   │   │   │   └── cloudflare/ # Cloudflare service status
-│   │   │   ├── settings/    # System configuration
-│   │   │   │   └── system/  # Docker registry and deployment infrastructure settings
-│   │   │   └── user/        # User preferences
-│   │   │       └── settings/ # Personal settings (timezone)
-│   │   ├── components/      # Reusable UI components
-│   │   │   ├── ui/          # shadcn UI components
-│   │   │   ├── postgres/    # PostgreSQL-specific components
-│   │   │   ├── deployments/ # Zero-downtime deployment components
-│   │   │   └── cloudflare/  # Cloudflare tunnel components
-│   │   ├── hooks/           # Custom React hooks
-│   │   └── lib/             # Frontend utilities and configuration
-│   ├── public/              # Static assets
-│   ├── dist/                # Build output (→ ../server/public)
-│   ├── package.json         # Frontend dependencies
-│   ├── vite.config.ts       # Vite configuration
-│   └── tailwind.config.js   # Tailwind CSS configuration
 ├── server/                  # Express.js 5 + Prisma backend
-│   ├── src/
-│   │   ├── app.ts           # Express app configuration
-│   │   ├── server.ts        # Server entry point
-│   │   ├── routes/          # API endpoints
-│   │   ├── services/        # Business logic layer
-│   │   ├── services/haproxy # Business logic layer for haproxy
-│   │   ├── lib/             # Core utilities and middleware
-│   │   └── __tests__/       # Test files
-│   ├── prisma/
-│   │   ├── schema.prisma    # Database schema definition
-│   │   └── dev.db           # SQLite development database file
-│   ├── config/
-│   │   └── logging.json     # Logging configuration
-│   ├── logs/                # Log files (excluded from git)
-│   ├── public/              # Static files served by Express
-│   ├── dist/                # Backend build output
-│   ├── package.json         # Backend dependencies
-│   ├── .env                 # Environment variables (not in git)
-│   └── .env.example         # Environment template
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
-│   ├── types/             # TypeScript type definitions shared between client and server
-│   ├── dist/              # Compiled JavaScript and declarations
-│   ├── package.json       # Shared types package configuration
-│   └── tsconfig.json      # TypeScript configuration
 ├── projectmanagement/      # Project documentation and specs
 ├── .claude/               # Claude Code configuration
 ├── CLAUDE.md              # Claude Code context and instructions
@@ -165,10 +115,6 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Watch Mode**: All three services run in parallel during development
 - **Type Safety**: Ensures consistent type definitions across full-stack
 - **Testing**: The shared types package must be built (`cd lib && npm run build`) before running tests, otherwise type imports will fail
-
-## Service Layer Architecture
-
-The backend implements a sophisticated service layer with dependency injection, configuration management, and comprehensive external API integration in `server/src/services`
 
 ## Key Commands
 
@@ -221,112 +167,12 @@ The backend implements a sophisticated service layer with dependency injection, 
 **Cons**: Security risk - container has full Docker control
 **Use Case**: Trusted environments, development, single-host deployments
 
-#### Docker-in-Docker (Alternative)
-
-For isolated environments, consider Docker-in-Docker (DinD):
-- Run Docker daemon inside container
-- Better isolation but more complex
-- Higher resource usage
-
-**Recommendation**: Only deploy with Docker socket access in trusted environments where container security is ensured through other means (network isolation, access controls, etc.).
-
-### Image Optimization
-
-The Docker image is optimized for size and security:
-
-- **Base Image**: `node:20-alpine` (minimal footprint)
-- **Multi-Stage Build**: Only runtime dependencies in final image
-- **Size**: Approximately 300-400MB
-- **Security**: Runs as non-root `node` user
-- **No Source Code**: Only compiled JavaScript in production image
-- **Layer Caching**: Optimized for fast rebuilds in CI/CD
-
-### Example docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  mini-infra:
-    image: ghcr.io/mrgeoffrich/mini-infra:latest
-    container_name: mini-infra
-    ports:
-      - "5000:5000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - mini-infra-data:/app/data
-      - mini-infra-logs:/app/server/logs
-    environment:
-      - NODE_ENV=production
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY_SECRET=${API_KEY_SECRET}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - LOG_LEVEL=info
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 3s
-      start_period: 40s
-      retries: 3
-
-volumes:
-  mini-infra-data:
-  mini-infra-logs:
-```
-
-### Graceful Shutdown
-
-The application handles graceful shutdown properly:
-
-- Listens for `SIGTERM` and `SIGINT` signals
-- Stops schedulers and background services
-- Closes database connections cleanly
-- 30-second timeout before force termination
-
-Docker respects this behavior:
-- `docker stop` sends `SIGTERM`
-- 10-second grace period (default)
-- Container shuts down cleanly
-
-### Troubleshooting
-
-#### Container Won't Start
-
-Check logs:
-```bash
-docker logs mini-infra
-```
-
-Common issues:
-- Missing required environment variables (SESSION_SECRET, API_KEY_SECRET)
-- Database migration failures
-- Port 5000 already in use
-
-#### Database Issues
-
-Check database permissions:
-```bash
-docker exec mini-infra ls -la /app/data
-```
-
-Ensure volume is mounted and writable.
-
-#### Health Check Failing
-
-Check application health:
-```bash
-docker exec mini-infra node -e "require('http').get('http://localhost:5000/health', (r) => {r.on('data', d => console.log(d.toString()))})"
-```
-
 ## Logging Architecture
 
 The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
 
 Logs are found in `server/logs/` directory with the following files:
  - `app.log.1` - Application logs
- - `app-all.log.1` - All logs aggregated together
  - `app-http.log.1` - http request and response logs
  - `app-services.log.1` - log from services that run from `server/src/service/*.ts`
  - `app-dockerexecutor.log.1` - logs from container execution
