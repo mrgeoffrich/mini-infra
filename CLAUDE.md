@@ -326,7 +326,6 @@ The application uses a sophisticated multi-file logging architecture built on Pi
 
 Logs are found in `server/logs/` directory with the following files:
  - `app.log.1` - Application logs
- - `app-all.log.1` - All logs aggregated together
  - `app-http.log.1` - http request and response logs
  - `app-services.log.1` - log from services that run from `server/src/service/*.ts`
  - `app-dockerexecutor.log.1` - logs from container execution
