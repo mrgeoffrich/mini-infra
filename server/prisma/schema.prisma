@@ -442,6 +442,24 @@ model EnvironmentVolume {
   @@map("environment_volumes")
 }
 
+// HostService model - Tracks host-level services (not scoped to an environment)
+model HostService {
+  id          String   @id @default(cuid())
+  serviceName String   @unique  // e.g., "monitoring"
+  serviceType String              // e.g., "MonitoringService"
+  status      String   @default("stopped")
+  health      String   @default("unknown")
+  config      Json?    // Service-specific configuration
+  startedAt   DateTime?
+  stoppedAt   DateTime?
+  lastError   Json?    // Error details
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@map("host_services")
+}
+
 // DeploymentDNSRecord model for tracking DNS records created for deployments
 model DeploymentDNSRecord {
   id                    String   @id @default(cuid())

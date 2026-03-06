@@ -73,17 +73,22 @@ describe('ServiceRegistry', () => {
     it('should return all service definitions', () => {
       const definitions = serviceRegistry.getAllServiceDefinitions();
 
-      expect(definitions).toHaveLength(1);
-      expect(definitions[0].serviceType).toBe('haproxy');
+      expect(definitions).toHaveLength(2);
+      expect(definitions.map(d => d.serviceType)).toContain('haproxy');
+      expect(definitions.map(d => d.serviceType)).toContain('monitoring');
     });
 
     it('should return all service metadata with service type', () => {
       const metadata = serviceRegistry.getAllServiceMetadata();
 
-      expect(metadata).toHaveLength(1);
-      expect(metadata[0].serviceType).toBe('haproxy');
-      expect(metadata[0].description).toBe('HAProxy load balancer with DataPlane API');
-      expect(metadata[0].name).toBe('haproxy');
+      expect(metadata).toHaveLength(2);
+      const haproxyMeta = metadata.find(m => m.serviceType === 'haproxy');
+      expect(haproxyMeta).toBeDefined();
+      expect(haproxyMeta!.description).toBe('HAProxy load balancer with DataPlane API');
+      expect(haproxyMeta!.name).toBe('haproxy');
+      const monitoringMeta = metadata.find(m => m.serviceType === 'monitoring');
+      expect(monitoringMeta).toBeDefined();
+      expect(monitoringMeta!.name).toBe('monitoring');
     });
   });
 

@@ -47,6 +47,9 @@ export * from "./environments";
 // Self-backup types
 export * from "./self-backup";
 
+// Monitoring types
+export * from "./monitoring";
+
 // Registry types
 export * from "./registry";
 

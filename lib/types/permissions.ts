@@ -20,6 +20,7 @@ export type PermissionDomain =
   | "user"
   | "agent"
   | "backups"
+  | "monitoring"
   | "registry";
 
 /** Permission actions */
@@ -358,6 +359,28 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    domain: "monitoring",
+    label: "Monitoring",
+    description: "Container metrics and monitoring services",
+    permissions: [
+      {
+        scope: "monitoring:read",
+        domain: "monitoring",
+        action: "read",
+        label: "View Monitoring",
+        description: "View monitoring status, query container metrics",
+      },
+      {
+        scope: "monitoring:write",
+        domain: "monitoring",
+        action: "write",
+        label: "Manage Monitoring",
+        description:
+          "Start, stop, and configure the monitoring service",
+      },
+    ],
+  },
+  {
     domain: "registry",
     label: "Registry Credentials",
     description: "Docker registry authentication",
@@ -423,6 +446,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "events:read",
       "backups:read",
       "registry:read",
+      "monitoring:read",
       "agent:use",
     ],
   },

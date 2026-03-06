@@ -145,6 +145,7 @@ import haproxyBackendsRoutes from "./routes/haproxy-backends";
 import githubAppSettingsRoutes from "./routes/github-app-settings";
 import githubAppResourcesRoutes from "./routes/github-app-resources";
 import agentRoutes from "./routes/agent";
+import monitoringRoutes from "./routes/monitoring";
 import permissionPresetsRoutes from "./routes/permission-presets";
 
 // JWT-based authentication doesn't require CSRF protection for now
@@ -194,6 +195,7 @@ const routes = [
   { path: "/api/tls/certificates", router: tlsCertificatesRoutes, name: "tlsCertificatesRoutes" },
   { path: "/api/tls/renewals", router: tlsRenewalsRoutes, name: "tlsRenewalsRoutes" },
   { path: "/api/events", router: eventsRoutes, name: "eventsRoutes" },
+  { path: "/api/monitoring", router: monitoringRoutes, name: "monitoringRoutes" },
   { path: "/api/permission-presets", router: permissionPresetsRoutes, name: "permissionPresetsRoutes" },
 ];
 

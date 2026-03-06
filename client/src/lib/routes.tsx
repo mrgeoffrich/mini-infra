@@ -47,6 +47,7 @@ import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
 import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
 import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
+import { MonitoringPage } from "@/app/monitoring/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -197,6 +198,10 @@ export const router = createBrowserRouter([
       {
         path: "environments/:id",
         element: <EnvironmentDetailPage />,
+      },
+      {
+        path: "monitoring",
+        element: <MonitoringPage />,
       },
       {
         path: "logs",

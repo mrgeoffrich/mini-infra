@@ -1,5 +1,6 @@
 import {
   type Icon,
+  IconActivity,
   IconBook,
   IconBrandDocker,
   IconBrandCloudflare,
@@ -235,6 +236,16 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "monitoring",
     description: "Activity log viewer",
     helpDoc: "monitoring/events",
+  },
+
+  "/monitoring": {
+    path: "/monitoring",
+    title: "Container Metrics",
+    icon: IconActivity,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "monitoring",
+    description: "Monitor CPU, memory, and network usage across containers",
   },
 
   "/events": {
