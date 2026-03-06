@@ -127,6 +127,7 @@ export class MonitoringService implements IApplicationService {
       this.currentStatus = ServiceStatus.RUNNING;
       this.startedAt = new Date();
       this.stoppedAt = undefined;
+      this.lastError = undefined;
 
       const duration = Date.now() - startTime;
       const result: StartupResult = {
@@ -993,6 +994,7 @@ loki.write "local" {
   markAsRunning(): void {
     this.currentStatus = ServiceStatus.RUNNING;
     this.startedAt = this.startedAt || new Date();
+    this.lastError = undefined;
   }
 
   getPrometheusUrl(): string {
