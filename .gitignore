@@ -55,3 +55,6 @@ Thumbs.db
 
 # Test coverage
 coverage/
+
+# Dev server restart sentinel
+.restart-dev
