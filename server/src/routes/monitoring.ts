@@ -15,6 +15,56 @@ const serviceRegistry = ServiceRegistry.getInstance();
 const MONITORING_SERVICE_NAME = 'host-monitoring';
 const MONITORING_SERVICE_TYPE = 'monitoring';
 
+/**
+ * Get the MonitoringService instance from the factory, or create a temporary one
+ * if the containers are running but the server was restarted (factory is empty).
+ */
+async function getOrRecoverService(): Promise<MonitoringService | undefined> {
+  const existing = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+  if (existing) return existing;
+
+  // Check if DB says running — containers may still be up after a server restart
+  const dbRecord = await prisma.hostService.findUnique({
+    where: { serviceName: MONITORING_SERVICE_NAME }
+  });
+
+  if (dbRecord?.status !== 'running') return undefined;
+
+  // Re-create the service instance and register it in the factory
+  try {
+    const metadata = serviceRegistry.getServiceMetadata(MONITORING_SERVICE_TYPE);
+    const networks = metadata?.requiredNetworks || [];
+    const volumes = metadata?.requiredVolumes || [];
+
+    const createResult = await serviceFactory.createService({
+      serviceName: MONITORING_SERVICE_NAME,
+      serviceType: MONITORING_SERVICE_TYPE,
+      projectName: 'monitoring'
+    });
+
+    if (!createResult.success || !createResult.service) return undefined;
+
+    await createResult.service.initialize(networks, volumes);
+
+    // Verify containers are actually healthy before promoting
+    const monitoringService = createResult.service as MonitoringService;
+    const health = await monitoringService.healthCheck();
+    if (health.status !== 'healthy') {
+      await serviceFactory.stopService(MONITORING_SERVICE_NAME).catch(() => {});
+      return undefined;
+    }
+
+    // Mark as running since containers are already up
+    monitoringService.markAsRunning();
+
+    logger.info('Recovered monitoring service instance after server restart');
+    return monitoringService;
+  } catch (error) {
+    logger.warn({ error }, 'Failed to recover monitoring service instance');
+    return undefined;
+  }
+}
+
 async function getOrCreateDbRecord() {
   let record = await prisma.hostService.findUnique({
     where: { serviceName: MONITORING_SERVICE_NAME }
@@ -39,8 +89,8 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
   try {
     const dbRecord = await getOrCreateDbRecord();
 
-    // Try to get live status from running service
-    const service = serviceFactory.getService(MONITORING_SERVICE_NAME);
+    // Try to get live status from running service (or recover after restart)
+    const service = await getOrRecoverService();
     if (service) {
       const status = await service.getStatus();
       return res.json({
@@ -269,7 +319,7 @@ router.get('/query', requirePermission('monitoring:read'), async (req, res) => {
       return res.status(400).json({ error: 'query parameter is required' });
     }
 
-    const service = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+    const service = await getOrRecoverService();
     if (!service) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
@@ -303,7 +353,7 @@ router.get('/query_range', requirePermission('monitoring:read'), async (req, res
       return res.status(400).json({ error: 'end parameter is required' });
     }
 
-    const service = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+    const service = await getOrRecoverService();
     if (!service) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
@@ -326,7 +376,7 @@ router.get('/query_range', requirePermission('monitoring:read'), async (req, res
 // GET /api/monitoring/targets - Proxy targets query to Prometheus
 router.get('/targets', requirePermission('monitoring:read'), async (_req, res) => {
   try {
-    const service = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+    const service = await getOrRecoverService();
     if (!service) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }

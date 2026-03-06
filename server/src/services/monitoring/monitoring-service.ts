@@ -664,6 +664,16 @@ scrape_configs:
     return { removed, errors };
   }
 
+  /**
+   * Mark the service as running without deploying containers.
+   * Used when recovering the in-memory state after a server restart
+   * while containers are still running from a previous session.
+   */
+  markAsRunning(): void {
+    this.currentStatus = ServiceStatus.RUNNING;
+    this.startedAt = this.startedAt || new Date();
+  }
+
   getPrometheusUrl(): string {
     // When the server runs inside Docker, use the container name on the shared network.
     // When running on the host, use localhost with the published port.
