@@ -88,7 +88,7 @@ export function MonitoringPage() {
   );
 
   const { data: memoryData } = usePrometheusQuery(
-    'docker_container_mem_working_set{container_name!=""}',
+    'docker_container_mem_usage{container_name!=""}',
     { enabled: isRunning }
   );
 
@@ -101,7 +101,7 @@ export function MonitoringPage() {
   );
 
   const { data: memoryRangeData } = usePrometheusRangeQuery(
-    'docker_container_mem_working_set{container_name!=""}',
+    'docker_container_mem_usage{container_name!=""}',
     rangeSeconds,
     step,
     { enabled: isRunning }
