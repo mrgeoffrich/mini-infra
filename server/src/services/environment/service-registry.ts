@@ -5,6 +5,7 @@ import {
   VolumeRequirement
 } from '../interfaces/application-service';
 import { HAProxyService } from '../haproxy/haproxy-service';
+import { MonitoringService } from '../monitoring/monitoring-service';
 import { servicesLogger } from '../../lib/logger-factory';
 
 export interface ServiceTypeDefinition {
@@ -39,6 +40,15 @@ export class ServiceRegistry {
       implementation: HAProxyService,
       metadata: haproxyInstance.metadata,
       description: 'HAProxy load balancer with DataPlane API'
+    });
+
+    // Register Monitoring service
+    const monitoringInstance = new MonitoringService();
+    this.registerService({
+      serviceType: 'monitoring',
+      implementation: MonitoringService,
+      metadata: monitoringInstance.metadata,
+      description: 'Container metrics monitoring with cAdvisor and Prometheus'
     });
 
     this.logger.info({ registeredServices: Array.from(this.services.keys()) }, 'Default services registered');

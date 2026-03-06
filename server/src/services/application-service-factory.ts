@@ -131,6 +131,9 @@ export class ApplicationServiceFactory {
       case 'haproxy':
         return new implementation(projectName || serviceName, environmentId);
 
+      case 'monitoring':
+        return new implementation(projectName || serviceName);
+
       default:
         // Generic instantiation - may need to be customized per service
         return new implementation(serviceName, config);
