@@ -8,6 +8,14 @@ scrape_configs:
     static_configs:
       - targets: ["telegraf:9273"]
 
+  # HAProxy native Prometheus exporter (served from the stats frontend)
+  # Requires http-request use-service prometheus-exporter in the stats frontend.
+  # Managed automatically by mini-infra remediation.
+  - job_name: "haproxy"
+    static_configs:
+      - targets: ["host.docker.internal:8404"]
+    metrics_path: /metrics
+
   # Docker daemon metrics (requires daemon.json configuration)
   # Uncomment if you've enabled metrics in /etc/docker/daemon.json:
   #   { "metrics-addr": "0.0.0.0:9323" }
