@@ -19,6 +19,8 @@ export class MonitoringService implements IApplicationService {
   private readonly projectName: string;
   private readonly telegrafContainerName: string;
   private readonly prometheusContainerName: string;
+  private readonly lokiContainerName: string;
+  private readonly alloyContainerName: string;
   private readonly logger = servicesLogger();
   private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
   private startedAt?: Date;
@@ -30,9 +32,9 @@ export class MonitoringService implements IApplicationService {
   readonly metadata: ServiceMetadata = {
     name: 'monitoring',
     version: '2.0.0',
-    description: 'Container metrics monitoring with Telegraf and Prometheus',
+    description: 'Container metrics monitoring with Telegraf, Prometheus, and centralized log collection with Loki and Alloy',
     dependencies: ['docker'],
-    tags: ['monitoring', 'metrics', 'prometheus', 'telegraf', 'infrastructure'],
+    tags: ['monitoring', 'metrics', 'prometheus', 'telegraf', 'loki', 'alloy', 'logging', 'infrastructure'],
     requiredNetworks: [
       {
         name: 'monitoring_network',
@@ -42,6 +44,9 @@ export class MonitoringService implements IApplicationService {
     requiredVolumes: [
       {
         name: 'prometheus_data'
+      },
+      {
+        name: 'loki_data'
       }
     ],
     exposedPorts: [
@@ -58,6 +63,20 @@ export class MonitoringService implements IApplicationService {
         hostPort: 9090,
         protocol: 'tcp',
         description: 'Prometheus query and UI'
+      },
+      {
+        name: 'loki',
+        containerPort: 3100,
+        hostPort: 3100,
+        protocol: 'tcp',
+        description: 'Loki log storage and query API'
+      },
+      {
+        name: 'alloy',
+        containerPort: 12345,
+        hostPort: 12345,
+        protocol: 'tcp',
+        description: 'Alloy collector debug UI'
       }
     ]
   };
@@ -67,6 +86,8 @@ export class MonitoringService implements IApplicationService {
     this.projectName = projectName;
     this.telegrafContainerName = `${this.projectName}-telegraf`;
     this.prometheusContainerName = `${this.projectName}-prometheus`;
+    this.lokiContainerName = `${this.projectName}-loki`;
+    this.alloyContainerName = `${this.projectName}-alloy`;
   }
 
   getProjectName(): string {
@@ -157,12 +178,20 @@ export class MonitoringService implements IApplicationService {
       // Write configs to volumes
       await this.writeTelegrafConfig();
       await this.writePrometheusConfig();
+      await this.writeLokiConfig();
+      await this.writeAlloyConfig();
 
       // Deploy Telegraf first (Prometheus depends on it)
       await this.deployTelegraf();
 
       // Deploy Prometheus
       await this.deployPrometheus();
+
+      // Deploy Loki (log storage)
+      await this.deployLoki();
+
+      // Deploy Alloy (log collector, depends on Loki)
+      await this.deployAlloy();
 
       this.logger.info('Monitoring deployment completed successfully');
     } catch (error) {
@@ -182,7 +211,9 @@ export class MonitoringService implements IApplicationService {
     const monitoringContainers = allContainers.filter(c =>
       c.Names?.some(name =>
         name.includes(this.telegrafContainerName) ||
-        name.includes(this.prometheusContainerName)
+        name.includes(this.prometheusContainerName) ||
+        name.includes(this.lokiContainerName) ||
+        name.includes(this.alloyContainerName)
       )
     );
 
@@ -481,6 +512,279 @@ scrape_configs:
     this.logger.info('Started Prometheus container');
   }
 
+  private getLokiConfig(): string {
+    return `auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: "2024-04-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h
+  max_query_length: 721h
+
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+  retention_enabled: true
+  compaction_interval: 10m
+  retention_delete_delay: 2h
+`;
+  }
+
+  private getAlloyConfig(): string {
+    return `// Collect stdout/stderr from ALL Docker containers
+
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.local.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_image_name"]
+    target_label  = "image"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+}
+
+loki.source.docker "stdout" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.local.targets
+  relabel_rules = discovery.relabel.docker_labels.rules
+  forward_to    = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://${this.lokiContainerName}:3100/loki/api/v1/push"
+  }
+}
+`;
+  }
+
+  private async writeLokiConfig(): Promise<void> {
+    const lokiConfig = this.getLokiConfig();
+    const lokiVolumeName = this.getVolumeByName('loki_data')?.name || 'loki_data';
+    this.logger.info({ volumeName: lokiVolumeName }, 'Writing Loki config to volume');
+
+    const tempWriterName = `${this.projectName}-loki-config-writer-${Date.now()}`;
+    const docker = this.dockerExecutor.getDockerClient();
+
+    try {
+      await this.dockerExecutor.pullImageWithAuth('alpine:latest');
+
+      const escapedConfig = lokiConfig.replace(/'/g, "'\\''");
+
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: tempWriterName,
+        Cmd: [
+          'sh',
+          '-c',
+          `mkdir -p /loki/config && echo '${escapedConfig}' > /loki/config/local-config.yaml`
+        ],
+        HostConfig: {
+          Binds: [`${lokiVolumeName}:/loki`]
+        }
+      });
+
+      try {
+        await container.start();
+        await container.wait();
+        this.logger.info('Loki config written to volume');
+      } finally {
+        try {
+          await container.remove({ force: true });
+        } catch (cleanupError) {
+          this.logger.warn({ error: cleanupError }, 'Failed to cleanup Loki config writer container');
+        }
+      }
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to write Loki config to volume');
+      throw error;
+    }
+  }
+
+  private async writeAlloyConfig(): Promise<void> {
+    const alloyConfig = this.getAlloyConfig();
+    const lokiVolumeName = this.getVolumeByName('loki_data')?.name || 'loki_data';
+    this.logger.info({ volumeName: lokiVolumeName }, 'Writing Alloy config to volume');
+
+    const tempWriterName = `${this.projectName}-alloy-config-writer-${Date.now()}`;
+    const docker = this.dockerExecutor.getDockerClient();
+
+    try {
+      await this.dockerExecutor.pullImageWithAuth('alpine:latest');
+
+      const escapedConfig = alloyConfig.replace(/'/g, "'\\''");
+
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: tempWriterName,
+        Cmd: [
+          'sh',
+          '-c',
+          `mkdir -p /loki/config && echo '${escapedConfig}' > /loki/config/config.alloy`
+        ],
+        HostConfig: {
+          Binds: [`${lokiVolumeName}:/loki`]
+        }
+      });
+
+      try {
+        await container.start();
+        await container.wait();
+        this.logger.info('Alloy config written to volume');
+      } finally {
+        try {
+          await container.remove({ force: true });
+        } catch (cleanupError) {
+          this.logger.warn({ error: cleanupError }, 'Failed to cleanup Alloy config writer container');
+        }
+      }
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to write Alloy config to volume');
+      throw error;
+    }
+  }
+
+  private async deployLoki(): Promise<void> {
+    await this.dockerExecutor.pullImageWithAuth('grafana/loki:3.6.0');
+
+    const lokiVolumeName = this.getVolumeByName('loki_data')?.name || 'loki_data';
+
+    const container = await this.dockerExecutor.createLongRunningContainer({
+      image: 'grafana/loki:3.6.0',
+      name: this.lokiContainerName,
+      projectName: this.projectName,
+      serviceName: 'loki',
+      env: {},
+      cmd: ['-config.file=/loki/config/local-config.yaml'],
+      ports: {
+        '3100/tcp': [{ HostPort: '3100' }]
+      },
+      mounts: [
+        {
+          Target: '/loki',
+          Source: lokiVolumeName,
+          Type: 'volume'
+        }
+      ],
+      networks: this.availableNetworks.map(net => net.name),
+      restartPolicy: 'unless-stopped',
+      healthcheck: {
+        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:3100/ready'],
+        Interval: 30000000000,
+        Timeout: 3000000000,
+        Retries: 3,
+        StartPeriod: 30000000000
+      },
+      logConfig: {
+        Type: 'json-file',
+        Config: {
+          'max-size': '10m',
+          'max-file': '3'
+        }
+      }
+    });
+
+    await container.start();
+    this.logger.info('Started Loki container');
+  }
+
+  private async deployAlloy(): Promise<void> {
+    await this.dockerExecutor.pullImageWithAuth('grafana/alloy:latest');
+
+    const lokiVolumeName = this.getVolumeByName('loki_data')?.name || 'loki_data';
+
+    const dockerSocketPath = process.platform === 'win32'
+      ? '//var/run/docker.sock'
+      : '/var/run/docker.sock';
+
+    const container = await this.dockerExecutor.createLongRunningContainer({
+      image: 'grafana/alloy:latest',
+      name: this.alloyContainerName,
+      projectName: this.projectName,
+      serviceName: 'alloy',
+      user: 'root',
+      env: {},
+      cmd: ['run', '/loki/config/config.alloy', '--server.http.listen-addr=0.0.0.0:12345'],
+      ports: {
+        '12345/tcp': [{ HostPort: '12345' }]
+      },
+      mounts: [
+        {
+          Target: '/loki',
+          Source: lokiVolumeName,
+          Type: 'volume',
+          ReadOnly: true
+        },
+        {
+          Target: '/var/run/docker.sock',
+          Source: dockerSocketPath,
+          Type: 'bind',
+          ReadOnly: false
+        }
+      ],
+      networks: this.availableNetworks.map(net => net.name),
+      restartPolicy: 'unless-stopped',
+      healthcheck: {
+        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:12345/-/ready'],
+        Interval: 30000000000,
+        Timeout: 3000000000,
+        Retries: 3,
+        StartPeriod: 20000000000
+      },
+      logConfig: {
+        Type: 'json-file',
+        Config: {
+          'max-size': '10m',
+          'max-file': '3'
+        }
+      }
+    });
+
+    await container.start();
+    this.logger.info('Started Alloy container');
+  }
+
   async stopAndCleanup(): Promise<void> {
     this.currentStatus = ServiceStatus.STOPPING;
     try {
@@ -523,7 +827,9 @@ scrape_configs:
     return allContainers.filter(c =>
       c.Names?.some(name =>
         name.includes(this.telegrafContainerName) ||
-        name.includes(this.prometheusContainerName)
+        name.includes(this.prometheusContainerName) ||
+        name.includes(this.lokiContainerName) ||
+        name.includes(this.alloyContainerName)
       )
     );
   }
@@ -561,13 +867,25 @@ scrape_configs:
       const prometheusRunning = containers.some(c =>
         c.State === 'running' && c.Names?.some(name => name.includes(this.prometheusContainerName))
       );
+      const lokiRunning = containers.some(c =>
+        c.State === 'running' && c.Names?.some(name => name.includes(this.lokiContainerName))
+      );
+      const alloyRunning = containers.some(c =>
+        c.State === 'running' && c.Names?.some(name => name.includes(this.alloyContainerName))
+      );
 
-      if (!telegrafRunning || !prometheusRunning) {
+      if (!telegrafRunning || !prometheusRunning || !lokiRunning || !alloyRunning) {
+        const services = [
+          `Telegraf=${telegrafRunning ? 'running' : 'stopped'}`,
+          `Prometheus=${prometheusRunning ? 'running' : 'stopped'}`,
+          `Loki=${lokiRunning ? 'running' : 'stopped'}`,
+          `Alloy=${alloyRunning ? 'running' : 'stopped'}`
+        ].join(', ');
         return {
           status: HealthStatus.UNHEALTHY,
-          message: `Monitoring degraded: Telegraf=${telegrafRunning ? 'running' : 'stopped'}, Prometheus=${prometheusRunning ? 'running' : 'stopped'}`,
+          message: `Monitoring degraded: ${services}`,
           lastChecked: new Date(),
-          details: { telegrafRunning, prometheusRunning }
+          details: { telegrafRunning, prometheusRunning, lokiRunning, alloyRunning }
         };
       }
 
@@ -579,7 +897,9 @@ scrape_configs:
           runningContainers: runningContainers.length,
           totalContainers: containers.length,
           telegrafRunning,
-          prometheusRunning
+          prometheusRunning,
+          lokiRunning,
+          alloyRunning
         }
       };
     } catch (error) {
@@ -639,7 +959,8 @@ scrape_configs:
     const allContainers = await docker.listContainers({ all: true });
     const orphans = allContainers.filter(c =>
       c.Names?.some(n =>
-        n.includes(this.telegrafContainerName) || n.includes(this.prometheusContainerName)
+        n.includes(this.telegrafContainerName) || n.includes(this.prometheusContainerName) ||
+        n.includes(this.lokiContainerName) || n.includes(this.alloyContainerName)
       ) && !removed.some(r => c.Names?.some(n => n.includes(r.replace('/', ''))))
     );
 
@@ -681,5 +1002,12 @@ scrape_configs:
     return inDocker
       ? `http://${this.prometheusContainerName}:9090`
       : 'http://localhost:9090';
+  }
+
+  getLokiUrl(): string {
+    const inDocker = existsSync('/.dockerenv');
+    return inDocker
+      ? `http://${this.lokiContainerName}:3100`
+      : 'http://localhost:3100';
   }
 }

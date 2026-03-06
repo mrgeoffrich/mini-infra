@@ -392,4 +392,113 @@ router.get('/targets', requirePermission('monitoring:read'), async (_req, res) =
   }
 });
 
+// ============================================================
+// Loki log query proxy routes
+// ============================================================
+
+// GET /api/monitoring/loki/labels - List all label names
+router.get('/loki/labels', requirePermission('monitoring:read'), async (req, res) => {
+  try {
+    const service = await getOrRecoverService();
+    if (!service) {
+      return res.status(503).json({ error: 'Monitoring service is not running' });
+    }
+
+    const lokiUrl = service.getLokiUrl();
+    const params = new URLSearchParams();
+    const { start, end } = req.query;
+    if (start && typeof start === 'string') params.set('start', start);
+    if (end && typeof end === 'string') params.set('end', end);
+
+    const response = await fetch(`${lokiUrl}/loki/api/v1/labels?${params}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error({ error }, 'Failed to query Loki labels');
+    res.status(500).json({ error: 'Failed to query Loki labels' });
+  }
+});
+
+// GET /api/monitoring/loki/label/:name/values - List values for a label
+router.get('/loki/label/:name/values', requirePermission('monitoring:read'), async (req, res) => {
+  try {
+    const service = await getOrRecoverService();
+    if (!service) {
+      return res.status(503).json({ error: 'Monitoring service is not running' });
+    }
+
+    const lokiUrl = service.getLokiUrl();
+    const params = new URLSearchParams();
+    const { start, end } = req.query;
+    if (start && typeof start === 'string') params.set('start', start);
+    if (end && typeof end === 'string') params.set('end', end);
+
+    const response = await fetch(`${lokiUrl}/loki/api/v1/label/${encodeURIComponent(req.params.name)}/values?${params}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error({ error }, 'Failed to query Loki label values');
+    res.status(500).json({ error: 'Failed to query Loki label values' });
+  }
+});
+
+// GET /api/monitoring/loki/query_range - Query logs over a time range
+router.get('/loki/query_range', requirePermission('monitoring:read'), async (req, res) => {
+  try {
+    const { query, start, end, limit, direction } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'query parameter is required' });
+    }
+
+    const service = await getOrRecoverService();
+    if (!service) {
+      return res.status(503).json({ error: 'Monitoring service is not running' });
+    }
+
+    const lokiUrl = service.getLokiUrl();
+    const params = new URLSearchParams({ query });
+    if (start && typeof start === 'string') params.set('start', start);
+    if (end && typeof end === 'string') params.set('end', end);
+    if (limit && typeof limit === 'string') params.set('limit', limit);
+    if (direction && typeof direction === 'string') params.set('direction', direction);
+
+    const response = await fetch(`${lokiUrl}/loki/api/v1/query_range?${params}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error({ error }, 'Failed to query Loki logs');
+    res.status(500).json({ error: 'Failed to query Loki logs' });
+  }
+});
+
+// GET /api/monitoring/loki/query - Query logs at a single point in time
+router.get('/loki/query', requirePermission('monitoring:read'), async (req, res) => {
+  try {
+    const { query, time, limit, direction } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'query parameter is required' });
+    }
+
+    const service = await getOrRecoverService();
+    if (!service) {
+      return res.status(503).json({ error: 'Monitoring service is not running' });
+    }
+
+    const lokiUrl = service.getLokiUrl();
+    const params = new URLSearchParams({ query });
+    if (time && typeof time === 'string') params.set('time', time);
+    if (limit && typeof limit === 'string') params.set('limit', limit);
+    if (direction && typeof direction === 'string') params.set('direction', direction);
+
+    const response = await fetch(`${lokiUrl}/loki/api/v1/query?${params}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    logger.error({ error }, 'Failed to query Loki');
+    res.status(500).json({ error: 'Failed to query Loki' });
+  }
+});
+
 export default router;
