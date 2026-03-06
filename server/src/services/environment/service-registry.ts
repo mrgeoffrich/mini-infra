@@ -48,7 +48,7 @@ export class ServiceRegistry {
       serviceType: 'monitoring',
       implementation: MonitoringService,
       metadata: monitoringInstance.metadata,
-      description: 'Container metrics monitoring with cAdvisor and Prometheus'
+      description: 'Container metrics monitoring with Telegraf and Prometheus'
     });
 
     this.logger.info({ registeredServices: Array.from(this.services.keys()) }, 'Default services registered');

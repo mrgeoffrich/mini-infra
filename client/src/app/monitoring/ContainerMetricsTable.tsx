@@ -93,7 +93,7 @@ function mergeMetrics(
 
   if (cpuData?.data?.result) {
     for (const result of cpuData.data.result) {
-      const name = result.metric.name || result.metric.container_label_com_docker_compose_service || "unknown";
+      const name = result.metric.container_name || result.metric.com_docker_compose_service || "unknown";
       const value = result.value ? parseFloat(result.value[1]) : 0;
       metricsMap.set(name, { name, cpu: value, memory: 0 });
     }
@@ -101,7 +101,7 @@ function mergeMetrics(
 
   if (memoryData?.data?.result) {
     for (const result of memoryData.data.result) {
-      const name = result.metric.name || result.metric.container_label_com_docker_compose_service || "unknown";
+      const name = result.metric.container_name || result.metric.com_docker_compose_service || "unknown";
       const value = result.value ? parseFloat(result.value[1]) : 0;
       const existing = metricsMap.get(name);
       if (existing) {

@@ -209,6 +209,38 @@ export function useStopMonitoring() {
   });
 }
 
+// Force remove monitoring containers
+async function forceRemoveMonitoringService(
+  correlationId: string
+): Promise<{ message: string; removed: string[]; errors: string[] }> {
+  const response = await fetch(`/api/monitoring/force-remove`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to force remove monitoring containers`);
+  }
+
+  return response.json();
+}
+
+export function useForceRemoveMonitoring() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => forceRemoveMonitoringService(generateCorrelationId()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+    },
+  });
+}
+
 export function usePrometheusQuery(
   query: string,
   options: { enabled?: boolean; refetchInterval?: number } = {}

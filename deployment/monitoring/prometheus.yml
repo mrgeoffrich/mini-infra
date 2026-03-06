@@ -3,10 +3,10 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  # cAdvisor container metrics
-  - job_name: "cadvisor"
+  # Telegraf Docker container metrics
+  - job_name: "telegraf"
     static_configs:
-      - targets: ["cadvisor:8080"]
+      - targets: ["telegraf:9273"]
 
   # Docker daemon metrics (requires daemon.json configuration)
   # Uncomment if you've enabled metrics in /etc/docker/daemon.json:

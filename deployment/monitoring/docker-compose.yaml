@@ -1,21 +1,15 @@
 services:
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.51.0
-    container_name: mini-infra-cadvisor
+  telegraf:
+    image: telegraf:latest
+    container_name: mini-infra-telegraf
     restart: unless-stopped
-    privileged: true
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "${CADVISOR_PORT:-8080}:8080"
-    devices:
-      - /dev/kmsg:/dev/kmsg
+      - "${TELEGRAF_PORT:-9273}:9273"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9273/metrics"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -35,7 +29,7 @@ services:
       - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}"
       - "--web.enable-lifecycle"
     depends_on:
-      cadvisor:
+      telegraf:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]

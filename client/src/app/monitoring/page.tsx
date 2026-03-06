@@ -28,12 +28,14 @@ import {
   IconPlayerPlay,
   IconPlayerStop,
   IconServer,
+  IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   useMonitoringStatus,
   useStartMonitoring,
   useStopMonitoring,
+  useForceRemoveMonitoring,
   usePrometheusQuery,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
@@ -68,6 +70,7 @@ export function MonitoringPage() {
 
   const startMonitoring = useStartMonitoring();
   const stopMonitoring = useStopMonitoring();
+  const forceRemove = useForceRemoveMonitoring();
 
   const isRunning = status?.service?.status === "running";
   const isStopped =
@@ -80,39 +83,39 @@ export function MonitoringPage() {
 
   // Current metrics (instant queries)
   const { data: cpuData } = usePrometheusQuery(
-    'rate(container_cpu_usage_seconds_total{name!=""}[5m])',
+    'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
     { enabled: isRunning }
   );
 
   const { data: memoryData } = usePrometheusQuery(
-    'container_memory_working_set_bytes{name!=""}',
+    'docker_container_mem_working_set{container_name!=""}',
     { enabled: isRunning }
   );
 
   // Range queries for charts
   const { data: cpuRangeData } = usePrometheusRangeQuery(
-    'rate(container_cpu_usage_seconds_total{name!=""}[5m])',
+    'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
     rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: memoryRangeData } = usePrometheusRangeQuery(
-    'container_memory_working_set_bytes{name!=""}',
+    'docker_container_mem_working_set{container_name!=""}',
     rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: networkRxRangeData } = usePrometheusRangeQuery(
-    'rate(container_network_receive_bytes_total{name!=""}[5m])',
+    'rate(docker_container_net_rx_bytes{container_name!=""}[5m])',
     rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: networkTxRangeData } = usePrometheusRangeQuery(
-    'rate(container_network_transmit_bytes_total{name!=""}[5m])',
+    'rate(docker_container_net_tx_bytes{container_name!=""}[5m])',
     rangeSeconds,
     step,
     { enabled: isRunning }
@@ -136,6 +139,24 @@ export function MonitoringPage() {
     } catch (error) {
       toast.error(
         `Failed to stop monitoring: ${(error as Error).message}`
+      );
+    }
+  };
+
+  const handleForceRemove = async () => {
+    try {
+      const result = await forceRemove.mutateAsync();
+      if (result.removed.length > 0) {
+        toast.success(`Force removed ${result.removed.length} container(s)`);
+      } else {
+        toast.info("No monitoring containers found to remove");
+      }
+      if (result.errors.length > 0) {
+        toast.warning(`Some containers had errors: ${result.errors.join(", ")}`);
+      }
+    } catch (error) {
+      toast.error(
+        `Failed to force remove: ${(error as Error).message}`
       );
     }
   };
@@ -171,8 +192,10 @@ export function MonitoringPage() {
           isStopped={isStopped}
           isStarting={startMonitoring.isPending}
           isStopping={stopMonitoring.isPending}
+          isForceRemoving={forceRemove.isPending}
           onStart={handleStart}
           onStop={handleStop}
+          onForceRemove={handleForceRemove}
         />
 
         {/* Metrics Content */}
@@ -267,8 +290,10 @@ function MonitoringServiceCard({
   isStopped,
   isStarting,
   isStopping,
+  isForceRemoving,
   onStart,
   onStop,
+  onForceRemove,
 }: {
   status: ReturnType<typeof useMonitoringStatus>["data"];
   isLoading: boolean;
@@ -276,8 +301,10 @@ function MonitoringServiceCard({
   isStopped: boolean;
   isStarting: boolean;
   isStopping: boolean;
+  isForceRemoving: boolean;
   onStart: () => void;
   onStop: () => void;
+  onForceRemove: () => void;
 }) {
   if (isLoading) {
     return (
@@ -306,7 +333,7 @@ function MonitoringServiceCard({
               <StatusBadge status={serviceStatus} />
             </CardTitle>
             <CardDescription>
-              {healthMessage || "cAdvisor + Prometheus container metrics collection"}
+              {healthMessage || "Telegraf + Prometheus container metrics collection"}
             </CardDescription>
           </div>
           <div className="flex gap-2">
@@ -338,6 +365,19 @@ function MonitoringServiceCard({
                 Stop
               </Button>
             )}
+            <Button
+              onClick={onForceRemove}
+              disabled={isForceRemoving}
+              variant="outline"
+              size="icon"
+              title="Force remove all monitoring containers"
+            >
+              {isForceRemoving ? (
+                <IconLoader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <IconTrash className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
       </CardHeader>

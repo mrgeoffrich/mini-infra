@@ -640,7 +640,7 @@ function MonitoringServiceCard() {
                 )}
               </CardTitle>
               <CardDescription>
-                Collect CPU, memory, and network metrics from all containers using cAdvisor and Prometheus
+                Collect CPU, memory, and network metrics from all containers using Telegraf and Prometheus
               </CardDescription>
             </div>
           </div>

@@ -274,6 +274,8 @@ export class DockerExecutorService {
         Type: string;
         Config: Record<string, string>;
       };
+      user?: string;
+      entrypoint?: string[];
     }
   ): Promise<Container> {
     return this.longRunningMgr.createLongRunningContainer(options);

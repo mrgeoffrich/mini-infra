@@ -57,7 +57,7 @@ export function MetricsChart({
     }
 
     const names = data.data.result.map(
-      (r) => r.metric.name || r.metric.container_label_com_docker_compose_service || "unknown"
+      (r) => r.metric.container_name || r.metric.com_docker_compose_service || "unknown"
     );
 
     // Build time-series data keyed by timestamp
@@ -65,8 +65,8 @@ export function MetricsChart({
 
     for (const result of data.data.result) {
       const name =
-        result.metric.name ||
-        result.metric.container_label_com_docker_compose_service ||
+        result.metric.container_name ||
+        result.metric.com_docker_compose_service ||
         "unknown";
 
       if (result.values) {

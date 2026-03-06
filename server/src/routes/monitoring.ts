@@ -78,14 +78,24 @@ router.post('/start', requirePermission('monitoring:write'), async (_req, res) =
   try {
     const dbRecord = await getOrCreateDbRecord();
 
+    // If DB says running, verify containers are actually running
     if (dbRecord.status === 'running') {
-      return res.status(400).json({ error: 'Monitoring service is already running' });
+      const service = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+      if (service) {
+        const health = await service.healthCheck();
+        if (health.status === 'healthy') {
+          return res.status(400).json({ error: 'Monitoring service is already running' });
+        }
+        // Containers are gone or unhealthy — clean up stale factory entry and re-deploy
+        logger.info('DB shows running but containers are unhealthy, re-deploying');
+        await serviceFactory.stopService(MONITORING_SERVICE_NAME).catch(() => {});
+      }
     }
 
     // Update DB status to starting
     await prisma.hostService.update({
       where: { serviceName: MONITORING_SERVICE_NAME },
-      data: { status: 'starting' }
+      data: { status: 'starting', lastError: Prisma.JsonNull }
     });
 
     // Create service via factory
@@ -161,18 +171,14 @@ router.post('/start', requirePermission('monitoring:write'), async (_req, res) =
 // POST /api/monitoring/stop - Stop the monitoring service
 router.post('/stop', requirePermission('monitoring:write'), async (_req, res) => {
   try {
-    const dbRecord = await getOrCreateDbRecord();
-
-    if (dbRecord.status === 'stopped') {
-      return res.status(400).json({ error: 'Monitoring service is already stopped' });
-    }
+    await getOrCreateDbRecord();
 
     await prisma.hostService.update({
       where: { serviceName: MONITORING_SERVICE_NAME },
       data: { status: 'stopping' }
     });
 
-    // Stop via factory
+    // Stop via factory — this is idempotent and handles missing containers
     await serviceFactory.stopService(MONITORING_SERVICE_NAME);
 
     // Update DB
@@ -181,7 +187,8 @@ router.post('/stop', requirePermission('monitoring:write'), async (_req, res) =>
       data: {
         status: 'stopped',
         health: 'unknown',
-        stoppedAt: new Date()
+        stoppedAt: new Date(),
+        lastError: Prisma.JsonNull
       }
     });
 
@@ -199,6 +206,57 @@ router.post('/stop', requirePermission('monitoring:write'), async (_req, res) =>
       }
     }).catch(() => {});
     res.status(500).json({ error: 'Failed to stop monitoring service' });
+  }
+});
+
+// POST /api/monitoring/force-remove - Force remove all monitoring containers
+router.post('/force-remove', requirePermission('monitoring:write'), async (_req, res) => {
+  try {
+    await getOrCreateDbRecord();
+
+    // Try to use existing service instance, or create a temporary one
+    let service = serviceFactory.getService(MONITORING_SERVICE_NAME) as MonitoringService | undefined;
+    if (!service) {
+      service = new MonitoringService('monitoring');
+      await service.initialize(
+        serviceRegistry.getServiceMetadata(MONITORING_SERVICE_TYPE)?.requiredNetworks || [],
+        serviceRegistry.getServiceMetadata(MONITORING_SERVICE_TYPE)?.requiredVolumes || []
+      );
+    }
+
+    const result = await service.forceRemove();
+
+    // Clean up factory entry
+    await serviceFactory.stopService(MONITORING_SERVICE_NAME).catch(() => {});
+
+    // Reset DB state
+    await prisma.hostService.update({
+      where: { serviceName: MONITORING_SERVICE_NAME },
+      data: {
+        status: 'stopped',
+        health: 'unknown',
+        stoppedAt: new Date(),
+        lastError: Prisma.JsonNull
+      }
+    });
+
+    res.json({
+      message: 'Force remove completed',
+      removed: result.removed,
+      errors: result.errors
+    });
+  } catch (error) {
+    logger.error({ error }, 'Failed to force remove monitoring containers');
+    // Still try to reset DB state
+    await prisma.hostService.update({
+      where: { serviceName: MONITORING_SERVICE_NAME },
+      data: {
+        status: 'stopped',
+        health: 'unknown',
+        stoppedAt: new Date()
+      }
+    }).catch(() => {});
+    res.status(500).json({ error: 'Failed to force remove monitoring containers' });
   }
 });
 

@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+import Docker from 'dockerode';
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
 import {
@@ -15,7 +17,7 @@ import {
 export class MonitoringService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
   private readonly projectName: string;
-  private readonly cadvisorContainerName: string;
+  private readonly telegrafContainerName: string;
   private readonly prometheusContainerName: string;
   private readonly logger = servicesLogger();
   private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
@@ -27,10 +29,10 @@ export class MonitoringService implements IApplicationService {
 
   readonly metadata: ServiceMetadata = {
     name: 'monitoring',
-    version: '1.0.0',
-    description: 'Container metrics monitoring with cAdvisor and Prometheus',
+    version: '2.0.0',
+    description: 'Container metrics monitoring with Telegraf and Prometheus',
     dependencies: ['docker'],
-    tags: ['monitoring', 'metrics', 'prometheus', 'cadvisor', 'infrastructure'],
+    tags: ['monitoring', 'metrics', 'prometheus', 'telegraf', 'infrastructure'],
     requiredNetworks: [
       {
         name: 'monitoring_network',
@@ -44,11 +46,11 @@ export class MonitoringService implements IApplicationService {
     ],
     exposedPorts: [
       {
-        name: 'cadvisor',
-        containerPort: 8080,
-        hostPort: 8080,
+        name: 'telegraf',
+        containerPort: 9273,
+        hostPort: 9273,
         protocol: 'tcp',
-        description: 'cAdvisor container metrics'
+        description: 'Telegraf Prometheus metrics endpoint'
       },
       {
         name: 'prometheus',
@@ -63,7 +65,7 @@ export class MonitoringService implements IApplicationService {
   constructor(projectName: string = 'monitoring') {
     this.dockerExecutor = new DockerExecutorService();
     this.projectName = projectName;
-    this.cadvisorContainerName = `${this.projectName}-cadvisor`;
+    this.telegrafContainerName = `${this.projectName}-telegraf`;
     this.prometheusContainerName = `${this.projectName}-prometheus`;
   }
 
@@ -149,11 +151,15 @@ export class MonitoringService implements IApplicationService {
       // Create volumes
       await this.createVolumes();
 
-      // Write Prometheus config to volume
+      // Clean up any stale containers before deploying
+      await this.removeStaleContainers();
+
+      // Write configs to volumes
+      await this.writeTelegrafConfig();
       await this.writePrometheusConfig();
 
-      // Deploy cAdvisor first (Prometheus depends on it)
-      await this.deployCadvisor();
+      // Deploy Telegraf first (Prometheus depends on it)
+      await this.deployTelegraf();
 
       // Deploy Prometheus
       await this.deployPrometheus();
@@ -162,6 +168,41 @@ export class MonitoringService implements IApplicationService {
     } catch (error) {
       this.logger.error({ error }, 'Failed to deploy monitoring');
       throw error;
+    }
+  }
+
+  /**
+   * Find and remove any existing monitoring containers that are stopped, dead, or in a bad state.
+   * Running containers are also stopped and removed so a clean deploy can proceed.
+   */
+  private async removeStaleContainers(): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const allContainers = await docker.listContainers({ all: true });
+
+    const monitoringContainers = allContainers.filter(c =>
+      c.Names?.some(name =>
+        name.includes(this.telegrafContainerName) ||
+        name.includes(this.prometheusContainerName)
+      )
+    );
+
+    for (const containerInfo of monitoringContainers) {
+      const containerName = containerInfo.Names?.[0] || containerInfo.Id;
+      try {
+        const container = docker.getContainer(containerInfo.Id);
+        if (containerInfo.State === 'running') {
+          this.logger.info({ container: containerName }, 'Stopping existing monitoring container');
+          await container.stop();
+        }
+        await container.remove({ force: true });
+        this.logger.info({ container: containerName }, 'Removed stale monitoring container');
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '';
+        if (msg.includes('404') || msg.includes('no such container')) {
+          continue;
+        }
+        this.logger.warn({ error, container: containerName }, 'Failed to remove stale container, continuing anyway');
+      }
     }
   }
 
@@ -215,15 +256,80 @@ export class MonitoringService implements IApplicationService {
     );
   }
 
+  private getTelegrafConfig(): string {
+    return `[agent]
+  interval = "10s"
+  flush_interval = "10s"
+
+[[inputs.docker]]
+  endpoint = "unix:///var/run/docker.sock"
+  gather_services = false
+  source_tag = false
+  timeout = "5s"
+  perdevice_include = ["cpu"]
+  total_include = ["cpu", "blkio", "network"]
+  docker_label_include = []
+  docker_label_exclude = []
+
+[[outputs.prometheus_client]]
+  listen = ":9273"
+  metric_version = 2
+  path = "/metrics"
+`;
+  }
+
+  private async writeTelegrafConfig(): Promise<void> {
+    const telegrafConfig = this.getTelegrafConfig();
+    const configVolumeName = this.getVolumeByName('prometheus_data')?.name || 'prometheus_data';
+    this.logger.info({ volumeName: configVolumeName }, 'Writing Telegraf config to volume');
+
+    const tempWriterName = `${this.projectName}-telegraf-config-writer-${Date.now()}`;
+    const docker = this.dockerExecutor.getDockerClient();
+
+    try {
+      await this.dockerExecutor.pullImageWithAuth('alpine:latest');
+
+      const escapedConfig = telegrafConfig.replace(/'/g, "'\\''");
+
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: tempWriterName,
+        Cmd: [
+          'sh',
+          '-c',
+          `mkdir -p /prometheus/config && echo '${escapedConfig}' > /prometheus/config/telegraf.conf`
+        ],
+        HostConfig: {
+          Binds: [`${configVolumeName}:/prometheus`]
+        }
+      });
+
+      try {
+        await container.start();
+        await container.wait();
+        this.logger.info('Telegraf config written to volume');
+      } finally {
+        try {
+          await container.remove({ force: true });
+        } catch (cleanupError) {
+          this.logger.warn({ error: cleanupError }, 'Failed to cleanup config writer container');
+        }
+      }
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to write Telegraf config to volume');
+      throw error;
+    }
+  }
+
   private async writePrometheusConfig(): Promise<void> {
     const prometheusConfig = `global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: "cadvisor"
+  - job_name: "telegraf"
     static_configs:
-      - targets: ["${this.cadvisorContainerName}:8080"]
+      - targets: ["${this.telegrafContainerName}:9273"]
 `;
 
     const configVolumeName = this.getVolumeByName('prometheus_data')?.name || 'prometheus_data';
@@ -243,7 +349,7 @@ scrape_configs:
         Cmd: [
           'sh',
           '-c',
-          `mkdir -p /prometheus/config && echo '${escapedConfig}' > /prometheus/config/prometheus.yml`
+          `mkdir -p /prometheus/config /prometheus/data && chown -R 65534:65534 /prometheus/data && echo '${escapedConfig}' > /prometheus/config/prometheus.yml`
         ],
         HostConfig: {
           Binds: [`${configVolumeName}:/prometheus`]
@@ -267,29 +373,47 @@ scrape_configs:
     }
   }
 
-  private async deployCadvisor(): Promise<void> {
-    await this.dockerExecutor.pullImageWithAuth('gcr.io/cadvisor/cadvisor:v0.51.0');
+  private async deployTelegraf(): Promise<void> {
+    await this.dockerExecutor.pullImageWithAuth('telegraf:latest');
+
+    const dataVolumeName = this.getVolumeByName('prometheus_data')?.name || 'prometheus_data';
+
+    const dockerSocketPath = process.platform === 'win32'
+      ? '//var/run/docker.sock'
+      : '/var/run/docker.sock';
 
     const container = await this.dockerExecutor.createLongRunningContainer({
-      image: 'gcr.io/cadvisor/cadvisor:v0.51.0',
-      name: this.cadvisorContainerName,
+      image: 'telegraf:latest',
+      name: this.telegrafContainerName,
       projectName: this.projectName,
-      serviceName: 'cadvisor',
+      serviceName: 'telegraf',
+      user: 'root',
       env: {},
       ports: {
-        '8080/tcp': [{ HostPort: '8080' }]
+        '9273/tcp': [{ HostPort: '9273' }]
       },
+      entrypoint: [
+        'sh', '-c',
+        'chmod 666 /var/run/docker.sock && exec /entrypoint.sh telegraf --config /telegraf-volume/config/telegraf.conf'
+      ],
       mounts: [
-        { Target: '/rootfs', Source: '/', Type: 'bind', ReadOnly: true },
-        { Target: '/var/run', Source: '/var/run', Type: 'bind', ReadOnly: true },
-        { Target: '/sys', Source: '/sys', Type: 'bind', ReadOnly: true },
-        { Target: '/var/lib/docker/', Source: '/var/lib/docker/', Type: 'bind', ReadOnly: true },
-        { Target: '/dev/disk/', Source: '/dev/disk/', Type: 'bind', ReadOnly: true }
+        {
+          Target: '/telegraf-volume',
+          Source: dataVolumeName,
+          Type: 'volume',
+          ReadOnly: true
+        },
+        {
+          Target: '/var/run/docker.sock',
+          Source: dockerSocketPath,
+          Type: 'bind',
+          ReadOnly: false
+        }
       ],
       networks: this.availableNetworks.map(net => net.name),
       restartPolicy: 'unless-stopped',
       healthcheck: {
-        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:8080/healthz'],
+        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:9273/metrics'],
         Interval: 30000000000,
         Timeout: 3000000000,
         Retries: 3,
@@ -305,7 +429,7 @@ scrape_configs:
     });
 
     await container.start();
-    this.logger.info('Started cAdvisor container');
+    this.logger.info('Started Telegraf container');
   }
 
   private async deployPrometheus(): Promise<void> {
@@ -360,11 +484,28 @@ scrape_configs:
   async stopAndCleanup(): Promise<void> {
     this.currentStatus = ServiceStatus.STOPPING;
     try {
+      // removeProject handles already-stopped containers gracefully
       await this.dockerExecutor.removeProject(this.projectName);
+
+      // Also clean up any containers matched by name that may not have project labels
+      // (e.g. orphans from a failed deploy)
+      await this.removeStaleContainers();
+
       this.currentStatus = ServiceStatus.STOPPED;
       this.stoppedAt = new Date();
       this.logger.info('Monitoring service stopped successfully - network and volumes retained');
     } catch (error) {
+      // If all containers are already gone, treat as success
+      const containers = await this.dockerExecutor.getProjectContainers(this.projectName).catch(() => []);
+      const staleContainers = await this.findMonitoringContainers().catch(() => []);
+
+      if (containers.length === 0 && staleContainers.length === 0) {
+        this.currentStatus = ServiceStatus.STOPPED;
+        this.stoppedAt = new Date();
+        this.logger.info('Monitoring containers already removed - treating as stopped');
+        return;
+      }
+
       this.currentStatus = ServiceStatus.FAILED;
       this.lastError = {
         message: error instanceof Error ? error.message : 'Failed to stop',
@@ -374,6 +515,17 @@ scrape_configs:
       this.logger.error({ error }, 'Monitoring service failed to stop');
       throw error;
     }
+  }
+
+  private async findMonitoringContainers(): Promise<Docker.ContainerInfo[]> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const allContainers = await docker.listContainers({ all: true });
+    return allContainers.filter(c =>
+      c.Names?.some(name =>
+        name.includes(this.telegrafContainerName) ||
+        name.includes(this.prometheusContainerName)
+      )
+    );
   }
 
   async getStatus(): Promise<ServiceStatusInfo> {
@@ -403,20 +555,19 @@ scrape_configs:
         };
       }
 
-      // Check both cadvisor and prometheus are running
-      const cadvisorRunning = containers.some(c =>
-        c.State === 'running' && c.Names?.some(name => name.includes(this.cadvisorContainerName))
+      const telegrafRunning = containers.some(c =>
+        c.State === 'running' && c.Names?.some(name => name.includes(this.telegrafContainerName))
       );
       const prometheusRunning = containers.some(c =>
         c.State === 'running' && c.Names?.some(name => name.includes(this.prometheusContainerName))
       );
 
-      if (!cadvisorRunning || !prometheusRunning) {
+      if (!telegrafRunning || !prometheusRunning) {
         return {
           status: HealthStatus.UNHEALTHY,
-          message: `Monitoring degraded: cAdvisor=${cadvisorRunning ? 'running' : 'stopped'}, Prometheus=${prometheusRunning ? 'running' : 'stopped'}`,
+          message: `Monitoring degraded: Telegraf=${telegrafRunning ? 'running' : 'stopped'}, Prometheus=${prometheusRunning ? 'running' : 'stopped'}`,
           lastChecked: new Date(),
-          details: { cadvisorRunning, prometheusRunning }
+          details: { telegrafRunning, prometheusRunning }
         };
       }
 
@@ -427,7 +578,7 @@ scrape_configs:
         details: {
           runningContainers: runningContainers.length,
           totalContainers: containers.length,
-          cadvisorRunning,
+          telegrafRunning,
           prometheusRunning
         }
       };
@@ -454,7 +605,71 @@ scrape_configs:
     }
   }
 
+  /**
+   * Force-remove all monitoring containers regardless of state.
+   * Use when normal stop fails or containers are stuck.
+   */
+  async forceRemove(): Promise<{ removed: string[]; errors: string[] }> {
+    const removed: string[] = [];
+    const errors: string[] = [];
+
+    // Remove by project label
+    try {
+      const projectContainers = await this.dockerExecutor.getProjectContainers(this.projectName);
+      for (const containerInfo of projectContainers) {
+        const name = containerInfo.Names?.[0] || containerInfo.Id;
+        try {
+          const docker = this.dockerExecutor.getDockerClient();
+          const container = docker.getContainer(containerInfo.Id);
+          await container.remove({ force: true });
+          removed.push(name);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes('404') && !msg.includes('no such container')) {
+            errors.push(`${name}: ${msg}`);
+          }
+        }
+      }
+    } catch {
+      // Ignore — try by name next
+    }
+
+    // Also remove by name (catches orphans without project labels)
+    const docker = this.dockerExecutor.getDockerClient();
+    const allContainers = await docker.listContainers({ all: true });
+    const orphans = allContainers.filter(c =>
+      c.Names?.some(n =>
+        n.includes(this.telegrafContainerName) || n.includes(this.prometheusContainerName)
+      ) && !removed.some(r => c.Names?.some(n => n.includes(r.replace('/', ''))))
+    );
+
+    for (const containerInfo of orphans) {
+      const name = containerInfo.Names?.[0] || containerInfo.Id;
+      try {
+        const container = docker.getContainer(containerInfo.Id);
+        await container.remove({ force: true });
+        removed.push(name);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('404') && !msg.includes('no such container')) {
+          errors.push(`${name}: ${msg}`);
+        }
+      }
+    }
+
+    this.currentStatus = ServiceStatus.STOPPED;
+    this.stoppedAt = new Date();
+    this.logger.info({ removed, errors }, 'Force remove completed');
+
+    return { removed, errors };
+  }
+
   getPrometheusUrl(): string {
-    return `http://${this.prometheusContainerName}:9090`;
+    // When the server runs inside Docker, use the container name on the shared network.
+    // When running on the host, use localhost with the published port.
+    const inDocker = existsSync('/.dockerenv');
+    return inDocker
+      ? `http://${this.prometheusContainerName}:9090`
+      : 'http://localhost:9090';
   }
 }

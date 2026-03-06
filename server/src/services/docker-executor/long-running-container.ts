@@ -44,6 +44,8 @@ export class LongRunningContainerManager {
         Type: string;
         Config: Record<string, string>;
       };
+      user?: string;
+      entrypoint?: string[];
     }
   ): Promise<Container> {
     try {
@@ -84,6 +86,16 @@ export class LongRunningContainerManager {
       // Add custom command if provided
       if (options.cmd) {
         containerOptions.Cmd = options.cmd;
+      }
+
+      // Override entrypoint if provided
+      if (options.entrypoint) {
+        containerOptions.Entrypoint = options.entrypoint;
+      }
+
+      // Set container user if specified
+      if (options.user) {
+        containerOptions.User = options.user;
       }
 
       // Add network mode if provided
