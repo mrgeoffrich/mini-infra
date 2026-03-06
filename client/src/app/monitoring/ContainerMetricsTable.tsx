@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { PrometheusQueryResponse } from "@/hooks/use-monitoring";
+import { formatCpu, formatBytes } from "@/lib/format-metrics";
 
 interface ContainerMetricsTableProps {
   cpuData?: PrometheusQueryResponse;
@@ -112,16 +113,4 @@ function mergeMetrics(
   }
 
   return Array.from(metricsMap.values());
-}
-
-function formatCpu(value: number): string {
-  if (value < 0.01) return `${(value * 1000).toFixed(1)}m`;
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatBytes(value: number): string {
-  if (value === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(value) / Math.log(1024));
-  return `${(value / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }

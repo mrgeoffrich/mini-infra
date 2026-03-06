@@ -228,18 +228,21 @@ export function usePrometheusQuery(
 
 export function usePrometheusRangeQuery(
   query: string,
-  start: string,
-  end: string,
+  rangeSeconds: number,
   step: string = "15s",
   options: { enabled?: boolean; refetchInterval?: number } = {}
 ) {
   const { enabled = true, refetchInterval = 30000 } = options;
 
   return useQuery({
-    queryKey: ["prometheusRangeQuery", query, start, end, step],
-    queryFn: () =>
-      fetchPrometheusRangeQuery(query, start, end, step, generateCorrelationId()),
-    enabled: enabled && !!query && !!start && !!end,
+    queryKey: ["prometheusRangeQuery", query, rangeSeconds, step],
+    queryFn: () => {
+      const now = Math.floor(Date.now() / 1000);
+      const start = (now - rangeSeconds).toString();
+      const end = now.toString();
+      return fetchPrometheusRangeQuery(query, start, end, step, generateCorrelationId());
+    },
+    enabled: enabled && !!query,
     refetchInterval,
     staleTime: 10000,
     gcTime: 2 * 60 * 1000,

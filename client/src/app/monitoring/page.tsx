@@ -37,6 +37,7 @@ import {
   usePrometheusQuery,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
+import { formatCpu, formatBytes, formatBytesPerSec } from "@/lib/format-metrics";
 import { MetricsChart } from "./MetricsChart";
 import { ContainerMetricsTable } from "./ContainerMetricsTable";
 
@@ -74,9 +75,7 @@ export function MonitoringPage() {
     status?.service?.status === "failed" ||
     !status?.service;
 
-  const now = Math.floor(Date.now() / 1000);
-  const start = (now - TIME_RANGE_SECONDS[timeRange]).toString();
-  const end = now.toString();
+  const rangeSeconds = TIME_RANGE_SECONDS[timeRange];
   const step = TIME_RANGE_STEP[timeRange];
 
   // Current metrics (instant queries)
@@ -93,32 +92,28 @@ export function MonitoringPage() {
   // Range queries for charts
   const { data: cpuRangeData } = usePrometheusRangeQuery(
     'rate(container_cpu_usage_seconds_total{name!=""}[5m])',
-    start,
-    end,
+    rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: memoryRangeData } = usePrometheusRangeQuery(
     'container_memory_working_set_bytes{name!=""}',
-    start,
-    end,
+    rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: networkRxRangeData } = usePrometheusRangeQuery(
     'rate(container_network_receive_bytes_total{name!=""}[5m])',
-    start,
-    end,
+    rangeSeconds,
     step,
     { enabled: isRunning }
   );
 
   const { data: networkTxRangeData } = usePrometheusRangeQuery(
     'rate(container_network_transmit_bytes_total{name!=""}[5m])',
-    start,
-    end,
+    rangeSeconds,
     step,
     { enabled: isRunning }
   );
@@ -214,7 +209,7 @@ export function MonitoringPage() {
                 description="CPU usage rate per container"
                 data={cpuRangeData}
                 icon={<IconCpu className="h-4 w-4" />}
-                valueFormatter={formatCpuValue}
+                valueFormatter={formatCpu}
                 color="blue"
               />
               <MetricsChart
@@ -222,7 +217,7 @@ export function MonitoringPage() {
                 description="Working set memory per container"
                 data={memoryRangeData}
                 icon={<IconServer className="h-4 w-4" />}
-                valueFormatter={formatBytesValue}
+                valueFormatter={formatBytes}
                 color="green"
               />
               <MetricsChart
@@ -230,7 +225,7 @@ export function MonitoringPage() {
                 description="Inbound network traffic rate"
                 data={networkRxRangeData}
                 icon={<IconNetwork className="h-4 w-4" />}
-                valueFormatter={formatBytesPerSecValue}
+                valueFormatter={formatBytesPerSec}
                 color="purple"
               />
               <MetricsChart
@@ -238,7 +233,7 @@ export function MonitoringPage() {
                 description="Outbound network traffic rate"
                 data={networkTxRangeData}
                 icon={<IconNetwork className="h-4 w-4" />}
-                valueFormatter={formatBytesPerSecValue}
+                valueFormatter={formatBytesPerSec}
                 color="orange"
               />
             </div>
@@ -395,24 +390,6 @@ function StatusBadge({ status }: { status: string }) {
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
-}
-
-// Formatting utilities
-
-function formatCpuValue(value: number): string {
-  if (value < 0.01) return `${(value * 1000).toFixed(1)}m`;
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatBytesValue(value: number): string {
-  if (value === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(value) / Math.log(1024));
-  return `${(value / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
-
-function formatBytesPerSecValue(value: number): string {
-  return `${formatBytesValue(value)}/s`;
 }
 
 export default MonitoringPage;
