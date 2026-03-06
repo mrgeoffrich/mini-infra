@@ -752,6 +752,7 @@ router.post('/:id/remediate-haproxy', requirePermission('environments:write'), a
         frontendsCreated: result.frontendsCreated,
         backendsRecreated: result.backendsRecreated,
         routesConfigured: result.routesConfigured,
+        statsFrontendConfigured: result.statsFrontendConfigured,
         errors: result.errors
       },
       message: result.success

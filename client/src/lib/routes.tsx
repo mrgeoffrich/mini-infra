@@ -47,6 +47,7 @@ import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
 import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
 import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
+import HAProxyInstancesPage from "@/app/haproxy/instances/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
@@ -190,6 +191,10 @@ export const router = createBrowserRouter([
       {
         path: "haproxy/backends/:backendName",
         element: <BackendDetailsPage />,
+      },
+      {
+        path: "haproxy/instances",
+        element: <HAProxyInstancesPage />,
       },
       {
         path: "environments",

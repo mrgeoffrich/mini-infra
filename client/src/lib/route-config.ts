@@ -320,6 +320,12 @@ export const routeConfig: Record<string, RouteConfig> = {
         showInNav: false,
         helpDoc: "deployments/haproxy-backends",
       },
+      instances: {
+        path: "/haproxy/instances",
+        title: "Instances",
+        showInNav: true,
+        helpDoc: "deployments/haproxy-frontends",
+      },
     },
   },
 

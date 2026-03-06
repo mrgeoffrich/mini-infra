@@ -6,15 +6,18 @@ import { FrontendMixin } from './mixin-frontend';
 import { ACLMixin } from './mixin-acl';
 import { SwitchingRulesMixin } from './mixin-switching-rules';
 import { SSLMixin } from './mixin-ssl';
+import { HttpRulesMixin } from './mixin-http-rules';
 
 // Compose all mixins into the final client class
-const ComposedClient = SSLMixin(
-  SwitchingRulesMixin(
-    ACLMixin(
-      FrontendMixin(
-        ServerMixin(
-          StatsMixin(
-            BackendMixin(HAProxyDataPlaneClientBase)
+const ComposedClient = HttpRulesMixin(
+  SSLMixin(
+    SwitchingRulesMixin(
+      ACLMixin(
+        FrontendMixin(
+          ServerMixin(
+            StatsMixin(
+              BackendMixin(HAProxyDataPlaneClientBase)
+            )
           )
         )
       )

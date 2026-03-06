@@ -15,8 +15,20 @@ export interface RemediationResult {
   frontendsCreated: number;
   backendsRecreated: number;
   routesConfigured: number;
+  statsFrontendConfigured: boolean;
   errors: string[];
 }
+
+// The stats frontend name as defined in haproxy.cfg template
+const STATS_FRONTEND_NAME = 'stats';
+
+// The prometheus-exporter http-request rule that must always be present
+const PROMETHEUS_HTTP_REQUEST_RULE = {
+  type: 'use-service',
+  service_name: 'prometheus-exporter',
+  cond: 'if',
+  cond_test: '{ path /metrics }',
+} as const;
 
 /**
  * Preview of what remediation would do
@@ -85,6 +97,7 @@ export class HAProxyRemediationService {
       frontendsCreated: 0,
       backendsRecreated: 0,
       routesConfigured: 0,
+      statsFrontendConfigured: false,
       errors: [],
     };
 
@@ -269,6 +282,15 @@ export class HAProxyRemediationService {
           logger.error({ error, hostname: manual.hostname }, errorMsg);
           result.errors.push(errorMsg);
         }
+      }
+
+      // Final step: ensure global stats frontend config (e.g. prometheus-exporter rule)
+      try {
+        result.statsFrontendConfigured = await this.ensureStatsFrontendConfig(haproxyClient);
+      } catch (error) {
+        const errorMsg = `Failed to ensure stats frontend config: ${error}`;
+        logger.error({ error }, errorMsg);
+        result.errors.push(errorMsg);
       }
 
       result.success = result.errors.length === 0;
@@ -467,6 +489,37 @@ export class HAProxyRemediationService {
       // If we can't check, assume remediation might be needed
       return true;
     }
+  }
+
+  /**
+   * Ensure the stats frontend has the required global config rules.
+   * Currently ensures the Prometheus exporter http-request rule is present.
+   * This is idempotent — safe to call on every remediation or startup.
+   *
+   * @param haproxyClient The HAProxy DataPlane client instance
+   * @returns true if the rule was added, false if it was already present
+   */
+  async ensureStatsFrontendConfig(haproxyClient: HAProxyDataPlaneClient): Promise<boolean> {
+    logger.info({ frontendName: STATS_FRONTEND_NAME }, 'Ensuring stats frontend global config');
+
+    const applied = await haproxyClient.ensureHttpRequestRule(
+      STATS_FRONTEND_NAME,
+      PROMETHEUS_HTTP_REQUEST_RULE
+    );
+
+    if (applied) {
+      logger.info(
+        { frontendName: STATS_FRONTEND_NAME, rule: PROMETHEUS_HTTP_REQUEST_RULE },
+        'Applied missing prometheus-exporter rule to stats frontend'
+      );
+    } else {
+      logger.debug(
+        { frontendName: STATS_FRONTEND_NAME },
+        'Stats frontend already has prometheus-exporter rule'
+      );
+    }
+
+    return applied;
   }
 }
 
