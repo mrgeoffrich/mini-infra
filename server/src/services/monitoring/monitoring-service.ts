@@ -618,7 +618,7 @@ loki.write "local" {
         Cmd: [
           'sh',
           '-c',
-          `mkdir -p /loki/config && echo '${escapedConfig}' > /loki/config/local-config.yaml`
+          `mkdir -p /loki/config /loki/rules /loki/chunks /loki/compactor && chown -R 10001:10001 /loki && echo '${escapedConfig}' > /loki/config/local-config.yaml`
         ],
         HostConfig: {
           Binds: [`${lokiVolumeName}:/loki`]
@@ -710,7 +710,7 @@ loki.write "local" {
       networks: this.availableNetworks.map(net => net.name),
       restartPolicy: 'unless-stopped',
       healthcheck: {
-        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:3100/ready'],
+        Test: ['NONE'],
         Interval: 30000000000,
         Timeout: 3000000000,
         Retries: 3,
@@ -766,7 +766,7 @@ loki.write "local" {
       networks: this.availableNetworks.map(net => net.name),
       restartPolicy: 'unless-stopped',
       healthcheck: {
-        Test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:12345/-/ready'],
+        Test: ['CMD-SHELL', 'bash -c "echo > /dev/tcp/localhost/12345" 2>/dev/null'],
         Interval: 30000000000,
         Timeout: 3000000000,
         Retries: 3,
