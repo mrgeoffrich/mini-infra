@@ -1,0 +1,127 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import type { PrometheusQueryResponse } from "@/hooks/use-monitoring";
+
+interface ContainerMetricsTableProps {
+  cpuData?: PrometheusQueryResponse;
+  memoryData?: PrometheusQueryResponse;
+}
+
+interface ContainerMetric {
+  name: string;
+  cpu: number;
+  memory: number;
+}
+
+export function ContainerMetricsTable({
+  cpuData,
+  memoryData,
+}: ContainerMetricsTableProps) {
+  const metrics = mergeMetrics(cpuData, memoryData);
+
+  if (metrics.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Container Metrics</CardTitle>
+          <CardDescription>
+            Waiting for metrics data from Prometheus...
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  // Sort by CPU usage descending
+  const sorted = [...metrics].sort((a, b) => b.cpu - a.cpu);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Container Metrics</CardTitle>
+        <CardDescription>
+          Current CPU and memory usage per container
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Container</TableHead>
+              <TableHead className="text-right">CPU Usage</TableHead>
+              <TableHead className="text-right">Memory</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((metric) => (
+              <TableRow key={metric.name}>
+                <TableCell className="font-medium">{metric.name}</TableCell>
+                <TableCell className="text-right">
+                  {formatCpu(metric.cpu)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatBytes(metric.memory)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function mergeMetrics(
+  cpuData?: PrometheusQueryResponse,
+  memoryData?: PrometheusQueryResponse
+): ContainerMetric[] {
+  const metricsMap = new Map<string, ContainerMetric>();
+
+  if (cpuData?.data?.result) {
+    for (const result of cpuData.data.result) {
+      const name = result.metric.name || result.metric.container_label_com_docker_compose_service || "unknown";
+      const value = result.value ? parseFloat(result.value[1]) : 0;
+      metricsMap.set(name, { name, cpu: value, memory: 0 });
+    }
+  }
+
+  if (memoryData?.data?.result) {
+    for (const result of memoryData.data.result) {
+      const name = result.metric.name || result.metric.container_label_com_docker_compose_service || "unknown";
+      const value = result.value ? parseFloat(result.value[1]) : 0;
+      const existing = metricsMap.get(name);
+      if (existing) {
+        existing.memory = value;
+      } else {
+        metricsMap.set(name, { name, cpu: 0, memory: value });
+      }
+    }
+  }
+
+  return Array.from(metricsMap.values());
+}
+
+function formatCpu(value: number): string {
+  if (value < 0.01) return `${(value * 1000).toFixed(1)}m`;
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatBytes(value: number): string {
+  if (value === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(value) / Math.log(1024));
+  return `${(value / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
