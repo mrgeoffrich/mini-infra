@@ -4,6 +4,10 @@
 
 For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
 
+## Restarting the Dev Server
+
+Run `touch .restart-dev` in the project root to trigger a full dev server restart (lib, server, and client). The file is automatically deleted after the restart is triggered.
+
 ## Important Instructions
 
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
