@@ -65,7 +65,9 @@ export function StacksList({ environmentId, className }: StacksListProps) {
     isRefetching,
   } = useStacks(environmentId);
 
-  const stacks: StackInfo[] = stacksData?.data ?? [];
+  const stacks: StackInfo[] = (stacksData?.data ?? []).filter(
+    (s) => s.environmentId !== null
+  );
 
   const toggleExpanded = (stackId: string) => {
     setExpandedStackId((prev) => (prev === stackId ? null : stackId));

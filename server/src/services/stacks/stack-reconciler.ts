@@ -58,7 +58,7 @@ export class StackReconciler {
         dockerTag: s.dockerTag,
         containerConfig: s.containerConfig as unknown as StackContainerConfig,
       })),
-      stack.environment.name
+      stack.environment?.name ?? stack.name
     );
 
     // 3. Compute definition hashes per service
@@ -222,7 +222,7 @@ export class StackReconciler {
       include: { services: { orderBy: { order: 'asc' } }, environment: true },
     });
 
-    const projectName = `${stack.environment.name}-${stack.name}`;
+    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
 
     // Build template context for config file resolution
     const templateContext = buildTemplateContext(
@@ -237,7 +237,7 @@ export class StackReconciler {
         dockerTag: s.dockerTag,
         containerConfig: s.containerConfig as unknown as StackContainerConfig,
       })),
-      stack.environment.name
+      stack.environment?.name ?? stack.name
     );
 
     // Build maps for service definitions, hashes, and resolved configs

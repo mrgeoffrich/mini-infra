@@ -38,9 +38,11 @@ function serializeService(svc: any): StackServiceInfo {
 // GET / — List stacks
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const { environmentId } = req.query;
+    const { environmentId, scope } = req.query;
     const where: any = {};
-    if (environmentId && typeof environmentId === 'string') {
+    if (scope === 'host') {
+      where.environmentId = null;
+    } else if (environmentId && typeof environmentId === 'string') {
       where.environmentId = environmentId;
     }
 
@@ -86,23 +88,31 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
 
     const { name, description, environmentId, networks, volumes, services } = parsed.data;
 
-    // Check environment exists
-    const environment = await prisma.environment.findUnique({ where: { id: environmentId } });
-    if (!environment) {
-      return res.status(404).json({ success: false, message: 'Environment not found' });
-    }
+    if (environmentId) {
+      // Check environment exists
+      const environment = await prisma.environment.findUnique({ where: { id: environmentId } });
+      if (!environment) {
+        return res.status(404).json({ success: false, message: 'Environment not found' });
+      }
 
-    // Check uniqueness
-    const existing = await prisma.stack.findFirst({ where: { name, environmentId } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'A stack with this name already exists in this environment' });
+      // Check uniqueness within environment
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'A stack with this name already exists in this environment' });
+      }
+    } else {
+      // Host-level stack: enforce singleton
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId: null } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'A host-level stack with this name already exists' });
+      }
     }
 
     const stack = await prisma.stack.create({
       data: {
         name,
         description: description ?? null,
-        environmentId,
+        environmentId: environmentId ?? undefined,
         networks: networks as any,
         volumes: volumes as any,
         services: {

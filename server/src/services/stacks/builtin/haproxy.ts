@@ -24,6 +24,10 @@ async function buildHAProxyDefinition(
     "utf-8"
   );
 
+  if (!context.environmentId) {
+    throw new Error("HAProxy stack requires an environmentId");
+  }
+
   const portConfig = await portUtils.getHAProxyPortsForEnvironment(
     context.environmentId
   );
@@ -133,5 +137,6 @@ async function buildHAProxyDefinition(
 export const haproxyStack: BuiltinStackDefinition = {
   name: "haproxy",
   builtinVersion: 2,
+  scope: 'environment',
   resolve: (context) => buildHAProxyDefinition(context),
 };

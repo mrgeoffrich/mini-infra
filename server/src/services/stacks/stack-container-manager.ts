@@ -11,7 +11,7 @@ export interface CreateContainerOptions {
   stackId: string;
   stackName: string;
   stackVersion: number;
-  environmentId: string;
+  environmentId?: string | null;
   definitionHash: string;
   networkNames: string[];
 }
@@ -183,7 +183,7 @@ export class StackContainerManager {
       'mini-infra.stack': options.stackName,
       'mini-infra.stack-id': options.stackId,
       'mini-infra.service': serviceName,
-      'mini-infra.environment': options.environmentId,
+      ...(options.environmentId ? { 'mini-infra.environment': options.environmentId } : {}),
       'mini-infra.definition-hash': options.definitionHash,
       'mini-infra.stack-version': options.stackVersion.toString(),
       ...(config.labels ?? {}),

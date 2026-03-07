@@ -1162,8 +1162,8 @@ model Stack {
   id                   String      @id @default(cuid())
   name                 String
   description          String?
-  environmentId        String
-  environment          Environment @relation(fields: [environmentId], references: [id])
+  environmentId        String?
+  environment          Environment? @relation(fields: [environmentId], references: [id])
   version              Int         @default(1)
   status               StackStatus @default(undeployed)
   lastAppliedVersion   Int?

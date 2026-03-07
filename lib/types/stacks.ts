@@ -84,7 +84,7 @@ export interface Stack {
   id: string;
   name: string;
   description: string | null;
-  environmentId: string;
+  environmentId: string | null;
   version: number;
   status: StackStatus;
   lastAppliedVersion: number | null;
@@ -121,7 +121,7 @@ export interface StackInfo {
   id: string;
   name: string;
   description: string | null;
-  environmentId: string;
+  environmentId: string | null;
   version: number;
   status: StackStatus;
   lastAppliedVersion: number | null;
@@ -203,7 +203,7 @@ export function serializeStack(
 export interface CreateStackInput {
   name: string;
   description?: string;
-  environmentId: string;
+  environmentId?: string;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -211,7 +211,7 @@ export interface CreateStackInput {
 
 export function deserializeStack(
   definition: StackDefinition,
-  environmentId: string
+  environmentId?: string
 ): CreateStackInput {
   return {
     name: definition.name,
@@ -278,7 +278,7 @@ export interface ServiceApplyResult {
 export interface CreateStackRequest {
   name: string;
   description?: string;
-  environmentId: string;
+  environmentId?: string;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];

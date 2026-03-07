@@ -23,7 +23,7 @@ export function LogsPage({ fullscreen = false }: LogsPageProps) {
   const queryClient = useQueryClient();
   const { data: status, isLoading: statusLoading, error: statusError } =
     useMonitoringStatus();
-  const isRunning = status?.service?.status === "running";
+  const isRunning = status?.running === true;
 
   const { filters, updateFilter } = useLogFilters();
   const [debouncedSearch, setDebouncedSearch] = useState("");

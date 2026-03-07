@@ -168,7 +168,7 @@ export const createStackSchema = z.object({
       "Stack name can only contain letters, numbers, hyphens, and underscores"
     ),
   description: z.string().max(500).optional(),
-  environmentId: z.string().min(1, "Environment ID is required"),
+  environmentId: z.string().min(1).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z

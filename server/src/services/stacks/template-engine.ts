@@ -21,9 +21,9 @@ export function buildTemplateContext(
     dockerTag: string;
     containerConfig: StackContainerConfig;
   }[],
-  environmentName: string
+  environmentName?: string
 ): TemplateContext {
-  const projectName = `${environmentName}-${stack.name}`;
+  const projectName = environmentName ? `${environmentName}-${stack.name}` : stack.name;
 
   const svcMap: Record<string, { containerName: string; image: string }> = {};
   const envMap: Record<string, string> = {};

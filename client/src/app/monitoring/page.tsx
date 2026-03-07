@@ -28,14 +28,13 @@ import {
   IconPlayerPlay,
   IconPlayerStop,
   IconServer,
-  IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   useMonitoringStatus,
-  useStartMonitoring,
+  useMonitoringPlan,
+  useApplyMonitoring,
   useStopMonitoring,
-  useForceRemoveMonitoring,
   usePrometheusQuery,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
@@ -68,15 +67,20 @@ export function MonitoringPage() {
     error: statusError,
   } = useMonitoringStatus();
 
-  const startMonitoring = useStartMonitoring();
-  const stopMonitoring = useStopMonitoring();
-  const forceRemove = useForceRemoveMonitoring();
+  const stackId = status?.stack?.id;
+  const isRunning = status?.running === true;
+  const isStopped = !isRunning;
+  const stackStatus = status?.stack?.status;
 
-  const isRunning = status?.service?.status === "running";
-  const isStopped =
-    status?.service?.status === "stopped" ||
-    status?.service?.status === "failed" ||
-    !status?.service;
+  const applyMonitoring = useApplyMonitoring();
+  const stopMonitoring = useStopMonitoring();
+
+  const {
+    data: planData,
+    isLoading: planLoading,
+  } = useMonitoringPlan(stackId, !!stackId && isStopped);
+
+  const plan = planData?.data;
 
   const rangeSeconds = TIME_RANGE_SECONDS[timeRange];
   const step = TIME_RANGE_STEP[timeRange];
@@ -121,13 +125,14 @@ export function MonitoringPage() {
     { enabled: isRunning }
   );
 
-  const handleStart = async () => {
+  const handleDeploy = async () => {
+    if (!stackId) return;
     try {
-      await startMonitoring.mutateAsync();
-      toast.success("Monitoring service started successfully");
+      await applyMonitoring.mutateAsync(stackId);
+      toast.success("Monitoring stack deployed successfully");
     } catch (error) {
       toast.error(
-        `Failed to start monitoring: ${(error as Error).message}`
+        `Failed to deploy monitoring: ${(error as Error).message}`
       );
     }
   };
@@ -135,28 +140,10 @@ export function MonitoringPage() {
   const handleStop = async () => {
     try {
       await stopMonitoring.mutateAsync();
-      toast.success("Monitoring service stopped");
+      toast.success("Monitoring stack stopped");
     } catch (error) {
       toast.error(
         `Failed to stop monitoring: ${(error as Error).message}`
-      );
-    }
-  };
-
-  const handleForceRemove = async () => {
-    try {
-      const result = await forceRemove.mutateAsync();
-      if (result.removed.length > 0) {
-        toast.success(`Force removed ${result.removed.length} container(s)`);
-      } else {
-        toast.success("Monitoring containers already removed");
-      }
-      if (result.errors.length > 0) {
-        toast.warning(`Some containers had errors: ${result.errors.join(", ")}`);
-      }
-    } catch (error) {
-      toast.error(
-        `Failed to force remove: ${(error as Error).message}`
       );
     }
   };
@@ -190,12 +177,13 @@ export function MonitoringPage() {
           isLoading={statusLoading}
           isRunning={isRunning}
           isStopped={isStopped}
-          isStarting={startMonitoring.isPending}
+          stackStatus={stackStatus}
+          isDeploying={applyMonitoring.isPending}
           isStopping={stopMonitoring.isPending}
-          isForceRemoving={forceRemove.isPending}
-          onStart={handleStart}
+          plan={plan}
+          planLoading={planLoading}
+          onDeploy={handleDeploy}
           onStop={handleStop}
-          onForceRemove={handleForceRemove}
         />
 
         {/* Metrics Content */}
@@ -288,23 +276,25 @@ function MonitoringServiceCard({
   isLoading,
   isRunning,
   isStopped,
-  isStarting,
+  stackStatus,
+  isDeploying,
   isStopping,
-  isForceRemoving,
-  onStart,
+  plan,
+  planLoading,
+  onDeploy,
   onStop,
-  onForceRemove,
 }: {
   status: ReturnType<typeof useMonitoringStatus>["data"];
   isLoading: boolean;
   isRunning: boolean;
   isStopped: boolean;
-  isStarting: boolean;
+  stackStatus: string | undefined;
+  isDeploying: boolean;
   isStopping: boolean;
-  isForceRemoving: boolean;
-  onStart: () => void;
+  plan: any;
+  planLoading: boolean;
+  onDeploy: () => void;
   onStop: () => void;
-  onForceRemove: () => void;
 }) {
   if (isLoading) {
     return (
@@ -320,8 +310,24 @@ function MonitoringServiceCard({
     );
   }
 
-  const serviceStatus = status?.service?.status || "unknown";
-  const healthMessage = status?.healthDetails?.message;
+  if (!status?.stack) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            Monitoring Service
+            <Badge variant="secondary">
+              <IconCircleX className="mr-1 h-3 w-3" />
+              Not Configured
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            {status?.message || "Monitoring stack will be created on next server restart."}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -330,25 +336,25 @@ function MonitoringServiceCard({
           <div>
             <CardTitle className="flex items-center gap-2">
               Monitoring Service
-              <StatusBadge status={serviceStatus} />
+              <StatusBadge running={isRunning} stackStatus={stackStatus} />
             </CardTitle>
             <CardDescription>
-              {healthMessage || "Telegraf + Prometheus container metrics collection"}
+              Telegraf + Prometheus container metrics and Loki + Alloy log collection
             </CardDescription>
           </div>
           <div className="flex gap-2">
             {isStopped && (
               <Button
-                onClick={onStart}
-                disabled={isStarting}
+                onClick={onDeploy}
+                disabled={isDeploying || planLoading}
                 className="bg-green-600 hover:bg-green-700"
               >
-                {isStarting ? (
+                {isDeploying ? (
                   <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <IconPlayerPlay className="mr-2 h-4 w-4" />
                 )}
-                Start Monitoring
+                {stackStatus === "undeployed" ? "Deploy" : "Redeploy"}
               </Button>
             )}
             {isRunning && (
@@ -365,70 +371,68 @@ function MonitoringServiceCard({
                 Stop
               </Button>
             )}
-            <Button
-              onClick={onForceRemove}
-              disabled={isForceRemoving}
-              variant="outline"
-              size="icon"
-              title="Force remove all monitoring containers"
-            >
-              {isForceRemoving ? (
-                <IconLoader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <IconTrash className="h-4 w-4" />
-              )}
-            </Button>
           </div>
         </div>
       </CardHeader>
-      {status?.lastError && (
+      {isStopped && plan?.hasChanges && (
         <CardContent>
-          <Alert variant="destructive">
-            <IconAlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              {typeof status.lastError === "object" && "message" in status.lastError
-                ? (status.lastError as { message: string }).message
-                : "An error occurred"}
-            </AlertDescription>
-          </Alert>
+          <div className="text-sm text-muted-foreground">
+            <p className="font-medium mb-2">Plan: {plan.actions.length} service(s)</p>
+            <ul className="space-y-1">
+              {plan.actions.map((action: any) => (
+                <li key={action.serviceName} className="flex items-center gap-2">
+                  <Badge
+                    variant={action.action === "create" ? "default" : action.action === "recreate" ? "secondary" : "destructive"}
+                    className="text-xs"
+                  >
+                    {action.action}
+                  </Badge>
+                  <span>{action.serviceName}</span>
+                  {action.desiredImage && (
+                    <span className="text-xs text-muted-foreground">({action.desiredImage})</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         </CardContent>
       )}
     </Card>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "running":
+function StatusBadge({ running, stackStatus }: { running: boolean; stackStatus: string | undefined }) {
+  if (running) {
+    return (
+      <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+        <IconCircleCheck className="mr-1 h-3 w-3" />
+        Running
+      </Badge>
+    );
+  }
+
+  switch (stackStatus) {
+    case "undeployed":
       return (
-        <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-          <IconCircleCheck className="mr-1 h-3 w-3" />
-          Running
+        <Badge variant="secondary">
+          <IconCircleX className="mr-1 h-3 w-3" />
+          Undeployed
         </Badge>
       );
-    case "stopped":
+    case "error":
+      return (
+        <Badge variant="destructive">
+          <IconAlertCircle className="mr-1 h-3 w-3" />
+          Error
+        </Badge>
+      );
+    default:
       return (
         <Badge variant="secondary">
           <IconCircleX className="mr-1 h-3 w-3" />
           Stopped
         </Badge>
       );
-    case "starting":
-      return (
-        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-          <IconLoader2 className="mr-1 h-3 w-3 animate-spin" />
-          Starting
-        </Badge>
-      );
-    case "failed":
-      return (
-        <Badge variant="destructive">
-          <IconAlertCircle className="mr-1 h-3 w-3" />
-          Failed
-        </Badge>
-      );
-    default:
-      return <Badge variant="outline">{status}</Badge>;
   }
 }
 

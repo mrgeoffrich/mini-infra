@@ -27,9 +27,11 @@ function generateCorrelationId(): string {
 async function fetchStacks(
   environmentId?: string,
   correlationId?: string,
+  scope?: string,
 ): Promise<StackListResponse> {
   const url = new URL("/api/stacks", window.location.origin);
-  if (environmentId) url.searchParams.set("environmentId", environmentId);
+  if (scope) url.searchParams.set("scope", scope);
+  else if (environmentId) url.searchParams.set("environmentId", environmentId);
 
   const response = await fetch(url.toString(), {
     credentials: "include",
@@ -211,12 +213,13 @@ async function deleteStack(
 // Stack Hooks
 // ====================
 
-export function useStacks(environmentId?: string) {
+export function useStacks(environmentId?: string, options?: { scope?: string }) {
   const correlationId = generateCorrelationId();
+  const scope = options?.scope;
 
   return useQuery({
-    queryKey: ["stacks", environmentId],
-    queryFn: () => fetchStacks(environmentId, correlationId),
+    queryKey: ["stacks", environmentId, scope],
+    queryFn: () => fetchStacks(environmentId, correlationId, scope),
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
