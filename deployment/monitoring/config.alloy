@@ -1,0 +1,53 @@
+// ============================================================
+// Phase 1: Collect stdout/stderr from ALL Docker containers
+// ============================================================
+
+// Discover every running container via the Docker socket
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Extract useful labels from container metadata
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.local.targets
+
+  // Clean container name (strip leading slash)
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Image name
+  rule {
+    source_labels = ["__meta_docker_container_image_name"]
+    target_label  = "image"
+  }
+
+  // Docker Compose service name (if present)
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  // Docker Compose project name (if present)
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+}
+
+// Collect logs via the Docker API (NOT filesystem — cross-platform safe)
+loki.source.docker "stdout" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.local.targets
+  relabel_rules = discovery.relabel.docker_labels.rules
+  forward_to    = [loki.write.local.receiver]
+}
+
+// Ship logs to Loki
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

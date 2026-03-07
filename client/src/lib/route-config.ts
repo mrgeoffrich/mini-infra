@@ -230,12 +230,12 @@ export const routeConfig: Record<string, RouteConfig> = {
 
   "/logs": {
     path: "/logs",
-    title: "Activity Logs",
+    title: "Container Logs",
     icon: IconHistory,
-    showInNav: false,
+    showInNav: true,
+    navGroup: "main",
     navSection: "monitoring",
-    description: "Activity log viewer",
-    helpDoc: "monitoring/events",
+    description: "Search and browse centralized container logs",
   },
 
   "/monitoring": {

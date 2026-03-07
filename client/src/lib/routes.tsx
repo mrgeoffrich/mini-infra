@@ -49,6 +49,7 @@ import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
 import HAProxyInstancesPage from "@/app/haproxy/instances/page";
 import { MonitoringPage } from "@/app/monitoring/page";
+import { LogsPage } from "@/app/logs/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -67,6 +68,16 @@ export const router = createBrowserRouter([
         <PublicRoute restricted>
           <LoginPage />
         </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/logs/fullscreen",
+    element: (
+      <AuthErrorBoundary>
+        <ProtectedRoute>
+          <LogsPage fullscreen />
+        </ProtectedRoute>
       </AuthErrorBoundary>
     ),
   },
@@ -210,7 +221,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "logs",
-        element: <div>Activity Logs - Coming Soon</div>,
+        element: <LogsPage />,
       },
       {
         path: "connectivity-docker",

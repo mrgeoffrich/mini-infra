@@ -119,10 +119,8 @@ export class ServiceRecoveryManager {
           totalTimeMs: totalTime,
           error: errorMessage
         },
-        "Service recovery process failed"
+        "Service recovery process failed - continuing with degraded functionality"
       );
-
-      throw error;
     }
   }
 

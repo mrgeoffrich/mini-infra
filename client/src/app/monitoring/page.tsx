@@ -149,7 +149,7 @@ export function MonitoringPage() {
       if (result.removed.length > 0) {
         toast.success(`Force removed ${result.removed.length} container(s)`);
       } else {
-        toast.info("No monitoring containers found to remove");
+        toast.success("Monitoring containers already removed");
       }
       if (result.errors.length > 0) {
         toast.warning(`Some containers had errors: ${result.errors.join(", ")}`);

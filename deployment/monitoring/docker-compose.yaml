@@ -1,3 +1,7 @@
+# NOTE: These config files are for reference only. The actual configs used at runtime
+# are inline in server/src/services/monitoring/monitoring-service.ts.
+# If you change any config here, you MUST also update the corresponding method in that file.
+
 services:
   telegraf:
     image: telegraf:latest
@@ -37,6 +41,46 @@ services:
       timeout: 3s
       retries: 3
 
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: mini-infra-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: mini-infra-alloy
+    user: root
+    restart: unless-stopped
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: run /etc/alloy/config.alloy --server.http.listen-addr=0.0.0.0:12345
+    ports:
+      - "${ALLOY_PORT:-12345}:12345"
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:12345/-/ready"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
 volumes:
   prometheus-data:
+    driver: local
+  loki-data:
     driver: local
