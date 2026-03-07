@@ -19,10 +19,6 @@ async function getMonitoringStack() {
   });
 }
 
-function isMonitoringRunning(stack: { status: string } | null): boolean {
-  return stack?.status === 'synced';
-}
-
 // GET /api/monitoring/status - Get monitoring stack status
 router.get('/status', requirePermission('monitoring:read'), async (_req, res) => {
   try {
@@ -31,27 +27,34 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
     if (!stack) {
       return res.json({
         stack: null,
+        containerStatus: [],
         running: false,
         message: 'Monitoring stack not found. It will be created on next server restart.',
       });
     }
 
     let containerStatus: any[] = [];
+    let running = false;
     try {
       const dockerExecutor = new DockerExecutorService();
       await dockerExecutor.initialize();
       const docker = dockerExecutor.getDockerClient();
       const containers = await docker.listContainers({
         all: true,
-        filters: { label: [`mini-infra.stack-id=${stack.id}`] },
+        filters: { label: [`mini-infra.stack=${stack.name}`] },
       });
 
       containerStatus = containers.map(mapContainerStatus);
+
+      // Check if prometheus is actually running via its container label
+      running = containers.some(
+        (c) =>
+          c.Labels['mini-infra.service'] === 'prometheus' &&
+          c.State === 'running'
+      );
     } catch {
       // Docker unavailable
     }
-
-    const running = isMonitoringRunning(stack) && containerStatus.some((c) => c.state === 'running');
 
     res.json({
       stack: serializeStack(stack),

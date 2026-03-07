@@ -137,7 +137,7 @@ export function buildStackTemplateContext(stack: {
       dockerTag: s.dockerTag,
       containerConfig: s.containerConfig as unknown as StackContainerConfig,
     })),
-    stack.environment?.name ?? stack.name
+    stack.environment?.name
   );
 }
 
