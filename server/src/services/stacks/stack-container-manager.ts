@@ -1,0 +1,270 @@
+import { DockerExecutorService } from '../docker-executor';
+import {
+  StackInitCommand,
+  StackConfigFile,
+  StackServiceDefinition,
+} from '@mini-infra/types';
+import { servicesLogger } from '../../lib/logger-factory';
+
+export interface CreateContainerOptions {
+  projectName: string;
+  stackId: string;
+  stackName: string;
+  stackVersion: number;
+  environmentId: string;
+  definitionHash: string;
+  networkNames: string[];
+}
+
+export class StackContainerManager {
+  private log = servicesLogger().child({ component: 'stack-container-manager' });
+
+  constructor(private dockerExecutor: DockerExecutorService) {}
+
+  async pullImage(image: string, tag: string): Promise<void> {
+    this.log.info({ image, tag }, 'Pulling image');
+    await this.dockerExecutor.pullImageWithAutoAuth(`${image}:${tag}`);
+  }
+
+  async runInitCommands(initCommands: StackInitCommand[], projectName: string): Promise<void> {
+    // Group by volumeName
+    const byVolume = new Map<string, StackInitCommand[]>();
+    for (const cmd of initCommands) {
+      const existing = byVolume.get(cmd.volumeName) ?? [];
+      existing.push(cmd);
+      byVolume.set(cmd.volumeName, existing);
+    }
+
+    const docker = this.dockerExecutor.getDockerClient();
+
+    for (const [volumeName, commands] of byVolume) {
+      const prefixedVolume = `${projectName}_${volumeName}`;
+      const allCommands = commands.flatMap((c) => c.commands);
+      const mountPath = commands[0].mountPath;
+      const shellCmd = allCommands.join(' && ');
+      const containerName = `${projectName}-init-${volumeName}-${Date.now()}`;
+
+      this.log.info({ volumeName: prefixedVolume, containerName, commandCount: allCommands.length }, 'Running init commands');
+
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: containerName,
+        Cmd: ['sh', '-c', shellCmd],
+        HostConfig: {
+          Binds: [`${prefixedVolume}:${mountPath}`],
+        },
+      });
+
+      try {
+        await container.start();
+        await container.wait();
+        this.log.info({ containerName }, 'Init commands completed');
+      } finally {
+        try {
+          await container.remove({ force: true });
+        } catch (err) {
+          this.log.warn({ containerName, error: err }, 'Failed to remove init container');
+        }
+      }
+    }
+  }
+
+  async writeConfigFiles(configFiles: StackConfigFile[], projectName: string): Promise<void> {
+    // Group by volumeName
+    const byVolume = new Map<string, StackConfigFile[]>();
+    for (const file of configFiles) {
+      const existing = byVolume.get(file.volumeName) ?? [];
+      existing.push(file);
+      byVolume.set(file.volumeName, existing);
+    }
+
+    const docker = this.dockerExecutor.getDockerClient();
+
+    for (const [volumeName, files] of byVolume) {
+      const prefixedVolume = `${projectName}_${volumeName}`;
+      const containerName = `${projectName}-config-writer-${volumeName}-${Date.now()}`;
+
+      // Build shell commands for all files in this volume
+      const dirs = [...new Set(files.map((f) => f.path.substring(0, f.path.lastIndexOf('/'))))].filter(Boolean);
+      const parts: string[] = [];
+
+      if (dirs.length > 0) {
+        parts.push(`mkdir -p ${dirs.join(' ')}`);
+      }
+
+      for (const file of files) {
+        const escapedContent = file.content.replace(/'/g, "'\\''");
+        parts.push(`echo '${escapedContent}' > ${file.path}`);
+        if (file.permissions) {
+          parts.push(`chmod ${file.permissions} ${file.path}`);
+        }
+        if (file.ownerUid !== undefined || file.ownerGid !== undefined) {
+          const uid = file.ownerUid ?? 0;
+          const gid = file.ownerGid ?? 0;
+          parts.push(`chown ${uid}:${gid} ${file.path}`);
+        }
+      }
+
+      const shellCmd = parts.join(' && ');
+
+      this.log.info({ volumeName: prefixedVolume, containerName, fileCount: files.length }, 'Writing config files');
+
+      const container = await docker.createContainer({
+        Image: 'alpine:latest',
+        name: containerName,
+        Cmd: ['sh', '-c', shellCmd],
+        HostConfig: {
+          Binds: [`${prefixedVolume}:/vol`],
+        },
+      });
+
+      try {
+        await container.start();
+        await container.wait();
+        this.log.info({ containerName }, 'Config files written');
+      } finally {
+        try {
+          await container.remove({ force: true });
+        } catch (err) {
+          this.log.warn({ containerName, error: err }, 'Failed to remove config writer container');
+        }
+      }
+    }
+  }
+
+  async createAndStartContainer(
+    serviceName: string,
+    service: StackServiceDefinition,
+    options: CreateContainerOptions
+  ): Promise<string> {
+    const containerName = `${options.projectName}-${serviceName}`;
+    const image = `${service.dockerImage}:${service.dockerTag}`;
+    const config = service.containerConfig;
+
+    // Convert ports to Docker format
+    const ports: Record<string, { HostPort: string }[]> | undefined = config.ports
+      ? Object.fromEntries(
+          config.ports.map((p) => [
+            `${p.containerPort}/${p.protocol}`,
+            [{ HostPort: String(p.hostPort) }],
+          ])
+        )
+      : undefined;
+
+    // Convert mounts to Docker format, prefixing volume sources with projectName
+    const mounts = config.mounts?.map((m) => ({
+      Target: m.target,
+      Source: m.type === 'volume' && !m.source.includes('/') ? `${options.projectName}_${m.source}` : m.source,
+      Type: m.type,
+      ReadOnly: m.readOnly,
+    }));
+
+    // Convert healthcheck seconds to nanoseconds
+    const healthcheck = config.healthcheck
+      ? {
+          Test: config.healthcheck.test,
+          Interval: config.healthcheck.interval * 1_000_000_000,
+          Timeout: config.healthcheck.timeout * 1_000_000_000,
+          Retries: config.healthcheck.retries,
+          StartPeriod: config.healthcheck.startPeriod * 1_000_000_000,
+        }
+      : undefined;
+
+    // Convert log config
+    const logConfig = config.logConfig
+      ? {
+          Type: config.logConfig.type,
+          Config: { 'max-size': config.logConfig.maxSize, 'max-file': config.logConfig.maxFile },
+        }
+      : undefined;
+
+    // Stack-specific labels
+    const labels: Record<string, string> = {
+      'mini-infra.stack': options.stackName,
+      'mini-infra.stack-id': options.stackId,
+      'mini-infra.service': serviceName,
+      'mini-infra.environment': options.environmentId,
+      'mini-infra.definition-hash': options.definitionHash,
+      'mini-infra.stack-version': options.stackVersion.toString(),
+      ...(config.labels ?? {}),
+    };
+
+    this.log.info({ containerName, image }, 'Creating container');
+
+    const container = await this.dockerExecutor.createLongRunningContainer({
+      image,
+      name: containerName,
+      projectName: options.projectName,
+      serviceName,
+      env: config.env ?? {},
+      cmd: config.command,
+      entrypoint: config.entrypoint,
+      user: config.user,
+      ports,
+      mounts,
+      networks: options.networkNames,
+      restartPolicy: config.restartPolicy,
+      healthcheck,
+      logConfig,
+      labels,
+    });
+
+    await container.start();
+    this.log.info({ containerId: container.id, containerName }, 'Container started');
+
+    return container.id;
+  }
+
+  async stopAndRemoveContainer(containerId: string): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const container = docker.getContainer(containerId);
+
+    try {
+      await container.stop();
+    } catch (err: any) {
+      if (err.statusCode !== 404 && err.statusCode !== 304) {
+        throw err;
+      }
+    }
+
+    try {
+      await container.remove({ force: true });
+    } catch (err: any) {
+      if (err.statusCode !== 404) {
+        throw err;
+      }
+    }
+  }
+
+  async waitForHealthy(containerId: string, timeoutMs = 60_000): Promise<boolean> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const container = docker.getContainer(containerId);
+
+    // Check if container has a healthcheck configured
+    const info = await container.inspect();
+
+    if (!info.Config?.Healthcheck?.Test || info.Config.Healthcheck.Test.length === 0) {
+      // No healthcheck — just verify the container is running
+      const status = await this.dockerExecutor.getContainerStatus(containerId);
+      return status.running;
+    }
+
+    // Poll for healthy status
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const inspectResult = await container.inspect();
+      const healthStatus = inspectResult.State?.Health?.Status;
+
+      if (healthStatus === 'healthy') {
+        return true;
+      }
+      if (healthStatus === 'unhealthy') {
+        return false;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    return false;
+  }
+}
