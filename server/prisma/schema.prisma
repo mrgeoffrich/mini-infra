@@ -381,6 +381,7 @@ model Environment {
   deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
+  stacks           Stack[]
 
   @@index([type])
   @@index([networkType])
@@ -1141,4 +1142,66 @@ enum RenewalStatus {
   DEPLOYED_TO_HAPROXY
   COMPLETED
   FAILED
+}
+
+enum StackStatus {
+  synced
+  drifted
+  pending
+  error
+  undeployed
+}
+
+enum StackServiceType {
+  Stateful
+  StatelessWeb
+}
+
+// Stack - Declarative container group definition
+model Stack {
+  id                   String      @id @default(cuid())
+  name                 String
+  description          String?
+  environmentId        String
+  environment          Environment @relation(fields: [environmentId], references: [id])
+  version              Int         @default(1)
+  status               StackStatus @default(undeployed)
+  lastAppliedVersion   Int?
+  lastAppliedAt        DateTime?
+  lastAppliedSnapshot  Json?
+  networks             Json        // Array of { name, driver?, options? }
+  volumes              Json        // Array of { name, driver?, options? }
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  // Relations
+  services             StackService[]
+
+  @@unique([name, environmentId])
+  @@index([environmentId])
+  @@index([status])
+  @@map("stacks")
+}
+
+// StackService - Individual service within a stack
+model StackService {
+  id              String           @id @default(cuid())
+  stackId         String
+  stack           Stack            @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  serviceName     String
+  serviceType     StackServiceType
+  dockerImage     String
+  dockerTag       String
+  containerConfig Json             // StackContainerConfig shape
+  configFiles     Json?            // Array of StackConfigFile
+  initCommands    Json?            // Array of StackInitCommand
+  dependsOn       Json             // Array of service name strings
+  order           Int
+  routing         Json?            // StackServiceRouting (required for StatelessWeb, forbidden for Stateful)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([stackId, serviceName])
+  @@index([stackId])
+  @@map("stack_services")
 }
