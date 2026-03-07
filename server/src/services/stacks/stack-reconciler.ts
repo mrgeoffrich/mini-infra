@@ -19,6 +19,8 @@ import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
 import { buildTemplateContext, resolveStackConfigFiles } from './template-engine';
 import { StackContainerManager } from './stack-container-manager';
+import { StackRoutingManager } from './stack-routing-manager';
+import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
 
 export class StackReconciler {
@@ -26,7 +28,8 @@ export class StackReconciler {
 
   constructor(
     private dockerExecutor: DockerExecutorService,
-    private prisma: PrismaClient
+    private prisma: PrismaClient,
+    private routingManager?: StackRoutingManager
   ) {
     this.containerManager = new StackContainerManager(dockerExecutor);
   }
@@ -311,126 +314,27 @@ export class StackReconciler {
       const actionStart = Date.now();
       const svc = serviceMap.get(action.serviceName);
       const serviceDef = svc ? this.toServiceDefinition(svc) : null;
+      const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
+
+      if (isStatelessWeb && !this.routingManager) {
+        throw new Error(`StackRoutingManager is required for StatelessWeb service "${action.serviceName}"`);
+      }
 
       try {
-        switch (action.action) {
-          case 'create': {
-            if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
-            log.info({ service: action.serviceName }, 'Creating service');
-
-            await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
-
-            const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
-            if (initCmds.length > 0) {
-              await this.containerManager.runInitCommands(initCmds, projectName);
-            }
-
-            const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-            if (resolvedConfigs.length > 0) {
-              await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-            }
-
-            const containerId = await this.containerManager.createAndStartContainer(
-              action.serviceName,
-              serviceDef,
-              {
-                projectName,
-                stackId,
-                stackName: stack.name,
-                stackVersion: stack.version,
-                environmentId: stack.environmentId,
-                definitionHash: serviceHashes.get(action.serviceName)!,
-                networkNames,
-              }
-            );
-
-            const healthy = await this.containerManager.waitForHealthy(containerId);
-
-            serviceResults.push({
-              serviceName: action.serviceName,
-              action: 'create',
-              success: healthy,
-              duration: Date.now() - actionStart,
-              containerId,
-              error: healthy ? undefined : 'Healthcheck timeout',
-            });
-            break;
-          }
-
-          case 'recreate': {
-            if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
-            log.info({ service: action.serviceName }, 'Recreating service');
-
-            const oldContainer = containerByService.get(action.serviceName);
-
-            // Stop old container
-            if (oldContainer) {
-              await this.containerManager.stopAndRemoveContainer(oldContainer.Id).catch(() => {
-                // If stop fails, we'll still try to create the new one
-                log.warn({ service: action.serviceName }, 'Failed to stop old container, continuing');
-              });
-            }
-
-            // Run init commands if changed
-            const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
-            if (initCmds.length > 0) {
-              await this.containerManager.runInitCommands(initCmds, projectName);
-            }
-
-            // Write config files if changed
-            const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-            if (resolvedConfigs.length > 0) {
-              await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-            }
-
-            await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
-
-            const containerId = await this.containerManager.createAndStartContainer(
-              action.serviceName,
-              serviceDef,
-              {
-                projectName,
-                stackId,
-                stackName: stack.name,
-                stackVersion: stack.version,
-                environmentId: stack.environmentId,
-                definitionHash: serviceHashes.get(action.serviceName)!,
-                networkNames,
-              }
-            );
-
-            const healthy = await this.containerManager.waitForHealthy(containerId);
-
-            if (!healthy) {
-              log.error({ service: action.serviceName, containerId }, 'Healthcheck failed after recreate');
-            }
-
-            serviceResults.push({
-              serviceName: action.serviceName,
-              action: 'recreate',
-              success: healthy,
-              duration: Date.now() - actionStart,
-              containerId,
-              error: healthy ? undefined : 'Healthcheck timeout',
-            });
-            break;
-          }
-
-          case 'remove': {
-            log.info({ service: action.serviceName }, 'Removing service');
-            const container = containerByService.get(action.serviceName);
-            if (container) {
-              await this.containerManager.stopAndRemoveContainer(container.Id);
-            }
-
-            serviceResults.push({
-              serviceName: action.serviceName,
-              action: 'remove',
-              success: true,
-              duration: Date.now() - actionStart,
-            });
-            break;
-          }
+        if (isStatelessWeb) {
+          const result = await this.applyStatelessWeb(
+            action, svc!, serviceDef!, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+            actionStart, log
+          );
+          serviceResults.push(result);
+        } else {
+          const result = await this.applyStateful(
+            action, svc, serviceDef, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+            actionStart, log
+          );
+          serviceResults.push(result);
         }
       } catch (err: any) {
         log.error({ service: action.serviceName, error: err.message }, 'Action failed');
@@ -476,6 +380,366 @@ export class StackReconciler {
       serviceResults,
       duration: Date.now() - startTime,
     };
+  }
+
+  private async applyStateful(
+    action: ServiceAction,
+    svc: any,
+    serviceDef: StackServiceDefinition | null,
+    projectName: string,
+    stackId: string,
+    stack: any,
+    networkNames: string[],
+    serviceHashes: Map<string, string>,
+    resolvedConfigsMap: Map<string, StackConfigFile[]>,
+    containerByService: Map<string, Docker.ContainerInfo>,
+    actionStart: number,
+    log: any
+  ): Promise<ServiceApplyResult> {
+    switch (action.action) {
+      case 'create': {
+        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        log.info({ service: action.serviceName }, 'Creating service');
+
+        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+
+        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        if (initCmds.length > 0) {
+          await this.containerManager.runInitCommands(initCmds, projectName);
+        }
+
+        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
+        if (resolvedConfigs.length > 0) {
+          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
+        }
+
+        const containerId = await this.containerManager.createAndStartContainer(
+          action.serviceName,
+          serviceDef,
+          {
+            projectName,
+            stackId,
+            stackName: stack.name,
+            stackVersion: stack.version,
+            environmentId: stack.environmentId,
+            definitionHash: serviceHashes.get(action.serviceName)!,
+            networkNames,
+          }
+        );
+
+        const healthy = await this.containerManager.waitForHealthy(containerId);
+
+        return {
+          serviceName: action.serviceName,
+          action: 'create',
+          success: healthy,
+          duration: Date.now() - actionStart,
+          containerId,
+          error: healthy ? undefined : 'Healthcheck timeout',
+        };
+      }
+
+      case 'recreate': {
+        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        log.info({ service: action.serviceName }, 'Recreating service');
+
+        const oldContainer = containerByService.get(action.serviceName);
+
+        if (oldContainer) {
+          await this.containerManager.stopAndRemoveContainer(oldContainer.Id).catch(() => {
+            log.warn({ service: action.serviceName }, 'Failed to stop old container, continuing');
+          });
+        }
+
+        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        if (initCmds.length > 0) {
+          await this.containerManager.runInitCommands(initCmds, projectName);
+        }
+
+        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
+        if (resolvedConfigs.length > 0) {
+          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
+        }
+
+        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+
+        const containerId = await this.containerManager.createAndStartContainer(
+          action.serviceName,
+          serviceDef,
+          {
+            projectName,
+            stackId,
+            stackName: stack.name,
+            stackVersion: stack.version,
+            environmentId: stack.environmentId,
+            definitionHash: serviceHashes.get(action.serviceName)!,
+            networkNames,
+          }
+        );
+
+        const healthy = await this.containerManager.waitForHealthy(containerId);
+
+        if (!healthy) {
+          log.error({ service: action.serviceName, containerId }, 'Healthcheck failed after recreate');
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'recreate',
+          success: healthy,
+          duration: Date.now() - actionStart,
+          containerId,
+          error: healthy ? undefined : 'Healthcheck timeout',
+        };
+      }
+
+      case 'remove': {
+        log.info({ service: action.serviceName }, 'Removing service');
+        const container = containerByService.get(action.serviceName);
+        if (container) {
+          await this.containerManager.stopAndRemoveContainer(container.Id);
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'remove',
+          success: true,
+          duration: Date.now() - actionStart,
+        };
+      }
+
+      default:
+        throw new Error(`Unknown action: ${action.action}`);
+    }
+  }
+
+  private async applyStatelessWeb(
+    action: ServiceAction,
+    svc: any,
+    serviceDef: StackServiceDefinition,
+    projectName: string,
+    stackId: string,
+    stack: any,
+    networkNames: string[],
+    serviceHashes: Map<string, string>,
+    resolvedConfigsMap: Map<string, StackConfigFile[]>,
+    containerByService: Map<string, Docker.ContainerInfo>,
+    actionStart: number,
+    log: any
+  ): Promise<ServiceApplyResult> {
+    const routing = serviceDef.routing;
+    if (!routing) {
+      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
+    }
+
+    const routingManager = this.routingManager!;
+    const containerName = `${projectName}-${action.serviceName}`;
+
+    switch (action.action) {
+      case 'create': {
+        log.info({ service: action.serviceName }, 'Creating StatelessWeb service');
+
+        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+
+        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        if (initCmds.length > 0) {
+          await this.containerManager.runInitCommands(initCmds, projectName);
+        }
+
+        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
+        if (resolvedConfigs.length > 0) {
+          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
+        }
+
+        const containerId = await this.containerManager.createAndStartContainer(
+          action.serviceName,
+          serviceDef,
+          {
+            projectName,
+            stackId,
+            stackName: stack.name,
+            stackVersion: stack.version,
+            environmentId: stack.environmentId,
+            definitionHash: serviceHashes.get(action.serviceName)!,
+            networkNames,
+          }
+        );
+
+        // Connect to HAProxy network
+        const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
+        await this.containerManager.connectToNetwork(containerId, haproxyCtx.haproxyNetworkName);
+
+        // Wait for healthy
+        const healthy = await this.containerManager.waitForHealthy(containerId);
+        if (!healthy) {
+          log.error({ service: action.serviceName, containerId }, 'Healthcheck failed, rolling back');
+          await this.containerManager.stopAndRemoveContainer(containerId);
+          return {
+            serviceName: action.serviceName,
+            action: 'create',
+            success: false,
+            duration: Date.now() - actionStart,
+            containerId,
+            error: 'Healthcheck timeout',
+          };
+        }
+
+        // Setup HAProxy routing
+        const haproxyClient = new HAProxyDataPlaneClient();
+        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+          serviceName: action.serviceName,
+          containerId,
+          containerName,
+          routing,
+          environmentId: stack.environmentId,
+          stackId,
+          stackName: stack.name,
+        };
+
+        const { backendName, serverName } = await routingManager.setupBackendAndServer(routingCtx, haproxyClient);
+        await routingManager.configureRoute(routingCtx, backendName, haproxyClient);
+        await routingManager.enableTraffic(backendName, serverName, haproxyClient);
+
+        // Configure DNS if needed
+        if (routing.dns) {
+          await routingManager.configureDNS(routing.hostname, stack.environmentId, routing);
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'create',
+          success: true,
+          duration: Date.now() - actionStart,
+          containerId,
+        };
+      }
+
+      case 'recreate': {
+        log.info({ service: action.serviceName }, 'Recreating StatelessWeb service (blue-green)');
+
+        const oldContainer = containerByService.get(action.serviceName);
+
+        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+
+        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        if (initCmds.length > 0) {
+          await this.containerManager.runInitCommands(initCmds, projectName);
+        }
+
+        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
+        if (resolvedConfigs.length > 0) {
+          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
+        }
+
+        // Create green container (blue stays running)
+        const greenId = await this.containerManager.createAndStartContainer(
+          action.serviceName,
+          serviceDef,
+          {
+            projectName,
+            stackId,
+            stackName: stack.name,
+            stackVersion: stack.version,
+            environmentId: stack.environmentId,
+            definitionHash: serviceHashes.get(action.serviceName)!,
+            networkNames,
+          }
+        );
+
+        // Connect green to HAProxy network
+        const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
+        await this.containerManager.connectToNetwork(greenId, haproxyCtx.haproxyNetworkName);
+
+        // Wait for green healthy
+        const healthy = await this.containerManager.waitForHealthy(greenId);
+        if (!healthy) {
+          log.error({ service: action.serviceName, containerId: greenId }, 'Green healthcheck failed, keeping blue');
+          await this.containerManager.stopAndRemoveContainer(greenId);
+          return {
+            serviceName: action.serviceName,
+            action: 'recreate',
+            success: false,
+            duration: Date.now() - actionStart,
+            error: 'Healthcheck timeout',
+          };
+        }
+
+        // Setup HAProxy for green
+        const haproxyClient = new HAProxyDataPlaneClient();
+        const backendName = `stk-${stack.name}-${action.serviceName}`;
+        const greenServerName = `${action.serviceName}-${greenId.slice(0, 8)}`;
+
+        await haproxyClient.addServer(backendName, {
+          name: greenServerName,
+          address: containerName,
+          port: routing.listeningPort,
+          check: 'enabled',
+        });
+
+        await routingManager.enableTraffic(backendName, greenServerName, haproxyClient);
+
+        // Drain and remove blue
+        if (oldContainer) {
+          const oldServerName = `${action.serviceName}-${oldContainer.Id.slice(0, 8)}`;
+          await routingManager.drainAndRemoveServer(backendName, oldServerName, haproxyClient);
+          await this.containerManager.stopAndRemoveContainer(oldContainer.Id);
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'recreate',
+          success: true,
+          duration: Date.now() - actionStart,
+          containerId: greenId,
+        };
+      }
+
+      case 'remove': {
+        log.info({ service: action.serviceName }, 'Removing StatelessWeb service');
+
+        const haproxyClient = new HAProxyDataPlaneClient();
+        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+          serviceName: action.serviceName,
+          containerId: '',
+          containerName,
+          routing,
+          environmentId: stack.environmentId,
+          stackId,
+          stackName: stack.name,
+        };
+
+        // Remove HAProxy route
+        await routingManager.removeRoute(routingCtx, haproxyClient);
+
+        // Remove DNS
+        if (routing.dns) {
+          await routingManager.removeDNS(routing.hostname);
+        }
+
+        // Remove server from backend and stop container
+        const container = containerByService.get(action.serviceName);
+        if (container) {
+          const backendName = `stk-${stack.name}-${action.serviceName}`;
+          const serverName = `${action.serviceName}-${container.Id.slice(0, 8)}`;
+          try {
+            await haproxyClient.deleteServer(backendName, serverName);
+          } catch (err: any) {
+            log.warn({ backendName, serverName, error: err.message }, 'Failed to delete server from backend');
+          }
+          await this.containerManager.stopAndRemoveContainer(container.Id);
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'remove',
+          success: true,
+          duration: Date.now() - actionStart,
+        };
+      }
+
+      default:
+        throw new Error(`Unknown action: ${action.action}`);
+    }
   }
 
   private toServiceDefinition(svc: {

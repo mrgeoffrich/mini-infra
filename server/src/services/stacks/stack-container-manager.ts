@@ -215,6 +215,13 @@ export class StackContainerManager {
     return container.id;
   }
 
+  async connectToNetwork(containerId: string, networkName: string): Promise<void> {
+    this.log.info({ containerId, networkName }, 'Connecting container to network');
+    const docker = this.dockerExecutor.getDockerClient();
+    const network = docker.getNetwork(networkName);
+    await network.connect({ Container: containerId });
+  }
+
   async stopAndRemoveContainer(containerId: string): Promise<void> {
     const docker = this.dockerExecutor.getDockerClient();
     const container = docker.getContainer(containerId);
