@@ -44,6 +44,7 @@ import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
+import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -240,6 +241,11 @@ const initializeServices = async () => {
     await serviceRecoveryManager.performRecovery();
     logger.info("Service recovery completed successfully");
     console.log("[STARTUP] ✓ Service recovery completed");
+
+    // Sync built-in stack definitions
+    console.log("[STARTUP] Syncing built-in stack definitions...");
+    await syncBuiltinStacks(prisma);
+    console.log("[STARTUP] ✓ Built-in stack definitions synced");
 
     // Initialize environment health scheduler (monitors service state every 5 minutes)
     console.log("[STARTUP] Initializing environment health scheduler...");

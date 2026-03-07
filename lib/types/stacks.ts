@@ -90,6 +90,7 @@ export interface Stack {
   lastAppliedVersion: number | null;
   lastAppliedAt: Date | null;
   lastAppliedSnapshot: StackDefinition | null;
+  builtinVersion: number | null;
   networks: StackNetwork[];
   volumes: StackVolume[];
   createdAt: Date;
@@ -126,6 +127,7 @@ export interface StackInfo {
   lastAppliedVersion: number | null;
   lastAppliedAt: string | null;
   lastAppliedSnapshot: StackDefinition | null;
+  builtinVersion: number | null;
   networks: StackNetwork[];
   volumes: StackVolume[];
   createdAt: string;

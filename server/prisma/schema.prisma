@@ -1169,6 +1169,7 @@ model Stack {
   lastAppliedVersion   Int?
   lastAppliedAt        DateTime?
   lastAppliedSnapshot  Json?
+  builtinVersion       Int?
   networks             Json        // Array of { name, driver?, options? }
   volumes              Json        // Array of { name, driver?, options? }
   createdAt            DateTime    @default(now())
