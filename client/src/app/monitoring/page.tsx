@@ -1,15 +1,5 @@
 import { useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -20,21 +10,12 @@ import {
 import {
   IconActivity,
   IconAlertCircle,
-  IconCircleCheck,
-  IconCircleX,
   IconCpu,
-  IconLoader2,
   IconNetwork,
-  IconPlayerPlay,
-  IconPlayerStop,
   IconServer,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
 import {
   useMonitoringStatus,
-  useMonitoringPlan,
-  useApplyMonitoring,
-  useStopMonitoring,
   usePrometheusQuery,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
@@ -63,24 +44,10 @@ export function MonitoringPage() {
 
   const {
     data: status,
-    isLoading: statusLoading,
     error: statusError,
   } = useMonitoringStatus();
 
-  const stackId = status?.stack?.id;
   const isRunning = status?.running === true;
-  const isStopped = !isRunning;
-  const stackStatus = status?.stack?.status;
-
-  const applyMonitoring = useApplyMonitoring();
-  const stopMonitoring = useStopMonitoring();
-
-  const {
-    data: planData,
-    isLoading: planLoading,
-  } = useMonitoringPlan(stackId, !!stackId && isStopped);
-
-  const plan = planData?.data;
 
   const rangeSeconds = TIME_RANGE_SECONDS[timeRange];
   const step = TIME_RANGE_STEP[timeRange];
@@ -125,29 +92,6 @@ export function MonitoringPage() {
     { enabled: isRunning }
   );
 
-  const handleDeploy = async () => {
-    if (!stackId) return;
-    try {
-      await applyMonitoring.mutateAsync(stackId);
-      toast.success("Monitoring stack deployed successfully");
-    } catch (error) {
-      toast.error(
-        `Failed to deploy monitoring: ${(error as Error).message}`
-      );
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      await stopMonitoring.mutateAsync();
-      toast.success("Monitoring stack stopped");
-    } catch (error) {
-      toast.error(
-        `Failed to stop monitoring: ${(error as Error).message}`
-      );
-    }
-  };
-
   if (statusError) {
     return (
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -171,24 +115,14 @@ export function MonitoringPage() {
       </div>
 
       <div className="px-4 lg:px-6">
-        {/* Service Status Card */}
-        <MonitoringServiceCard
-          status={status}
-          isLoading={statusLoading}
-          isRunning={isRunning}
-          isStopped={isStopped}
-          stackStatus={stackStatus}
-          isDeploying={applyMonitoring.isPending}
-          isStopping={stopMonitoring.isPending}
-          plan={plan}
-          planLoading={planLoading}
-          onDeploy={handleDeploy}
-          onStop={handleStop}
-        />
+        {!isRunning && (
+          <p className="text-sm text-muted-foreground">
+            Monitoring is not currently running. Deploy the monitoring stack from the Host page to view container metrics.
+          </p>
+        )}
 
-        {/* Metrics Content */}
         {isRunning && (
-          <div className="mt-6 space-y-6">
+          <div className="space-y-6">
             {/* Time Range Selector */}
             <div className="flex justify-end">
               <Select
@@ -269,171 +203,6 @@ function PageHeader() {
       </div>
     </div>
   );
-}
-
-function MonitoringServiceCard({
-  status,
-  isLoading,
-  isRunning,
-  isStopped,
-  stackStatus,
-  isDeploying,
-  isStopping,
-  plan,
-  planLoading,
-  onDeploy,
-  onStop,
-}: {
-  status: ReturnType<typeof useMonitoringStatus>["data"];
-  isLoading: boolean;
-  isRunning: boolean;
-  isStopped: boolean;
-  stackStatus: string | undefined;
-  isDeploying: boolean;
-  isStopping: boolean;
-  plan: any;
-  planLoading: boolean;
-  onDeploy: () => void;
-  onStop: () => void;
-}) {
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-4 w-72" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-32" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!status?.stack) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Monitoring Service
-            <Badge variant="secondary">
-              <IconCircleX className="mr-1 h-3 w-3" />
-              Not Configured
-            </Badge>
-          </CardTitle>
-          <CardDescription>
-            {status?.message || "Monitoring stack will be created on next server restart."}
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              Monitoring Service
-              <StatusBadge running={isRunning} stackStatus={stackStatus} />
-            </CardTitle>
-            <CardDescription>
-              Telegraf + Prometheus container metrics and Loki + Alloy log collection
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            {isStopped && (
-              <Button
-                onClick={onDeploy}
-                disabled={isDeploying || planLoading}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {isDeploying ? (
-                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <IconPlayerPlay className="mr-2 h-4 w-4" />
-                )}
-                {stackStatus === "undeployed" ? "Deploy" : "Redeploy"}
-              </Button>
-            )}
-            {isRunning && (
-              <Button
-                onClick={onStop}
-                disabled={isStopping}
-                variant="destructive"
-              >
-                {isStopping ? (
-                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <IconPlayerStop className="mr-2 h-4 w-4" />
-                )}
-                Stop
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      {isStopped && plan?.hasChanges && (
-        <CardContent>
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium mb-2">Plan: {plan.actions.length} service(s)</p>
-            <ul className="space-y-1">
-              {plan.actions.map((action: any) => (
-                <li key={action.serviceName} className="flex items-center gap-2">
-                  <Badge
-                    variant={action.action === "create" ? "default" : action.action === "recreate" ? "secondary" : "destructive"}
-                    className="text-xs"
-                  >
-                    {action.action}
-                  </Badge>
-                  <span>{action.serviceName}</span>
-                  {action.desiredImage && (
-                    <span className="text-xs text-muted-foreground">({action.desiredImage})</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function StatusBadge({ running, stackStatus }: { running: boolean; stackStatus: string | undefined }) {
-  if (running) {
-    return (
-      <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-        <IconCircleCheck className="mr-1 h-3 w-3" />
-        Running
-      </Badge>
-    );
-  }
-
-  switch (stackStatus) {
-    case "undeployed":
-      return (
-        <Badge variant="secondary">
-          <IconCircleX className="mr-1 h-3 w-3" />
-          Undeployed
-        </Badge>
-      );
-    case "error":
-      return (
-        <Badge variant="destructive">
-          <IconAlertCircle className="mr-1 h-3 w-3" />
-          Error
-        </Badge>
-      );
-    default:
-      return (
-        <Badge variant="secondary">
-          <IconCircleX className="mr-1 h-3 w-3" />
-          Stopped
-        </Badge>
-      );
-  }
 }
 
 export default MonitoringPage;

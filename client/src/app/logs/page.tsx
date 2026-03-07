@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IconTerminal, IconAlertCircle, IconArrowsMaximize, IconArrowsMinimize } from "@tabler/icons-react";
@@ -105,21 +103,9 @@ export function LogsPage({ fullscreen = false }: LogsPageProps) {
             Loading...
           </div>
         ) : !isRunning ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <IconAlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-lg font-medium mb-2">
-                Monitoring Service Not Running
-              </p>
-              <p className="text-muted-foreground mb-4">
-                Start the monitoring service to collect and query container
-                logs.
-              </p>
-              <Link to="/monitoring">
-                <Button>Go to Monitoring</Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Loki is not currently running. Deploy the monitoring stack from the Host page to view container logs.
+          </p>
         ) : (
           <div className={fullscreen ? "flex flex-col flex-1 min-h-0 gap-1" : "space-y-3"}>
             <div className={fullscreen ? "px-3 pt-2" : ""}>

@@ -6,6 +6,7 @@ import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { StackRoutingManager } from '../services/stacks/stack-routing-manager';
 import { HAProxyFrontendManager } from '../services/haproxy';
+import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
 import {
   createStackSchema,
   updateStackSchema,
@@ -313,6 +314,29 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
       ...parsed.data,
       triggeredBy: (req as any).user?.id,
     });
+
+    // After a successful HAProxy stack apply where the haproxy service was
+    // created or recreated, restore runtime state (backends, servers, TLS
+    // certs, shared frontends) from the database.
+    const haproxyServiceApplied = result.serviceResults.some(
+      (r) => r.serviceName === 'haproxy' && r.success && (r.action === 'create' || r.action === 'recreate')
+    );
+    if (haproxyServiceApplied) {
+      const stack = await prisma.stack.findUnique({
+        where: { id: req.params.stackId },
+        select: { name: true, environmentId: true },
+      });
+      if (stack?.name === 'haproxy' && stack.environmentId) {
+        const postApply = await restoreHAProxyRuntimeState(stack.environmentId, prisma);
+        if (!postApply.success) {
+          logger.warn(
+            { stackId: req.params.stackId, errors: postApply.errors },
+            'HAProxy post-apply restoration had errors'
+          );
+        }
+        (result as any).postApply = postApply;
+      }
+    }
 
     res.json({ success: true, data: result });
   } catch (error: any) {

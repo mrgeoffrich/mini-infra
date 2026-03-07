@@ -8,11 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   IconStack2,
   IconRefresh,
   IconChevronDown,
@@ -22,7 +17,8 @@ import {
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 
 interface StacksListProps {
-  environmentId: string;
+  environmentId?: string;
+  scope?: "host";
   className?: string;
 }
 
@@ -52,7 +48,7 @@ const statusBadgeVariants: Record<
   },
 };
 
-export function StacksList({ environmentId, className }: StacksListProps) {
+export function StacksList({ environmentId, scope, className }: StacksListProps) {
   const [expandedStackId, setExpandedStackId] = useState<string | null>(null);
   const { formatDateTime } = useFormattedDate();
 
@@ -63,10 +59,10 @@ export function StacksList({ environmentId, className }: StacksListProps) {
     error,
     refetch,
     isRefetching,
-  } = useStacks(environmentId);
+  } = useStacks(environmentId, { scope });
 
-  const stacks: StackInfo[] = (stacksData?.data ?? []).filter(
-    (s) => s.environmentId !== null
+  const stacks: StackInfo[] = (stacksData?.data ?? []).filter((s) =>
+    scope === "host" ? s.environmentId === null : s.environmentId !== null
   );
 
   const toggleExpanded = (stackId: string) => {
@@ -99,7 +95,9 @@ export function StacksList({ environmentId, className }: StacksListProps) {
               <div>
                 <CardTitle>Stacks</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Infrastructure stacks in this environment
+                  {scope === "host"
+                    ? "Host-level infrastructure stacks"
+                    : "Infrastructure stacks in this environment"}
                 </p>
               </div>
             </div>
@@ -141,71 +139,66 @@ export function StacksList({ environmentId, className }: StacksListProps) {
                 const badge = statusBadgeVariants[stack.status];
 
                 return (
-                  <Collapsible
-                    key={stack.id}
-                    open={isExpanded}
-                    onOpenChange={() => toggleExpanded(stack.id)}
-                  >
-                    <div className="rounded-md border">
-                      <CollapsibleTrigger asChild>
-                        <button className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <IconStack2 className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {stack.name}
-                                </span>
-                                <Badge
-                                  variant={
-                                    stack.status === "undeployed"
-                                      ? "secondary"
-                                      : "outline"
-                                  }
-                                  className={badge.className}
-                                >
-                                  {badge.label}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                                <span>v{stack.version}</span>
-                                {stack.lastAppliedVersion !== null &&
-                                  stack.lastAppliedVersion !== stack.version && (
-                                    <span className="text-orange-600 dark:text-orange-400">
-                                      (running v{stack.lastAppliedVersion})
-                                    </span>
-                                  )}
-                                {stack.services && (
-                                  <span>
-                                    {stack.services.length} service
-                                    {stack.services.length !== 1 ? "s" : ""}
-                                  </span>
-                                )}
-                                {stack.lastAppliedAt && (
-                                  <span>
-                                    Applied{" "}
-                                    {formatDateTime(stack.lastAppliedAt)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                  <div key={stack.id} className="rounded-md border">
+                    <button
+                      className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                      onClick={() => toggleExpanded(stack.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <IconStack2 className="h-5 w-5 text-muted-foreground" />
+                        <div>
                           <div className="flex items-center gap-2">
-                            {isExpanded ? (
-                              <IconChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <IconChevronDown className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">
+                              {stack.name}
+                            </span>
+                            <Badge
+                              variant={
+                                stack.status === "undeployed"
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                              className={badge.className}
+                            >
+                              {badge.label}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                            <span>Latest Version v{stack.version}</span>
+                            {stack.lastAppliedVersion !== null &&
+                              stack.lastAppliedVersion !== stack.version && (
+                                <span className="text-orange-600 dark:text-orange-400">
+                                  (running v{stack.lastAppliedVersion})
+                                </span>
+                              )}
+                            {stack.services && (
+                              <span>
+                                {stack.services.length} service
+                                {stack.services.length !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            {stack.lastAppliedAt && (
+                              <span>
+                                Applied{" "}
+                                {formatDateTime(stack.lastAppliedAt)}
+                              </span>
                             )}
                           </div>
-                        </button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="border-t p-4">
-                          <StackPlanView stackId={stack.id} />
                         </div>
-                      </CollapsibleContent>
-                    </div>
-                  </Collapsible>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? (
+                          <IconChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <IconChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t p-4">
+                        <StackPlanView stackId={stack.id} />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>

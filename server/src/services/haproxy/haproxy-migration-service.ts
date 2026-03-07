@@ -2,20 +2,13 @@ import { PrismaClient } from '@prisma/client';
 import { loadbalancerLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../docker-executor';
 import { StackReconciler } from '../stacks/stack-reconciler';
-import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
-import { haproxyRemediationService } from './haproxy-remediation-service';
-import { haproxyCertificateDeployer } from './haproxy-certificate-deployer';
 import DockerService from '../docker';
+import {
+  restoreHAProxyRuntimeState,
+  getEnvironmentCertificateIds,
+} from './haproxy-post-apply';
 
 const logger = loadbalancerLogger();
-
-/** Legacy resource names for an environment */
-interface LegacyResources {
-  containerName: string;
-  containerId: string | null;
-  volumes: string[];
-  existingVolumes: string[];
-}
 
 export interface MigrationPreview {
   needsMigration: boolean;
@@ -146,7 +139,7 @@ export class HAProxyMigrationService {
     }
 
     // 4. Count certificates that need redeployment
-    const certIds = await this.getEnvironmentCertificateIds(environmentId, prisma);
+    const certIds = await getEnvironmentCertificateIds(environmentId, prisma);
 
     // 5. Count backends and servers that need recreation
     const activeBackends = await prisma.hAProxyBackend.findMany({
@@ -302,97 +295,10 @@ export class HAProxyMigrationService {
       return { success: false, steps, errors };
     }
 
-    // Step 4: Redeploy TLS certificates
-    const certIds = await this.getEnvironmentCertificateIds(environmentId, prisma);
-    if (certIds.length > 0) {
-      try {
-        // Need to get HAProxy client for the new container
-        const haproxyClient = await this.getNewHAProxyClient(environmentId, prisma);
-
-        let deployedCount = 0;
-        for (const certId of certIds) {
-          try {
-            const fileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
-              certId,
-              prisma,
-              haproxyClient,
-              { gracefulNotFound: true }
-            );
-            if (fileName) {
-              deployedCount++;
-            }
-          } catch (error) {
-            const msg = `Failed to deploy certificate ${certId}: ${error}`;
-            logger.warn({ error, certId }, msg);
-            errors.push(msg);
-          }
-        }
-
-        steps.push({
-          step: 'Redeploy TLS certificates',
-          status: deployedCount > 0 ? 'completed' : 'skipped',
-          detail: `${deployedCount}/${certIds.length} certificates deployed`,
-        });
-      } catch (error) {
-        const msg = `Failed to connect to new HAProxy for certificate deployment: ${error}`;
-        logger.error({ error }, msg);
-        errors.push(msg);
-        steps.push({ step: 'Redeploy TLS certificates', status: 'failed', detail: msg });
-        // Non-fatal: continue to remediation
-      }
-    } else {
-      steps.push({ step: 'Redeploy TLS certificates', status: 'skipped', detail: 'No certificates to deploy' });
-    }
-
-    // Step 5: Recreate backends and servers from DB records
-    try {
-      const haproxyClient = await this.getNewHAProxyClient(environmentId, prisma);
-      const { backendsCreated, serversAdded } = await this.recreateBackendsAndServers(
-        environmentId,
-        haproxyClient,
-        prisma
-      );
-
-      steps.push({
-        step: 'Recreate backends and servers',
-        status: backendsCreated > 0 || serversAdded > 0 ? 'completed' : 'skipped',
-        detail: `${backendsCreated} backend(s), ${serversAdded} server(s)`,
-      });
-    } catch (error) {
-      const msg = `Failed to recreate backends and servers: ${error}`;
-      logger.error({ error }, msg);
-      errors.push(msg);
-      steps.push({ step: 'Recreate backends and servers', status: 'failed', detail: msg });
-    }
-
-    // Step 6: Run frontend remediation
-    if (preview.postMigration.remediationNeeded) {
-      try {
-        const haproxyClient = await this.getNewHAProxyClient(environmentId, prisma);
-        const remediationResult = await haproxyRemediationService.remediateEnvironment(
-          environmentId,
-          haproxyClient,
-          prisma
-        );
-
-        steps.push({
-          step: 'Frontend remediation',
-          status: remediationResult.success ? 'completed' : 'failed',
-          detail: `Frontends: +${remediationResult.frontendsCreated}/-${remediationResult.frontendsDeleted}, Routes: ${remediationResult.routesConfigured}`,
-        });
-
-        if (!remediationResult.success) {
-          errors.push(...remediationResult.errors);
-        }
-      } catch (error) {
-        const msg = `Frontend remediation failed: ${error}`;
-        logger.error({ error }, msg);
-        errors.push(msg);
-        steps.push({ step: 'Frontend remediation', status: 'failed', detail: msg });
-      }
-    } else {
-      steps.push({ step: 'Frontend remediation', status: 'skipped', detail: 'No remediation needed' });
-    }
+    // Steps 4-6: Restore runtime state (TLS certificates, backends/servers, frontend remediation)
+    const postApply = await restoreHAProxyRuntimeState(environmentId, prisma);
+    steps.push(...postApply.steps);
+    errors.push(...postApply.errors);
 
     // Step 7: Mark legacy EnvironmentService as migrated
     try {
@@ -419,147 +325,6 @@ export class HAProxyMigrationService {
     return { success, steps, errors };
   }
 
-  /**
-   * Recreate all active backends and their servers from DB records.
-   * This restores the HAProxy runtime configuration after a fresh container start.
-   */
-  private async recreateBackendsAndServers(
-    environmentId: string,
-    haproxyClient: HAProxyDataPlaneClient,
-    prisma: PrismaClient
-  ): Promise<{ backendsCreated: number; serversAdded: number }> {
-    let backendsCreated = 0;
-    let serversAdded = 0;
-
-    const backends = await prisma.hAProxyBackend.findMany({
-      where: { environmentId, status: 'active' },
-      include: { servers: { where: { status: 'active' } } },
-    });
-
-    logger.info(
-      { environmentId, backendCount: backends.length },
-      'Recreating backends and servers from DB'
-    );
-
-    for (const backend of backends) {
-      try {
-        // Check if backend already exists in HAProxy (shouldn't on fresh container)
-        const existing = await haproxyClient.getBackend(backend.name);
-        if (!existing) {
-          await haproxyClient.createBackend({
-            name: backend.name,
-            mode: backend.mode as 'http' | 'tcp',
-            balance: backend.balanceAlgorithm as 'roundrobin' | 'leastconn' | 'source',
-            ...(backend.checkTimeout && { check_timeout: backend.checkTimeout }),
-            ...(backend.connectTimeout && { connect_timeout: backend.connectTimeout }),
-            ...(backend.serverTimeout && { server_timeout: backend.serverTimeout }),
-          });
-          backendsCreated++;
-        }
-
-        // Add servers to the backend
-        for (const server of backend.servers) {
-          try {
-            await haproxyClient.addServer(backend.name, {
-              name: server.name,
-              address: server.address,
-              port: server.port,
-              check: server.check as 'enabled' | 'disabled',
-              ...(server.checkPath && { check_path: server.checkPath }),
-              ...(server.inter && { inter: server.inter }),
-              ...(server.rise && { rise: server.rise }),
-              ...(server.fall && { fall: server.fall }),
-              weight: server.weight,
-              maintenance: server.maintenance ? 'enabled' : 'disabled',
-              enabled: server.enabled,
-            });
-            serversAdded++;
-          } catch (error) {
-            logger.warn(
-              { error, backendName: backend.name, serverName: server.name },
-              'Failed to add server to backend'
-            );
-          }
-        }
-
-        logger.info(
-          { backendName: backend.name, serverCount: backend.servers.length },
-          'Recreated backend with servers'
-        );
-      } catch (error) {
-        logger.error(
-          { error, backendName: backend.name },
-          'Failed to recreate backend'
-        );
-      }
-    }
-
-    return { backendsCreated, serversAdded };
-  }
-
-  /**
-   * Get all unique TLS certificate IDs associated with an environment.
-   */
-  private async getEnvironmentCertificateIds(
-    environmentId: string,
-    prisma: PrismaClient
-  ): Promise<string[]> {
-    const [deploymentCerts, frontendCerts, routeCerts] = await Promise.all([
-      prisma.deploymentConfiguration.findMany({
-        where: { environmentId, isActive: true, tlsCertificateId: { not: null } },
-        select: { tlsCertificateId: true },
-      }),
-      prisma.hAProxyFrontend.findMany({
-        where: { environmentId, status: { not: 'removed' }, tlsCertificateId: { not: null } },
-        select: { tlsCertificateId: true },
-      }),
-      prisma.hAProxyRoute.findMany({
-        where: {
-          sharedFrontend: { environmentId },
-          status: 'active',
-          tlsCertificateId: { not: null },
-        },
-        select: { tlsCertificateId: true },
-      }),
-    ]);
-
-    const allCertIds = new Set<string>();
-    for (const r of [...deploymentCerts, ...frontendCerts, ...routeCerts]) {
-      if (r.tlsCertificateId) allCertIds.add(r.tlsCertificateId);
-    }
-    return [...allCertIds];
-  }
-
-  /**
-   * Get HAProxy DataPlane client for the newly created stack-managed container.
-   */
-  private async getNewHAProxyClient(
-    environmentId: string,
-    prisma: PrismaClient
-  ): Promise<HAProxyDataPlaneClient> {
-    const dockerService = DockerService.getInstance();
-    await dockerService.initialize();
-    const containers = await dockerService.listContainers();
-
-    // Find the stack-managed HAProxy container
-    const stackContainer = containers.find((c: any) => {
-      const labels = c.labels || {};
-      return (
-        labels['mini-infra.service'] === 'haproxy' &&
-        labels['mini-infra.environment'] === environmentId &&
-        !!labels['mini-infra.stack-id'] &&
-        c.status === 'running'
-      );
-    });
-
-    if (!stackContainer) {
-      throw new Error('New stack-managed HAProxy container not found or not running');
-    }
-
-    const client = new HAProxyDataPlaneClient();
-    await client.initialize(stackContainer.id);
-    return client;
-  }
 }
 
 export const haproxyMigrationService = new HAProxyMigrationService();

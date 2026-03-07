@@ -189,6 +189,16 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
+  "/host": {
+    path: "/host",
+    title: "Host",
+    icon: IconServer,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "applications",
+    description: "Host-level infrastructure stacks",
+  },
+
   "/tunnels": {
     path: "/tunnels",
     title: "Cloudflare Tunnels",
