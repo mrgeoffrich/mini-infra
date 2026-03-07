@@ -1,3 +1,6 @@
+# NOTE: This file is read at runtime by server/src/services/haproxy/haproxy-service.ts
+# and written into the haproxy_config Docker volume. Changes here take effect on next Start.
+#
 # Domain to Backend Mapping
 # Format: <domain> <backend_name>
 #

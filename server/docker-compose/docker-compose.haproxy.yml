@@ -1,3 +1,7 @@
+# NOTE: This compose file is for integration testing only. The actual HAProxy deployment
+# is managed inline in server/src/services/haproxy/haproxy-service.ts.
+# If you change any config here, you MUST also update the corresponding code in that file.
+
 services:
   haproxy-init:
     image: haproxytech/haproxy-alpine:3.2

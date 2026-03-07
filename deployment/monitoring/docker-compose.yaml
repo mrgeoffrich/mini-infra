@@ -1,3 +1,7 @@
+# NOTE: These config files are for reference only. The actual configs used at runtime
+# are inline in server/src/services/monitoring/monitoring-service.ts.
+# If you change any config here, you MUST also update the corresponding method in that file.
+
 services:
   telegraf:
     image: telegraf:latest

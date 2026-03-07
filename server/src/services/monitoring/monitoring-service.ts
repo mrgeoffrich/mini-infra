@@ -530,6 +530,13 @@ common:
     kvstore:
       store: inmemory
 
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+
 schema_config:
   configs:
     - from: "2024-04-01"
