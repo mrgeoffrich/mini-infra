@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { LogControls } from "./LogControls";
 import { LogStream } from "./LogStream";
 
 export function LogsPage() {
+  const queryClient = useQueryClient();
   const { data: status, isLoading: statusLoading, error: statusError } =
     useMonitoringStatus();
   const isRunning = status?.service?.status === "running";
@@ -23,7 +25,7 @@ export function LogsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(filters.search), 300);
+    const timer = setTimeout(() => setDebouncedSearch(filters.search), 500);
     return () => clearTimeout(timer);
   }, [filters.search]);
 
@@ -37,7 +39,6 @@ export function LogsPage() {
     isLoading: logsLoading,
     isFetching,
     error: logsError,
-    refetch,
   } = useLokiLogs(
     {
       services: filters.services,
@@ -101,9 +102,8 @@ export function LogsPage() {
               filters={filters}
               services={services}
               updateFilter={updateFilter}
-              onRefresh={() => refetch()}
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: ["lokiLogs"] })}
               isLoading={logsLoading || isFetching}
-              entryCount={logsData?.entries.length}
             />
 
             {logsError && (
@@ -120,6 +120,7 @@ export function LogsPage() {
               isLoading={logsLoading}
               search={debouncedSearch}
               tailing={filters.tailing}
+              entryCount={logsData?.entries.length}
             />
           </div>
         )}

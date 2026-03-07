@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +29,6 @@ interface LogControlsProps {
   ) => void;
   onRefresh: () => void;
   isLoading: boolean;
-  entryCount?: number;
 }
 
 export function LogControls({
@@ -37,8 +37,24 @@ export function LogControls({
   updateFilter,
   onRefresh,
   isLoading,
-  entryCount,
 }: LogControlsProps) {
+  const [spinning, setSpinning] = useState(false);
+
+  useEffect(() => {
+    if (isLoading) setSpinning(true);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!spinning) return;
+    const timer = setTimeout(() => setSpinning(false), 500);
+    return () => clearTimeout(timer);
+  }, [spinning]);
+
+  const handleRefresh = useCallback(() => {
+    setSpinning(true);
+    onRefresh();
+  }, [onRefresh]);
+
   const selectedService =
     filters.services.length === 1 ? filters.services[0] : "__all__";
 
@@ -161,23 +177,14 @@ export function LogControls({
           variant="outline"
           size="icon"
           className="h-9 w-9"
-          onClick={onRefresh}
-          disabled={isLoading}
+          onClick={handleRefresh}
         >
           <IconRefresh
-            className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
           />
         </Button>
       </div>
 
-      {/* Stats line */}
-      {entryCount !== undefined && (
-        <div className="text-sm text-muted-foreground">
-          {entryCount.toLocaleString()} log{" "}
-          {entryCount === 1 ? "line" : "lines"}
-          {filters.tailing && " · auto-refreshing"}
-        </div>
-      )}
     </div>
   );
 }

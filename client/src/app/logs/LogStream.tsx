@@ -10,6 +10,7 @@ interface LogStreamProps {
   isLoading: boolean;
   search: string;
   tailing: boolean;
+  entryCount?: number;
 }
 
 function detectLogLevel(
@@ -56,6 +57,7 @@ export function LogStream({
   isLoading,
   search,
   tailing,
+  entryCount,
 }: LogStreamProps) {
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,13 +151,24 @@ export function LogStream({
   }
 
   return (
-    <div className="relative">
-      {/* Action buttons */}
-      <div className="absolute top-2 right-4 z-10 flex gap-1">
+    <div>
+      {/* Stats and action buttons */}
+      <div className="flex items-center justify-between mb-1">
+        {entryCount !== undefined ? (
+          <span className="text-sm text-muted-foreground">
+            {entryCount.toLocaleString()} log{" "}
+            {entryCount === 1 ? "line" : "lines"} - Most recent logs are at
+            the top.
+            {tailing && " · auto-refreshing"}
+          </span>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-1">
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-gray-400 hover:text-white hover:bg-gray-700"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
           onClick={handleCopy}
           title="Copy all logs"
         >
@@ -164,12 +177,13 @@ export function LogStream({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-gray-400 hover:text-white hover:bg-gray-700"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
           onClick={handleDownload}
           title="Download logs"
         >
           <IconDownload className="h-3.5 w-3.5" />
         </Button>
+        </div>
       </div>
 
       {/* Log lines */}
@@ -193,7 +207,7 @@ export function LogStream({
                 className={`flex items-start gap-2 px-3 py-0.5 hover:bg-gray-800/60 cursor-pointer border-l-2 ${borderColor}`}
                 onClick={() => toggleExpanded(index)}
               >
-                <span className="text-gray-600 select-none shrink-0 tabular-nums">
+                <span className="text-white select-none shrink-0 tabular-nums">
                   {formatTime(entry.timestamp)}
                 </span>
                 <span

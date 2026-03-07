@@ -216,7 +216,7 @@ export interface LogFiltersState {
 export function useLogFilters(initial: Partial<LogFiltersState> = {}) {
   const [filters, setFilters] = useState<LogFiltersState>({
     services: [],
-    timeRange: "1h",
+    timeRange: "5m",
     search: "",
     direction: "backward",
     limit: 1000,
@@ -234,7 +234,7 @@ export function useLogFilters(initial: Partial<LogFiltersState> = {}) {
   const resetFilters = useCallback(() => {
     setFilters({
       services: [],
-      timeRange: "1h",
+      timeRange: "5m",
       search: "",
       direction: "backward",
       limit: 1000,
