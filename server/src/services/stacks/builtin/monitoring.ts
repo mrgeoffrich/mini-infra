@@ -142,9 +142,7 @@ function buildMonitoringDefinition(): StackDefinition {
             "-c",
             "chmod 666 /var/run/docker.sock && exec /entrypoint.sh telegraf --config /telegraf-volume/config/telegraf.conf",
           ],
-          ports: [
-            { containerPort: 9273, hostPort: 9273, protocol: "tcp" },
-          ],
+          ports: [{ containerPort: 9273, hostPort: 9273, protocol: "tcp" }],
           mounts: [
             {
               source: "prometheus_data",
@@ -199,9 +197,7 @@ function buildMonitoringDefinition(): StackDefinition {
             "--storage.tsdb.retention.time=30d",
             "--web.enable-lifecycle",
           ],
-          ports: [
-            { containerPort: 9090, hostPort: 9090, protocol: "tcp" },
-          ],
+          ports: [{ containerPort: 9090, hostPort: 9090, protocol: "tcp" }],
           mounts: [
             {
               source: "prometheus_data",
@@ -254,9 +250,7 @@ function buildMonitoringDefinition(): StackDefinition {
         containerConfig: {
           env: {},
           command: ["-config.file=/loki/config/local-config.yaml"],
-          ports: [
-            { containerPort: 3100, hostPort: 3100, protocol: "tcp" },
-          ],
+          ports: [{ containerPort: 3100, hostPort: 3100, protocol: "tcp" }],
           mounts: [
             {
               source: "loki_data",
@@ -307,9 +301,7 @@ function buildMonitoringDefinition(): StackDefinition {
             "/loki/config/config.alloy",
             "--server.http.listen-addr=0.0.0.0:12345",
           ],
-          ports: [
-            { containerPort: 12345, hostPort: 12345, protocol: "tcp" },
-          ],
+          ports: [{ containerPort: 12345, hostPort: 12345, protocol: "tcp" }],
           mounts: [
             {
               source: "loki_data",
@@ -353,7 +345,7 @@ function buildMonitoringDefinition(): StackDefinition {
 
 export const monitoringStack: BuiltinStackDefinition = {
   name: "monitoring",
-  builtinVersion: 1,
-  scope: 'host',
+  builtinVersion: 2,
+  scope: "host",
   resolve: async () => buildMonitoringDefinition(),
 };
