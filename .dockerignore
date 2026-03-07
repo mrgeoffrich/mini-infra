@@ -18,9 +18,7 @@ server/public
 
 # Development files
 *.log
-logs
-*/logs
-**/logs
+server/logs
 *.local
 .env
 .env.local
