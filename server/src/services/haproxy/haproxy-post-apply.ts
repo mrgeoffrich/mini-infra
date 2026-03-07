@@ -243,6 +243,8 @@ export async function recreateBackendsAndServers(
 
 /**
  * Get HAProxy DataPlane client for the stack-managed container in an environment.
+ * Retries initialization to allow time for the DataPlane API to become ready
+ * after a fresh container is created.
  */
 async function getStackHAProxyClient(
   environmentId: string,
@@ -266,7 +268,27 @@ async function getStackHAProxyClient(
     throw new Error('Stack-managed HAProxy container not found or not running');
   }
 
-  const client = new HAProxyDataPlaneClient();
-  await client.initialize(stackContainer.id);
-  return client;
+  const maxRetries = 5;
+  const baseDelay = 3000;
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const client = new HAProxyDataPlaneClient();
+      await client.initialize(stackContainer.id);
+      return client;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(1.5, attempt);
+        logger.info(
+          { attempt: attempt + 1, maxRetries, delay, environmentId },
+          'DataPlane API not ready yet, retrying...'
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError!;
 }

@@ -324,7 +324,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     if (haproxyServiceApplied) {
       const stack = await prisma.stack.findUnique({
         where: { id: req.params.stackId },
-        select: { name: true, environmentId: true },
+        select: { name: true, environmentId: true, environment: { select: { name: true } } },
       });
       if (stack?.name === 'haproxy' && stack.environmentId) {
         const postApply = await restoreHAProxyRuntimeState(stack.environmentId, prisma);
