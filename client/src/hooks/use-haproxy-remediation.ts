@@ -3,6 +3,8 @@ import {
   HAProxyStatusResponse,
   RemediationPreviewResponse,
   RemediateHAProxyResponse,
+  MigrationPreviewResponse,
+  MigrationResultResponse,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -183,6 +185,97 @@ export function useRemediateHAProxy() {
 }
 
 // ====================
+// Migration Hooks
+// ====================
+
+async function fetchMigrationPreview(
+  environmentId: string,
+  correlationId: string,
+): Promise<MigrationPreviewResponse> {
+  const response = await fetch(`/api/environments/${environmentId}/migration-preview`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch migration preview: ${response.statusText}`);
+  }
+
+  const data: MigrationPreviewResponse = await response.json();
+
+  if (!data.success) {
+    throw new Error("Failed to fetch migration preview");
+  }
+
+  return data;
+}
+
+async function migrateHAProxy(
+  environmentId: string,
+  correlationId: string,
+): Promise<MigrationResultResponse> {
+  const response = await fetch(`/api/environments/${environmentId}/migrate-haproxy`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Failed to migrate HAProxy: ${response.statusText}`);
+  }
+
+  const data: MigrationResultResponse = await response.json();
+  return data;
+}
+
+/**
+ * Hook to get migration preview for an environment
+ */
+export function useMigrationPreview(
+  environmentId: string | undefined,
+  options: UseHAProxyRemediationOptions = {},
+) {
+  const { enabled = true } = options;
+  const correlationId = generateCorrelationId();
+
+  return useQuery({
+    queryKey: ["migration-preview", environmentId],
+    queryFn: () => fetchMigrationPreview(environmentId!, correlationId),
+    enabled: enabled && !!environmentId,
+    retry: 1,
+    staleTime: 10000,
+    gcTime: 60 * 1000,
+  });
+}
+
+/**
+ * Hook to trigger HAProxy migration
+ */
+export function useMigrateHAProxy() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: (environmentId: string) => migrateHAProxy(environmentId, correlationId),
+    onSuccess: (_, environmentId) => {
+      queryClient.invalidateQueries({ queryKey: ["haproxy-status", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["migration-preview", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["remediation-preview", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+    },
+  });
+}
+
+// ====================
 // Type Exports
 // ====================
 
@@ -190,4 +283,6 @@ export type {
   HAProxyStatusResponse,
   RemediationPreviewResponse,
   RemediateHAProxyResponse,
+  MigrationPreviewResponse,
+  MigrationResultResponse,
 };

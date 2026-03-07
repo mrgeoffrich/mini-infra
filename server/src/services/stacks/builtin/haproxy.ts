@@ -31,7 +31,7 @@ async function buildHAProxyDefinition(
   return {
     name: "haproxy",
     description: "HAProxy load balancer with DataPlane API",
-    networks: [{ name: "haproxy_network", driver: "bridge" }],
+    networks: [{ name: "network", driver: "bridge" }],
     volumes: [
       { name: "haproxy_data" },
       { name: "haproxy_run" },
@@ -132,6 +132,6 @@ async function buildHAProxyDefinition(
 
 export const haproxyStack: BuiltinStackDefinition = {
   name: "haproxy",
-  builtinVersion: 1,
+  builtinVersion: 2,
   resolve: (context) => buildHAProxyDefinition(context),
 };

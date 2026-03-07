@@ -9,8 +9,9 @@ import {
 } from "@tabler/icons-react";
 
 import { useEnvironments } from "@/hooks/use-environments";
-import { useHAProxyStatus } from "@/hooks/use-haproxy-remediation";
+import { useHAProxyStatus, useMigrationPreview } from "@/hooks/use-haproxy-remediation";
 import { RemediateHAProxyDialog } from "@/components/haproxy/remediate-haproxy-dialog";
+import { MigrateHAProxyDialog } from "@/components/haproxy/migrate-haproxy-dialog";
 import { EnvironmentStatus } from "@/components/environments/environment-status";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -93,10 +94,17 @@ function HAProxyHealthBadge({
 
 function HAProxyInstanceRow({ env }: { env: Environment }) {
   const [remediateOpen, setRemediateOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const { data, isLoading, isError } = useHAProxyStatus(env.id);
 
   const isStopped = env.status === "stopped";
   const status = data?.data;
+
+  // Check if this environment needs migration from legacy to stack-managed
+  const { data: migrationPreview } = useMigrationPreview(env.id, {
+    enabled: !isStopped,
+  });
+  const needsMigration = migrationPreview?.data?.needsMigration ?? false;
 
   return (
     <TableRow>
@@ -117,6 +125,14 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
       <TableCell>
         {isStopped ? (
           <span className="text-muted-foreground">—</span>
+        ) : needsMigration ? (
+          <Badge
+            variant="outline"
+            className="text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:bg-orange-950"
+          >
+            <IconAlertTriangle className="h-3 w-3 mr-1" />
+            Legacy
+          </Badge>
         ) : (
           <HAProxyHealthBadge
             needsRemediation={status?.needsRemediation}
@@ -148,20 +164,42 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
         )}
       </TableCell>
       <TableCell>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isStopped}
-          onClick={() => setRemediateOpen(true)}
-        >
-          Remediate
-        </Button>
-        <RemediateHAProxyDialog
-          environmentId={env.id}
-          environmentName={env.name}
-          open={remediateOpen}
-          onOpenChange={setRemediateOpen}
-        />
+        {needsMigration ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isStopped}
+              onClick={() => setMigrateOpen(true)}
+              className="text-orange-700 border-orange-200 hover:bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:hover:bg-orange-950"
+            >
+              Migrate to Stack
+            </Button>
+            <MigrateHAProxyDialog
+              environmentId={env.id}
+              environmentName={env.name}
+              open={migrateOpen}
+              onOpenChange={setMigrateOpen}
+            />
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isStopped}
+              onClick={() => setRemediateOpen(true)}
+            >
+              Remediate
+            </Button>
+            <RemediateHAProxyDialog
+              environmentId={env.id}
+              environmentName={env.name}
+              open={remediateOpen}
+              onOpenChange={setRemediateOpen}
+            />
+          </>
+        )}
       </TableCell>
     </TableRow>
   );
