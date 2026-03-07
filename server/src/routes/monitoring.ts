@@ -68,7 +68,7 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
 });
 
 // POST /api/monitoring/stop - Stop monitoring stack
-router.post('/stop', requirePermission('monitoring:write'), async (_req, res) => {
+router.post('/stop', requirePermission('monitoring:write'), async (req, res) => {
   try {
     const stack = await getMonitoringStack();
     if (!stack) {
@@ -78,7 +78,7 @@ router.post('/stop', requirePermission('monitoring:write'), async (_req, res) =>
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
-    const result = await reconciler.stopStack(stack.id);
+    const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as any).user?.id });
 
     res.json({ message: 'Monitoring stack stopped', ...result });
   } catch (error: any) {

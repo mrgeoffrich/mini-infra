@@ -199,10 +199,14 @@ const mockLongRunningContainer = {
 };
 const mockCreateLongRunningContainer = vi.fn().mockResolvedValue(mockLongRunningContainer);
 
+const mockStackDeploymentCreate = vi.fn().mockResolvedValue({});
 const mockPrisma = {
   stack: {
     findUniqueOrThrow: mockFindUniqueOrThrow,
     update: mockStackUpdate,
+  },
+  stackDeployment: {
+    create: mockStackDeploymentCreate,
   },
 } as any;
 

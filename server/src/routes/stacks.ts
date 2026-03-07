@@ -309,7 +309,10 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     await dockerExecutor.initialize();
     const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
     const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager);
-    const result = await reconciler.apply(req.params.stackId, parsed.data);
+    const result = await reconciler.apply(req.params.stackId, {
+      ...parsed.data,
+      triggeredBy: (req as any).user?.id,
+    });
 
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -365,75 +368,50 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
   }
 });
 
-// GET /:stackId/history — List applied version snapshots
+// GET /:stackId/history — List deployment history
 router.get('/:stackId/history', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const stack = await prisma.stack.findUnique({
-      where: { id: req.params.stackId },
-      select: {
-        id: true,
-        lastAppliedVersion: true,
-        lastAppliedAt: true,
-        lastAppliedSnapshot: true,
-      },
-    });
+    const { stackId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
 
+    const stack = await prisma.stack.findUnique({ where: { id: stackId }, select: { id: true } });
     if (!stack) {
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    const history = stack.lastAppliedVersion !== null
-      ? [{
-          version: stack.lastAppliedVersion,
-          appliedAt: stack.lastAppliedAt?.toISOString() ?? null,
-          snapshot: stack.lastAppliedSnapshot,
-        }]
-      : [];
+    const [data, total] = await Promise.all([
+      prisma.stackDeployment.findMany({
+        where: { stackId },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.stackDeployment.count({ where: { stackId } }),
+    ]);
 
-    res.json({ success: true, data: history });
+    res.json({ success: true, data, total });
   } catch (error) {
     logger.error({ error, stackId: req.params.stackId }, 'Failed to get stack history');
     res.status(500).json({ success: false, message: 'Failed to get stack history' });
   }
 });
 
-// GET /:stackId/history/:version — Specific snapshot
-router.get('/:stackId/history/:version', requirePermission('stacks:read'), async (req, res) => {
+// GET /:stackId/history/:deploymentId — Specific deployment record
+router.get('/:stackId/history/:deploymentId', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const version = parseInt(req.params.version, 10);
-    if (isNaN(version)) {
-      return res.status(400).json({ success: false, message: 'Invalid version number' });
-    }
-
-    const stack = await prisma.stack.findUnique({
-      where: { id: req.params.stackId },
-      select: {
-        id: true,
-        lastAppliedVersion: true,
-        lastAppliedAt: true,
-        lastAppliedSnapshot: true,
-      },
+    const deployment = await prisma.stackDeployment.findFirst({
+      where: { id: req.params.deploymentId, stackId: req.params.stackId },
     });
 
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
+    if (!deployment) {
+      return res.status(404).json({ success: false, message: 'Deployment not found' });
     }
 
-    if (stack.lastAppliedVersion !== version) {
-      return res.status(404).json({ success: false, message: 'Version not found' });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        version: stack.lastAppliedVersion,
-        appliedAt: stack.lastAppliedAt?.toISOString() ?? null,
-        snapshot: stack.lastAppliedSnapshot,
-      },
-    });
+    res.json({ success: true, data: deployment });
   } catch (error) {
-    logger.error({ error, stackId: req.params.stackId }, 'Failed to get stack history version');
-    res.status(500).json({ success: false, message: 'Failed to get stack history version' });
+    logger.error({ error, stackId: req.params.stackId }, 'Failed to get deployment record');
+    res.status(500).json({ success: false, message: 'Failed to get deployment record' });
   }
 });
 

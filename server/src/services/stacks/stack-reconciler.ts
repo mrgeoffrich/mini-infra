@@ -209,149 +209,192 @@ export class StackReconciler {
       include: { services: { orderBy: { order: 'asc' } }, environment: true },
     });
 
-    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+    try {
+      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
 
-    // Build template context for config file resolution
-    const templateContext = buildStackTemplateContext(stack);
+      // Build template context for config file resolution
+      const templateContext = buildStackTemplateContext(stack);
 
-    // Build maps for service definitions, hashes, and resolved configs
-    const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-    const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
-    const serviceHashes = new Map<string, string>();
+      // Build maps for service definitions, hashes, and resolved configs
+      const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
+      const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
+      const serviceHashes = new Map<string, string>();
 
-    for (const svc of stack.services) {
-      const resolvedConfigs = resolveStackConfigFiles(
-        (svc.configFiles as unknown as StackConfigFile[]) ?? [],
-        templateContext
-      );
-      resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
-      serviceHashes.set(svc.serviceName, computeDefinitionHash(toServiceDefinition(svc), resolvedConfigs));
-    }
-
-    // 5. Ensure infrastructure — create networks and volumes
-    const networks = stack.networks as unknown as StackNetwork[];
-    const volumes = stack.volumes as unknown as StackVolume[];
-    const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
-
-    for (const net of networks) {
-      const netName = `${projectName}_${net.name}`;
-      const exists = await this.dockerExecutor.networkExists(netName);
-      if (!exists) {
-        log.info({ network: netName }, 'Creating network');
-        await this.dockerExecutor.createNetwork(netName, projectName, {
-          driver: net.driver,
-          labels: stackLabels,
-        });
-      }
-    }
-
-    for (const vol of volumes) {
-      const volName = `${projectName}_${vol.name}`;
-      const exists = await this.dockerExecutor.volumeExists(volName);
-      if (!exists) {
-        log.info({ volume: volName }, 'Creating volume');
-        await this.dockerExecutor.createVolume(volName, projectName, { labels: stackLabels });
-      }
-    }
-
-    // 6. Sort actions: creates first, then recreates, then removes
-    const actionOrder: Record<string, number> = { create: 0, recreate: 1, remove: 2 };
-    actions.sort((a, b) => {
-      const orderDiff = (actionOrder[a.action] ?? 99) - (actionOrder[b.action] ?? 99);
-      if (orderDiff !== 0) return orderDiff;
-      // Within same action type, respect service order
-      const svcA = serviceMap.get(a.serviceName);
-      const svcB = serviceMap.get(b.serviceName);
-      return (svcA?.order ?? 999) - (svcB?.order ?? 999);
-    });
-
-    // Resolve network names
-    const networkNames = networks.map((n) => `${projectName}_${n.name}`);
-
-    // 7. Execute actions
-    const serviceResults: ServiceApplyResult[] = [];
-
-    // Get current containers for recreate/remove operations
-    const docker = this.dockerExecutor.getDockerClient();
-    const currentContainers = await docker.listContainers({
-      all: true,
-      filters: { label: [`mini-infra.stack-id=${stackId}`] },
-    });
-    const containerByService = buildContainerMap(currentContainers);
-
-    for (const action of actions) {
-      const actionStart = Date.now();
-      const svc = serviceMap.get(action.serviceName);
-      const serviceDef = svc ? toServiceDefinition(svc) : null;
-      const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
-
-      if (isStatelessWeb && !this.routingManager) {
-        throw new Error(`StackRoutingManager is required for StatelessWeb service "${action.serviceName}"`);
+      for (const svc of stack.services) {
+        const resolvedConfigs = resolveStackConfigFiles(
+          (svc.configFiles as unknown as StackConfigFile[]) ?? [],
+          templateContext
+        );
+        resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
+        serviceHashes.set(svc.serviceName, computeDefinitionHash(toServiceDefinition(svc), resolvedConfigs));
       }
 
-      try {
-        if (isStatelessWeb) {
-          const result = await this.applyStatelessWeb(
-            action, svc!, serviceDef!, projectName, stackId, stack,
-            networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-            actionStart, log
-          );
-          serviceResults.push(result);
-        } else {
-          const result = await this.applyStateful(
-            action, svc, serviceDef, projectName, stackId, stack,
-            networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-            actionStart, log
-          );
-          serviceResults.push(result);
+      // 5. Ensure infrastructure — create networks and volumes
+      const networks = stack.networks as unknown as StackNetwork[];
+      const volumes = stack.volumes as unknown as StackVolume[];
+      const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
+
+      for (const net of networks) {
+        const netName = `${projectName}_${net.name}`;
+        const exists = await this.dockerExecutor.networkExists(netName);
+        if (!exists) {
+          log.info({ network: netName }, 'Creating network');
+          await this.dockerExecutor.createNetwork(netName, projectName, {
+            driver: net.driver,
+            labels: stackLabels,
+          });
         }
-      } catch (err: any) {
-        log.error({ service: action.serviceName, error: err.message }, 'Action failed');
-        serviceResults.push({
-          serviceName: action.serviceName,
-          action: action.action,
-          success: false,
-          duration: Date.now() - actionStart,
-          error: err.message,
-        });
       }
+
+      for (const vol of volumes) {
+        const volName = `${projectName}_${vol.name}`;
+        const exists = await this.dockerExecutor.volumeExists(volName);
+        if (!exists) {
+          log.info({ volume: volName }, 'Creating volume');
+          await this.dockerExecutor.createVolume(volName, projectName, { labels: stackLabels });
+        }
+      }
+
+      // 6. Sort actions: creates first, then recreates, then removes
+      const actionOrder: Record<string, number> = { create: 0, recreate: 1, remove: 2 };
+      actions.sort((a, b) => {
+        const orderDiff = (actionOrder[a.action] ?? 99) - (actionOrder[b.action] ?? 99);
+        if (orderDiff !== 0) return orderDiff;
+        // Within same action type, respect service order
+        const svcA = serviceMap.get(a.serviceName);
+        const svcB = serviceMap.get(b.serviceName);
+        return (svcA?.order ?? 999) - (svcB?.order ?? 999);
+      });
+
+      // Resolve network names
+      const networkNames = networks.map((n) => `${projectName}_${n.name}`);
+
+      // 7. Execute actions
+      const serviceResults: ServiceApplyResult[] = [];
+
+      // Get current containers for recreate/remove operations
+      const docker = this.dockerExecutor.getDockerClient();
+      const currentContainers = await docker.listContainers({
+        all: true,
+        filters: { label: [`mini-infra.stack-id=${stackId}`] },
+      });
+      const containerByService = buildContainerMap(currentContainers);
+
+      for (const action of actions) {
+        const actionStart = Date.now();
+        const svc = serviceMap.get(action.serviceName);
+        const serviceDef = svc ? toServiceDefinition(svc) : null;
+        const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
+
+        if (isStatelessWeb && !this.routingManager) {
+          throw new Error(`StackRoutingManager is required for StatelessWeb service "${action.serviceName}"`);
+        }
+
+        try {
+          if (isStatelessWeb) {
+            const result = await this.applyStatelessWeb(
+              action, svc!, serviceDef!, projectName, stackId, stack,
+              networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+              actionStart, log
+            );
+            serviceResults.push(result);
+          } else {
+            const result = await this.applyStateful(
+              action, svc, serviceDef, projectName, stackId, stack,
+              networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+              actionStart, log
+            );
+            serviceResults.push(result);
+          }
+        } catch (err: any) {
+          log.error({ service: action.serviceName, error: err.message }, 'Action failed');
+          serviceResults.push({
+            serviceName: action.serviceName,
+            action: action.action,
+            success: false,
+            duration: Date.now() - actionStart,
+            error: err.message,
+          });
+        }
+      }
+
+      // 8. Update stack in DB
+      const allSucceeded = serviceResults.every((r) => r.success);
+      const resultStatus = allSucceeded ? 'synced' : 'error';
+      await this.prisma.stack.update({
+        where: { id: stackId },
+        data: {
+          lastAppliedVersion: stack.version,
+          lastAppliedAt: new Date(),
+          lastAppliedSnapshot: serializeStack({
+            ...stack,
+            networks: stack.networks as unknown as StackNetwork[],
+            volumes: stack.volumes as unknown as StackVolume[],
+            services: stack.services.map((s) => ({
+              ...s,
+              serviceType: s.serviceType as StackServiceDefinition['serviceType'],
+              containerConfig: s.containerConfig as unknown as StackContainerConfig,
+              configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
+              initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
+              dependsOn: s.dependsOn as unknown as string[],
+              routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
+            })),
+          } as any) as any,
+          status: resultStatus,
+        },
+      });
+
+      // 9. Record deployment history
+      await this.prisma.stackDeployment.create({
+        data: {
+          stackId,
+          action: 'apply',
+          success: allSucceeded,
+          version: stack.version,
+          status: resultStatus,
+          duration: Date.now() - startTime,
+          serviceResults: serviceResults as any,
+          triggeredBy: options?.triggeredBy ?? null,
+        },
+      });
+
+      return {
+        success: allSucceeded,
+        stackId,
+        appliedVersion: stack.version,
+        serviceResults,
+        duration: Date.now() - startTime,
+      };
+    } catch (err: any) {
+      // Record unexpected failure as a deployment record
+      const duration = Date.now() - startTime;
+      log.error({ error: err.message }, 'Apply failed unexpectedly');
+      try {
+        await this.prisma.stackDeployment.create({
+          data: {
+            stackId,
+            action: 'apply',
+            success: false,
+            version: stack.version,
+            status: 'error',
+            duration,
+            error: err.message,
+            triggeredBy: options?.triggeredBy ?? null,
+          },
+        });
+        await this.prisma.stack.update({
+          where: { id: stackId },
+          data: { status: 'error' },
+        });
+      } catch (dbErr) {
+        log.error({ error: dbErr }, 'Failed to record deployment failure');
+      }
+      throw err;
     }
-
-    // 8. Update stack in DB
-    const allSucceeded = serviceResults.every((r) => r.success);
-    await this.prisma.stack.update({
-      where: { id: stackId },
-      data: {
-        lastAppliedVersion: stack.version,
-        lastAppliedAt: new Date(),
-        lastAppliedSnapshot: serializeStack({
-          ...stack,
-          networks: stack.networks as unknown as StackNetwork[],
-          volumes: stack.volumes as unknown as StackVolume[],
-          services: stack.services.map((s) => ({
-            ...s,
-            serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-            containerConfig: s.containerConfig as unknown as StackContainerConfig,
-            configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
-            initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
-            dependsOn: s.dependsOn as unknown as string[],
-            routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
-          })),
-        } as any) as any,
-        status: allSucceeded ? 'synced' : 'error',
-      },
-    });
-
-    return {
-      success: allSucceeded,
-      stackId,
-      appliedVersion: stack.version,
-      serviceResults,
-      duration: Date.now() - startTime,
-    };
   }
 
-  async stopStack(stackId: string): Promise<{ success: boolean; stoppedContainers: number }> {
+  async stopStack(stackId: string, options?: { triggeredBy?: string }): Promise<{ success: boolean; stoppedContainers: number }> {
+    const startTime = Date.now();
     const log = servicesLogger().child({ operation: 'stack-stop', stackId });
 
     const docker = this.dockerExecutor.getDockerClient();
@@ -383,6 +426,18 @@ export class StackReconciler {
     await this.prisma.stack.update({
       where: { id: stackId },
       data: { status: 'undeployed' },
+    });
+
+    // Record deployment history
+    await this.prisma.stackDeployment.create({
+      data: {
+        stackId,
+        action: 'stop',
+        success: true,
+        status: 'undeployed',
+        duration: Date.now() - startTime,
+        triggeredBy: options?.triggeredBy ?? null,
+      },
     });
 
     log.info({ stopped }, 'Stack stopped');

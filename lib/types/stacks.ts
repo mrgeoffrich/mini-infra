@@ -254,6 +254,7 @@ export interface FieldDiff {
 export interface ApplyOptions {
   serviceNames?: string[];
   dryRun?: boolean;
+  triggeredBy?: string;
 }
 
 export interface ApplyResult {
@@ -271,6 +272,22 @@ export interface ServiceApplyResult {
   duration: number;
   error?: string;
   containerId?: string;
+}
+
+// Deployment history
+
+export interface StackDeploymentRecord {
+  id: string;
+  stackId: string;
+  action: 'apply' | 'stop';
+  success: boolean;
+  version: number | null;
+  status: StackStatus;
+  duration: number | null;
+  serviceResults: ServiceApplyResult[] | null;
+  error: string | null;
+  triggeredBy: string | null;
+  createdAt: string;
 }
 
 // API request types

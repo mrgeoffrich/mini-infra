@@ -1177,6 +1177,7 @@ model Stack {
 
   // Relations
   services             StackService[]
+  deployments          StackDeployment[]
 
   @@unique([name, environmentId])
   @@index([environmentId])
@@ -1205,4 +1206,24 @@ model StackService {
   @@unique([stackId, serviceName])
   @@index([stackId])
   @@map("stack_services")
+}
+
+// StackDeployment - Immutable log of each apply/stop operation
+model StackDeployment {
+  id              String      @id @default(cuid())
+  stackId         String
+  stack           Stack       @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  action          String      // 'apply' | 'stop'
+  success         Boolean
+  version         Int?        // stack version at time of deploy (null for stop)
+  status          StackStatus // resulting status after operation
+  duration        Int?        // milliseconds
+  serviceResults  Json?       // ServiceApplyResult[] for apply, null for stop
+  error           String?     // error message if operation failed
+  triggeredBy     String?     // user ID for audit trail
+  createdAt       DateTime    @default(now())
+
+  @@index([stackId])
+  @@index([createdAt])
+  @@map("stack_deployments")
 }

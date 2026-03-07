@@ -161,7 +161,7 @@ async function fetchStackStatus(
 async function fetchStackHistory(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: any[] }> {
+): Promise<{ success: boolean; data: any[]; total?: number }> {
   const response = await fetch(`/api/stacks/${stackId}/history`, {
     credentials: "include",
     headers: {
