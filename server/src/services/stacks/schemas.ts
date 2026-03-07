@@ -100,7 +100,13 @@ export const stackVolumeSchema = z.object({
   options: z.record(z.string(), z.any()).optional(),
 });
 
-const serviceNameRegex = /^[a-zA-Z0-9_-]+$/;
+const nameRegex = /^[a-zA-Z0-9_-]+$/;
+
+const stackNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(nameRegex, "Stack name can only contain letters, numbers, hyphens, and underscores");
 
 export const stackServiceDefinitionSchema = z
   .object({
@@ -109,7 +115,7 @@ export const stackServiceDefinitionSchema = z
       .min(1)
       .max(100)
       .regex(
-        serviceNameRegex,
+        nameRegex,
         "Service name can only contain letters, numbers, hyphens, and underscores"
       ),
     serviceType: z.enum(["Stateful", "StatelessWeb"]),
@@ -140,14 +146,7 @@ export const stackServiceDefinitionSchema = z
 
 // The portable StackDefinition shape (no DB fields)
 export const stackDefinitionSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(
-      serviceNameRegex,
-      "Stack name can only contain letters, numbers, hyphens, and underscores"
-    ),
+  name: stackNameSchema,
   description: z.string().max(500).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
@@ -159,14 +158,7 @@ export const stackDefinitionSchema = z.object({
 // API request schemas
 
 export const createStackSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(
-      serviceNameRegex,
-      "Stack name can only contain letters, numbers, hyphens, and underscores"
-    ),
+  name: stackNameSchema,
   description: z.string().max(500).optional(),
   environmentId: z.string().min(1).optional(),
   networks: z.array(stackNetworkSchema),
@@ -177,15 +169,7 @@ export const createStackSchema = z.object({
 });
 
 export const updateStackSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(
-      serviceNameRegex,
-      "Stack name can only contain letters, numbers, hyphens, and underscores"
-    )
-    .optional(),
+  name: stackNameSchema.optional(),
   description: z.string().max(500).optional(),
   networks: z.array(stackNetworkSchema).optional(),
   volumes: z.array(stackVolumeSchema).optional(),

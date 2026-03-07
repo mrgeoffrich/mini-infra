@@ -17,11 +17,17 @@ import {
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
-import { buildTemplateContext, resolveStackConfigFiles } from './template-engine';
+import { resolveStackConfigFiles } from './template-engine';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
+import {
+  buildStackTemplateContext,
+  buildContainerMap,
+  toServiceDefinition,
+  prepareServiceContainer,
+} from './utils';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -46,20 +52,7 @@ export class StackReconciler {
     log.info({ stackName: stack.name, serviceCount: stack.services.length }, 'Computing plan');
 
     // 2. Build template context and resolve config files per service
-    const templateContext = buildTemplateContext(
-      {
-        name: stack.name,
-        networks: stack.networks as unknown as StackNetwork[],
-        volumes: stack.volumes as unknown as StackVolume[],
-      },
-      stack.services.map((s) => ({
-        serviceName: s.serviceName,
-        dockerImage: s.dockerImage,
-        dockerTag: s.dockerTag,
-        containerConfig: s.containerConfig as unknown as StackContainerConfig,
-      })),
-      stack.environment?.name ?? stack.name
-    );
+    const templateContext = buildStackTemplateContext(stack);
 
     // 3. Compute definition hashes per service
     const serviceHashes = new Map<string, string>();
@@ -72,7 +65,7 @@ export class StackReconciler {
       );
       resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
 
-      const def = this.toServiceDefinition(svc);
+      const def = toServiceDefinition(svc);
       const hash = computeDefinitionHash(def, resolvedConfigs);
       serviceHashes.set(svc.serviceName, hash);
     }
@@ -84,13 +77,7 @@ export class StackReconciler {
       filters: { label: [`mini-infra.stack-id=${stackId}`] },
     });
 
-    const containerMap = new Map<string, Docker.ContainerInfo>();
-    for (const container of containers) {
-      const serviceName = container.Labels['mini-infra.service'];
-      if (serviceName) {
-        containerMap.set(serviceName, container);
-      }
-    }
+    const containerMap = buildContainerMap(containers);
 
     // 5. Compare desired services against running containers
     const actions: ServiceAction[] = [];
@@ -137,7 +124,7 @@ export class StackReconciler {
       }
 
       // Hash mismatch — generate diffs
-      const diffs = this.generateDiffs(svc.serviceName, snapshot, this.toServiceDefinition(svc));
+      const diffs = this.generateDiffs(svc.serviceName, snapshot, toServiceDefinition(svc));
       const reason = this.buildReason(currentImage, desiredImage, diffs);
 
       actions.push({
@@ -225,20 +212,7 @@ export class StackReconciler {
     const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
 
     // Build template context for config file resolution
-    const templateContext = buildTemplateContext(
-      {
-        name: stack.name,
-        networks: stack.networks as unknown as StackNetwork[],
-        volumes: stack.volumes as unknown as StackVolume[],
-      },
-      stack.services.map((s) => ({
-        serviceName: s.serviceName,
-        dockerImage: s.dockerImage,
-        dockerTag: s.dockerTag,
-        containerConfig: s.containerConfig as unknown as StackContainerConfig,
-      })),
-      stack.environment?.name ?? stack.name
-    );
+    const templateContext = buildStackTemplateContext(stack);
 
     // Build maps for service definitions, hashes, and resolved configs
     const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
@@ -251,8 +225,7 @@ export class StackReconciler {
         templateContext
       );
       resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
-      const def = this.toServiceDefinition(svc);
-      serviceHashes.set(svc.serviceName, computeDefinitionHash(def, resolvedConfigs));
+      serviceHashes.set(svc.serviceName, computeDefinitionHash(toServiceDefinition(svc), resolvedConfigs));
     }
 
     // 5. Ensure infrastructure — create networks and volumes
@@ -304,16 +277,12 @@ export class StackReconciler {
       all: true,
       filters: { label: [`mini-infra.stack-id=${stackId}`] },
     });
-    const containerByService = new Map<string, Docker.ContainerInfo>();
-    for (const c of currentContainers) {
-      const sn = c.Labels['mini-infra.service'];
-      if (sn) containerByService.set(sn, c);
-    }
+    const containerByService = buildContainerMap(currentContainers);
 
     for (const action of actions) {
       const actionStart = Date.now();
       const svc = serviceMap.get(action.serviceName);
-      const serviceDef = svc ? this.toServiceDefinition(svc) : null;
+      const serviceDef = svc ? toServiceDefinition(svc) : null;
       const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
 
       if (isStatelessWeb && !this.routingManager) {
@@ -439,17 +408,7 @@ export class StackReconciler {
         if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Creating service');
 
-        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
-
-        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
-        if (initCmds.length > 0) {
-          await this.containerManager.runInitCommands(initCmds, projectName);
-        }
-
-        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-        if (resolvedConfigs.length > 0) {
-          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-        }
+        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
@@ -489,17 +448,7 @@ export class StackReconciler {
           });
         }
 
-        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
-        if (initCmds.length > 0) {
-          await this.containerManager.runInitCommands(initCmds, projectName);
-        }
-
-        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-        if (resolvedConfigs.length > 0) {
-          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-        }
-
-        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
@@ -577,17 +526,7 @@ export class StackReconciler {
       case 'create': {
         log.info({ service: action.serviceName }, 'Creating StatelessWeb service');
 
-        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
-
-        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
-        if (initCmds.length > 0) {
-          await this.containerManager.runInitCommands(initCmds, projectName);
-        }
-
-        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-        if (resolvedConfigs.length > 0) {
-          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-        }
+        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
@@ -657,17 +596,7 @@ export class StackReconciler {
 
         const oldContainer = containerByService.get(action.serviceName);
 
-        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
-
-        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
-        if (initCmds.length > 0) {
-          await this.containerManager.runInitCommands(initCmds, projectName);
-        }
-
-        const resolvedConfigs = resolvedConfigsMap.get(action.serviceName) ?? [];
-        if (resolvedConfigs.length > 0) {
-          await this.containerManager.writeConfigFiles(resolvedConfigs, projectName);
-        }
+        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         // Create green container (blue stays running)
         const greenId = await this.containerManager.createAndStartContainer(
@@ -778,32 +707,6 @@ export class StackReconciler {
       default:
         throw new Error(`Unknown action: ${action.action}`);
     }
-  }
-
-  private toServiceDefinition(svc: {
-    serviceName: string;
-    serviceType: string;
-    dockerImage: string;
-    dockerTag: string;
-    containerConfig: unknown;
-    configFiles: unknown;
-    initCommands: unknown;
-    dependsOn: unknown;
-    order: number;
-    routing: unknown;
-  }): StackServiceDefinition {
-    return {
-      serviceName: svc.serviceName,
-      serviceType: svc.serviceType as StackServiceDefinition['serviceType'],
-      dockerImage: svc.dockerImage,
-      dockerTag: svc.dockerTag,
-      containerConfig: svc.containerConfig as StackContainerConfig,
-      configFiles: (svc.configFiles as unknown as StackConfigFile[]) ?? undefined,
-      initCommands: (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? undefined,
-      dependsOn: svc.dependsOn as string[],
-      order: svc.order,
-      routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
-    };
   }
 
   private generateDiffs(

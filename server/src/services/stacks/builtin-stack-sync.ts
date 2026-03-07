@@ -1,7 +1,8 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { BUILTIN_STACKS } from "./builtin";
 import { BuiltinStackDefinition } from "./builtin/types";
 import { servicesLogger } from "../../lib/logger-factory";
+import { toServiceCreateInput } from "./utils";
 
 export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   const log = servicesLogger().child({ operation: "builtin-stack-sync" });
@@ -97,18 +98,7 @@ async function syncHostStack(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map((s) => ({
-            serviceName: s.serviceName,
-            serviceType: s.serviceType,
-            dockerImage: s.dockerImage,
-            dockerTag: s.dockerTag,
-            containerConfig: s.containerConfig as any,
-            configFiles: (s.configFiles ?? []) as any,
-            initCommands: (s.initCommands ?? []) as any,
-            dependsOn: s.dependsOn,
-            order: s.order,
-            routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-          })),
+          create: definition.services.map(toServiceCreateInput),
         },
       },
     });
@@ -157,18 +147,7 @@ async function syncHostStack(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map((s) => ({
-            serviceName: s.serviceName,
-            serviceType: s.serviceType,
-            dockerImage: s.dockerImage,
-            dockerTag: s.dockerTag,
-            containerConfig: s.containerConfig as any,
-            configFiles: (s.configFiles ?? []) as any,
-            initCommands: (s.initCommands ?? []) as any,
-            dependsOn: s.dependsOn,
-            order: s.order,
-            routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-          })),
+          create: definition.services.map(toServiceCreateInput),
         },
       },
     });
@@ -201,18 +180,7 @@ async function syncOneStack(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map((s) => ({
-            serviceName: s.serviceName,
-            serviceType: s.serviceType,
-            dockerImage: s.dockerImage,
-            dockerTag: s.dockerTag,
-            containerConfig: s.containerConfig as any,
-            configFiles: (s.configFiles ?? []) as any,
-            initCommands: (s.initCommands ?? []) as any,
-            dependsOn: s.dependsOn,
-            order: s.order,
-            routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-          })),
+          create: definition.services.map(toServiceCreateInput),
         },
       },
     });
@@ -266,18 +234,7 @@ async function syncOneStack(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map((s) => ({
-            serviceName: s.serviceName,
-            serviceType: s.serviceType,
-            dockerImage: s.dockerImage,
-            dockerTag: s.dockerTag,
-            containerConfig: s.containerConfig as any,
-            configFiles: (s.configFiles ?? []) as any,
-            initCommands: (s.initCommands ?? []) as any,
-            dependsOn: s.dependsOn,
-            order: s.order,
-            routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-          })),
+          create: definition.services.map(toServiceCreateInput),
         },
       },
     });

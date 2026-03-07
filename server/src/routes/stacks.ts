@@ -12,28 +12,15 @@ import {
   updateStackServiceSchema,
   applyStackSchema,
 } from '../services/stacks/schemas';
-import type { StackInfo, StackServiceInfo } from '@mini-infra/types';
+import {
+  serializeStack,
+  toServiceCreateInput,
+  isDockerConnectionError,
+  mapContainerStatus,
+} from '../services/stacks/utils';
 
 const router = Router();
 const logger = appLogger();
-
-function serializeStack(stack: any): StackInfo {
-  return {
-    ...stack,
-    lastAppliedAt: stack.lastAppliedAt?.toISOString() ?? null,
-    createdAt: stack.createdAt.toISOString(),
-    updatedAt: stack.updatedAt.toISOString(),
-    services: stack.services?.map(serializeService),
-  };
-}
-
-function serializeService(svc: any): StackServiceInfo {
-  return {
-    ...svc,
-    createdAt: svc.createdAt.toISOString(),
-    updatedAt: svc.updatedAt.toISOString(),
-  };
-}
 
 // GET / — List stacks
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
@@ -116,18 +103,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         networks: networks as any,
         volumes: volumes as any,
         services: {
-          create: services.map((svc) => ({
-            serviceName: svc.serviceName,
-            serviceType: svc.serviceType,
-            dockerImage: svc.dockerImage,
-            dockerTag: svc.dockerTag,
-            containerConfig: svc.containerConfig as any,
-            configFiles: (svc.configFiles as any) ?? undefined,
-            initCommands: (svc.initCommands as any) ?? undefined,
-            dependsOn: svc.dependsOn,
-            order: svc.order,
-            routing: (svc.routing as any) ?? undefined,
-          })),
+          create: services.map(toServiceCreateInput),
         },
       },
       include: { services: true },
@@ -175,18 +151,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
             version: existing.version + 1,
             status: 'pending',
             services: {
-              create: services.map((svc) => ({
-                serviceName: svc.serviceName,
-                serviceType: svc.serviceType,
-                dockerImage: svc.dockerImage,
-                dockerTag: svc.dockerTag,
-                containerConfig: svc.containerConfig as any,
-                configFiles: (svc.configFiles as any) ?? undefined,
-                initCommands: (svc.initCommands as any) ?? undefined,
-                dependsOn: svc.dependsOn,
-                order: svc.order,
-                routing: (svc.routing as any) ?? undefined,
-              })),
+              create: services.map(toServiceCreateInput),
             },
           },
           include: { services: true },
@@ -229,6 +194,7 @@ router.delete('/:stackId', requirePermission('stacks:write'), async (req, res) =
       // Check if there are running containers
       try {
         const dockerExecutor = new DockerExecutorService();
+        await dockerExecutor.initialize();
         const docker = dockerExecutor.getDockerClient();
         const containers = await docker.listContainers({
           filters: { label: [`mini-infra.stack-id=${stackId}`] },
@@ -317,12 +283,13 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
 router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) => {
   try {
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
     const plan = await reconciler.plan(req.params.stackId);
 
     res.json({ success: true, data: plan });
   } catch (error: any) {
-    if (error?.message?.includes('connect ENOENT') || error?.message?.includes('ECONNREFUSED')) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId: req.params.stackId }, 'Failed to compute plan');
@@ -339,13 +306,14 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     }
 
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
     const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager);
     const result = await reconciler.apply(req.params.stackId, parsed.data);
 
     res.json({ success: true, data: result });
   } catch (error: any) {
-    if (error?.message?.includes('connect ENOENT') || error?.message?.includes('ECONNREFUSED')) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId: req.params.stackId }, 'Failed to apply stack');
@@ -369,6 +337,7 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
     let containerStatus: any[] = [];
     try {
       const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
       const docker = dockerExecutor.getDockerClient();
       const containers = await docker.listContainers({
         all: true,
@@ -376,12 +345,7 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
       });
 
       containerStatus = containers.map((c) => ({
-        serviceName: c.Labels['mini-infra.service'] ?? 'unknown',
-        containerId: c.Id,
-        containerName: c.Names?.[0]?.replace(/^\//, '') ?? '',
-        image: c.Image,
-        state: c.State,
-        status: c.Status,
+        ...mapContainerStatus(c),
         health: c.Labels['mini-infra.definition-hash'] ? 'tracked' : 'untracked',
       }));
     } catch {

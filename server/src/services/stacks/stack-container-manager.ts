@@ -5,6 +5,7 @@ import {
   StackServiceDefinition,
 } from '@mini-infra/types';
 import { servicesLogger } from '../../lib/logger-factory';
+import { groupByProperty } from './utils';
 
 export interface CreateContainerOptions {
   projectName: string;
@@ -27,15 +28,7 @@ export class StackContainerManager {
   }
 
   async runInitCommands(initCommands: StackInitCommand[], projectName: string): Promise<void> {
-    // Group by volumeName
-    const byVolume = new Map<string, StackInitCommand[]>();
-    for (const cmd of initCommands) {
-      const existing = byVolume.get(cmd.volumeName) ?? [];
-      existing.push(cmd);
-      byVolume.set(cmd.volumeName, existing);
-    }
-
-    const docker = this.dockerExecutor.getDockerClient();
+    const byVolume = groupByProperty(initCommands, 'volumeName');
 
     for (const [volumeName, commands] of byVolume) {
       const prefixedVolume = `${projectName}_${volumeName}`;
@@ -45,47 +38,21 @@ export class StackContainerManager {
       const containerName = `${projectName}-init-${volumeName}-${Date.now()}`;
 
       this.log.info({ volumeName: prefixedVolume, containerName, commandCount: allCommands.length }, 'Running init commands');
-
-      const container = await docker.createContainer({
-        Image: 'alpine:latest',
-        name: containerName,
-        Cmd: ['sh', '-c', shellCmd],
-        HostConfig: {
-          Binds: [`${prefixedVolume}:${mountPath}`],
-        },
-      });
-
-      try {
-        await container.start();
-        await container.wait();
-        this.log.info({ containerName }, 'Init commands completed');
-      } finally {
-        try {
-          await container.remove({ force: true });
-        } catch (err) {
-          this.log.warn({ containerName, error: err }, 'Failed to remove init container');
-        }
-      }
+      await this.runEphemeralContainer(containerName, shellCmd, `${prefixedVolume}:${mountPath}`);
+      this.log.info({ containerName }, 'Init commands completed');
     }
   }
 
   async writeConfigFiles(configFiles: StackConfigFile[], projectName: string): Promise<void> {
-    // Group by volumeName
-    const byVolume = new Map<string, StackConfigFile[]>();
-    for (const file of configFiles) {
-      const existing = byVolume.get(file.volumeName) ?? [];
-      existing.push(file);
-      byVolume.set(file.volumeName, existing);
-    }
-
-    const docker = this.dockerExecutor.getDockerClient();
+    const byVolume = groupByProperty(configFiles, 'volumeName');
 
     for (const [volumeName, files] of byVolume) {
       const prefixedVolume = `${projectName}_${volumeName}`;
       const containerName = `${projectName}-config-writer-${volumeName}-${Date.now()}`;
 
       // Build shell commands for all files in this volume
-      const dirs = [...new Set(files.map((f) => f.path.substring(0, f.path.lastIndexOf('/'))))].filter(Boolean);
+      const volPath = (p: string) => `/vol${p.startsWith('/') ? '' : '/'}${p}`;
+      const dirs = [...new Set(files.map((f) => volPath(f.path).substring(0, volPath(f.path).lastIndexOf('/'))))].filter(Boolean);
       const parts: string[] = [];
 
       if (dirs.length > 0) {
@@ -93,41 +60,44 @@ export class StackContainerManager {
       }
 
       for (const file of files) {
+        const dest = volPath(file.path);
         const escapedContent = file.content.replace(/'/g, "'\\''");
-        parts.push(`echo '${escapedContent}' > ${file.path}`);
+        parts.push(`echo '${escapedContent}' > ${dest}`);
         if (file.permissions) {
-          parts.push(`chmod ${file.permissions} ${file.path}`);
+          parts.push(`chmod ${file.permissions} ${dest}`);
         }
         if (file.ownerUid !== undefined || file.ownerGid !== undefined) {
           const uid = file.ownerUid ?? 0;
           const gid = file.ownerGid ?? 0;
-          parts.push(`chown ${uid}:${gid} ${file.path}`);
+          parts.push(`chown ${uid}:${gid} ${dest}`);
         }
       }
 
       const shellCmd = parts.join(' && ');
 
       this.log.info({ volumeName: prefixedVolume, containerName, fileCount: files.length }, 'Writing config files');
+      await this.runEphemeralContainer(containerName, shellCmd, `${prefixedVolume}:/vol`);
+      this.log.info({ containerName }, 'Config files written');
+    }
+  }
 
-      const container = await docker.createContainer({
-        Image: 'alpine:latest',
-        name: containerName,
-        Cmd: ['sh', '-c', shellCmd],
-        HostConfig: {
-          Binds: [`${prefixedVolume}:/vol`],
-        },
-      });
+  private async runEphemeralContainer(name: string, shellCmd: string, bind: string): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const container = await docker.createContainer({
+      Image: 'alpine:latest',
+      name,
+      Cmd: ['sh', '-c', shellCmd],
+      HostConfig: { Binds: [bind] },
+    });
 
+    try {
+      await container.start();
+      await container.wait();
+    } finally {
       try {
-        await container.start();
-        await container.wait();
-        this.log.info({ containerName }, 'Config files written');
-      } finally {
-        try {
-          await container.remove({ force: true });
-        } catch (err) {
-          this.log.warn({ containerName, error: err }, 'Failed to remove config writer container');
-        }
+        await container.remove({ force: true });
+      } catch (err) {
+        this.log.warn({ containerName: name, error: err }, 'Failed to remove ephemeral container');
       }
     }
   }

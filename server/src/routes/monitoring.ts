@@ -4,27 +4,13 @@ import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
-import type { StackInfo } from '@mini-infra/types';
+import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../services/stacks/utils';
 
 const router = Router();
 const logger = appLogger();
 
 const PROMETHEUS_URL = 'http://localhost:9090';
 const LOKI_URL = 'http://localhost:3100';
-
-function serializeStack(stack: any): StackInfo {
-  return {
-    ...stack,
-    lastAppliedAt: stack.lastAppliedAt?.toISOString() ?? null,
-    createdAt: stack.createdAt.toISOString(),
-    updatedAt: stack.updatedAt.toISOString(),
-    services: stack.services?.map((svc: any) => ({
-      ...svc,
-      createdAt: svc.createdAt.toISOString(),
-      updatedAt: svc.updatedAt.toISOString(),
-    })),
-  };
-}
 
 async function getMonitoringStack() {
   return prisma.stack.findFirst({
@@ -53,20 +39,14 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
     let containerStatus: any[] = [];
     try {
       const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
       const docker = dockerExecutor.getDockerClient();
       const containers = await docker.listContainers({
         all: true,
         filters: { label: [`mini-infra.stack-id=${stack.id}`] },
       });
 
-      containerStatus = containers.map((c) => ({
-        serviceName: c.Labels['mini-infra.service'] ?? 'unknown',
-        containerId: c.Id,
-        containerName: c.Names?.[0]?.replace(/^\//, '') ?? '',
-        image: c.Image,
-        state: c.State,
-        status: c.Status,
-      }));
+      containerStatus = containers.map(mapContainerStatus);
     } catch {
       // Docker unavailable
     }
@@ -93,6 +73,7 @@ router.post('/stop', requirePermission('monitoring:write'), async (_req, res) =>
     }
 
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
     const result = await reconciler.stopStack(stack.id);
 
@@ -102,14 +83,6 @@ router.post('/stop', requirePermission('monitoring:write'), async (_req, res) =>
     res.status(500).json({ error: error?.message ?? 'Failed to stop monitoring stack' });
   }
 });
-
-function isConnectionError(error: unknown): boolean {
-  if (error instanceof TypeError && error.message === 'fetch failed') {
-    const cause = (error as any).cause;
-    return cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET' || cause?.code === 'ENOTFOUND';
-  }
-  return false;
-}
 
 // GET /api/monitoring/query - Proxy instant query to Prometheus
 router.get('/query', requirePermission('monitoring:read'), async (req, res) => {
@@ -128,7 +101,7 @@ router.get('/query', requirePermission('monitoring:read'), async (req, res) => {
 
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Prometheus');
@@ -160,7 +133,7 @@ router.get('/query_range', requirePermission('monitoring:read'), async (req, res
 
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Prometheus range');
@@ -176,7 +149,7 @@ router.get('/targets', requirePermission('monitoring:read'), async (_req, res) =
 
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Prometheus targets');
@@ -200,7 +173,7 @@ router.get('/loki/labels', requirePermission('monitoring:read'), async (req, res
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Loki labels');
@@ -220,7 +193,7 @@ router.get('/loki/label/:name/values', requirePermission('monitoring:read'), asy
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Loki label values');
@@ -247,7 +220,7 @@ router.get('/loki/query_range', requirePermission('monitoring:read'), async (req
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Loki logs');
@@ -273,7 +246,7 @@ router.get('/loki/query', requirePermission('monitoring:read'), async (req, res)
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    if (isConnectionError(error)) {
+    if (isDockerConnectionError(error)) {
       return res.status(503).json({ error: 'Monitoring service is not running' });
     }
     logger.error({ error }, 'Failed to query Loki');
