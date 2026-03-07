@@ -137,6 +137,7 @@ export class HAProxyMigrationService {
     ];
 
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     const existingVolumes: string[] = [];
     for (const vol of legacyVolumeNames) {
       if (await dockerExecutor.volumeExists(vol)) {
@@ -258,6 +259,7 @@ export class HAProxyMigrationService {
 
     // Step 2: Remove legacy volumes
     const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
     for (const vol of preview.legacyVolumes) {
       try {
         await dockerExecutor.removeVolume(vol);
