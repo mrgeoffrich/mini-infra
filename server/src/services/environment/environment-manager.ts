@@ -24,6 +24,10 @@ import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
 import { portUtils } from '../port-utils';
+import { seedStacksForEnvironment } from '../stacks/seed';
+import { StackReconciler } from '../stacks/stack-reconciler';
+import { StackRoutingManager } from '../stacks/stack-routing-manager';
+import { HAProxyFrontendManager } from '../haproxy';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
@@ -109,6 +113,11 @@ export class EnvironmentManager {
         await this.addServicesToEnvironment(environmentData.id, request.services);
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services added successfully`);
       }
+
+      // Seed stacks for the new environment
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Seeding stacks for environment...`);
+      await seedStacksForEnvironment(this.prisma, environmentData.id);
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stack seeding complete`);
 
       // Fetch the complete environment with relations
       const environment = await this.getEnvironmentById(environmentData.id);
@@ -572,18 +581,41 @@ export class EnvironmentManager {
         await this.dockerExecutor.initialize();
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Docker executor initialized successfully`);
 
-        // Create networks and volumes first
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Provisioning infrastructure (${environment.networks.length} networks, ${environment.volumes.length} volumes)...`);
-        await this.provisionInfrastructure(environment, userEvent.id);
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Infrastructure provisioned successfully`);
+        // Apply all stacks for this environment (reconciler handles networks/volumes/containers)
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Applying stacks...`);
+        const stacks = await this.prisma.stack.findMany({
+          where: { environmentId: id },
+          include: { services: { orderBy: { order: 'asc' } } },
+        });
 
-        // Start services in dependency order
-        const serviceTypes = environment.services.map(s => s.serviceType);
-        const startOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes);
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Starting ${environment.services.length} service(s) in dependency order: ${startOrder.join(' -> ')}`);
+        const hasStatelessWeb = stacks.some(s =>
+          s.services?.some(svc => svc.serviceType === 'StatelessWeb')
+        );
+        const routingManager = hasStatelessWeb
+          ? new StackRoutingManager(this.prisma, new HAProxyFrontendManager())
+          : undefined;
+        const reconciler = new StackReconciler(this.dockerExecutor, this.prisma, routingManager);
 
-        await this.startAllServices(environment, userEvent.id);
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services started successfully`);
+        for (const stack of stacks) {
+          await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Applying stack '${stack.name}' (v${stack.version})...`);
+          const result = await reconciler.apply(stack.id);
+
+          if (!result.success) {
+            const failed = result.serviceResults.filter(r => !r.success);
+            const msg = `Stack '${stack.name}' apply failed: ${failed.map(f => `${f.serviceName}: ${f.error}`).join(', ')}`;
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] ERROR: ${msg}`);
+            throw new Error(msg);
+          }
+
+          await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stack '${stack.name}' applied successfully (${result.serviceResults.length} services)`);
+        }
+
+        // Update all environment service statuses to RUNNING
+        for (const envService of environment.services) {
+          await this.updateServiceStatus(envService.id, ServiceStatusValues.RUNNING, ApplicationServiceHealthStatusValues.HEALTHY);
+        }
+
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All stacks applied successfully`);
 
         // Update status to running
         await this.updateEnvironmentStatus(id, ServiceStatusValues.RUNNING);
@@ -703,13 +735,29 @@ export class EnvironmentManager {
       await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPING);
 
       try {
-        // Stop services in reverse dependency order
-        const serviceTypes = environment.services.map(s => s.serviceType);
-        const stopOrder = this.serviceRegistry.resolveDependencyOrder(serviceTypes).reverse();
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stopping ${environment.services.length} service(s) in reverse dependency order: ${stopOrder.join(' -> ')}`);
+        // Stop all stacks for this environment
+        const stacks = await this.prisma.stack.findMany({
+          where: { environmentId: id },
+        });
 
-        await this.stopAllServices(environment, userEvent.id);
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All services stopped successfully`);
+        const reconciler = new StackReconciler(this.dockerExecutor, this.prisma);
+
+        for (const stack of stacks) {
+          await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stopping stack '${stack.name}'...`);
+          const result = await reconciler.stopStack(stack.id);
+          await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stack '${stack.name}' stopped (${result.stoppedContainers} containers)`);
+        }
+
+        // Update all environment service statuses to STOPPED
+        for (const envService of environment.services) {
+          await this.updateServiceStatus(envService.id, ServiceStatusValues.STOPPED, ApplicationServiceHealthStatusValues.UNKNOWN);
+          await this.prisma.environmentService.update({
+            where: { id: envService.id },
+            data: { stoppedAt: new Date() },
+          });
+        }
+
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] All stacks stopped successfully`);
 
         // Update status to stopped
         await this.updateEnvironmentStatus(id, ServiceStatusValues.STOPPED);

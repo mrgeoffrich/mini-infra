@@ -159,7 +159,7 @@ router.post("/deploy", requirePermission('deployments:write') as RequestHandler,
 
     try {
       await haproxyService.initialize(networks, volumes);
-      await haproxyService.deployHAProxy();
+      await haproxyService.start();
 
       // Get the deployed containers to return container ID
       const containers = await haproxyService.getServiceContainers('haproxy');

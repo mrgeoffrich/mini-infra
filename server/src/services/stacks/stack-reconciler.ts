@@ -382,6 +382,44 @@ export class StackReconciler {
     };
   }
 
+  async stopStack(stackId: string): Promise<{ success: boolean; stoppedContainers: number }> {
+    const log = servicesLogger().child({ operation: 'stack-stop', stackId });
+
+    const docker = this.dockerExecutor.getDockerClient();
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { label: [`mini-infra.stack-id=${stackId}`] },
+    });
+
+    log.info({ containerCount: containers.length }, 'Stopping stack containers');
+
+    let stopped = 0;
+    // Stop in reverse order (highest order first = dependents before dependencies)
+    const sorted = [...containers].sort((a, b) => {
+      const orderA = parseInt(a.Labels['mini-infra.stack-version'] || '0');
+      const orderB = parseInt(b.Labels['mini-infra.stack-version'] || '0');
+      return orderB - orderA;
+    });
+
+    for (const containerInfo of sorted) {
+      try {
+        await this.containerManager.stopAndRemoveContainer(containerInfo.Id);
+        stopped++;
+      } catch (err) {
+        log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to stop container, continuing');
+      }
+    }
+
+    // Update stack status to undeployed
+    await this.prisma.stack.update({
+      where: { id: stackId },
+      data: { status: 'undeployed' },
+    });
+
+    log.info({ stopped }, 'Stack stopped');
+    return { success: true, stoppedContainers: stopped };
+  }
+
   private async applyStateful(
     action: ServiceAction,
     svc: any,
