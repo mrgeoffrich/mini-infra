@@ -49,14 +49,14 @@ export class StackReconciler {
     const templateContext = buildTemplateContext(
       {
         name: stack.name,
-        networks: stack.networks as StackNetwork[],
-        volumes: stack.volumes as StackVolume[],
+        networks: stack.networks as unknown as StackNetwork[],
+        volumes: stack.volumes as unknown as StackVolume[],
       },
       stack.services.map((s) => ({
         serviceName: s.serviceName,
         dockerImage: s.dockerImage,
         dockerTag: s.dockerTag,
-        containerConfig: s.containerConfig as StackContainerConfig,
+        containerConfig: s.containerConfig as unknown as StackContainerConfig,
       })),
       stack.environment.name
     );
@@ -67,7 +67,7 @@ export class StackReconciler {
 
     for (const svc of stack.services) {
       const resolvedConfigs = resolveStackConfigFiles(
-        (svc.configFiles as StackConfigFile[]) ?? [],
+        (svc.configFiles as unknown as StackConfigFile[]) ?? [],
         templateContext
       );
       resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
@@ -94,7 +94,7 @@ export class StackReconciler {
 
     // 5. Compare desired services against running containers
     const actions: ServiceAction[] = [];
-    const snapshot = stack.lastAppliedSnapshot as StackDefinition | null;
+    const snapshot = stack.lastAppliedSnapshot as unknown as StackDefinition | null;
 
     for (const svc of stack.services) {
       const container = containerMap.get(svc.serviceName);
@@ -228,14 +228,14 @@ export class StackReconciler {
     const templateContext = buildTemplateContext(
       {
         name: stack.name,
-        networks: stack.networks as StackNetwork[],
-        volumes: stack.volumes as StackVolume[],
+        networks: stack.networks as unknown as StackNetwork[],
+        volumes: stack.volumes as unknown as StackVolume[],
       },
       stack.services.map((s) => ({
         serviceName: s.serviceName,
         dockerImage: s.dockerImage,
         dockerTag: s.dockerTag,
-        containerConfig: s.containerConfig as StackContainerConfig,
+        containerConfig: s.containerConfig as unknown as StackContainerConfig,
       })),
       stack.environment.name
     );
@@ -247,7 +247,7 @@ export class StackReconciler {
 
     for (const svc of stack.services) {
       const resolvedConfigs = resolveStackConfigFiles(
-        (svc.configFiles as StackConfigFile[]) ?? [],
+        (svc.configFiles as unknown as StackConfigFile[]) ?? [],
         templateContext
       );
       resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
@@ -256,8 +256,8 @@ export class StackReconciler {
     }
 
     // 5. Ensure infrastructure — create networks and volumes
-    const networks = stack.networks as StackNetwork[];
-    const volumes = stack.volumes as StackVolume[];
+    const networks = stack.networks as unknown as StackNetwork[];
+    const volumes = stack.volumes as unknown as StackVolume[];
     const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
 
     for (const net of networks) {
@@ -357,18 +357,18 @@ export class StackReconciler {
         lastAppliedAt: new Date(),
         lastAppliedSnapshot: serializeStack({
           ...stack,
-          networks: stack.networks as StackNetwork[],
-          volumes: stack.volumes as StackVolume[],
+          networks: stack.networks as unknown as StackNetwork[],
+          volumes: stack.volumes as unknown as StackVolume[],
           services: stack.services.map((s) => ({
             ...s,
             serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-            containerConfig: s.containerConfig as StackContainerConfig,
-            configFiles: (s.configFiles as StackConfigFile[]) ?? null,
-            initCommands: (s.initCommands as StackServiceDefinition['initCommands']) ?? null,
-            dependsOn: s.dependsOn as string[],
-            routing: s.routing as StackServiceDefinition['routing'] ?? null,
+            containerConfig: s.containerConfig as unknown as StackContainerConfig,
+            configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
+            initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
+            dependsOn: s.dependsOn as unknown as string[],
+            routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
           })),
-        }) as any,
+        } as any) as any,
         status: allSucceeded ? 'synced' : 'error',
       },
     });
@@ -441,7 +441,7 @@ export class StackReconciler {
 
         await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
 
-        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
         if (initCmds.length > 0) {
           await this.containerManager.runInitCommands(initCmds, projectName);
         }
@@ -489,7 +489,7 @@ export class StackReconciler {
           });
         }
 
-        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
         if (initCmds.length > 0) {
           await this.containerManager.runInitCommands(initCmds, projectName);
         }
@@ -579,7 +579,7 @@ export class StackReconciler {
 
         await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
 
-        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
         if (initCmds.length > 0) {
           await this.containerManager.runInitCommands(initCmds, projectName);
         }
@@ -659,7 +659,7 @@ export class StackReconciler {
 
         await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
 
-        const initCmds = (svc.initCommands as StackServiceDefinition['initCommands']) ?? [];
+        const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
         if (initCmds.length > 0) {
           await this.containerManager.runInitCommands(initCmds, projectName);
         }
@@ -798,11 +798,11 @@ export class StackReconciler {
       dockerImage: svc.dockerImage,
       dockerTag: svc.dockerTag,
       containerConfig: svc.containerConfig as StackContainerConfig,
-      configFiles: (svc.configFiles as StackConfigFile[]) ?? undefined,
-      initCommands: (svc.initCommands as StackServiceDefinition['initCommands']) ?? undefined,
+      configFiles: (svc.configFiles as unknown as StackConfigFile[]) ?? undefined,
+      initCommands: (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? undefined,
       dependsOn: svc.dependsOn as string[],
       order: svc.order,
-      routing: (svc.routing as StackServiceDefinition['routing']) ?? undefined,
+      routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
     };
   }
 

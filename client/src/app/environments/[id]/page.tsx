@@ -3,7 +3,8 @@ import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment, useStartEnvironment, useStopEnvironment } from "@/hooks/use-environments";
 import { useValidatePorts, hasUnavailablePorts, formatUnavailablePorts } from "@/hooks/use-validate-ports";
-import { NetworkList, VolumeList } from "@/components/environments";
+import { NetworkList, VolumeList, StacksList } from "@/components/environments";
+import { useStacks } from "@/hooks/use-stacks";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
 import { ServiceAddDialog } from "@/components/environments/service-add-dialog";
@@ -42,6 +43,7 @@ import {
   IconUsers,
   IconAlertCircle,
   IconAlertTriangle,
+  IconStack2,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
@@ -76,6 +78,9 @@ export function EnvironmentDetailPage() {
     refetchInterval: 10000, // Refetch every 10 seconds for real-time updates
     enabled: !!environmentId, // Only fetch if environmentId exists
   });
+
+  // Fetch stacks for overview card
+  const { data: stacksData } = useStacks(environmentId);
 
   // Validate ports for HAProxy services
   const {
@@ -339,7 +344,7 @@ export function EnvironmentDetailPage() {
         )}
 
         {/* Environment Overview */}
-        <div className="grid gap-6 md:grid-cols-3 mb-6">
+        <div className="grid gap-6 md:grid-cols-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Services</CardTitle>
@@ -389,6 +394,21 @@ export function EnvironmentDetailPage() {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Stacks</CardTitle>
+              <IconStack2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stacksData?.data?.length ?? 0}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  {stacksData?.data?.filter((s) => s.status === "synced").length ?? 0} synced
+                </span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* HAProxy Status Card - Only show if environment has HAProxy service */}
@@ -403,7 +423,7 @@ export function EnvironmentDetailPage() {
 
       <div className="px-4 lg:px-6 max-w-full">
         <Tabs defaultValue="services" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="services" className="flex items-center gap-2">
               <IconServer className="h-4 w-4" />
               Services
@@ -415,6 +435,10 @@ export function EnvironmentDetailPage() {
             <TabsTrigger value="volumes" className="flex items-center gap-2">
               <IconDatabase className="h-4 w-4" />
               Volumes
+            </TabsTrigger>
+            <TabsTrigger value="stacks" className="flex items-center gap-2">
+              <IconStack2 className="h-4 w-4" />
+              Stacks
             </TabsTrigger>
           </TabsList>
 
@@ -501,6 +525,10 @@ export function EnvironmentDetailPage() {
 
           <TabsContent value="volumes">
             <VolumeList environmentId={environment.id} />
+          </TabsContent>
+
+          <TabsContent value="stacks">
+            <StacksList environmentId={environment.id} />
           </TabsContent>
         </Tabs>
       </div>
