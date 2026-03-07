@@ -72,6 +72,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/logs/fullscreen",
+    element: (
+      <AuthErrorBoundary>
+        <ProtectedRoute>
+          <LogsPage fullscreen />
+        </ProtectedRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
     path: "/",
     element: (
       <AuthErrorBoundary>

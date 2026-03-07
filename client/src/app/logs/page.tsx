@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { IconTerminal, IconAlertCircle } from "@tabler/icons-react";
+import { IconTerminal, IconAlertCircle, IconArrowsMaximize, IconArrowsMinimize } from "@tabler/icons-react";
 import { useMonitoringStatus } from "@/hooks/use-monitoring";
 import {
   useLogFilters,
@@ -15,7 +15,11 @@ import {
 import { LogControls } from "./LogControls";
 import { LogStream } from "./LogStream";
 
-export function LogsPage() {
+interface LogsPageProps {
+  fullscreen?: boolean;
+}
+
+export function LogsPage({ fullscreen = false }: LogsPageProps) {
   const queryClient = useQueryClient();
   const { data: status, isLoading: statusLoading, error: statusError } =
     useMonitoringStatus();
@@ -53,12 +57,30 @@ export function LogsPage() {
     },
   );
 
+  const maximizeButton = !fullscreen ? (
+    <a href="/logs/fullscreen" target="_blank" rel="noopener noreferrer">
+      <Button variant="outline" size="icon" className="h-9 w-9" title="Open fullscreen">
+        <IconArrowsMaximize className="h-4 w-4" />
+      </Button>
+    </a>
+  ) : (
+    <Button
+      variant="outline"
+      size="icon"
+      className="h-9 w-9"
+      title="Close fullscreen"
+      onClick={() => window.close()}
+    >
+      <IconArrowsMinimize className="h-4 w-4" />
+    </Button>
+  );
+
   if (statusError) {
     return (
-      <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-        <div className="px-4 lg:px-6">
-          <PageHeader />
-          <Alert variant="destructive" className="mt-4">
+      <div className={`flex flex-col gap-4 ${fullscreen ? "p-3" : "py-4 md:gap-6 md:py-6"}`}>
+        <div className={fullscreen ? "" : "px-4 lg:px-6"}>
+          {!fullscreen && <PageHeader />}
+          <Alert variant="destructive" className={!fullscreen ? "mt-4" : ""}>
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               Failed to load monitoring status: {statusError.message}
@@ -70,12 +92,14 @@ export function LogsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="px-4 lg:px-6">
-        <PageHeader />
-      </div>
+    <div className={`flex flex-col ${fullscreen ? "h-screen" : "gap-4 py-4 md:gap-6 md:py-6"}`}>
+      {!fullscreen && (
+        <div className="px-4 lg:px-6">
+          <PageHeader />
+        </div>
+      )}
 
-      <div className="px-4 lg:px-6">
+      <div className={fullscreen ? "flex flex-col flex-1 min-h-0" : "px-4 lg:px-6"}>
         {statusLoading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading...
@@ -97,14 +121,17 @@ export function LogsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
-            <LogControls
-              filters={filters}
-              services={services}
-              updateFilter={updateFilter}
-              onRefresh={() => queryClient.invalidateQueries({ queryKey: ["lokiLogs"] })}
-              isLoading={logsLoading || isFetching}
-            />
+          <div className={fullscreen ? "flex flex-col flex-1 min-h-0 gap-1" : "space-y-3"}>
+            <div className={fullscreen ? "px-3 pt-2" : ""}>
+              <LogControls
+                filters={filters}
+                services={services}
+                updateFilter={updateFilter}
+                onRefresh={() => queryClient.invalidateQueries({ queryKey: ["lokiLogs"] })}
+                isLoading={logsLoading || isFetching}
+                extraActions={maximizeButton}
+              />
+            </div>
 
             {logsError && (
               <Alert variant="destructive">
@@ -121,6 +148,7 @@ export function LogsPage() {
               search={debouncedSearch}
               tailing={filters.tailing}
               entryCount={logsData?.entries.length}
+              fullscreen={fullscreen}
             />
           </div>
         )}

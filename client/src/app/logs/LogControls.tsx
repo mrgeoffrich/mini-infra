@@ -1,3 +1,4 @@
+import React from "react";
 import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ interface LogControlsProps {
   ) => void;
   onRefresh: () => void;
   isLoading: boolean;
+  extraActions?: React.ReactNode;
 }
 
 export function LogControls({
@@ -37,6 +39,7 @@ export function LogControls({
   updateFilter,
   onRefresh,
   isLoading,
+  extraActions,
 }: LogControlsProps) {
   const [spinning, setSpinning] = useState(false);
 
@@ -183,6 +186,8 @@ export function LogControls({
             className={`h-4 w-4 ${spinning ? "animate-spin" : ""}`}
           />
         </Button>
+
+        {extraActions}
       </div>
 
     </div>

@@ -11,6 +11,7 @@ interface LogStreamProps {
   search: string;
   tailing: boolean;
   entryCount?: number;
+  fullscreen?: boolean;
 }
 
 function detectLogLevel(
@@ -58,6 +59,7 @@ export function LogStream({
   search,
   tailing,
   entryCount,
+  fullscreen = false,
 }: LogStreamProps) {
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -136,7 +138,7 @@ export function LogStream({
 
   if (isLoading && entries.length === 0) {
     return (
-      <div className="bg-black rounded-md h-[calc(100vh-300px)] min-h-[400px] flex items-center justify-center text-gray-500 font-mono text-sm">
+      <div className={`bg-black flex items-center justify-center text-gray-500 font-mono text-sm ${fullscreen ? "flex-1" : "rounded-md h-[calc(100vh-300px)] min-h-[400px]"}`}>
         Loading logs...
       </div>
     );
@@ -144,16 +146,16 @@ export function LogStream({
 
   if (entries.length === 0) {
     return (
-      <div className="bg-black rounded-md h-[calc(100vh-300px)] min-h-[400px] flex items-center justify-center text-gray-500 font-mono text-sm">
+      <div className={`bg-black flex items-center justify-center text-gray-500 font-mono text-sm ${fullscreen ? "flex-1" : "rounded-md h-[calc(100vh-300px)] min-h-[400px]"}`}>
         No logs found for the selected filters
       </div>
     );
   }
 
   return (
-    <div>
+    <div className={fullscreen ? "flex flex-col flex-1 min-h-0" : ""}>
       {/* Stats and action buttons */}
-      <div className="flex items-center justify-between mb-1">
+      <div className={`flex items-center justify-between mb-1 ${fullscreen ? "px-3" : ""}`}>
         {entryCount !== undefined ? (
           <span className="text-sm text-muted-foreground">
             {entryCount.toLocaleString()} log{" "}
@@ -189,7 +191,7 @@ export function LogStream({
       {/* Log lines */}
       <div
         ref={containerRef}
-        className="bg-black rounded-md h-[calc(100vh-300px)] min-h-[400px] overflow-auto font-mono text-xs"
+        className={`bg-black overflow-auto font-mono text-xs ${fullscreen ? "flex-1" : "rounded-md h-[calc(100vh-300px)] min-h-[400px]"}`}
       >
         {entries.map((entry, index) => {
           const level = detectLogLevel(entry.line);
