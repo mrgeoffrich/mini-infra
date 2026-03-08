@@ -187,8 +187,8 @@ export class StackReconciler {
     const startTime = Date.now();
     const log = servicesLogger().child({ operation: 'stack-apply', stackId });
 
-    // 1. Get plan
-    const plan = await this.plan(stackId);
+    // 1. Get plan (use pre-computed plan if provided)
+    const plan = options?.plan ?? await this.plan(stackId);
 
     // 2. Filter actions if serviceNames provided
     let actions = plan.actions.filter((a) => a.action !== 'no-op');
@@ -319,6 +319,13 @@ export class StackReconciler {
             duration: Date.now() - actionStart,
             error: err.message,
           });
+        }
+
+        // Notify caller of per-service progress
+        if (options?.onProgress) {
+          try {
+            options.onProgress(serviceResults[serviceResults.length - 1], serviceResults.length, actions.length);
+          } catch { /* never let callback errors break apply */ }
         }
       }
 

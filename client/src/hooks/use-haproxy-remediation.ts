@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   HAProxyStatusResponse,
@@ -5,7 +6,13 @@ import {
   RemediateHAProxyResponse,
   MigrationPreviewResponse,
   MigrationResultResponse,
+  MigrationStep,
+  MigrationResult,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { toast } from "sonner";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -216,7 +223,7 @@ async function fetchMigrationPreview(
 async function migrateHAProxy(
   environmentId: string,
   correlationId: string,
-): Promise<MigrationResultResponse> {
+): Promise<{ success: boolean; data: { started: boolean; environmentId: string } }> {
   const response = await fetch(`/api/environments/${environmentId}/migrate-haproxy`, {
     method: "POST",
     credentials: "include",
@@ -228,11 +235,10 @@ async function migrateHAProxy(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to migrate HAProxy: ${response.statusText}`);
+    throw new Error(errorData.message || `Failed to start HAProxy migration: ${response.statusText}`);
   }
 
-  const data: MigrationResultResponse = await response.json();
-  return data;
+  return response.json();
 }
 
 /**
@@ -256,23 +262,108 @@ export function useMigrationPreview(
 }
 
 /**
- * Hook to trigger HAProxy migration
+ * Hook to trigger HAProxy migration (fire-and-forget, progress via Socket.IO)
  */
 export function useMigrateHAProxy() {
-  const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (environmentId: string) => migrateHAProxy(environmentId, correlationId),
-    onSuccess: (_, environmentId) => {
+    onError: (error: Error) => {
+      toast.error(`Failed to start migration: ${error.message}`);
+    },
+  });
+}
+
+// ====================
+// Migration Progress Hook (Socket.IO)
+// ====================
+
+export interface MigrationProgressState {
+  isMigrating: boolean;
+  totalSteps: number;
+  completedSteps: MigrationStep[];
+  finalResult: (MigrationResult & { environmentId: string }) | null;
+}
+
+const INITIAL_MIGRATION_STATE: MigrationProgressState = {
+  isMigrating: false,
+  totalSteps: 0,
+  completedSteps: [],
+  finalResult: null,
+};
+
+/**
+ * Subscribe to Socket.IO events for live HAProxy migration progress.
+ * Returns real-time state as each step completes.
+ */
+export function useMigrationProgress(environmentId: string) {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+  const [state, setState] = useState<MigrationProgressState>(INITIAL_MIGRATION_STATE);
+
+  // Subscribe to the stacks channel (migration events are emitted here)
+  useSocketChannel(Channel.STACKS, !!environmentId);
+
+  // Migration started
+  useSocketEvent(
+    ServerEvent.MIGRATION_STARTED,
+    (data) => {
+      if (data.environmentId !== environmentId) return;
+      setState({
+        isMigrating: true,
+        totalSteps: data.totalSteps,
+        completedSteps: [],
+        finalResult: null,
+      });
+    },
+    !!environmentId,
+  );
+
+  // Per-step progress
+  useSocketEvent(
+    ServerEvent.MIGRATION_STEP,
+    (data) => {
+      if (data.environmentId !== environmentId) return;
+      setState((prev) => ({
+        ...prev,
+        totalSteps: data.totalSteps,
+        completedSteps: [...prev.completedSteps, data.step],
+      }));
+    },
+    !!environmentId,
+  );
+
+  // Migration completed
+  useSocketEvent(
+    ServerEvent.MIGRATION_COMPLETED,
+    (data) => {
+      if (data.environmentId !== environmentId) return;
+      setState((prev) => ({
+        ...prev,
+        isMigrating: false,
+        finalResult: data,
+      }));
+      // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ["haproxy-status", environmentId] });
       queryClient.invalidateQueries({ queryKey: ["migration-preview", environmentId] });
       queryClient.invalidateQueries({ queryKey: ["remediation-preview", environmentId] });
       queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
       queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
+
+      if (data.success) {
+        toast.success("HAProxy migration completed successfully");
+      } else {
+        toast.error("HAProxy migration completed with errors");
+      }
     },
-  });
+    !!environmentId,
+  );
+
+  const reset = useCallback(() => setState(INITIAL_MIGRATION_STATE), []);
+
+  return { ...state, connected, reset };
 }
 
 // ====================
@@ -285,4 +376,5 @@ export type {
   RemediateHAProxyResponse,
   MigrationPreviewResponse,
   MigrationResultResponse,
+  MigrationStep,
 };

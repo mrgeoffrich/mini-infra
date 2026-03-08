@@ -203,10 +203,20 @@ export class HAProxyMigrationService {
    */
   async migrate(
     environmentId: string,
-    prisma: PrismaClient
+    prisma: PrismaClient,
+    onStep?: (step: MigrationStep, completedCount: number, totalSteps: number) => void,
   ): Promise<MigrationResult> {
     const steps: MigrationStep[] = [];
     const errors: string[] = [];
+    // Estimate total steps: remove container + volumes + apply stack + restore state + update record
+    // We refine this as we discover more (e.g. postApply steps), but start with a reasonable estimate.
+    let totalSteps = 5;
+
+    const emitStep = (step: MigrationStep) => {
+      steps.push(step);
+      if (step.status === 'failed') errors.push(step.detail ?? step.step);
+      try { onStep?.(step, steps.length, totalSteps); } catch { /* never break migration */ }
+    };
 
     logger.info({ environmentId }, 'Starting HAProxy migration to stack management');
 
@@ -226,6 +236,10 @@ export class HAProxyMigrationService {
       };
     }
 
+    // Refine total step count now that we know the preview
+    // remove container (1) + remove volumes (N) + apply stack (1) + restore state (~3) + update record (1)
+    totalSteps = 1 + preview.legacyVolumes.length + 1 + 3 + 1;
+
     // Step 1: Stop & remove legacy container
     try {
       logger.info({ containerId: preview.legacyContainer!.id }, 'Stopping legacy HAProxy container');
@@ -241,12 +255,11 @@ export class HAProxyMigrationService {
         }
       }
       await container.remove({ force: true });
-      steps.push({ step: 'Remove legacy container', status: 'completed', detail: preview.legacyContainer!.name });
+      emitStep({ step: 'Remove legacy container', status: 'completed', detail: preview.legacyContainer!.name });
     } catch (error) {
       const msg = `Failed to remove legacy container: ${error}`;
       logger.error({ error, environmentId }, msg);
-      errors.push(msg);
-      steps.push({ step: 'Remove legacy container', status: 'failed', detail: msg });
+      emitStep({ step: 'Remove legacy container', status: 'failed', detail: msg });
       return { success: false, steps, errors };
     }
 
@@ -256,12 +269,11 @@ export class HAProxyMigrationService {
     for (const vol of preview.legacyVolumes) {
       try {
         await dockerExecutor.removeVolume(vol);
-        steps.push({ step: 'Remove legacy volume', status: 'completed', detail: vol });
+        emitStep({ step: 'Remove legacy volume', status: 'completed', detail: vol });
       } catch (error) {
         const msg = `Failed to remove volume ${vol}: ${error}`;
         logger.warn({ error, volume: vol }, msg);
-        errors.push(msg);
-        steps.push({ step: 'Remove legacy volume', status: 'failed', detail: msg });
+        emitStep({ step: 'Remove legacy volume', status: 'failed', detail: msg });
         // Non-fatal: continue even if a volume can't be removed
       }
     }
@@ -273,8 +285,7 @@ export class HAProxyMigrationService {
 
     if (!haproxyStack) {
       const msg = 'HAProxy stack definition not found for this environment. Run server restart to sync built-in stacks.';
-      errors.push(msg);
-      steps.push({ step: 'Apply haproxy stack', status: 'failed', detail: msg });
+      emitStep({ step: 'Apply haproxy stack', status: 'failed', detail: msg });
       return { success: false, steps, errors };
     }
 
@@ -282,7 +293,7 @@ export class HAProxyMigrationService {
       logger.info({ stackId: haproxyStack.id }, 'Applying haproxy stack');
       const reconciler = new StackReconciler(dockerExecutor, prisma);
       const result = await reconciler.apply(haproxyStack.id);
-      steps.push({
+      emitStep({
         step: 'Apply haproxy stack',
         status: 'completed',
         detail: `Stack applied: ${result.serviceResults.map((s: { serviceName: string; action: string }) => `${s.serviceName}=${s.action}`).join(', ')}`,
@@ -290,15 +301,17 @@ export class HAProxyMigrationService {
     } catch (error) {
       const msg = `Failed to apply haproxy stack: ${error}`;
       logger.error({ error, stackId: haproxyStack.id }, msg);
-      errors.push(msg);
-      steps.push({ step: 'Apply haproxy stack', status: 'failed', detail: msg });
+      emitStep({ step: 'Apply haproxy stack', status: 'failed', detail: msg });
       return { success: false, steps, errors };
     }
 
     // Steps 4-6: Restore runtime state (TLS certificates, backends/servers, frontend remediation)
     const postApply = await restoreHAProxyRuntimeState(environmentId, prisma);
-    steps.push(...postApply.steps);
-    errors.push(...postApply.errors);
+    // Update totalSteps to reflect actual post-apply steps
+    totalSteps = 1 + preview.legacyVolumes.length + 1 + postApply.steps.length + 1;
+    for (const postStep of postApply.steps) {
+      emitStep(postStep);
+    }
 
     // Step 7: Mark legacy EnvironmentService as migrated
     try {
@@ -310,13 +323,12 @@ export class HAProxyMigrationService {
           where: { id: haproxyEnvService.id },
           data: { status: 'migrated-to-stack' },
         });
-        steps.push({ step: 'Update legacy service record', status: 'completed', detail: 'Marked as migrated-to-stack' });
+        emitStep({ step: 'Update legacy service record', status: 'completed', detail: 'Marked as migrated-to-stack' });
       }
     } catch (error) {
       const msg = `Failed to update EnvironmentService record: ${error}`;
       logger.warn({ error }, msg);
-      errors.push(msg);
-      steps.push({ step: 'Update legacy service record', status: 'failed', detail: msg });
+      emitStep({ step: 'Update legacy service record', status: 'failed', detail: msg });
     }
 
     const success = errors.length === 0;

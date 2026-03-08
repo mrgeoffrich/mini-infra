@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "@prisma/client";
 import { StackParameterDefinition, StackParameterValue } from "@mini-infra/types";
@@ -6,8 +7,25 @@ import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 
-// Resolve the templates directory relative to the server root
-const TEMPLATES_DIR = path.resolve(__dirname, "../../../templates");
+// Resolve the templates directory relative to the server root.
+// In dev, __dirname is server/src/services/stacks/ (3 levels up to server/).
+// In prod, __dirname is server/dist/server/src/services/stacks/ (5 levels up to server/).
+// Use a reliable anchor: walk up until we find the templates/ sibling directory.
+function findTemplatesDir(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 10; i++) {
+    const candidate = path.join(dir, "templates");
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      return candidate;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(__dirname, "../../../templates");
+}
+
+const TEMPLATES_DIR = findTemplatesDir();
 
 export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   const log = servicesLogger().child({ operation: "builtin-stack-sync" });

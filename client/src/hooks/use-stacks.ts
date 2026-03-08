@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
+import {
+  Channel,
+  ServerEvent,
+} from "@mini-infra/types";
 import type {
   StackInfo,
   StackServiceInfo,
@@ -12,8 +17,8 @@ import type {
   StackListResponse,
   StackResponse,
   StackPlanResponse,
-  StackApplyResponse,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -108,7 +113,7 @@ async function applyStack(
   stackId: string,
   options: ApplyStackRequest,
   correlationId?: string,
-): Promise<StackApplyResponse> {
+): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
   const response = await fetch(`/api/stacks/${stackId}/apply`, {
     method: "POST",
     credentials: "include",
@@ -123,10 +128,13 @@ async function applyStack(
     if (response.status === 503) {
       throw new Error("Docker is unavailable");
     }
+    if (response.status === 409) {
+      throw new Error("Stack apply already in progress");
+    }
     throw new Error(`Failed to apply stack: ${response.statusText}`);
   }
 
-  const data: StackApplyResponse = await response.json();
+  const data = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to apply stack");
   }
@@ -251,7 +259,6 @@ export function useStackPlan(stackId: string, enabled = true) {
 }
 
 export function useStackApply() {
-  const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
@@ -262,20 +269,9 @@ export function useStackApply() {
       stackId: string;
       options: ApplyStackRequest;
     }) => applyStack(stackId, options, correlationId),
-    onSuccess: (data, { stackId }) => {
-      const result = data.data;
-      if (result.success) {
-        toast.success(`Stack applied successfully (v${result.appliedVersion})`);
-      } else {
-        const failed = result.serviceResults.filter((r) => !r.success);
-        toast.error(
-          `Apply partially failed: ${failed.length} service(s) had errors`,
-        );
-      }
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
+    onSuccess: () => {
+      // The HTTP response just confirms the apply started.
+      // Final results come via Socket.IO events.
     },
     onError: (error: Error) => {
       toast.error(`Failed to apply stack: ${error.message}`);
@@ -283,16 +279,117 @@ export function useStackApply() {
   });
 }
 
+/** Live apply progress state from Socket.IO events */
+export interface StackApplyProgressState {
+  isApplying: boolean;
+  totalActions: number;
+  completedResults: ServiceApplyResult[];
+  actions: Array<{ serviceName: string; action: string }>;
+  finalResult: (ApplyResult & { error?: string; postApply?: { success: boolean; errors?: string[] } }) | null;
+}
+
+const INITIAL_APPLY_STATE: StackApplyProgressState = {
+  isApplying: false,
+  totalActions: 0,
+  completedResults: [],
+  actions: [],
+  finalResult: null,
+};
+
+/**
+ * Subscribe to Socket.IO events for live stack apply progress.
+ * Returns real-time state as each service completes.
+ */
+export function useStackApplyProgress(stackId: string) {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+  const [applyState, setApplyState] = useState<StackApplyProgressState>(INITIAL_APPLY_STATE);
+
+  // Subscribe to the stacks channel
+  useSocketChannel(Channel.STACKS, !!stackId);
+
+  // Apply started
+  useSocketEvent(
+    ServerEvent.STACK_APPLY_STARTED,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setApplyState({
+        isApplying: true,
+        totalActions: data.totalActions,
+        completedResults: [],
+        actions: data.actions,
+        finalResult: null,
+      });
+    },
+    !!stackId,
+  );
+
+  // Per-service result
+  useSocketEvent(
+    ServerEvent.STACK_APPLY_SERVICE_RESULT,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setApplyState((prev) => ({
+        ...prev,
+        completedResults: [...prev.completedResults, data],
+      }));
+    },
+    !!stackId,
+  );
+
+  // Apply completed
+  useSocketEvent(
+    ServerEvent.STACK_APPLY_COMPLETED,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setApplyState((prev) => ({
+        ...prev,
+        isApplying: false,
+        finalResult: data,
+      }));
+      // Invalidate all stack queries so data refreshes
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
+
+      // Toast notification
+      if (data.error) {
+        toast.error(`Stack apply failed: ${data.error}`);
+      } else if (data.success) {
+        toast.success(`Stack applied successfully (v${data.appliedVersion})`);
+      } else {
+        const failed = data.serviceResults.filter((r) => !r.success);
+        toast.error(`Apply partially failed: ${failed.length} service(s) had errors`);
+      }
+    },
+    !!stackId,
+  );
+
+  const reset = useCallback(
+    () => setApplyState(INITIAL_APPLY_STATE),
+    [],
+  );
+
+  return { ...applyState, connected, reset };
+}
+
 export function useStackStatus(stackId: string) {
   const correlationId = generateCorrelationId();
+  const { connected } = useSocket();
+
+  // Subscribe to stacks channel for push updates
+  useSocketChannel(Channel.STACKS, !!stackId);
 
   return useQuery({
     queryKey: ["stackStatus", stackId],
     queryFn: () => fetchStackStatus(stackId, correlationId),
     enabled: !!stackId,
-    refetchInterval: 5000,
+    refetchInterval: connected ? false : 5000,
     staleTime: 2000,
     gcTime: 2 * 60 * 1000,
+    refetchOnReconnect: true,
   });
 }
 

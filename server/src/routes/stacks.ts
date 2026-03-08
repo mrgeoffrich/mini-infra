@@ -19,9 +19,14 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
+import { Channel, ServerEvent } from '@mini-infra/types';
+import { emitToChannel } from '../lib/socket';
 
 const router = Router();
 const logger = appLogger();
+
+/** Track in-progress stack applies to prevent concurrent operations */
+const applyingStacks = new Set<string>();
 
 // GET / — List stacks
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
@@ -306,52 +311,113 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
   }
 });
 
-// POST /:stackId/apply — Apply changes
+// POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)
 router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, res) => {
+  const stackId = req.params.stackId;
   try {
     const parsed = applyStackSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
+    // Prevent concurrent applies on the same stack
+    if (applyingStacks.has(stackId)) {
+      return res.status(409).json({ success: false, message: 'Stack apply already in progress' });
+    }
+
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
     const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager);
-    const result = await reconciler.apply(req.params.stackId, {
-      ...parsed.data,
-      triggeredBy: (req as any).user?.id,
-    });
 
-    // After a successful HAProxy stack apply where the haproxy service was
-    // created or recreated, restore runtime state (backends, servers, TLS
-    // certs, shared frontends) from the database.
-    const haproxyServiceApplied = result.serviceResults.some(
-      (r) => r.serviceName === 'haproxy' && r.success && (r.action === 'create' || r.action === 'recreate')
-    );
-    if (haproxyServiceApplied) {
-      const stack = await prisma.stack.findUnique({
-        where: { id: req.params.stackId },
-        select: { name: true, environmentId: true, environment: { select: { name: true } } },
-      });
-      if (stack?.name === 'haproxy' && stack.environmentId) {
-        const postApply = await restoreHAProxyRuntimeState(stack.environmentId, prisma);
-        if (!postApply.success) {
-          logger.warn(
-            { stackId: req.params.stackId, errors: postApply.errors },
-            'HAProxy post-apply restoration had errors'
-          );
-        }
-        (result as any).postApply = postApply;
-      }
+    // Pre-compute plan so we can emit the started event with action details
+    const plan = await reconciler.plan(stackId);
+    const activeActions = plan.actions.filter((a) => a.action !== 'no-op');
+
+    // Filter by serviceNames if provided
+    let plannedActions = activeActions;
+    if (parsed.data.serviceNames && parsed.data.serviceNames.length > 0) {
+      const filterSet = new Set(parsed.data.serviceNames);
+      plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
     }
 
-    res.json({ success: true, data: result });
+    applyingStacks.add(stackId);
+
+    // Emit started event
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+      stackId,
+      stackName: plan.stackName,
+      totalActions: plannedActions.length,
+      actions: plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action })),
+    });
+
+    // Respond immediately — progress comes via Socket.IO
+    res.json({ success: true, data: { started: true, stackId } });
+
+    // Run apply in background
+    const triggeredBy = (req as any).user?.id;
+    (async () => {
+      try {
+        const result = await reconciler.apply(stackId, {
+          ...parsed.data,
+          triggeredBy,
+          plan,
+          onProgress: (serviceResult, completedCount, totalActions) => {
+            try {
+              emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
+                stackId,
+                ...serviceResult,
+                completedCount,
+                totalActions,
+              });
+            } catch { /* never break apply */ }
+          },
+        });
+
+        // HAProxy post-apply restoration
+        let postApply: { success: boolean; errors?: string[] } | undefined;
+        const haproxyServiceApplied = result.serviceResults.some(
+          (r) => r.serviceName === 'haproxy' && r.success && (r.action === 'create' || r.action === 'recreate')
+        );
+        if (haproxyServiceApplied) {
+          const stack = await prisma.stack.findUnique({
+            where: { id: stackId },
+            select: { name: true, environmentId: true },
+          });
+          if (stack?.name === 'haproxy' && stack.environmentId) {
+            const postApplyResult = await restoreHAProxyRuntimeState(stack.environmentId, prisma);
+            if (!postApplyResult.success) {
+              logger.warn({ stackId, errors: postApplyResult.errors }, 'HAProxy post-apply restoration had errors');
+            }
+            postApply = { success: postApplyResult.success, errors: postApplyResult.errors };
+          }
+        }
+
+        // Emit completed event
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
+          ...result,
+          postApply,
+        });
+      } catch (error: any) {
+        logger.error({ error: error.message, stackId }, 'Background stack apply failed');
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
+          success: false,
+          stackId,
+          appliedVersion: 0,
+          serviceResults: [],
+          duration: 0,
+          error: error.message,
+        });
+      } finally {
+        applyingStacks.delete(stackId);
+      }
+    })();
   } catch (error: any) {
+    applyingStacks.delete(stackId);
     if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
-    logger.error({ error, stackId: req.params.stackId }, 'Failed to apply stack');
+    logger.error({ error, stackId }, 'Failed to start stack apply');
     res.status(500).json({ success: false, message: error?.message ?? 'Failed to apply stack' });
   }
 });

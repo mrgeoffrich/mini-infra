@@ -17,11 +17,16 @@ import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
 import { haproxyMigrationService } from '../services/haproxy/haproxy-migration-service';
+import { emitToChannel } from '../lib/socket';
+import { Channel, ServerEvent } from '@mini-infra/types';
 import DockerService from '../services/docker';
 import { portUtils } from '../services/port-utils';
 
 const router = Router();
 const logger = appLogger();
+
+// Track in-progress migrations to prevent concurrent runs
+const migratingEnvironments = new Set<string>();
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);
@@ -952,7 +957,7 @@ router.get('/:id/migration-preview', requirePermission('environments:read'), asy
 
 /**
  * POST /api/environments/:id/migrate-haproxy
- * Migrate legacy HAProxy to stack-managed HAProxy
+ * Migrate legacy HAProxy to stack-managed HAProxy (fire-and-forget with Socket.IO progress)
  */
 router.post('/:id/migrate-haproxy', requirePermission('environments:write'), async (req, res) => {
   try {
@@ -966,24 +971,65 @@ router.post('/:id/migrate-haproxy', requirePermission('environments:write'), asy
       });
     }
 
-    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting HAProxy migration via API');
-    const result = await haproxyMigrationService.migrate(id, prisma);
+    if (migratingEnvironments.has(id)) {
+      return res.status(409).json({
+        success: false,
+        message: 'HAProxy migration already in progress for this environment'
+      });
+    }
 
-    logger.info({ environmentId: id, result: { success: result.success, stepCount: result.steps.length } }, 'HAProxy migration completed via API');
+    migratingEnvironments.add(id);
 
-    res.json({
-      success: result.success,
-      data: result,
-      message: result.success
-        ? 'HAProxy migration completed successfully'
-        : 'HAProxy migration completed with errors'
+    // Emit started event
+    emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_STARTED, {
+      environmentId: id,
+      environmentName: environment.name,
+      totalSteps: 5,
     });
 
+    // Respond immediately — progress comes via Socket.IO
+    res.json({ success: true, data: { started: true, environmentId: id } });
+
+    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting HAProxy migration via API');
+
+    // Run migration in background
+    (async () => {
+      try {
+        const result = await haproxyMigrationService.migrate(id, prisma, (step, completedCount, totalSteps) => {
+          try {
+            emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_STEP, {
+              environmentId: id,
+              step,
+              completedCount,
+              totalSteps,
+            });
+          } catch { /* never break migration */ }
+        });
+
+        logger.info({ environmentId: id, result: { success: result.success, stepCount: result.steps.length } }, 'HAProxy migration completed via API');
+
+        emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_COMPLETED, {
+          ...result,
+          environmentId: id,
+        });
+      } catch (error: any) {
+        logger.error({ error: error.message, environmentId: id }, 'Background HAProxy migration failed');
+        emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_COMPLETED, {
+          success: false,
+          steps: [],
+          errors: [error.message],
+          environmentId: id,
+        });
+      } finally {
+        migratingEnvironments.delete(id);
+      }
+    })();
+
   } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to migrate HAProxy');
+    logger.error({ error, environmentId: req.params.id }, 'Failed to start HAProxy migration');
     res.status(500).json({
       error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to migrate HAProxy'
+      message: error instanceof Error ? error.message : 'Failed to start HAProxy migration'
     });
   }
 });

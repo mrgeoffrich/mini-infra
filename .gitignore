@@ -58,3 +58,6 @@ coverage/
 
 # Dev server restart sentinel
 .restart-dev
+
+# Playwright CLI artifacts
+.playwright-cli/
