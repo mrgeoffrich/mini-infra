@@ -5,6 +5,7 @@ import {
   NextFunction,
   RequestHandler,
 } from "express";
+import crypto from "crypto";
 import passport from "../lib/passport";
 import { appLogger } from "../lib/logger-factory";
 import { serverConfig, securityConfig } from "../lib/config-new";
@@ -36,14 +37,29 @@ router.get("/google", ((req: Request, res: Response, next: NextFunction) => {
   const redirectParam = req.query.redirect as string;
   logger.debug({ redirect: redirectParam }, "Initiating Google OAuth flow");
 
-  // Store redirect URL in query state for OAuth callback
-  // Only encode safe relative paths to prevent open redirect via state parameter
-  let state = "";
+  // Generate a cryptographic nonce to prevent OAuth CSRF (login CSRF / account confusion)
+  const nonce = crypto.randomBytes(32).toString("hex");
+
+  // Build state payload: nonce + optional redirect path
+  let redirectPath = "";
   if (redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//") && !redirectParam.includes("://")) {
-    state = Buffer.from(redirectParam).toString("base64");
+    redirectPath = redirectParam;
   } else if (redirectParam) {
     logger.warn({ redirect: redirectParam }, "Rejected unsafe redirect parameter in OAuth initiation");
   }
+
+  const statePayload = JSON.stringify({ nonce, redirect: redirectPath });
+  const state = Buffer.from(statePayload).toString("base64");
+
+  // Store nonce in a short-lived HTTP-only cookie for verification on callback
+  const shouldUseSecureCookie = serverConfig.nodeEnv === "production" && !securityConfig.allowInsecure;
+  res.cookie("oauth-state", nonce, {
+    httpOnly: true,
+    secure: shouldUseSecureCookie,
+    sameSite: "lax",
+    maxAge: 5 * 60 * 1000, // 5 minutes — generous for the OAuth round-trip
+    path: "/auth/google/callback",
+  });
 
   passport.authenticate("google", {
     scope: ["profile", "email"],
@@ -59,6 +75,11 @@ router.get("/google/callback", ((
   next: NextFunction,
 ) => {
   passport.authenticate("google", (err: any, user: any, info: any) => {
+    // Read the nonce cookie before clearing it
+    const storedNonce = req.cookies?.["oauth-state"];
+    // Always clear the oauth-state cookie regardless of outcome
+    res.clearCookie("oauth-state", { path: "/auth/google/callback" });
+
     if (err) {
       logger.error({ error: err }, "OAuth authentication error");
       return res.redirect("/auth/failure");
@@ -66,6 +87,33 @@ router.get("/google/callback", ((
 
     if (!user) {
       logger.warn({ info }, "OAuth authentication failed - no user returned");
+      return res.redirect("/auth/failure");
+    }
+
+    // Verify the CSRF nonce from the state parameter against the cookie
+    if (!storedNonce) {
+      logger.warn("OAuth callback missing oauth-state cookie — possible CSRF");
+      return res.redirect("/auth/failure");
+    }
+
+    let stateNonce: string | undefined;
+    let stateRedirect: string | undefined;
+    try {
+      const stateRaw = req.query.state as string;
+      if (stateRaw) {
+        const parsed = JSON.parse(Buffer.from(stateRaw, "base64").toString("utf8"));
+        stateNonce = parsed.nonce;
+        stateRedirect = parsed.redirect;
+      }
+    } catch {
+      logger.warn("Failed to parse OAuth state parameter");
+      return res.redirect("/auth/failure");
+    }
+
+    const nonceBuf = Buffer.from(stateNonce || "");
+    const storedBuf = Buffer.from(storedNonce);
+    if (!stateNonce || nonceBuf.length !== storedBuf.length || !crypto.timingSafeEqual(nonceBuf, storedBuf)) {
+      logger.warn("OAuth state nonce mismatch — possible CSRF attack");
       return res.redirect("/auth/failure");
     }
 
@@ -84,20 +132,8 @@ router.get("/google/callback", ((
         (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
 
       let redirectPath = "/dashboard";
-      try {
-        const state = req.query.state as string;
-        if (state) {
-          const decoded = Buffer.from(state, "base64").toString("utf8");
-          // Validate the decoded path is a safe relative path to prevent open redirects
-          // Must start with "/" but not "//" (protocol-relative URL), and must not contain "://" (absolute URL)
-          if (decoded.startsWith("/") && !decoded.startsWith("//") && !decoded.includes("://")) {
-            redirectPath = decoded;
-          } else {
-            logger.warn({ decoded }, "Rejected unsafe redirect path from OAuth state");
-          }
-        }
-      } catch {
-        logger.warn("Failed to decode redirect state, using default");
+      if (stateRedirect && stateRedirect.startsWith("/") && !stateRedirect.startsWith("//") && !stateRedirect.includes("://")) {
+        redirectPath = stateRedirect;
       }
 
       const redirectUrl = `${frontendUrl}${redirectPath}`;
