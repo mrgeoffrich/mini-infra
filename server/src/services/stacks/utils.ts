@@ -5,11 +5,13 @@ import type {
   StackConfigFile,
   StackContainerConfig,
   StackNetwork,
+  StackParameterDefinition,
+  StackParameterValue,
   StackVolume,
   StackInfo,
   StackServiceInfo,
 } from '@mini-infra/types';
-import { buildTemplateContext, resolveStackConfigFiles } from './template-engine';
+import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
 import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 
@@ -19,6 +21,8 @@ import { StackContainerManager } from './stack-container-manager';
 export function serializeStack(stack: any): StackInfo {
   return {
     ...stack,
+    parameters: stack.parameters ?? [],
+    parameterValues: stack.parameterValues ?? {},
     lastAppliedAt: stack.lastAppliedAt?.toISOString() ?? null,
     createdAt: stack.createdAt.toISOString(),
     updatedAt: stack.updatedAt.toISOString(),
@@ -113,18 +117,35 @@ export function groupByProperty<T>(items: T[], key: keyof T): Map<string, T[]> {
 /**
  * Build template context from a stack and its services.
  */
-export function buildStackTemplateContext(stack: {
-  name: string;
-  networks: unknown;
-  volumes: unknown;
-  services: Array<{
-    serviceName: string;
-    dockerImage: string;
-    dockerTag: string;
-    containerConfig: unknown;
-  }>;
-  environment?: { name: string } | null;
-}) {
+/**
+ * Merge parameter values with definitions, filling in defaults for missing values.
+ */
+export function mergeParameterValues(
+  definitions: StackParameterDefinition[],
+  values: Record<string, StackParameterValue>
+): Record<string, StackParameterValue> {
+  const merged: Record<string, StackParameterValue> = {};
+  for (const def of definitions) {
+    merged[def.name] = values[def.name] ?? def.default;
+  }
+  return merged;
+}
+
+export function buildStackTemplateContext(
+  stack: {
+    name: string;
+    networks: unknown;
+    volumes: unknown;
+    services: Array<{
+      serviceName: string;
+      dockerImage: string;
+      dockerTag: string;
+      containerConfig: unknown;
+    }>;
+    environment?: { name: string } | null;
+  },
+  params?: Record<string, StackParameterValue>
+) {
   return buildTemplateContext(
     {
       name: stack.name,
@@ -137,7 +158,8 @@ export function buildStackTemplateContext(stack: {
       dockerTag: s.dockerTag,
       containerConfig: s.containerConfig as unknown as StackContainerConfig,
     })),
-    stack.environment?.name
+    stack.environment?.name,
+    params
   );
 }
 
@@ -158,8 +180,13 @@ export function resolveServiceConfigs(
     routing: unknown;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>
-): { resolvedConfigsMap: Map<string, StackConfigFile[]>; serviceHashes: Map<string, string> } {
+): {
+  resolvedConfigsMap: Map<string, StackConfigFile[]>;
+  resolvedDefinitions: Map<string, StackServiceDefinition>;
+  serviceHashes: Map<string, string>;
+} {
   const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
+  const resolvedDefinitions = new Map<string, StackServiceDefinition>();
   const serviceHashes = new Map<string, string>();
 
   for (const svc of services) {
@@ -168,11 +195,16 @@ export function resolveServiceConfigs(
       templateContext
     );
     resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
+
     const def = toServiceDefinition(svc);
-    serviceHashes.set(svc.serviceName, computeDefinitionHash(def, resolvedConfigs));
+    const resolvedDef = resolveServiceDefinition(def, templateContext);
+    resolvedDefinitions.set(svc.serviceName, resolvedDef);
+
+    // Hash the resolved definition so parameter value changes trigger recreates
+    serviceHashes.set(svc.serviceName, computeDefinitionHash(resolvedDef, resolvedConfigs));
   }
 
-  return { resolvedConfigsMap, serviceHashes };
+  return { resolvedConfigsMap, resolvedDefinitions, serviceHashes };
 }
 
 /**

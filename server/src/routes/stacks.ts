@@ -74,7 +74,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { name, description, environmentId, networks, volumes, services } = parsed.data;
+    const { name, description, environmentId, parameters, parameterValues, networks, volumes, services } = parsed.data;
 
     if (environmentId) {
       // Check environment exists
@@ -101,10 +101,12 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         name,
         description: description ?? null,
         environmentId: environmentId ?? undefined,
+        parameters: parameters ? (parameters as any) : undefined,
+        parameterValues: parameterValues ? (parameterValues as any) : undefined,
         networks: networks as any,
         volumes: volumes as any,
         services: {
-          create: services.map(toServiceCreateInput),
+          create: (services as any[]).map(toServiceCreateInput),
         },
       },
       include: { services: true },
@@ -136,7 +138,17 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    const { services, ...fields } = parsed.data;
+    const { services, parameters, parameterValues, ...fields } = parsed.data;
+
+    const updateData: any = {
+      ...fields,
+      networks: fields.networks ? (fields.networks as any) : undefined,
+      volumes: fields.volumes ? (fields.volumes as any) : undefined,
+      parameters: parameters ? (parameters as any) : undefined,
+      parameterValues: parameterValues ? (parameterValues as any) : undefined,
+      version: existing.version + 1,
+      status: 'pending',
+    };
 
     if (services) {
       // Transaction: delete existing services, update stack, recreate services
@@ -146,13 +158,9 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
         return tx.stack.update({
           where: { id: stackId },
           data: {
-            ...fields,
-            networks: fields.networks ? (fields.networks as any) : undefined,
-            volumes: fields.volumes ? (fields.volumes as any) : undefined,
-            version: existing.version + 1,
-            status: 'pending',
+            ...updateData,
             services: {
-              create: services.map(toServiceCreateInput),
+              create: (services as any[]).map(toServiceCreateInput),
             },
           },
           include: { services: true },
@@ -163,13 +171,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
     } else {
       const stack = await prisma.stack.update({
         where: { id: stackId },
-        data: {
-          ...fields,
-          networks: fields.networks ? (fields.networks as any) : undefined,
-          volumes: fields.volumes ? (fields.volumes as any) : undefined,
-          version: existing.version + 1,
-          status: 'pending',
-        },
+        data: updateData,
         include: { services: true },
       });
 

@@ -9,6 +9,8 @@ import {
   StackConfigFile,
   StackContainerConfig,
   StackNetwork,
+  StackParameterDefinition,
+  StackParameterValue,
   StackVolume,
   ApplyOptions,
   ApplyResult,
@@ -17,7 +19,6 @@ import {
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
-import { resolveStackConfigFiles } from './template-engine';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { HAProxyDataPlaneClient } from '../haproxy';
@@ -25,7 +26,9 @@ import { servicesLogger } from '../../lib/logger-factory';
 import {
   buildStackTemplateContext,
   buildContainerMap,
+  mergeParameterValues,
   toServiceDefinition,
+  resolveServiceConfigs,
   prepareServiceContainer,
 } from './utils';
 
@@ -51,24 +54,15 @@ export class StackReconciler {
 
     log.info({ stackName: stack.name, serviceCount: stack.services.length }, 'Computing plan');
 
-    // 2. Build template context and resolve config files per service
-    const templateContext = buildStackTemplateContext(stack);
+    // 2. Build template context with parameters and resolve service definitions
+    const params = mergeParameterValues(
+      (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+      (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
+    );
+    const templateContext = buildStackTemplateContext(stack, params);
 
-    // 3. Compute definition hashes per service
-    const serviceHashes = new Map<string, string>();
-    const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
-
-    for (const svc of stack.services) {
-      const resolvedConfigs = resolveStackConfigFiles(
-        (svc.configFiles as unknown as StackConfigFile[]) ?? [],
-        templateContext
-      );
-      resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
-
-      const def = toServiceDefinition(svc);
-      const hash = computeDefinitionHash(def, resolvedConfigs);
-      serviceHashes.set(svc.serviceName, hash);
-    }
+    // 3. Resolve service definitions (templates + type coercion) and compute hashes
+    const { serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
     // 4. Query running containers for this stack
     const docker = this.dockerExecutor.getDockerClient();
@@ -212,22 +206,16 @@ export class StackReconciler {
     try {
       const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
 
-      // Build template context for config file resolution
-      const templateContext = buildStackTemplateContext(stack);
+      // Build template context with parameters and resolve service definitions
+      const params = mergeParameterValues(
+        (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+        (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
+      );
+      const templateContext = buildStackTemplateContext(stack, params);
 
       // Build maps for service definitions, hashes, and resolved configs
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
-      const serviceHashes = new Map<string, string>();
-
-      for (const svc of stack.services) {
-        const resolvedConfigs = resolveStackConfigFiles(
-          (svc.configFiles as unknown as StackConfigFile[]) ?? [],
-          templateContext
-        );
-        resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
-        serviceHashes.set(svc.serviceName, computeDefinitionHash(toServiceDefinition(svc), resolvedConfigs));
-      }
+      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
       // 5. Ensure infrastructure — create networks and volumes
       const networks = stack.networks as unknown as StackNetwork[];
@@ -283,7 +271,7 @@ export class StackReconciler {
       for (const action of actions) {
         const actionStart = Date.now();
         const svc = serviceMap.get(action.serviceName);
-        const serviceDef = svc ? toServiceDefinition(svc) : null;
+        const serviceDef = resolvedDefinitions.get(action.serviceName) ?? null;
         const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
 
         if (isStatelessWeb && !this.routingManager) {

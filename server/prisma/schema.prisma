@@ -1170,6 +1170,8 @@ model Stack {
   lastAppliedAt        DateTime?
   lastAppliedSnapshot  Json?
   builtinVersion       Int?
+  parameters           Json?       // Array of StackParameterDefinition
+  parameterValues      Json?       // Record<string, string | number | boolean>
   networks             Json        // Array of { name, driver?, options? }
   volumes              Json        // Array of { name, driver?, options? }
   createdAt            DateTime    @default(now())

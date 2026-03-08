@@ -1,8 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import { StackParameterDefinition, StackParameterValue } from "@mini-infra/types";
 import { BUILTIN_STACKS } from "./builtin";
 import { BuiltinStackDefinition } from "./builtin/types";
 import { servicesLogger } from "../../lib/logger-factory";
-import { toServiceCreateInput } from "./utils";
+import { toServiceCreateInput, mergeParameterValues } from "./utils";
 
 export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   const log = servicesLogger().child({ operation: "builtin-stack-sync" });
@@ -86,6 +87,8 @@ async function syncHostStack(
   if (!existing) {
     log.info({ stackName: builtin.name }, "Creating host-scoped built-in stack");
     const definition = await builtin.resolve({ prisma });
+    const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
+    const defaultValues = mergeParameterValues(paramDefs, {});
 
     await prisma.stack.create({
       data: {
@@ -95,6 +98,8 @@ async function syncHostStack(
         version: 1,
         status: "undeployed",
         builtinVersion: builtin.builtinVersion,
+        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
+        parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
@@ -131,6 +136,10 @@ async function syncHostStack(
   );
 
   const definition = await builtin.resolve({ prisma });
+  const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
+  // Preserve existing user-set parameter values, fill in defaults for new params
+  const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
+  const mergedValues = mergeParameterValues(paramDefs, existingValues);
 
   await prisma.$transaction(async (tx) => {
     await tx.stackService.deleteMany({
@@ -144,6 +153,8 @@ async function syncHostStack(
         version: existing.version + 1,
         status: "pending",
         builtinVersion: builtin.builtinVersion,
+        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
+        parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
@@ -168,6 +179,8 @@ async function syncOneStack(
   if (!existing) {
     log.info({ stackName: builtin.name }, "Creating built-in stack");
     const definition = await builtin.resolve({ environmentId, prisma });
+    const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
+    const defaultValues = mergeParameterValues(paramDefs, {});
 
     await prisma.stack.create({
       data: {
@@ -177,6 +190,8 @@ async function syncOneStack(
         version: 1,
         status: "undeployed",
         builtinVersion: builtin.builtinVersion,
+        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
+        parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
@@ -216,6 +231,10 @@ async function syncOneStack(
   );
 
   const definition = await builtin.resolve({ environmentId, prisma });
+  const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
+  // Preserve existing user-set parameter values, fill in defaults for new params
+  const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
+  const mergedValues = mergeParameterValues(paramDefs, existingValues);
 
   await prisma.$transaction(async (tx) => {
     // Delete old services
@@ -231,6 +250,8 @@ async function syncOneStack(
         version: existing.version + 1,
         status: "pending",
         builtinVersion: builtin.builtinVersion,
+        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
+        parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {

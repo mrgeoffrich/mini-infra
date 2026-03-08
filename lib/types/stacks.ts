@@ -7,6 +7,25 @@ export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeploy
 export type StackServiceType = 'Stateful' | 'StatelessWeb';
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
+// Stack parameter types
+
+export type StackParameterType = 'string' | 'number' | 'boolean';
+
+export type StackParameterValue = string | number | boolean;
+
+export interface StackParameterDefinition {
+  name: string;
+  type: StackParameterType;
+  description?: string;
+  default: StackParameterValue;
+  validation?: {
+    min?: number;
+    max?: number;
+    pattern?: string;
+    options?: StackParameterValue[];
+  };
+}
+
 // JSON field shape interfaces
 
 export interface StackContainerConfig {
@@ -91,6 +110,8 @@ export interface Stack {
   lastAppliedAt: Date | null;
   lastAppliedSnapshot: StackDefinition | null;
   builtinVersion: number | null;
+  parameters: StackParameterDefinition[];
+  parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   createdAt: Date;
@@ -128,6 +149,8 @@ export interface StackInfo {
   lastAppliedAt: string | null;
   lastAppliedSnapshot: StackDefinition | null;
   builtinVersion: number | null;
+  parameters: StackParameterDefinition[];
+  parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   createdAt: string;
@@ -170,6 +193,7 @@ export interface StackServiceDefinition {
 export interface StackDefinition {
   name: string;
   description?: string;
+  parameters?: StackParameterDefinition[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -183,6 +207,7 @@ export function serializeStack(
   return {
     name: stack.name,
     description: stack.description ?? undefined,
+    parameters: stack.parameters?.length > 0 ? stack.parameters : undefined,
     networks: stack.networks,
     volumes: stack.volumes,
     services: stack.services.map((s) => ({
@@ -204,6 +229,8 @@ export interface CreateStackInput {
   name: string;
   description?: string;
   environmentId?: string;
+  parameters?: StackParameterDefinition[];
+  parameterValues?: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -217,6 +244,7 @@ export function deserializeStack(
     name: definition.name,
     description: definition.description,
     environmentId,
+    parameters: definition.parameters,
     networks: definition.networks,
     volumes: definition.volumes,
     services: definition.services,
@@ -296,6 +324,8 @@ export interface CreateStackRequest {
   name: string;
   description?: string;
   environmentId?: string;
+  parameters?: StackParameterDefinition[];
+  parameterValues?: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -304,6 +334,8 @@ export interface CreateStackRequest {
 export interface UpdateStackRequest {
   name?: string;
   description?: string;
+  parameters?: StackParameterDefinition[];
+  parameterValues?: Record<string, StackParameterValue>;
   networks?: StackNetwork[];
   volumes?: StackVolume[];
   services?: StackServiceDefinition[];

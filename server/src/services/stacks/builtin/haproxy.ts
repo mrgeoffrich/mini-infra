@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import { StackDefinition } from "@mini-infra/types";
-import { portUtils } from "../../port-utils";
 import { BuiltinStackDefinition, BuiltinStackContext } from "./types";
 
 async function buildHAProxyDefinition(
@@ -28,13 +27,15 @@ async function buildHAProxyDefinition(
     throw new Error("HAProxy stack requires an environmentId");
   }
 
-  const portConfig = await portUtils.getHAProxyPortsForEnvironment(
-    context.environmentId
-  );
-
   return {
     name: "haproxy",
     description: "HAProxy load balancer with DataPlane API",
+    parameters: [
+      { name: "http-port", type: "number", default: 80, description: "Host port for HTTP traffic" },
+      { name: "https-port", type: "number", default: 443, description: "Host port for HTTPS traffic" },
+      { name: "stats-port", type: "number", default: 8404, description: "Host port for HAProxy stats" },
+      { name: "dataplane-port", type: "number", default: 5555, description: "Host port for DataPlane API" },
+    ],
     networks: [{ name: "network", driver: "bridge" }],
     volumes: [
       { name: "haproxy_data" },
@@ -58,22 +59,22 @@ async function buildHAProxyDefinition(
           ports: [
             {
               containerPort: 80,
-              hostPort: portConfig.httpPort,
+              hostPort: "{{params.http-port}}" as any,
               protocol: "tcp",
             },
             {
               containerPort: 443,
-              hostPort: portConfig.httpsPort,
+              hostPort: "{{params.https-port}}" as any,
               protocol: "tcp",
             },
             {
               containerPort: 8404,
-              hostPort: portConfig.statsPort,
+              hostPort: "{{params.stats-port}}" as any,
               protocol: "tcp",
             },
             {
               containerPort: 5555,
-              hostPort: portConfig.dataplanePort,
+              hostPort: "{{params.dataplane-port}}" as any,
               protocol: "tcp",
             },
           ],
@@ -136,7 +137,7 @@ async function buildHAProxyDefinition(
 
 export const haproxyStack: BuiltinStackDefinition = {
   name: "haproxy",
-  builtinVersion: 2,
+  builtinVersion: 3,
   scope: 'environment',
   resolve: (context) => buildHAProxyDefinition(context),
 };

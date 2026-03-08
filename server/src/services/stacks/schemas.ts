@@ -1,5 +1,52 @@
 import { z } from "zod";
 
+// Template string pattern: allows {{params.key-name}} references
+const templateStringPattern = /\{\{params\.[a-zA-Z0-9_-]+\}\}/;
+
+// A value that can be either a literal number or a template string
+const numberOrTemplate = z.union([
+  z.number().int().min(1).max(65535),
+  z.string().regex(templateStringPattern, "Must be a {{params.name}} template reference"),
+]);
+
+const numberOrTemplateMin0 = z.union([
+  z.number().int().min(0),
+  z.string().regex(templateStringPattern, "Must be a {{params.name}} template reference"),
+]);
+
+const numberOrTemplateMin1 = z.union([
+  z.number().int().min(1),
+  z.string().regex(templateStringPattern, "Must be a {{params.name}} template reference"),
+]);
+
+// Stack parameter schemas
+
+const stackParameterValueSchema = z.union([z.string(), z.number(), z.boolean()]);
+
+export const stackParameterDefinitionSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z0-9_-]+$/, "Parameter name can only contain letters, numbers, hyphens, and underscores"),
+  type: z.enum(["string", "number", "boolean"]),
+  description: z.string().max(500).optional(),
+  default: stackParameterValueSchema,
+  validation: z
+    .object({
+      min: z.number().optional(),
+      max: z.number().optional(),
+      pattern: z.string().optional(),
+      options: z.array(stackParameterValueSchema).optional(),
+    })
+    .optional(),
+});
+
+export const parameterValuesSchema = z.record(
+  z.string(),
+  stackParameterValueSchema
+);
+
 // Sub-schemas for JSON field shapes
 
 export const stackContainerConfigSchema = z.object({
@@ -10,8 +57,8 @@ export const stackContainerConfigSchema = z.object({
   ports: z
     .array(
       z.object({
-        containerPort: z.number().int().min(1).max(65535),
-        hostPort: z.number().int().min(1).max(65535),
+        containerPort: numberOrTemplate,
+        hostPort: numberOrTemplate,
         protocol: z.enum(["tcp", "udp"]),
       })
     )
@@ -33,10 +80,10 @@ export const stackContainerConfigSchema = z.object({
   healthcheck: z
     .object({
       test: z.array(z.string()),
-      interval: z.number().int().min(1),
-      timeout: z.number().int().min(1),
-      retries: z.number().int().min(1),
-      startPeriod: z.number().int().min(0),
+      interval: numberOrTemplateMin1,
+      timeout: numberOrTemplateMin1,
+      retries: numberOrTemplateMin1,
+      startPeriod: numberOrTemplateMin0,
     })
     .optional(),
   logConfig: z
@@ -65,7 +112,7 @@ export const stackInitCommandSchema = z.object({
 
 export const stackServiceRoutingSchema = z.object({
   hostname: z.string().min(1).max(253),
-  listeningPort: z.number().int().min(1).max(65535),
+  listeningPort: numberOrTemplate,
   enableSsl: z.boolean().optional(),
   tlsCertificateId: z.string().optional(),
   backendOptions: z
@@ -73,9 +120,9 @@ export const stackServiceRoutingSchema = z.object({
       balanceAlgorithm: z
         .enum(["roundrobin", "leastconn", "source"])
         .optional(),
-      checkTimeout: z.number().int().min(0).optional(),
-      connectTimeout: z.number().int().min(0).optional(),
-      serverTimeout: z.number().int().min(0).optional(),
+      checkTimeout: numberOrTemplateMin0.optional(),
+      connectTimeout: numberOrTemplateMin0.optional(),
+      serverTimeout: numberOrTemplateMin0.optional(),
     })
     .optional(),
   dns: z
@@ -148,6 +195,7 @@ export const stackServiceDefinitionSchema = z
 export const stackDefinitionSchema = z.object({
   name: stackNameSchema,
   description: z.string().max(500).optional(),
+  parameters: z.array(stackParameterDefinitionSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z
@@ -161,6 +209,8 @@ export const createStackSchema = z.object({
   name: stackNameSchema,
   description: z.string().max(500).optional(),
   environmentId: z.string().min(1).optional(),
+  parameters: z.array(stackParameterDefinitionSchema).optional(),
+  parameterValues: parameterValuesSchema.optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z
@@ -171,6 +221,8 @@ export const createStackSchema = z.object({
 export const updateStackSchema = z.object({
   name: stackNameSchema.optional(),
   description: z.string().max(500).optional(),
+  parameters: z.array(stackParameterDefinitionSchema).optional(),
+  parameterValues: parameterValuesSchema.optional(),
   networks: z.array(stackNetworkSchema).optional(),
   volumes: z.array(stackVolumeSchema).optional(),
   services: z.array(stackServiceDefinitionSchema).optional(),
