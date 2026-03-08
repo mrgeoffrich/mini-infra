@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Environment } from "@mini-infra/types";
 import { useEnvironments, useEnvironmentFilters } from "@/hooks/use-environments";
 import { EnvironmentCard } from "./environment-card";
-import { EnvironmentFilters } from "./environment-filters";
 import { EnvironmentCreateDialog } from "./environment-create-dialog";
 import { EnvironmentEditDialog } from "./environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "./environment-delete-dialog";
@@ -33,7 +32,7 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
   const [serviceAddDialogOpen, setServiceAddDialogOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
 
-  const { filters, updateFilter, resetFilters } = useEnvironmentFilters();
+  const { filters, updateFilter } = useEnvironmentFilters();
 
   const {
     data: environmentsData,
@@ -181,14 +180,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
         </div>
       </div>
 
-      {/* Filters */}
-      <EnvironmentFilters
-        filters={filters}
-        onFilterChange={updateFilter}
-        onResetFilters={resetFilters}
-        className="mb-6"
-      />
-
       {/* Content */}
       {isLoading ? (
         <div className="grid gap-6 md:grid-cols-2">
@@ -217,20 +208,12 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
             <IconServer className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Environments Found</h3>
             <p className="text-muted-foreground text-center mb-4">
-              {Object.keys(filters).some(key => key !== 'page' && key !== 'limit' && filters[key as keyof typeof filters])
-                ? "No environments match your current filters."
-                : "Get started by creating your first environment."}
+              Get started by creating your first environment.
             </p>
-            {Object.keys(filters).some(key => key !== 'page' && key !== 'limit' && filters[key as keyof typeof filters]) ? (
-              <Button variant="outline" onClick={resetFilters}>
-                Clear Filters
-              </Button>
-            ) : (
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <IconPlus className="h-4 w-4 mr-2" />
-                Create Environment
-              </Button>
-            )}
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <IconPlus className="h-4 w-4 mr-2" />
+              Create Environment
+            </Button>
           </CardContent>
         </Card>
       ) : (

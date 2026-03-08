@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState, useCallback, useEffect } from "react";
 import {
   ContainerInfo,
@@ -99,6 +99,7 @@ export function useContainers(options: UseContainersOptions = {}) {
     queryFn: () => fetchContainers(queryParams, correlationId),
     enabled,
     refetchInterval,
+    placeholderData: keepPreviousData,
     retry:
       typeof retry === "function"
         ? retry

@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContainerDashboard } from "./ContainerDashboard";
 import { NetworksList } from "./NetworksList";
 import { VolumesList } from "./VolumesList";
-import { IconServer, IconNetwork, IconDatabase } from "@tabler/icons-react";
+import { IconServer, IconNetwork, IconDatabase, IconBrandDocker } from "@tabler/icons-react";
 
 const ACTIVE_TAB_STORAGE_KEY = "mini-infra:containers-active-tab";
 
@@ -35,10 +35,17 @@ export function ContainersPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <h1 className="text-3xl font-bold mb-2">Docker Management</h1>
-        <p className="text-muted-foreground">
-          Manage Docker containers, networks, and volumes
-        </p>
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            <IconBrandDocker className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">Container Dashboard</h1>
+            <p className="text-muted-foreground">
+              Monitor and manage your Docker containers
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="px-4 lg:px-6">

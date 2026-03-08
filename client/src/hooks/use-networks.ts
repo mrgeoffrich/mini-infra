@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   DockerNetwork,
   DockerNetworkListResponse,
@@ -91,6 +91,7 @@ export function useNetworks(options: UseNetworksOptions = {}) {
     queryFn: () => fetchNetworks(correlationId),
     enabled,
     refetchInterval,
+    placeholderData: keepPreviousData,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on authentication errors
       if (

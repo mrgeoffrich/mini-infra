@@ -168,6 +168,16 @@ export const StackPlanView = React.memo(function StackPlanView({
               No changes needed — all services match the desired state.
             </p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-4"
+            onClick={handleApplyAll}
+            disabled={applyMutation.isPending}
+          >
+            <IconRefresh className="h-4 w-4 mr-2" />
+            {applyMutation.isPending ? "Syncing..." : "Sync Anyway"}
+          </Button>
         </CardContent>
       </Card>
     );
