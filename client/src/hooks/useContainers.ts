@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useState, useCallback, useEffect } from "react";
 import {
   ContainerInfo,
@@ -7,8 +7,10 @@ import {
   ContainerFilters,
   ContainerQueryParams,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-const POLL_INTERVAL = 5000; // 5 seconds as specified in requirements
+const POLL_INTERVAL_CONNECTED = 30000; // 30s fallback when socket is connected
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s when socket is not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -88,9 +90,70 @@ export function useContainers(options: UseContainersOptions = {}) {
   const {
     enabled = true,
     queryParams = {},
-    refetchInterval = POLL_INTERVAL,
     retry = 3,
   } = options;
+
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  // Use slower polling when socket is connected (it's just a fallback),
+  // faster polling when disconnected. Allow explicit override via options.
+  const refetchInterval =
+    options.refetchInterval ??
+    (connected ? POLL_INTERVAL_CONNECTED : POLL_INTERVAL_DISCONNECTED);
+
+  // Subscribe to the containers channel for push updates
+  useSocketChannel("containers", enabled);
+
+  // When server pushes a full container list update, invalidate all container queries
+  // so TanStack Query refetches with proper server-side filtering/sorting
+  useSocketEvent(
+    "containers:list",
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["containers"] });
+    },
+    enabled,
+  );
+
+  // Optimistically update a single container's status in the cache
+  useSocketEvent(
+    "container:status",
+    (data) => {
+      queryClient.setQueriesData<ContainerListResponse>(
+        { queryKey: ["containers"] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            containers: old.containers.map((c) =>
+              c.id === data.id ? { ...c, status: data.status } : c,
+            ),
+          };
+        },
+      );
+    },
+    enabled,
+  );
+
+  // Remove a container from cache when it's deleted
+  useSocketEvent(
+    "container:removed",
+    (data) => {
+      queryClient.setQueriesData<ContainerListResponse>(
+        { queryKey: ["containers"] },
+        (old) => {
+          if (!old) return old;
+          const filtered = old.containers.filter((c) => c.id !== data.id);
+          return {
+            ...old,
+            containers: filtered,
+            totalCount: filtered.length,
+          };
+        },
+      );
+    },
+    enabled,
+  );
 
   const correlationId = generateCorrelationId();
 

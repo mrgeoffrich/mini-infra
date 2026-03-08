@@ -24,47 +24,10 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
+import { serializeContainer } from "../services/container-serializer";
+import { emitToChannel } from "../lib/socket";
+
 const router = express.Router();
-
-// Helper function to convert DockerContainerInfo to ContainerInfo for API responses
-async function serializeContainer(container: DockerContainerInfo): Promise<ContainerInfo> {
-  const serialized: ContainerInfo = {
-    ...container,
-    createdAt: container.createdAt.toISOString(),
-    startedAt: container.startedAt?.toISOString(),
-  };
-
-  // Check if container has environment label
-  const environmentId = container.labels['mini-infra.environment'];
-  if (environmentId) {
-    try {
-      // Look up environment from database
-      const environment = await prisma.environment.findUnique({
-        where: { id: environmentId },
-        select: { id: true, name: true, type: true },
-      });
-
-      if (environment) {
-        serialized.environmentInfo = {
-          id: environment.id,
-          name: environment.name,
-          type: environment.type,
-        };
-      }
-    } catch (error) {
-      logger.warn(
-        {
-          error,
-          environmentId,
-          containerId: container.id,
-        },
-        "Failed to look up environment for container",
-      );
-    }
-  }
-
-  return serialized;
-}
 
 // Query parameter validation schema
 const containerQuerySchema = z.object({
@@ -1264,6 +1227,20 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
       },
       `Container ${action} completed successfully`,
     );
+
+    // Emit granular socket events for immediate UI updates
+    if (action === "remove") {
+      emitToChannel("containers", "container:removed", {
+        id: containerId,
+        name: containerInfo.name,
+      });
+    } else if (updatedContainer) {
+      emitToChannel("containers", "container:status", {
+        id: containerId,
+        name: containerInfo.name,
+        status: updatedContainer.status,
+      });
+    }
 
     const response: ContainerActionResponse = {
       success: true,
