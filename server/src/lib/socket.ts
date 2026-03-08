@@ -17,7 +17,7 @@ import type {
   SocketData,
   SocketChannel,
 } from "@mini-infra/types";
-import { isValidSocketChannel, ClientEvent, ParameterizedChannel } from "@mini-infra/types";
+import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedChannel, MAX_SOCKET_SUBSCRIPTIONS } from "@mini-infra/types";
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
@@ -69,9 +69,10 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     return io;
   }
 
+  const DEV_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:5005"];
   const corsOrigin =
     appConfig.server.publicUrl ||
-    (appConfig.server.nodeEnv === "development" ? true : false);
+    (appConfig.server.nodeEnv === "development" ? DEV_CORS_ORIGINS : false);
 
   io = new Server<
     ClientToServerEvents,
@@ -129,6 +130,13 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
         );
         return;
       }
+      if (socket.data.subscribedChannels.size >= MAX_SOCKET_SUBSCRIPTIONS) {
+        logger.warn(
+          { userId: socket.data.userId, socketId: socket.id, channel, limit: MAX_SOCKET_SUBSCRIPTIONS },
+          "Socket subscription limit reached"
+        );
+        return;
+      }
       joinChannel(socket, channel);
       logger.debug(
         { userId: socket.data.userId, socketId: socket.id, channel },
@@ -149,6 +157,13 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
 
     // Handle container log streaming
     socket.on(ClientEvent.CONTAINER_LOGS_START, (data) => {
+      if (!isValidContainerId(data.containerId)) {
+        logger.warn(
+          { userId: socket.data.userId, socketId: socket.id, containerId: data.containerId },
+          "Invalid container ID in log stream request"
+        );
+        return;
+      }
       const channel = ParameterizedChannel.container(data.containerId);
       joinChannel(socket, channel);
       logger.debug(
@@ -165,6 +180,9 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     });
 
     socket.on(ClientEvent.CONTAINER_LOGS_STOP, (data) => {
+      if (!isValidContainerId(data.containerId)) {
+        return;
+      }
       const channel = ParameterizedChannel.container(data.containerId);
       leaveChannel(socket, channel);
       logger.debug(
@@ -334,15 +352,6 @@ async function authenticateSocket(socket: TypedSocket): Promise<SocketUser | nul
     } catch {
       // API key validation failed
     }
-  }
-
-  // In development, allow unauthenticated connections for easier testing
-  if (appConfig.server.nodeEnv === "development") {
-    logger.debug({ socketId: socket.id }, "Allowing unauthenticated socket in development mode");
-    return {
-      id: "dev-user",
-      name: "Development User",
-    };
   }
 
   return null;

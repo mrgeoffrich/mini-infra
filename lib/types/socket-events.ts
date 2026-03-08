@@ -80,18 +80,35 @@ export function isValidSocketChannel(channel: string): channel is SocketChannel 
   if ((STATIC_SOCKET_CHANNELS as readonly string[]).includes(channel)) {
     return true;
   }
-  return PARAMETERIZED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
+  // Parameterized channels must have a prefix + a non-empty ID, capped at 128 chars total
+  if (channel.length > 128) {
+    return false;
+  }
+  return PARAMETERIZED_CHANNEL_PREFIXES.some(
+    (prefix) => channel.startsWith(prefix) && channel.length > prefix.length,
+  );
 }
 
 // ====================
 // Shared Defaults
 // ====================
 
+/** Maximum channels a single socket can subscribe to */
+export const MAX_SOCKET_SUBSCRIPTIONS = 50;
+
 /** Default number of log tail lines */
 export const DEFAULT_LOG_TAIL_LINES = 100;
 
 /** Maximum allowed log tail lines */
 export const MAX_LOG_TAIL_LINES = 5000;
+
+/** Docker container IDs are 12 (short) or 64 (full) hex characters */
+const DOCKER_ID_RE = /^[a-f0-9]{12,64}$/;
+
+/** Validate that a string looks like a Docker container ID */
+export function isValidContainerId(id: string): boolean {
+  return DOCKER_ID_RE.test(id);
+}
 
 // ====================
 // Socket Event Name Constants

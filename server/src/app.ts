@@ -74,7 +74,9 @@ app.use(
   cors({
     origin:
       appConfig.server.publicUrl ||
-      (appConfig.server.nodeEnv === "development" ? true : false),
+      (appConfig.server.nodeEnv === "development"
+        ? ["http://localhost:5173", "http://localhost:5005"]
+        : false),
     credentials: true,
     optionsSuccessStatus: 200,
   }),
