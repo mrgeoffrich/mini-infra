@@ -13,6 +13,7 @@ export const createHelmetMiddleware = (allowInsecure: boolean) => {
     objectSrc: ["'none'"],
     mediaSrc: ["'self'"],
     frameSrc: ["'none'"],
+    formAction: ["'self'", "https://github.com"],
   };
 
   // Allow HTTP connections when insecure mode is enabled
