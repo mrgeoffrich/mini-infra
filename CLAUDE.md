@@ -38,56 +38,56 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 ## Technology Stack
 
 ### Frontend
-- **Build Tool**: Vite 7.1.2
-- **UI Framework**: React 19.1.1 with React DOM 19.1.1
-- **Routing**: React Router DOM 7.8.2
-- **Styling**: Tailwind CSS 4.1.12 with shadcn/ui components via Radix UI
-- **UI Components**: 
+- **Build Tool**: Vite
+- **UI Framework**: React with React DOM
+- **Routing**: React Router DOM
+- **Styling**: Tailwind CSS with shadcn/ui components via Radix UI
+- **UI Components**:
   - Radix UI primitives (dialog, dropdown, select, etc.)
-  - Tabler Icons 3.34.1 and Lucide React 0.542.0
+  - Tabler Icons and Lucide React
   - Custom shadcn/ui components with class-variance-authority
-- **Forms**: React Hook Form 7.62.0 with Zod 4.1.4 validation
-- **State Management**: TanStack Query 5.85.5 (React Query)
-- **Data Tables**: @tanstack/react-table 8.21.3 for container data display
-- **Date Handling**: date-fns 4.1.0 with date-fns-tz 3.2.0 for timezone support
-- **Charts**: Recharts 2.15.4 for data visualization
-- **Notifications**: Sonner 2.0.7 for toast notifications
+- **Forms**: React Hook Form with Zod validation
+- **State Management**: TanStack Query (React Query)
+- **Data Tables**: @tanstack/react-table for container data display
+- **Date Handling**: date-fns with date-fns-tz for timezone support
+- **Charts**: Recharts for data visualization
+- **Notifications**: Sonner for toast notifications
 - **Drag & Drop**: @dnd-kit suite for sortable interfaces
-- **Theming**: next-themes 0.4.6 for dark/light mode
-- **Virtualization**: react-window 2.0.0 for large lists
+- **Theming**: next-themes for dark/light mode
+- **Virtualization**: react-window for large lists
 
 ### Backend
-- **API Framework**: Express.js 5.1.0
-- **Database**: SQLite with Prisma ORM 6.15.0
-- **Authentication**: Passport 0.7.0 with Google OAuth 2.0 strategy
-- **Validation**: Zod 4.1.4 for runtime type checking
-- **Logging**: Pino 9.9.0 with multi-file domain-specific logging architecture
-  - pino-http 10.5.0 for HTTP request logging
-  - pino-pretty 13.1.1 for development formatting
-  - pino-roll 3.1.0 for production log rotation
-- **Security**: 
-  - Helmet 8.1.0 for HTTP security headers
-  - CORS 2.8.5 for cross-origin requests
-  - crypto-js 4.2.0 for data encryption
-  - jsonwebtoken 9.0.2 for JWT tokens
+- **API Framework**: Express.js
+- **Database**: SQLite with Prisma ORM
+- **Authentication**: Passport with Google OAuth 2.0 strategy
+- **Validation**: Zod for runtime type checking
+- **Logging**: Pino with multi-file domain-specific logging architecture
+  - pino-http for HTTP request logging
+  - pino-pretty for development formatting
+  - pino-roll for production log rotation
+- **Security**:
+  - Helmet for HTTP security headers
+  - CORS for cross-origin requests
+  - crypto-js for data encryption
+  - jsonwebtoken for JWT tokens
 - **External API Integrations**:
-  - dockerode 4.0.7 for Docker API
-  - @azure/storage-blob 12.28.0 for Azure Storage
-  - cloudflare 4.5.0 for Cloudflare API
-  - pg 8.16.3 for PostgreSQL connectivity
-- **Scheduling**: node-cron 4.2.1 with cron-parser 5.3.1
-- **Caching**: node-cache 5.1.2 for in-memory caching
+  - dockerode for Docker API
+  - @azure/storage-blob for Azure Storage
+  - cloudflare for Cloudflare API
+  - pg for PostgreSQL connectivity
+- **Scheduling**: node-cron with cron-parser
+- **Caching**: node-cache for in-memory caching
 
 ### Development Tools
-- **Language**: TypeScript 5.8.3 (client) / 5.1.6 (server/lib)
+- **Language**: TypeScript
 - **Package Manager**: npm with workspaces
-- **Linting**: ESLint 9.33.0+ with TypeScript ESLint 8.39.0+
-- **Code Formatting**: Prettier 3.6.2
-- **Testing**: Vitest 4.x with Supertest 7.1.4 for API testing
+- **Linting**: ESLint with TypeScript ESLint
+- **Code Formatting**: Prettier
+- **Testing**: Vitest with Supertest for API testing
 - **Build & Development**:
-  - tsx 3.12.7 for TypeScript execution and watching
-  - cross-env 10.0.0 for cross-platform environment variables
-  - rimraf 6.0.1 for cross-platform file cleanup
+  - tsx for TypeScript execution and watching
+  - cross-env for cross-platform environment variables
+  - rimraf for cross-platform file cleanup
 - **Shared Types**: Centralized TypeScript definitions in `@mini-infra/types` package
 
 ## Development Environment Notes
