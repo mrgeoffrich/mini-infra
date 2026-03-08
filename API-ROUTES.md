@@ -355,6 +355,54 @@
 | POST | `/api/environments/:id/remediate-haproxy` | Remediate HAProxy |
 | GET | `/api/environments/:id/haproxy-status` | HAProxy status |
 | GET | `/api/environments/:id/remediation-preview` | Remediation preview |
+| GET | `/api/environments/:id/migration-preview` | HAProxy migration preview |
+| POST | `/api/environments/:id/migrate-haproxy` | Migrate legacy HAProxy to stack-managed |
+
+## Stacks (`/api/stacks`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stacks/` | List stacks (filter by `scope`, `environmentId`) |
+| GET | `/api/stacks/:stackId` | Get stack details |
+| POST | `/api/stacks/` | Create stack |
+| PUT | `/api/stacks/:stackId` | Update stack |
+| DELETE | `/api/stacks/:stackId` | Delete stack |
+| PUT | `/api/stacks/:stackId/services/:serviceName` | Update service |
+| GET | `/api/stacks/:stackId/plan` | Compute plan (diff desired vs running state) |
+| POST | `/api/stacks/:stackId/apply` | Apply planned changes |
+| GET | `/api/stacks/:stackId/status` | Get status with container state |
+| GET | `/api/stacks/:stackId/history` | Deployment history |
+| GET | `/api/stacks/:stackId/history/:deploymentId` | Deployment detail |
+
+## Stack Templates (`/api/stack-templates`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stack-templates/` | List templates |
+| GET | `/api/stack-templates/:templateId` | Get template |
+| GET | `/api/stack-templates/:templateId/versions` | List versions |
+| GET | `/api/stack-templates/:templateId/versions/:versionId` | Get version |
+| POST | `/api/stack-templates/` | Create template |
+| PATCH | `/api/stack-templates/:templateId` | Update template metadata |
+| POST | `/api/stack-templates/:templateId/draft` | Save draft version |
+| POST | `/api/stack-templates/:templateId/publish` | Publish draft as new version |
+| DELETE | `/api/stack-templates/:templateId/draft` | Delete draft |
+| DELETE | `/api/stack-templates/:templateId` | Delete template |
+| POST | `/api/stack-templates/:templateId/instantiate` | Create stack from template |
+
+## Monitoring (`/api/monitoring`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/monitoring/status` | Monitoring stack status |
+| POST | `/api/monitoring/stop` | Stop monitoring stack |
+| GET | `/api/monitoring/query` | Prometheus instant query |
+| GET | `/api/monitoring/query_range` | Prometheus range query |
+| GET | `/api/monitoring/targets` | Prometheus scrape targets |
+| GET | `/api/monitoring/loki/labels` | Loki label names |
+| GET | `/api/monitoring/loki/label/:name/values` | Loki label values |
+| GET | `/api/monitoring/loki/query_range` | Loki log range query |
+| GET | `/api/monitoring/loki/query` | Loki instant query |
 
 ## TLS Settings (`/api/tls`)
 

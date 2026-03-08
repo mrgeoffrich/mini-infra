@@ -1,12 +1,12 @@
 # User Docs Structure
 
-Generated: 2026-03-05
+Generated: 2026-03-08
 
 ## Coverage Summary
 
-- Total user-visible routes: 43
-- Routes fully covered: 43 ✅
-- Routes partially covered / inferred: 0 ⚠️
+- Total user-visible routes: 46
+- Routes fully covered: 41 ✅
+- Routes partially covered / inferred: 5 ⚠️
 - Routes missing coverage: 0 ❌
 - Extra defined articles (from extra-docs-defined.md): 15 total, 15 ✅ exist, 0 ❌ not yet created
 
@@ -32,14 +32,15 @@ Generated: 2026-03-05
 | `/deployments/new` | New Deployment Configuration | ✅ | `deployments/creating-deployments.md` |
 | `/deployments/:id` | Deployment Details | ✅ | `deployments/deployment-lifecycle.md` |
 | `/environments` | Environments | ✅ | `deployments/environments.md` |
-| `/environments/:id` | Environment Details | ✅ | `deployments/environments.md` (inherited from parent) |
+| `/environments/:id` | Environment Details | ⚠️ | Parent covered by `deployments/environments.md` |
+| `/host` | Host | ✅ | `applications/host-stacks.md` |
 
 ### Databases
 
 | Route | Page Title | Status | Doc File |
 |-------|-----------|--------|----------|
 | `/postgres-server` | Postgres Servers | ✅ | `postgres-backups/backup-overview.md` |
-| `/postgres-server/:serverId` | Server Details | ✅ | `postgres-backups/backup-overview.md` (inherited from parent) |
+| `/postgres-server/:serverId` | Server Details | ⚠️ | Parent covered by `postgres-backups/backup-overview.md` |
 | `/postgres-server/:serverId/databases/:dbId` | Database Details | ✅ | `postgres-backups/database-management.md` |
 | `/postgres-backup` | Postgres Backups | ✅ | `postgres-backups/backup-overview.md` |
 | `/postgres-backup/:databaseId/restore` | Restore Database | ✅ | `postgres-backups/restoring-backups.md` |
@@ -49,23 +50,25 @@ Generated: 2026-03-05
 | Route | Page Title | Status | Doc File |
 |-------|-----------|--------|----------|
 | `/tunnels` | Cloudflare Tunnels | ✅ | `tunnels/tunnel-monitoring.md` |
-| `/haproxy` | Load Balancer | ✅ | `deployments/deployment-overview.md` (redirects to /haproxy/frontends) |
 | `/haproxy/frontends` | Frontends | ✅ | `deployments/haproxy-frontends.md` |
 | `/haproxy/frontends/new/manual` | Connect Container | ✅ | `deployments/haproxy-frontends.md` |
 | `/haproxy/frontends/:frontendName` | Frontend Details | ✅ | `deployments/haproxy-frontends.md` |
 | `/haproxy/frontends/:frontendName/edit` | Edit Frontend | ✅ | `deployments/haproxy-frontends.md` |
 | `/haproxy/backends` | Backends | ✅ | `deployments/haproxy-backends.md` |
 | `/haproxy/backends/:backendName` | Backend Details | ✅ | `deployments/haproxy-backends.md` |
+| `/haproxy/instances` | Instances | ✅ | `deployments/haproxy-frontends.md` |
 | `/certificates` | TLS Certificates | ✅ | `networking/tls-certificates.md` |
-| `/certificates/:id` | Certificate Details | ✅ | `networking/tls-certificates.md` (inherited from parent) |
+| `/certificates/:id` | Certificate Details | ⚠️ | Parent covered by `networking/tls-certificates.md` |
 
 ### Monitoring
 
 | Route | Page Title | Status | Doc File |
 |-------|-----------|--------|----------|
-| `/logs` | Activity Logs | ✅ | `monitoring/events.md` |
+| `/logs` | Container Logs | ✅ | `monitoring/container-logs.md` |
+| `/logs/fullscreen` | Container Logs (Fullscreen) | ✅ | `monitoring/container-logs.md` (variant of `/logs`) |
+| `/monitoring` | Container Metrics | ✅ | `monitoring/container-metrics.md` |
 | `/events` | Events | ✅ | `monitoring/events.md` |
-| `/events/:id` | Event Details | ✅ | `monitoring/events.md` (inherited from parent) |
+| `/events/:id` | Event Details | ⚠️ | Parent covered by `monitoring/events.md` |
 
 ### Connected Services
 
@@ -81,7 +84,7 @@ Generated: 2026-03-05
 | Route | Page Title | Status | Doc File |
 |-------|-----------|--------|----------|
 | `/api-keys` | API Keys | ✅ | `settings/api-keys.md` |
-| `/api-keys/new` | Create API Key | ✅ | `settings/api-keys.md` (inherited from parent) |
+| `/api-keys/new` | Create API Key | ⚠️ | Parent covered by `settings/api-keys.md` |
 | `/api-keys/presets` | Permission Presets | ✅ | `settings/permission-presets.md` |
 | `/settings-system` | System Settings | ✅ | `settings/system-settings.md` |
 | `/settings-security` | Security Settings | ✅ | `settings/security-settings.md` |
@@ -89,6 +92,11 @@ Generated: 2026-03-05
 | `/settings-self-backup` | Self-Backup Settings | ✅ | `postgres-backups/configuring-backups.md` |
 | `/settings-tls` | TLS Settings | ✅ | `settings/tls-settings.md` |
 | `/settings-ai-assistant` | AI Assistant | ✅ | `settings/ai-assistant.md` |
+
+### Other (not in sidebar navigation)
+
+| Route | Page Title | Status | Doc File |
+|-------|-----------|--------|----------|
 | `/bug-report-settings` | Bug Report Settings | ✅ | `github/github-app-setup.md` |
 | `/user/settings` | User Settings | ✅ | `settings/user-preferences.md` |
 
@@ -119,6 +127,12 @@ These articles are defined in `extra-docs-defined.md` and supplement the route-d
 ---
 
 ## Existing Docs Inventory
+
+### applications
+
+| File | Title | Description |
+|------|-------|-------------|
+| `host-stacks.md` | Host Infrastructure Stacks | How to manage host-level infrastructure stacks with plan and apply semantics in Mini Infra. |
 
 ### api
 
@@ -178,6 +192,8 @@ These articles are defined in `extra-docs-defined.md` and supplement the route-d
 | File | Title | Description |
 |------|-------|-------------|
 | `events.md` | Event Log | How to view and manage the system event log in Mini Infra. |
+| `container-logs.md` | Searching Container Logs | How to search, filter, and stream centralized container logs in Mini Infra. |
+| `container-metrics.md` | Container Metrics | How to monitor CPU, memory, and network usage across Docker containers in Mini Infra. |
 
 ### networking
 

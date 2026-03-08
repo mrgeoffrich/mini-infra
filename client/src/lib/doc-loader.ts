@@ -65,10 +65,13 @@ export interface DocCategory {
 
 const categoryOrder: string[] = [
   "getting-started",
+  "applications",
   "containers",
   "postgres-backups",
   "deployments",
+  "networking",
   "tunnels",
+  "monitoring",
   "connectivity",
   "github",
   "api",

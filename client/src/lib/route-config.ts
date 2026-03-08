@@ -197,6 +197,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Host-level infrastructure stacks",
+    helpDoc: "applications/host-stacks",
   },
 
   "/tunnels": {
@@ -246,6 +247,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "monitoring",
     description: "Search and browse centralized container logs",
+    helpDoc: "monitoring/container-logs",
   },
 
   "/monitoring": {
@@ -256,6 +258,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "monitoring",
     description: "Monitor CPU, memory, and network usage across containers",
+    helpDoc: "monitoring/container-metrics",
   },
 
   "/events": {
