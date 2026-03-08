@@ -75,63 +75,59 @@ RUN apk add --no-cache dumb-init=1.2.5-r3 docker-cli github-cli
 
 WORKDIR /app
 
-# Copy root package.json for workspace resolution
-COPY package*.json ./
+# --- Dependency layer (cached unless package.json or prisma schema changes) ---
+# These layers are large (~710MB) but rarely change, so they should come first.
 
-# Copy lib package.json
-COPY lib/package*.json ./lib/
+# Copy package files for workspace resolution and npm install
+COPY --chown=node:node package*.json ./
+COPY --chown=node:node lib/package*.json ./lib/
+COPY --chown=node:node server/package*.json ./server/
 
-# Copy built lib artifacts
-COPY --from=lib-builder /app/lib/dist ./lib/dist
+# Copy Prisma schema for client generation (migrations copied later with code)
+COPY --chown=node:node server/prisma/schema.prisma ./server/prisma/schema.prisma
 
-# Copy server package.json
-COPY server/package*.json ./server/
-
-# Copy built frontend assets (served by Express from server/public)
-COPY --from=client-builder /app/server/public ./server/public
-
-# Copy built backend JavaScript
-COPY --from=server-builder /app/server/dist ./server/dist
-
-# Copy Prisma schema and migrations for runtime
-COPY server/prisma ./server/prisma
-
-# Copy configuration files
-COPY server/config ./server/config
-
-# Copy stack template files (HAProxy, monitoring, etc.)
-COPY server/templates ./server/templates
-
-# Copy startup script
-COPY server/docker-entrypoint.sh ./server/docker-entrypoint.sh
-
-# Create agent working directory and copy user documentation
-COPY client/src/user-docs/ /app/agent/docs/
-
-# Create directories for data, logs, and agent with proper permissions
-RUN mkdir -p /app/data /app/server/logs /app/agent
-
-# Make startup script executable
-RUN chmod +x /app/server/docker-entrypoint.sh
-
-# Change ownership of the entire app directory once, before switching users
-# This is more efficient than chown after creating thousands of node_modules files
-RUN chown -R node:node /app
+# Create directories with proper ownership
+RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 
 # Switch to non-root user for security BEFORE running npm/prisma
-# This way all generated files (node_modules, .prisma) are owned by node from the start
 USER node
 
-# Install production dependencies only (after copying package files)
+# Install production dependencies only
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     npm install --workspace=lib --workspace=server --omit=dev
 
 # Generate Prisma client in production environment
-# This creates the client code in node_modules/.prisma/client based on the schema
 WORKDIR /app/server
 RUN npx prisma generate
 
 WORKDIR /app
+
+# --- Code layer (changes on every code change, but small ~20MB) ---
+
+# Copy built lib artifacts
+COPY --chown=node:node --from=lib-builder /app/lib/dist ./lib/dist
+
+# Copy built frontend assets (served by Express from server/public)
+COPY --chown=node:node --from=client-builder /app/server/public ./server/public
+
+# Copy built backend JavaScript
+COPY --chown=node:node --from=server-builder /app/server/dist ./server/dist
+
+# Copy Prisma migrations for runtime (migrate deploy)
+COPY --chown=node:node server/prisma/migrations ./server/prisma/migrations
+
+# Copy configuration files
+COPY --chown=node:node server/config ./server/config
+
+# Copy stack template files (HAProxy, monitoring, etc.)
+COPY --chown=node:node server/templates ./server/templates
+
+# Copy startup script
+COPY --chown=node:node server/docker-entrypoint.sh ./server/docker-entrypoint.sh
+RUN chmod +x /app/server/docker-entrypoint.sh
+
+# Copy user documentation for agent
+COPY --chown=node:node client/src/user-docs/ /app/agent/docs/
 
 # Set environment to production
 ENV NODE_ENV=production
