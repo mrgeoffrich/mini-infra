@@ -1,82 +1,71 @@
 # Multi-stage Docker build for Mini Infra
-# Stage 1: Build shared types library
-# Stage 2: Build frontend application
-# Stage 3: Build backend application
-# Stage 4: Production runtime image
+# Stage 1: Install all dependencies (shared across build stages)
+# Stage 2: Build shared types library
+# Stage 3: Build frontend application
+# Stage 4: Build backend application
+# Stage 5: Production runtime image
 
 # ============================================
-# Stage 1: Build shared types library
+# Stage 1: Install all workspace dependencies
 # ============================================
-FROM node:24-alpine AS lib-builder
+FROM node:24-alpine AS deps
 
 WORKDIR /app
 
-# Copy root package files for workspace configuration
+# Copy only package files first for optimal layer caching
+# Changes to source code won't bust this layer
 COPY package*.json ./
+COPY lib/package*.json ./lib/
+COPY client/package*.json ./client/
+COPY server/package*.json ./server/
 
-# Copy lib package
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --production=false
+
+# ============================================
+# Stage 2: Build shared types library
+# ============================================
+FROM deps AS lib-builder
+
+# Copy lib source (deps already installed)
 COPY lib ./lib
 
-# Install dependencies and build shared types
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --workspace=lib && \
-    npm run build:lib
+RUN npm run build:lib
 
 # ============================================
-# Stage 2: Build frontend application
+# Stage 2b: deps with built lib available
+# (needed because workspace symlinks resolve through lib/)
 # ============================================
-FROM node:24-alpine AS client-builder
+FROM deps AS deps-with-lib
 
-WORKDIR /app
+COPY --from=lib-builder /app/lib/dist ./lib/dist
+COPY --from=lib-builder /app/lib/types ./lib/types
+COPY --from=lib-builder /app/lib/tsconfig.json ./lib/tsconfig.json
 
-# Copy built lib from previous stage
-COPY --from=lib-builder /app/lib ./lib
+# ============================================
+# Stage 3: Build frontend application
+# ============================================
+FROM deps-with-lib AS client-builder
 
-# Copy root package files
-COPY package*.json ./
-
-# Copy client package
+# Copy client source only (deps + built lib already available)
 COPY client ./client
 
-# Install dependencies for client workspace
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --workspace=client
-
 # Build frontend (outputs to server/public via vite.config.ts)
-WORKDIR /app/client
-RUN npm run build
-
-WORKDIR /app
+RUN npm run build -w client
 
 # ============================================
-# Stage 3: Build backend application
+# Stage 4: Build backend application
 # ============================================
-FROM node:24-alpine AS server-builder
+FROM deps-with-lib AS server-builder
 
-WORKDIR /app
-
-# Copy built lib from lib-builder stage
-COPY --from=lib-builder /app/lib ./lib
-
-# Copy root package files
-COPY package*.json ./
-
-# Copy server package
+# Copy server source only (deps + built lib already available)
 COPY server ./server
 
-# Install all dependencies (including dev dependencies for build)
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --workspace=server --production=false
-
 # Generate Prisma client and build backend
-WORKDIR /app/server
-RUN npx prisma generate && \
-    npm run build
-
-WORKDIR /app
+RUN cd server && npx prisma generate && npm run build
 
 # ============================================
-# Stage 4: Production runtime image
+# Stage 5: Production runtime image
 # ============================================
 FROM node:24-alpine AS production
 
