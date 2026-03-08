@@ -174,6 +174,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           actions={applyProgress.actions}
           completedResults={applyProgress.completedResults}
           totalActions={applyProgress.totalActions}
+          forcePull={applyProgress.forcePull}
           result={applyProgress.finalResult ?? undefined}
         />
         {applyProgress.finalResult && (
@@ -240,15 +241,50 @@ export const StackPlanView = React.memo(function StackPlanView({
             </p>
           </div>
           <div className="ml-4 flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRedeploy}
-              disabled={applyMutation.isPending || destroyMutation.isPending}
-            >
-              <IconCloudDownload className="h-4 w-4 mr-2" />
-              {applyMutation.isPending ? "Pulling..." : "Redeploy Containers"}
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={applyMutation.isPending || destroyMutation.isPending}
+                >
+                  <IconCloudDownload className="h-4 w-4 mr-2" />
+                  {applyMutation.isPending ? "Pulling..." : "Redeploy Containers"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Redeploy Containers</AlertDialogTitle>
+                  <AlertDialogDescription asChild>
+                    <div className="space-y-3">
+                      <p>
+                        This will pull the latest image for each service and recreate
+                        any containers where the image has changed.
+                      </p>
+                      <div className="rounded-md border p-3 space-y-1.5">
+                        {sortedActions.map((a) => (
+                          <div key={a.serviceName} className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{a.serviceName}</span>
+                            <span className="text-muted-foreground font-mono text-xs truncate ml-4 max-w-[260px]">
+                              {a.desiredImage ?? a.currentImage ?? "—"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Services with unchanged images will not be restarted.
+                      </p>
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRedeploy}>
+                    Pull &amp; Redeploy
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button
               variant="ghost"
               size="sm"

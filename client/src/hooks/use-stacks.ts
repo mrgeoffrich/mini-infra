@@ -319,6 +319,7 @@ export interface StackApplyProgressState {
   totalActions: number;
   completedResults: ServiceApplyResult[];
   actions: Array<{ serviceName: string; action: string }>;
+  forcePull: boolean;
   finalResult: (ApplyResult & { error?: string; postApply?: { success: boolean; errors?: string[] } }) | null;
 }
 
@@ -327,6 +328,7 @@ const INITIAL_APPLY_STATE: StackApplyProgressState = {
   totalActions: 0,
   completedResults: [],
   actions: [],
+  forcePull: false,
   finalResult: null,
 };
 
@@ -352,6 +354,7 @@ export function useStackApplyProgress(stackId: string) {
         totalActions: data.totalActions,
         completedResults: [],
         actions: data.actions,
+        forcePull: !!data.forcePull,
         finalResult: null,
       });
     },
@@ -365,6 +368,9 @@ export function useStackApplyProgress(stackId: string) {
       if (data.stackId !== stackId) return;
       setApplyState((prev) => ({
         ...prev,
+        // For forcePull, update totalActions from actual apply progress
+        // since the initial STARTED event used "pull" placeholders
+        totalActions: prev.forcePull && data.totalActions != null ? data.totalActions : prev.totalActions,
         completedResults: [...prev.completedResults, data],
       }));
     },
@@ -391,6 +397,8 @@ export function useStackApplyProgress(stackId: string) {
       // Toast notification
       if (data.error) {
         toast.error(`Stack apply failed: ${data.error}`);
+      } else if (data.success && data.serviceResults.length === 0 && prev.forcePull) {
+        toast.success('All images are up to date');
       } else if (data.success) {
         toast.success(`Stack applied successfully (v${data.appliedVersion})`);
       } else {

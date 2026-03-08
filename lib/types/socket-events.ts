@@ -263,6 +263,7 @@ export interface ServerToClientEvents {
     stackName: string;
     totalActions: number;
     actions: Array<{ serviceName: string; action: string }>;
+    forcePull?: boolean;
   }) => void;
   /** Individual service within a stack apply completed */
   "stack:apply:service-result": (data: ServiceApplyResult & {

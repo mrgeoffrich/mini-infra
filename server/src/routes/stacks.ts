@@ -342,14 +342,25 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
       plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
     }
 
+    // For forcePull, include all services since any could be promoted to recreate
+    // after pulling new images. Mark them as "pull" initially.
+    const isForcePull = !!parsed.data.forcePull;
+    let startedActions: Array<{ serviceName: string; action: string }>;
+    if (isForcePull && plannedActions.length === 0) {
+      startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
+    } else {
+      startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
+    }
+
     applyingStacks.add(stackId);
 
     // Emit started event
     emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
       stackId,
       stackName: plan.stackName,
-      totalActions: plannedActions.length,
-      actions: plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action })),
+      totalActions: startedActions.length,
+      actions: startedActions,
+      forcePull: isForcePull,
     });
 
     // Respond immediately — progress comes via Socket.IO
