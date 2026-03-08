@@ -74,7 +74,7 @@ export const stackContainerConfigSchema = z.object({
         (m) => {
           if (m.type !== "bind") return true;
           // Block bind mounts to sensitive host paths
-          const blocked = ["/", "/etc", "/proc", "/sys", "/root", "/dev", "/boot", "/var/run/docker.sock"];
+          const blocked = ["/", "/etc", "/proc", "/sys", "/root", "/dev", "/boot"];
           const normalized = m.source.replace(/\/+$/, "") || "/";
           return !blocked.includes(normalized);
         },

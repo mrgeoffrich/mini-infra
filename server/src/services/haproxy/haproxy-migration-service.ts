@@ -236,6 +236,20 @@ export class HAProxyMigrationService {
       };
     }
 
+    // Pre-flight: verify the haproxy stack definition exists BEFORE any destructive action
+    const haproxyStack = await prisma.stack.findFirst({
+      where: { name: 'haproxy', environmentId },
+    });
+    if (!haproxyStack) {
+      const msg = 'HAProxy stack definition not found for this environment. Run server restart to sync built-in stacks.';
+      logger.error({ environmentId }, msg);
+      return {
+        success: false,
+        steps: [{ step: 'Pre-flight: verify stack exists', status: 'failed', detail: msg }],
+        errors: [msg],
+      };
+    }
+
     // Refine total step count now that we know the preview
     // remove container (1) + remove volumes (N) + apply stack (1) + restore state (~3) + update record (1)
     totalSteps = 1 + preview.legacyVolumes.length + 1 + 3 + 1;
@@ -278,17 +292,7 @@ export class HAProxyMigrationService {
       }
     }
 
-    // Step 3: Apply haproxy stack
-    const haproxyStack = await prisma.stack.findFirst({
-      where: { name: 'haproxy', environmentId },
-    });
-
-    if (!haproxyStack) {
-      const msg = 'HAProxy stack definition not found for this environment. Run server restart to sync built-in stacks.';
-      emitStep({ step: 'Apply haproxy stack', status: 'failed', detail: msg });
-      return { success: false, steps, errors };
-    }
-
+    // Step 3: Apply haproxy stack (pre-validated above)
     try {
       logger.info({ stackId: haproxyStack.id }, 'Applying haproxy stack');
       const reconciler = new StackReconciler(dockerExecutor, prisma);
