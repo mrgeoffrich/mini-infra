@@ -312,6 +312,8 @@ export interface FieldDiff {
 export interface ApplyOptions {
   serviceNames?: string[];
   dryRun?: boolean;
+  /** Pull all images and recreate containers whose image digest changed */
+  forcePull?: boolean;
   triggeredBy?: string;
   /** Pre-computed plan to avoid re-computing inside apply() */
   plan?: StackPlan;
@@ -336,12 +338,22 @@ export interface ServiceApplyResult {
   containerId?: string;
 }
 
+export interface DestroyResult {
+  success: boolean;
+  stackId: string;
+  containersRemoved: number;
+  networksRemoved: string[];
+  volumesRemoved: string[];
+  duration: number;
+  error?: string;
+}
+
 // Deployment history
 
 export interface StackDeploymentRecord {
   id: string;
   stackId: string;
-  action: 'apply' | 'stop';
+  action: 'apply' | 'stop' | 'destroy';
   success: boolean;
   version: number | null;
   status: StackStatus;
@@ -390,6 +402,8 @@ export interface UpdateStackServiceRequest {
 export interface ApplyStackRequest {
   serviceNames?: string[];
   dryRun?: boolean;
+  /** Pull all images and recreate containers whose image digest changed */
+  forcePull?: boolean;
 }
 
 // API response types

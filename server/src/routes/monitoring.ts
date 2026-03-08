@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import { Router } from 'express';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
@@ -9,8 +10,11 @@ import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../
 const router = Router();
 const logger = appLogger();
 
-const PROMETHEUS_URL = 'http://localhost:9090';
-const LOKI_URL = 'http://localhost:3100';
+// When the server runs inside Docker, use container names on the shared network.
+// When running on the host, use localhost with the published ports.
+const inDocker = existsSync('/.dockerenv');
+const PROMETHEUS_URL = inDocker ? 'http://monitoring-prometheus:9090' : 'http://localhost:9090';
+const LOKI_URL = inDocker ? 'http://monitoring-loki:3100' : 'http://localhost:3100';
 
 async function getMonitoringStack() {
   return prisma.stack.findFirst({

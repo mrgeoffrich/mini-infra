@@ -12,6 +12,7 @@ import type {
   ServiceAction,
   FieldDiff,
   ApplyResult,
+  DestroyResult,
   ServiceApplyResult,
   ApplyStackRequest,
   StackListResponse,
@@ -205,6 +206,39 @@ async function deleteStack(
 
   if (!response.ok) {
     let errorMessage = `Failed to delete stack: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // Use default error message
+    }
+    throw new Error(errorMessage);
+  }
+
+  return await response.json();
+}
+
+async function destroyStack(
+  stackId: string,
+  correlationId?: string,
+): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
+  const response = await fetch(`/api/stacks/${stackId}/destroy`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 503) {
+      throw new Error("Docker is unavailable");
+    }
+    if (response.status === 409) {
+      throw new Error("An operation is already in progress for this stack");
+    }
+    let errorMessage = `Failed to destroy stack: ${response.statusText}`;
     try {
       const errorData = await response.json();
       errorMessage = errorData.message || errorMessage;
@@ -421,6 +455,65 @@ export function useDeleteStack() {
   });
 }
 
+export function useStackDestroy() {
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: (stackId: string) => destroyStack(stackId, correlationId),
+    onSuccess: () => {
+      // HTTP response just confirms the destroy started.
+      // Final results come via Socket.IO events.
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to destroy stack: ${error.message}`);
+    },
+  });
+}
+
+/** Listen for stack destroy completion events */
+export function useStackDestroyProgress(stackId: string | null) {
+  const queryClient = useQueryClient();
+  const [destroying, setDestroying] = useState(false);
+  const [result, setResult] = useState<(DestroyResult & { error?: string }) | null>(null);
+
+  useSocketChannel(Channel.STACKS, !!stackId);
+
+  useSocketEvent(
+    ServerEvent.STACK_DESTROY_STARTED,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setDestroying(true);
+      setResult(null);
+    },
+    !!stackId,
+  );
+
+  useSocketEvent(
+    ServerEvent.STACK_DESTROY_COMPLETED,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setDestroying(false);
+      setResult(data);
+
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+
+      if (data.error) {
+        toast.error(`Stack destroy failed: ${data.error}`);
+      } else if (data.success) {
+        toast.success("Stack destroyed successfully");
+      }
+    },
+    !!stackId,
+  );
+
+  const reset = useCallback(() => {
+    setDestroying(false);
+    setResult(null);
+  }, []);
+
+  return { destroying, result, reset };
+}
+
 // ====================
 // Type Exports
 // ====================
@@ -432,6 +525,7 @@ export type {
   ServiceAction,
   FieldDiff,
   ApplyResult,
+  DestroyResult,
   ServiceApplyResult,
   ApplyStackRequest,
 };

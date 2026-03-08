@@ -252,4 +252,5 @@ export const updateStackServiceSchema = z.object({
 export const applyStackSchema = z.object({
   serviceNames: z.array(z.string()).optional(),
   dryRun: z.boolean().optional(),
+  forcePull: z.boolean().optional(),
 });
