@@ -21,7 +21,7 @@ import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedCha
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
-import appConfig from "./config-new";
+import appConfig, { corsOrigin } from "./config-new";
 
 const logger = appLogger();
 
@@ -68,11 +68,6 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     logger.warn("Socket.IO server already initialized, returning existing instance");
     return io;
   }
-
-  const DEV_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:5005"];
-  const corsOrigin =
-    appConfig.server.publicUrl ||
-    (appConfig.server.nodeEnv === "development" ? DEV_CORS_ORIGINS : false);
 
   io = new Server<
     ClientToServerEvents,
