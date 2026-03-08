@@ -26,7 +26,7 @@ Each job is scoped to fit within a single Opus context window. Jobs are sequenti
 - Add `deserializeStack(definition, environmentId) → CreateStackInput` that produces the shape needed to upsert into the DB
 - The `lastAppliedSnapshot` field on Stack stores data in this same `StackDefinition` shape, keeping snapshots consistent with the export format
 
-**Verification:** `npx prisma generate` succeeds, `cd lib && npm run build` succeeds
+**Verification:** `npx -w server prisma generate` succeeds, `npm run build -w lib` succeeds
 
 ---
 

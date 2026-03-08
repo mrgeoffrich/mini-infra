@@ -16,13 +16,13 @@
 Use the built-in development API key when talking to the backend.
 
 ```bash
-cd server && npm run show-dev-key
+npm run show-dev-key -w server
 ```
 
 Recreate the key if needed:
 
 ```bash
-cd server && npm run show-dev-key -- --recreate
+npm run show-dev-key -w server -- --recreate
 ```
 
 Pass the key to requests with either header:
@@ -47,14 +47,14 @@ The dev key appears when `npm run dev` is running.
 - External integrations: dockerode, Azure Blob Storage, Cloudflare, PostgreSQL health checks, HAProxy orchestration.
 
 ### Shared Types (lib/)
-- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`npm run dev` or `npm run build` inside `lib/`).
+- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`npm run dev -w lib` or `npm run build -w lib`).
 
 ## High-Value Workflows
 - **Run whole stack in dev**: `npm run dev` (from repo root). Starts lib watcher, server, and client simultaneously.
-- **Server only**: `cd server && npm run dev`
-- **Client only**: `cd client && npm run dev`
+- **Server only**: `npm run dev -w server`
+- **Client only**: `npm run dev -w client`
 - **Build everything**: `npm run build:all`
-- **Vitest tests**: `cd server && npm test`; run a single file with `npx vitest run <filename>`.
+- **Vitest tests**: `npm test -w server`; run a single file with `npx -w server vitest run <filename>`.
 - **Lint**: `npm run lint` (root), or workspace-specific variants.
 - **Format**: `npm run format` (root) or `npm run format:check`.
 

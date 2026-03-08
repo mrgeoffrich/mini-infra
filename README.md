@@ -101,13 +101,13 @@ Pre-built Docker images and deployment configurations are available in the [`dep
 ## Running Tests
 
 ```bash
-cd server && npm test
+npm test -w server
 ```
 
 To run a single test file:
 
 ```bash
-cd server && npx vitest run src/__tests__/your-test-file.test.ts
+npx -w server vitest run src/__tests__/your-test-file.test.ts
 ```
 
 ## Tech Stack

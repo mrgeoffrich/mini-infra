@@ -111,7 +111,7 @@ Errors return:
 In development mode, Mini Infra automatically creates a development API key with full access. To display it:
 
 ```bash
-cd server && npm run show-dev-key
+npm run show-dev-key -w server
 ```
 
 This key only works in development mode (`NODE_ENV=development`).
