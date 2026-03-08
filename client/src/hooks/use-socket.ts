@@ -131,10 +131,12 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(
       (handlerRef.current as (...a: unknown[]) => void)(...args);
     }) as ServerToClientEvents[E];
 
-    socketInstance.on(event, listener);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socketInstance.on(event as any, listener as any);
 
     return () => {
-      socketInstance.off(event, listener);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socketInstance.off(event as any, listener as any);
     };
   }, [socketInstance, event, enabled]);
 }
