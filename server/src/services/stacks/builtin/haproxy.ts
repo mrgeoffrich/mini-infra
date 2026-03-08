@@ -137,7 +137,9 @@ async function buildHAProxyDefinition(
 
 export const haproxyStack: BuiltinStackDefinition = {
   name: "haproxy",
+  displayName: "HAProxy Load Balancer",
   builtinVersion: 3,
   scope: 'environment',
+  category: 'infrastructure',
   resolve: (context) => buildHAProxyDefinition(context),
 };

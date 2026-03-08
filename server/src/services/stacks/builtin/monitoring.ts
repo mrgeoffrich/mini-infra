@@ -345,7 +345,9 @@ function buildMonitoringDefinition(): StackDefinition {
 
 export const monitoringStack: BuiltinStackDefinition = {
   name: "monitoring",
+  displayName: "Monitoring Stack",
   builtinVersion: 2,
   scope: "host",
+  category: 'infrastructure',
   resolve: async () => buildMonitoringDefinition(),
 };

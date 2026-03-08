@@ -46,10 +46,14 @@ export class StackReconciler {
   async plan(stackId: string): Promise<StackPlan> {
     const log = servicesLogger().child({ operation: 'stack-plan', stackId });
 
-    // 1. Load stack with services and environment
+    // 1. Load stack with services, environment, and template version info
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } }, environment: true },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        environment: true,
+        template: { select: { currentVersion: { select: { version: true } } } },
+      },
     });
 
     log.info({ stackName: stack.name, serviceCount: stack.services.length }, 'Computing plan');
@@ -144,6 +148,11 @@ export class StackReconciler {
       }
     }
 
+    const templateUpdateAvailable =
+      stack.templateVersion != null &&
+      (stack as any).template?.currentVersion?.version != null &&
+      (stack as any).template.currentVersion.version > stack.templateVersion;
+
     const plan: StackPlan = {
       stackId,
       stackName: stack.name,
@@ -151,6 +160,7 @@ export class StackReconciler {
       planTime: new Date().toISOString(),
       actions,
       hasChanges: actions.some((a) => a.action !== 'no-op'),
+      templateUpdateAvailable,
     };
 
     log.info(

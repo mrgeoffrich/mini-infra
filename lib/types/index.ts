@@ -68,6 +68,9 @@ export * from "./agent";
 // Stacks types
 export * from "./stacks";
 
+// Stack Template types
+export * from "./stack-templates";
+
 // ====================
 // Type Utilities
 // ====================

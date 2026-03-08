@@ -1,0 +1,932 @@
+import { PrismaClient, Prisma } from "@prisma/client";
+import type {
+  StackTemplateInfo,
+  StackTemplateVersionInfo,
+  StackTemplateServiceInfo,
+  StackTemplateConfigFileInfo,
+  StackTemplateConfigFileInput,
+  CreateStackTemplateRequest,
+  UpdateStackTemplateRequest,
+  DraftVersionInput,
+  PublishDraftRequest,
+  CreateStackFromTemplateRequest,
+  StackTemplateSource,
+  StackTemplateScope,
+} from "@mini-infra/types";
+import type {
+  StackServiceDefinition,
+  StackParameterDefinition,
+  StackParameterValue,
+  StackInfo,
+  StackDefinition,
+} from "@mini-infra/types";
+import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
+
+// Input shape for upserting system templates from builtin definitions
+export interface UpsertSystemTemplateInput {
+  name: string;
+  displayName: string;
+  scope: StackTemplateScope;
+  category?: string;
+  builtinVersion: number;
+  definition: StackDefinition;
+  configFiles?: StackTemplateConfigFileInput[];
+}
+
+// Include helpers for Prisma queries
+const versionWithDetails = {
+  services: { orderBy: { order: "asc" as const } },
+  configFiles: true,
+};
+
+const versionSummary = {
+  id: true,
+  templateId: true,
+  version: true,
+  status: true,
+  notes: true,
+  parameters: true,
+  defaultParameterValues: true,
+  networks: true,
+  volumes: true,
+  publishedAt: true,
+  createdAt: true,
+  createdById: true,
+};
+
+export class StackTemplateService {
+  constructor(private prisma: PrismaClient) {}
+
+  // =====================
+  // Query Methods
+  // =====================
+
+  async listTemplates(opts?: {
+    source?: StackTemplateSource;
+    scope?: StackTemplateScope;
+    includeArchived?: boolean;
+  }): Promise<StackTemplateInfo[]> {
+    const where: any = {};
+    if (opts?.source) where.source = opts.source;
+    if (opts?.scope) where.scope = opts.scope;
+    if (!opts?.includeArchived) where.isArchived = false;
+
+    const templates = await this.prisma.stackTemplate.findMany({
+      where,
+      include: {
+        currentVersion: { select: versionSummary },
+        draftVersion: { select: versionSummary },
+      },
+      orderBy: { name: "asc" },
+    });
+
+    return templates.map((t) => this.serializeTemplate(t));
+  }
+
+  async getTemplate(
+    templateId: string,
+    opts?: { includeVersions?: boolean }
+  ): Promise<StackTemplateInfo | null> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+      include: {
+        currentVersion: {
+          include: versionWithDetails,
+        },
+        draftVersion: {
+          include: versionWithDetails,
+        },
+        ...(opts?.includeVersions
+          ? {
+              versions: {
+                orderBy: { version: "desc" as const },
+                select: versionSummary,
+              },
+            }
+          : {}),
+      },
+    });
+
+    if (!template) return null;
+    return this.serializeTemplate(template);
+  }
+
+  async getTemplateVersion(
+    versionId: string
+  ): Promise<StackTemplateVersionInfo | null> {
+    const version = await this.prisma.stackTemplateVersion.findUnique({
+      where: { id: versionId },
+      include: versionWithDetails,
+    });
+
+    if (!version) return null;
+    return this.serializeVersion(version);
+  }
+
+  async getPublishedVersion(
+    templateId: string
+  ): Promise<StackTemplateVersionInfo | null> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+      select: { currentVersionId: true },
+    });
+
+    if (!template?.currentVersionId) return null;
+    return this.getTemplateVersion(template.currentVersionId);
+  }
+
+  async listVersions(templateId: string): Promise<StackTemplateVersionInfo[]> {
+    const versions = await this.prisma.stackTemplateVersion.findMany({
+      where: { templateId },
+      include: versionWithDetails,
+      orderBy: { version: "desc" },
+    });
+
+    return versions.map((v) => this.serializeVersion(v));
+  }
+
+  // =====================
+  // User Template CRUD
+  // =====================
+
+  async createUserTemplate(
+    input: CreateStackTemplateRequest,
+    createdById?: string
+  ): Promise<StackTemplateInfo> {
+    // Check for name collision
+    const existing = await this.prisma.stackTemplate.findUnique({
+      where: { name_source: { name: input.name, source: "user" } },
+    });
+    if (existing) {
+      throw new TemplateError(
+        `A user template named "${input.name}" already exists`,
+        409
+      );
+    }
+
+    // Extract config files from services (they come embedded in StackServiceDefinition.configFiles)
+    // and also accept top-level configFiles input
+    const configFileInputs = input.configFiles ?? [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create template
+      const template = await tx.stackTemplate.create({
+        data: {
+          name: input.name,
+          displayName: input.displayName,
+          description: input.description ?? null,
+          source: "user",
+          scope: input.scope,
+          category: input.category ?? null,
+          createdById: createdById ?? null,
+        },
+      });
+
+      // Create draft version (version 0)
+      const version = await tx.stackTemplateVersion.create({
+        data: {
+          templateId: template.id,
+          version: 0,
+          status: "draft",
+          parameters: (input.parameters ?? []) as any,
+          defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
+          networks: input.networks as any,
+          volumes: input.volumes as any,
+          createdById: createdById ?? null,
+          services: {
+            create: input.services.map((s, i) =>
+              toTemplateServiceCreate(s, i)
+            ),
+          },
+          configFiles: {
+            create: configFileInputs.map(toTemplateConfigFileCreate),
+          },
+        },
+      });
+
+      // Set draftVersionId
+      const updated = await tx.stackTemplate.update({
+        where: { id: template.id },
+        data: { draftVersionId: version.id },
+        include: {
+          draftVersion: { include: versionWithDetails },
+        },
+      });
+
+      return updated;
+    });
+
+    return this.serializeTemplate(result);
+  }
+
+  async updateTemplateMeta(
+    templateId: string,
+    input: UpdateStackTemplateRequest
+  ): Promise<StackTemplateInfo> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+    });
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (template.source === "system") {
+      throw new TemplateError("Cannot modify system templates", 403);
+    }
+
+    const updated = await this.prisma.stackTemplate.update({
+      where: { id: templateId },
+      data: {
+        displayName: input.displayName,
+        description: input.description,
+        category: input.category,
+      },
+      include: {
+        currentVersion: { select: versionSummary },
+        draftVersion: { select: versionSummary },
+      },
+    });
+
+    return this.serializeTemplate(updated);
+  }
+
+  async archiveTemplate(templateId: string): Promise<void> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+      include: { stacks: { select: { id: true }, take: 1 } },
+    });
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (template.source === "system") {
+      throw new TemplateError("Cannot archive system templates", 403);
+    }
+    if (template.stacks.length > 0) {
+      throw new TemplateError(
+        "Cannot archive template with linked stacks",
+        409
+      );
+    }
+
+    await this.prisma.stackTemplate.update({
+      where: { id: templateId },
+      data: { isArchived: true },
+    });
+  }
+
+  // =====================
+  // Draft Lifecycle
+  // =====================
+
+  async createOrUpdateDraft(
+    templateId: string,
+    input: DraftVersionInput,
+    createdById?: string
+  ): Promise<StackTemplateVersionInfo> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+    });
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (template.source === "system") {
+      throw new TemplateError("Cannot modify system templates", 403);
+    }
+
+    const configFileInputs = input.configFiles ?? [];
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Delete existing draft if any
+      if (template.draftVersionId) {
+        await tx.stackTemplateVersion.delete({
+          where: { id: template.draftVersionId },
+        });
+      }
+
+      // Create new draft version
+      const version = await tx.stackTemplateVersion.create({
+        data: {
+          templateId,
+          version: 0,
+          status: "draft",
+          notes: input.notes ?? null,
+          parameters: (input.parameters ?? []) as any,
+          defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
+          networks: input.networks as any,
+          volumes: input.volumes as any,
+          createdById: createdById ?? null,
+          services: {
+            create: input.services.map((s, i) =>
+              toTemplateServiceCreate(s, i)
+            ),
+          },
+          configFiles: {
+            create: configFileInputs.map(toTemplateConfigFileCreate),
+          },
+        },
+        include: versionWithDetails,
+      });
+
+      // Update template pointer
+      await tx.stackTemplate.update({
+        where: { id: templateId },
+        data: { draftVersionId: version.id },
+      });
+
+      return version;
+    });
+
+    return this.serializeVersion(result);
+  }
+
+  async publishDraft(
+    templateId: string,
+    input?: PublishDraftRequest
+  ): Promise<StackTemplateVersionInfo> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+    });
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (template.source === "system") {
+      throw new TemplateError("Cannot publish system templates via API", 403);
+    }
+    if (!template.draftVersionId) {
+      throw new TemplateError(
+        "No draft version exists for this template",
+        404
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Find the highest published version number
+      const maxVersion = await tx.stackTemplateVersion.findFirst({
+        where: {
+          templateId,
+          status: { in: ["published", "archived"] },
+        },
+        orderBy: { version: "desc" },
+        select: { version: true },
+      });
+
+      const nextVersion = (maxVersion?.version ?? 0) + 1;
+      const now = new Date();
+
+      // Promote draft to published
+      const version = await tx.stackTemplateVersion.update({
+        where: { id: template.draftVersionId! },
+        data: {
+          version: nextVersion,
+          status: "published",
+          publishedAt: now,
+          notes: input?.notes ?? undefined,
+        },
+        include: versionWithDetails,
+      });
+
+      // Update template pointers
+      await tx.stackTemplate.update({
+        where: { id: templateId },
+        data: {
+          currentVersionId: version.id,
+          draftVersionId: null,
+        },
+      });
+
+      return version;
+    });
+
+    return this.serializeVersion(result);
+  }
+
+  async discardDraft(templateId: string): Promise<void> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: templateId },
+    });
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (template.source === "system") {
+      throw new TemplateError("Cannot modify system templates", 403);
+    }
+    if (!template.draftVersionId) {
+      throw new TemplateError(
+        "No draft version exists for this template",
+        404
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.stackTemplate.update({
+        where: { id: templateId },
+        data: { draftVersionId: null },
+      });
+
+      await tx.stackTemplateVersion.delete({
+        where: { id: template.draftVersionId! },
+      });
+    });
+  }
+
+  // =====================
+  // System Template Upsert
+  // =====================
+
+  async upsertSystemTemplate(
+    input: UpsertSystemTemplateInput
+  ): Promise<{ templateId: string; versionId: string; created: boolean }> {
+    const {
+      name,
+      displayName,
+      scope,
+      category,
+      builtinVersion,
+      definition,
+      configFiles: externalConfigFiles,
+    } = input;
+
+    // Check if template exists
+    const existing = await this.prisma.stackTemplate.findUnique({
+      where: { name_source: { name, source: "system" } },
+      include: {
+        currentVersion: { select: { id: true, version: true } },
+      },
+    });
+
+    // If current version matches, no-op
+    if (
+      existing?.currentVersion &&
+      existing.currentVersion.version >= builtinVersion
+    ) {
+      return {
+        templateId: existing.id,
+        versionId: existing.currentVersion.id,
+        created: false,
+      };
+    }
+
+    // Build config files from service definitions + external config files
+    const configFileInputs = buildConfigFilesFromDefinition(
+      definition,
+      externalConfigFiles
+    );
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Upsert the template record
+      const template = existing
+        ? await tx.stackTemplate.update({
+            where: { id: existing.id },
+            data: {
+              displayName,
+              description: definition.description ?? null,
+              scope,
+              category: category ?? null,
+            },
+          })
+        : await tx.stackTemplate.create({
+            data: {
+              name,
+              displayName,
+              description: definition.description ?? null,
+              source: "system",
+              scope,
+              category: category ?? null,
+            },
+          });
+
+      // Check if this version already exists (idempotent)
+      const existingVersion =
+        await tx.stackTemplateVersion.findUnique({
+          where: {
+            templateId_version: {
+              templateId: template.id,
+              version: builtinVersion,
+            },
+          },
+        });
+
+      let versionId: string;
+
+      if (existingVersion) {
+        // Update existing version's content
+        versionId = existingVersion.id;
+
+        // Delete and recreate services and config files
+        await tx.stackTemplateService.deleteMany({
+          where: { versionId },
+        });
+        await tx.stackTemplateConfigFile.deleteMany({
+          where: { versionId },
+        });
+
+        await tx.stackTemplateVersion.update({
+          where: { id: versionId },
+          data: {
+            parameters: (definition.parameters ?? []) as any,
+            defaultParameterValues: buildDefaultParameterValues(
+              definition.parameters ?? []
+            ) as any,
+            networks: definition.networks as any,
+            volumes: definition.volumes as any,
+            publishedAt: new Date(),
+          },
+        });
+      } else {
+        // Create new version
+        const version = await tx.stackTemplateVersion.create({
+          data: {
+            templateId: template.id,
+            version: builtinVersion,
+            status: "published",
+            parameters: (definition.parameters ?? []) as any,
+            defaultParameterValues: buildDefaultParameterValues(
+              definition.parameters ?? []
+            ) as any,
+            networks: definition.networks as any,
+            volumes: definition.volumes as any,
+            publishedAt: new Date(),
+          },
+        });
+        versionId = version.id;
+      }
+
+      // Create services
+      for (const svc of definition.services) {
+        await tx.stackTemplateService.create({
+          data: {
+            versionId,
+            ...toTemplateServiceCreate(svc, svc.order),
+          },
+        });
+      }
+
+      // Create config files
+      for (const cf of configFileInputs) {
+        await tx.stackTemplateConfigFile.create({
+          data: {
+            versionId,
+            ...toTemplateConfigFileCreate(cf),
+          },
+        });
+      }
+
+      // Update template's currentVersionId
+      await tx.stackTemplate.update({
+        where: { id: template.id },
+        data: { currentVersionId: versionId },
+      });
+
+      return { templateId: template.id, versionId };
+    });
+
+    return { ...result, created: !existing };
+  }
+
+  // =====================
+  // Stack Creation from Template
+  // =====================
+
+  async createStackFromTemplate(
+    input: CreateStackFromTemplateRequest,
+    createdById?: string
+  ): Promise<StackInfo> {
+    const template = await this.prisma.stackTemplate.findUnique({
+      where: { id: input.templateId },
+      include: {
+        currentVersion: {
+          include: versionWithDetails,
+        },
+      },
+    });
+
+    if (!template) {
+      throw new TemplateError("Template not found", 404);
+    }
+    if (!template.currentVersion) {
+      throw new TemplateError(
+        "Template has no published version",
+        400
+      );
+    }
+    if (template.isArchived) {
+      throw new TemplateError(
+        "Cannot create stack from archived template",
+        400
+      );
+    }
+
+    const version = template.currentVersion;
+    const paramDefs = version.parameters as unknown as StackParameterDefinition[];
+    const defaultValues = version.defaultParameterValues as unknown as Record<
+      string,
+      StackParameterValue
+    >;
+
+    // Merge provided parameter values with defaults
+    const mergedValues = mergeParameterValues(
+      paramDefs,
+      { ...defaultValues, ...(input.parameterValues ?? {}) }
+    );
+
+    // Build service definitions from template services + config files
+    const services = buildServiceDefinitionsFromVersion(version);
+
+    // Validate scope
+    if (template.scope === "host" && input.environmentId) {
+      throw new TemplateError(
+        "Host-scoped template cannot be assigned to an environment",
+        400
+      );
+    }
+    if (template.scope === "environment" && !input.environmentId) {
+      throw new TemplateError(
+        "Environment-scoped template requires an environmentId",
+        400
+      );
+    }
+
+    const stackName = input.name ?? template.name;
+
+    const stack = await this.prisma.stack.create({
+      data: {
+        name: stackName,
+        description: template.description,
+        environmentId: input.environmentId ?? null,
+        version: 1,
+        status: "undeployed",
+        templateId: template.id,
+        templateVersion: version.version,
+        builtinVersion:
+          template.source === "system" ? version.version : null,
+        parameters:
+          paramDefs.length > 0 ? (paramDefs as any) : undefined,
+        parameterValues:
+          Object.keys(mergedValues).length > 0
+            ? (mergedValues as any)
+            : undefined,
+        networks: version.networks as any,
+        volumes: version.volumes as any,
+        services: {
+          create: services.map(toServiceCreateInput),
+        },
+      },
+      include: {
+        services: { orderBy: { order: "asc" } },
+      },
+    });
+
+    return serializeStack(stack);
+  }
+
+  // =====================
+  // Serialization
+  // =====================
+
+  serializeTemplate(template: any): StackTemplateInfo {
+    return {
+      id: template.id,
+      name: template.name,
+      displayName: template.displayName,
+      description: template.description,
+      source: template.source,
+      scope: template.scope,
+      category: template.category,
+      isArchived: template.isArchived,
+      currentVersionId: template.currentVersionId,
+      draftVersionId: template.draftVersionId,
+      createdAt: template.createdAt.toISOString(),
+      updatedAt: template.updatedAt.toISOString(),
+      createdById: template.createdById,
+      currentVersion: template.currentVersion
+        ? this.serializeVersion(template.currentVersion)
+        : template.currentVersion === null
+          ? null
+          : undefined,
+      draftVersion: template.draftVersion
+        ? this.serializeVersion(template.draftVersion)
+        : template.draftVersion === null
+          ? null
+          : undefined,
+    };
+  }
+
+  serializeVersion(version: any): StackTemplateVersionInfo {
+    return {
+      id: version.id,
+      templateId: version.templateId,
+      version: version.version,
+      status: version.status,
+      notes: version.notes,
+      parameters: version.parameters ?? [],
+      defaultParameterValues: version.defaultParameterValues ?? {},
+      networks: version.networks ?? [],
+      volumes: version.volumes ?? [],
+      publishedAt: version.publishedAt?.toISOString() ?? null,
+      createdAt: version.createdAt.toISOString(),
+      createdById: version.createdById,
+      services: version.services?.map(serializeTemplateService),
+      configFiles: version.configFiles?.map(serializeTemplateConfigFile),
+    };
+  }
+}
+
+// =====================
+// Error class
+// =====================
+
+export class TemplateError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number
+  ) {
+    super(message);
+    this.name = "TemplateError";
+  }
+}
+
+// =====================
+// Helpers
+// =====================
+
+function serializeTemplateService(svc: any): StackTemplateServiceInfo {
+  return {
+    id: svc.id,
+    versionId: svc.versionId,
+    serviceName: svc.serviceName,
+    serviceType: svc.serviceType,
+    dockerImage: svc.dockerImage,
+    dockerTag: svc.dockerTag,
+    containerConfig: svc.containerConfig,
+    initCommands: svc.initCommands,
+    dependsOn: svc.dependsOn,
+    order: svc.order,
+    routing: svc.routing,
+  };
+}
+
+function serializeTemplateConfigFile(cf: any): StackTemplateConfigFileInfo {
+  return {
+    id: cf.id,
+    versionId: cf.versionId,
+    serviceName: cf.serviceName,
+    fileName: cf.fileName,
+    volumeName: cf.volumeName,
+    mountPath: cf.mountPath,
+    content: cf.content,
+    permissions: cf.permissions,
+    owner: cf.owner,
+  };
+}
+
+/**
+ * Convert a StackServiceDefinition to a Prisma create input for StackTemplateService.
+ */
+function toTemplateServiceCreate(
+  s: StackServiceDefinition,
+  fallbackOrder: number
+) {
+  return {
+    serviceName: s.serviceName,
+    serviceType: s.serviceType,
+    dockerImage: s.dockerImage,
+    dockerTag: s.dockerTag,
+    containerConfig: s.containerConfig as any,
+    initCommands: (s.initCommands ?? null) as any,
+    dependsOn: s.dependsOn as any,
+    order: s.order ?? fallbackOrder,
+    routing: s.routing ? (s.routing as any) : Prisma.DbNull,
+  };
+}
+
+/**
+ * Convert a config file input to a Prisma create shape for StackTemplateConfigFile.
+ */
+function toTemplateConfigFileCreate(cf: StackTemplateConfigFileInput) {
+  return {
+    serviceName: cf.serviceName,
+    fileName: cf.fileName,
+    volumeName: cf.volumeName,
+    mountPath: cf.mountPath,
+    content: cf.content,
+    permissions: cf.permissions ?? null,
+    owner: cf.owner ?? null,
+  };
+}
+
+/**
+ * Build default parameter values from parameter definitions.
+ */
+function buildDefaultParameterValues(
+  params: StackParameterDefinition[]
+): Record<string, StackParameterValue> {
+  const values: Record<string, StackParameterValue> = {};
+  for (const p of params) {
+    values[p.name] = p.default;
+  }
+  return values;
+}
+
+/**
+ * Extract config files from a StackDefinition's services and merge with external config files.
+ * Normalizes the StackConfigFile shape (path → mountPath, derived fileName).
+ */
+function buildConfigFilesFromDefinition(
+  definition: StackDefinition,
+  externalConfigFiles?: StackTemplateConfigFileInput[]
+): StackTemplateConfigFileInput[] {
+  const result: StackTemplateConfigFileInput[] = [];
+
+  // Extract from service configFiles
+  for (const svc of definition.services) {
+    if (svc.configFiles) {
+      for (const cf of svc.configFiles) {
+        result.push({
+          serviceName: svc.serviceName,
+          fileName: cf.path.split("/").pop() ?? cf.path,
+          volumeName: cf.volumeName,
+          mountPath: cf.path,
+          content: cf.content,
+          permissions: cf.permissions ?? undefined,
+          owner:
+            cf.ownerUid != null
+              ? `${cf.ownerUid}:${cf.ownerGid ?? cf.ownerUid}`
+              : undefined,
+        });
+      }
+    }
+  }
+
+  // Merge external config files (overrides service-embedded ones on conflict)
+  if (externalConfigFiles) {
+    for (const cf of externalConfigFiles) {
+      // Remove any existing entry with same key
+      const idx = result.findIndex(
+        (r) =>
+          r.serviceName === cf.serviceName &&
+          r.volumeName === cf.volumeName &&
+          r.mountPath === cf.mountPath
+      );
+      if (idx >= 0) result.splice(idx, 1);
+      result.push(cf);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Build StackServiceDefinition[] from a template version's services and config files.
+ * Merges config files back into each service's configFiles array.
+ */
+function buildServiceDefinitionsFromVersion(version: {
+  services?: any[];
+  configFiles?: any[];
+}): StackServiceDefinition[] {
+  const services = version.services ?? [];
+  const configFiles = version.configFiles ?? [];
+
+  // Group config files by serviceName
+  const cfByService = new Map<string, any[]>();
+  for (const cf of configFiles) {
+    const list = cfByService.get(cf.serviceName) ?? [];
+    list.push(cf);
+    cfByService.set(cf.serviceName, list);
+  }
+
+  return services.map((svc: any) => {
+    const svcConfigFiles = cfByService.get(svc.serviceName) ?? [];
+    return {
+      serviceName: svc.serviceName,
+      serviceType: svc.serviceType,
+      dockerImage: svc.dockerImage,
+      dockerTag: svc.dockerTag,
+      containerConfig: svc.containerConfig,
+      configFiles: svcConfigFiles.length > 0
+        ? svcConfigFiles.map((cf: any) => ({
+            volumeName: cf.volumeName,
+            path: cf.mountPath,
+            content: cf.content,
+            permissions: cf.permissions ?? undefined,
+            ownerUid: cf.owner ? parseOwnerUid(cf.owner) : undefined,
+            ownerGid: cf.owner ? parseOwnerGid(cf.owner) : undefined,
+          }))
+        : undefined,
+      initCommands: svc.initCommands ?? undefined,
+      dependsOn: svc.dependsOn ?? [],
+      order: svc.order,
+      routing: svc.routing ?? undefined,
+    };
+  });
+}
+
+function parseOwnerUid(owner: string): number | undefined {
+  const parts = owner.split(":");
+  const uid = parseInt(parts[0], 10);
+  return isNaN(uid) ? undefined : uid;
+}
+
+function parseOwnerGid(owner: string): number | undefined {
+  const parts = owner.split(":");
+  const gid = parseInt(parts[1] ?? parts[0], 10);
+  return isNaN(gid) ? undefined : gid;
+}

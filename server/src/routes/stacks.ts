@@ -36,7 +36,10 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
 
     const stacks = await prisma.stack.findMany({
       where,
-      include: { services: true },
+      include: {
+        services: true,
+        template: { select: { currentVersion: { select: { version: true } } } },
+      },
       orderBy: { name: 'asc' },
     });
 
@@ -52,7 +55,10 @@ router.get('/:stackId', requirePermission('stacks:read'), async (req, res) => {
   try {
     const stack = await prisma.stack.findUnique({
       where: { id: req.params.stackId },
-      include: { services: { orderBy: { order: 'asc' } } },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        template: { select: { currentVersion: { select: { version: true } } } },
+      },
     });
 
     if (!stack) {
@@ -356,7 +362,10 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
     const { stackId } = req.params;
     const stack = await prisma.stack.findUnique({
       where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } } },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        template: { select: { currentVersion: { select: { version: true } } } },
+      },
     });
 
     if (!stack) {

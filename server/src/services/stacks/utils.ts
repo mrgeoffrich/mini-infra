@@ -23,11 +23,19 @@ export function serializeStack(stack: any): StackInfo {
     ...stack,
     parameters: stack.parameters ?? [],
     parameterValues: stack.parameterValues ?? {},
+    templateId: stack.templateId ?? null,
+    templateVersion: stack.templateVersion ?? null,
+    templateUpdateAvailable: computeTemplateUpdateAvailable(stack),
     lastAppliedAt: stack.lastAppliedAt?.toISOString() ?? null,
     createdAt: stack.createdAt.toISOString(),
     updatedAt: stack.updatedAt.toISOString(),
     services: stack.services?.map(serializeService),
   };
+}
+
+function computeTemplateUpdateAvailable(stack: any): boolean {
+  if (!stack.templateVersion || !stack.template?.currentVersion) return false;
+  return stack.template.currentVersion.version > stack.templateVersion;
 }
 
 export function serializeService(svc: any): StackServiceInfo {

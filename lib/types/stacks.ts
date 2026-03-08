@@ -110,6 +110,8 @@ export interface Stack {
   lastAppliedAt: Date | null;
   lastAppliedSnapshot: StackDefinition | null;
   builtinVersion: number | null;
+  templateId: string | null;
+  templateVersion: number | null;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
@@ -149,6 +151,9 @@ export interface StackInfo {
   lastAppliedAt: string | null;
   lastAppliedSnapshot: StackDefinition | null;
   builtinVersion: number | null;
+  templateId: string | null;
+  templateVersion: number | null;
+  templateUpdateAvailable?: boolean;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
@@ -260,6 +265,7 @@ export interface StackPlan {
   planTime: string;
   actions: ServiceAction[];
   hasChanges: boolean;
+  templateUpdateAvailable?: boolean;
 }
 
 export interface ServiceAction {

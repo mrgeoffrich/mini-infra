@@ -1157,6 +1157,22 @@ enum StackServiceType {
   StatelessWeb
 }
 
+enum StackTemplateSource {
+  system
+  user
+}
+
+enum StackTemplateScope {
+  host
+  environment
+}
+
+enum StackTemplateVersionStatus {
+  draft
+  published
+  archived
+}
+
 // Stack - Declarative container group definition
 model Stack {
   id                   String      @id @default(cuid())
@@ -1170,6 +1186,9 @@ model Stack {
   lastAppliedAt        DateTime?
   lastAppliedSnapshot  Json?
   builtinVersion       Int?
+  templateId           String?
+  template             StackTemplate? @relation(fields: [templateId], references: [id])
+  templateVersion      Int?        // Version number of the template used to create/sync this stack
   parameters           Json?       // Array of StackParameterDefinition
   parameterValues      Json?       // Record<string, string | number | boolean>
   networks             Json        // Array of { name, driver?, options? }
@@ -1184,6 +1203,7 @@ model Stack {
   @@unique([name, environmentId])
   @@index([environmentId])
   @@index([status])
+  @@index([templateId])
   @@map("stacks")
 }
 
@@ -1228,4 +1248,107 @@ model StackDeployment {
   @@index([stackId])
   @@index([createdAt])
   @@map("stack_deployments")
+}
+
+// StackTemplate - Reusable blueprint for stack definitions
+model StackTemplate {
+  id               String               @id @default(cuid())
+  name             String
+  displayName      String
+  description      String?
+  source           StackTemplateSource  // system | user
+  scope            StackTemplateScope   // host | environment
+  category         String?
+  isArchived       Boolean              @default(false)
+
+  // Pointer to the live published version (null until first publish)
+  currentVersionId String?              @unique
+  currentVersion   StackTemplateVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+
+  // Pointer to the in-progress draft (null when no draft exists)
+  draftVersionId   String?              @unique
+  draftVersion     StackTemplateVersion? @relation("DraftVersion", fields: [draftVersionId], references: [id])
+
+  // Audit
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  createdById      String?
+
+  // Relations
+  versions         StackTemplateVersion[] @relation("AllVersions")
+  stacks           Stack[]
+
+  @@unique([name, source])
+  @@index([source])
+  @@index([scope])
+  @@index([isArchived])
+  @@map("stack_templates")
+}
+
+// StackTemplateVersion - Immutable snapshot; draft has version=0, published versions are sequential
+model StackTemplateVersion {
+  id                     String                      @id @default(cuid())
+  templateId             String
+  template               StackTemplate               @relation("AllVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  version                Int
+  status                 StackTemplateVersionStatus   // draft | published | archived
+  notes                  String?
+  parameters             Json                        // StackParameterDefinition[]
+  defaultParameterValues Json                        // Record<string, StackParameterValue>
+  networks               Json                        // StackNetwork[]
+  volumes                Json                        // StackVolume[]
+  publishedAt            DateTime?
+  createdAt              DateTime                    @default(now())
+  createdById            String?
+
+  // Relations
+  services               StackTemplateService[]
+  configFiles            StackTemplateConfigFile[]
+
+  // Back-relations for self-referential FKs on StackTemplate
+  currentForTemplate     StackTemplate?              @relation("CurrentVersion")
+  draftForTemplate       StackTemplate?              @relation("DraftVersion")
+
+  @@unique([templateId, version])
+  @@index([templateId])
+  @@index([status])
+  @@map("stack_template_versions")
+}
+
+// StackTemplateService - Service definition within a template version
+model StackTemplateService {
+  id              String                @id @default(cuid())
+  versionId       String
+  version         StackTemplateVersion  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  serviceName     String
+  serviceType     StackServiceType
+  dockerImage     String
+  dockerTag       String
+  containerConfig Json                  // StackContainerConfig
+  initCommands    Json?                 // StackInitCommand[]
+  dependsOn       Json                  // string[]
+  order           Int
+  routing         Json?                 // StackServiceRouting | null
+
+  @@unique([versionId, serviceName])
+  @@index([versionId])
+  @@map("stack_template_services")
+}
+
+// StackTemplateConfigFile - Config file stored against a template version
+model StackTemplateConfigFile {
+  id          String                @id @default(cuid())
+  versionId   String
+  version     StackTemplateVersion  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  serviceName String
+  fileName    String
+  volumeName  String
+  mountPath   String
+  content     String                // Supports {{template}} variables
+  permissions String?
+  owner       String?
+
+  @@unique([versionId, serviceName, volumeName, mountPath])
+  @@index([versionId])
+  @@map("stack_template_config_files")
 }

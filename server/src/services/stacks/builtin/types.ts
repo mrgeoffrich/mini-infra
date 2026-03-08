@@ -8,7 +8,9 @@ export interface BuiltinStackContext {
 
 export interface BuiltinStackDefinition {
   name: string;
+  displayName: string;
   builtinVersion: number;
   scope: 'host' | 'environment';
+  category?: string;
   resolve: (context: BuiltinStackContext) => Promise<StackDefinition>;
 }
