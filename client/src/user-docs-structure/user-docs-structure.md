@@ -56,7 +56,7 @@ Generated: 2026-03-08
 | `/haproxy/frontends/:frontendName/edit` | Edit Frontend | ✅ | `deployments/haproxy-frontends.md` |
 | `/haproxy/backends` | Backends | ✅ | `deployments/haproxy-backends.md` |
 | `/haproxy/backends/:backendName` | Backend Details | ✅ | `deployments/haproxy-backends.md` |
-| `/haproxy/instances` | Instances | ✅ | `deployments/haproxy-frontends.md` |
+| `/haproxy/instances` | Instances | ✅ | `deployments/haproxy-instances.md` |
 | `/certificates` | TLS Certificates | ✅ | `networking/tls-certificates.md` |
 | `/certificates/:id` | Certificate Details | ⚠️ | Parent covered by `networking/tls-certificates.md` |
 
@@ -168,6 +168,7 @@ These articles are defined in `extra-docs-defined.md` and supplement the route-d
 | `environments.md` | Managing Environments | How to create and manage environments that group services and infrastructure in Mini Infra. |
 | `haproxy-frontends.md` | Managing HAProxy Frontends | How to view, create, and configure HAProxy frontends in Mini Infra. |
 | `haproxy-backends.md` | Managing HAProxy Backends | How to view and configure HAProxy backends in Mini Infra. |
+| `haproxy-instances.md` | HAProxy Instances | How to monitor HAProxy health across environments and remediate or migrate instances in Mini Infra. |
 | `troubleshooting.md` | Deployment Troubleshooting | Common deployment issues and how to resolve them in Mini Infra. |
 
 ### getting-started

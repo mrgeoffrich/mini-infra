@@ -337,7 +337,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         path: "/haproxy/instances",
         title: "Instances",
         showInNav: true,
-        helpDoc: "deployments/haproxy-frontends",
+        helpDoc: "deployments/haproxy-instances",
       },
     },
   },
