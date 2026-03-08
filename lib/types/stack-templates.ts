@@ -8,7 +8,6 @@ import type {
   StackNetwork,
   StackVolume,
   StackContainerConfig,
-  StackConfigFile,
   StackInitCommand,
   StackServiceRouting,
   StackServiceType,
