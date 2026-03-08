@@ -259,7 +259,6 @@ export function useStackPlan(stackId: string, enabled = true) {
 }
 
 export function useStackApply() {
-  const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
