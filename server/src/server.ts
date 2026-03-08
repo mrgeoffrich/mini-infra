@@ -1,8 +1,11 @@
 console.log("[STARTUP] Starting Mini Infra server...");
 console.log("[STARTUP] Importing app module...");
+import { createServer } from "http";
 import app from "./app";
 console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
+import { initializeSocketIO, shutdownSocketIO } from "./lib/socket";
+import { setupContainerSocketEmitter } from "./services/container-socket-emitter";
 import {
   appLogger,
   clearLoggerCache,
@@ -194,6 +197,10 @@ const initializeServices = async () => {
     const dockerService = DockerService.getInstance();
     await dockerService.initialize();
     console.log("[STARTUP] ✓ Docker service initialized");
+
+    // Wire up container state changes to Socket.IO
+    setupContainerSocketEmitter();
+    console.log("[STARTUP] ✓ Container socket emitter initialized");
 
     // Initialize connectivity scheduler
     console.log("[STARTUP] Initializing connectivity scheduler...");
@@ -427,7 +434,14 @@ const startServer = async () => {
   console.log("[STARTUP] Services initialized, binding to port...");
 
   console.log(`[STARTUP] Attempting to listen on port ${appConfig.server.port}...`);
-  const server = app.listen(appConfig.server.port, () => {
+
+  // Create HTTP server and attach Socket.IO before listening
+  const httpServer = createServer(app);
+  console.log("[STARTUP] Initializing Socket.IO...");
+  initializeSocketIO(httpServer);
+  console.log("[STARTUP] ✓ Socket.IO initialized");
+
+  const server = httpServer.listen(appConfig.server.port, () => {
     console.log(`[STARTUP] ✓ Server successfully listening on port ${appConfig.server.port}`);
     logger.info(
       {
@@ -520,6 +534,10 @@ startServer()
         await agentService.shutdown();
         logger.info("Agent service stopped");
       }
+
+      // Shut down Socket.IO before closing the HTTP server
+      await shutdownSocketIO();
+      logger.info("Socket.IO shut down");
 
       server.close((err) => {
         if (err) {

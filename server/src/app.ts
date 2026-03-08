@@ -10,7 +10,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 
 // Import configuration and utilities
-import appConfig, { securityConfig } from "./lib/config-new";
+import appConfig, { securityConfig, corsOrigin } from "./lib/config-new";
 import { httpLogger } from "./lib/logger-factory";
 import { requestIdMiddleware } from "./lib/request-id";
 import { createHelmetMiddleware } from "./lib/security";
@@ -72,9 +72,7 @@ app.use(createHelmetMiddleware(securityConfig.allowInsecure));
 // CORS configuration
 app.use(
   cors({
-    origin:
-      appConfig.server.publicUrl ||
-      (appConfig.server.nodeEnv === "development" ? true : false),
+    origin: corsOrigin,
     credentials: true,
     optionsSuccessStatus: 200,
   }),
@@ -278,19 +276,6 @@ app.use(notFoundHandler as RequestHandler);
 
 // Global error handling middleware (must be last) - Express 5 compliant
 app.use(errorHandler);
-
-// Graceful shutdown handling
-const appLoggerInstance = httpLogger(); // Use HTTP logger for shutdown messages since they relate to server lifecycle
-
-process.on("SIGTERM", () => {
-  appLoggerInstance.info("SIGTERM received, shutting down gracefully");
-  process.exit(0);
-});
-
-process.on("SIGINT", () => {
-  appLoggerInstance.info("SIGINT received, shutting down gracefully");
-  process.exit(0);
-});
 
 export default app;
 // Foreign keys enabled via DATABASE_URL parameter

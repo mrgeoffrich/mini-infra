@@ -9,7 +9,10 @@ import {
   TriggerBackupResponse,
   BackupHistoryResponse,
   UpdateSelfBackupConfigRequest,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -411,8 +414,26 @@ export interface UseBackupHealthOptions {
 }
 
 export function useBackupHealth(options: UseBackupHealthOptions = {}) {
-  const { enabled = true, refetchInterval = 60000 } = options; // Refresh every minute
+  const { enabled = true, refetchInterval: customRefetchInterval } = options;
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // No polling when socket is connected (real-time updates via socket events);
+  // fall back to 60s polling when disconnected
+  const refetchInterval = customRefetchInterval ?? (connected ? false : 60000);
+
+  // Subscribe to backup-health channel for real-time updates
+  useSocketChannel(Channel.BACKUP_HEALTH, enabled);
+
+  // Invalidate query when server pushes new backup health data
+  useSocketEvent(
+    ServerEvent.BACKUP_HEALTH_STATUS,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["backup-health"] });
+    },
+    enabled,
+  );
 
   return useQuery({
     queryKey: ["backup-health"],
@@ -421,6 +442,7 @@ export function useBackupHealth(options: UseBackupHealthOptions = {}) {
     refetchInterval,
     staleTime: 30000, // 30 seconds
     gcTime: 5 * 60 * 1000,
+    refetchOnReconnect: true,
   });
 }
 

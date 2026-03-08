@@ -14,6 +14,7 @@ class DockerService {
   private connected: boolean = false;
   private reconnectInterval: NodeJS.Timeout | null = null;
   private dockerConfigService: DockerConfigService;
+  private containerChangeCallbacks: Array<() => void> = [];
 
   private constructor() {
     // Initialize cache with 3-second TTL
@@ -329,6 +330,14 @@ class DockerService {
                 "Container event received, invalidating cache",
               );
               this.cache.flushAll();
+              // Notify registered listeners (e.g., socket emitter)
+              for (const cb of this.containerChangeCallbacks) {
+                try {
+                  cb();
+                } catch (err) {
+                  servicesLogger().error({ error: err }, "Container change callback failed");
+                }
+              }
             } else if (event.Type === "network") {
               servicesLogger().debug(
                 {
@@ -726,6 +735,14 @@ class DockerService {
   public flushCache(): void {
     this.cache.flushAll();
     servicesLogger().info("Docker service cache flushed");
+  }
+
+  /**
+   * Register a callback to be invoked when Docker container state changes.
+   * Used by the socket emitter to push updates to clients.
+   */
+  public onContainerChange(callback: () => void): void {
+    this.containerChangeCallbacks.push(callback);
   }
 
   /**

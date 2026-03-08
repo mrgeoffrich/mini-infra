@@ -71,6 +71,9 @@ export * from "./stacks";
 // Stack Template types
 export * from "./stack-templates";
 
+// Socket.IO event types
+export * from "./socket-events";
+
 // ====================
 // Type Utilities
 // ====================

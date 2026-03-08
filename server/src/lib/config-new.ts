@@ -250,3 +250,15 @@ export const {
   security: securityConfig,
   agent: agentConfig,
 } = validatedConfig;
+
+/** Allowed CORS origins for development mode */
+const DEV_CORS_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:5005",
+  "http://localhost:3005",
+];
+
+/** Resolved CORS origin: publicUrl in production, explicit allowlist in dev */
+export const corsOrigin: string | string[] | boolean =
+  validatedConfig.server.publicUrl ||
+  (validatedConfig.server.nodeEnv === "development" ? DEV_CORS_ORIGINS : false);

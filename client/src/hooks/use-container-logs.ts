@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ContainerLogLine, ContainerLogEvent, ContainerLogOptions } from "@mini-infra/types/containers";
+import { DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES } from "@mini-infra/types";
 
 interface UseContainerLogsOptions extends ContainerLogOptions {
   containerId: string;
@@ -20,8 +21,8 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
   const {
     containerId,
     enabled = true,
-    maxLines = 5000,
-    tail = 100,
+    maxLines = MAX_LOG_TAIL_LINES,
+    tail = DEFAULT_LOG_TAIL_LINES,
     follow = true,
     timestamps = true,
     stdout = true,

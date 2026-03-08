@@ -1,6 +1,7 @@
 import prisma, { PrismaClient } from "../../lib/prisma";
 import { selfBackupLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
+import { emitBackupHealthStatus } from "./backup-health-socket-emitter";
 import { BlobServiceClient } from "@azure/storage-blob";
 import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
@@ -163,6 +164,16 @@ export class SelfBackupExecutor {
     } finally {
       // Clean up temp files
       await this.cleanupTempFiles(backupFilePath, zipFilePath);
+
+      // Emit updated backup health status via Socket.IO
+      try {
+        await emitBackupHealthStatus();
+      } catch (emitError) {
+        selfBackupLogger().error(
+          { error: emitError instanceof Error ? emitError.message : emitError },
+          "Failed to emit backup health status via socket",
+        );
+      }
     }
   }
 

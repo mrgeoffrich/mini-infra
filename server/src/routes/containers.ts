@@ -24,47 +24,12 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
+import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId } from "@mini-infra/types";
+import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
+import { emitToChannel } from "../lib/socket";
+import { DockerStreamDemuxer } from "../lib/docker-stream";
+
 const router = express.Router();
-
-// Helper function to convert DockerContainerInfo to ContainerInfo for API responses
-async function serializeContainer(container: DockerContainerInfo): Promise<ContainerInfo> {
-  const serialized: ContainerInfo = {
-    ...container,
-    createdAt: container.createdAt.toISOString(),
-    startedAt: container.startedAt?.toISOString(),
-  };
-
-  // Check if container has environment label
-  const environmentId = container.labels['mini-infra.environment'];
-  if (environmentId) {
-    try {
-      // Look up environment from database
-      const environment = await prisma.environment.findUnique({
-        where: { id: environmentId },
-        select: { id: true, name: true, type: true },
-      });
-
-      if (environment) {
-        serialized.environmentInfo = {
-          id: environment.id,
-          name: environment.name,
-          type: environment.type,
-        };
-      }
-    } catch (error) {
-      logger.warn(
-        {
-          error,
-          environmentId,
-          containerId: container.id,
-        },
-        "Failed to look up environment for container",
-      );
-    }
-  }
-
-  return serialized;
-}
 
 // Query parameter validation schema
 const containerQuerySchema = z.object({
@@ -169,8 +134,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
     }
 
     // Fetch containers from Docker service
-    let dockerContainers = await dockerService.listContainers(true);
-    let containers = await Promise.all(dockerContainers.map(serializeContainer));
+    let containers = await fetchAndSerializeContainers(dockerService);
 
     // Apply filtering
     if (queryParams.status) {
@@ -472,7 +436,7 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
 
   try {
     // Validate container ID format
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -581,7 +545,7 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
 
   try {
     // Validate container ID format
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -824,9 +788,9 @@ const logQuerySchema = z.object({
   tail: z
     .string()
     .optional()
-    .transform((val) => (val ? parseInt(val) : 100))
-    .refine((val) => val > 0 && val <= 5000, {
-      message: "Tail must be between 1 and 5000",
+    .transform((val) => (val ? parseInt(val) : DEFAULT_LOG_TAIL_LINES))
+    .refine((val) => val > 0 && val <= MAX_LOG_TAIL_LINES, {
+      message: `Tail must be between 1 and ${MAX_LOG_TAIL_LINES}`,
     }),
   follow: z
     .string()
@@ -875,7 +839,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
 
   try {
     // Validate container ID
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -986,38 +950,17 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
       follow: shouldFollow as true,
       stdout: options.stdout ?? true,
       stderr: options.stderr ?? true,
-      tail: options.tail ?? 100,
+      tail: options.tail ?? DEFAULT_LOG_TAIL_LINES,
       timestamps: options.timestamps ?? false,
       since: options.since ? parseInt(options.since) : undefined,
       until: options.until ? parseInt(options.until) : undefined,
     })) as unknown as Readable;
 
-    // Docker logs use a multiplexed stream format with 8-byte headers
-    // Header format: [stream_type, 0, 0, 0, size1, size2, size3, size4]
-    // stream_type: 0=stdin, 1=stdout, 2=stderr
-    let buffer = Buffer.alloc(0);
+    const demuxer = new DockerStreamDemuxer();
 
     logStream.on("data", (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-
-      // Process complete frames
-      while (buffer.length >= 8) {
-        const header = buffer.slice(0, 8);
-        const streamType = header[0];
-        const payloadSize =
-          (header[4] << 24) | (header[5] << 16) | (header[6] << 8) | header[7];
-
-        // Check if we have the complete payload
-        if (buffer.length < 8 + payloadSize) {
-          break;
-        }
-
-        // Extract the payload
-        const payload = buffer.slice(8, 8 + payloadSize);
-        buffer = buffer.slice(8 + payloadSize);
-
-        // Convert to string and send as SSE event
-        const message = payload.toString("utf-8").trimEnd();
+      for (const frame of demuxer.push(chunk)) {
+        const message = frame.data.toString("utf-8").trimEnd();
 
         // Parse timestamp if present (Docker format: "2025-01-13T10:30:45.123456789Z message")
         let timestamp: string | undefined;
@@ -1036,7 +979,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
           data: {
             timestamp,
             message: logMessage,
-            stream: streamType === 1 ? "stdout" : "stderr",
+            stream: frame.stream === "stderr" ? "stderr" : "stdout",
           },
         };
 
@@ -1152,7 +1095,7 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
 
   try {
     // Validate container ID
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -1264,6 +1207,20 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
       },
       `Container ${action} completed successfully`,
     );
+
+    // Emit granular socket events for immediate UI updates
+    if (action === "remove") {
+      emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINER_REMOVED, {
+        id: containerId,
+        name: containerInfo.name,
+      });
+    } else if (updatedContainer) {
+      emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINER_STATUS, {
+        id: containerId,
+        name: containerInfo.name,
+        status: updatedContainer.status,
+      });
+    }
 
     const response: ContainerActionResponse = {
       success: true,
