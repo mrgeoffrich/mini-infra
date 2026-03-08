@@ -21,7 +21,8 @@ export type PermissionDomain =
   | "agent"
   | "backups"
   | "monitoring"
-  | "registry";
+  | "registry"
+  | "stacks";
 
 /** Permission actions */
 export type PermissionAction = "read" | "write" | "use";
@@ -164,6 +165,27 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Environments",
         description:
           "Create, update, delete environments, services, networks, volumes",
+      },
+    ],
+  },
+  {
+    domain: "stacks",
+    label: "Stacks",
+    description: "Declarative stack management and deployment",
+    permissions: [
+      {
+        scope: "stacks:read",
+        domain: "stacks",
+        action: "read",
+        label: "View Stacks",
+        description: "View stacks, services, plans, status, and history",
+      },
+      {
+        scope: "stacks:write",
+        domain: "stacks",
+        action: "write",
+        label: "Manage Stacks",
+        description: "Create, update, delete stacks, apply changes",
       },
     ],
   },
@@ -447,6 +469,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "backups:read",
       "registry:read",
       "monitoring:read",
+      "stacks:read",
       "agent:use",
     ],
   },
@@ -467,6 +490,8 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "tls:read",
       "tls:write",
       "registry:read",
+      "stacks:read",
+      "stacks:write",
       "events:read",
       "events:write",
     ],

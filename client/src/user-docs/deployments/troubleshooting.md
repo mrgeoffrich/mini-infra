@@ -2,7 +2,7 @@
 title: Deployment Troubleshooting
 description: Common deployment issues and how to resolve them in Mini Infra.
 category: Deployments
-order: 7
+order: 8
 tags:
   - deployments
   - troubleshooting

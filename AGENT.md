@@ -8,7 +8,7 @@
 
 ## Command & Tooling Expectations
 - Prefer `npm` scripts defined in each workspace; they wrap tsx, Jest, ESLint, and Prisma so you do not have to remember raw invocations.
-- Testing uses Jest 30 with Supertest. Keep unit/integration tests colocated under `server/src/__tests__/` and `client/src/__tests__/`.
+- Testing uses Vitest 4 with Supertest. Keep unit/integration tests colocated under `server/src/__tests__/` and `client/src/__tests__/`.
 - Linting and formatting rely on ESLint 9.x and Prettier 3. Run `npm run lint` or `npm run format:check` before handing work back.
 - Prisma controls the SQLite schema. Update `server/prisma/schema.prisma` first, then run `npx prisma migrate dev` or `npx prisma db push` as appropriate.
 
@@ -16,13 +16,13 @@
 Use the built-in development API key when talking to the backend.
 
 ```bash
-cd server && npm run show-dev-key
+npm run show-dev-key -w server
 ```
 
 Recreate the key if needed:
 
 ```bash
-cd server && npm run show-dev-key -- --recreate
+npm run show-dev-key -w server -- --recreate
 ```
 
 Pass the key to requests with either header:
@@ -47,14 +47,14 @@ The dev key appears when `npm run dev` is running.
 - External integrations: dockerode, Azure Blob Storage, Cloudflare, PostgreSQL health checks, HAProxy orchestration.
 
 ### Shared Types (lib/)
-- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`npm run dev` or `npm run build` inside `lib/`).
+- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`npm run dev -w lib` or `npm run build -w lib`).
 
 ## High-Value Workflows
 - **Run whole stack in dev**: `npm run dev` (from repo root). Starts lib watcher, server, and client simultaneously.
-- **Server only**: `cd server && npm run dev`
-- **Client only**: `cd client && npm run dev`
+- **Server only**: `npm run dev -w server`
+- **Client only**: `npm run dev -w client`
 - **Build everything**: `npm run build:all`
-- **Jest tests**: `cd server && npm test`; add `-- runInBand` when debugging.
+- **Vitest tests**: `npm test -w server`; run a single file with `npx -w server vitest run <filename>`.
 - **Lint**: `npm run lint` (root), or workspace-specific variants.
 - **Format**: `npm run format` (root) or `npm run format:check`.
 
@@ -63,9 +63,15 @@ The dev key appears when `npm run dev` is running.
 - Seed data lives in `server/prisma/seed.ts`. Keep it aligned with migrations; update seeds whenever schema changes.
 - Backups leverage Azure Blob Storage. Local development expects `.env` variables; check `.env.example` files before adding new config.
 
+## Stacks & Infrastructure
+- **Stacks** are the declarative infrastructure-as-code system. A stack defines a group of Docker containers with plan/apply semantics (similar to Terraform). Code lives in `server/src/services/stacks/` with routes in `server/src/routes/stacks.ts`.
+- Stacks support two service types: **Stateful** (stop/start replacement) and **StatelessWeb** (blue-green deployment via HAProxy).
+- **Stack templates** provide versioned blueprints for creating stacks. Built-in templates (monitoring, haproxy) are defined as JSON files in `server/templates/`.
+- The **monitoring stack** (Telegraf, Prometheus, Loki, Alloy) is deployed as a host-level stack and powers the Container Metrics and Container Logs pages.
+
 ## Deployment & Infrastructure Hooks
 - Deployment configs and progress tracking live under `server/src/services/deployments/` and `server/src/services/progress-tracker.ts`.
-- HAProxy integration code sits in `server/src/services/haproxy/`. This handles all load-balancing behavior for zero-downtime deployments.
+- HAProxy integration code sits in `server/src/services/haproxy/`. This handles all load-balancing behavior for zero-downtime deployments. HAProxy can be deployed as a stack-managed service or via the legacy deployment infrastructure.
 - Cron-based jobs use `node-cron`; scheduling definitions live in `server/src/services/scheduler/`.
 
 ## Logging & Diagnostics

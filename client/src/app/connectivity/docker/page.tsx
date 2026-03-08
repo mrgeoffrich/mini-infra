@@ -48,7 +48,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { useMonitoringStatus, useStartMonitoring, useStopMonitoring } from "@/hooks/use-monitoring";
+import { useMonitoringStatus, useApplyMonitoring, useStopMonitoring } from "@/hooks/use-monitoring";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 
@@ -594,16 +594,18 @@ export default function DockerSettingsPage() {
 function MonitoringServiceCard() {
   const navigate = useNavigate();
   const { data: monitoringStatus, isLoading } = useMonitoringStatus({ refetchInterval: 10000 });
-  const startMonitoring = useStartMonitoring();
+  const applyMonitoring = useApplyMonitoring();
   const stopMonitoring = useStopMonitoring();
 
-  const serviceStatus = monitoringStatus?.service?.status || "unknown";
-  const isRunning = serviceStatus === "running";
-  const isStopped = serviceStatus === "stopped" || serviceStatus === "failed" || !monitoringStatus?.service;
+  const isRunning = monitoringStatus?.running === true;
+  const stackStatus = monitoringStatus?.stack?.status || "unknown";
+  const isStopped = !isRunning;
+  const stackId = monitoringStatus?.stack?.id;
 
-  const handleStart = async () => {
+  const handleDeploy = async () => {
+    if (!stackId) return;
     try {
-      await startMonitoring.mutateAsync();
+      await applyMonitoring.mutateAsync(stackId);
       toast.success("Monitoring service started successfully");
     } catch (error) {
       toast.error(`Failed to start monitoring: ${(error as Error).message}`);
@@ -635,7 +637,7 @@ function MonitoringServiceCard() {
                     variant={isRunning ? "default" : "secondary"}
                     className={isRunning ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" : ""}
                   >
-                    {serviceStatus}
+                    {isRunning ? "running" : stackStatus}
                   </Badge>
                 )}
               </CardTitle>
@@ -648,18 +650,18 @@ function MonitoringServiceCard() {
       </CardHeader>
       <CardContent>
         <div className="flex gap-2">
-          {isStopped && (
+          {isStopped && stackId && (
             <Button
-              onClick={handleStart}
-              disabled={startMonitoring.isPending}
+              onClick={handleDeploy}
+              disabled={applyMonitoring.isPending}
               className="bg-green-600 hover:bg-green-700"
             >
-              {startMonitoring.isPending ? (
+              {applyMonitoring.isPending ? (
                 <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <IconPlayerPlay className="mr-2 h-4 w-4" />
               )}
-              Start Monitoring
+              {stackStatus === "undeployed" ? "Deploy Monitoring" : "Start Monitoring"}
             </Button>
           )}
           {isRunning && (

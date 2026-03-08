@@ -13,6 +13,9 @@ export { NetworkCreateDialog } from "./network-create-dialog";
 export { NetworkEditDialog } from "./network-edit-dialog";
 export { NetworkDeleteDialog } from "./network-delete-dialog";
 
+// Stack management components
+export { StacksList } from "./stacks-list";
+
 // Volume management components
 export { VolumeList } from "./volume-list";
 export { VolumeCreateDialog } from "./volume-create-dialog";

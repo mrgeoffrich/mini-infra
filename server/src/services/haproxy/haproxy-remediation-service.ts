@@ -3,6 +3,7 @@ import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "@prisma/client";
 import { generateSharedFrontendName } from "./haproxy-naming";
+import { recreateBackendsAndServers } from "./haproxy-post-apply";
 
 const logger = loadbalancerLogger();
 
@@ -205,7 +206,27 @@ export class HAProxyRemediationService {
         }
       }
 
-      // Step 5: Add routes for each deployment configuration
+      // Step 5: Recreate backends from DB so routing rules can reference them
+      try {
+        const { backendsCreated, serversAdded } = await recreateBackendsAndServers(
+          environmentId,
+          haproxyClient,
+          prisma
+        );
+        result.backendsRecreated = backendsCreated;
+        logger.info(
+          { environmentId, backendsCreated, serversAdded },
+          "Recreated backends and servers from DB"
+        );
+      } catch (error) {
+        const errorMsg = `Failed to recreate backends: ${error}`;
+        logger.error({ error, environmentId }, errorMsg);
+        result.errors.push(errorMsg);
+        result.success = false;
+        return result;
+      }
+
+      // Step 6: Add routes for each deployment configuration
       for (const config of deploymentConfigs) {
         if (!config.hostname) continue;
 
@@ -245,7 +266,7 @@ export class HAProxyRemediationService {
         }
       }
 
-      // Step 6: Add routes for manual frontends
+      // Step 7: Add routes for manual frontends
       const manualFrontends = existingFrontends.filter(
         (f) => f.frontendType === "manual" && f.hostname
       );

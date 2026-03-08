@@ -25,6 +25,26 @@ vi.mock('../services/port-utils', () => ({
   },
 }));
 
+const mockReconcilerApply = vi.fn();
+const mockReconcilerStopStack = vi.fn();
+vi.mock('../services/stacks/stack-reconciler', () => ({
+  StackReconciler: function() {
+    return {
+      apply: mockReconcilerApply,
+      stopStack: mockReconcilerStopStack,
+    };
+  },
+}));
+vi.mock('../services/stacks/stack-routing-manager', () => ({
+  StackRoutingManager: vi.fn(),
+}));
+vi.mock('../services/haproxy', () => ({
+  HAProxyFrontendManager: vi.fn(),
+}));
+vi.mock('../services/stacks/seed', () => ({
+  seedStacksForEnvironment: vi.fn().mockResolvedValue(undefined),
+}));
+
 const MockServiceRegistry = ServiceRegistry as MockedClass<typeof ServiceRegistry>;
 const MockApplicationServiceFactory = ApplicationServiceFactory as MockedClass<typeof ApplicationServiceFactory>;
 const MockDockerExecutorService = DockerExecutorService as MockedClass<typeof DockerExecutorService>;
@@ -59,6 +79,15 @@ describe('EnvironmentManager', () => {
       },
       environmentVolume: {
         upsert: vi.fn(),
+      },
+      stack: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      stackService: {
+        create: vi.fn().mockResolvedValue({}),
       },
     } as any;
 
@@ -107,6 +136,14 @@ describe('EnvironmentManager', () => {
     MockServiceRegistry.getInstance.mockReturnValue(mockServiceRegistry);
     MockApplicationServiceFactory.getInstance.mockReturnValue(mockServiceFactory);
     MockDockerExecutorService.mockImplementation(function() { return mockDockerExecutor; });
+
+    // Restore reconciler mock implementations (cleared by vi.clearAllMocks)
+    mockReconcilerApply.mockResolvedValue({
+      success: true, stackId: 'stack-1', appliedVersion: 1,
+      serviceResults: [{ serviceName: 'haproxy', action: 'create', success: true, duration: 100 }],
+      duration: 100,
+    });
+    mockReconcilerStopStack.mockResolvedValue({ success: true, stoppedContainers: 1 });
 
     environmentManager = EnvironmentManager.getInstance(mockPrisma);
   });
@@ -496,13 +533,16 @@ describe('EnvironmentManager', () => {
       mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environment.update.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environmentService.update.mockResolvedValue({} as any);
+      (mockPrisma as any).stack.findMany.mockResolvedValue([
+        { id: 'stack-1', name: 'haproxy', version: 1, services: [{ serviceType: 'Stateful' }] }
+      ]);
 
       const result = await environmentManager.startEnvironment('env-1');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Environment started successfully');
       expect(mockDockerExecutor.initialize).toHaveBeenCalled();
-      expect(mockServiceFactory.createService).toHaveBeenCalled();
+      expect(mockReconcilerApply).toHaveBeenCalledWith('stack-1');
     });
 
     it('should return success if environment already running', async () => {
@@ -550,12 +590,15 @@ describe('EnvironmentManager', () => {
       mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environment.update.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environmentService.update.mockResolvedValue({} as any);
+      (mockPrisma as any).stack.findMany.mockResolvedValue([
+        { id: 'stack-1', name: 'haproxy' }
+      ]);
 
       const result = await environmentManager.stopEnvironment('env-1');
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Environment stopped successfully');
-      expect(mockServiceFactory.stopService).toHaveBeenCalledWith('test-env-my-haproxy', 'env-1');
+      expect(mockReconcilerStopStack).toHaveBeenCalledWith('stack-1');
     });
 
     it('should return success if environment already stopped', async () => {

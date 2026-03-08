@@ -1,8 +1,5 @@
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
-import ContainerLabelManager from '../container/container-label-manager';
-import { portUtils } from '../port-utils';
-import * as path from 'path';
 import Dockerode from 'dockerode';
 import {
   IApplicationService,
@@ -14,12 +11,10 @@ import {
   HealthStatus,
   NetworkRequirement,
   VolumeRequirement,
-  PortRequirement
 } from '../interfaces/application-service';
 
 export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
-  private labelManager: ContainerLabelManager;
   private readonly projectName: string;
   private readonly mainContainerName: string;
   private readonly logger = servicesLogger();
@@ -99,7 +94,6 @@ export class HAProxyService implements IApplicationService {
     private environmentId?: string
   ) {
     this.dockerExecutor = new DockerExecutorService();
-    this.labelManager = new ContainerLabelManager();
     this.projectName = projectName;
     this.mainContainerName = `${this.projectName}-haproxy`;
   }
@@ -143,285 +137,16 @@ export class HAProxyService implements IApplicationService {
    */
   async start(): Promise<StartupResult> {
     const startTime = Date.now();
-    this.currentStatus = ServiceStatus.STARTING;
+    this.currentStatus = ServiceStatus.RUNNING;
+    this.startedAt = new Date();
+    this.stoppedAt = undefined;
+    this.lastError = undefined;
 
-    try {
-      await this.deployHAProxy();
-
-      this.currentStatus = ServiceStatus.RUNNING;
-      this.startedAt = new Date();
-      this.stoppedAt = undefined;
-
-      const duration = Date.now() - startTime;
-      const result: StartupResult = {
-        success: true,
-        message: 'HAProxy service started successfully',
-        duration,
-        details: {
-          projectName: this.projectName,
-          networks: this.availableNetworks.map(n => n.name),
-          volumes: this.availableVolumes.map(v => v.name)
-        }
-      };
-
-      this.logger.info({ duration }, 'HAProxy service started successfully');
-      return result;
-    } catch (error) {
-      this.currentStatus = ServiceStatus.FAILED;
-      this.lastError = {
-        message: error instanceof Error ? error.message : 'Failed to start',
-        timestamp: new Date(),
-        details: { phase: 'startup' }
-      };
-
-      const result: StartupResult = {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to start HAProxy service',
-        duration: Date.now() - startTime
-      };
-
-      this.logger.error({ error, duration: result.duration }, 'HAProxy service failed to start');
-      return result;
-    }
-  }
-
-  async deployHAProxy(): Promise<void> {
-    try {
-      // Check if network exists, create if it doesn't
-      const networkExists = await this.networkExists();
-      if (!networkExists) {
-        await this.createNetwork();
-      }
-
-      // Create named volumes
-      await this.createVolumes();
-
-      // Write config files directly to haproxy_config volume
-      await this.writeConfigsToVolume();
-
-      // Deploy main haproxy container
-      await this.deployHAProxyContainer();
-
-      this.logger.info('HAProxy deployment completed successfully');
-    } catch (error) {
-      this.logger.error({ error }, 'Failed to deploy HAProxy');
-      throw error;
-    }
-  }
-
-  private async networkExists(): Promise<boolean> {
-    try {
-      const docker = this.dockerExecutor.getDockerClient();
-      const networks = await docker.listNetworks();
-
-      // Check if all required networks exist
-      for (const networkReq of this.availableNetworks) {
-        const exists = networks.some(network => network.Name === networkReq.name);
-        if (!exists) {
-          this.logger.warn({ networkName: networkReq.name }, 'Required network does not exist');
-          return false;
-        }
-      }
-      return true;
-    } catch (error) {
-      this.logger.error({ error }, 'Failed to check if networks exist');
-      return false;
-    }
-  }
-
-  private async createNetwork(): Promise<void> {
-    const docker = this.dockerExecutor.getDockerClient();
-    const existingNetworks = await docker.listNetworks();
-
-    // Create each required network only if it doesn't exist
-    for (const networkReq of this.availableNetworks) {
-      const exists = existingNetworks.some(network => network.Name === networkReq.name);
-
-      if (!exists) {
-        this.logger.info({ networkName: networkReq.name }, 'Creating network');
-        await this.dockerExecutor.createNetwork(networkReq.name, this.projectName, {
-          driver: networkReq.driver || 'bridge',
-          ...networkReq.options
-        });
-      } else {
-        this.logger.debug({ networkName: networkReq.name }, 'Network already exists, skipping creation');
-      }
-    }
-  }
-
-  private async createVolumes(): Promise<void> {
-    // Use the stored volume requirements instead of hardcoded list
-    for (const volumeReq of this.availableVolumes) {
-      await this.dockerExecutor.createVolume(volumeReq.name, this.projectName);
-    }
-  }
-
-  /**
-   * Write HAProxy config files directly to the haproxy_config volume
-   */
-  private async writeConfigsToVolume(): Promise<void> {
-    const configVolumeName = this.getVolumeByName('haproxy_config')?.name || 'haproxy_config';
-    this.logger.info({ volumeName: configVolumeName }, 'Writing config files to volume');
-
-    // Read the config files
-    const fs = await import('fs/promises');
-    const haproxyCfg = await fs.readFile(
-      path.join(process.cwd(), 'docker-compose', 'haproxy', 'haproxy.cfg'),
-      'utf-8'
-    );
-    const dataplaneApiYml = await fs.readFile(
-      path.join(process.cwd(), 'docker-compose', 'haproxy', 'dataplaneapi.yml'),
-      'utf-8'
-    );
-    const domainBackendMap = await fs.readFile(
-      path.join(process.cwd(), 'docker-compose', 'haproxy', 'domain-backend.map'),
-      'utf-8'
-    );
-
-    // Escape the content for shell usage
-    const escapedHaproxyCfg = haproxyCfg.replace(/'/g, "'\\''");
-    const escapedDataplaneApiYml = dataplaneApiYml.replace(/'/g, "'\\''");
-    const escapedDomainBackendMap = domainBackendMap.replace(/'/g, "'\\''");
-
-    // Run a temporary container to write the configs to the volume
-    const tempWriterName = `${this.projectName}-config-writer-${Date.now()}`;
-    const docker = this.dockerExecutor.getDockerClient();
-
-    try {
-      // Pull alpine image first
-      await this.dockerExecutor.pullImageWithAuth('alpine:latest');
-
-      // Create a container that writes the configs directly to haproxy_config volume
-      const container = await docker.createContainer({
-        Image: 'alpine:latest',
-        name: tempWriterName,
-        Cmd: [
-          'sh',
-          '-c',
-          `echo '${escapedHaproxyCfg}' > /usr/local/etc/haproxy/haproxy.cfg && echo '${escapedDataplaneApiYml}' > /usr/local/etc/haproxy/dataplaneapi.yml && echo '${escapedDomainBackendMap}' > /usr/local/etc/haproxy/domain-backend.map && chmod 666 /usr/local/etc/haproxy/haproxy.cfg && chmod 666 /usr/local/etc/haproxy/dataplaneapi.yml && chmod 666 /usr/local/etc/haproxy/domain-backend.map`
-        ],
-        HostConfig: {
-          Binds: [`${configVolumeName}:/usr/local/etc/haproxy`]
-        }
-      });
-
-      try {
-        // Start and wait for completion
-        await container.start();
-        await container.wait();
-
-        this.logger.info('Config files written to haproxy_config volume');
-      } finally {
-        // Always cleanup the temporary container
-        try {
-          await container.remove({ force: true });
-        } catch (cleanupError) {
-          this.logger.warn({ error: cleanupError }, 'Failed to cleanup config writer container');
-        }
-      }
-    } catch (error) {
-      this.logger.error({ error }, 'Failed to write config files to volume');
-      throw error;
-    }
-  }
-
-  private getVolumeByName(name: string): VolumeRequirement | undefined {
-    // Support both exact match and suffix match (for environment-prefixed volumes)
-    // e.g., 'haproxy_config' will match 'env-123-haproxy_config'
-    return this.availableVolumes.find(vol =>
-      vol.name === name || vol.name.endsWith(`-${name}`)
-    );
-  }
-
-  private async deployHAProxyContainer(): Promise<void> {
-    await this.dockerExecutor.pullImageWithAuth('haproxytech/haproxy-alpine:3.2');
-
-    // Get dynamic port configuration based on environment
-    // Defaults are for internet/no environment
-    let httpPort = 8111;
-    let httpsPort = 8443;
-    let statsPort = 8405;
-    let dataplanePort = 5556;
-
-    if (this.environmentId) {
-      try {
-        const portConfig = await portUtils.getHAProxyPortsForEnvironment(this.environmentId);
-        httpPort = portConfig.httpPort;
-        httpsPort = portConfig.httpsPort;
-        statsPort = portConfig.statsPort;
-        dataplanePort = portConfig.dataplanePort;
-        this.logger.info(
-          {
-            environmentId: this.environmentId,
-            httpPort,
-            httpsPort,
-            statsPort,
-            dataplanePort,
-            source: portConfig.source
-          },
-          'Using dynamic port configuration for HAProxy'
-        );
-      } catch (error) {
-        this.logger.warn(
-          { error, environmentId: this.environmentId },
-          'Failed to get dynamic ports, using defaults'
-        );
-      }
-    }
-
-    const container = await this.dockerExecutor.createLongRunningContainer({
-      image: 'haproxytech/haproxy-alpine:3.2',
-      name: this.mainContainerName,
-      projectName: this.projectName,
-      serviceName: 'haproxy',
-      env: {
-        'HAPROXY_DATACENTER': 'docker',
-        'HAPROXY_MWORKER': '1',
-        'DATAPLANEAPI_USERLIST_FILE': '/usr/local/etc/haproxy/haproxy.cfg'
-      },
-      labels: this.environmentId ? this.labelManager.generateHAProxyLabels({
-        environmentId: this.environmentId,
-        projectName: this.projectName,
-        serviceName: 'haproxy'
-      }) : undefined,
-      ports: {
-        '80/tcp': [{ HostPort: httpPort.toString() }],
-        '443/tcp': [{ HostPort: httpsPort.toString() }],
-        '8404/tcp': [{ HostPort: statsPort.toString() }],
-        '5555/tcp': [{ HostPort: dataplanePort.toString() }]
-      },
-      mounts: [
-        {
-          Target: '/usr/local/etc/haproxy/',
-          Source: this.getVolumeByName('haproxy_config')?.name || 'haproxy_config',
-          Type: 'volume'
-        },
-        {
-          Target: '/etc/ssl/certs',
-          Source: this.getVolumeByName('haproxy_certs')?.name || 'haproxy_certs',
-          Type: 'volume'
-        }
-      ],
-      networks: this.availableNetworks.map(net => net.name),
-      restartPolicy: 'unless-stopped',
-      healthcheck: {
-        Test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://admin:admin@127.0.0.1:8404/stats'],
-        Interval: 30000000000, // 30s in nanoseconds
-        Timeout: 5000000000,   // 5s in nanoseconds
-        Retries: 3,
-        StartPeriod: 10000000000 // 10s in nanoseconds
-      },
-      logConfig: {
-        Type: 'json-file',
-        Config: {
-          'max-size': '10m',
-          'max-file': '3'
-        }
-      }
-    });
-
-    await container.start();
-    this.logger.info('Started haproxy container');
+    return {
+      success: true,
+      message: 'HAProxy service marked as running (containers managed by stack reconciler)',
+      duration: Date.now() - startTime,
+    };
   }
 
   /**

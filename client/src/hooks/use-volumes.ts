@@ -1,5 +1,5 @@
 import React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   DockerVolume,
   DockerVolumeListResponse,
@@ -99,6 +99,7 @@ export function useVolumes(options: UseVolumesOptions = {}) {
     queryFn: () => fetchVolumes(correlationId),
     enabled,
     refetchInterval,
+    placeholderData: keepPreviousData,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on authentication errors
       if (

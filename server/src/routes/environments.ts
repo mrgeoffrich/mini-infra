@@ -16,6 +16,7 @@ import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
+import { haproxyMigrationService } from '../services/haproxy/haproxy-migration-service';
 import DockerService from '../services/docker';
 import { portUtils } from '../services/port-utils';
 
@@ -913,6 +914,76 @@ router.get('/:id/remediation-preview', requirePermission('environments:read'), a
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Failed to get remediation preview'
+    });
+  }
+});
+
+/**
+ * GET /api/environments/:id/migration-preview
+ * Check if environment needs migration from legacy to stack-managed HAProxy
+ */
+router.get('/:id/migration-preview', requirePermission('environments:read'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    const preview = await haproxyMigrationService.getMigrationPreview(id, prisma);
+
+    res.json({
+      success: true,
+      data: preview
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to get migration preview');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to get migration preview'
+    });
+  }
+});
+
+/**
+ * POST /api/environments/:id/migrate-haproxy
+ * Migrate legacy HAProxy to stack-managed HAProxy
+ */
+router.post('/:id/migrate-haproxy', requirePermission('environments:write'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const environment = await environmentManager.getEnvironmentById(id);
+    if (!environment) {
+      return res.status(404).json({
+        error: 'Environment not found',
+        message: `Environment with ID ${id} does not exist`
+      });
+    }
+
+    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting HAProxy migration via API');
+    const result = await haproxyMigrationService.migrate(id, prisma);
+
+    logger.info({ environmentId: id, result: { success: result.success, stepCount: result.steps.length } }, 'HAProxy migration completed via API');
+
+    res.json({
+      success: result.success,
+      data: result,
+      message: result.success
+        ? 'HAProxy migration completed successfully'
+        : 'HAProxy migration completed with errors'
+    });
+
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to migrate HAProxy');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to migrate HAProxy'
     });
   }
 });

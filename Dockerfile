@@ -110,8 +110,8 @@ COPY server/prisma ./server/prisma
 # Copy configuration files
 COPY server/config ./server/config
 
-# Copy HAProxy deployment configuration files
-COPY server/docker-compose ./server/docker-compose
+# Copy stack template files (HAProxy, monitoring, etc.)
+COPY server/templates ./server/templates
 
 # Copy startup script
 COPY server/docker-entrypoint.sh ./server/docker-entrypoint.sh

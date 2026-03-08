@@ -48,8 +48,8 @@ export class CertificateDistributor {
     this.dataPlaneClient = dataPlaneClient;
     this.logger = tlsLogger();
 
-    // Certificate directory on host (mounted into HAProxy container)
-    this.certDir = path.join(process.cwd(), "docker-compose", "haproxy", "certs");
+    // Local staging directory for certificates (used as fallback when API methods fail)
+    this.certDir = path.join(process.cwd(), "data", "certs");
   }
 
   /**

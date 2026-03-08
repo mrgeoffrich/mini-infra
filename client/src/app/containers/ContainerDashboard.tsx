@@ -91,12 +91,19 @@ export function ContainerDashboard() {
     refetchInterval: 5000,
   });
 
-  const postgresContainerIds = new Set<string>(
-    (postgresContainersData || []).map((c: any) => c.id)
+  const postgresContainerIds = React.useMemo(
+    () => new Set<string>((postgresContainersData || []).map((c: any) => c.id)),
+    [postgresContainersData]
   );
   // Extract container IDs from the mapping
-  const managedContainerMap = managedContainerMapData || {};
-  const managedContainerIds = new Set<string>(Object.keys(managedContainerMap));
+  const managedContainerMap = React.useMemo(
+    () => managedContainerMapData || {},
+    [managedContainerMapData]
+  );
+  const managedContainerIds = React.useMemo(
+    () => new Set<string>(Object.keys(managedContainerMap)),
+    [managedContainerMap]
+  );
 
   // Group containers by environment
   const containerGroups = React.useMemo((): ContainerGroup[] => {
@@ -319,55 +326,9 @@ export function ContainerDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6" data-tour="containers-table">
-      <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-            <IconBrandDocker className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold">Container Dashboard</h1>
-            <p className="text-muted-foreground">
-              Monitor and manage your Docker containers
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 lg:px-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle>Containers</CardTitle>
-                <CardDescription>
-                  View and filter your Docker containers. Data updates every 5
-                  seconds.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={
-                    filterState.filters.status === "running"
-                      ? "default"
-                      : "outline"
-                  }
-                  size="sm"
-                  onClick={() => filterState.updateFilter("status", "running")}
-                >
-                  Running Only
-                </Button>
-                <Button
-                  variant={!filterState.filters.status ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => filterState.updateFilter("status", undefined)}
-                >
-                  All
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
+    <div data-tour="containers-table">
+      <Card>
+          <CardContent className="space-y-4 pt-6">
             <ContainerFilters {...filterState} />
 
             {isLoading && !containerData ? (
@@ -426,7 +387,6 @@ export function ContainerDashboard() {
             )}
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }

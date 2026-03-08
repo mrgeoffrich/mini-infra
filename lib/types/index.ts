@@ -65,6 +65,12 @@ export * from "./api";
 // Agent conversation types
 export * from "./agent";
 
+// Stacks types
+export * from "./stacks";
+
+// Stack Template types
+export * from "./stack-templates";
+
 // ====================
 // Type Utilities
 // ====================

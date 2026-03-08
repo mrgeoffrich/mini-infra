@@ -14,7 +14,7 @@ Run `touch .restart-dev` in the project root to trigger a full dev server restar
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
 * Run this command to display your development API key:
 ```bash
-cd server && npm run show-dev-key
+npm run show-dev-key -w server
 ```
 
 ### Use the API Key
@@ -99,10 +99,10 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ```
 mini-infra/
-├── client/                   # Vite + React 19 frontend application
-├── server/                  # Express.js 5 + Prisma backend
+├── client/                # Vite + React 19 frontend application
+├── server/                # Express.js 5 + Prisma backend
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
-├── projectmanagement/      # Project documentation and specs
+├── docs/                  # Project documentation and specs
 ├── .claude/               # Claude Code configuration
 ├── CLAUDE.md              # Claude Code context and instructions
 ├── README.md              # Project documentation
@@ -118,7 +118,7 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Scripts**: `build:lib` → `build:client` / `build:server`
 - **Watch Mode**: All three services run in parallel during development
 - **Type Safety**: Ensures consistent type definitions across full-stack
-- **Testing**: The shared types package must be built (`cd lib && npm run build`) before running tests, otherwise type imports will fail
+- **Testing**: The shared types package must be built (`npm run build:lib`) before running tests, otherwise type imports will fail
 
 ## Key Commands
 
@@ -130,36 +130,35 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - `npm run build:server` - Build lib then server
 - `npm install` - Install all workspace dependencies
 
-### Frontend (client/)
-- `npm run dev` - Start development server (Vite)
-- `npm run build` - Build for production
-- `npm run test` - Run tests
-- `npm run lint` - Run linting
+### Frontend (client/) — run from project root
+- `npm run dev -w client` - Start development server (Vite)
+- `npm run build -w client` - Build for production
+- `npm test -w client` - Run tests
+- `npm run lint -w client` - Run linting
 
-### Backend (server/)
-- `npm run dev` - Start development server with hot reload (tsx watch)
-- `npm run build` - Build TypeScript to JavaScript
-- `npm start` - Start production server
-- `npm test` - Run Vitest test suite
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:coverage` - Run tests with coverage report
-- `npx vitest run <filename>` - Run a single test file (e.g., `npx vitest run src/__tests__/environment-manager.test.ts`)
-- `npm run lint` - Run ESLint on TypeScript files
-- `npm run lint:fix` - Run ESLint with auto-fix
-- `npm run format` - Format code with Prettier
-- `npm run format:check` - Check code formatting
+### Backend (server/) — run from project root
+- `npm run dev -w server` - Start development server with hot reload (tsx watch)
+- `npm run build -w server` - Build TypeScript to JavaScript
+- `npm start -w server` - Start production server
+- `npm test -w server` - Run Vitest test suite
+- `npm run test:watch -w server` - Run tests in watch mode
+- `npm run test:coverage -w server` - Run tests with coverage report
+- `npx -w server vitest run <filename>` - Run a single test file (e.g., `npx -w server vitest run src/__tests__/environment-manager.test.ts`)
+- `npm run lint -w server` - Run ESLint on TypeScript files
+- `npm run lint:fix -w server` - Run ESLint with auto-fix
+- `npm run format -w server` - Format code with Prettier
+- `npm run format:check -w server` - Check code formatting
 
-### Shared Types (lib/)
-- `npm run dev` - TypeScript watch mode (auto-recompile on changes)
-- `npm run build` - Compile TypeScript to JavaScript + declarations
-- `npm run clean` - Remove dist/ build output
+### Shared Types (lib/) — run from project root
+- `npm run dev -w lib` - TypeScript watch mode (auto-recompile on changes)
+- `npm run build -w lib` - Compile TypeScript to JavaScript + declarations
+- `npm run clean -w lib` - Remove dist/ build output
 
-### Database (server/)
-- `npx prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
-- `npx prisma generate` - Regenerate Prisma client after schema changes
-- `npx prisma studio` - Open database GUI for data inspection
-- `npx prisma migrate status` - Check migration status and detect drift
-- `npx prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
+### Database — run from project root
+- `npx -w server prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
+- `npx -w server prisma generate` - Regenerate Prisma client after schema changes
+- `npx -w server prisma migrate status` - Check migration status and detect drift
+- `npx -w server prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
 
 #### Host Docker Socket Mount (Recommended)
 
@@ -176,11 +175,11 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
 
 Logs are found in `server/logs/` directory with the following files:
- - `app.log.1` - Application logs
- - `app-http.log.1` - http request and response logs
- - `app-services.log.1` - log from services that run from `server/src/service/*.ts`
- - `app-dockerexecutor.log.1` - logs from container execution
- - `app-prisma.log.1` - log from prisma
- - `app-deployments.log.1` - logs from deployment orchestrator and deployment operations
- - `app-loadbalancer.log.1` - logs from the haproxy service
- - `app-tls.log.1` - logs from the certificate management service
+ - `app.log.*` - Application logs
+ - `app-http.log.*` - http request and response logs
+ - `app-services.log.*` - log from services that run from `server/src/service/*.ts`
+ - `app-dockerexecutor.log.*` - logs from container execution
+ - `app-prisma.log.*` - log from prisma
+ - `app-deployments.log.*` - logs from deployment orchestrator and deployment operations
+ - `app-loadbalancer.log.*` - logs from the haproxy service
+ - `app-tls.log.*` - logs from the certificate management service

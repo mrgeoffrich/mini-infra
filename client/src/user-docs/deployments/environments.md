@@ -30,6 +30,7 @@ The detail page at `/environments/:id` shows:
 | **Services** | Total service count, healthy service count |
 | **Networks** | Number of Docker networks in this environment |
 | **Volumes** | Number of Docker volumes in this environment |
+| **Stacks** | Number of infrastructure stacks, synced count |
 
 ### Environment status
 
@@ -53,13 +54,6 @@ Individual services within an environment show:
 | `unhealthy` | Service is failing health checks |
 | `unknown` | Health status cannot be determined |
 
-## Starting and stopping an environment
-
-Use the action buttons in the top-right of the environment detail page:
-
-- **Start Environment** — available when the environment is stopped, failed, or uninitialized
-- **Stop Environment** — available when the environment is running or degraded
-
 ## Managing services
 
 Click **Add Service** (in the top-right dropdown or in the Services tab) to add a service to the environment. Services represent individual components managed within the environment (e.g., HAProxy, individual containers).
@@ -70,13 +64,13 @@ Each service in the list shows its name, type, last error (if any), creation tim
 
 The **Networks** and **Volumes** tabs show Docker networks and volumes scoped to this environment. These are managed automatically when services are deployed.
 
+## Stacks
+
+The **Stacks** tab shows infrastructure stacks scoped to this environment. Stacks use a declarative plan/apply model to manage groups of containers. See [Host Infrastructure Stacks](/help/applications/host-stacks) for details on how stacks work — the same plan, diff, and apply workflow applies to environment-scoped stacks.
+
 ## HAProxy status
 
 If the environment includes an HAProxy service, a **HAProxy Status** card appears on the detail page. If HAProxy configuration has drifted or encountered an error, a **Remediate** option appears to restore it.
-
-## Port availability
-
-If any ports required by the environment are already in use on the host, a warning alert appears showing which ports are unavailable. This can prevent the environment from starting.
 
 ## Creating and editing environments
 

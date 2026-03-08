@@ -1,51 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { StackInfo } from "@mini-infra/types";
 
 function generateCorrelationId(): string {
   return `monitoring-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 // Types for monitoring API responses
-export interface MonitoringServiceStatus {
-  service: {
-    id: string;
+export interface MonitoringStatusResponse {
+  stack: StackInfo | null;
+  containerStatus: Array<{
     serviceName: string;
-    serviceType: string;
+    containerId: string;
+    containerName: string;
+    image: string;
+    state: string;
     status: string;
-    health: string;
-    config: Record<string, unknown> | null;
-    startedAt: string | null;
-    stoppedAt: string | null;
-    lastError: unknown;
-    createdAt: string;
-    updatedAt: string;
-  };
-  metadata: {
-    name: string;
-    version: string;
-    description: string;
-    dependencies: string[];
-    tags: string[];
-    requiredNetworks: Array<{ name: string; driver?: string }>;
-    requiredVolumes: Array<{ name: string }>;
-    exposedPorts: Array<{
-      name: string;
-      containerPort: number;
-      hostPort: number;
-      protocol: string;
-      description: string;
-    }>;
-  };
-  healthDetails: {
-    status: string;
-    message: string;
-    lastChecked: string;
-    details?: Record<string, unknown>;
-  };
-  lastError?: {
-    message: string;
-    timestamp: string;
-    details?: Record<string, unknown>;
-  };
+  }>;
+  running: boolean;
+  message?: string;
 }
 
 export interface PrometheusQueryResponse {
@@ -60,10 +32,10 @@ export interface PrometheusQueryResponse {
   };
 }
 
-// Fetch monitoring service status
+// Fetch monitoring status (stack-based)
 async function fetchMonitoringStatus(
   correlationId: string
-): Promise<MonitoringServiceStatus> {
+): Promise<MonitoringStatusResponse> {
   const response = await fetch(`/api/monitoring/status`, {
     credentials: "include",
     headers: {
@@ -126,29 +98,31 @@ async function fetchPrometheusRangeQuery(
   return response.json();
 }
 
-// Start monitoring service
-async function startMonitoringService(
+// Apply stack (deploy/update)
+async function applyMonitoringStack(
+  stackId: string,
   correlationId: string
-): Promise<{ message: string; duration?: number }> {
-  const response = await fetch(`/api/monitoring/start`, {
+): Promise<any> {
+  const response = await fetch(`/api/stacks/${stackId}/apply`, {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       "X-Correlation-ID": correlationId,
     },
+    body: JSON.stringify({}),
   });
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to start monitoring service`);
+    throw new Error(data.message || `Failed to apply monitoring stack`);
   }
 
   return response.json();
 }
 
-// Stop monitoring service
-async function stopMonitoringService(
+// Stop monitoring stack
+async function stopMonitoringStack(
   correlationId: string
 ): Promise<{ message: string }> {
   const response = await fetch(`/api/monitoring/stop`, {
@@ -162,7 +136,30 @@ async function stopMonitoringService(
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to stop monitoring service`);
+    throw new Error(data.error || `Failed to stop monitoring stack`);
+  }
+
+  return response.json();
+}
+
+// Fetch stack plan
+async function fetchMonitoringPlan(
+  stackId: string,
+  correlationId: string
+): Promise<any> {
+  const response = await fetch(`/api/stacks/${stackId}/plan`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 503) {
+      throw new Error("Docker is unavailable");
+    }
+    throw new Error(`Failed to fetch plan: ${response.statusText}`);
   }
 
   return response.json();
@@ -187,13 +184,25 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
   });
 }
 
-export function useStartMonitoring() {
+export function useMonitoringPlan(stackId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["monitoringPlan", stackId],
+    queryFn: () => fetchMonitoringPlan(stackId!, generateCorrelationId()),
+    enabled: !!stackId && enabled,
+    staleTime: 0,
+    gcTime: 2 * 60 * 1000,
+  });
+}
+
+export function useApplyMonitoring() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => startMonitoringService(generateCorrelationId()),
+    mutationFn: (stackId: string) =>
+      applyMonitoringStack(stackId, generateCorrelationId()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
     },
   });
 }
@@ -202,41 +211,10 @@ export function useStopMonitoring() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => stopMonitoringService(generateCorrelationId()),
+    mutationFn: () => stopMonitoringStack(generateCorrelationId()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
-    },
-  });
-}
-
-// Force remove monitoring containers
-async function forceRemoveMonitoringService(
-  correlationId: string
-): Promise<{ message: string; removed: string[]; errors: string[] }> {
-  const response = await fetch(`/api/monitoring/force-remove`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to force remove monitoring containers`);
-  }
-
-  return response.json();
-}
-
-export function useForceRemoveMonitoring() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => forceRemoveMonitoringService(generateCorrelationId()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
     },
   });
 }

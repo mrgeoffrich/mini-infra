@@ -57,7 +57,7 @@ export function NetworksList() {
     );
   }, [data?.networks, searchFilter]);
 
-  const columns: ColumnDef<DockerNetwork>[] = [
+  const columns = useMemo<ColumnDef<DockerNetwork>[]>(() => [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -158,11 +158,12 @@ export function NetworksList() {
         );
       },
     },
-  ];
+  ], []);
 
   const table = useReactTable({
     data: filteredNetworks,
     columns,
+    getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,

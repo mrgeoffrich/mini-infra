@@ -147,6 +147,8 @@ import githubAppResourcesRoutes from "./routes/github-app-resources";
 import agentRoutes from "./routes/agent";
 import monitoringRoutes from "./routes/monitoring";
 import permissionPresetsRoutes from "./routes/permission-presets";
+import stacksRoutes from "./routes/stacks";
+import stackTemplatesRoutes from "./routes/stack-templates";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -197,6 +199,8 @@ const routes = [
   { path: "/api/events", router: eventsRoutes, name: "eventsRoutes" },
   { path: "/api/monitoring", router: monitoringRoutes, name: "monitoringRoutes" },
   { path: "/api/permission-presets", router: permissionPresetsRoutes, name: "permissionPresetsRoutes" },
+  { path: "/api/stacks", router: stacksRoutes, name: "stacksRoutes" },
+  { path: "/api/stack-templates", router: stackTemplatesRoutes, name: "stackTemplatesRoutes" },
 ];
 
 // Agent routes are always registered — the settings endpoint must be accessible

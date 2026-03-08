@@ -162,7 +162,7 @@ export function VolumesList() {
     );
   }, [data?.volumes, searchFilter]);
 
-  const columns: ColumnDef<DockerVolume>[] = [
+  const columns = useMemo<ColumnDef<DockerVolume>[]>(() => [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -234,11 +234,12 @@ export function VolumesList() {
         return <VolumeActions volume={volume} />;
       },
     },
-  ];
+  ], []);
 
   const table = useReactTable({
     data: filteredVolumes,
     columns,
+    getRowId: (row) => row.name,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,

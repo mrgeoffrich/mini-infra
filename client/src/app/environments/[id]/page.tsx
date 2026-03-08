@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
-import { useEnvironment, useStartEnvironment, useStopEnvironment } from "@/hooks/use-environments";
-import { useValidatePorts, hasUnavailablePorts, formatUnavailablePorts } from "@/hooks/use-validate-ports";
-import { NetworkList, VolumeList } from "@/components/environments";
+import { useEnvironment } from "@/hooks/use-environments";
+import { NetworkList, VolumeList, StacksList } from "@/components/environments";
+import { useStacks } from "@/hooks/use-stacks";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
 import { ServiceAddDialog } from "@/components/environments/service-add-dialog";
@@ -34,17 +34,14 @@ import {
   IconServer,
   IconNetwork,
   IconDatabase,
-  IconPlayerPlay,
-  IconSquare,
   IconSettings,
   IconTrash,
   IconDots,
   IconUsers,
   IconAlertCircle,
-  IconAlertTriangle,
+  IconStack2,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const ApplicationServiceHealthStatusValues = {
@@ -61,10 +58,6 @@ export function EnvironmentDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [serviceAddDialogOpen, setServiceAddDialogOpen] = useState(false);
   const [remediateDialogOpen, setRemediateDialogOpen] = useState(false);
-  const [isOperating, setIsOperating] = useState(false);
-
-  const startMutation = useStartEnvironment();
-  const stopMutation = useStopEnvironment();
 
   const {
     data: environment,
@@ -77,61 +70,14 @@ export function EnvironmentDetailPage() {
     enabled: !!environmentId, // Only fetch if environmentId exists
   });
 
-  // Validate ports for HAProxy services
-  const {
-    data: portValidation,
-    refetch: refetchPortValidation,
-  } = useValidatePorts(environmentId, {
-    enabled: !!environmentId,
-    refetchInterval: 30000, // Check ports every 30 seconds
-  });
+  // Fetch stacks for overview card
+  const { data: stacksData } = useStacks(environmentId);
 
   if (!environmentId) {
     return <Navigate to="/environments" replace />;
   }
 
   const isRunning = environment?.status === "running";
-  const canStart = environment?.status === "stopped" || environment?.status === "failed" || environment?.status === "uninitialized";
-  const canStop = environment?.status === "running" || environment?.status === "degraded";
-
-  const handleStart = async () => {
-    if (!environment) return;
-    setIsOperating(true);
-    try {
-      // Re-validate ports before starting
-      const { data: freshValidation } = await refetchPortValidation();
-      if (freshValidation && hasUnavailablePorts(freshValidation.data?.validation)) {
-        const unavailable = formatUnavailablePorts(freshValidation.data?.validation);
-        toast.error(`Cannot start environment: The following ports are unavailable: ${unavailable}`);
-        setIsOperating(false);
-        return;
-      }
-
-      await startMutation.mutateAsync(environment.id);
-      toast.success(`Environment "${environment.name}" started successfully`);
-    } catch (error) {
-      toast.error(
-        `Failed to start environment: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsOperating(false);
-    }
-  };
-
-  const handleStop = async () => {
-    if (!environment) return;
-    setIsOperating(true);
-    try {
-      await stopMutation.mutateAsync(environment.id);
-      toast.success(`Environment "${environment.name}" stopped successfully`);
-    } catch (error) {
-      toast.error(
-        `Failed to stop environment: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setIsOperating(false);
-    }
-  };
 
   const getTypeColor = (type: Environment['type']) => {
     return type === "production"
@@ -267,27 +213,6 @@ export function EnvironmentDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {canStart && (
-              <Button
-                onClick={handleStart}
-                disabled={isOperating}
-                className="flex items-center gap-2"
-              >
-                <IconPlayerPlay className="h-4 w-4" />
-                Start Environment
-              </Button>
-            )}
-            {canStop && (
-              <Button
-                variant="outline"
-                onClick={handleStop}
-                disabled={isOperating}
-                className="flex items-center gap-2"
-              >
-                <IconSquare className="h-4 w-4" />
-                Stop Environment
-              </Button>
-            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
@@ -324,22 +249,8 @@ export function EnvironmentDetailPage() {
           </div>
         </div>
 
-        {/* Port Unavailability Warning */}
-        {canStart && hasUnavailablePorts(portValidation?.data?.validation) && (
-          <Alert variant="destructive" className="mb-6">
-            <IconAlertTriangle className="h-4 w-4" />
-            <AlertDescription className="flex flex-col gap-1">
-              <span className="font-medium">Port Conflict Detected</span>
-              <span>
-                The following ports are already in use and may prevent the environment from starting:{" "}
-                {formatUnavailablePorts(portValidation?.data?.validation)}
-              </span>
-            </AlertDescription>
-          </Alert>
-        )}
-
         {/* Environment Overview */}
-        <div className="grid gap-6 md:grid-cols-3 mb-6">
+        <div className="grid gap-6 md:grid-cols-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Services</CardTitle>
@@ -389,6 +300,21 @@ export function EnvironmentDetailPage() {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Stacks</CardTitle>
+              <IconStack2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stacksData?.data?.length ?? 0}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  {stacksData?.data?.filter((s) => s.status === "synced").length ?? 0} synced
+                </span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* HAProxy Status Card - Only show if environment has HAProxy service */}
@@ -403,7 +329,7 @@ export function EnvironmentDetailPage() {
 
       <div className="px-4 lg:px-6 max-w-full">
         <Tabs defaultValue="services" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="services" className="flex items-center gap-2">
               <IconServer className="h-4 w-4" />
               Services
@@ -416,9 +342,13 @@ export function EnvironmentDetailPage() {
               <IconDatabase className="h-4 w-4" />
               Volumes
             </TabsTrigger>
+            <TabsTrigger value="stacks" className="flex items-center gap-2">
+              <IconStack2 className="h-4 w-4" />
+              Stacks
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="services" className="space-y-6">
+          <TabsContent value="services" className="space-y-6" forceMount >
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -495,12 +425,16 @@ export function EnvironmentDetailPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="networks">
+          <TabsContent value="networks" forceMount >
             <NetworkList environmentId={environment.id} />
           </TabsContent>
 
-          <TabsContent value="volumes">
+          <TabsContent value="volumes" forceMount >
             <VolumeList environmentId={environment.id} />
+          </TabsContent>
+
+          <TabsContent value="stacks" forceMount >
+            <StacksList environmentId={environment.id} />
           </TabsContent>
         </Tabs>
       </div>

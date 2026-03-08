@@ -896,3 +896,52 @@ export interface RemediationPreviewResponse {
   success: boolean;
   data: RemediationPreview;
 }
+
+// HAProxy Migration Types (legacy → stack-managed)
+
+export interface MigrationPreview {
+  needsMigration: boolean;
+  legacyContainer: {
+    name: string;
+    id: string;
+    status: string;
+  } | null;
+  stackStatus: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+  legacyVolumes: string[];
+  certificateCount: number;
+  backendCount: number;
+  serverCount: number;
+  postMigration: {
+    newContainerName: string;
+    newVolumes: string[];
+    networkReused: string;
+    remediationNeeded: boolean;
+  };
+}
+
+export interface MigrationPreviewResponse {
+  success: boolean;
+  data: MigrationPreview;
+}
+
+export interface MigrationStep {
+  step: string;
+  status: 'completed' | 'failed' | 'skipped';
+  detail?: string;
+}
+
+export interface MigrationResult {
+  success: boolean;
+  steps: MigrationStep[];
+  errors: string[];
+}
+
+export interface MigrationResultResponse {
+  success: boolean;
+  data: MigrationResult;
+  message: string;
+}
