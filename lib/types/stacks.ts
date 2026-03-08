@@ -256,6 +256,29 @@ export function deserializeStack(
   };
 }
 
+// Plan warnings
+
+export interface PortConflictWarning {
+  type: 'port-conflict';
+  serviceName: string;
+  hostPort: number;
+  protocol: 'tcp' | 'udp';
+  conflictingContainerName: string;
+  conflictingStackName?: string;
+  message: string;
+}
+
+export interface NameConflictWarning {
+  type: 'name-conflict';
+  serviceName: string;
+  desiredContainerName: string;
+  conflictingContainerId: string;
+  conflictingStackName?: string;
+  message: string;
+}
+
+export type PlanWarning = PortConflictWarning | NameConflictWarning;
+
 // Reconciler types
 
 export interface StackPlan {
@@ -266,6 +289,7 @@ export interface StackPlan {
   actions: ServiceAction[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
+  warnings?: PlanWarning[];
 }
 
 export interface ServiceAction {
