@@ -13,6 +13,7 @@ import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
 import type { ServiceApplyResult, ApplyResult } from "./stacks";
+import type { MigrationStep, MigrationResult } from "./deployments";
 
 // ====================
 // Socket Channel Constants & Types
@@ -151,6 +152,10 @@ export const ServerEvent = {
   STACK_APPLY_STARTED: "stack:apply:started",
   STACK_APPLY_SERVICE_RESULT: "stack:apply:service-result",
   STACK_APPLY_COMPLETED: "stack:apply:completed",
+  // HAProxy Migration
+  MIGRATION_STARTED: "migration:started",
+  MIGRATION_STEP: "migration:step",
+  MIGRATION_COMPLETED: "migration:completed",
   // Volumes
   VOLUMES_LIST: "volumes:list",
   // Networks
@@ -267,6 +272,25 @@ export interface ServerToClientEvents {
   "stack:apply:completed": (data: ApplyResult & {
     error?: string;
     postApply?: { success: boolean; errors?: string[] };
+  }) => void;
+
+  // ── HAProxy Migration ──────────────────────────────
+  /** HAProxy migration started */
+  "migration:started": (data: {
+    environmentId: string;
+    environmentName: string;
+    totalSteps: number;
+  }) => void;
+  /** Individual migration step completed */
+  "migration:step": (data: {
+    environmentId: string;
+    step: MigrationStep;
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** HAProxy migration completed (success or failure) */
+  "migration:completed": (data: MigrationResult & {
+    environmentId: string;
   }) => void;
 
   // ── Volumes ─────────────────────────────────────────

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useMigrationPreview,
   useMigrateHAProxy,
+  useMigrationProgress,
 } from "@/hooks/use-haproxy-remediation";
 import {
   Dialog,
@@ -15,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
 import type { MigrationStep } from "@mini-infra/types";
 import {
   IconLoader2,
@@ -59,10 +59,6 @@ export function MigrateHAProxyDialog({
   onSuccess,
 }: MigrateHAProxyDialogProps) {
   const [dialogState, setDialogState] = useState<DialogState>("preview");
-  const [result, setResult] = useState<{
-    steps: MigrationStep[];
-    errors: string[];
-  } | null>(null);
 
   const {
     data: previewResponse,
@@ -75,36 +71,45 @@ export function MigrateHAProxyDialog({
   });
 
   const migrateMutation = useMigrateHAProxy();
+  const migrationProgress = useMigrationProgress(environmentId);
 
   const preview = previewResponse?.data;
 
+  // Track migration progress from Socket.IO events
+  useEffect(() => {
+    if (migrationProgress.isMigrating && dialogState !== "migrating") {
+      setDialogState("migrating");
+    }
+  }, [migrationProgress.isMigrating, dialogState]);
+
+  // Handle migration completion from Socket.IO
+  useEffect(() => {
+    if (!migrationProgress.finalResult) return;
+
+    if (migrationProgress.finalResult.success) {
+      setDialogState("success");
+      onSuccess?.();
+    } else {
+      setDialogState("error");
+    }
+  }, [migrationProgress.finalResult, onSuccess]);
+
   const handleMigrate = async () => {
     setDialogState("migrating");
+    migrationProgress.reset();
 
     try {
-      const response = await migrateMutation.mutateAsync(environmentId);
-      setResult({ steps: response.data.steps, errors: response.data.errors });
-      setDialogState(response.data.success ? "success" : "error");
-
-      if (response.data.success) {
-        toast.success("HAProxy migration completed successfully");
-        onSuccess?.();
-      } else {
-        toast.error("HAProxy migration completed with errors");
-      }
-    } catch (error) {
-      setResult(null);
+      await migrateMutation.mutateAsync(environmentId);
+      // HTTP responded with { started: true } — real progress comes via Socket.IO
+    } catch {
       setDialogState("error");
-      toast.error(
-        `Migration failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
     }
   };
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       setDialogState("preview");
-      setResult(null);
+      migrationProgress.reset();
     }
     onOpenChange(isOpen);
   };
@@ -112,6 +117,10 @@ export function MigrateHAProxyDialog({
   const handleClose = () => {
     handleOpenChange(false);
   };
+
+  // Use Socket.IO results when available, otherwise show empty
+  const resultSteps = migrationProgress.finalResult?.steps ?? migrationProgress.completedSteps;
+  const resultErrors = migrationProgress.finalResult?.errors ?? [];
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -308,21 +317,43 @@ export function MigrateHAProxyDialog({
             </div>
           )}
 
-          {/* Migrating State */}
+          {/* Migrating State — live progress from Socket.IO */}
           {dialogState === "migrating" && (
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <IconLoader2 className="h-12 w-12 animate-spin text-primary" />
-              <div className="text-center space-y-2">
-                <div className="font-medium">Migrating HAProxy</div>
-                <div className="text-sm text-muted-foreground">
-                  Removing legacy container, deploying via stack, and restoring configuration...
-                </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-center py-4">
+                <IconLoader2 className="h-10 w-10 animate-spin text-primary" />
               </div>
+              <div className="text-center text-sm text-muted-foreground mb-4">
+                {migrationProgress.completedSteps.length > 0
+                  ? `Step ${migrationProgress.completedSteps.length} of ~${migrationProgress.totalSteps}`
+                  : "Starting migration..."}
+              </div>
+
+              {migrationProgress.completedSteps.length > 0 && (
+                <div className="rounded-md border p-4 space-y-1">
+                  {migrationProgress.completedSteps.map((step, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 text-sm p-1.5 rounded"
+                    >
+                      <StepStatusIcon status={step.status} />
+                      <div className="flex-1">
+                        <span className="font-medium">{step.step}</span>
+                        {step.detail && (
+                          <span className="text-muted-foreground ml-1">
+                            — {step.detail}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {/* Success State */}
-          {dialogState === "success" && result && (
+          {dialogState === "success" && (
             <div className="space-y-4">
               <div className="flex items-center justify-center py-4">
                 <div className="rounded-full bg-green-100 dark:bg-green-900 p-3">
@@ -333,7 +364,7 @@ export function MigrateHAProxyDialog({
               <div className="rounded-md border p-4 space-y-2">
                 <h4 className="font-medium">Migration Steps</h4>
                 <div className="space-y-1">
-                  {result.steps.map((step, i) => (
+                  {resultSteps.map((step, i) => (
                     <div
                       key={i}
                       className="flex items-start gap-2 text-sm p-1.5 rounded hover:bg-muted/50"
@@ -352,13 +383,13 @@ export function MigrateHAProxyDialog({
                 </div>
               </div>
 
-              {result.errors.length > 0 && (
+              {resultErrors.length > 0 && (
                 <Alert className="bg-yellow-50 dark:bg-yellow-950 border-yellow-200">
                   <IconAlertTriangle className="h-4 w-4 text-yellow-600" />
                   <AlertDescription>
                     <div className="font-medium mb-1">Warnings:</div>
                     <ul className="text-sm list-disc list-inside">
-                      {result.errors.map((error, i) => (
+                      {resultErrors.map((error, i) => (
                         <li key={i}>{error}</li>
                       ))}
                     </ul>
@@ -385,11 +416,11 @@ export function MigrateHAProxyDialog({
                 </AlertDescription>
               </Alert>
 
-              {result && result.steps.length > 0 && (
+              {resultSteps.length > 0 && (
                 <div className="rounded-md border p-3">
                   <h4 className="font-medium mb-2 text-sm">Step Results:</h4>
                   <div className="space-y-1">
-                    {result.steps.map((step, i) => (
+                    {resultSteps.map((step, i) => (
                       <div
                         key={i}
                         className="flex items-start gap-2 text-sm"
@@ -414,11 +445,11 @@ export function MigrateHAProxyDialog({
                 </div>
               )}
 
-              {result && result.errors.length > 0 && (
+              {resultErrors.length > 0 && (
                 <div className="rounded-md border p-3">
                   <h4 className="font-medium mb-2 text-sm">Errors:</h4>
                   <ul className="text-sm space-y-1 text-red-600 dark:text-red-400">
-                    {result.errors.map((error, i) => (
+                    {resultErrors.map((error, i) => (
                       <li key={i} className="flex items-start gap-2">
                         <IconX className="h-4 w-4 mt-0.5 flex-shrink-0" />
                         <span>{error}</span>
