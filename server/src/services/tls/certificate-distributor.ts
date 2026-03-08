@@ -49,7 +49,7 @@ export class CertificateDistributor {
     this.logger = tlsLogger();
 
     // Certificate directory on host (mounted into HAProxy container)
-    this.certDir = path.join(process.cwd(), "docker-compose", "haproxy", "certs");
+    this.certDir = path.join(process.cwd(), "templates", "haproxy", "certs");
   }
 
   /**
