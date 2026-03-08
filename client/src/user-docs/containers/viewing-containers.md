@@ -57,10 +57,6 @@ Use the filter bar above the table to narrow down the container list:
 
 To clear all active filters, click the **Reset** button (appears when any filter is active). Active filters are shown as chips above the table.
 
-## Quick filters
-
-At the top of the container card, **Running Only** and **All** buttons let you toggle between showing all containers and showing only running ones.
-
 ## Container groups
 
 Containers are grouped in the table:
