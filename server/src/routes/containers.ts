@@ -24,9 +24,10 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
-import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent } from "@mini-infra/types";
-import { serializeContainer } from "../services/container-serializer";
+import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId } from "@mini-infra/types";
+import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
+import { DockerStreamDemuxer } from "../lib/docker-stream";
 
 const router = express.Router();
 
@@ -133,8 +134,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
     }
 
     // Fetch containers from Docker service
-    let dockerContainers = await dockerService.listContainers(true);
-    let containers = await Promise.all(dockerContainers.map(serializeContainer));
+    let containers = await fetchAndSerializeContainers(dockerService);
 
     // Apply filtering
     if (queryParams.status) {
@@ -436,7 +436,7 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
 
   try {
     // Validate container ID format
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -545,7 +545,7 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
 
   try {
     // Validate container ID format
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -839,7 +839,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
 
   try {
     // Validate container ID
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",
@@ -956,32 +956,11 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
       until: options.until ? parseInt(options.until) : undefined,
     })) as unknown as Readable;
 
-    // Docker logs use a multiplexed stream format with 8-byte headers
-    // Header format: [stream_type, 0, 0, 0, size1, size2, size3, size4]
-    // stream_type: 0=stdin, 1=stdout, 2=stderr
-    let buffer = Buffer.alloc(0);
+    const demuxer = new DockerStreamDemuxer();
 
     logStream.on("data", (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-
-      // Process complete frames
-      while (buffer.length >= 8) {
-        const header = buffer.slice(0, 8);
-        const streamType = header[0];
-        const payloadSize =
-          (header[4] << 24) | (header[5] << 16) | (header[6] << 8) | header[7];
-
-        // Check if we have the complete payload
-        if (buffer.length < 8 + payloadSize) {
-          break;
-        }
-
-        // Extract the payload
-        const payload = buffer.slice(8, 8 + payloadSize);
-        buffer = buffer.slice(8 + payloadSize);
-
-        // Convert to string and send as SSE event
-        const message = payload.toString("utf-8").trimEnd();
+      for (const frame of demuxer.push(chunk)) {
+        const message = frame.data.toString("utf-8").trimEnd();
 
         // Parse timestamp if present (Docker format: "2025-01-13T10:30:45.123456789Z message")
         let timestamp: string | undefined;
@@ -1000,7 +979,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
           data: {
             timestamp,
             message: logMessage,
-            stream: streamType === 1 ? "stdout" : "stderr",
+            stream: frame.stream === "stderr" ? "stderr" : "stdout",
           },
         };
 
@@ -1116,7 +1095,7 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
 
   try {
     // Validate container ID
-    if (!containerId || containerId.length < 12) {
+    if (!containerId || !isValidContainerId(containerId)) {
       return res.status(400).json({
         error: "Bad Request",
         message: "Invalid container ID format",

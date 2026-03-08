@@ -11,6 +11,7 @@
 import type { ContainerInfo, DockerContainerInfo } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
+import type DockerService from "./docker";
 
 const logger = appLogger();
 
@@ -52,4 +53,14 @@ export async function serializeContainer(
   }
 
   return serialized;
+}
+
+/**
+ * Fetch all containers from Docker and serialize them for API/socket responses.
+ */
+export async function fetchAndSerializeContainers(
+  dockerService: DockerService,
+): Promise<ContainerInfo[]> {
+  const rawContainers = await dockerService.listContainers(true);
+  return Promise.all(rawContainers.map(serializeContainer));
 }

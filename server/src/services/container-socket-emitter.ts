@@ -11,7 +11,7 @@
 
 import DockerService from "./docker";
 import { Channel, ServerEvent } from "@mini-infra/types";
-import { serializeContainer } from "./container-serializer";
+import { fetchAndSerializeContainers } from "./container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { servicesLogger } from "../lib/logger-factory";
 
@@ -41,10 +41,7 @@ export function setupContainerSocketEmitter(): void {
           return;
         }
 
-        const rawContainers = await dockerService.listContainers(true);
-        const containers = await Promise.all(
-          rawContainers.map((c) => serializeContainer(c)),
-        );
+        const containers = await fetchAndSerializeContainers(dockerService);
 
         emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINERS_LIST, {
           containers,

@@ -15,7 +15,7 @@ import type {
   ClientToServerEvents,
   SocketChannel,
 } from "@mini-infra/types";
-import { ClientEvent } from "@mini-infra/types";
+import { ClientEvent, SOCKET_TRANSPORTS } from "@mini-infra/types";
 
 // Fully typed client socket
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -32,7 +32,7 @@ function getSocket(): TypedSocket {
     socket = io({
       // Connect to same origin (Vite proxies in dev, same host in prod)
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      transports: [...SOCKET_TRANSPORTS],
       autoConnect: false,
     }) as TypedSocket;
   }

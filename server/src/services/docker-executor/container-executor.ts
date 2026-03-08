@@ -4,6 +4,7 @@ import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions, ContainerExecutionResult, ContainerProgress } from "./types";
 import { inferTaskType, generateTaskId } from "./utils";
+import { parseDockerStreamChunk } from "../../lib/docker-stream";
 
 /**
  * ContainerExecutor - Executes short-lived, task-specific Docker containers
@@ -265,19 +266,14 @@ export class ContainerExecutor {
       const stdout = new Readable({ read() { } });
       const stderr = new Readable({ read() { } });
 
-      // Docker multiplexes stdout and stderr in a single stream
-      // Each chunk has an 8-byte header: [stream_type, 0, 0, 0, size_bytes...]
       stream.on("data", (chunk: Buffer) => {
-        if (chunk.length < 8) return;
+        const frame = parseDockerStreamChunk(chunk);
+        if (!frame) return;
 
-        const streamType = chunk.readUInt8(0);
-        const size = chunk.readUInt32BE(4);
-        const data = chunk.subarray(8, 8 + size);
-
-        if (streamType === 1) {
-          stdout.push(data);
-        } else if (streamType === 2) {
-          stderr.push(data);
+        if (frame.stream === "stdout") {
+          stdout.push(frame.data);
+        } else if (frame.stream === "stderr") {
+          stderr.push(frame.data);
         }
       });
 

@@ -17,7 +17,7 @@ import type {
   SocketData,
   SocketChannel,
 } from "@mini-infra/types";
-import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedChannel, MAX_SOCKET_SUBSCRIPTIONS } from "@mini-infra/types";
+import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedChannel, MAX_SOCKET_SUBSCRIPTIONS, SOCKET_TRANSPORTS } from "@mini-infra/types";
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
@@ -79,8 +79,7 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
       origin: corsOrigin,
       credentials: true,
     },
-    // Only use websocket transport (skip long-polling for cleaner behavior)
-    transports: ["websocket", "polling"],
+    transports: [...SOCKET_TRANSPORTS],
   });
 
   // Authentication middleware

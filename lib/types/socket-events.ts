@@ -102,6 +102,9 @@ export const DEFAULT_LOG_TAIL_LINES = 100;
 /** Maximum allowed log tail lines */
 export const MAX_LOG_TAIL_LINES = 5000;
 
+/** Socket.IO transports in priority order (must match between client and server) */
+export const SOCKET_TRANSPORTS = ["websocket", "polling"] as const;
+
 /** Docker container IDs are 12 (short) or 64 (full) hex characters */
 const DOCKER_ID_RE = /^[a-f0-9]{12,64}$/;
 

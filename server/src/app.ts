@@ -277,18 +277,5 @@ app.use(notFoundHandler as RequestHandler);
 // Global error handling middleware (must be last) - Express 5 compliant
 app.use(errorHandler);
 
-// Graceful shutdown handling
-const appLoggerInstance = httpLogger(); // Use HTTP logger for shutdown messages since they relate to server lifecycle
-
-process.on("SIGTERM", () => {
-  appLoggerInstance.info("SIGTERM received, shutting down gracefully");
-  process.exit(0);
-});
-
-process.on("SIGINT", () => {
-  appLoggerInstance.info("SIGINT received, shutting down gracefully");
-  process.exit(0);
-});
-
 export default app;
 // Foreign keys enabled via DATABASE_URL parameter
