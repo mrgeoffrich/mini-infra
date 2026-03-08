@@ -442,6 +442,7 @@ export function useBackupHealth(options: UseBackupHealthOptions = {}) {
     refetchInterval,
     staleTime: 30000, // 30 seconds
     gcTime: 5 * 60 * 1000,
+    refetchOnReconnect: true,
   });
 }
 

@@ -11,7 +11,6 @@ import {
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-const POLL_INTERVAL_CONNECTED = 30000; // 30s fallback when socket is connected
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s when socket is not connected
 
 // Generate correlation ID for debugging
@@ -98,11 +97,11 @@ export function useContainers(options: UseContainersOptions = {}) {
   const queryClient = useQueryClient();
   const { connected } = useSocket();
 
-  // Use slower polling when socket is connected (it's just a fallback),
-  // faster polling when disconnected. Allow explicit override via options.
+  // No polling when socket is connected (real-time updates via socket events);
+  // fall back to fast polling when disconnected. Allow explicit override via options.
   const refetchInterval =
     options.refetchInterval ??
-    (connected ? POLL_INTERVAL_CONNECTED : POLL_INTERVAL_DISCONNECTED);
+    (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   // Subscribe to the containers channel for push updates
   useSocketChannel(Channel.CONTAINERS, enabled);

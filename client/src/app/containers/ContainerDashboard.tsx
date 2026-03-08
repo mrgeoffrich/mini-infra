@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
+import { useSocket } from "@/hooks/use-socket";
 import { ContainerTable } from "./ContainerTable";
 import { ContainerFilters } from "./ContainerFilters";
 import {
@@ -33,13 +34,13 @@ export function ContainerDashboard() {
   const { formatDateTime } = useFormattedDate();
   const filterState = useContainerFilters();
   const { queryParams } = filterState;
+  const { connected } = useSocket();
 
   // Check Docker connectivity first
   const { data: connectivityData, isLoading: isConnectivityLoading } =
     useConnectivityStatus({
       filters: { service: "docker" },
       limit: 1,
-      refetchInterval: 10000, // Check every 10 seconds
     });
 
   // Get the latest Docker connectivity status
@@ -73,7 +74,7 @@ export function ContainerDashboard() {
       return data.data || [];
     },
     enabled: isDockerConnected === true,
-    refetchInterval: 5000,
+    refetchInterval: connected ? false : 5000,
   });
 
   // Fetch managed container IDs mapping (container ID -> server ID)
@@ -88,7 +89,7 @@ export function ContainerDashboard() {
       return data.data || {};
     },
     enabled: isDockerConnected === true,
-    refetchInterval: 5000,
+    refetchInterval: connected ? false : 5000,
   });
 
   const postgresContainerIds = React.useMemo(
