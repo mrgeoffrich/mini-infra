@@ -10,6 +10,7 @@ Run `touch .restart-dev` in the project root to trigger a full dev server restar
 
 ## Important Instructions
 
+* **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
 * Run this command to display your development API key:
