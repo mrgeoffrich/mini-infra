@@ -121,6 +121,20 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Type Safety**: Ensures consistent type definitions across full-stack
 - **Testing**: The shared types package must be built (`npm run build:lib`) before running tests, otherwise type imports will fail
 
+## Socket.IO Conventions
+
+### Client-Side Data Fetching
+- **No polling when socket is connected.** Rely on socket events to invalidate TanStack Query caches. Set `refetchInterval` to `false` when connected, fall back to polling only when disconnected.
+- **Use `refetchOnReconnect: true`** so data refreshes automatically after a socket reconnect (covers any events missed during disconnection).
+- **Use `useSocketChannel()`** to subscribe/unsubscribe to a channel on mount/unmount, and **`useSocketEvent()`** to listen for events and invalidate queries.
+- See `client/src/hooks/useContainers.ts` for the reference pattern.
+
+### Server-Side Emission
+- **Emitters are standalone functions** (e.g., `emitConnectivityStatus()`) that query the DB and call `emitToChannel()`. Follow the pattern in `server/src/services/container-socket-emitter.ts`.
+- **Wrap emission calls in try/catch** so failures never break the caller (schedulers, executors, route handlers).
+- **Extract shared logic** (e.g., health calculators) into separate modules so both REST routes and socket emitters can reuse them.
+- **Event types and channel constants** are defined in `lib/types/socket-events.ts` — always use `Channel.*` and `ServerEvent.*` constants, never raw strings.
+
 ## Key Commands
 
 ### Root Project (npm workspaces)

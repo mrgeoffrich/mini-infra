@@ -16,7 +16,10 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
   ValidateServiceResponse,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -521,11 +524,29 @@ export function useConnectivityStatus(
     filters = {},
     page = 1,
     limit = 50,
-    refetchInterval = 30000, // 30 seconds for connectivity status
+    refetchInterval: customRefetchInterval,
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // No polling when socket is connected (real-time updates via socket events);
+  // fall back to 30s polling when disconnected
+  const refetchInterval = customRefetchInterval ?? (connected ? false : 30000);
+
+  // Subscribe to connectivity channel for real-time updates
+  useSocketChannel(Channel.CONNECTIVITY, enabled);
+
+  // Invalidate query when server pushes new connectivity data
+  useSocketEvent(
+    ServerEvent.CONNECTIVITY_ALL,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+    },
+    enabled,
+  );
 
   return useQuery({
     queryKey: ["connectivityStatus", filters, page, limit],

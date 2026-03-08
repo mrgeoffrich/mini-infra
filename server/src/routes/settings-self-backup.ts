@@ -4,6 +4,7 @@ import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import { z } from "zod";
 import { SelfBackupScheduler, SelfBackupExecutor } from "../services/backup";
+import { emitBackupHealthStatus } from "../services/backup/backup-health-socket-emitter";
 import type {
   SelfBackupConfigResponse,
   UpdateSelfBackupConfigRequest,
@@ -215,6 +216,16 @@ router.post("/enable", requirePermission('backups:write'), async (req, res) => {
 
     logger.info({ userId }, "Self-backup schedule enabled");
 
+    // Emit updated health status (transitions from not_configured)
+    try {
+      await emitBackupHealthStatus();
+    } catch (emitError) {
+      logger.error(
+        { error: emitError instanceof Error ? emitError.message : emitError },
+        "Failed to emit backup health status via socket",
+      );
+    }
+
     res.json({
       success: true,
       message: "Backup schedule enabled",
@@ -277,6 +288,16 @@ router.post("/disable", requirePermission('backups:write'), async (req, res) => 
     }
 
     logger.info({ userId }, "Self-backup schedule disabled");
+
+    // Emit updated health status (transitions to not_configured)
+    try {
+      await emitBackupHealthStatus();
+    } catch (emitError) {
+      logger.error(
+        { error: emitError instanceof Error ? emitError.message : emitError },
+        "Failed to emit backup health status via socket",
+      );
+    }
 
     res.json({
       success: true,

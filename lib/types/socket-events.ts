@@ -10,6 +10,7 @@ import type {
   RemovalOperationInfo,
 } from "./deployments";
 import type { ConnectivityStatusInfo } from "./settings";
+import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
 
 // ====================
@@ -256,11 +257,7 @@ export interface ServerToClientEvents {
 
   // ── Backup Health ───────────────────────────────────
   /** Self-backup health status */
-  "backup-health:status": (data: {
-    healthy: boolean;
-    lastBackupAt: string | null;
-    nextBackupAt: string | null;
-  }) => void;
+  "backup-health:status": (data: BackupHealthStatus) => void;
 
   // ── Logs (Loki) ─────────────────────────────────────
   /** Loki log entries pushed (for tailing) */
