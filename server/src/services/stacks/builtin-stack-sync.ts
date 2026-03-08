@@ -1,66 +1,82 @@
+import * as path from "path";
 import { PrismaClient } from "@prisma/client";
 import { StackParameterDefinition, StackParameterValue } from "@mini-infra/types";
-import { BUILTIN_STACKS } from "./builtin";
-import { BuiltinStackDefinition } from "./builtin/types";
 import { servicesLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
+import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
+
+// Resolve the templates directory relative to the server root
+const TEMPLATES_DIR = path.resolve(__dirname, "../../../templates");
 
 export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   const log = servicesLogger().child({ operation: "builtin-stack-sync" });
   const templateService = new StackTemplateService(prisma);
 
-  // 1. Sync host-scoped stacks (once globally)
-  const hostStacks = BUILTIN_STACKS.filter((s) => s.scope === "host");
-  for (const builtin of hostStacks) {
+  // Discover and validate all template files
+  let templates: LoadedTemplate[];
+  try {
+    templates = discoverTemplates(TEMPLATES_DIR);
+    log.info(
+      { count: templates.length, dir: TEMPLATES_DIR },
+      "Discovered system template files"
+    );
+  } catch (error) {
+    log.error({ error, dir: TEMPLATES_DIR }, "Failed to discover template files");
+    return;
+  }
+
+  // 1. Sync host-scoped templates (once globally)
+  const hostTemplates = templates.filter((t) => t.scope === "host");
+  for (const template of hostTemplates) {
     try {
-      const definition = await builtin.resolve({ prisma });
-      const { templateId, versionId } = await templateService.upsertSystemTemplate({
-        name: builtin.name,
-        displayName: builtin.displayName,
-        scope: builtin.scope,
-        category: builtin.category,
-        builtinVersion: builtin.builtinVersion,
-        definition,
+      const { templateId } = await templateService.upsertSystemTemplate({
+        name: template.name,
+        displayName: template.displayName,
+        scope: template.scope,
+        category: template.category,
+        builtinVersion: template.builtinVersion,
+        definition: template.definition as any,
+        configFiles: template.configFiles,
       });
-      await syncStackFromTemplate(prisma, templateId, builtin, definition, null, log);
+      await syncStackFromTemplate(prisma, templateId, template, null, log);
     } catch (error) {
       log.error(
-        { error, stackName: builtin.name },
-        "Failed to sync host-scoped built-in stack"
+        { error, stackName: template.name },
+        "Failed to sync host-scoped system template"
       );
     }
   }
 
-  // 2. Sync environment-scoped stacks (per environment)
-  const envStacks = BUILTIN_STACKS.filter((s) => s.scope === "environment");
-  if (envStacks.length > 0) {
+  // 2. Sync environment-scoped templates (per environment)
+  const envTemplates = templates.filter((t) => t.scope === "environment");
+  if (envTemplates.length > 0) {
     const environments = await prisma.environment.findMany({
       select: { id: true },
     });
 
     log.info(
       { environmentCount: environments.length },
-      "Syncing environment-scoped built-in stacks"
+      "Syncing environment-scoped system templates"
     );
 
     for (const env of environments) {
-      for (const builtin of envStacks) {
+      for (const template of envTemplates) {
         try {
-          const definition = await builtin.resolve({ environmentId: env.id, prisma });
-          const { templateId, versionId } = await templateService.upsertSystemTemplate({
-            name: builtin.name,
-            displayName: builtin.displayName,
-            scope: builtin.scope,
-            category: builtin.category,
-            builtinVersion: builtin.builtinVersion,
-            definition,
+          const { templateId } = await templateService.upsertSystemTemplate({
+            name: template.name,
+            displayName: template.displayName,
+            scope: template.scope,
+            category: template.category,
+            builtinVersion: template.builtinVersion,
+            definition: template.definition as any,
+            configFiles: template.configFiles,
           });
-          await syncStackFromTemplate(prisma, templateId, builtin, definition, env.id, log);
+          await syncStackFromTemplate(prisma, templateId, template, env.id, log);
         } catch (error) {
           log.error(
-            { error, stackName: builtin.name, environmentId: env.id },
-            "Failed to sync built-in stack"
+            { error, stackName: template.name, environmentId: env.id },
+            "Failed to sync environment-scoped system template"
           );
         }
       }
@@ -83,48 +99,57 @@ export async function syncBuiltinStacksForEnvironment(
   });
   const templateService = new StackTemplateService(prisma);
 
-  const envStacks = BUILTIN_STACKS.filter((s) => s.scope === "environment");
-  for (const builtin of envStacks) {
+  let templates: LoadedTemplate[];
+  try {
+    templates = discoverTemplates(TEMPLATES_DIR);
+  } catch (error) {
+    log.error({ error }, "Failed to discover template files");
+    return;
+  }
+
+  const envTemplates = templates.filter((t) => t.scope === "environment");
+  for (const template of envTemplates) {
     try {
-      const definition = await builtin.resolve({ environmentId, prisma });
-      const { templateId, versionId } = await templateService.upsertSystemTemplate({
-        name: builtin.name,
-        displayName: builtin.displayName,
-        scope: builtin.scope,
-        category: builtin.category,
-        builtinVersion: builtin.builtinVersion,
-        definition,
+      const { templateId } = await templateService.upsertSystemTemplate({
+        name: template.name,
+        displayName: template.displayName,
+        scope: template.scope,
+        category: template.category,
+        builtinVersion: template.builtinVersion,
+        definition: template.definition as any,
+        configFiles: template.configFiles,
       });
-      await syncStackFromTemplate(prisma, templateId, builtin, definition, environmentId, log);
+      await syncStackFromTemplate(prisma, templateId, template, environmentId, log);
     } catch (error) {
       log.error(
-        { error, stackName: builtin.name },
-        "Failed to sync built-in stack"
+        { error, stackName: template.name },
+        "Failed to sync system template"
       );
     }
   }
 }
 
 /**
- * Sync a Stack row from a template. Creates the stack if it doesn't exist,
+ * Sync a Stack row from a loaded template. Creates the stack if it doesn't exist,
  * updates it if the template version has advanced, and backfills templateId
  * on existing stacks that don't have it set yet.
  */
 async function syncStackFromTemplate(
   prisma: PrismaClient,
   templateId: string,
-  builtin: BuiltinStackDefinition,
-  definition: import("@mini-infra/types").StackDefinition,
+  template: LoadedTemplate,
   environmentId: string | null,
   log: ReturnType<typeof servicesLogger>
 ): Promise<void> {
+  const { definition } = template;
+
   const existing = await prisma.stack.findFirst({
-    where: { name: builtin.name, environmentId },
+    where: { name: template.name, environmentId },
   });
 
   // No DB record → create
   if (!existing) {
-    log.info({ stackName: builtin.name }, "Creating built-in stack from template");
+    log.info({ stackName: template.name }, "Creating built-in stack from template");
     const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
     const defaultValues = mergeParameterValues(paramDefs, {});
 
@@ -135,9 +160,9 @@ async function syncStackFromTemplate(
         environmentId,
         version: 1,
         status: "undeployed",
-        builtinVersion: builtin.builtinVersion,
+        builtinVersion: template.builtinVersion,
         templateId,
-        templateVersion: builtin.builtinVersion,
+        templateVersion: template.builtinVersion,
         parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
         parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as any) : undefined,
         networks: definition.networks as any,
@@ -153,7 +178,7 @@ async function syncStackFromTemplate(
   // builtinVersion is null → user-created stack with same name, skip
   if (existing.builtinVersion === null) {
     log.debug(
-      { stackName: builtin.name },
+      { stackName: template.name },
       "Skipping user-created stack with built-in name"
     );
     return;
@@ -169,51 +194,48 @@ async function syncStackFromTemplate(
       },
     });
     log.info(
-      { stackName: builtin.name },
+      { stackName: template.name },
       "Backfilled templateId on existing built-in stack"
     );
   }
 
   // DB version matches → no-op
-  if (existing.builtinVersion >= builtin.builtinVersion) {
+  if (existing.builtinVersion >= template.builtinVersion) {
     log.debug(
-      { stackName: builtin.name, version: existing.builtinVersion },
+      { stackName: template.name, version: existing.builtinVersion },
       "Built-in stack is up to date"
     );
     return;
   }
 
-  // Code version is newer → update
+  // Template version is newer → update
   log.info(
     {
-      stackName: builtin.name,
+      stackName: template.name,
       oldVersion: existing.builtinVersion,
-      newVersion: builtin.builtinVersion,
+      newVersion: template.builtinVersion,
     },
     "Updating built-in stack definition"
   );
 
   const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
-  // Preserve existing user-set parameter values, fill in defaults for new params
   const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
   const mergedValues = mergeParameterValues(paramDefs, existingValues);
 
   await prisma.$transaction(async (tx) => {
-    // Delete old services
     await tx.stackService.deleteMany({
       where: { stackId: existing.id },
     });
 
-    // Update stack with new definition
     await tx.stack.update({
       where: { id: existing.id },
       data: {
         description: definition.description ?? null,
         version: existing.version + 1,
         status: "pending",
-        builtinVersion: builtin.builtinVersion,
+        builtinVersion: template.builtinVersion,
         templateId,
-        templateVersion: builtin.builtinVersion,
+        templateVersion: template.builtinVersion,
         parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
         parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as any) : undefined,
         networks: definition.networks as any,
@@ -230,8 +252,6 @@ async function cleanupOrphanedMonitoringStacks(
   prisma: PrismaClient,
   log: ReturnType<typeof servicesLogger>
 ): Promise<void> {
-  // Remove per-environment monitoring stacks created by old sync logic
-  // (monitoring is now host-scoped, not per-environment)
   const orphaned = await prisma.stack.findMany({
     where: {
       name: "monitoring",

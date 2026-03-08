@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "telegraf"
+    static_configs:
+      - targets: ["{{services.telegraf.containerName}}:9273"]
