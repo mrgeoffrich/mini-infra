@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { RemediateHAProxyStep } from "@mini-infra/types";
 import {
   IconLoader2,
   IconAlertTriangle,
@@ -27,6 +28,7 @@ import {
   IconRefresh,
   IconCheck,
   IconX,
+  IconMinus,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -49,10 +51,7 @@ export function RemediateHAProxyDialog({
 }: RemediateHAProxyDialogProps) {
   const [dialogState, setDialogState] = useState<DialogState>("preview");
   const [result, setResult] = useState<{
-    frontendsDeleted: number;
-    frontendsCreated: number;
-    backendsRecreated: number;
-    routesConfigured: number;
+    steps: RemediateHAProxyStep[];
     errors: string[];
   } | null>(null);
 
@@ -79,16 +78,16 @@ export function RemediateHAProxyDialog({
       setDialogState(response.success ? "success" : "error");
 
       if (response.success) {
-        toast.success("HAProxy remediation completed successfully");
+        toast.success("HAProxy rebuild completed successfully");
         onSuccess?.();
       } else {
-        toast.error("HAProxy remediation completed with errors");
+        toast.error("HAProxy rebuild completed with errors");
       }
     } catch (error) {
       setResult(null);
       setDialogState("error");
       toast.error(
-        `Remediation failed: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Rebuild failed: ${error instanceof Error ? error.message : "Unknown error"}`
       );
     }
   };
@@ -113,20 +112,20 @@ export function RemediateHAProxyDialog({
           <DialogTitle className="flex items-center gap-2">
             <IconRouter className="h-5 w-5" />
             {dialogState === "success"
-              ? "Remediation Complete"
+              ? "Rebuild Complete"
               : dialogState === "error"
-                ? "Remediation Failed"
-                : "Remediate HAProxy"}
+                ? "Rebuild Failed"
+                : "Rebuild HAProxy"}
           </DialogTitle>
           <DialogDescription>
             {dialogState === "preview" &&
-              `Review the changes that will be made to HAProxy configuration for ${environmentName}.`}
+              `Full rebuild of HAProxy runtime state from database for ${environmentName}. This restores TLS certificates, frontends, backends, and all routing rules.`}
             {dialogState === "remediating" &&
-              "Remediation in progress. Please wait..."}
+              "Rebuild in progress. Please wait..."}
             {dialogState === "success" &&
-              "HAProxy has been successfully reconfigured."}
+              "HAProxy has been successfully rebuilt from database state."}
             {dialogState === "error" &&
-              "There were errors during the remediation process."}
+              "There were errors during the rebuild process."}
           </DialogDescription>
         </DialogHeader>
 
@@ -380,9 +379,9 @@ export function RemediateHAProxyDialog({
             <div className="flex flex-col items-center justify-center py-8 space-y-4">
               <IconLoader2 className="h-12 w-12 animate-spin text-primary" />
               <div className="text-center space-y-2">
-                <div className="font-medium">Remediating HAProxy Configuration</div>
+                <div className="font-medium">Rebuilding HAProxy Configuration</div>
                 <div className="text-sm text-muted-foreground">
-                  Please wait while the configuration is being updated...
+                  Please wait while the configuration is being rebuilt from database state...
                 </div>
               </div>
               <Progress value={undefined} className="w-full max-w-xs" />
@@ -399,24 +398,50 @@ export function RemediateHAProxyDialog({
               </div>
 
               <div className="rounded-md border p-4 space-y-3">
-                <h4 className="font-medium">Summary</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                    <span>Frontends Deleted</span>
-                    <Badge variant="outline">{result.frontendsDeleted}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                    <span>Frontends Created</span>
-                    <Badge variant="outline">{result.frontendsCreated}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                    <span>Backends Recreated</span>
-                    <Badge variant="outline">{result.backendsRecreated}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-2 bg-muted/50 rounded">
-                    <span>Routes Configured</span>
-                    <Badge variant="outline">{result.routesConfigured}</Badge>
-                  </div>
+                <h4 className="font-medium">Rebuild Steps</h4>
+                <div className="space-y-2">
+                  {result.steps.map((step, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-start gap-3 p-2 rounded text-sm",
+                        step.status === "completed" && "bg-green-50 dark:bg-green-950/50",
+                        step.status === "failed" && "bg-red-50 dark:bg-red-950/50",
+                        step.status === "skipped" && "bg-muted/50"
+                      )}
+                    >
+                      <div className="mt-0.5 flex-shrink-0">
+                        {step.status === "completed" && (
+                          <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        )}
+                        {step.status === "failed" && (
+                          <IconX className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        )}
+                        {step.status === "skipped" && (
+                          <IconMinus className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{step.step}</div>
+                        {step.detail && (
+                          <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                            {step.detail}
+                          </div>
+                        )}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs flex-shrink-0",
+                          step.status === "completed" && "border-green-200 text-green-700 dark:text-green-400",
+                          step.status === "failed" && "border-red-200 text-red-700 dark:text-red-400",
+                          step.status === "skipped" && "border-muted text-muted-foreground"
+                        )}
+                      >
+                        {step.status}
+                      </Badge>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -448,11 +473,48 @@ export function RemediateHAProxyDialog({
               <Alert variant="destructive">
                 <IconAlertTriangle className="h-4 w-4" />
                 <AlertDescription>
-                  The remediation process encountered errors. Some changes may have
+                  The rebuild process encountered errors. Some changes may have
                   been applied. Please check the HAProxy status and try again if
                   necessary.
                 </AlertDescription>
               </Alert>
+
+              {result && result.steps.length > 0 && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <h4 className="font-medium mb-2 text-sm">Steps:</h4>
+                  {result.steps.map((step, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-start gap-3 p-2 rounded text-sm",
+                        step.status === "completed" && "bg-green-50 dark:bg-green-950/50",
+                        step.status === "failed" && "bg-red-50 dark:bg-red-950/50",
+                        step.status === "skipped" && "bg-muted/50"
+                      )}
+                    >
+                      <div className="mt-0.5 flex-shrink-0">
+                        {step.status === "completed" && (
+                          <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        )}
+                        {step.status === "failed" && (
+                          <IconX className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        )}
+                        {step.status === "skipped" && (
+                          <IconMinus className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{step.step}</div>
+                        {step.detail && (
+                          <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                            {step.detail}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {result && result.errors.length > 0 && (
                 <div className="rounded-md border p-3">
@@ -485,15 +547,11 @@ export function RemediateHAProxyDialog({
               )}
               <Button
                 onClick={handleRemediate}
-                disabled={isLoadingPreview || isPreviewError || !preview?.needsRemediation}
-                className={cn(
-                  preview?.needsRemediation
-                    ? "bg-yellow-600 hover:bg-yellow-700"
-                    : ""
-                )}
+                disabled={isLoadingPreview || isPreviewError}
+                className="bg-yellow-600 hover:bg-yellow-700"
               >
                 <IconRefresh className="h-4 w-4 mr-2" />
-                {preview?.needsRemediation ? "Apply Remediation" : "No Changes Needed"}
+                Rebuild HAProxy
               </Button>
             </>
           )}

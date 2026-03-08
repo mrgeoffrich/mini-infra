@@ -857,13 +857,16 @@ export interface RemediationPreview {
   };
 }
 
+export interface RemediateHAProxyStep {
+  step: string;
+  status: 'completed' | 'failed' | 'skipped';
+  detail?: string;
+}
+
 export interface RemediateHAProxyResponse {
   success: boolean;
   data: {
-    frontendsDeleted: number;
-    frontendsCreated: number;
-    backendsRecreated: number;
-    routesConfigured: number;
+    steps: RemediateHAProxyStep[];
     errors: string[];
   };
   message: string;

@@ -17,6 +17,7 @@ import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
 import { haproxyMigrationService } from '../services/haproxy/haproxy-migration-service';
+import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
 import { emitToChannel } from '../lib/socket';
 import { Channel, ServerEvent } from '@mini-infra/types';
 import DockerService from '../services/docker';
@@ -731,39 +732,24 @@ router.post('/:id/remediate-haproxy', requirePermission('environments:write'), a
       });
     }
 
-    // Get HAProxy client
-    let haproxyClient: HAProxyDataPlaneClient;
-    try {
-      haproxyClient = await getHAProxyClientForEnvironment(id);
-    } catch (error) {
-      return res.status(503).json({
-        error: 'HAProxy unavailable',
-        message: error instanceof Error ? error.message : 'Failed to connect to HAProxy'
-      });
-    }
-
-    // Perform remediation
-    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting HAProxy remediation via API');
-    const result = await haproxyRemediationService.remediateEnvironment(id, haproxyClient, prisma);
+    // Perform full rebuild of HAProxy runtime state from DB
+    logger.info({ environmentId: id, environmentName: environment.name }, 'Starting full HAProxy rebuild via API');
+    const result = await restoreHAProxyRuntimeState(id, prisma);
 
     logger.info({
       environmentId: id,
       result
-    }, 'HAProxy remediation completed via API');
+    }, 'HAProxy rebuild completed via API');
 
     res.json({
       success: result.success,
       data: {
-        frontendsDeleted: result.frontendsDeleted,
-        frontendsCreated: result.frontendsCreated,
-        backendsRecreated: result.backendsRecreated,
-        routesConfigured: result.routesConfigured,
-        statsFrontendConfigured: result.statsFrontendConfigured,
-        errors: result.errors
+        steps: result.steps,
+        errors: result.errors,
       },
       message: result.success
-        ? 'HAProxy remediation completed successfully'
-        : 'HAProxy remediation completed with errors'
+        ? 'HAProxy rebuild completed successfully'
+        : 'HAProxy rebuild completed with errors'
     });
 
   } catch (error) {
