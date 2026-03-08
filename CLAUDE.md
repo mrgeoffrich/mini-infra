@@ -99,10 +99,10 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 
 ```
 mini-infra/
-├── client/                   # Vite + React 19 frontend application
-├── server/                  # Express.js 5 + Prisma backend
+├── client/                # Vite + React 19 frontend application
+├── server/                # Express.js 5 + Prisma backend
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
-├── projectmanagement/      # Project documentation and specs
+├── docs/                  # Project documentation and specs
 ├── .claude/               # Claude Code configuration
 ├── CLAUDE.md              # Claude Code context and instructions
 ├── README.md              # Project documentation
@@ -157,7 +157,6 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 ### Database (server/)
 - `npx prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
 - `npx prisma generate` - Regenerate Prisma client after schema changes
-- `npx prisma studio` - Open database GUI for data inspection
 - `npx prisma migrate status` - Check migration status and detect drift
 - `npx prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
 
@@ -176,11 +175,11 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
 
 Logs are found in `server/logs/` directory with the following files:
- - `app.log.1` - Application logs
- - `app-http.log.1` - http request and response logs
- - `app-services.log.1` - log from services that run from `server/src/service/*.ts`
- - `app-dockerexecutor.log.1` - logs from container execution
- - `app-prisma.log.1` - log from prisma
- - `app-deployments.log.1` - logs from deployment orchestrator and deployment operations
- - `app-loadbalancer.log.1` - logs from the haproxy service
- - `app-tls.log.1` - logs from the certificate management service
+ - `app.log.*` - Application logs
+ - `app-http.log.*` - http request and response logs
+ - `app-services.log.*` - log from services that run from `server/src/service/*.ts`
+ - `app-dockerexecutor.log.*` - logs from container execution
+ - `app-prisma.log.*` - log from prisma
+ - `app-deployments.log.*` - logs from deployment orchestrator and deployment operations
+ - `app-loadbalancer.log.*` - logs from the haproxy service
+ - `app-tls.log.*` - logs from the certificate management service
