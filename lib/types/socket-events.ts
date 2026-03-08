@@ -12,6 +12,7 @@ import type {
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
+import type { ServiceApplyResult, ApplyResult } from "./stacks";
 
 // ====================
 // Socket Channel Constants & Types
@@ -147,6 +148,9 @@ export const ServerEvent = {
   CONNECTIVITY_ALL: "connectivity:all",
   // Stacks
   STACK_STATUS: "stack:status",
+  STACK_APPLY_STARTED: "stack:apply:started",
+  STACK_APPLY_SERVICE_RESULT: "stack:apply:service-result",
+  STACK_APPLY_COMPLETED: "stack:apply:completed",
   // Volumes
   VOLUMES_LIST: "volumes:list",
   // Networks
@@ -245,6 +249,24 @@ export interface ServerToClientEvents {
     stackId: string;
     status: string;
     containers: Array<{ name: string; status: string }>;
+  }) => void;
+  /** Stack apply operation started */
+  "stack:apply:started": (data: {
+    stackId: string;
+    stackName: string;
+    totalActions: number;
+    actions: Array<{ serviceName: string; action: string }>;
+  }) => void;
+  /** Individual service within a stack apply completed */
+  "stack:apply:service-result": (data: ServiceApplyResult & {
+    stackId: string;
+    completedCount: number;
+    totalActions: number;
+  }) => void;
+  /** Stack apply operation completed (success or failure) */
+  "stack:apply:completed": (data: ApplyResult & {
+    error?: string;
+    postApply?: { success: boolean; errors?: string[] };
   }) => void;
 
   // ── Volumes ─────────────────────────────────────────

@@ -11,10 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { useStackPlan, useStackApply } from "@/hooks/use-stacks";
+import { useStackPlan, useStackApply, useStackApplyProgress } from "@/hooks/use-stacks";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
-import type { ApplyResult } from "@mini-infra/types";
 
 interface StackPlanViewProps {
   stackId: string;
@@ -40,10 +39,10 @@ export const StackPlanView = React.memo(function StackPlanView({
     isFetching,
   } = useStackPlan(stackId);
   const applyMutation = useStackApply();
+  const applyProgress = useStackApplyProgress(stackId);
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
-  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
   const plan = planResponse?.data;
 
@@ -82,43 +81,41 @@ export const StackPlanView = React.memo(function StackPlanView({
   );
 
   const handleApplyAll = useCallback(() => {
-    applyMutation.mutate(
-      { stackId, options: {} },
-      {
-        onSuccess: (data) => setApplyResult(data.data),
-      },
-    );
+    applyMutation.mutate({ stackId, options: {} });
   }, [stackId, applyMutation]);
 
   const handleApplySelected = useCallback(() => {
-    applyMutation.mutate(
-      {
-        stackId,
-        options: { serviceNames: Array.from(selectedServices) },
-      },
-      {
-        onSuccess: (data) => setApplyResult(data.data),
-      },
-    );
+    applyMutation.mutate({
+      stackId,
+      options: { serviceNames: Array.from(selectedServices) },
+    });
   }, [stackId, selectedServices, applyMutation]);
 
-  // Show apply result if available
-  if (applyResult) {
+  // Show live progress or final result from socket events
+  if (applyProgress.isApplying || applyProgress.finalResult) {
     return (
       <div className={className}>
-        <StackApplyProgress result={applyResult} />
-        <div className="mt-4 flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setApplyResult(null);
-              refetch();
-            }}
-          >
-            <IconRefresh className="h-4 w-4 mr-2" />
-            View Updated Plan
-          </Button>
-        </div>
+        <StackApplyProgress
+          isApplying={applyProgress.isApplying}
+          actions={applyProgress.actions}
+          completedResults={applyProgress.completedResults}
+          totalActions={applyProgress.totalActions}
+          result={applyProgress.finalResult ?? undefined}
+        />
+        {applyProgress.finalResult && (
+          <div className="mt-4 flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                applyProgress.reset();
+                refetch();
+              }}
+            >
+              <IconRefresh className="h-4 w-4 mr-2" />
+              View Updated Plan
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -258,7 +255,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           disabled={applyMutation.isPending}
         >
           <IconRocket className="h-4 w-4 mr-2" />
-          {applyMutation.isPending ? "Applying..." : "Apply All"}
+          {applyMutation.isPending ? "Starting..." : "Apply All"}
         </Button>
         {selectedServices.size > 0 && (
           <Button

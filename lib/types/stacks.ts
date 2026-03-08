@@ -313,6 +313,10 @@ export interface ApplyOptions {
   serviceNames?: string[];
   dryRun?: boolean;
   triggeredBy?: string;
+  /** Pre-computed plan to avoid re-computing inside apply() */
+  plan?: StackPlan;
+  /** Called after each service action completes */
+  onProgress?: (result: ServiceApplyResult, completedCount: number, totalActions: number) => void;
 }
 
 export interface ApplyResult {
@@ -411,5 +415,11 @@ export interface StackPlanResponse {
 export interface StackApplyResponse {
   success: boolean;
   data: ApplyResult;
+  message?: string;
+}
+
+export interface StackApplyStartedResponse {
+  success: boolean;
+  data: { started: true; stackId: string };
   message?: string;
 }
