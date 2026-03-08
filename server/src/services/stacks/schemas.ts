@@ -70,7 +70,16 @@ export const stackContainerConfigSchema = z.object({
         target: z.string().min(1),
         type: z.enum(["volume", "bind"]),
         readOnly: z.boolean().optional(),
-      })
+      }).refine(
+        (m) => {
+          if (m.type !== "bind") return true;
+          // Block bind mounts to sensitive host paths
+          const blocked = ["/", "/etc", "/proc", "/sys", "/root", "/dev", "/boot", "/var/run/docker.sock"];
+          const normalized = m.source.replace(/\/+$/, "") || "/";
+          return !blocked.includes(normalized);
+        },
+        { message: "Bind mount source points to a restricted host path" }
+      )
     )
     .optional(),
   labels: z.record(z.string(), z.string()).optional(),
@@ -97,16 +106,16 @@ export const stackContainerConfigSchema = z.object({
 
 export const stackConfigFileSchema = z.object({
   volumeName: z.string().min(1),
-  path: z.string().min(1),
+  path: z.string().min(1).regex(/^[a-zA-Z0-9_.\/\-]+$/, "path must contain only safe characters"),
   content: z.string(),
-  permissions: z.string().optional(),
+  permissions: z.string().regex(/^[0-7]{3,4}$/, "permissions must be a 3 or 4 digit octal value").optional(),
   ownerUid: z.number().int().min(0).optional(),
   ownerGid: z.number().int().min(0).optional(),
 });
 
 export const stackInitCommandSchema = z.object({
   volumeName: z.string().min(1),
-  mountPath: z.string().min(1),
+  mountPath: z.string().min(1).regex(/^\/[a-zA-Z0-9_.\/-]*$/, "mountPath must be a safe absolute path"),
   commands: z.array(z.string().min(1)),
 });
 

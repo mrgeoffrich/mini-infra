@@ -25,7 +25,7 @@ const templateConfigFileSchema = z.object({
   // Either inline content or a file reference (relative to template directory)
   content: z.string().optional(),
   contentFile: z.string().optional(),
-  permissions: z.string().optional(),
+  permissions: z.string().regex(/^[0-7]{3,4}$/, "permissions must be a 3 or 4 digit octal value").optional(),
   owner: z.string().optional(),
 }).refine(
   (data) => data.content != null || data.contentFile != null,
@@ -155,7 +155,12 @@ export function loadTemplateFromObject(
           `Config file "${cf.fileName}" uses contentFile but no template directory was provided`
         );
       }
-      const filePath = path.join(templateDir, cf.contentFile);
+      const filePath = path.resolve(templateDir, cf.contentFile);
+      if (!filePath.startsWith(path.resolve(templateDir) + path.sep)) {
+        throw new TemplateFileError(
+          `contentFile path traversal detected: ${cf.contentFile}`
+        );
+      }
       if (!fs.existsSync(filePath)) {
         throw new TemplateFileError(
           `Referenced config file not found: ${cf.contentFile} (resolved to ${filePath})`

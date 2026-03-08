@@ -34,6 +34,9 @@ export class StackContainerManager {
       const prefixedVolume = `${projectName}_${volumeName}`;
       const allCommands = commands.flatMap((c) => c.commands);
       const mountPath = commands[0].mountPath;
+      if (!/^\/[a-zA-Z0-9_.\/-]*$/.test(mountPath)) {
+        throw new Error(`Invalid mountPath: ${mountPath}`);
+      }
       const shellCmd = allCommands.join(' && ');
       const containerName = `${projectName}-init-${volumeName}-${Date.now()}`;
 
@@ -52,18 +55,22 @@ export class StackContainerManager {
 
       // Build shell commands for all files in this volume
       const volPath = (p: string) => `/vol${p.startsWith('/') ? '' : '/'}${p}`;
+      const shellQuote = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
       const dirs = [...new Set(files.map((f) => volPath(f.path).substring(0, volPath(f.path).lastIndexOf('/'))))].filter(Boolean);
       const parts: string[] = [];
 
       if (dirs.length > 0) {
-        parts.push(`mkdir -p ${dirs.join(' ')}`);
+        parts.push(`mkdir -p ${dirs.map(shellQuote).join(' ')}`);
       }
 
       for (const file of files) {
-        const dest = volPath(file.path);
+        const dest = shellQuote(volPath(file.path));
         const escapedContent = file.content.replace(/'/g, "'\\''");
         parts.push(`echo '${escapedContent}' > ${dest}`);
         if (file.permissions) {
+          if (!/^[0-7]{3,4}$/.test(file.permissions)) {
+            throw new Error(`Invalid permissions value: ${file.permissions}`);
+          }
           parts.push(`chmod ${file.permissions} ${dest}`);
         }
         if (file.ownerUid !== undefined || file.ownerGid !== undefined) {
