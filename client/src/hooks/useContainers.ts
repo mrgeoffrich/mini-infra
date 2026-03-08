@@ -6,6 +6,8 @@ import {
   ContainerListApiResponse,
   ContainerFilters,
   ContainerQueryParams,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
@@ -103,12 +105,12 @@ export function useContainers(options: UseContainersOptions = {}) {
     (connected ? POLL_INTERVAL_CONNECTED : POLL_INTERVAL_DISCONNECTED);
 
   // Subscribe to the containers channel for push updates
-  useSocketChannel("containers", enabled);
+  useSocketChannel(Channel.CONTAINERS, enabled);
 
   // When server pushes a full container list update, invalidate all container queries
   // so TanStack Query refetches with proper server-side filtering/sorting
   useSocketEvent(
-    "containers:list",
+    ServerEvent.CONTAINERS_LIST,
     () => {
       queryClient.invalidateQueries({ queryKey: ["containers"] });
     },
@@ -117,7 +119,7 @@ export function useContainers(options: UseContainersOptions = {}) {
 
   // Optimistically update a single container's status in the cache
   useSocketEvent(
-    "container:status",
+    ServerEvent.CONTAINER_STATUS,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
         { queryKey: ["containers"] },
@@ -137,7 +139,7 @@ export function useContainers(options: UseContainersOptions = {}) {
 
   // Remove a container from cache when it's deleted
   useSocketEvent(
-    "container:removed",
+    ServerEvent.CONTAINER_REMOVED,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
         { queryKey: ["containers"] },

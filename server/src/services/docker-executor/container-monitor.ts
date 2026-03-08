@@ -1,4 +1,5 @@
 import Docker from "dockerode";
+import { DEFAULT_LOG_TAIL_LINES } from "@mini-infra/types";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 
 /**
@@ -88,7 +89,7 @@ export class ContainerMonitor {
         stdout: true,
         stderr: true,
         timestamps: options?.includeTimestamps || false,
-        tail: options?.tail || 100, // Default to last 100 lines
+        tail: options?.tail || DEFAULT_LOG_TAIL_LINES,
         since: options?.since
       };
 

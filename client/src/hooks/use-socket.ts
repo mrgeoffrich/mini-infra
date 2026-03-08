@@ -15,6 +15,7 @@ import type {
   ClientToServerEvents,
   SocketChannel,
 } from "@mini-infra/types";
+import { ClientEvent } from "@mini-infra/types";
 
 // Fully typed client socket
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -164,10 +165,10 @@ export function useSocketChannel(
   useEffect(() => {
     if (!channel || !enabled || !connected) return;
 
-    socketInstance.emit("subscribe", channel);
+    socketInstance.emit(ClientEvent.SUBSCRIBE, channel);
 
     return () => {
-      socketInstance.emit("unsubscribe", channel);
+      socketInstance.emit(ClientEvent.UNSUBSCRIBE, channel);
     };
   }, [socketInstance, channel, enabled, connected]);
 }

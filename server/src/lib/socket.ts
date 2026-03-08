@@ -17,6 +17,7 @@ import type {
   SocketData,
   SocketChannel,
 } from "@mini-infra/types";
+import { isValidSocketChannel, ClientEvent, ParameterizedChannel } from "@mini-infra/types";
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
@@ -120,7 +121,14 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     );
 
     // Handle channel subscriptions
-    socket.on("subscribe", (channel) => {
+    socket.on(ClientEvent.SUBSCRIBE, (channel) => {
+      if (!isValidSocketChannel(channel)) {
+        logger.warn(
+          { userId: socket.data.userId, socketId: socket.id, channel },
+          "Socket attempted to subscribe to invalid channel"
+        );
+        return;
+      }
       joinChannel(socket, channel);
       logger.debug(
         { userId: socket.data.userId, socketId: socket.id, channel },
@@ -128,7 +136,10 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
       );
     });
 
-    socket.on("unsubscribe", (channel) => {
+    socket.on(ClientEvent.UNSUBSCRIBE, (channel) => {
+      if (!isValidSocketChannel(channel)) {
+        return;
+      }
       leaveChannel(socket, channel);
       logger.debug(
         { userId: socket.data.userId, socketId: socket.id, channel },
@@ -137,8 +148,8 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     });
 
     // Handle container log streaming
-    socket.on("container:logs:start", (data) => {
-      const channel: SocketChannel = `container:${data.containerId}`;
+    socket.on(ClientEvent.CONTAINER_LOGS_START, (data) => {
+      const channel = ParameterizedChannel.container(data.containerId);
       joinChannel(socket, channel);
       logger.debug(
         {
@@ -153,8 +164,8 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
       // when it emits events to the container:{id} room
     });
 
-    socket.on("container:logs:stop", (data) => {
-      const channel: SocketChannel = `container:${data.containerId}`;
+    socket.on(ClientEvent.CONTAINER_LOGS_STOP, (data) => {
+      const channel = ParameterizedChannel.container(data.containerId);
       leaveChannel(socket, channel);
       logger.debug(
         { userId: socket.data.userId, socketId: socket.id, containerId: data.containerId },

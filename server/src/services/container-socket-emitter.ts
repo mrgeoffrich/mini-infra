@@ -10,6 +10,7 @@
  */
 
 import DockerService from "./docker";
+import { Channel, ServerEvent } from "@mini-infra/types";
 import { serializeContainer } from "./container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { servicesLogger } from "../lib/logger-factory";
@@ -45,7 +46,7 @@ export function setupContainerSocketEmitter(): void {
           rawContainers.map((c) => serializeContainer(c)),
         );
 
-        emitToChannel("containers", "containers:list", {
+        emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINERS_LIST, {
           containers,
           totalCount: containers.length,
         });

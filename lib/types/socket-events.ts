@@ -13,22 +13,33 @@ import type { ConnectivityStatusInfo } from "./settings";
 import type { UserEventInfo } from "./user-events";
 
 // ====================
-// Socket Channel Types
+// Socket Channel Constants & Types
 // ====================
 
+/** All static (non-parameterized) channel names as a runtime array */
+export const STATIC_SOCKET_CHANNELS = [
+  "containers",
+  "deployments",
+  "postgres",
+  "monitoring",
+  "events",
+  "connectivity",
+  "logs",
+  "stacks",
+  "volumes",
+  "networks",
+  "backup-health",
+] as const;
+
 /** Static (non-parameterized) channels */
-export type StaticSocketChannel =
-  | "containers"
-  | "deployments"
-  | "postgres"
-  | "monitoring"
-  | "events"
-  | "connectivity"
-  | "logs"
-  | "stacks"
-  | "volumes"
-  | "networks"
-  | "backup-health";
+export type StaticSocketChannel = (typeof STATIC_SOCKET_CHANNELS)[number];
+
+/** Prefixes for parameterized channels */
+export const PARAMETERIZED_CHANNEL_PREFIXES = [
+  "container:",
+  "deployment:",
+  "removal:",
+] as const;
 
 /** Parameterized channels with entity IDs */
 export type ParameterizedSocketChannel =
@@ -38,6 +49,100 @@ export type ParameterizedSocketChannel =
 
 /** All valid channel names that clients can subscribe to */
 export type SocketChannel = StaticSocketChannel | ParameterizedSocketChannel;
+
+/** Named constants for static channels */
+export const Channel = {
+  CONTAINERS: "containers",
+  DEPLOYMENTS: "deployments",
+  POSTGRES: "postgres",
+  MONITORING: "monitoring",
+  EVENTS: "events",
+  CONNECTIVITY: "connectivity",
+  LOGS: "logs",
+  STACKS: "stacks",
+  VOLUMES: "volumes",
+  NETWORKS: "networks",
+  BACKUP_HEALTH: "backup-health",
+} as const satisfies Record<string, StaticSocketChannel>;
+
+/** Helpers to build parameterized channel names */
+export const ParameterizedChannel = {
+  container: (id: string): SocketChannel => `container:${id}`,
+  deployment: (id: string): SocketChannel => `deployment:${id}`,
+  removal: (id: string): SocketChannel => `removal:${id}`,
+} as const;
+
+/**
+ * Runtime validator for channel names.
+ * Use this on the server to reject arbitrary strings from untyped clients.
+ */
+export function isValidSocketChannel(channel: string): channel is SocketChannel {
+  if ((STATIC_SOCKET_CHANNELS as readonly string[]).includes(channel)) {
+    return true;
+  }
+  return PARAMETERIZED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
+}
+
+// ====================
+// Shared Defaults
+// ====================
+
+/** Default number of log tail lines */
+export const DEFAULT_LOG_TAIL_LINES = 100;
+
+/** Maximum allowed log tail lines */
+export const MAX_LOG_TAIL_LINES = 5000;
+
+// ====================
+// Socket Event Name Constants
+// ====================
+
+/** Server → Client event names */
+export const ServerEvent = {
+  // Containers
+  CONTAINERS_LIST: "containers:list",
+  CONTAINER_STATUS: "container:status",
+  CONTAINER_REMOVED: "container:removed",
+  CONTAINER_LOG: "container:log",
+  CONTAINER_LOG_END: "container:log:end",
+  CONTAINER_LOG_ERROR: "container:log:error",
+  // Deployments
+  DEPLOYMENT_STATUS: "deployment:status",
+  DEPLOYMENT_STEP: "deployment:step",
+  DEPLOYMENT_COMPLETED: "deployment:completed",
+  DEPLOYMENTS_ACTIVE: "deployments:active",
+  // Removal
+  REMOVAL_STATUS: "removal:status",
+  // Postgres
+  POSTGRES_OPERATION: "postgres:operation",
+  POSTGRES_OPERATION_COMPLETED: "postgres:operation:completed",
+  // Monitoring
+  MONITORING_STATUS: "monitoring:status",
+  // Events
+  EVENT_CREATED: "event:created",
+  EVENT_UPDATED: "event:updated",
+  // Connectivity
+  CONNECTIVITY_STATUS: "connectivity:status",
+  CONNECTIVITY_ALL: "connectivity:all",
+  // Stacks
+  STACK_STATUS: "stack:status",
+  // Volumes
+  VOLUMES_LIST: "volumes:list",
+  // Networks
+  NETWORKS_LIST: "networks:list",
+  // Backup Health
+  BACKUP_HEALTH_STATUS: "backup-health:status",
+  // Logs (Loki)
+  LOGS_ENTRIES: "logs:entries",
+} as const;
+
+/** Client → Server event names */
+export const ClientEvent = {
+  SUBSCRIBE: "subscribe",
+  UNSUBSCRIBE: "unsubscribe",
+  CONTAINER_LOGS_START: "container:logs:start",
+  CONTAINER_LOGS_STOP: "container:logs:stop",
+} as const;
 
 // ====================
 // Server → Client Events

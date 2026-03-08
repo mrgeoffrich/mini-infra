@@ -24,6 +24,7 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
+import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent } from "@mini-infra/types";
 import { serializeContainer } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 
@@ -787,9 +788,9 @@ const logQuerySchema = z.object({
   tail: z
     .string()
     .optional()
-    .transform((val) => (val ? parseInt(val) : 100))
-    .refine((val) => val > 0 && val <= 5000, {
-      message: "Tail must be between 1 and 5000",
+    .transform((val) => (val ? parseInt(val) : DEFAULT_LOG_TAIL_LINES))
+    .refine((val) => val > 0 && val <= MAX_LOG_TAIL_LINES, {
+      message: `Tail must be between 1 and ${MAX_LOG_TAIL_LINES}`,
     }),
   follow: z
     .string()
@@ -949,7 +950,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
       follow: shouldFollow as true,
       stdout: options.stdout ?? true,
       stderr: options.stderr ?? true,
-      tail: options.tail ?? 100,
+      tail: options.tail ?? DEFAULT_LOG_TAIL_LINES,
       timestamps: options.timestamps ?? false,
       since: options.since ? parseInt(options.since) : undefined,
       until: options.until ? parseInt(options.until) : undefined,
@@ -1230,12 +1231,12 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
 
     // Emit granular socket events for immediate UI updates
     if (action === "remove") {
-      emitToChannel("containers", "container:removed", {
+      emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINER_REMOVED, {
         id: containerId,
         name: containerInfo.name,
       });
     } else if (updatedContainer) {
-      emitToChannel("containers", "container:status", {
+      emitToChannel(Channel.CONTAINERS, ServerEvent.CONTAINER_STATUS, {
         id: containerId,
         name: containerInfo.name,
         status: updatedContainer.status,
