@@ -100,7 +100,7 @@ export class HAProxyRemediationService {
           sharedFrontend: { environmentId },
           status: 'active',
         },
-        select: { useSSL: true },
+        select: { useSSL: true, hostname: true },
       });
 
       const sharedHttpFrontend = generateSharedFrontendName(environmentId, "http");
@@ -134,8 +134,10 @@ export class HAProxyRemediationService {
       ];
 
       // Determine what needs to change
+      // Only legacy non-shared, non-manual frontends should be deleted
+      // (matches the filter in haproxy-post-apply.ts restoreHAProxyRuntimeState)
       const legacyFrontends = existingFrontends.filter(
-        (f) => !f.isSharedFrontend && f.frontendType !== "shared"
+        (f) => !f.isSharedFrontend && f.frontendType !== "shared" && f.frontendType !== "manual"
       );
       const frontendsToDelete = legacyFrontends.map((f) => f.frontendName);
 
@@ -150,7 +152,11 @@ export class HAProxyRemediationService {
         }
       }
 
-      const routesToAdd = expectedRoutes.map((r) => r.hostname);
+      // Only show routes that don't already have active route records
+      const existingRouteHostnames = new Set(existingRoutes.map((r) => r.hostname));
+      const routesToAdd = expectedRoutes
+        .filter((r) => !existingRouteHostnames.has(r.hostname))
+        .map((r) => r.hostname);
 
       // Backends that exist in DB but not in HAProxy runtime need recreation
       const backendsToRecreate = dbBackends.filter(
@@ -161,6 +167,7 @@ export class HAProxyRemediationService {
         frontendsToDelete.length > 0 ||
         frontendsToCreate.length > 0 ||
         backendsToRecreate.length > 0 ||
+        routesToAdd.length > 0 ||
         !sharedExists;
 
       return {
