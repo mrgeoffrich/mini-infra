@@ -23,7 +23,6 @@ import {
   IconAlertTriangle,
   IconRouter,
   IconRoute,
-  IconTrash,
   IconPlus,
   IconRefresh,
   IconCheck,
@@ -214,29 +213,6 @@ export function RemediateHAProxyDialog({
                       Changes to be Made
                     </h4>
                     <div className="rounded-md border divide-y">
-                      {/* Frontends to delete */}
-                      {preview.changes.frontendsToDelete.length > 0 && (
-                        <div className="p-3">
-                          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 mb-2">
-                            <IconTrash className="h-4 w-4" />
-                            <span className="font-medium">
-                              Delete {preview.changes.frontendsToDelete.length} frontend(s)
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {preview.changes.frontendsToDelete.map((name) => (
-                              <Badge
-                                key={name}
-                                variant="outline"
-                                className="text-xs font-mono bg-red-50 dark:bg-red-950 border-red-200"
-                              >
-                                {name}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
                       {/* Frontends to create */}
                       {preview.changes.frontendsToCreate.length > 0 && (
                         <div className="p-3">
@@ -317,8 +293,7 @@ export function RemediateHAProxyDialog({
                       )}
 
                       {/* No changes needed */}
-                      {preview.changes.frontendsToDelete.length === 0 &&
-                        preview.changes.frontendsToCreate.length === 0 &&
+                      {preview.changes.frontendsToCreate.length === 0 &&
                         preview.changes.routesToAdd.length === 0 &&
                         preview.changes.backendsToRecreate.length === 0 && (
                           <div className="p-3 text-sm text-muted-foreground text-center">

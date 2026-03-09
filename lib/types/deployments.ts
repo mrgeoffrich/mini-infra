@@ -852,7 +852,6 @@ export interface RemediationPreview {
     backends: string[];
   };
   changes: {
-    frontendsToDelete: string[];
     frontendsToCreate: string[];
     backendsToRecreate: string[];
     routesToAdd: string[];

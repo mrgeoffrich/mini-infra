@@ -123,31 +123,6 @@ export async function restoreHAProxyRuntimeState(
       }),
     ]);
 
-    // Delete legacy non-shared frontends from HAProxy runtime (they may still
-    // exist in the DB from before migration; we don't need them in HAProxy)
-    const legacyFrontends = await prisma.hAProxyFrontend.findMany({
-      where: {
-        environmentId,
-        status: { not: 'removed' },
-        isSharedFrontend: false,
-        frontendType: { not: 'manual' },
-      },
-    });
-
-    let legacyDeleted = 0;
-    for (const legacy of legacyFrontends) {
-      try {
-        await frontendManager.removeFrontend(legacy.frontendName, haproxyClient);
-        await prisma.hAProxyFrontend.update({
-          where: { id: legacy.id },
-          data: { status: 'removed' },
-        });
-        legacyDeleted++;
-      } catch (error) {
-        logger.warn({ error, frontendName: legacy.frontendName }, 'Failed to remove legacy frontend (may not exist)');
-      }
-    }
-
     // Create shared HTTP frontend (always needed)
     const httpFrontend = await frontendManager.getOrCreateSharedFrontend(
       environmentId,
@@ -182,7 +157,6 @@ export async function restoreHAProxyRuntimeState(
     const frontendDetail = [
       `HTTP: ${httpFrontend.frontendName}`,
       needsHttps ? `HTTPS: ${httpsFrontend?.frontendName}` : 'HTTPS: not needed',
-      legacyDeleted > 0 ? `${legacyDeleted} legacy frontend(s) removed` : null,
     ].filter(Boolean).join(', ');
 
     steps.push({

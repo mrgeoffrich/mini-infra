@@ -22,7 +22,6 @@ export interface RemediationPreview {
     backends: string[];
   };
   changes: {
-    frontendsToDelete: string[];
     frontendsToCreate: string[];
     backendsToRecreate: string[];
     routesToAdd: string[];
@@ -135,13 +134,6 @@ export class HAProxyRemediationService {
       ];
 
       // Determine what needs to change
-      // Only legacy non-shared, non-manual frontends should be deleted
-      // (matches the filter in haproxy-post-apply.ts restoreHAProxyRuntimeState)
-      const legacyFrontends = existingFrontends.filter(
-        (f) => !f.isSharedFrontend && f.frontendType !== "shared" && f.frontendType !== "manual"
-      );
-      const frontendsToDelete = legacyFrontends.map((f) => f.frontendName);
-
       const frontendsToCreate: string[] = [];
       const sharedExists = existingFrontends.some(
         (f) => f.isSharedFrontend && f.frontendType === "shared"
@@ -165,7 +157,6 @@ export class HAProxyRemediationService {
       );
 
       const needsRemediation =
-        frontendsToDelete.length > 0 ||
         frontendsToCreate.length > 0 ||
         backendsToRecreate.length > 0 ||
         routesToAdd.length > 0 ||
@@ -189,7 +180,6 @@ export class HAProxyRemediationService {
           backends: expectedBackends,
         },
         changes: {
-          frontendsToDelete,
           frontendsToCreate,
           backendsToRecreate,
           routesToAdd,
