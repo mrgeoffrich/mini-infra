@@ -20,9 +20,17 @@ const router = express.Router();
 // Helper Functions
 // ====================
 
-function serializeFrontend(frontend: any): HAProxyFrontendInfo {
+function serializeFrontend(
+  frontend: any,
+  sharedFrontendNameLookup?: Map<string, string>
+): HAProxyFrontendInfo {
   // Extract hostnames from routes if available
   const routeHostnames = frontend.routes?.map((route: any) => route.hostname) ?? [];
+
+  // Resolve shared frontend name for manual frontends
+  const sharedFrontendName = frontend.sharedFrontendId
+    ? sharedFrontendNameLookup?.get(frontend.sharedFrontendId) ?? null
+    : null;
 
   return {
     id: frontend.id,
@@ -42,6 +50,7 @@ function serializeFrontend(frontend: any): HAProxyFrontendInfo {
     sslBindPort: frontend.sslBindPort,
     isSharedFrontend: frontend.isSharedFrontend ?? false,
     sharedFrontendId: frontend.sharedFrontendId ?? null,
+    sharedFrontendName,
     routesCount: frontend._count?.routes ?? frontend.routes?.length ?? 0,
     routeHostnames,
     status: frontend.status as 'active' | 'pending' | 'failed' | 'removed',
@@ -100,9 +109,18 @@ router.get(
         orderBy: { createdAt: "desc" },
       });
 
+      // Build lookup map for shared frontend names (so manual frontends
+      // can display which shared frontend they route through)
+      const sharedFrontendNameLookup = new Map<string, string>();
+      for (const f of frontends) {
+        if (f.isSharedFrontend) {
+          sharedFrontendNameLookup.set(f.id, f.frontendName);
+        }
+      }
+
       const response: HAProxyFrontendListResponse = {
         success: true,
-        data: frontends.map(serializeFrontend),
+        data: frontends.map((f) => serializeFrontend(f, sharedFrontendNameLookup)),
       };
 
       res.json(response);
@@ -440,9 +458,21 @@ router.get(
         });
       }
 
+      // Look up shared frontend name if this is a manual frontend
+      const sharedFrontendNameLookup = new Map<string, string>();
+      if (frontend.sharedFrontendId) {
+        const sharedFrontend = await prisma.hAProxyFrontend.findUnique({
+          where: { id: frontend.sharedFrontendId },
+          select: { id: true, frontendName: true },
+        });
+        if (sharedFrontend) {
+          sharedFrontendNameLookup.set(sharedFrontend.id, sharedFrontend.frontendName);
+        }
+      }
+
       const response: HAProxyFrontendResponse = {
         success: true,
-        data: serializeFrontend(frontend),
+        data: serializeFrontend(frontend, sharedFrontendNameLookup),
       };
 
       res.json(response);

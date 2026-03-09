@@ -29,6 +29,7 @@ import {
   IconCheck,
   IconX,
   IconMinus,
+  IconShield,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -355,16 +356,56 @@ export function RemediateHAProxyDialog({
                             </span>
                           </div>
                         )}
-                        <div className="pt-2 border-t border-green-200">
-                          <span className="text-muted-foreground">Routes:</span>{" "}
-                          <span className="font-medium">
-                            {preview.expectedState.routes.length}
-                          </span>
-                          {" • "}
-                          <span className="text-muted-foreground">Backends:</span>{" "}
-                          <span className="font-medium">
-                            {preview.expectedState.backends.length}
-                          </span>
+                        {(preview.expectedState.manualFrontends ?? []).length > 0 && (
+                          <>
+                            {preview.expectedState.manualFrontends.map((mf) => (
+                              <div key={mf.frontendName} className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-white dark:bg-gray-900">
+                                  Manual
+                                </Badge>
+                                <span className="font-mono text-xs">
+                                  {mf.frontendName}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {mf.containerName && `(${mf.containerName})`}
+                                </span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        <div className="pt-2 border-t border-green-200 space-y-2">
+                          <div>
+                            <span className="text-muted-foreground">Routes:</span>{" "}
+                            <span className="font-medium">
+                              {preview.expectedState.routes.length}
+                            </span>
+                            {" • "}
+                            <span className="text-muted-foreground">Backends:</span>{" "}
+                            <span className="font-medium">
+                              {preview.expectedState.backends.length}
+                            </span>
+                          </div>
+                          {preview.expectedState.routes.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {preview.expectedState.routes.slice(0, 10).map((route) => (
+                                <Badge
+                                  key={route.hostname}
+                                  variant="outline"
+                                  className="text-xs font-mono bg-white dark:bg-gray-900"
+                                >
+                                  {route.hostname}
+                                  {route.ssl && (
+                                    <IconShield className="h-3 w-3 ml-1 text-green-600 inline" />
+                                  )}
+                                </Badge>
+                              ))}
+                              {preview.expectedState.routes.length > 10 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{preview.expectedState.routes.length - 10} more
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -375,6 +375,36 @@ export function FrontendDetailsPage() {
         </div>
       )}
 
+      {/* Shared Frontend Routing Info (Manual Frontends) */}
+      {isManual && frontend.hostname && (
+        <div className="px-4 lg:px-6 max-w-7xl">
+          <Card className="border-blue-200 dark:border-blue-800">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <IconInfoCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    This container is routed via hostname{" "}
+                    <span className="font-mono font-medium">{frontend.hostname}</span>
+                    {" "}through a shared frontend.
+                  </p>
+                  {frontend.sharedFrontendName && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/haproxy/frontends/${frontend.sharedFrontendName}`)}
+                    >
+                      <IconEye className="h-4 w-4 mr-2" />
+                      View Shared Frontend
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Container Details Card (Manual Frontends) */}
       {isManual && (
         <div className="px-4 lg:px-6 max-w-7xl">

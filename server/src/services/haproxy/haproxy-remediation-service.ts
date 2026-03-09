@@ -17,6 +17,7 @@ export interface RemediationPreview {
   expectedState: {
     sharedHttpFrontend: string | null;
     sharedHttpsFrontend: string | null;
+    manualFrontends: Array<{ frontendName: string; hostname: string; containerName: string | null }>;
     routes: Array<{ hostname: string; backend: string; ssl: boolean }>;
     backends: string[];
   };
@@ -179,6 +180,11 @@ export class HAProxyRemediationService {
         expectedState: {
           sharedHttpFrontend,
           sharedHttpsFrontend,
+          manualFrontends: manualFrontends.map((mf) => ({
+            frontendName: mf.frontendName,
+            hostname: mf.hostname,
+            containerName: mf.containerName,
+          })),
           routes: expectedRoutes,
           backends: expectedBackends,
         },
