@@ -182,14 +182,14 @@ export class ConfigureFrontend {
         "Route added to shared frontend successfully"
       );
 
-      // Check if a legacy frontend record exists for this deployment config
+      // Check if a manual frontend record exists for this deployment config
       // If so, mark it as removed since we're now using shared frontends
       const existingFrontend = await prisma.hAProxyFrontend.findUnique({
         where: { deploymentConfigId: context.deploymentConfigId },
       });
 
       if (existingFrontend && !existingFrontend.isSharedFrontend) {
-        // Mark legacy frontend as removed
+        // Mark manual frontend as removed
         await prisma.hAProxyFrontend.update({
           where: { id: existingFrontend.id },
           data: {
@@ -203,7 +203,7 @@ export class ConfigureFrontend {
             deploymentId: context.deploymentId,
             frontendId: existingFrontend.id,
           },
-          "Marked legacy frontend record as removed"
+          "Marked manual frontend record as removed"
         );
       }
 

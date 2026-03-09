@@ -37,7 +37,7 @@ Click **Refresh** in the top-right to reload the table.
 |--------|-------|---------|
 | **Healthy** | Green | HAProxy configuration matches the expected state |
 | **Needs Remediation** | Yellow | Configuration has drifted and needs to be resynced |
-| **Legacy** | Orange | Environment uses the legacy HAProxy deployment and should be migrated to stack-managed |
+| **Needs Migration** | Orange | Environment uses the older HAProxy deployment and should be migrated to stack-managed |
 | **Unavailable** | Red | HAProxy health could not be determined (environment may be starting or in an error state) |
 | **—** | Gray | Environment is stopped — health is not checked |
 
@@ -47,9 +47,9 @@ When an HAProxy instance shows **Needs Remediation**, its configuration has drif
 
 Click **Remediate** to open the remediation dialog, which shows a preview of the changes that will be applied. Review the proposed fixes and confirm to resync the HAProxy configuration.
 
-## Migration from legacy to stack-managed
+## Migration to stack-managed
 
-Environments that were created before the stacks feature show a **Legacy** badge. These use the older HAProxy deployment method and should be migrated to stack-managed HAProxy for better reliability and consistency.
+Environments that were created before the stacks feature show a **Needs Migration** badge. These use the older HAProxy deployment method and should be migrated to stack-managed HAProxy for better reliability and consistency.
 
 Click **Migrate to Stack** to open the migration dialog. The dialog walks through the migration steps:
 
@@ -58,11 +58,11 @@ Click **Migrate to Stack** to open the migration dialog. The dialog walks throug
 3. Execution with step-by-step progress
 4. Results summary showing success or any errors
 
-Migration converts the environment's HAProxy from the legacy service-based deployment to a stack-managed deployment. Existing frontends, backends, and routes are preserved.
+Migration converts the environment's HAProxy from the older service-based deployment to a stack-managed deployment. Existing frontends, backends, and routes are preserved.
 
 ## What to watch out for
 
 - Stopped environments show dashes for all health and count columns — HAProxy health is only checked for running environments.
 - If no environments have HAProxy configured, the page shows an empty state with a link to the environments list.
 - Remediation applies changes to the live HAProxy configuration immediately. Traffic routing may briefly change during remediation.
-- Migration is a one-way operation — once an environment is migrated to stack-managed HAProxy, it cannot be reverted to the legacy model.
+- Migration is a one-way operation — once an environment is migrated to stack-managed HAProxy, it cannot be reverted to the previous model.

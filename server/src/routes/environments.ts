@@ -803,7 +803,7 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
 
     // Check if using shared frontend architecture
     const sharedFrontends = frontends.filter(f => f.isSharedFrontend);
-    const legacyFrontends = frontends.filter(f => !f.isSharedFrontend);
+    const manualFrontends = frontends.filter(f => !f.isSharedFrontend);
 
     // Get deployment configs with hostnames
     const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
@@ -821,7 +821,7 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
     });
 
     // Determine if remediation is recommended
-    const needsRemediation = legacyFrontends.length > 0 ||
+    const needsRemediation = manualFrontends.length > 0 ||
       (deploymentConfigs.length > 0 && sharedFrontends.length === 0);
 
     res.json({
@@ -829,7 +829,7 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
       data: {
         hasHAProxy: true,
         sharedFrontendsCount: sharedFrontends.length,
-        legacyFrontendsCount: legacyFrontends.length,
+        manualFrontendsCount: manualFrontends.length,
         totalRoutesCount: sharedFrontends.reduce((acc, f) => acc + (f.routes?.length || 0), 0),
         deploymentConfigsWithHostnames: deploymentConfigs.length,
         needsRemediation,

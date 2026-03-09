@@ -582,7 +582,7 @@ export class ManualFrontendManager {
           prisma
         );
       } else {
-        // Legacy path: remove the dedicated frontend from HAProxy
+        // Manual path: remove the dedicated frontend from HAProxy
         logger.info({ frontendName }, "Removing dedicated frontend from HAProxy");
         await this.frontendManager.removeFrontend(frontendName, haproxyClient);
       }

@@ -879,7 +879,7 @@ export interface HAProxyStatusResponse {
     hasHAProxy: boolean;
     message?: string;
     sharedFrontendsCount?: number;
-    legacyFrontendsCount?: number;
+    manualFrontendsCount?: number;
     totalRoutesCount?: number;
     deploymentConfigsWithHostnames?: number;
     needsRemediation?: boolean;
