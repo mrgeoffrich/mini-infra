@@ -397,7 +397,7 @@ export function useStackApplyProgress(stackId: string) {
       // Toast notification
       if (data.error) {
         toast.error(`Stack apply failed: ${data.error}`);
-      } else if (data.success && data.serviceResults.length === 0 && prev.forcePull) {
+      } else if (data.success && data.serviceResults.length === 0 && applyState.forcePull) {
         toast.success('All images are up to date');
       } else if (data.success) {
         toast.success(`Stack applied successfully (v${data.appliedVersion})`);
