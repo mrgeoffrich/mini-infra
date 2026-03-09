@@ -368,9 +368,9 @@ export function useStackApplyProgress(stackId: string) {
       if (data.stackId !== stackId) return;
       setApplyState((prev) => ({
         ...prev,
-        // For forcePull, update totalActions from actual apply progress
+        // For forcePull, replace totalActions from the first service result
         // since the initial STARTED event used "pull" placeholders
-        totalActions: prev.forcePull && data.totalActions != null ? data.totalActions : prev.totalActions,
+        totalActions: prev.forcePull && data.totalActions != null && prev.completedResults.length === 0 ? data.totalActions : prev.totalActions,
         completedResults: [...prev.completedResults, data],
       }));
     },
@@ -504,6 +504,12 @@ export function useStackDestroyProgress(stackId: string | null) {
       setResult(data);
 
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      if (stackId) {
+        queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
+        queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
+        queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
+        queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
+      }
 
       if (data.error) {
         toast.error(`Stack destroy failed: ${data.error}`);

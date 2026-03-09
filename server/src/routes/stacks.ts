@@ -33,7 +33,7 @@ const applyingStacks = new Set<string>();
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
     const { environmentId, scope } = req.query;
-    const where: any = {};
+    const where: any = { status: { not: 'removed' } };
     if (scope === 'host') {
       where.environmentId = null;
     } else if (environmentId && typeof environmentId === 'string') {
@@ -95,14 +95,14 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         return res.status(404).json({ success: false, message: 'Environment not found' });
       }
 
-      // Check uniqueness within environment
-      const existing = await prisma.stack.findFirst({ where: { name, environmentId } });
+      // Check uniqueness within environment (exclude removed stacks)
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId, status: { not: 'removed' } } });
       if (existing) {
         return res.status(409).json({ success: false, message: 'A stack with this name already exists in this environment' });
       }
     } else {
-      // Host-level stack: enforce singleton
-      const existing = await prisma.stack.findFirst({ where: { name, environmentId: null } });
+      // Host-level stack: enforce singleton (exclude removed stacks)
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId: null, status: { not: 'removed' } } });
       if (existing) {
         return res.status(409).json({ success: false, message: 'A host-level stack with this name already exists' });
       }

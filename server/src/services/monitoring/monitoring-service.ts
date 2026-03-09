@@ -385,7 +385,7 @@ export class MonitoringService implements IApplicationService {
   async ensureAppConnectedToMonitoringNetwork(): Promise<void> {
     if (!existsSync('/.dockerenv')) return;
 
-    const networkName = `${this.projectName}-monitoring_network`;
+    const networkName = `${this.projectName}_monitoring_network`;
 
     try {
       const docker = this.dockerExecutor.getDockerClient();

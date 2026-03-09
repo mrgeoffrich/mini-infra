@@ -3,7 +3,7 @@
 // ====================
 
 // Status and service type unions (mirror Prisma enums)
-export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed';
+export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
 export type StackServiceType = 'Stateful' | 'StatelessWeb';
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 

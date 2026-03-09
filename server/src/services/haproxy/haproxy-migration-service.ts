@@ -72,7 +72,7 @@ export class HAProxyMigrationService {
 
     // 1. Find the haproxy stack for this environment
     const haproxyStack = await prisma.stack.findFirst({
-      where: { name: 'haproxy', environmentId },
+      where: { name: 'haproxy', environmentId, status: { not: 'removed' } },
     });
 
     // 2. Look for a running HAProxy container
@@ -238,7 +238,7 @@ export class HAProxyMigrationService {
 
     // Pre-flight: verify the haproxy stack definition exists BEFORE any destructive action
     const haproxyStack = await prisma.stack.findFirst({
-      where: { name: 'haproxy', environmentId },
+      where: { name: 'haproxy', environmentId, status: { not: 'removed' } },
     });
     if (!haproxyStack) {
       const msg = 'HAProxy stack definition not found for this environment. Run server restart to sync built-in stacks.';

@@ -162,7 +162,7 @@ async function syncStackFromTemplate(
   const { definition } = template;
 
   const existing = await prisma.stack.findFirst({
-    where: { name: template.name, environmentId },
+    where: { name: template.name, environmentId, status: { not: 'removed' } },
   });
 
   // No DB record → create

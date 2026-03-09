@@ -600,20 +600,23 @@ export class StackReconciler {
       }
     }
 
-    // 4. Record deployment history and delete stack from DB
+    // 4. Record deployment history and mark stack as removed
     const duration = Date.now() - startTime;
     await this.prisma.stackDeployment.create({
       data: {
         stackId,
         action: 'destroy',
         success: true,
-        status: 'undeployed',
+        status: 'removed',
         duration,
         triggeredBy: options?.triggeredBy ?? null,
       },
     });
 
-    await this.prisma.stack.delete({ where: { id: stackId } });
+    await this.prisma.stack.update({
+      where: { id: stackId },
+      data: { status: 'removed', removedAt: new Date() },
+    });
 
     log.info({ containersRemoved, networksRemoved, volumesRemoved, duration }, 'Stack destroyed');
     return {
