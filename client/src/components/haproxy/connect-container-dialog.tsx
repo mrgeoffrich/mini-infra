@@ -58,20 +58,17 @@ export function ConnectContainerDialog({
 
   // Build the state: use progress state, but if we just fired the mutation
   // and haven't received STARTED yet, show executing with step names
-  const connectStepNames = request.enableSsl
-    ? [
-        "Validate container connectivity",
-        "Find or issue TLS certificate",
-        "Deploy certificate to HAProxy",
-        "Create backend, frontend and route",
-      ]
-    : [
-        "Validate container connectivity",
-        "Create backend, frontend and route",
-      ];
+  const connectStepNames: string[] = [];
+  if (request.needsNetworkJoin) connectStepNames.push("Connect container to HAProxy network");
+  connectStepNames.push("Validate container connectivity");
+  if (request.enableSsl) {
+    connectStepNames.push("Find or issue TLS certificate");
+    connectStepNames.push("Deploy certificate to HAProxy");
+  }
+  connectStepNames.push("Create backend, frontend and route");
   const operationState =
     operationId && progress.state.phase === "idle"
-      ? { ...progress.state, phase: "executing" as const, totalSteps: request.enableSsl ? 4 : 2, plannedStepNames: connectStepNames }
+      ? { ...progress.state, phase: "executing" as const, totalSteps: connectStepNames.length, plannedStepNames: connectStepNames }
       : progress.state;
 
   return (
@@ -122,6 +119,9 @@ export function ConnectContainerDialog({
           <div className="rounded-md border p-3 bg-muted/30">
             <h4 className="text-sm font-medium mb-2">Steps to execute:</h4>
             <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+              {request.needsNetworkJoin && (
+                <li>Connect container to HAProxy network</li>
+              )}
               <li>Validate container connectivity</li>
               {request.enableSsl && (
                 <>

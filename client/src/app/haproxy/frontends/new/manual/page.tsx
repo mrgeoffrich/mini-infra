@@ -82,6 +82,7 @@ const createManualFrontendSchema = z.object({
     .regex(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, "Invalid hostname format"),
   enableSsl: z.boolean(),
   healthCheckPath: z.string(),
+  needsNetworkJoin: z.boolean(),
 });
 
 type FormValues = z.infer<typeof createManualFrontendSchema>;
@@ -116,6 +117,7 @@ export default function CreateManualFrontendPage() {
       hostname: "",
       enableSsl: false,
       healthCheckPath: "/",
+      needsNetworkJoin: false,
     },
   });
 
@@ -426,7 +428,7 @@ function ContainerSelectionCard({
       <CardHeader>
         <CardTitle>Select Container</CardTitle>
         <CardDescription>
-          Choose an existing container on the same network as HAProxy
+          Choose a running container to connect to HAProxy
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -457,6 +459,7 @@ function ContainerSelectionCard({
                   if (container.canConnect) {
                     form.setValue("containerId", container.id);
                     form.setValue("containerName", container.name);
+                    form.setValue("needsNetworkJoin", container.needsNetworkJoin ?? false);
                     // Auto-fill container port if available
                     if (
                       container.ports?.length > 0 &&
@@ -501,6 +504,7 @@ function ContainerSelectionCard({
                   </div>
                   <ContainerEligibilityBadge
                     canConnect={container.canConnect}
+                    needsNetworkJoin={container.needsNetworkJoin}
                     reason={container.reason}
                   />
                 </div>
@@ -718,6 +722,12 @@ function ValidationAndCreationCard({
               <span className="text-muted-foreground">Health Check:</span>
               <p className="font-medium">{values.healthCheckPath}</p>
             </div>
+            {values.needsNetworkJoin && (
+              <div>
+                <span className="text-muted-foreground">Network Join:</span>
+                <p className="font-medium text-amber-600 dark:text-amber-400">Required</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -729,10 +739,17 @@ function ValidationAndCreationCard({
               label="Container is running"
               status={container?.state === "running"}
             />
-            <ValidationCheck
-              label="Network connectivity"
-              status={container?.canConnect || false}
-            />
+            {values.needsNetworkJoin ? (
+              <div className="flex items-center gap-2">
+                <IconAlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-500" />
+                <span className="text-sm">Will be joined to HAProxy network</span>
+              </div>
+            ) : (
+              <ValidationCheck
+                label="Network connectivity"
+                status={container?.canConnect || false}
+              />
+            )}
             <ValidationCheck
               label="Hostname is available"
               status={true} // Already validated in step 3

@@ -38,7 +38,8 @@ export class ManualFrontendSetupService {
     userId: string,
     onStep?: SetupStepCallback,
   ): Promise<ManualFrontendSetupResult> {
-    const totalSteps = request.enableSsl ? 4 : 2;
+    const hasNetworkJoin = request.needsNetworkJoin === true;
+    const totalSteps = (hasNetworkJoin ? 1 : 0) + (request.enableSsl ? 4 : 2);
     const steps: ManualFrontendSetupStep[] = [];
     const errors: string[] = [];
     let stepCount = 0;
@@ -53,8 +54,25 @@ export class ManualFrontendSetupService {
     };
 
     try {
-      // Step 1: Validate container connectivity
-      logger.info({ containerId: request.containerId, environmentId: request.environmentId }, "Step 1: Validating container");
+      // Conditional step: Connect container to HAProxy network
+      if (hasNetworkJoin) {
+        logger.info({ containerId: request.containerId, environmentId: request.environmentId }, "Connecting container to HAProxy network");
+        try {
+          await this.manualFrontendManager.connectContainerToNetwork(
+            request.containerId,
+            request.environmentId,
+            this.prisma,
+          );
+          emitStep("Connect container to HAProxy network", "completed");
+        } catch (joinError) {
+          const detail = joinError instanceof Error ? joinError.message : "Network join failed";
+          emitStep("Connect container to HAProxy network", "failed", detail);
+          return { success: false, steps, errors };
+        }
+      }
+
+      // Step: Validate container connectivity
+      logger.info({ containerId: request.containerId, environmentId: request.environmentId }, "Validating container");
       const validation = await this.manualFrontendManager.validateContainer(
         request.containerId,
         request.environmentId,

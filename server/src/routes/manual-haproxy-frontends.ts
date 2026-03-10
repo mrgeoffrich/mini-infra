@@ -46,6 +46,7 @@ const createManualFrontendSchema = z.object({
   hostname: z.string().min(1).regex(/^[a-z0-9.-]+$/i, "Invalid hostname format"),
   enableSsl: z.boolean().optional(),
   healthCheckPath: z.string().optional(),
+  needsNetworkJoin: z.boolean().optional(),
 });
 
 // Concurrency guard — one setup per environment at a time
@@ -272,18 +273,16 @@ router.post(
       // Pre-flight: resolve HAProxy client synchronously (fails fast before 200)
       const haproxyClient = await getHAProxyClient(request.environmentId);
 
-      const totalSteps = request.enableSsl ? 4 : 2;
-      const stepNames = request.enableSsl
-        ? [
-            "Validate container connectivity",
-            "Find or issue TLS certificate",
-            "Deploy certificate to HAProxy",
-            "Create backend, frontend and route",
-          ]
-        : [
-            "Validate container connectivity",
-            "Create backend, frontend and route",
-          ];
+      const hasNetworkJoin = request.needsNetworkJoin === true;
+      const totalSteps = (hasNetworkJoin ? 1 : 0) + (request.enableSsl ? 4 : 2);
+      const stepNames: string[] = [];
+      if (hasNetworkJoin) stepNames.push("Connect container to HAProxy network");
+      stepNames.push("Validate container connectivity");
+      if (request.enableSsl) {
+        stepNames.push("Find or issue TLS certificate");
+        stepNames.push("Deploy certificate to HAProxy");
+      }
+      stepNames.push("Create backend, frontend and route");
 
       // Respond immediately — progress comes via Socket.IO
       res.json({ success: true, data: { started: true, operationId, environmentId: request.environmentId } });

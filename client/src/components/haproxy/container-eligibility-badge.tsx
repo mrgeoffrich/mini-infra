@@ -5,10 +5,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { IconCircleCheck, IconCircleX } from "@tabler/icons-react";
+import { IconCircleCheck, IconCircleX, IconNetwork } from "@tabler/icons-react";
 
 interface ContainerEligibilityBadgeProps {
   canConnect: boolean;
+  needsNetworkJoin?: boolean;
   reason?: string;
   className?: string;
 }
@@ -18,13 +19,38 @@ interface ContainerEligibilityBadgeProps {
  *
  * Displays:
  * - "Can Connect" (green) with IconCircleCheck
+ * - "Needs Network Join" (amber) with IconNetwork + tooltip with reason
  * - "Cannot Connect" (red) with IconCircleX + tooltip with reason
  */
 export function ContainerEligibilityBadge({
   canConnect,
+  needsNetworkJoin,
   reason,
   className,
 }: ContainerEligibilityBadgeProps) {
+  if (canConnect && needsNetworkJoin) {
+    const badge = (
+      <Badge
+        variant="outline"
+        className={`text-amber-700 border-amber-200 bg-amber-50 dark:text-amber-300 dark:border-amber-800 dark:bg-amber-950 ${className || ""}`}
+      >
+        <IconNetwork className="w-3 h-3 mr-1" />
+        Needs Network Join
+      </Badge>
+    );
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>{badge}</TooltipTrigger>
+          <TooltipContent>
+            <p className="text-sm">{reason}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
   const badge = canConnect ? (
     <Badge
       variant="outline"

@@ -144,12 +144,15 @@ export class ManualFrontendManager {
           let canConnect = true;
           let reason: string | undefined;
 
+          let needsNetworkJoin = false;
+
           if (isHAProxyContainer) {
             canConnect = false;
             reason = "Cannot connect HAProxy container to itself";
           } else if (!isOnHAProxyNetwork) {
-            canConnect = false;
-            reason = `Container is not on HAProxy network (${haproxyNetwork.name})`;
+            canConnect = true;
+            needsNetworkJoin = true;
+            reason = `Will be joined to HAProxy network (${haproxyNetwork.name})`;
           } else if (alreadyHasFrontend) {
             canConnect = false;
             reason = "Container already has a manual frontend configured";
@@ -170,6 +173,7 @@ export class ManualFrontendManager {
             labels: container.Labels || {},
             ports,
             canConnect,
+            needsNetworkJoin: needsNetworkJoin || undefined,
             reason,
           };
         })
@@ -193,6 +197,36 @@ export class ManualFrontendManager {
       logger.error({ error, environmentId }, "Failed to get eligible containers");
       throw error;
     }
+  }
+
+  /**
+   * Connect a container to the HAProxy network for the given environment.
+   */
+  async connectContainerToNetwork(
+    containerId: string,
+    environmentId: string,
+    prisma: PrismaClient,
+  ): Promise<void> {
+    await this.dockerExecutor.initialize();
+    const docker = this.dockerExecutor.getDockerClient();
+
+    const environment = await prisma.environment.findUnique({
+      where: { id: environmentId },
+      include: { networks: true },
+    });
+
+    const haproxyNetwork = environment?.networks.find(
+      (net) => net.name.includes("haproxy") || net.name.includes("network"),
+    );
+
+    if (!haproxyNetwork) {
+      throw new Error(`No HAProxy network found for environment: ${environmentId}`);
+    }
+
+    const network = docker.getNetwork(haproxyNetwork.name);
+    await network.connect({ Container: containerId });
+
+    logger.info({ containerId, network: haproxyNetwork.name }, "Container joined HAProxy network");
   }
 
   /**
