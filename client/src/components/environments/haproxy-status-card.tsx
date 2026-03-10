@@ -103,7 +103,6 @@ export function HAProxyStatusCard({
   }
 
   const isHealthy = !status.needsRemediation && status.sharedFrontendsCount && status.sharedFrontendsCount > 0;
-  const hasManualFrontends = status.manualFrontendsCount && status.manualFrontendsCount > 0;
 
   return (
     <Card className={className}>
@@ -154,16 +153,6 @@ export function HAProxyStatusCard({
             </div>
           </div>
         </div>
-
-        {/* Manual frontend warning */}
-        {hasManualFrontends && (
-          <Alert className="py-2 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
-            <IconAlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-sm text-yellow-800 dark:text-yellow-200">
-              Manual frontend configuration detected. Consider running remediation to migrate to shared frontends.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* Frontend list preview */}
         {status.frontends && status.frontends.length > 0 && (

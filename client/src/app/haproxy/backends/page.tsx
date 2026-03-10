@@ -251,18 +251,19 @@ export function BackendsListPage() {
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm">
                   <IconDots className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() =>
+                  onClick={(e) => {
+                    e.stopPropagation();
                     navigate(
                       `/haproxy/backends/${backend.name}?environmentId=${backend.environmentId}`,
-                    )
-                  }
+                    );
+                  }}
                 >
                   <IconEye className="h-4 w-4 mr-2" />
                   View Details
@@ -488,7 +489,11 @@ export function BackendsListPage() {
                   </TableHeader>
                   <TableBody>
                     {table.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow
+                        key={row.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => navigate(`/haproxy/backends/${row.original.name}?environmentId=${row.original.environmentId}`)}
+                      >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
                             {flexRender(

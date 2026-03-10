@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   IconServer2,
   IconRefresh,
@@ -94,6 +94,7 @@ function HAProxyHealthBadge({
 }
 
 function HAProxyInstanceRow({ env }: { env: Environment }) {
+  const navigate = useNavigate();
   const [remediateOpen, setRemediateOpen] = useState(false);
   const [migrateOpen, setMigrateOpen] = useState(false);
   const { data, isLoading, isError } = useHAProxyStatus(env.id);
@@ -108,14 +109,12 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
   const needsMigration = migrationPreview?.data?.needsMigration ?? false;
 
   return (
-    <TableRow>
+    <TableRow
+      className="cursor-pointer hover:bg-muted/50"
+      onClick={() => navigate(`/environments/${env.id}`)}
+    >
       <TableCell>
-        <Link
-          to={`/environments/${env.id}`}
-          className="font-medium hover:underline text-foreground"
-        >
-          {env.name}
-        </Link>
+        <span className="font-medium">{env.name}</span>
       </TableCell>
       <TableCell>
         <EnvironmentTypeBadge type={env.type} />
@@ -171,7 +170,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
               variant="outline"
               size="sm"
               disabled={isStopped}
-              onClick={() => setMigrateOpen(true)}
+              onClick={(e) => { e.stopPropagation(); setMigrateOpen(true); }}
               className="text-orange-700 border-orange-200 hover:bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:hover:bg-orange-950"
             >
               Migrate to Stack
@@ -189,7 +188,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
               variant="outline"
               size="sm"
               disabled={isStopped}
-              onClick={() => setRemediateOpen(true)}
+              onClick={(e) => { e.stopPropagation(); setRemediateOpen(true); }}
             >
               Remediate
             </Button>

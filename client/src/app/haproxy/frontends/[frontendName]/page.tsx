@@ -19,7 +19,6 @@ import {
   IconActivity,
   IconCircleCheck,
   IconCircleX,
-  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,16 +29,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DeleteFrontendDialog } from "@/components/haproxy/delete-frontend-dialog";
 import { useFrontendByName } from "@/hooks/use-haproxy-frontend";
 import { useDeleteManualFrontend } from "@/hooks/use-manual-haproxy-frontend";
 import { useSyncDeploymentFrontend } from "@/hooks/use-haproxy-frontend";
@@ -540,48 +530,14 @@ export function FrontendDetailsPage() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <div className="flex items-center gap-2">
-              <IconAlertTriangle className="h-5 w-5 text-destructive" />
-              <AlertDialogTitle>Delete Manual Frontend</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription>
-              Are you sure you want to delete the frontend "
-              {frontend?.frontendName}"? This will remove the frontend
-              configuration from HAProxy and stop routing traffic to the
-              container.
-              <br />
-              <br />
-              <strong>Note:</strong> The container itself will not be stopped or
-              removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDeleteCancel} disabled={isDeleting}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? (
-                <>
-                  <IconTrash className="h-4 w-4 mr-2 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                <>
-                  <IconTrash className="h-4 w-4 mr-2" />
-                  Delete
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteFrontendDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        frontend={frontend ?? null}
+        isDeleting={isDeleting}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 }

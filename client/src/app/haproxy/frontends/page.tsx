@@ -41,16 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DeleteFrontendDialog } from "@/components/haproxy/delete-frontend-dialog";
 import {
   Table,
   TableBody,
@@ -237,14 +228,14 @@ export function FrontendsListPage() {
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm">
                   <IconDots className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => navigate(`/haproxy/frontends/${frontend.frontendName}`)}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/haproxy/frontends/${frontend.frontendName}`); }}
                 >
                   <IconEye className="h-4 w-4 mr-2" />
                   View Details
@@ -252,13 +243,13 @@ export function FrontendsListPage() {
                 {isManual && (
                   <>
                     <DropdownMenuItem
-                      onClick={() => navigate(`/haproxy/frontends/${frontend.frontendName}/edit`)}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/haproxy/frontends/${frontend.frontendName}/edit`); }}
                     >
                       <IconEdit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleDeleteClick(frontend)}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteClick(frontend); }}
                       className="text-destructive focus:text-destructive"
                     >
                       <IconTrash className="h-4 w-4 mr-2" />
@@ -513,7 +504,11 @@ export function FrontendsListPage() {
                   </TableHeader>
                   <TableBody>
                     {table.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow
+                        key={row.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => navigate(`/haproxy/frontends/${row.original.frontendName}`)}
+                      >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
                             {flexRender(
@@ -533,43 +528,14 @@ export function FrontendsListPage() {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Manual Frontend</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the frontend "{frontendToDelete?.frontendName}"?
-              This will remove the frontend configuration from HAProxy and stop routing traffic
-              to the container.
-              <br />
-              <br />
-              <strong>Note:</strong> The container itself will not be stopped or removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDeleteCancel} disabled={isDeleting}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? (
-                <>
-                  <IconTrash className="h-4 w-4 mr-2 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                <>
-                  <IconTrash className="h-4 w-4 mr-2" />
-                  Delete
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteFrontendDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        frontend={frontendToDelete}
+        isDeleting={isDeleting}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 }

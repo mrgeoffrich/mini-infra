@@ -609,6 +609,7 @@ export interface EligibleContainer {
   labels: Record<string, string>;
   ports: Array<{ containerPort: number; protocol: string }>;
   canConnect: boolean;
+  needsNetworkJoin?: boolean;
   reason?: string;
 }
 
@@ -629,6 +630,7 @@ export interface CreateManualFrontendRequest {
   hostname: string;
   enableSsl?: boolean;
   healthCheckPath?: string;
+  needsNetworkJoin?: boolean;
 }
 
 export interface UpdateManualFrontendRequest {
