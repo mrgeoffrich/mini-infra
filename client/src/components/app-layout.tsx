@@ -7,8 +7,11 @@ import { AgentChatFAB } from "@/components/agent/agent-chat-fab";
 import { AgentChatPanel } from "@/components/agent/agent-chat-panel";
 import { AgentSpotlightOverlay } from "@/components/agent/agent-spotlight-overlay";
 import { AgentNavigationHandler } from "@/components/agent/agent-navigation-handler";
+import { useSocket } from "@/hooks/use-socket";
 
 export function AppLayout() {
+  // Establish socket connection once at the app level so all pages can use it
+  useSocket();
   return (
     <AgentChatProvider>
       <SidebarProvider

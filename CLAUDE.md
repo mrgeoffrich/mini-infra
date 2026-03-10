@@ -4,12 +4,15 @@
 
 For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
 
+When opening the site in playwrite use `playwright-cli open --persistent --headed)` and browse to http://localhost:3005
+
 ## Restarting the Dev Server
 
 Run `touch .restart-dev` in the project root to trigger a full dev server restart (lib, server, and client). The file is automatically deleted after the restart is triggered.
 
 ## Important Instructions
 
+* Always use http://localhost:3005 for all frontend and backend requests as this is a vite server that will proxy through to the backend. If you need to test the proxy, use http://localhost:5005 for what it connects to.
 * **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
@@ -25,8 +28,8 @@ Add one of these headers to your HTTP requests:
 
 ### Example Usage
 ```bash
-curl -H "x-api-key: <your-api-key>" http://localhost:5005/api/containers
-curl -H "x-api-key: <your-api-key>" http://localhost:5005/api/deployments/configs
+curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/containers
+curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/deployments/configs
 ```
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.

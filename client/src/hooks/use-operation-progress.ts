@@ -96,8 +96,11 @@ export function useOperationProgress<
 
   const enabled = !!operationId;
 
-  // Subscribe to the channel
-  useSocketChannel(channel, enabled);
+  // Subscribe to the channel eagerly (not gated on operationId) so we're
+  // already listening when the server starts emitting events immediately
+  // after the POST response. Event handlers filter by operationId, so
+  // no spurious events are processed.
+  useSocketChannel(channel);
 
   // Started event
   useSocketEvent(
