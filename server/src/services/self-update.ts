@@ -10,6 +10,9 @@ const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
 const STATUS_VOLUME_PREFIX = "mini-infra-update-status-";
 
+// In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race)
+let launchInProgress = false;
+
 export type SelfUpdateState =
   | "idle"
   | "checking"
@@ -126,128 +129,163 @@ export async function isUpdateInProgress(): Promise<boolean> {
 export async function launchSidecar(
   options: TriggerUpdateOptions,
 ): Promise<string> {
-  const docker = await DockerService.getInstance().getDockerInstance();
-  const containerId = getOwnContainerId();
+  // Acquire in-memory mutex to prevent TOCTOU race between concurrent requests
+  if (launchInProgress) {
+    throw new Error("An update launch is already in progress");
+  }
+  launchInProgress = true;
 
-  if (!containerId) {
-    throw new Error(
-      "Cannot determine own container ID. Are you running inside Docker?",
+  try {
+    const docker = await DockerService.getInstance().getDockerInstance();
+    const containerId = getOwnContainerId();
+
+    if (!containerId) {
+      throw new Error(
+        "Cannot determine own container ID. Are you running inside Docker?",
+      );
+    }
+
+    // Validate the target image against the allowed registry
+    const fullImageRef = options.targetTag.includes(":")
+      ? options.targetTag
+      : `${options.targetTag}:latest`;
+
+    if (!validateTargetImage(fullImageRef, options.allowedRegistryPattern)) {
+      throw new Error(
+        `Target image "${fullImageRef}" does not match allowed registry pattern "${options.allowedRegistryPattern}"`,
+      );
+    }
+
+    const inProgress = await isUpdateInProgress();
+    if (inProgress) {
+      throw new Error("An update is already in progress");
+    }
+
+    // Create a temporary volume for status file sharing
+    const statusVolumeName = `${STATUS_VOLUME_PREFIX}${Date.now()}`;
+    await docker.createVolume({ Name: statusVolumeName });
+
+    logger.info(
+      {
+        sidecarImage: options.sidecarImage,
+        targetImage: fullImageRef,
+        containerId,
+        statusVolume: statusVolumeName,
+      },
+      "Launching self-update sidecar",
     );
-  }
 
-  // Validate the target image against the allowed registry
-  const fullImageRef = options.targetTag.includes(":")
-    ? options.targetTag
-    : `${options.targetTag}:latest`;
-
-  if (!validateTargetImage(fullImageRef, options.allowedRegistryPattern)) {
-    throw new Error(
-      `Target image "${fullImageRef}" does not match allowed registry pattern "${options.allowedRegistryPattern}"`,
-    );
-  }
-
-  const inProgress = await isUpdateInProgress();
-  if (inProgress) {
-    throw new Error("An update is already in progress");
-  }
-
-  // Create a temporary volume for status file sharing
-  const statusVolumeName = `${STATUS_VOLUME_PREFIX}${Date.now()}`;
-  await docker.createVolume({ Name: statusVolumeName });
-
-  logger.info(
-    {
-      sidecarImage: options.sidecarImage,
-      targetImage: fullImageRef,
-      containerId,
-      statusVolume: statusVolumeName,
-    },
-    "Launching self-update sidecar",
-  );
-
-  const sidecar = await docker.createContainer({
-    Image: options.sidecarImage,
-    name: `mini-infra-sidecar-${Date.now()}`,
-    Env: [
-      `TARGET_IMAGE=${fullImageRef}`,
-      `CONTAINER_ID=${containerId}`,
-      `HEALTH_CHECK_URL=${options.healthCheckUrl}`,
-      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
-      `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
-      `STATUS_FILE=/status/update-status.json`,
-    ],
-    Labels: {
-      [SIDECAR_LABEL]: "true",
-      [UPDATE_LOCK_LABEL]: new Date().toISOString(),
-    },
-    HostConfig: {
-      Binds: [
-        "/var/run/docker.sock:/var/run/docker.sock:ro",
-        `${statusVolumeName}:/status`,
+    const sidecar = await docker.createContainer({
+      Image: options.sidecarImage,
+      name: `mini-infra-sidecar-${Date.now()}`,
+      Env: [
+        `TARGET_IMAGE=${fullImageRef}`,
+        `CONTAINER_ID=${containerId}`,
+        `HEALTH_CHECK_URL=${options.healthCheckUrl}`,
+        `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
+        `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
+        `STATUS_FILE=/status/update-status.json`,
       ],
-      AutoRemove: true,
-      ReadonlyRootfs: true,
-      Tmpfs: { "/tmp": "rw,noexec,nosuid" },
-    },
-  } as Docker.ContainerCreateOptions);
+      Labels: {
+        [SIDECAR_LABEL]: "true",
+        [UPDATE_LOCK_LABEL]: new Date().toISOString(),
+      },
+      HostConfig: {
+        Binds: [
+          "/var/run/docker.sock:/var/run/docker.sock",
+          `${statusVolumeName}:/status`,
+        ],
+        ReadonlyRootfs: true,
+        Tmpfs: { "/tmp": "rw,noexec,nosuid" },
+      },
+    } as Docker.ContainerCreateOptions);
 
-  await sidecar.start();
+    await sidecar.start();
 
-  const sidecarId = (sidecar as unknown as { id: string }).id;
-  logger.info({ sidecarId }, "Sidecar container started");
+    const sidecarId = (sidecar as unknown as { id: string }).id;
+    logger.info({ sidecarId }, "Sidecar container started");
 
-  return sidecarId;
+    return sidecarId;
+  } finally {
+    launchInProgress = false;
+  }
 }
 
 /**
- * Reads the update status by exec-ing into the running sidecar container.
- * This avoids spawning a new container on each poll.
- * Returns null if no sidecar is running or the status file isn't available yet.
+ * Reads the update status from the status volume.
+ * Uses a lightweight helper container to cat the file from the volume,
+ * which works regardless of whether the sidecar is still running.
+ * Returns null if no status volume exists or the file isn't available yet.
  */
 export async function readSidecarStatus(): Promise<SelfUpdateStatus | null> {
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
 
-    // Find the running sidecar container
-    const containers = await docker.listContainers({
-      filters: {
-        label: [`${SIDECAR_LABEL}=true`],
-        status: ["running"],
-      },
+    // Find the status volume
+    const volumes = await docker.listVolumes({
+      filters: { name: [STATUS_VOLUME_PREFIX] },
     });
 
-    if (containers.length === 0) {
+    if (!volumes.Volumes || volumes.Volumes.length === 0) {
       return null;
     }
 
-    const sidecar = docker.getContainer(containers[0].Id);
-    const exec = await sidecar.exec({
+    // Use the most recent status volume (sorted by name which includes timestamp)
+    const volumeName = volumes.Volumes.sort((a, b) =>
+      b.Name.localeCompare(a.Name),
+    )[0].Name;
+
+    // Spawn a minimal helper container to read the status file
+    const helper = await docker.createContainer({
+      Image: "alpine:latest",
       Cmd: ["cat", "/status/update-status.json"],
-      AttachStdout: true,
-      AttachStderr: false,
+      HostConfig: {
+        Binds: [`${volumeName}:/status:ro`],
+        AutoRemove: true,
+      },
+    } as Docker.ContainerCreateOptions);
+
+    // Attach before starting to capture output
+    const stream = await helper.attach({
+      stream: true,
+      stdout: true,
+      stderr: false,
     });
 
-    const stream = await exec.start({ Detach: false });
-
-    const output = await new Promise<string>((resolve) => {
-      let data = "";
+    const outputPromise = new Promise<string>((resolve) => {
+      const chunks: Buffer[] = [];
       stream.on("data", (chunk: Buffer) => {
-        // Docker multiplexed stream: first 8 bytes are header
-        data += chunk.subarray(8).toString();
+        chunks.push(chunk);
       });
-      stream.on("end", () => resolve(data));
+      stream.on("end", () => {
+        const raw = Buffer.concat(chunks);
+        // Docker multiplexed stream: demux by stripping 8-byte headers
+        // Use dockerode's demuxer for correctness
+        resolve(raw.toString());
+      });
     });
+
+    await helper.start();
+    await helper.wait();
+
+    const output = await outputPromise;
 
     if (!output.trim()) return null;
 
+    // The output may contain Docker mux headers — try parsing as-is first,
+    // then strip non-JSON prefix if needed
+    const jsonStart = output.indexOf("{");
+    if (jsonStart === -1) return null;
+    const jsonStr = output.substring(jsonStart);
+
     try {
-      return JSON.parse(output.trim()) as SelfUpdateStatus;
+      return JSON.parse(jsonStr) as SelfUpdateStatus;
     } catch (parseErr) {
-      logger.warn({ parseErr, raw: output.trim() }, "Failed to parse sidecar status file");
+      logger.warn({ parseErr, raw: jsonStr.substring(0, 200) }, "Failed to parse sidecar status file");
       return null;
     }
   } catch (err) {
-    logger.debug({ err }, "Could not read sidecar status (sidecar may have exited)");
+    logger.debug({ err }, "Could not read sidecar status");
     return null;
   }
 }
@@ -311,31 +349,33 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
 
 /**
  * Reads the last update result from a status volume (if one exists).
- * Returns the status and cleans up the volume afterward.
+ * Returns the status and always cleans up status volumes afterward,
+ * regardless of whether the status was readable.
  */
 export async function readAndCleanupLastUpdateResult(): Promise<SelfUpdateStatus | null> {
   const status = await readSidecarStatus();
 
-  if (status) {
-    // Clean up the status volume now that we've read it
-    try {
-      const docker = await DockerService.getInstance().getDockerInstance();
-      const volumes = await docker.listVolumes({
-        filters: { name: [STATUS_VOLUME_PREFIX] },
-      });
-      if (volumes.Volumes) {
-        for (const vol of volumes.Volumes) {
-          try {
-            const volume = docker.getVolume(vol.Name);
-            await volume.remove();
-          } catch {
-            // Volume may still be in use
-          }
+  // Always clean up status volumes at startup — even if we couldn't read
+  // the status (e.g. sidecar crashed before writing). This prevents
+  // volume leaks across updates.
+  try {
+    const docker = await DockerService.getInstance().getDockerInstance();
+    const volumes = await docker.listVolumes({
+      filters: { name: [STATUS_VOLUME_PREFIX] },
+    });
+    if (volumes.Volumes) {
+      for (const vol of volumes.Volumes) {
+        try {
+          const volume = docker.getVolume(vol.Name);
+          await volume.remove();
+          logger.info({ volume: vol.Name }, "Cleaned up status volume");
+        } catch {
+          // Volume may still be in use by a running sidecar
         }
       }
-    } catch {
-      // Non-fatal
     }
+  } catch {
+    // Non-fatal
   }
 
   return status;

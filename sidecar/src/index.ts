@@ -116,13 +116,26 @@ async function main(): Promise<void> {
     logger.fatal({ err }, "Update failed");
     status.report("failed", { error: errorMessage });
 
-    // Attempt rollback if we got far enough to have stopped the old container
-    if (oldContainerName && newContainerId) {
+    // Attempt rollback if we got far enough to have stopped the old container.
+    // We only need oldContainerName to be set — if createContainer failed,
+    // newContainerId will be undefined, but we still need to restore the old container.
+    if (oldContainerName) {
       try {
         logger.info("Attempting rollback after failure");
         status.report("rolling-back", { error: errorMessage });
         const oldContainer = docker.getContainer(CONTAINER_ID);
-        await rollback(docker, newContainerId, oldContainer, oldContainerName);
+
+        if (newContainerId) {
+          // Full rollback: remove the new container, then restore the old one
+          await rollback(docker, newContainerId, oldContainer, oldContainerName);
+        } else {
+          // Partial rollback: no new container was created, just restore the old one
+          logger.info("No new container to remove, restoring old container only");
+          await oldContainer.rename({ name: oldContainerName });
+          await oldContainer.start();
+          logger.info("Rollback complete — old container restored");
+        }
+
         status.report("rollback-complete", { error: errorMessage });
       } catch (rollbackErr) {
         logger.fatal({ rollbackErr }, "Rollback also failed — manual intervention required");

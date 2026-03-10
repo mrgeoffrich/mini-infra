@@ -145,7 +145,8 @@ export default function SelfUpdateSettingsPage() {
         gracefulStopSeconds: c.gracefulStopSeconds ?? 30,
       });
     }
-  }, [configData, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- form.reset is stable; only re-run when server data changes
+  }, [configData]);
 
   // Handlers
   const handleSaveConfig = async (data: ConfigFormData) => {

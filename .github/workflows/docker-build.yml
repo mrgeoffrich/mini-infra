@@ -76,9 +76,19 @@ jobs:
       - name: Determine sidecar image tag
         id: sidecar-tag
         run: |
-          # Use the first tag from the metadata output (most specific)
-          FIRST_TAG=$(echo "${{ steps.sidecar-meta.outputs.tags }}" | head -n1)
-          echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
+          # Pick an immutable tag to bake into the main image.
+          # For releases: use the exact semver tag (e.g. 1.2.3)
+          # For main branch pushes: use the SHA-pinned tag (e.g. main-abc1234)
+          # Fallback: first tag from metadata output
+          TAGS="${{ steps.sidecar-meta.outputs.tags }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          else
+            TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
+          fi
+          # Fallback to first tag if no specific match
+          TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       # ---- Main image metadata & build ----
 
