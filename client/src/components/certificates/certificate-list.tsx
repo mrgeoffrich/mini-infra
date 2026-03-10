@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconCertificate,
   IconDotsVertical,
+  IconTrash,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
+import { useRevokeCertificate } from "@/hooks/use-certificates";
 import {
   ColumnDef,
   flexRender,
@@ -29,9 +32,76 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CertificateStatusBadge } from "./certificate-status-badge";
 import { cn } from "@/lib/utils";
 import type { TlsCertificate } from "@mini-infra/types";
+
+function RevokeCertificateDialog({
+  certificate,
+  open,
+  onOpenChange,
+}: {
+  certificate: TlsCertificate | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { mutate: revoke, isPending } = useRevokeCertificate(certificate?.id ?? "");
+
+  const handleConfirm = () => {
+    revoke(undefined, {
+      onSuccess: () => onOpenChange(false),
+    });
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div className="flex items-center gap-2">
+            <IconAlertTriangle className="h-5 w-5 text-destructive" />
+            <AlertDialogTitle>Revoke Certificate</AlertDialogTitle>
+          </div>
+          <AlertDialogDescription>
+            Are you sure you want to revoke the certificate for{" "}
+            <strong>{certificate?.primaryDomain}</strong>? This action cannot be
+            undone. The certificate will be permanently deleted and any services
+            using it will need a new certificate.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleConfirm}
+            disabled={isPending}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isPending ? (
+              <>
+                <IconTrash className="h-4 w-4 mr-2 animate-spin" />
+                Revoking...
+              </>
+            ) : (
+              <>
+                <IconTrash className="h-4 w-4 mr-2" />
+                Revoke
+              </>
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 interface CertificateListProps {
   certificates: TlsCertificate[];
@@ -41,6 +111,13 @@ export function CertificateList({ certificates }: CertificateListProps) {
   const navigate = useNavigate();
   const { formatDateTime } = useFormattedDate();
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [certificateToRevoke, setCertificateToRevoke] = useState<TlsCertificate | null>(null);
+
+  const handleRevokeClick = useCallback((cert: TlsCertificate) => {
+    setCertificateToRevoke(cert);
+    setRevokeDialogOpen(true);
+  }, []);
 
   const columns = useMemo<ColumnDef<TlsCertificate>[]>(
     () => [
@@ -123,12 +200,22 @@ export function CertificateList({ certificates }: CertificateListProps) {
                 <IconCertificate className="h-4 w-4 mr-2" />
                 View Details
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRevokeClick(row.original);
+                }}
+                className="text-destructive focus:text-destructive"
+              >
+                <IconTrash className="h-4 w-4 mr-2" />
+                Revoke
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [formatDateTime, navigate]
+    [formatDateTime, navigate, handleRevokeClick]
   );
 
   const table = useReactTable({
@@ -143,6 +230,7 @@ export function CertificateList({ certificates }: CertificateListProps) {
   });
 
   return (
+    <>
     <Table>
       <TableHeader>
         {table.getHeaderGroups().map((headerGroup) => (
@@ -184,5 +272,11 @@ export function CertificateList({ certificates }: CertificateListProps) {
         )}
       </TableBody>
     </Table>
+    <RevokeCertificateDialog
+      certificate={certificateToRevoke}
+      open={revokeDialogOpen}
+      onOpenChange={setRevokeDialogOpen}
+    />
+    </>
   );
 }
