@@ -1,11 +1,25 @@
 import express, { Request, Response, RequestHandler } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import { requirePermission } from "../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
+import { ManualFrontendSetupService } from "../services/haproxy/manual-frontend-setup-service";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
+import { emitToChannel } from "../lib/socket";
+import { TlsConfigService } from "../services/tls/tls-config";
+import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
+import { AcmeClientManager } from "../services/tls/acme-client-manager";
+import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
+import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
+import { CertificateDistributor } from "../services/tls/certificate-distributor";
+import { CertificateProvisioningService } from "../services/tls/certificate-provisioning-service";
+import { CloudflareService } from "../services/cloudflare";
+import { AzureStorageService } from "../services/azure-storage-service";
+import { HAProxyService } from "../services/haproxy/haproxy-service";
+import { DockerExecutorService } from "../services/docker-executor";
 import {
   EligibleContainersResponse,
   CreateManualFrontendRequest,
@@ -13,6 +27,8 @@ import {
   ManualFrontendResponse,
   DeleteManualFrontendResponse,
   HAProxyFrontendInfo,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
 
 const logger = appLogger();
@@ -29,9 +45,42 @@ const createManualFrontendSchema = z.object({
   containerPort: z.number().int().min(1).max(65535),
   hostname: z.string().min(1).regex(/^[a-z0-9.-]+$/i, "Invalid hostname format"),
   enableSsl: z.boolean().optional(),
-  tlsCertificateId: z.string().cuid().optional(),
   healthCheckPath: z.string().optional(),
 });
+
+// Concurrency guard — one setup per environment at a time
+const settingUpFrontends = new Set<string>();
+
+/**
+ * Initialize all TLS services needed for the manual frontend setup
+ */
+async function buildSetupService(): Promise<ManualFrontendSetupService> {
+  const tlsConfig = new TlsConfigService(prisma);
+  const azureConfig = new AzureStorageService(prisma);
+  const containerName = await tlsConfig.getCertificateContainerName();
+  const connectionString = await azureConfig.getConnectionString();
+  if (!connectionString) throw new Error("Azure Storage not configured");
+
+  const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+  const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
+  const cloudflareConfig = new CloudflareService(prisma);
+  const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
+  await acmeClient.initialize();
+
+  const haproxyService = new HAProxyService();
+  const dockerExecutor = new DockerExecutorService();
+  await dockerExecutor.initialize();
+  const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExecutor);
+
+  const lifecycleManager = new CertificateLifecycleManager(
+    acmeClient, certificateStore, dnsChallenge, prisma, containerName, distributor,
+  );
+  const provisioningService = new CertificateProvisioningService(lifecycleManager, prisma);
+
+  return new ManualFrontendSetupService(
+    manualFrontendManager, provisioningService, lifecycleManager, distributor, prisma,
+  );
+}
 
 const updateManualFrontendSchema = z.object({
   hostname: z.string().min(1).regex(/^[a-z0-9.-]+$/i, "Invalid hostname format").optional(),
@@ -186,12 +235,13 @@ router.get(
 
 /**
  * POST /api/haproxy/manual-frontends
- * Create a manual frontend for a container
+ * Create a manual frontend for a container (async with Socket.IO progress)
  */
 router.post(
   "/",
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
+    let guardedEnvironmentId: string | null = null;
     try {
       // Validate request body
       const validationResult = createManualFrontendSchema.safeParse(req.body);
@@ -205,40 +255,93 @@ router.post(
       }
 
       const request: CreateManualFrontendRequest = validationResult.data;
+      const user = getAuthenticatedUser(req);
+      const userId = user?.id ?? "unknown";
+      const operationId = randomUUID();
 
-      // Get HAProxy client
+      // Concurrency guard — set BEFORE any await to prevent race conditions
+      if (settingUpFrontends.has(request.environmentId)) {
+        return res.status(409).json({
+          success: false,
+          message: "Manual frontend setup already in progress for this environment",
+        });
+      }
+      guardedEnvironmentId = request.environmentId;
+      settingUpFrontends.add(guardedEnvironmentId);
+
+      // Pre-flight: resolve HAProxy client synchronously (fails fast before 200)
       const haproxyClient = await getHAProxyClient(request.environmentId);
 
-      // Create manual frontend
-      const frontend = await manualFrontendManager.createManualFrontend(
-        request,
-        haproxyClient,
-        prisma
-      );
+      const totalSteps = request.enableSsl ? 4 : 2;
+      const stepNames = request.enableSsl
+        ? [
+            "Validate container connectivity",
+            "Find or issue TLS certificate",
+            "Deploy certificate to HAProxy",
+            "Create backend, frontend and route",
+          ]
+        : [
+            "Validate container connectivity",
+            "Create backend, frontend and route",
+          ];
 
-      const response: ManualFrontendResponse = {
-        success: true,
-        data: serializeFrontend(frontend),
-        message: "Manual frontend created successfully",
-      };
+      // Respond immediately — progress comes via Socket.IO
+      res.json({ success: true, data: { started: true, operationId, environmentId: request.environmentId } });
 
-      res.status(201).json(response);
+      // Run setup in background
+      (async () => {
+        try {
+          emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_STARTED, {
+            operationId,
+            environmentId: request.environmentId,
+            hostname: request.hostname,
+            totalSteps,
+            stepNames,
+          });
+
+          const setupService = await buildSetupService();
+          const result = await setupService.setup(
+            request,
+            haproxyClient,
+            userId,
+            (step, completedCount, totalSteps) => {
+              try {
+                emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_STEP, {
+                  operationId, step, completedCount, totalSteps,
+                });
+              } catch { /* never break setup */ }
+            },
+          );
+
+          logger.info({ operationId, success: result.success, stepCount: result.steps.length }, "Manual frontend setup completed");
+
+          emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_COMPLETED, {
+            ...result,
+            operationId,
+          });
+        } catch (error: any) {
+          logger.error({ error: error.message, operationId }, "Background manual frontend setup failed");
+          emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_COMPLETED, {
+            success: false,
+            operationId,
+            steps: [],
+            errors: [error.message],
+          });
+        } finally {
+          settingUpFrontends.delete(request.environmentId);
+        }
+      })();
     } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to create manual frontend");
+      if (guardedEnvironmentId) settingUpFrontends.delete(guardedEnvironmentId);
+      logger.error({ error: error.message }, "Failed to start manual frontend setup");
 
-      // Determine appropriate status code based on error
       let statusCode = 500;
-      if (error.message.includes("not found")) {
-        statusCode = 404;
-      } else if (error.message.includes("already in use") || error.message.includes("validation failed")) {
-        statusCode = 409;
-      } else if (error.message.includes("Invalid")) {
-        statusCode = 400;
-      }
+      if (error.message.includes("not found")) statusCode = 404;
+      else if (error.message.includes("Invalid")) statusCode = 400;
 
       res.status(statusCode).json({
         success: false,
-        error: "Failed to create manual frontend",
+        error: "Failed to start manual frontend setup",
         message: error.message,
       });
     }

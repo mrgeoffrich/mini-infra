@@ -18,7 +18,6 @@ import {
   IconCircleX,
   IconAlertCircle,
   IconNetwork,
-  IconLoader2,
   IconShield,
   IconWorld,
   IconActivity,
@@ -55,13 +54,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { StepIndicator, type Step } from "@/components/haproxy/step-indicator";
-import { SSLCertificateSelect } from "@/components/haproxy/ssl-certificate-select";
 import { ContainerEligibilityBadge } from "@/components/haproxy/container-eligibility-badge";
+import { ConnectContainerDialog } from "@/components/haproxy/connect-container-dialog";
 
 import { useEnvironments } from "@/hooks/use-environments";
 import {
   useEligibleContainers,
-  useCreateManualFrontend,
   useValidateHostname,
 } from "@/hooks/use-manual-haproxy-frontend";
 
@@ -83,7 +81,6 @@ const createManualFrontendSchema = z.object({
     .min(1, "Hostname is required")
     .regex(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, "Invalid hostname format"),
   enableSsl: z.boolean(),
-  tlsCertificateId: z.string().optional(),
   healthCheckPath: z.string(),
 });
 
@@ -107,6 +104,7 @@ const STEPS: Step[] = [
 export default function CreateManualFrontendPage() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(createManualFrontendSchema),
@@ -117,7 +115,6 @@ export default function CreateManualFrontendPage() {
       containerPort: 80,
       hostname: "",
       enableSsl: false,
-      tlsCertificateId: "",
       healthCheckPath: "/",
     },
   });
@@ -127,8 +124,6 @@ export default function CreateManualFrontendPage() {
   const selectedEnvironmentId = form.watch("environmentId");
   const { data: containersData, isLoading: isLoadingContainers } =
     useEligibleContainers(selectedEnvironmentId || null);
-
-  const createMutation = useCreateManualFrontend();
 
   const handleNext = async (e?: React.MouseEvent) => {
     // Prevent any event propagation that might trigger the submit button
@@ -149,9 +144,6 @@ export default function CreateManualFrontendPage() {
         break;
       case 3:
         fieldsToValidate = ["hostname", "healthCheckPath"];
-        if (form.watch("enableSsl")) {
-          fieldsToValidate.push("tlsCertificateId");
-        }
         break;
     }
 
@@ -172,13 +164,9 @@ export default function CreateManualFrontendPage() {
     navigate("/haproxy/frontends");
   };
 
-  const onSubmit = async (data: FormValues) => {
-    try {
-      await createMutation.mutateAsync(data);
-      navigate("/haproxy/frontends");
-    } catch (error) {
-      // Error is handled by the mutation hook
-    }
+  const onSubmit = async (_data: FormValues) => {
+    // Open the connect container dialog instead of submitting directly
+    setShowConnectDialog(true);
   };
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
@@ -187,6 +175,10 @@ export default function CreateManualFrontendPage() {
       e.preventDefault();
     }
   };
+
+  const selectedEnvironment = environmentsData?.environments?.find(
+    (e: any) => e.id === selectedEnvironmentId,
+  );
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -253,7 +245,6 @@ export default function CreateManualFrontendPage() {
                 form={form}
                 containersData={containersData}
                 environmentsData={environmentsData}
-                isCreating={createMutation.isPending}
               />
             )}
           </div>
@@ -267,7 +258,6 @@ export default function CreateManualFrontendPage() {
                     type="button"
                     variant="outline"
                     onClick={handleBack}
-                    disabled={createMutation.isPending}
                   >
                     <IconArrowLeft className="w-4 h-4 mr-1" />
                     Back
@@ -277,7 +267,6 @@ export default function CreateManualFrontendPage() {
                   type="button"
                   variant="ghost"
                   onClick={handleCancel}
-                  disabled={createMutation.isPending}
                 >
                   <IconX className="w-4 h-4 mr-1" />
                   Cancel
@@ -290,16 +279,8 @@ export default function CreateManualFrontendPage() {
                   <IconArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               ) : (
-                <Button
-                  type="submit"
-                  disabled={createMutation.isPending}
-                  className="gap-1"
-                >
-                  {createMutation.isPending ? (
-                    <IconLoader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <IconCheck className="w-4 h-4" />
-                  )}
+                <Button type="submit" className="gap-1">
+                  <IconCheck className="w-4 h-4" />
                   Create Frontend
                 </Button>
               )}
@@ -307,6 +288,15 @@ export default function CreateManualFrontendPage() {
           </div>
         </form>
       </Form>
+
+      {/* Connect Container Progress Dialog */}
+      <ConnectContainerDialog
+        open={showConnectDialog}
+        onOpenChange={setShowConnectDialog}
+        request={form.getValues()}
+        environmentName={selectedEnvironment?.name || ""}
+        onSuccess={() => navigate("/haproxy/frontends")}
+      />
     </div>
   );
 }
@@ -632,27 +622,14 @@ function FrontendConfigurationCard({
           )}
         />
 
-        {enableSsl && (
-          <FormField
-            control={form.control}
-            name="tlsCertificateId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>TLS Certificate</FormLabel>
-                <FormControl>
-                  <SSLCertificateSelect
-                    environmentId={environmentId}
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                </FormControl>
-                <FormDescription>
-                  Select an active TLS certificate for this frontend
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        {enableSsl && hostname && (
+          <Alert>
+            <IconShield className="w-4 h-4 text-green-600" />
+            <AlertDescription>
+              A TLS certificate for <strong>{hostname}</strong> will be
+              automatically found or issued when you create the frontend.
+            </AlertDescription>
+          </Alert>
         )}
 
         <FormField
@@ -687,14 +664,12 @@ interface ValidationAndCreationCardProps {
   form: any;
   containersData: any;
   environmentsData: any;
-  isCreating: boolean;
 }
 
 function ValidationAndCreationCard({
   form,
   containersData,
   environmentsData,
-  isCreating,
 }: ValidationAndCreationCardProps) {
   const values = form.getValues();
   const environment = environmentsData?.environments?.find(
@@ -764,21 +739,12 @@ function ValidationAndCreationCard({
             />
             {values.enableSsl && (
               <ValidationCheck
-                label="Certificate is valid"
-                status={!!values.tlsCertificateId}
+                label="TLS certificate will be auto-resolved"
+                status={true}
               />
             )}
           </div>
         </div>
-
-        {isCreating && (
-          <Alert>
-            <IconLoader2 className="w-4 h-4 animate-spin" />
-            <AlertDescription>
-              Creating manual frontend... Please wait.
-            </AlertDescription>
-          </Alert>
-        )}
       </CardContent>
     </Card>
   );

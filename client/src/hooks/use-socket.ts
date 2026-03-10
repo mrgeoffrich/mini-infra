@@ -162,11 +162,26 @@ export function useSocketChannel(
   channel: SocketChannel | null | undefined,
   enabled: boolean = true,
 ): void {
-  const { socket: socketInstance, connected } = useSocket();
+  const socketInstance = useMemo(() => getSocket(), []);
+  const [connected, setConnected] = useState(socketInstance.connected);
+
+  // Track connection state independently to avoid stale state from useSocket()
+  useEffect(() => {
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+    socketInstance.on("connect", onConnect);
+    socketInstance.on("disconnect", onDisconnect);
+
+    // Sync in case socket connected before this effect ran
+    setConnected(socketInstance.connected);
+    return () => {
+      socketInstance.off("connect", onConnect);
+      socketInstance.off("disconnect", onDisconnect);
+    };
+  }, [socketInstance]);
 
   useEffect(() => {
     if (!channel || !enabled || !connected) return;
-
     socketInstance.emit(ClientEvent.SUBSCRIBE, channel);
 
     return () => {

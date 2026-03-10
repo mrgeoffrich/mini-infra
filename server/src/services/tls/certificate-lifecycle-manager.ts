@@ -15,6 +15,12 @@ import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
 import { CertificateRequest } from "./types";
 
+export type IssuanceStepCallback = (
+  step: { step: string; status: 'completed' | 'failed' | 'skipped'; detail?: string },
+  completedCount: number,
+  totalSteps: number,
+) => void;
+
 /**
  * Service for managing certificate lifecycle
  */
@@ -48,15 +54,23 @@ export class CertificateLifecycleManager {
    * Issue new certificate
    *
    * @param request - Certificate request parameters
+   * @param onStep - Optional callback for step-by-step progress reporting
    * @returns Created certificate record
    */
-  async issueCertificate(request: CertificateRequest): Promise<any> {
+  async issueCertificate(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<any> {
     const { domains, primaryDomain, userId } = request;
+    const totalSteps = request.deployToHaproxy ? 5 : 4;
+    let stepCount = 0;
+
+    const emitStep = (step: string, status: 'completed' | 'failed' | 'skipped', detail?: string) => {
+      stepCount++;
+      try { onStep?.({ step, status, detail }, stepCount, totalSteps); } catch { /* never break issuance */ }
+    };
 
     this.logger.info({ domains, primaryDomain, userId }, "Starting certificate issuance");
 
     try {
-      // Step 1: Request certificate from Let's Encrypt
+      // Step 1: Request certificate from ACME provider (includes DNS challenge + propagation)
       this.logger.info("Requesting certificate from ACME provider");
 
       const { certificate, privateKey, chain } = await this.acmeClient.requestCertificate(
@@ -64,12 +78,12 @@ export class CertificateLifecycleManager {
         this.dnsChallenge
       );
 
-      // Step 2: Parse certificate metadata
       const certInfo = await parseCertificate(certificate);
+      emitStep("Request certificate from Let's Encrypt", "completed", `Issued for ${domains.join(", ")}`);
 
-      // Step 3: Create database record first to get certificate ID
+      // Step 2: Create database record
       const renewAfter = new Date(certInfo.notAfter);
-      renewAfter.setDate(renewAfter.getDate() - 30); // Renew 30 days before expiry
+      renewAfter.setDate(renewAfter.getDate() - 30);
 
       const tlsCertificate = await this.prisma.tlsCertificate.create({
         data: {
@@ -78,7 +92,7 @@ export class CertificateLifecycleManager {
           certificateType: "ACME",
           acmeProvider: "letsencrypt",
           blobContainerName: this.containerName,
-          blobName: null, // Will be set after storage
+          blobName: null,
           issuer: certInfo.issuer,
           serialNumber: certInfo.serialNumber || undefined,
           fingerprint: certInfo.fingerprint,
@@ -93,12 +107,13 @@ export class CertificateLifecycleManager {
           createdBy: userId,
         },
       });
+      emitStep("Save certificate record", "completed");
 
-      // Step 4: Store in Azure Blob Storage using certificate ID
+      // Step 3: Store in Azure Blob Storage
       this.logger.info("Storing certificate in Azure Storage");
       const blobName = `cert_${tlsCertificate.id}.pem`;
 
-      const { version, secretId } = await this.certificateStore.storeCertificate(
+      await this.certificateStore.storeCertificate(
         blobName,
         certificate,
         privateKey,
@@ -110,17 +125,16 @@ export class CertificateLifecycleManager {
           fingerprint: certInfo.fingerprint,
         }
       );
+      emitStep("Store certificate in Azure", "completed");
 
-      // Step 5: Update certificate record with blob name and mark as ACTIVE
+      // Step 4: Mark as ACTIVE
       await this.prisma.tlsCertificate.update({
         where: { id: tlsCertificate.id },
-        data: {
-          blobName,
-          status: "ACTIVE",
-        },
+        data: { blobName, status: "ACTIVE" },
       });
+      emitStep("Activate certificate", "completed");
 
-      // Step 6: Deploy to HAProxy (if requested and distributor is available)
+      // Step 5: Deploy to HAProxy (if requested and distributor is available)
       if (request.deployToHaproxy && this.distributor) {
         this.logger.info("Deploying certificate to HAProxy");
         try {
@@ -134,17 +148,21 @@ export class CertificateLifecycleManager {
               { certificateId: tlsCertificate.id, method: deployResult.method },
               "Certificate deployed to HAProxy successfully"
             );
+            emitStep("Deploy certificate to HAProxy", "completed", `Method: ${deployResult.method}`);
           } else {
             this.logger.warn(
               { certificateId: tlsCertificate.id, error: deployResult.error },
-              "Certificate deployment to HAProxy failed (certificate issued but not deployed)"
+              "Certificate deployment to HAProxy failed"
             );
+            emitStep("Deploy certificate to HAProxy", "failed", deployResult.error);
           }
         } catch (deployError) {
           this.logger.warn(
             { certificateId: tlsCertificate.id, error: deployError },
-            "Certificate deployment to HAProxy failed (certificate issued but not deployed)"
+            "Certificate deployment to HAProxy failed"
           );
+          emitStep("Deploy certificate to HAProxy", "failed",
+            deployError instanceof Error ? deployError.message : "Unknown error");
         }
       }
 

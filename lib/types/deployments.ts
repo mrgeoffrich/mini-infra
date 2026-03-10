@@ -628,7 +628,6 @@ export interface CreateManualFrontendRequest {
   containerPort: number;
   hostname: string;
   enableSsl?: boolean;
-  tlsCertificateId?: string;
   healthCheckPath?: string;
 }
 
@@ -656,6 +655,24 @@ export interface ManualFrontendResponse {
 export interface DeleteManualFrontendResponse {
   success: boolean;
   message: string;
+}
+
+// ====================
+// Async Manual Frontend Setup Types
+// ====================
+
+export interface ManualFrontendSetupStep {
+  step: string;
+  status: 'completed' | 'failed' | 'skipped';
+  detail?: string;
+}
+
+export interface ManualFrontendSetupResult {
+  success: boolean;
+  steps: ManualFrontendSetupStep[];
+  errors: string[];
+  frontendId?: string;
+  certificateId?: string;
 }
 
 // ====================

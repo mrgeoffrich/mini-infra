@@ -98,3 +98,21 @@ export interface TlsSettings {
   renewal_check_cron: string;
   renewal_days_before_expiry: string;
 }
+
+// ====================
+// Async Certificate Issuance Types
+// ====================
+
+export interface CertIssuanceStep {
+  step: string;
+  status: 'completed' | 'failed' | 'skipped';
+  detail?: string;
+}
+
+export interface CertIssuanceResult {
+  success: boolean;
+  steps: CertIssuanceStep[];
+  errors: string[];
+  certificateId?: string;
+  primaryDomain?: string;
+}

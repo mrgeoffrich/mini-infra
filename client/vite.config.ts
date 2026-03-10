@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["@mini-infra/types"],
+    exclude: ["@mini-infra/types"],
   },
   server: {
     port: 3005,
@@ -37,6 +37,11 @@ export default defineConfig({
       "/auth": {
         target: "http://localhost:5005",
         changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://localhost:5005",
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

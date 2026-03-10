@@ -821,8 +821,8 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
     });
 
     // Determine if remediation is recommended
-    const needsRemediation = manualFrontends.length > 0 ||
-      (deploymentConfigs.length > 0 && sharedFrontends.length === 0);
+    const needsRemediation =
+      deploymentConfigs.length > 0 && sharedFrontends.length === 0;
 
     res.json({
       success: true,

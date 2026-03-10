@@ -10,10 +10,12 @@
  */
 
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { tlsLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { emitToChannel } from "../lib/socket";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
@@ -24,6 +26,7 @@ import { CloudflareService } from "../services/cloudflare";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
+import { Channel, ServerEvent, type CertIssuanceStep } from "@mini-infra/types";
 
 const logger = tlsLogger();
 const router = express.Router();
@@ -90,35 +93,99 @@ async function initializeLifecycleManager(): Promise<CertificateLifecycleManager
   );
 }
 
+// Concurrency guard — one issuance per domain at a time
+const issuingCertificates = new Set<string>();
+
 /**
  * POST /api/tls/certificates
- * Issue a new TLS certificate
+ * Issue a new TLS certificate (async with Socket.IO progress)
  */
 router.post("/", requirePermission('tls:write'), async (req, res) => {
+  let guardedDomain: string | null = null;
   try {
     const user = getAuthenticatedUser(req);
     const userId = user?.id || "unknown";
 
     // Validate request body
     const validatedData = createCertificateSchema.parse(req.body);
+    const operationId = randomUUID();
 
-    logger.info({ userId, domains: validatedData.domains }, "Issuing new certificate");
+    // Concurrency guard — set BEFORE any await to prevent race conditions
+    if (issuingCertificates.has(validatedData.primaryDomain)) {
+      return res.status(409).json({
+        success: false,
+        message: "Certificate issuance already in progress for this domain",
+      });
+    }
+    guardedDomain = validatedData.primaryDomain;
+    issuingCertificates.add(guardedDomain);
 
-    // Initialize lifecycle manager
+    logger.info({ userId, domains: validatedData.domains, operationId }, "Starting async certificate issuance");
+
+    // Initialize synchronously before 200 to detect misconfig fast
     const lifecycleManager = await initializeLifecycleManager();
 
-    // Issue certificate
-    const certificate = await lifecycleManager.issueCertificate({
-      domains: validatedData.domains,
-      primaryDomain: validatedData.primaryDomain,
-      userId,
-    });
+    const totalSteps = 4;
+    const stepNames = [
+      "Request certificate from Let's Encrypt",
+      "Save certificate record",
+      "Store certificate in Azure",
+      "Activate certificate",
+    ];
 
-    res.status(201).json({
-      success: true,
-      data: certificate,
-    });
+    // Respond immediately — progress comes via Socket.IO
+    res.json({ success: true, data: { started: true, operationId } });
+
+    // Run issuance in background
+    (async () => {
+      const steps: CertIssuanceStep[] = [];
+
+      try {
+        emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_STARTED, {
+          operationId,
+          domains: validatedData.domains,
+          primaryDomain: validatedData.primaryDomain,
+          totalSteps,
+          stepNames,
+        });
+
+        const certificate = await lifecycleManager.issueCertificate(
+          { domains: validatedData.domains, primaryDomain: validatedData.primaryDomain, userId },
+          (step, completedCount, totalSteps) => {
+            steps.push(step);
+            try {
+              emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_STEP, {
+                operationId, step, completedCount, totalSteps,
+              });
+            } catch { /* never break issuance */ }
+          },
+        );
+
+        logger.info({ operationId, certificateId: certificate.id }, "Async certificate issuance completed");
+
+        emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
+          operationId,
+          success: true,
+          certificateId: certificate.id,
+          primaryDomain: validatedData.primaryDomain,
+          steps,
+          errors: [],
+        });
+      } catch (error: any) {
+        logger.error({ error: error.message, operationId }, "Background certificate issuance failed");
+        emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
+          operationId,
+          success: false,
+          primaryDomain: validatedData.primaryDomain,
+          steps,
+          errors: [error.message],
+        });
+      } finally {
+        issuingCertificates.delete(validatedData.primaryDomain);
+      }
+    })();
   } catch (error) {
+    if (guardedDomain) issuingCertificates.delete(guardedDomain);
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -127,11 +194,11 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
       });
     }
 
-    logger.error({ error }, "Failed to issue certificate");
+    logger.error({ error }, "Failed to start certificate issuance");
 
     res.status(500).json({
       success: false,
-      error: "Failed to issue certificate",
+      error: "Failed to start certificate issuance",
       message: error instanceof Error ? error.message : String(error),
     });
   }

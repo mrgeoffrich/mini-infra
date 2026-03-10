@@ -6,6 +6,7 @@ import {
   IconAlertTriangle,
   IconCircleCheck,
   IconNetwork,
+  IconPlus,
 } from "@tabler/icons-react";
 
 import { useEnvironments } from "@/hooks/use-environments";
@@ -229,15 +230,23 @@ export default function HAProxyInstancesPage() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading || isRefetching}
-          >
-            <IconRefresh className={`h-4 w-4 mr-2 ${isRefetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading || isRefetching}
+            >
+              <IconRefresh className={`h-4 w-4 mr-2 ${isRefetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/haproxy/frontends/new/manual">
+                <IconPlus className="h-4 w-4 mr-2" />
+                Connect Container
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
 
