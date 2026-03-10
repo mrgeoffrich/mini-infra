@@ -1,0 +1,23 @@
+{
+  "name": "mini-infra-sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.9",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.1.1"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.43",
+    "@types/node": "^20.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.1.6"
+  }
+}

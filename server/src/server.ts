@@ -49,6 +49,8 @@ import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
+import { cleanupOrphanedSidecars, readAndCleanupLastUpdateResult } from "./services/self-update";
+import { setLastUpdateResult } from "./routes/self-update";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -202,6 +204,21 @@ const initializeServices = async () => {
     // Wire up container state changes to Socket.IO
     setupContainerSocketEmitter();
     console.log("[STARTUP] ✓ Container socket emitter initialized");
+
+    // Clean up orphaned sidecar containers from previous updates and read last result
+    console.log("[STARTUP] Cleaning up self-update sidecar resources...");
+    try {
+      const lastResult = await readAndCleanupLastUpdateResult();
+      if (lastResult) {
+        setLastUpdateResult(lastResult);
+        logger.info({ state: lastResult.state }, "Loaded last self-update result");
+      }
+      await cleanupOrphanedSidecars();
+      console.log("[STARTUP] ✓ Self-update sidecar cleanup complete");
+    } catch (err) {
+      logger.warn({ err }, "Self-update sidecar cleanup failed (non-fatal)");
+      console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
+    }
 
     // Initialize connectivity scheduler
     console.log("[STARTUP] Initializing connectivity scheduler...");
