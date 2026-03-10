@@ -1118,6 +1118,33 @@ model AgentConversationMessage {
   @@map("agent_conversation_messages")
 }
 
+// Self-Update tracking - persists update state across container restarts
+
+/// SelfUpdate model for tracking self-update operations
+model SelfUpdate {
+  id              String   @id @default(cuid())
+  targetTag       String   // Target image tag (e.g., "v2.1.0")
+  fullImageRef    String   // Full image reference (e.g., "ghcr.io/user/repo:v2.1.0")
+  state           String   // 'pending', 'pulling', 'inspecting', 'stopping', 'creating', 'health-checking', 'complete', 'rolling-back', 'rollback-complete', 'failed'
+  progress        Int?     // 0-100 for image pull progress
+  errorMessage    String?
+  sidecarId       String?  // Docker container ID of the sidecar
+
+  // Timing
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+
+  // Audit
+  triggeredBy     String   // User ID who triggered the update
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([state])
+  @@index([startedAt])
+  @@map("self_updates")
+}
+
 // Enums
 enum CertificateType {
   ACME    // Let's Encrypt via ACME protocol

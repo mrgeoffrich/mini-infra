@@ -2,6 +2,7 @@ import Docker from "dockerode";
 import fs from "fs";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
+import prisma from "../lib/prisma";
 
 const logger = servicesLogger();
 
@@ -338,4 +339,106 @@ export async function readAndCleanupLastUpdateResult(): Promise<SelfUpdateStatus
   }
 
   return status;
+}
+
+// ---------------------------------------------------------------------------
+// Database persistence — survives container restarts
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a SelfUpdate record when an update is triggered.
+ * This record persists in the SQLite DB on the mounted volume,
+ * so the new container can read it after restart.
+ */
+export async function createUpdateRecord(options: {
+  targetTag: string;
+  fullImageRef: string;
+  sidecarId: string;
+  triggeredBy: string;
+}): Promise<string> {
+  const record = await prisma.selfUpdate.create({
+    data: {
+      targetTag: options.targetTag,
+      fullImageRef: options.fullImageRef,
+      state: "pending",
+      sidecarId: options.sidecarId,
+      triggeredBy: options.triggeredBy,
+    },
+  });
+
+  logger.info({ updateId: record.id }, "Self-update record created");
+  return record.id;
+}
+
+/**
+ * Updates the state of the most recent in-progress update record.
+ * Called on startup to reconcile the DB record with the sidecar's
+ * final status (read from the Docker volume).
+ */
+export async function finalizeUpdateRecord(
+  sidecarStatus: SelfUpdateStatus,
+): Promise<void> {
+  // Find the most recent non-terminal update record
+  const record = await prisma.selfUpdate.findFirst({
+    where: {
+      state: {
+        notIn: ["complete", "rollback-complete", "failed"],
+      },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+
+  if (!record) {
+    logger.debug("No in-progress update record to finalize");
+    return;
+  }
+
+  const now = new Date();
+  await prisma.selfUpdate.update({
+    where: { id: record.id },
+    data: {
+      state: sidecarStatus.state,
+      progress: sidecarStatus.progress ?? null,
+      errorMessage: sidecarStatus.error ?? null,
+      completedAt: now,
+      durationMs: now.getTime() - record.startedAt.getTime(),
+    },
+  });
+
+  logger.info(
+    { updateId: record.id, state: sidecarStatus.state },
+    "Self-update record finalized",
+  );
+}
+
+/**
+ * Returns the most recent self-update record (for the status endpoint).
+ */
+export async function getLatestUpdateRecord(): Promise<{
+  id: string;
+  targetTag: string;
+  fullImageRef: string;
+  state: string;
+  progress: number | null;
+  errorMessage: string | null;
+  startedAt: Date;
+  completedAt: Date | null;
+  durationMs: number | null;
+  triggeredBy: string;
+} | null> {
+  return prisma.selfUpdate.findFirst({
+    orderBy: { startedAt: "desc" },
+    select: {
+      id: true,
+      targetTag: true,
+      fullImageRef: true,
+      state: true,
+      progress: true,
+      errorMessage: true,
+      startedAt: true,
+      completedAt: true,
+      durationMs: true,
+      triggeredBy: true,
+    },
+  });
 }

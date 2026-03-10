@@ -8,21 +8,13 @@ import {
   isUpdateInProgress,
   readSidecarStatus,
   getOwnContainerId,
+  createUpdateRecord,
+  getLatestUpdateRecord,
   type SelfUpdateStatus,
 } from "../services/self-update";
 
 const logger = appLogger();
 const router = express.Router();
-
-// In-memory cache of the last known update result (populated on startup)
-let lastUpdateResult: SelfUpdateStatus | null = null;
-
-/**
- * Set the last update result (called from server.ts on startup).
- */
-export function setLastUpdateResult(result: SelfUpdateStatus | null): void {
-  lastUpdateResult = result;
-}
 
 // Validation schema for trigger request
 const triggerSchema = z.object({
@@ -38,6 +30,11 @@ const triggerSchema = z.object({
 
 /**
  * GET /status - Get current self-update status
+ *
+ * Priority order:
+ * 1. Live sidecar status (if a sidecar is running)
+ * 2. Most recent DB record (persists across restarts)
+ * 3. Idle
  */
 router.get("/status", requirePermission("settings:read"), async (req, res) => {
   try {
@@ -45,24 +42,50 @@ router.get("/status", requirePermission("settings:read"), async (req, res) => {
     const inProgress = await isUpdateInProgress();
 
     if (inProgress) {
-      // Try to read status from the sidecar's shared volume
+      // Try to read live status from the sidecar
       const sidecarStatus = await readSidecarStatus();
       if (sidecarStatus) {
         return res.json({ success: true, status: sidecarStatus });
       }
 
+      // Sidecar is running but status not available yet — check DB record
+      const dbRecord = await getLatestUpdateRecord();
+      if (dbRecord && !["complete", "rollback-complete", "failed"].includes(dbRecord.state)) {
+        return res.json({
+          success: true,
+          status: {
+            state: dbRecord.state,
+            targetTag: dbRecord.targetTag,
+            progress: dbRecord.progress,
+            startedAt: dbRecord.startedAt.toISOString(),
+          } as SelfUpdateStatus,
+        });
+      }
+
+      // Fallback: sidecar exists but no details available
+      return res.json({
+        success: true,
+        status: { state: "pulling" } as SelfUpdateStatus,
+      });
+    }
+
+    // No sidecar running — return latest DB record or idle
+    const dbRecord = await getLatestUpdateRecord();
+    if (dbRecord) {
       return res.json({
         success: true,
         status: {
-          state: "pulling",
-          startedAt: new Date().toISOString(),
+          state: dbRecord.state,
+          targetTag: dbRecord.targetTag,
+          progress: dbRecord.progress,
+          error: dbRecord.errorMessage,
+          startedAt: dbRecord.startedAt.toISOString(),
+          updatedAt: dbRecord.completedAt?.toISOString(),
         } as SelfUpdateStatus,
       });
     }
 
-    // No update in progress — return last known result or idle
-    const status: SelfUpdateStatus = lastUpdateResult ?? { state: "idle" };
-    res.json({ success: true, status });
+    res.json({ success: true, status: { state: "idle" } as SelfUpdateStatus });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
@@ -128,6 +151,14 @@ router.post(
       // Validate request body
       const { targetTag } = triggerSchema.parse(req.body);
 
+      const userId = getCurrentUserId(req);
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated",
+        });
+      }
+
       // Verify we're running in Docker
       const containerId = getOwnContainerId();
       if (!containerId) {
@@ -186,9 +217,15 @@ router.post(
         10,
       );
 
+      // Build the full image ref for DB record
+      const fullImageRef = targetTag.includes(":")
+        ? targetTag
+        : `${targetTag}:latest`;
+
       logger.info(
         {
           targetTag,
+          fullImageRef,
           allowedRegistryPattern,
           sidecarImage,
           containerId,
@@ -207,9 +244,18 @@ router.post(
         gracefulStopSeconds,
       });
 
+      // Persist to DB so the new container knows an update was triggered
+      const updateId = await createUpdateRecord({
+        targetTag,
+        fullImageRef,
+        sidecarId,
+        triggeredBy: userId,
+      });
+
       res.status(202).json({
         success: true,
         message: "Update initiated. The server will restart shortly.",
+        updateId,
         sidecarId,
         targetTag,
       });

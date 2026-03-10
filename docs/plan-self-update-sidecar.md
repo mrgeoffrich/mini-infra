@@ -194,7 +194,47 @@ interface SelfUpdateStatus {
 
 The server polls the shared status file from the sidecar volume and emits status events until it shuts down. After the new container comes up, it can read the final status from the same volume.
 
-## Component 4: Frontend UI
+## Component 4: Database Persistence
+
+Update state is persisted in a `SelfUpdate` table in SQLite (on the mounted data volume) so it survives container restarts.
+
+### Schema
+
+```prisma
+model SelfUpdate {
+  id              String   @id @default(cuid())
+  targetTag       String
+  fullImageRef    String
+  state           String   // 'pending' → 'pulling' → ... → 'complete' | 'failed' | 'rollback-complete'
+  progress        Int?
+  errorMessage    String?
+  sidecarId       String?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  durationMs      Int?
+  triggeredBy     String   // User ID
+
+  @@index([state])
+  @@index([startedAt])
+  @@map("self_updates")
+}
+```
+
+### Lifecycle
+
+1. **On trigger**: Route creates a `SelfUpdate` record with `state: "pending"` before responding 202
+2. **During update**: Sidecar writes progress to the shared Docker volume (as before)
+3. **On startup (new container)**: `server.ts` reads the sidecar status volume and calls `finalizeUpdateRecord()` to update the DB record with the terminal state (`complete`, `rollback-complete`, or `failed`)
+4. **Status endpoint**: `GET /api/self-update/status` reads from DB — no in-memory cache needed
+
+### Status Priority
+
+The status endpoint resolves in this order:
+1. Live sidecar status (via `docker exec`) if a sidecar container is running
+2. Most recent DB record (persists across restarts)
+3. `{ state: "idle" }` if no records exist
+
+## Component 5: Frontend UI
 
 **New page/section:** Settings > System Update (or a dedicated update page)
 
@@ -205,19 +245,41 @@ The server polls the shared status file from the sidecar volume and emits status
 - **Available update card** — shows new tag, changelog link if available
 - **Update button** — confirmation dialog ("This will restart Mini Infra"), then calls trigger endpoint
 - **Progress display** — subscribes to `self-update` Socket.IO channel, shows step-by-step progress
-- **Reconnection handling** — after the container restarts, the frontend loses the socket. Use the existing reconnection logic; on reconnect, fetch `/api/self-update/status` to show the result
+- **Reconnection handling** — see below
 
-## Component 5: Startup Cleanup
+### Browser Reconnection Strategy
 
-In `server/src/server.ts`, add to the startup sequence (after Docker service init):
+When Mini Infra is stopped by the sidecar, the frontend loses both HTTP and WebSocket connections. The UI must handle this gracefully:
+
+1. **On trigger response (202)**: Store `{ updateInProgress: true, targetTag, triggeredAt }` in `localStorage`
+2. **On socket disconnect** (during an update): Switch to a dedicated "Updating..." screen showing the last known status and a reconnection spinner. Suppress error toasts — the disconnect is expected.
+3. **On page refresh** (during the blackout): Check `localStorage` on mount. If an update was recently triggered (within the last 5 minutes), show the "Updating..." screen immediately instead of a confusing error page.
+4. **On socket reconnect** (or first successful HTTP response): Fetch `GET /api/self-update/status` to get the final result from the DB. Display success/rollback/failure. Clear the `localStorage` flag.
+
+### localStorage Schema
 
 ```typescript
-// Clean up any orphaned sidecar containers from previous updates
-await cleanupOrphanedSidecars(dockerService);
-// Clean up shared status volumes
-await cleanupUpdateStatusVolumes(dockerService);
-// Read last update result if available
-await recordUpdateResult();
+interface SelfUpdateLocalState {
+  updateInProgress: boolean;
+  targetTag: string;
+  triggeredAt: string; // ISO timestamp
+  updateId: string;    // DB record ID from the 202 response
+}
+// Key: "mini-infra:self-update"
+```
+
+## Component 6: Startup Cleanup (implemented)
+
+In `server/src/server.ts`, after Docker service init:
+
+```typescript
+// Read sidecar status volume and finalize the DB record
+const lastResult = await readAndCleanupLastUpdateResult();
+if (lastResult) {
+  await finalizeUpdateRecord(lastResult);
+}
+// Remove orphaned sidecar containers and status volumes
+await cleanupOrphanedSidecars();
 ```
 
 ## New Files Summary
@@ -231,19 +293,23 @@ sidecar/
     ├── index.ts              # Entry point - orchestrates update
     ├── container-inspector.ts # Extracts settings from running container
     ├── health-checker.ts      # Polls health endpoint
+    ├── logger.ts              # Pino logger
     └── status-reporter.ts     # Writes status to shared file
 
+server/prisma/migrations/
+└── 20260310..._add_self_update_table/
+    └── migration.sql          # SelfUpdate table
+
 server/src/
-├── routes/self-update.ts          # API endpoints
-├── services/self-update.ts        # Service: launch sidecar, read status
+├── routes/self-update.ts          # API endpoints (5 routes)
+├── services/self-update.ts        # Service: launch sidecar, read status, DB persistence
 
 client/src/
 ├── pages/settings/system-update.tsx   # Update UI page
-├── hooks/useSelfUpdate.ts             # Query + socket hooks
+├── hooks/useSelfUpdate.ts             # Query + socket + localStorage hooks
 
 lib/types/
 └── socket-events.ts                   # (modified) Add self-update channel/events
-└── permissions.ts                     # (modified) Document settings:write covers updates
 ```
 
 ## Build & Release
