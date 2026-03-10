@@ -8,12 +8,16 @@ import type {
   DeploymentStatus,
   DeploymentStepInfo,
   RemovalOperationInfo,
+  MigrationStep,
+  MigrationResult,
+  ManualFrontendSetupStep,
+  ManualFrontendSetupResult,
 } from "./deployments";
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
 import type { ServiceApplyResult, ApplyResult, DestroyResult } from "./stacks";
-import type { MigrationStep, MigrationResult } from "./deployments";
+import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 
 // ====================
 // Socket Channel Constants & Types
@@ -32,6 +36,8 @@ export const STATIC_SOCKET_CHANNELS = [
   "volumes",
   "networks",
   "backup-health",
+  "tls",
+  "haproxy",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -66,6 +72,8 @@ export const Channel = {
   VOLUMES: "volumes",
   NETWORKS: "networks",
   BACKUP_HEALTH: "backup-health",
+  TLS: "tls",
+  HAPROXY: "haproxy",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -166,6 +174,14 @@ export const ServerEvent = {
   BACKUP_HEALTH_STATUS: "backup-health:status",
   // Logs (Loki)
   LOGS_ENTRIES: "logs:entries",
+  // TLS Certificate Issuance
+  CERT_ISSUANCE_STARTED: "cert:issuance:started",
+  CERT_ISSUANCE_STEP: "cert:issuance:step",
+  CERT_ISSUANCE_COMPLETED: "cert:issuance:completed",
+  // Manual Frontend Setup
+  FRONTEND_SETUP_STARTED: "frontend:setup:started",
+  FRONTEND_SETUP_STEP: "frontend:setup:step",
+  FRONTEND_SETUP_COMPLETED: "frontend:setup:completed",
 } as const;
 
 /** Client → Server event names */
@@ -316,6 +332,46 @@ export interface ServerToClientEvents {
   /** Loki log entries pushed (for tailing) */
   "logs:entries": (data: {
     entries: Array<{ timestamp: string; line: string; labels: Record<string, string> }>;
+  }) => void;
+
+  // ── TLS Certificate Issuance ─────────────────────────
+  /** Certificate issuance started */
+  "cert:issuance:started": (data: {
+    operationId: string;
+    domains: string[];
+    primaryDomain: string;
+    totalSteps: number;
+  }) => void;
+  /** Certificate issuance step completed */
+  "cert:issuance:step": (data: {
+    operationId: string;
+    step: CertIssuanceStep;
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** Certificate issuance completed (success or failure) */
+  "cert:issuance:completed": (data: CertIssuanceResult & {
+    operationId: string;
+  }) => void;
+
+  // ── Manual Frontend Setup ────────────────────────────
+  /** Manual frontend setup started */
+  "frontend:setup:started": (data: {
+    operationId: string;
+    environmentId: string;
+    hostname: string;
+    totalSteps: number;
+  }) => void;
+  /** Manual frontend setup step completed */
+  "frontend:setup:step": (data: {
+    operationId: string;
+    step: ManualFrontendSetupStep;
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** Manual frontend setup completed (success or failure) */
+  "frontend:setup:completed": (data: ManualFrontendSetupResult & {
+    operationId: string;
   }) => void;
 }
 

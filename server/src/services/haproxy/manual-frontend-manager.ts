@@ -9,6 +9,11 @@ import {
   UpdateManualFrontendRequest,
 } from "@mini-infra/types";
 
+/** Internal extended request that includes the server-resolved certificate ID */
+interface InternalCreateRequest extends CreateManualFrontendRequest {
+  tlsCertificateId?: string;
+}
+
 const logger = loadbalancerLogger();
 
 export interface ContainerValidationResult {
@@ -255,7 +260,7 @@ export class ManualFrontendManager {
    * @returns Created frontend record (for backward compatibility) with route info
    */
   async createManualFrontend(
-    request: CreateManualFrontendRequest,
+    request: InternalCreateRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
   ): Promise<any> {

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
   IconServer,
   IconRefresh,
@@ -9,6 +9,7 @@ import {
   IconAlertCircle,
   IconRocket,
   IconSettings,
+  IconPlus,
 } from "@tabler/icons-react";
 import {
   flexRender,
@@ -353,6 +354,13 @@ export function BackendsListPage() {
               </p>
             </div>
           </div>
+
+          <Button asChild>
+            <Link to="/haproxy/frontends/new/manual">
+              <IconPlus className="h-4 w-4 mr-2" />
+              Connect Container
+            </Link>
+          </Button>
         </div>
       </div>
 

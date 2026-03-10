@@ -193,31 +193,55 @@ export class CertificateProvisioningService {
    * Find certificate for hostname
    *
    * Searches for an active certificate that matches the hostname.
-   * Checks both exact match on primaryDomain and JSON array match in domains field.
+   * Checks exact primaryDomain match, wildcard match (*.example.com),
+   * and JSON domains array membership.
    *
    * @param hostname - Hostname to search for
    * @returns Certificate record or null
    */
-  private async findCertificateForHostname(hostname: string): Promise<any | null> {
-    // First try exact match on primaryDomain
-    const exactMatch = await this.prisma.tlsCertificate.findFirst({
-      where: {
-        primaryDomain: hostname,
-        status: {
-          in: ["ACTIVE", "PENDING", "RENEWING"],
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+  async findCertificateForHostname(hostname: string): Promise<any | null> {
+    const statusFilter = { in: ["ACTIVE", "PENDING", "RENEWING"] as ("ACTIVE" | "PENDING" | "RENEWING")[] };
 
-    if (exactMatch) {
-      return exactMatch;
+    // 1. Exact match on primaryDomain
+    const exactMatch = await this.prisma.tlsCertificate.findFirst({
+      where: { primaryDomain: hostname, status: statusFilter },
+      orderBy: { createdAt: "desc" },
+    });
+    if (exactMatch) return exactMatch;
+
+    // 2. Wildcard match: cert for "*.example.com" covers "api.example.com"
+    const parts = hostname.split(".");
+    if (parts.length >= 3) {
+      const wildcardDomain = "*." + parts.slice(1).join(".");
+      const wildcardMatch = await this.prisma.tlsCertificate.findFirst({
+        where: { primaryDomain: wildcardDomain, status: statusFilter },
+        orderBy: { createdAt: "desc" },
+      });
+      if (wildcardMatch) return wildcardMatch;
     }
 
-    // No exact match found - could implement wildcard matching here in the future
-    // For now, only return exact primary domain matches
+    // 3. Domains array membership (JSON string stored in SQLite)
+    const candidates = await this.prisma.tlsCertificate.findMany({
+      where: {
+        status: statusFilter,
+        domains: { contains: hostname },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    for (const cert of candidates) {
+      const domainList: string[] = Array.isArray(cert.domains)
+        ? cert.domains
+        : JSON.parse(cert.domains as string);
+      if (domainList.includes(hostname)) return cert;
+      // Also check wildcard entries in the domains array
+      for (const d of domainList) {
+        if (d.startsWith("*.") && hostname.endsWith(d.slice(1)) && !hostname.slice(0, -d.length + 1).includes(".")) {
+          return cert;
+        }
+      }
+    }
+
     return null;
   }
 

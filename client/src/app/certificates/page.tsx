@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CertificateList } from "@/components/certificates/certificate-list";
-import { CreateCertificateDialog } from "@/components/certificates/create-certificate-dialog";
+import { IssueCertificateDialog } from "@/components/certificates/issue-certificate-dialog";
 
 export default function CertificatesPage() {
   const { data: certificates, isLoading, error, refetch } = useCertificates();
@@ -132,7 +132,7 @@ export default function CertificatesPage() {
       </div>
 
       {/* Create certificate dialog */}
-      <CreateCertificateDialog
+      <IssueCertificateDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
       />
