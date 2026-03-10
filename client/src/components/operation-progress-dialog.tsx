@@ -179,7 +179,7 @@ export function OperationProgressDialog({
   descriptions,
   onClose,
 }: OperationProgressDialogProps) {
-  const { phase, completedSteps, totalSteps, plannedStepNames, errors } = operationState;
+  const { phase, completedSteps, plannedStepNames, errors } = operationState;
 
   const handleClose = () => {
     onClose?.();
