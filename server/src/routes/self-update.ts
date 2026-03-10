@@ -1,10 +1,8 @@
 import express from "express";
 import { z } from "zod";
-import { Channel, ServerEvent } from "@mini-infra/types";
 import { appLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
-import { emitToChannel } from "../lib/socket";
 import prisma from "../lib/prisma";
 import {
   launchSidecar,
@@ -285,17 +283,6 @@ router.post(
 
         // Update the record with the sidecar container ID
         await updateUpdateRecordSidecarId(updateId, sidecarId);
-
-        // Emit socket event so connected clients get immediate feedback
-        try {
-          emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_STATUS, {
-            state: "pulling",
-            targetTag,
-            startedAt: new Date().toISOString(),
-          });
-        } catch {
-          // Socket emission failure should never block the update
-        }
 
         res.status(202).json({
           success: true,

@@ -1,7 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Channel, ServerEvent } from "@mini-infra/types";
-import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,24 +87,10 @@ function clearLocalUpdateState(): void {
 
 /**
  * Fetches the current self-update status from the server.
- * Uses Socket.IO for real-time updates when connected;
- * falls back to polling every 3s when disconnected and an update is active.
+ * Polls every 3s when an update is active.
  */
 export function useSelfUpdateStatus() {
   const localState = getLocalUpdateState();
-  const { connected } = useSocket();
-  const queryClient = useQueryClient();
-
-  // Subscribe to the self-update socket channel
-  useSocketChannel(Channel.SELF_UPDATE);
-
-  // Invalidate the query when a socket event arrives
-  useSocketEvent(
-    ServerEvent.SELF_UPDATE_STATUS,
-    () => {
-      queryClient.invalidateQueries({ queryKey: ["self-update-status"] });
-    },
-  );
 
   const query = useQuery<{ success: boolean; status: SelfUpdateStatus }>({
     queryKey: ["self-update-status"],
@@ -116,11 +100,9 @@ export function useSelfUpdateStatus() {
       return res.json();
     },
     refetchInterval: (query) => {
-      // When socket is connected, rely on socket events — no polling needed
-      if (connected) return false;
       const state = query.state.data?.status?.state;
       if (!state) return false;
-      // Poll while an update is in progress and socket is disconnected
+      // Poll while an update is in progress
       if (
         state !== "idle" &&
         state !== "complete" &&

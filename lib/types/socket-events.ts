@@ -38,7 +38,6 @@ export const STATIC_SOCKET_CHANNELS = [
   "backup-health",
   "tls",
   "haproxy",
-  "self-update",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -75,7 +74,6 @@ export const Channel = {
   BACKUP_HEALTH: "backup-health",
   TLS: "tls",
   HAPROXY: "haproxy",
-  SELF_UPDATE: "self-update",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -184,8 +182,6 @@ export const ServerEvent = {
   FRONTEND_SETUP_STARTED: "frontend:setup:started",
   FRONTEND_SETUP_STEP: "frontend:setup:step",
   FRONTEND_SETUP_COMPLETED: "frontend:setup:completed",
-  // Self-Update
-  SELF_UPDATE_STATUS: "self-update:status",
 } as const;
 
 /** Client → Server event names */
@@ -380,16 +376,6 @@ export interface ServerToClientEvents {
     operationId: string;
   }) => void;
 
-  // ── Self-Update ─────────────────────────────────────
-  /** Self-update status changed */
-  "self-update:status": (data: {
-    state: string;
-    targetTag?: string;
-    progress?: number;
-    error?: string;
-    startedAt?: string;
-    updatedAt?: string;
-  }) => void;
 }
 
 // ====================
