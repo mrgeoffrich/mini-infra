@@ -17,6 +17,7 @@ import {
   IconSettings,
   IconShield,
   IconHistory,
+  IconDownload,
 } from "@tabler/icons-react";
 
 export interface RouteMetadata {
@@ -476,6 +477,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "administration",
     description: "AI assistant API key, model, and capabilities",
     helpDoc: "settings/ai-assistant",
+  },
+
+  "/settings-self-update": {
+    path: "/settings-self-update",
+    title: "System Update",
+    breadcrumbLabel: "System Update",
+    icon: IconDownload,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Update Mini Infra via sidecar container",
   },
 
   "/bug-report-settings": {

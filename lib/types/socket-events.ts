@@ -375,6 +375,7 @@ export interface ServerToClientEvents {
   "frontend:setup:completed": (data: ManualFrontendSetupResult & {
     operationId: string;
   }) => void;
+
 }
 
 // ====================
