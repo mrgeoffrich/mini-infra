@@ -228,14 +228,14 @@ export function FrontendsListPage() {
 
           return (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm">
                   <IconDots className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => navigate(`/haproxy/frontends/${frontend.frontendName}`)}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/haproxy/frontends/${frontend.frontendName}`); }}
                 >
                   <IconEye className="h-4 w-4 mr-2" />
                   View Details
@@ -243,13 +243,13 @@ export function FrontendsListPage() {
                 {isManual && (
                   <>
                     <DropdownMenuItem
-                      onClick={() => navigate(`/haproxy/frontends/${frontend.frontendName}/edit`)}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/haproxy/frontends/${frontend.frontendName}/edit`); }}
                     >
                       <IconEdit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleDeleteClick(frontend)}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteClick(frontend); }}
                       className="text-destructive focus:text-destructive"
                     >
                       <IconTrash className="h-4 w-4 mr-2" />
@@ -504,7 +504,11 @@ export function FrontendsListPage() {
                   </TableHeader>
                   <TableBody>
                     {table.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow
+                        key={row.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => navigate(`/haproxy/frontends/${row.original.frontendName}`)}
+                      >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
                             {flexRender(
