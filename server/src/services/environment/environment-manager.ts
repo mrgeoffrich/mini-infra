@@ -584,7 +584,7 @@ export class EnvironmentManager {
         // Apply all stacks for this environment (reconciler handles networks/volumes/containers)
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Applying stacks...`);
         const stacks = await this.prisma.stack.findMany({
-          where: { environmentId: id },
+          where: { environmentId: id, status: { not: 'removed' } },
           include: { services: { orderBy: { order: 'asc' } } },
         });
 
@@ -737,7 +737,7 @@ export class EnvironmentManager {
       try {
         // Stop all stacks for this environment
         const stacks = await this.prisma.stack.findMany({
-          where: { environmentId: id },
+          where: { environmentId: id, status: { not: 'removed' } },
         });
 
         const reconciler = new StackReconciler(this.dockerExecutor, this.prisma);

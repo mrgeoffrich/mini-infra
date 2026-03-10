@@ -23,12 +23,12 @@ import {
   IconAlertTriangle,
   IconRouter,
   IconRoute,
-  IconTrash,
   IconPlus,
   IconRefresh,
   IconCheck,
   IconX,
   IconMinus,
+  IconShield,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -213,29 +213,6 @@ export function RemediateHAProxyDialog({
                       Changes to be Made
                     </h4>
                     <div className="rounded-md border divide-y">
-                      {/* Frontends to delete */}
-                      {preview.changes.frontendsToDelete.length > 0 && (
-                        <div className="p-3">
-                          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 mb-2">
-                            <IconTrash className="h-4 w-4" />
-                            <span className="font-medium">
-                              Delete {preview.changes.frontendsToDelete.length} frontend(s)
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {preview.changes.frontendsToDelete.map((name) => (
-                              <Badge
-                                key={name}
-                                variant="outline"
-                                className="text-xs font-mono bg-red-50 dark:bg-red-950 border-red-200"
-                              >
-                                {name}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
                       {/* Frontends to create */}
                       {preview.changes.frontendsToCreate.length > 0 && (
                         <div className="p-3">
@@ -316,8 +293,7 @@ export function RemediateHAProxyDialog({
                       )}
 
                       {/* No changes needed */}
-                      {preview.changes.frontendsToDelete.length === 0 &&
-                        preview.changes.frontendsToCreate.length === 0 &&
+                      {preview.changes.frontendsToCreate.length === 0 &&
                         preview.changes.routesToAdd.length === 0 &&
                         preview.changes.backendsToRecreate.length === 0 && (
                           <div className="p-3 text-sm text-muted-foreground text-center">
@@ -355,16 +331,56 @@ export function RemediateHAProxyDialog({
                             </span>
                           </div>
                         )}
-                        <div className="pt-2 border-t border-green-200">
-                          <span className="text-muted-foreground">Routes:</span>{" "}
-                          <span className="font-medium">
-                            {preview.expectedState.routes.length}
-                          </span>
-                          {" • "}
-                          <span className="text-muted-foreground">Backends:</span>{" "}
-                          <span className="font-medium">
-                            {preview.expectedState.backends.length}
-                          </span>
+                        {(preview.expectedState.manualFrontends ?? []).length > 0 && (
+                          <>
+                            {preview.expectedState.manualFrontends.map((mf) => (
+                              <div key={mf.frontendName} className="flex items-center gap-2">
+                                <Badge variant="outline" className="bg-white dark:bg-gray-900">
+                                  Manual
+                                </Badge>
+                                <span className="font-mono text-xs">
+                                  {mf.frontendName}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {mf.containerName && `(${mf.containerName})`}
+                                </span>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        <div className="pt-2 border-t border-green-200 space-y-2">
+                          <div>
+                            <span className="text-muted-foreground">Routes:</span>{" "}
+                            <span className="font-medium">
+                              {preview.expectedState.routes.length}
+                            </span>
+                            {" • "}
+                            <span className="text-muted-foreground">Backends:</span>{" "}
+                            <span className="font-medium">
+                              {preview.expectedState.backends.length}
+                            </span>
+                          </div>
+                          {preview.expectedState.routes.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {preview.expectedState.routes.slice(0, 10).map((route) => (
+                                <Badge
+                                  key={route.hostname}
+                                  variant="outline"
+                                  className="text-xs font-mono bg-white dark:bg-gray-900"
+                                >
+                                  {route.hostname}
+                                  {route.ssl && (
+                                    <IconShield className="h-3 w-3 ml-1 text-green-600 inline" />
+                                  )}
+                                </Badge>
+                              ))}
+                              {preview.expectedState.routes.length > 10 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{preview.expectedState.routes.length - 10} more
+                                </Badge>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -12,7 +12,7 @@ import type {
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
-import type { ServiceApplyResult, ApplyResult } from "./stacks";
+import type { ServiceApplyResult, ApplyResult, DestroyResult } from "./stacks";
 import type { MigrationStep, MigrationResult } from "./deployments";
 
 // ====================
@@ -152,6 +152,8 @@ export const ServerEvent = {
   STACK_APPLY_STARTED: "stack:apply:started",
   STACK_APPLY_SERVICE_RESULT: "stack:apply:service-result",
   STACK_APPLY_COMPLETED: "stack:apply:completed",
+  STACK_DESTROY_STARTED: "stack:destroy:started",
+  STACK_DESTROY_COMPLETED: "stack:destroy:completed",
   // HAProxy Migration
   MIGRATION_STARTED: "migration:started",
   MIGRATION_STEP: "migration:step",
@@ -261,6 +263,7 @@ export interface ServerToClientEvents {
     stackName: string;
     totalActions: number;
     actions: Array<{ serviceName: string; action: string }>;
+    forcePull?: boolean;
   }) => void;
   /** Individual service within a stack apply completed */
   "stack:apply:service-result": (data: ServiceApplyResult & {
@@ -273,6 +276,10 @@ export interface ServerToClientEvents {
     error?: string;
     postApply?: { success: boolean; errors?: string[] };
   }) => void;
+  /** Stack destroy started */
+  "stack:destroy:started": (data: { stackId: string; stackName: string }) => void;
+  /** Stack destroy completed */
+  "stack:destroy:completed": (data: DestroyResult) => void;
 
   // ── HAProxy Migration ──────────────────────────────
   /** HAProxy migration started */

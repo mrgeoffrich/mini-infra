@@ -500,6 +500,7 @@ export interface HAProxyFrontendInfo {
   // Shared frontend support
   isSharedFrontend: boolean;
   sharedFrontendId?: string | null; // Reference to parent shared frontend (for manual connections)
+  sharedFrontendName?: string | null; // Name of parent shared frontend (for display)
   routesCount?: number;
   routeHostnames?: string[]; // Hostnames from routes (for shared frontends)
   status: 'active' | 'pending' | 'failed' | 'removed';
@@ -846,11 +847,11 @@ export interface RemediationPreview {
   expectedState: {
     sharedHttpFrontend: string | null;
     sharedHttpsFrontend: string | null;
+    manualFrontends: Array<{ frontendName: string; hostname: string; containerName: string | null }>;
     routes: Array<{ hostname: string; backend: string; ssl: boolean }>;
     backends: string[];
   };
   changes: {
-    frontendsToDelete: string[];
     frontendsToCreate: string[];
     backendsToRecreate: string[];
     routesToAdd: string[];
@@ -878,7 +879,7 @@ export interface HAProxyStatusResponse {
     hasHAProxy: boolean;
     message?: string;
     sharedFrontendsCount?: number;
-    legacyFrontendsCount?: number;
+    manualFrontendsCount?: number;
     totalRoutesCount?: number;
     deploymentConfigsWithHostnames?: number;
     needsRemediation?: boolean;

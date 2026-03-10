@@ -15,6 +15,7 @@ import {
   StackVolume,
   ApplyOptions,
   ApplyResult,
+  DestroyResult,
   ServiceApplyResult,
   serializeStack,
 } from '@mini-infra/types';
@@ -189,6 +190,12 @@ export class StackReconciler {
 
     // 1. Get plan (use pre-computed plan if provided)
     const plan = options?.plan ?? await this.plan(stackId);
+
+    // 1b. Force-pull: pull all images and promote no-op services to recreate
+    // if the pulled image digest differs from the running container's image.
+    if (options?.forcePull) {
+      await this.promoteStalePullActions(plan, stackId, log);
+    }
 
     // 2. Filter actions if serviceNames provided
     let actions = plan.actions.filter((a) => a.action !== 'no-op');
@@ -404,6 +411,80 @@ export class StackReconciler {
     }
   }
 
+  /**
+   * Pull all images for the stack's services and promote no-op actions to
+   * 'recreate' when the freshly-pulled image ID differs from the running
+   * container's image ID. Mutates `plan.actions` in place.
+   */
+  private async promoteStalePullActions(
+    plan: StackPlan,
+    stackId: string,
+    log: any
+  ): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+
+    // Load service definitions for image names
+    const stack = await this.prisma.stack.findUniqueOrThrow({
+      where: { id: stackId },
+      include: { services: true },
+    });
+    const serviceImageMap = new Map(
+      stack.services.map((s) => [s.serviceName, `${s.dockerImage}:${s.dockerTag}`])
+    );
+
+    // Pull all images (regardless of action — we always want latest)
+    const pulledImageIds = new Map<string, string>();
+    for (const svc of stack.services) {
+      const imageRef = `${svc.dockerImage}:${svc.dockerTag}`;
+      try {
+        log.info({ service: svc.serviceName, image: imageRef }, 'Force-pulling image');
+        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+
+        // Get the image ID of the freshly-pulled image
+        const image = docker.getImage(imageRef);
+        const inspectData = await image.inspect();
+        pulledImageIds.set(svc.serviceName, inspectData.Id);
+      } catch (err: any) {
+        log.warn({ service: svc.serviceName, error: err.message }, 'Force-pull failed, skipping');
+      }
+    }
+
+    // Get running containers to compare image IDs
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { label: [`mini-infra.stack-id=${stackId}`] },
+    });
+    const containerByService = buildContainerMap(containers);
+
+    // Promote no-op actions to recreate if the image digest changed
+    for (const action of plan.actions) {
+      if (action.action !== 'no-op') continue;
+
+      const pulledId = pulledImageIds.get(action.serviceName);
+      if (!pulledId) continue;
+
+      const container = containerByService.get(action.serviceName);
+      if (!container) continue;
+
+      // container.ImageID is the full image digest of the image the container was created from
+      if (container.ImageID !== pulledId) {
+        log.info(
+          {
+            service: action.serviceName,
+            oldImageId: container.ImageID?.substring(0, 24),
+            newImageId: pulledId.substring(0, 24),
+          },
+          'Image updated — promoting to recreate'
+        );
+        action.action = 'recreate';
+        action.reason = 'image updated (force pull)';
+        action.currentImage = container.Image;
+        action.desiredImage = serviceImageMap.get(action.serviceName);
+        plan.hasChanges = true;
+      }
+    }
+  }
+
   async stopStack(stackId: string, options?: { triggeredBy?: string }): Promise<{ success: boolean; stoppedContainers: number }> {
     const startTime = Date.now();
     const log = servicesLogger().child({ operation: 'stack-stop', stackId });
@@ -453,6 +534,99 @@ export class StackReconciler {
 
     log.info({ stopped }, 'Stack stopped');
     return { success: true, stoppedContainers: stopped };
+  }
+
+  /**
+   * Destroy a stack: stop and remove all containers, networks, and volumes,
+   * then delete the stack from the database.
+   */
+  async destroyStack(stackId: string, options?: { triggeredBy?: string }): Promise<DestroyResult> {
+    const startTime = Date.now();
+    const log = servicesLogger().child({ operation: 'stack-destroy', stackId });
+
+    const stack = await this.prisma.stack.findUniqueOrThrow({
+      where: { id: stackId },
+      include: { services: true, environment: true },
+    });
+
+    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+    const networks = (stack.networks as unknown as StackNetwork[]) ?? [];
+    const volumes = (stack.volumes as unknown as StackVolume[]) ?? [];
+
+    log.info({ stackName: stack.name, projectName }, 'Destroying stack');
+
+    // 1. Stop and remove all containers
+    const docker = this.dockerExecutor.getDockerClient();
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { label: [`mini-infra.stack-id=${stackId}`] },
+    });
+
+    let containersRemoved = 0;
+    for (const containerInfo of containers) {
+      try {
+        await this.containerManager.stopAndRemoveContainer(containerInfo.Id);
+        containersRemoved++;
+      } catch (err) {
+        log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to remove container, continuing');
+      }
+    }
+
+    // 2. Remove networks
+    const networksRemoved: string[] = [];
+    for (const net of networks) {
+      const netName = `${projectName}_${net.name}`;
+      try {
+        if (await this.dockerExecutor.networkExists(netName)) {
+          await this.dockerExecutor.removeNetwork(netName);
+          networksRemoved.push(netName);
+        }
+      } catch (err) {
+        log.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
+      }
+    }
+
+    // 3. Remove volumes
+    const volumesRemoved: string[] = [];
+    for (const vol of volumes) {
+      const volName = `${projectName}_${vol.name}`;
+      try {
+        if (await this.dockerExecutor.volumeExists(volName)) {
+          await this.dockerExecutor.removeVolume(volName);
+          volumesRemoved.push(volName);
+        }
+      } catch (err) {
+        log.warn({ volume: volName, error: err }, 'Failed to remove volume, continuing');
+      }
+    }
+
+    // 4. Record deployment history and mark stack as removed
+    const duration = Date.now() - startTime;
+    await this.prisma.stackDeployment.create({
+      data: {
+        stackId,
+        action: 'destroy',
+        success: true,
+        status: 'removed',
+        duration,
+        triggeredBy: options?.triggeredBy ?? null,
+      },
+    });
+
+    await this.prisma.stack.update({
+      where: { id: stackId },
+      data: { status: 'removed', removedAt: new Date() },
+    });
+
+    log.info({ containersRemoved, networksRemoved, volumesRemoved, duration }, 'Stack destroyed');
+    return {
+      success: true,
+      stackId,
+      containersRemoved,
+      networksRemoved,
+      volumesRemoved,
+      duration,
+    };
   }
 
   private async applyStateful(

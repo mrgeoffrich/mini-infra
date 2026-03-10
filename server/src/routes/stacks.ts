@@ -7,6 +7,7 @@ import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { StackRoutingManager } from '../services/stacks/stack-routing-manager';
 import { HAProxyFrontendManager } from '../services/haproxy';
 import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
+import { MonitoringService } from '../services/monitoring';
 import {
   createStackSchema,
   updateStackSchema,
@@ -32,7 +33,7 @@ const applyingStacks = new Set<string>();
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
     const { environmentId, scope } = req.query;
-    const where: any = {};
+    const where: any = { status: { not: 'removed' } };
     if (scope === 'host') {
       where.environmentId = null;
     } else if (environmentId && typeof environmentId === 'string') {
@@ -94,14 +95,14 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         return res.status(404).json({ success: false, message: 'Environment not found' });
       }
 
-      // Check uniqueness within environment
-      const existing = await prisma.stack.findFirst({ where: { name, environmentId } });
+      // Check uniqueness within environment (exclude removed stacks)
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId, status: { not: 'removed' } } });
       if (existing) {
         return res.status(409).json({ success: false, message: 'A stack with this name already exists in this environment' });
       }
     } else {
-      // Host-level stack: enforce singleton
-      const existing = await prisma.stack.findFirst({ where: { name, environmentId: null } });
+      // Host-level stack: enforce singleton (exclude removed stacks)
+      const existing = await prisma.stack.findFirst({ where: { name, environmentId: null, status: { not: 'removed' } } });
       if (existing) {
         return res.status(409).json({ success: false, message: 'A host-level stack with this name already exists' });
       }
@@ -341,14 +342,25 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
       plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
     }
 
+    // For forcePull, include all services since any could be promoted to recreate
+    // after pulling new images. Mark them as "pull" initially.
+    const isForcePull = !!parsed.data.forcePull;
+    let startedActions: Array<{ serviceName: string; action: string }>;
+    if (isForcePull && plannedActions.length === 0) {
+      startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
+    } else {
+      startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
+    }
+
     applyingStacks.add(stackId);
 
     // Emit started event
     emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
       stackId,
       stackName: plan.stackName,
-      totalActions: plannedActions.length,
-      actions: plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action })),
+      totalActions: startedActions.length,
+      actions: startedActions,
+      forcePull: isForcePull,
     });
 
     // Respond immediately — progress comes via Socket.IO
@@ -393,6 +405,23 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           }
         }
 
+        // Monitoring post-apply: connect app container to monitoring network
+        if (result.success) {
+          const stack = await prisma.stack.findUnique({
+            where: { id: stackId },
+            select: { name: true },
+          });
+          if (stack?.name === 'monitoring') {
+            try {
+              const monitoringService = new MonitoringService();
+              await monitoringService.initialize();
+              await monitoringService.ensureAppConnectedToMonitoringNetwork();
+            } catch (err) {
+              logger.warn({ error: err }, 'Failed to connect app to monitoring network after apply');
+            }
+          }
+        }
+
         // Emit completed event
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
@@ -419,6 +448,59 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     }
     logger.error({ error, stackId }, 'Failed to start stack apply');
     res.status(500).json({ success: false, message: error?.message ?? 'Failed to apply stack' });
+  }
+});
+
+// POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, and DB record
+router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, res) => {
+  const stackId = req.params.stackId;
+  try {
+    const stack = await prisma.stack.findUnique({ where: { id: stackId } });
+    if (!stack) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+
+    // Prevent concurrent operations on the same stack
+    if (applyingStacks.has(stackId)) {
+      return res.status(409).json({ success: false, message: 'An operation is already in progress for this stack' });
+    }
+    applyingStacks.add(stackId);
+
+    // Acknowledge immediately, run in background
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_STARTED, { stackId, stackName: stack.name });
+    res.json({ success: true, data: { started: true, stackId } });
+
+    const triggeredBy = (req as any).user?.id;
+    (async () => {
+      try {
+        const dockerExecutor = new DockerExecutorService();
+        await dockerExecutor.initialize();
+        const reconciler = new StackReconciler(dockerExecutor, prisma);
+        const result = await reconciler.destroyStack(stackId, { triggeredBy });
+
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
+      } catch (error: any) {
+        logger.error({ error: error.message, stackId }, 'Background stack destroy failed');
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, {
+          success: false,
+          stackId,
+          containersRemoved: 0,
+          networksRemoved: [],
+          volumesRemoved: [],
+          duration: 0,
+          error: error.message,
+        });
+      } finally {
+        applyingStacks.delete(stackId);
+      }
+    })();
+  } catch (error: any) {
+    applyingStacks.delete(stackId);
+    if (isDockerConnectionError(error)) {
+      return res.status(503).json({ success: false, message: 'Docker is unavailable' });
+    }
+    logger.error({ error, stackId }, 'Failed to start stack destroy');
+    res.status(500).json({ success: false, message: error?.message ?? 'Failed to destroy stack' });
   }
 });
 

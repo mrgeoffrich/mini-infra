@@ -48,6 +48,7 @@ import { DockerExecutorService } from "./services/docker-executor";
 import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
+import { MonitoringService } from "./services/monitoring";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -253,6 +254,16 @@ const initializeServices = async () => {
     console.log("[STARTUP] Syncing built-in stack definitions...");
     await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
+
+    // When running in Docker, connect to monitoring network (if it exists)
+    // so the app can proxy requests to Prometheus/Loki by container name
+    try {
+      const monitoringService = new MonitoringService();
+      await monitoringService.initialize();
+      await monitoringService.ensureAppConnectedToMonitoringNetwork();
+    } catch (err) {
+      logger.debug({ error: err }, "Monitoring network connection skipped (non-fatal)");
+    }
 
     // Initialize environment health scheduler (monitors service state every 5 minutes)
     console.log("[STARTUP] Initializing environment health scheduler...");

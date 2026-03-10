@@ -103,7 +103,7 @@ export function HAProxyStatusCard({
   }
 
   const isHealthy = !status.needsRemediation && status.sharedFrontendsCount && status.sharedFrontendsCount > 0;
-  const hasLegacyConfig = status.legacyFrontendsCount && status.legacyFrontendsCount > 0;
+  const hasManualFrontends = status.manualFrontendsCount && status.manualFrontendsCount > 0;
 
   return (
     <Card className={className}>
@@ -137,10 +137,10 @@ export function HAProxyStatusCard({
               <span>Frontends</span>
             </div>
             <div className="text-2xl font-bold">
-              {(status.sharedFrontendsCount || 0) + (status.legacyFrontendsCount || 0)}
+              {(status.sharedFrontendsCount || 0) + (status.manualFrontendsCount || 0)}
             </div>
             <div className="text-xs text-muted-foreground">
-              {status.sharedFrontendsCount || 0} shared, {status.legacyFrontendsCount || 0} legacy
+              {status.sharedFrontendsCount || 0} shared, {status.manualFrontendsCount || 0} manual
             </div>
           </div>
           <div className="space-y-1">
@@ -155,12 +155,12 @@ export function HAProxyStatusCard({
           </div>
         </div>
 
-        {/* Legacy warning */}
-        {hasLegacyConfig && (
+        {/* Manual frontend warning */}
+        {hasManualFrontends && (
           <Alert className="py-2 bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800">
             <IconAlertTriangle className="h-4 w-4 text-yellow-600" />
             <AlertDescription className="text-sm text-yellow-800 dark:text-yellow-200">
-              Legacy frontend configuration detected. Consider running remediation to migrate to shared frontends.
+              Manual frontend configuration detected. Consider running remediation to migrate to shared frontends.
             </AlertDescription>
           </Alert>
         )}

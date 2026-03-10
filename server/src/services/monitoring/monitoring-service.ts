@@ -1,4 +1,5 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { hostname } from 'os';
 import Docker from 'dockerode';
 import { DockerExecutorService } from '../docker-executor';
 import { servicesLogger } from '../../lib/logger-factory';
@@ -373,6 +374,84 @@ export class MonitoringService implements IApplicationService {
     this.currentStatus = ServiceStatus.RUNNING;
     this.startedAt = this.startedAt || new Date();
     this.lastError = undefined;
+  }
+
+  /**
+   * When the app runs inside Docker, connect its own container to the
+   * monitoring network so it can reach Prometheus / Loki by container name.
+   * Safe to call multiple times — it's a no-op if already connected or
+   * if the monitoring network doesn't exist yet.
+   */
+  async ensureAppConnectedToMonitoringNetwork(): Promise<void> {
+    if (!existsSync('/.dockerenv')) return;
+
+    const networkName = `${this.projectName}_monitoring_network`;
+
+    try {
+      const docker = this.dockerExecutor.getDockerClient();
+
+      // Resolve our own container ID
+      const selfId = this.getSelfContainerId();
+      if (!selfId) {
+        this.logger.warn('Could not determine own container ID — skipping monitoring network join');
+        return;
+      }
+
+      // Check if the monitoring network exists
+      const networks = await docker.listNetworks({ filters: { name: [networkName] } });
+      const match = networks.find(n => n.Name === networkName);
+      if (!match) {
+        this.logger.debug({ networkName }, 'Monitoring network does not exist yet — will retry after stack apply');
+        return;
+      }
+
+      // Check if we're already connected
+      const network = docker.getNetwork(match.Id);
+      const info = await network.inspect();
+      if (info.Containers && info.Containers[selfId]) {
+        this.logger.debug('App container already connected to monitoring network');
+        return;
+      }
+
+      await network.connect({ Container: selfId });
+      this.logger.info({ networkName, containerId: selfId }, 'Connected app container to monitoring network');
+    } catch (error) {
+      // Non-fatal — the proxy routes will return 503 until the connection is established
+      this.logger.warn({ error, networkName }, 'Failed to connect app container to monitoring network');
+    }
+  }
+
+  /**
+   * Determine the container ID of the running process.
+   * Uses HOSTNAME env var (set by Docker to the short container ID),
+   * then falls back to parsing /proc/self/cgroup.
+   */
+  private getSelfContainerId(): string | null {
+    // Docker sets HOSTNAME to the short container ID by default
+    const h = process.env.HOSTNAME || hostname();
+    if (h && /^[0-9a-f]{12,64}$/.test(h)) {
+      return h;
+    }
+
+    // Fallback: parse /proc/self/cgroup (works on cgroup v1 and some v2 setups)
+    try {
+      const cgroup = readFileSync('/proc/self/cgroup', 'utf8');
+      const match = cgroup.match(/[0-9a-f]{64}/);
+      if (match) return match[0];
+    } catch {
+      // Not available (e.g. macOS)
+    }
+
+    // Fallback: try /proc/self/mountinfo for cgroup v2
+    try {
+      const mountinfo = readFileSync('/proc/self/mountinfo', 'utf8');
+      const match = mountinfo.match(/\/docker\/([0-9a-f]{64})/);
+      if (match) return match[1];
+    } catch {
+      // Not available
+    }
+
+    return null;
   }
 
   getPrometheusUrl(): string {

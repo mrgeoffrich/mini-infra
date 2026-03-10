@@ -100,7 +100,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
   const isStopped = env.status === "stopped";
   const status = data?.data;
 
-  // Check if this environment needs migration from legacy to stack-managed
+  // Check if this environment needs migration to stack-managed
   const { data: migrationPreview } = useMigrationPreview(env.id, {
     enabled: !isStopped,
   });
@@ -131,7 +131,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
             className="text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:bg-orange-950"
           >
             <IconAlertTriangle className="h-3 w-3 mr-1" />
-            Legacy
+            Needs Migration
           </Badge>
         ) : (
           <HAProxyHealthBadge

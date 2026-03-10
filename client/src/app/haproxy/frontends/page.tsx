@@ -150,7 +150,32 @@ export function FrontendsListPage() {
         accessorKey: "routes",
         header: "Routes",
         cell: ({ row }) => {
-          const hostnames = row.original.routeHostnames || [];
+          const frontend = row.original;
+
+          // Manual frontends don't have routes directly — they route
+          // through a shared frontend. Show the hostname with an indicator.
+          if (frontend.frontendType === "manual" && frontend.hostname) {
+            return (
+              <div className="text-sm">
+                <span>{frontend.hostname}</span>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  via {frontend.sharedFrontendName ? (
+                    <span
+                      className="underline cursor-pointer hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/haproxy/frontends/${frontend.sharedFrontendName}`);
+                      }}
+                    >
+                      {frontend.sharedFrontendName}
+                    </span>
+                  ) : "shared frontend"}
+                </div>
+              </div>
+            );
+          }
+
+          const hostnames = frontend.routeHostnames || [];
           if (hostnames.length === 0) {
             return (
               <div className="text-sm text-muted-foreground">No routes</div>

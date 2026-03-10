@@ -17,11 +17,11 @@ export interface RemediationPreview {
   expectedState: {
     sharedHttpFrontend: string | null;
     sharedHttpsFrontend: string | null;
+    manualFrontends: Array<{ frontendName: string; hostname: string; containerName: string | null }>;
     routes: Array<{ hostname: string; backend: string; ssl: boolean }>;
     backends: string[];
   };
   changes: {
-    frontendsToDelete: string[];
     frontendsToCreate: string[];
     backendsToRecreate: string[];
     routesToAdd: string[];
@@ -100,7 +100,7 @@ export class HAProxyRemediationService {
           sharedFrontend: { environmentId },
           status: 'active',
         },
-        select: { useSSL: true },
+        select: { useSSL: true, hostname: true },
       });
 
       const sharedHttpFrontend = generateSharedFrontendName(environmentId, "http");
@@ -134,11 +134,6 @@ export class HAProxyRemediationService {
       ];
 
       // Determine what needs to change
-      const legacyFrontends = existingFrontends.filter(
-        (f) => !f.isSharedFrontend && f.frontendType !== "shared"
-      );
-      const frontendsToDelete = legacyFrontends.map((f) => f.frontendName);
-
       const frontendsToCreate: string[] = [];
       const sharedExists = existingFrontends.some(
         (f) => f.isSharedFrontend && f.frontendType === "shared"
@@ -150,7 +145,11 @@ export class HAProxyRemediationService {
         }
       }
 
-      const routesToAdd = expectedRoutes.map((r) => r.hostname);
+      // Only show routes that don't already have active route records
+      const existingRouteHostnames = new Set(existingRoutes.map((r) => r.hostname));
+      const routesToAdd = expectedRoutes
+        .filter((r) => !existingRouteHostnames.has(r.hostname))
+        .map((r) => r.hostname);
 
       // Backends that exist in DB but not in HAProxy runtime need recreation
       const backendsToRecreate = dbBackends.filter(
@@ -158,9 +157,9 @@ export class HAProxyRemediationService {
       );
 
       const needsRemediation =
-        frontendsToDelete.length > 0 ||
         frontendsToCreate.length > 0 ||
         backendsToRecreate.length > 0 ||
+        routesToAdd.length > 0 ||
         !sharedExists;
 
       return {
@@ -172,11 +171,15 @@ export class HAProxyRemediationService {
         expectedState: {
           sharedHttpFrontend,
           sharedHttpsFrontend,
+          manualFrontends: manualFrontends.map((mf) => ({
+            frontendName: mf.frontendName,
+            hostname: mf.hostname,
+            containerName: mf.containerName,
+          })),
           routes: expectedRoutes,
           backends: expectedBackends,
         },
         changes: {
-          frontendsToDelete,
           frontendsToCreate,
           backendsToRecreate,
           routesToAdd,

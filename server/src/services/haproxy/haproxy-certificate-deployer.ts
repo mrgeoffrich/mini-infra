@@ -263,18 +263,18 @@ export class HaproxyCertificateDeployer {
       return;
     }
 
-    // Also check legacy frontends using this certificate
-    const legacyFrontendsUsingCert = await prisma.hAProxyFrontend.count({
+    // Also check manual frontends using this certificate
+    const manualFrontendsUsingCert = await prisma.hAProxyFrontend.count({
       where: {
         tlsCertificateId: certId,
         status: { not: "removed" },
       },
     });
 
-    if (legacyFrontendsUsingCert > 0) {
+    if (manualFrontendsUsingCert > 0) {
       logger.info(
-        { certId, certFileName, legacyFrontendsUsingCert },
-        "Certificate still in use by legacy frontends, skipping removal"
+        { certId, certFileName, manualFrontendsUsingCert },
+        "Certificate still in use by manual frontends, skipping removal"
       );
       return;
     }

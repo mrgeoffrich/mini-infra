@@ -16,6 +16,8 @@ interface StackApplyProgressProps {
   totalActions?: number;
   /** Live mode: whether the apply is still running */
   isApplying?: boolean;
+  /** Whether this is a force-pull redeploy */
+  forcePull?: boolean;
   /** Completed mode: final result */
   result?: ApplyResult & { error?: string };
   className?: string;
@@ -32,6 +34,7 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
   completedResults,
   totalActions,
   isApplying,
+  forcePull,
   result,
   className,
 }: StackApplyProgressProps) {
@@ -51,9 +54,11 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
               )}
               {result.error
                 ? "Apply Failed"
-                : result.success
-                  ? "Apply Succeeded"
-                  : "Apply Partially Failed"}
+                : result.success && result.serviceResults.length === 0 && forcePull
+                  ? "Images Up to Date"
+                  : result.success
+                    ? "Apply Succeeded"
+                    : "Apply Partially Failed"}
             </CardTitle>
             {result.duration > 0 && (
               <Badge variant="secondary">{formatDuration(result.duration)}</Badge>
@@ -62,9 +67,11 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
           <p className="text-sm text-muted-foreground">
             {result.error
               ? result.error
-              : result.success
-                ? `Applied version ${result.appliedVersion} in ${formatDuration(result.duration)}`
-                : `${succeeded.length} of ${result.serviceResults.length} services succeeded`}
+              : result.success && result.serviceResults.length === 0 && forcePull
+                ? `All images are up to date — no containers needed recreation (${formatDuration(result.duration)})`
+                : result.success
+                  ? `Applied version ${result.appliedVersion} in ${formatDuration(result.duration)}`
+                  : `${succeeded.length} of ${result.serviceResults.length} services succeeded`}
           </p>
         </CardHeader>
 
@@ -105,7 +112,41 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
   }
 
   // Live progress mode
-  if (!actions || !totalActions) return null;
+  if (!actions || totalActions == null) return null;
+
+  // Pulling phase: forcePull with all "pull" actions and no completed results yet
+  const isPulling = isApplying && actions.length > 0 && actions.every(a => a.action === 'pull') && !(completedResults?.length);
+
+  if (isPulling) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <IconLoader2 className="h-5 w-5 animate-spin text-blue-500" />
+            Pulling Images
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Pulling latest images and checking for updates...
+          </p>
+          <Progress className="mt-2" />
+        </CardHeader>
+        <CardContent className="space-y-0">
+          {actions.map((action, index) => (
+            <div key={action.serviceName}>
+              <div className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-2">
+                  <IconLoader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">{action.serviceName}</span>
+                  <Badge variant="secondary" className="text-xs">pull</Badge>
+                </div>
+              </div>
+              {index < actions.length - 1 && <Separator />}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const completedSet = new Map(
     (completedResults ?? []).map((r) => [r.serviceName, r]),

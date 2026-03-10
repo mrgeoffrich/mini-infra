@@ -8,7 +8,7 @@ const logger = loadbalancerLogger();
 /**
  * RemoveFrontend action removes HAProxy frontend configuration for a deployment
  * This action handles both:
- * - Legacy frontends (per-deployment HAProxyFrontend records)
+ * - Manual frontends (per-deployment HAProxyFrontend records)
  * - Shared frontend routes (HAProxyRoute records pointing to shared frontends)
  */
 export class RemoveFrontend {
@@ -66,7 +66,7 @@ export class RemoveFrontend {
 
       // Track what we removed
       let routeRemoved = false;
-      let legacyFrontendRemoved = false;
+      let manualFrontendRemoved = false;
 
       // Step 1: Check for HAProxyRoute (shared frontend architecture)
       const routeRecord = await prisma.hAProxyRoute.findFirst({
@@ -135,7 +135,7 @@ export class RemoveFrontend {
         }
       }
 
-      // Step 2: Check for legacy HAProxyFrontend record
+      // Step 2: Check for manual HAProxyFrontend record
       const frontendRecord = await prisma.hAProxyFrontend.findUnique({
         where: { deploymentConfigId: context.deploymentConfigId },
       });
@@ -158,23 +158,23 @@ export class RemoveFrontend {
               frontendName: frontendRecord.frontendName,
               frontendRecordId: frontendRecord.id,
             },
-            "Found legacy frontend record, proceeding with removal"
+            "Found manual frontend record, proceeding with removal"
           );
 
-          // Remove legacy frontend from HAProxy
+          // Remove manual frontend from HAProxy
           await haproxyFrontendManager.removeFrontend(
             frontendRecord.frontendName,
             this.haproxyClient
           );
 
-          legacyFrontendRemoved = true;
+          manualFrontendRemoved = true;
 
           logger.info(
             {
               deploymentId: context.deploymentId,
               frontendName: frontendRecord.frontendName,
             },
-            "Legacy frontend removed from HAProxy successfully"
+            "Manual frontend removed from HAProxy successfully"
           );
 
           // Update database record status
@@ -186,14 +186,14 @@ export class RemoveFrontend {
             },
           });
 
-          // Clean up certificate if legacy frontend had SSL enabled
+          // Clean up certificate if manual frontend had SSL enabled
           if (frontendRecord.tlsCertificateId) {
             logger.info(
               {
                 deploymentId: context.deploymentId,
                 tlsCertificateId: frontendRecord.tlsCertificateId,
               },
-              "Cleaning up SSL certificate after legacy frontend removal"
+              "Cleaning up SSL certificate after manual frontend removal"
             );
 
             try {
@@ -224,7 +224,7 @@ export class RemoveFrontend {
       }
 
       // Determine result
-      if (!routeRemoved && !legacyFrontendRemoved && !frontendRecord) {
+      if (!routeRemoved && !manualFrontendRemoved && !frontendRecord) {
         logger.warn(
           { deploymentConfigId: context.deploymentConfigId },
           "No frontend or route records found in database, skipping removal"
@@ -250,7 +250,7 @@ export class RemoveFrontend {
         {
           deploymentId: context.deploymentId,
           routeRemoved,
-          legacyFrontendRemoved,
+          manualFrontendRemoved,
         },
         "Frontend removal completed successfully"
       );
