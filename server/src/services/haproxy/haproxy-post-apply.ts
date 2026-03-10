@@ -37,8 +37,10 @@ export interface PostApplyResult {
  * This is the single, authoritative "rebuild everything" function. It pushes
  * existing DB state into HAProxy without creating any new database records:
  *   1. TLS certificates
- *   2. Sync routes (ACLs + backend switching rules) from existing DB route records
- *   3. Stats frontend config (prometheus-exporter)
+ *   2. Recreate backends and servers from DB
+ *   3. Ensure shared frontends exist in HAProxy runtime
+ *   4. Sync routes (ACLs + backend switching rules) from existing DB route records
+ *   5. Stats frontend config (prometheus-exporter)
  */
 export async function restoreHAProxyRuntimeState(
   environmentId: string,
@@ -97,7 +99,95 @@ export async function restoreHAProxyRuntimeState(
     steps.push({ step: 'Redeploy TLS certificates', status: 'skipped', detail: 'No certificates to deploy' });
   }
 
-  // ── Step 2: Sync existing DB routes to HAProxy runtime ─────────────────
+  // ── Step 2: Recreate backends and servers from DB ────────────────────────
+  try {
+    const backendResult = await recreateBackendsAndServers(environmentId, haproxyClient, prisma);
+    steps.push({
+      step: 'Recreate backends and servers',
+      status: backendResult.backendsCreated > 0 || backendResult.serversAdded > 0 ? 'completed' : 'skipped',
+      detail: `${backendResult.backendsCreated} backend(s) created, ${backendResult.serversAdded} server(s) added`,
+    });
+  } catch (error) {
+    const msg = `Failed to recreate backends: ${error}`;
+    logger.error({ error }, msg);
+    errors.push(msg);
+    steps.push({ step: 'Recreate backends and servers', status: 'failed', detail: msg });
+  }
+
+  // ── Step 3: Ensure shared frontends exist in HAProxy runtime ───────────
+  try {
+    const sharedFrontends = await prisma.hAProxyFrontend.findMany({
+      where: {
+        environmentId,
+        isSharedFrontend: true,
+        frontendType: 'shared',
+        status: { not: 'removed' },
+      },
+    });
+
+    let frontendsCreated = 0;
+    for (const frontend of sharedFrontends) {
+      try {
+        const existing = await frontendManager.getFrontendStatus(frontend.frontendName, haproxyClient);
+        if (!existing) {
+          await haproxyClient.createFrontend({
+            name: frontend.frontendName,
+            mode: 'http',
+          });
+
+          // Add bind for non-SSL frontends, or SSL frontends that have a certificate
+          if (!frontend.useSSL) {
+            await haproxyClient.addFrontendBind(
+              frontend.frontendName,
+              frontend.bindAddress,
+              frontend.bindPort
+            );
+          } else if (frontend.tlsCertificateId) {
+            // SSL frontend with cert - deploy cert first, then add SSL bind
+            const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+              frontend.tlsCertificateId,
+              prisma,
+              haproxyClient,
+              { gracefulNotFound: true }
+            );
+            if (certFileName) {
+              await haproxyClient.addFrontendBind(
+                frontend.frontendName,
+                frontend.bindAddress,
+                frontend.bindPort,
+                { ssl: true, ssl_certificate: `/etc/haproxy/certs/${certFileName}` }
+              );
+            }
+          }
+
+          frontendsCreated++;
+          logger.info(
+            { frontendName: frontend.frontendName, bindPort: frontend.bindPort },
+            'Recreated shared frontend in HAProxy'
+          );
+        }
+      } catch (error) {
+        const msg = `Failed to recreate frontend ${frontend.frontendName}: ${error}`;
+        logger.warn({ error, frontendName: frontend.frontendName }, msg);
+        errors.push(msg);
+      }
+    }
+
+    steps.push({
+      step: 'Ensure shared frontends exist',
+      status: frontendsCreated > 0 ? 'completed' : 'skipped',
+      detail: frontendsCreated > 0
+        ? `${frontendsCreated} frontend(s) created`
+        : `All ${sharedFrontends.length} shared frontend(s) already present`,
+    });
+  } catch (error) {
+    const msg = `Failed to ensure shared frontends: ${error}`;
+    logger.error({ error }, msg);
+    errors.push(msg);
+    steps.push({ step: 'Ensure shared frontends exist', status: 'failed', detail: msg });
+  }
+
+  // ── Step 4: Sync existing DB routes to HAProxy runtime ─────────────────
   // This pushes ACLs + backend switching rules for routes that already exist
   // in the database. Only reads from DB, does not create any records.
   try {
@@ -123,7 +213,7 @@ export async function restoreHAProxyRuntimeState(
     steps.push({ step: 'Sync existing routes to HAProxy', status: 'failed', detail: msg });
   }
 
-  // ── Step 3: Ensure stats frontend config ─────────────────────────────
+  // ── Step 5: Ensure stats frontend config ─────────────────────────────
   try {
     const applied = await ensureStatsFrontendConfig(haproxyClient);
     steps.push({
