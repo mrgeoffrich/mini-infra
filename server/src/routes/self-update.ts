@@ -213,6 +213,10 @@ router.post(
           });
         }
 
+        // Derive image base from registry pattern (e.g. "ghcr.io/user/repo:*" → "ghcr.io/user/repo")
+        const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
+        const fullImageRef = `${imageBase}:${targetTag}`;
+
         const sidecarImage =
           settingsMap.get("sidecar_image") ||
           process.env.SIDECAR_IMAGE_TAG ||
@@ -225,12 +229,14 @@ router.post(
           });
         }
 
-        // Validate the sidecar image against the allowed registry pattern
-        // to prevent running arbitrary Docker images with host socket access
-        if (!validateTargetImage(sidecarImage, allowedRegistryPattern)) {
+        // Validate the sidecar image against a pattern derived from the
+        // allowed registry.  The CI convention is that the sidecar image
+        // lives at "{repo}-sidecar:{tag}" (e.g. mini-infra-sidecar:v1.0.0).
+        const sidecarAllowedPattern = `${imageBase}-sidecar:*`;
+        if (!validateTargetImage(sidecarImage, sidecarAllowedPattern)) {
           return res.status(400).json({
             success: false,
-            error: `Sidecar image "${sidecarImage}" does not match allowed registry pattern "${allowedRegistryPattern}". The sidecar must come from the same trusted registry.`,
+            error: `Sidecar image "${sidecarImage}" does not match expected pattern "${sidecarAllowedPattern}". The sidecar must come from the same trusted registry.`,
           });
         }
 
@@ -244,11 +250,6 @@ router.post(
           settingsMap.get("graceful_stop_seconds") ?? "30",
           10,
         );
-
-        // Derive full image ref from the registry pattern base + tag
-        // e.g. pattern "ghcr.io/user/repo:*" + tag "v2.1.0" → "ghcr.io/user/repo:v2.1.0"
-        const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
-        const fullImageRef = `${imageBase}:${targetTag}`;
 
         logger.info(
           {
