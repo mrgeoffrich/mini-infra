@@ -68,6 +68,7 @@ export function useCertIssuanceProgress(operationId: string | null) {
     operationId,
     getOperationId: (p) => p.operationId,
     getTotalSteps: (p) => p.totalSteps,
+    getStepNames: (p) => p.stepNames ?? [],
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
     invalidateKeys: [["certificates"]],

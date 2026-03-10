@@ -273,6 +273,17 @@ router.post(
       const haproxyClient = await getHAProxyClient(request.environmentId);
 
       const totalSteps = request.enableSsl ? 4 : 2;
+      const stepNames = request.enableSsl
+        ? [
+            "Validate container connectivity",
+            "Find or issue TLS certificate",
+            "Deploy certificate to HAProxy",
+            "Create backend, frontend and route",
+          ]
+        : [
+            "Validate container connectivity",
+            "Create backend, frontend and route",
+          ];
 
       // Respond immediately — progress comes via Socket.IO
       res.json({ success: true, data: { started: true, operationId, environmentId: request.environmentId } });
@@ -285,6 +296,7 @@ router.post(
             environmentId: request.environmentId,
             hostname: request.hostname,
             totalSteps,
+            stepNames,
           });
 
           const setupService = await buildSetupService();

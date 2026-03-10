@@ -126,6 +126,12 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
     const lifecycleManager = await initializeLifecycleManager();
 
     const totalSteps = 4;
+    const stepNames = [
+      "Request certificate from Let's Encrypt",
+      "Save certificate record",
+      "Store certificate in Azure",
+      "Activate certificate",
+    ];
 
     // Respond immediately — progress comes via Socket.IO
     res.json({ success: true, data: { started: true, operationId } });
@@ -140,6 +146,7 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
           domains: validatedData.domains,
           primaryDomain: validatedData.primaryDomain,
           totalSteps,
+          stepNames,
         });
 
         const certificate = await lifecycleManager.issueCertificate(

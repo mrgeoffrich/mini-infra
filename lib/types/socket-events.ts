@@ -341,6 +341,7 @@ export interface ServerToClientEvents {
     domains: string[];
     primaryDomain: string;
     totalSteps: number;
+    stepNames?: string[];
   }) => void;
   /** Certificate issuance step completed */
   "cert:issuance:step": (data: {
@@ -361,6 +362,7 @@ export interface ServerToClientEvents {
     environmentId: string;
     hostname: string;
     totalSteps: number;
+    stepNames?: string[];
   }) => void;
   /** Manual frontend setup step completed */
   "frontend:setup:step": (data: {

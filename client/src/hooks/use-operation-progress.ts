@@ -23,6 +23,8 @@ export interface OperationState {
   phase: OperationPhase;
   totalSteps: number;
   completedSteps: OperationStep[];
+  /** Names of all planned steps (sent by server at start) */
+  plannedStepNames: string[];
   errors: string[];
 }
 
@@ -30,6 +32,7 @@ const INITIAL_STATE: OperationState = {
   phase: "idle",
   totalSteps: 0,
   completedSteps: [],
+  plannedStepNames: [],
   errors: [],
 };
 
@@ -50,6 +53,8 @@ export interface UseOperationProgressOptions<
   getOperationId: (payload: any) => string;
   /** Extract totalSteps from started event */
   getTotalSteps: (payload: any) => number;
+  /** Extract planned step names from started event (optional) */
+  getStepNames?: (payload: any) => string[];
   /** Extract step from step event */
   getStep: (payload: any) => OperationStep;
   /** Extract result from completed event */
@@ -84,6 +89,7 @@ export function useOperationProgress<
     operationId,
     getOperationId,
     getTotalSteps,
+    getStepNames,
     getStep,
     getResult,
     invalidateKeys,
@@ -111,6 +117,7 @@ export function useOperationProgress<
         phase: "executing",
         totalSteps: getTotalSteps(data),
         completedSteps: [],
+        plannedStepNames: getStepNames?.(data) ?? [],
         errors: [],
       });
     }) as ServerToClientEvents[TStarted],
@@ -136,12 +143,13 @@ export function useOperationProgress<
     ((data: any) => {
       if (getOperationId(data) !== operationId) return;
       const result = getResult(data);
-      setState({
+      setState((prev) => ({
         phase: result.success ? "success" : "error",
         totalSteps: result.steps.length,
         completedSteps: result.steps,
+        plannedStepNames: prev.plannedStepNames,
         errors: result.errors,
-      });
+      }));
 
       // Invalidate queries
       if (invalidateKeys) {

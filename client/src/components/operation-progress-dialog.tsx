@@ -30,24 +30,81 @@ import type { OperationState, OperationStep } from "@/hooks/use-operation-progre
 // Step rendering components
 // ====================
 
-function StepStatusIcon({ status }: { status: OperationStep["status"] }) {
+type StepDisplayStatus = OperationStep["status"] | "pending" | "in-progress";
+
+function StepStatusIcon({ status }: { status: StepDisplayStatus }) {
   if (status === "completed") {
     return <IconCheck className="h-4 w-4 text-green-600 dark:text-green-400" />;
   }
   if (status === "failed") {
     return <IconX className="h-4 w-4 text-red-600 dark:text-red-400" />;
   }
+  if (status === "in-progress") {
+    return <IconLoader2 className="h-4 w-4 animate-spin text-primary" />;
+  }
+  if (status === "pending") {
+    return <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />;
+  }
   return <IconArrowRight className="h-4 w-4 text-muted-foreground" />;
 }
 
-function OperationStepList({ steps }: { steps: OperationStep[] }) {
-  if (steps.length === 0) return null;
+interface DisplayStep {
+  name: string;
+  status: StepDisplayStatus;
+  detail?: string;
+}
+
+function buildDisplaySteps(
+  completedSteps: OperationStep[],
+  plannedStepNames: string[],
+  isExecuting: boolean,
+): DisplayStep[] {
+  const completedMap = new Map(
+    completedSteps.map((s) => [s.step, s]),
+  );
+
+  // If we have planned step names, show them all with appropriate status
+  if (plannedStepNames.length > 0) {
+    let foundFirstPending = false;
+    return plannedStepNames.map((name) => {
+      const completed = completedMap.get(name);
+      if (completed) {
+        return { name: completed.step, status: completed.status, detail: completed.detail };
+      }
+      // First non-completed step during execution is "in-progress"
+      if (isExecuting && !foundFirstPending) {
+        foundFirstPending = true;
+        return { name, status: "in-progress" as const };
+      }
+      return { name, status: "pending" as const };
+    });
+  }
+
+  // Fallback: no planned names, just show completed steps
+  return completedSteps.map((s) => ({
+    name: s.step,
+    status: s.status,
+    detail: s.detail,
+  }));
+}
+
+function OperationStepList({
+  steps,
+  plannedStepNames = [],
+  isExecuting = false,
+}: {
+  steps: OperationStep[];
+  plannedStepNames?: string[];
+  isExecuting?: boolean;
+}) {
+  const displaySteps = buildDisplaySteps(steps, plannedStepNames, isExecuting);
+  if (displaySteps.length === 0) return null;
 
   return (
     <div className="rounded-md border p-4 space-y-1">
-      {steps.map((step, i) => (
+      {displaySteps.map((step, i) => (
         <div
-          key={step.step || i}
+          key={step.name || i}
           className="flex items-start gap-2 text-sm p-1.5 rounded"
         >
           <StepStatusIcon status={step.status} />
@@ -56,9 +113,10 @@ function OperationStepList({ steps }: { steps: OperationStep[] }) {
               className={cn(
                 "font-medium",
                 step.status === "failed" && "text-red-600 dark:text-red-400",
+                step.status === "pending" && "text-muted-foreground",
               )}
             >
-              {step.step}
+              {step.name}
             </span>
             {step.detail && (
               <span className="text-muted-foreground ml-1">
@@ -121,7 +179,7 @@ export function OperationProgressDialog({
   descriptions,
   onClose,
 }: OperationProgressDialogProps) {
-  const { phase, completedSteps, totalSteps, errors } = operationState;
+  const { phase, completedSteps, totalSteps, plannedStepNames, errors } = operationState;
 
   const handleClose = () => {
     onClose?.();
@@ -161,15 +219,16 @@ export function OperationProgressDialog({
           {/* Executing */}
           {phase === "executing" && (
             <div className="space-y-4">
-              <div className="flex items-center justify-center py-4">
-                <IconLoader2 className="h-10 w-10 animate-spin text-primary" />
-              </div>
-              <div className="text-center text-sm text-muted-foreground mb-4">
-                {completedSteps.length > 0
-                  ? `Step ${completedSteps.length} of ~${totalSteps}`
-                  : "Starting..."}
-              </div>
-              <OperationStepList steps={completedSteps} />
+              {plannedStepNames.length === 0 && (
+                <div className="flex items-center justify-center py-4">
+                  <IconLoader2 className="h-10 w-10 animate-spin text-primary" />
+                </div>
+              )}
+              <OperationStepList
+                steps={completedSteps}
+                plannedStepNames={plannedStepNames}
+                isExecuting
+              />
             </div>
           )}
 
@@ -181,7 +240,7 @@ export function OperationProgressDialog({
                   <IconCheck className="h-8 w-8 text-green-600 dark:text-green-400" />
                 </div>
               </div>
-              <OperationStepList steps={completedSteps} />
+              <OperationStepList steps={completedSteps} plannedStepNames={plannedStepNames} />
               {errors.length > 0 && (
                 <Alert className="bg-yellow-50 dark:bg-yellow-950 border-yellow-200">
                   <IconAlertTriangle className="h-4 w-4 text-yellow-600" />
@@ -221,7 +280,7 @@ export function OperationProgressDialog({
                   </AlertDescription>
                 </Alert>
               )}
-              <OperationStepList steps={completedSteps} />
+              <OperationStepList steps={completedSteps} plannedStepNames={plannedStepNames} />
             </div>
           )}
         </div>

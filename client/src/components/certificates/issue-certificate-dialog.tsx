@@ -103,10 +103,16 @@ export function IssueCertificateDialog({
     setDomainInput("");
   };
 
-  // Build operation state
+  // Build operation state — show step names immediately before socket event arrives
+  const certStepNames = [
+    "Request certificate from Let's Encrypt",
+    "Save certificate record",
+    "Store certificate in Azure",
+    "Activate certificate",
+  ];
   const operationState =
     operationId && progress.state.phase === "idle"
-      ? { ...progress.state, phase: "executing" as const, totalSteps: 4 }
+      ? { ...progress.state, phase: "executing" as const, totalSteps: 4, plannedStepNames: certStepNames }
       : progress.state;
 
   return (

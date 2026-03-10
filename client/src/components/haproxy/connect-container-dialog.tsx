@@ -57,10 +57,21 @@ export function ConnectContainerDialog({
   };
 
   // Build the state: use progress state, but if we just fired the mutation
-  // and haven't received STARTED yet, show executing
+  // and haven't received STARTED yet, show executing with step names
+  const connectStepNames = request.enableSsl
+    ? [
+        "Validate container connectivity",
+        "Find or issue TLS certificate",
+        "Deploy certificate to HAProxy",
+        "Create backend, frontend and route",
+      ]
+    : [
+        "Validate container connectivity",
+        "Create backend, frontend and route",
+      ];
   const operationState =
     operationId && progress.state.phase === "idle"
-      ? { ...progress.state, phase: "executing" as const, totalSteps: request.enableSsl ? 4 : 2 }
+      ? { ...progress.state, phase: "executing" as const, totalSteps: request.enableSsl ? 4 : 2, plannedStepNames: connectStepNames }
       : progress.state;
 
   return (
