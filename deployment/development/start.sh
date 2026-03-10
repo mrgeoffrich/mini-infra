@@ -7,20 +7,20 @@ set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/.env"
+ENV_FILE="$SCRIPT_DIR/../../server/.env"
 
 # Check if .env file exists
 if [ ! -f "$ENV_FILE" ]; then
     echo -e "\033[0;31mERROR: .env file not found at: $ENV_FILE\033[0m"
     echo ""
-    echo -e "\033[0;33mPlease create a .env file in the deployment/development/ directory.\033[0m"
+    echo -e "\033[0;33mPlease create a .env file in the server/ directory.\033[0m"
     echo -e "\033[0;33mYou can use the following template as a starting point:\033[0m"
     echo ""
     echo "  SESSION_SECRET=<generate with: openssl rand -base64 32>"
     echo "  API_KEY_SECRET=<generate with: openssl rand -base64 32>"
     echo "  GOOGLE_CLIENT_ID=your_google_client_id"
     echo "  GOOGLE_CLIENT_SECRET=your_google_client_secret"
-    echo "  GOOGLE_CALLBACK_URL=http://localhost:5000/auth/google/callback"
+    echo "  GOOGLE_CALLBACK_URL=http://localhost:3005/auth/google/callback"
     echo ""
     exit 1
 fi

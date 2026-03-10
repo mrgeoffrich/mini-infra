@@ -1,0 +1,56 @@
+name: Cleanup Old Package Versions
+
+on:
+  schedule:
+    # Run every Sunday at midnight GMT+10 (2 PM UTC Saturday)
+    - cron: '0 14 * * 6'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  cleanup-mini-infra:
+    name: Cleanup mini-infra images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      # Remove untagged manifests (orphaned platform layers), keep last 10
+      - name: Delete untagged mini-infra versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra
+          package-type: container
+          delete-only-untagged-versions: 'true'
+          min-versions-to-keep: 10
+
+      # Remove old tagged versions, but preserve semver releases and key tags
+      - name: Delete old mini-infra versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra
+          package-type: container
+          min-versions-to-keep: 10
+          ignore-versions: '^(\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|dev|main|production|latest)$'
+
+  cleanup-sidecar:
+    name: Cleanup mini-infra-sidecar images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete untagged sidecar versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-sidecar
+          package-type: container
+          delete-only-untagged-versions: 'true'
+          min-versions-to-keep: 10
+
+      - name: Delete old sidecar versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-sidecar
+          package-type: container
+          min-versions-to-keep: 10
+          ignore-versions: '^(\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|dev|main|production|latest)$'
