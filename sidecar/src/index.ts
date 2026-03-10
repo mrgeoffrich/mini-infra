@@ -1,6 +1,5 @@
 import Docker from "dockerode";
 import { logger } from "./logger";
-import { StatusReporter } from "./status-reporter";
 import { inspectContainer, CapturedContainerSettings } from "./container-inspector";
 import { waitForHealthy } from "./health-checker";
 
@@ -15,7 +14,6 @@ const HEALTH_CHECK_TIMEOUT_MS = parseInt(
   process.env.HEALTH_CHECK_TIMEOUT_MS ?? "60000",
   10,
 );
-const STATUS_FILE = process.env.STATUS_FILE ?? "/status/update-status.json";
 const GRACEFUL_STOP_SECONDS = parseInt(
   process.env.GRACEFUL_STOP_SECONDS ?? "30",
   10,
@@ -36,7 +34,6 @@ function requireEnv(name: string): string {
 
 async function main(): Promise<void> {
   const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-  const status = new StatusReporter(STATUS_FILE);
 
   let oldContainerName: string | undefined;
   let newContainerId: string | undefined;
@@ -45,20 +42,20 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     // 1. Pull the target image
     // -----------------------------------------------------------------------
-    status.report("pulling", { targetTag: TARGET_IMAGE });
-    await pullImage(docker, TARGET_IMAGE, status);
+    logger.info({ state: "pulling", targetTag: TARGET_IMAGE }, "Update status: pulling");
+    await pullImage(docker, TARGET_IMAGE);
 
     // -----------------------------------------------------------------------
     // 2. Inspect the running container to capture its settings
     // -----------------------------------------------------------------------
-    status.report("inspecting");
+    logger.info({ state: "inspecting" }, "Update status: inspecting");
     const settings = await inspectContainer(docker, CONTAINER_ID);
     oldContainerName = settings.name;
 
     // -----------------------------------------------------------------------
     // 3. Stop the running container gracefully
     // -----------------------------------------------------------------------
-    status.report("stopping");
+    logger.info({ state: "stopping" }, "Update status: stopping");
     const oldContainer = docker.getContainer(CONTAINER_ID);
     logger.info(
       { containerId: CONTAINER_ID, timeout: GRACEFUL_STOP_SECONDS },
@@ -74,7 +71,7 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     // 4. Create and start the new container
     // -----------------------------------------------------------------------
-    status.report("creating");
+    logger.info({ state: "creating" }, "Update status: creating");
     const newContainer = await createContainer(docker, TARGET_IMAGE, settings);
     newContainerId = (newContainer as unknown as { id: string }).id;
     await newContainer.start();
@@ -83,7 +80,7 @@ async function main(): Promise<void> {
     // -----------------------------------------------------------------------
     // 5. Health-check the new container
     // -----------------------------------------------------------------------
-    status.report("health-checking");
+    logger.info({ state: "health-checking" }, "Update status: health-checking");
     const healthy = await waitForHealthy({
       url: HEALTH_CHECK_URL,
       timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
@@ -91,7 +88,7 @@ async function main(): Promise<void> {
 
     if (healthy) {
       // Success — clean up the old container
-      status.report("complete", { targetTag: TARGET_IMAGE });
+      logger.info({ state: "complete", targetTag: TARGET_IMAGE }, "Update status: complete");
       logger.info("Update successful, removing old container");
       try {
         await oldContainer.remove({ v: false });
@@ -105,43 +102,38 @@ async function main(): Promise<void> {
     // 6. Rollback — new container failed health checks
     // -------------------------------------------------------------------
     logger.error("New container failed health check, initiating rollback");
-    status.report("rolling-back");
+    logger.info({ state: "rolling-back" }, "Update status: rolling-back");
     await rollback(docker, newContainerId, oldContainer, settings.name);
-    status.report("rollback-complete", {
-      error: "New container failed health check",
-    });
+    logger.info(
+      { state: "rollback-complete", error: "New container failed health check" },
+      "Update status: rollback-complete",
+    );
     process.exit(1);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     logger.fatal({ err }, "Update failed");
-    status.report("failed", { error: errorMessage });
 
     // Attempt rollback if we got far enough to have stopped the old container.
-    // We only need oldContainerName to be set — if createContainer failed,
-    // newContainerId will be undefined, but we still need to restore the old container.
     if (oldContainerName) {
       try {
-        logger.info("Attempting rollback after failure");
-        status.report("rolling-back", { error: errorMessage });
+        logger.info({ state: "rolling-back", error: errorMessage }, "Update status: rolling-back");
         const oldContainer = docker.getContainer(CONTAINER_ID);
 
         if (newContainerId) {
-          // Full rollback: remove the new container, then restore the old one
           await rollback(docker, newContainerId, oldContainer, oldContainerName);
         } else {
-          // Partial rollback: no new container was created, just restore the old one
           logger.info("No new container to remove, restoring old container only");
           await oldContainer.rename({ name: oldContainerName });
           await oldContainer.start();
           logger.info("Rollback complete — old container restored");
         }
 
-        status.report("rollback-complete", { error: errorMessage });
+        logger.info(
+          { state: "rollback-complete", error: errorMessage },
+          "Update status: rollback-complete",
+        );
       } catch (rollbackErr) {
         logger.fatal({ rollbackErr }, "Rollback also failed — manual intervention required");
-        status.report("failed", {
-          error: `Update failed: ${errorMessage}. Rollback also failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-        });
       }
     }
 
@@ -154,13 +146,9 @@ async function main(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Pulls a Docker image, reporting layer-level progress to the status reporter.
+ * Pulls a Docker image, logging layer-level progress.
  */
-async function pullImage(
-  docker: Docker,
-  image: string,
-  status: StatusReporter,
-): Promise<void> {
+async function pullImage(docker: Docker, image: string): Promise<void> {
   logger.info({ image }, "Pulling image");
 
   const stream = await docker.pull(image);
@@ -175,7 +163,6 @@ async function pullImage(
         else resolve();
       },
       (event: { id?: string; status?: string; progressDetail?: { current?: number; total?: number } }) => {
-        // Track per-layer progress for an overall percentage
         if (event.id && event.progressDetail?.total) {
           layerProgress.set(event.id, {
             current: event.progressDetail.current ?? 0,
@@ -194,7 +181,7 @@ async function pullImage(
               ? Math.round((downloadedBytes / totalBytes) * 100)
               : 0;
 
-          status.report("pulling", { targetTag: image, progress });
+          logger.info({ state: "pulling", progress, image }, `Pull progress: ${progress}%`);
         }
       },
     );
@@ -233,7 +220,6 @@ async function rollback(
   oldContainer: Docker.Container,
   originalName: string,
 ): Promise<void> {
-  // Stop and remove the failed new container
   const newContainer = docker.getContainer(newContainerId);
   try {
     await newContainer.stop({ t: 10 });
@@ -246,7 +232,6 @@ async function rollback(
     logger.warn({ err }, "Failed to remove new container during rollback");
   }
 
-  // Restore the old container's original name and start it
   await oldContainer.rename({ name: originalName });
   await oldContainer.start();
   logger.info("Rollback complete — old container restored");

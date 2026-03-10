@@ -61,7 +61,6 @@ const configSchema = z.object({
     .string()
     .min(1, "Allowed registry pattern is required"),
   sidecarImage: z.string().min(1, "Sidecar image is required"),
-  healthCheckUrl: z.string().url("Must be a valid URL"),
   healthCheckTimeoutMs: z.coerce.number().int().min(5000).max(300000),
   gracefulStopSeconds: z.coerce.number().int().min(5).max(120),
 });
@@ -126,7 +125,6 @@ export default function SelfUpdateSettingsPage() {
     defaultValues: {
       allowedRegistryPattern: "",
       sidecarImage: "",
-      healthCheckUrl: "http://localhost:5000/health",
       healthCheckTimeoutMs: 60000,
       gracefulStopSeconds: 30,
     },
@@ -140,7 +138,6 @@ export default function SelfUpdateSettingsPage() {
       form.reset({
         allowedRegistryPattern: c.allowedRegistryPattern ?? "",
         sidecarImage: c.sidecarImage ?? "",
-        healthCheckUrl: c.healthCheckUrl ?? "http://localhost:5000/health",
         healthCheckTimeoutMs: c.healthCheckTimeoutMs ?? 60000,
         gracefulStopSeconds: c.gracefulStopSeconds ?? 30,
       });
@@ -393,8 +390,9 @@ export default function SelfUpdateSettingsPage() {
             Trigger Update
           </CardTitle>
           <CardDescription>
-            Enter the target image tag and initiate an update. The server will
-            restart during this process.
+            Enter the target tag and initiate an update. The full image
+            reference is built from the configured registry pattern. The server
+            will restart during this process.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -416,7 +414,7 @@ export default function SelfUpdateSettingsPage() {
 
           <div className="flex gap-2">
             <Input
-              placeholder="e.g. ghcr.io/mrgeoffrich/mini-infra:v2.1.0"
+              placeholder="e.g. v2.1.0 or latest"
               value={triggerTag}
               onChange={(e) => setTriggerTag(e.target.value)}
             />
@@ -436,7 +434,8 @@ export default function SelfUpdateSettingsPage() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            The target tag must match the configured allowed registry pattern.
+            Enter an image tag. The full image reference is derived from the
+            configured registry pattern.
           </p>
         </CardContent>
       </Card>
@@ -491,27 +490,6 @@ export default function SelfUpdateSettingsPage() {
                     </FormControl>
                     <FormDescription>
                       Docker image for the update sidecar container.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="healthCheckUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Health Check URL</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="http://localhost:5000/health"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      URL the sidecar polls to verify the new container is
-                      healthy.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

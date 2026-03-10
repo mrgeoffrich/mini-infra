@@ -49,7 +49,7 @@ import { securityConfig } from "./lib/security-config";
 import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
-import { cleanupOrphanedSidecars, readAndCleanupLastUpdateResult, finalizeUpdateRecord } from "./services/self-update";
+import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -208,11 +208,7 @@ const initializeServices = async () => {
     // and finalize any in-progress update record in the DB
     console.log("[STARTUP] Cleaning up self-update sidecar resources...");
     try {
-      const lastResult = await readAndCleanupLastUpdateResult();
-      if (lastResult) {
-        await finalizeUpdateRecord(lastResult);
-        logger.info({ state: lastResult.state }, "Finalized self-update record from sidecar status");
-      }
+      await finalizeLastUpdate();
       await cleanupOrphanedSidecars();
       console.log("[STARTUP] ✓ Self-update sidecar cleanup complete");
     } catch (err) {

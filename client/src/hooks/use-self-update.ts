@@ -37,7 +37,6 @@ export interface SelfUpdateCheckResult {
 export interface SelfUpdateConfig {
   allowedRegistryPattern: string | null;
   sidecarImage: string | null;
-  healthCheckUrl: string;
   healthCheckTimeoutMs: number;
   gracefulStopSeconds: number;
 }

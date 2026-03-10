@@ -1,12 +1,12 @@
 import express from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
+import appConfig from "../lib/config-new";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   launchSidecar,
   isUpdateInProgress,
-  readSidecarStatus,
   getOwnContainerId,
   createUpdateRecord,
   getLatestUpdateRecord,
@@ -21,10 +21,10 @@ const triggerSchema = z.object({
   targetTag: z
     .string()
     .min(1, "Target tag is required")
-    .max(256, "Target tag too long")
+    .max(128, "Target tag too long")
     .regex(
-      /^[a-zA-Z0-9][a-zA-Z0-9._\-/:]*$/,
-      "Invalid image tag format",
+      /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+      "Invalid tag format. Enter just the tag (e.g. v2.1.0), not a full image reference.",
     ),
 });
 
@@ -42,13 +42,7 @@ router.get("/status", requirePermission("settings:read"), async (req, res) => {
     const inProgress = await isUpdateInProgress();
 
     if (inProgress) {
-      // Try to read live status from the sidecar
-      const sidecarStatus = await readSidecarStatus();
-      if (sidecarStatus) {
-        return res.json({ success: true, status: sidecarStatus });
-      }
-
-      // Sidecar is running but status not available yet — check DB record
+      // Sidecar is running — check DB record for details
       const dbRecord = await getLatestUpdateRecord();
       if (dbRecord && !["complete", "rollback-complete", "failed"].includes(dbRecord.state)) {
         return res.json({
@@ -209,8 +203,8 @@ router.post(
         });
       }
 
-      const healthCheckUrl =
-        settingsMap.get("health_check_url") ?? "http://localhost:5000/health";
+      const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
+      const containerPort = appConfig.server.port;
       const healthCheckTimeoutMs = parseInt(
         settingsMap.get("health_check_timeout_ms") ?? "60000",
         10,
@@ -220,10 +214,10 @@ router.post(
         10,
       );
 
-      // Build the full image ref for DB record
-      const fullImageRef = targetTag.includes(":")
-        ? targetTag
-        : `${targetTag}:latest`;
+      // Derive full image ref from the registry pattern base + tag
+      // e.g. pattern "ghcr.io/user/repo:*" + tag "v2.1.0" → "ghcr.io/user/repo:v2.1.0"
+      const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
+      const fullImageRef = `${imageBase}:${targetTag}`;
 
       logger.info(
         {
@@ -239,9 +233,10 @@ router.post(
       // Launch the sidecar — this is a fire-and-forget operation.
       // The sidecar will stop this container, so we respond immediately.
       const sidecarId = await launchSidecar({
-        targetTag,
+        fullImageRef,
         allowedRegistryPattern,
         sidecarImage,
+        containerPort,
         healthCheckUrl,
         healthCheckTimeoutMs,
         gracefulStopSeconds,
@@ -320,8 +315,6 @@ router.get("/config", requirePermission("settings:read"), async (req, res) => {
           settingsMap.get("sidecar_image") ||
           process.env.SIDECAR_IMAGE_TAG ||
           null,
-        healthCheckUrl:
-          settingsMap.get("health_check_url") ?? "http://localhost:5000/health",
         healthCheckTimeoutMs: parseInt(
           settingsMap.get("health_check_timeout_ms") ?? "60000",
           10,
@@ -352,7 +345,6 @@ const configSchema = z.object({
     .string()
     .min(1, "Allowed registry pattern is required"),
   sidecarImage: z.string().min(1, "Sidecar image is required"),
-  healthCheckUrl: z.string().url("Must be a valid URL").optional(),
   healthCheckTimeoutMs: z.number().int().min(5000).max(300000).optional(),
   gracefulStopSeconds: z.number().int().min(5).max(120).optional(),
 });
@@ -380,10 +372,6 @@ router.put(
           value: validated.allowedRegistryPattern,
         },
         { key: "sidecar_image", value: validated.sidecarImage },
-        {
-          key: "health_check_url",
-          value: validated.healthCheckUrl ?? "http://localhost:5000/health",
-        },
         {
           key: "health_check_timeout_ms",
           value: String(validated.healthCheckTimeoutMs ?? 60000),

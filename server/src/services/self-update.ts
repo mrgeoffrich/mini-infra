@@ -8,7 +8,6 @@ const logger = servicesLogger();
 
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
-const STATUS_VOLUME_PREFIX = "mini-infra-update-status-";
 
 // In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race)
 let launchInProgress = false;
@@ -42,10 +41,11 @@ export interface UpdateCheckResult {
 }
 
 export interface TriggerUpdateOptions {
-  targetTag: string;
+  fullImageRef: string; // Full image reference (e.g. "ghcr.io/user/repo:v2.1.0")
   allowedRegistryPattern: string;
   sidecarImage: string;
-  healthCheckUrl: string;
+  containerPort: number;
+  healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
 }
@@ -103,7 +103,7 @@ export function validateTargetImage(
 
 /**
  * Checks whether an update is already in progress by looking for
- * a running sidecar container or the update-lock label on self.
+ * a running sidecar container.
  */
 export async function isUpdateInProgress(): Promise<boolean> {
   try {
@@ -146,9 +146,7 @@ export async function launchSidecar(
     }
 
     // Validate the target image against the allowed registry
-    const fullImageRef = options.targetTag.includes(":")
-      ? options.targetTag
-      : `${options.targetTag}:latest`;
+    const fullImageRef = options.fullImageRef;
 
     if (!validateTargetImage(fullImageRef, options.allowedRegistryPattern)) {
       throw new Error(
@@ -161,45 +159,68 @@ export async function launchSidecar(
       throw new Error("An update is already in progress");
     }
 
-    // Create a temporary volume for status file sharing
-    const statusVolumeName = `${STATUS_VOLUME_PREFIX}${Date.now()}`;
-    await docker.createVolume({ Name: statusVolumeName });
+    // Inspect own container to discover name and network
+    const ownContainer = docker.getContainer(containerId);
+    const ownInfo = await ownContainer.inspect();
+    const containerName = ownInfo.Name.replace(/^\//, "");
+
+    // Auto-detect health check URL from container name and port,
+    // using Docker DNS to resolve the container name
+    const healthCheckUrl =
+      options.healthCheckUrl ||
+      `http://${containerName}:${options.containerPort}/health`;
+
+    // Find a user-defined Docker network to attach the sidecar to
+    // (required for Docker DNS resolution of container names)
+    const ownNetworks = Object.keys(ownInfo.NetworkSettings?.Networks ?? {});
+    const sidecarNetwork = ownNetworks.find(
+      (n) => n !== "host" && n !== "none" && n !== "bridge",
+    ) ?? ownNetworks[0];
 
     logger.info(
       {
         sidecarImage: options.sidecarImage,
         targetImage: fullImageRef,
         containerId,
-        statusVolume: statusVolumeName,
+        containerName,
+        healthCheckUrl,
+        sidecarNetwork,
       },
       "Launching self-update sidecar",
     );
 
-    const sidecar = await docker.createContainer({
+    const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
       name: `mini-infra-sidecar-${Date.now()}`,
       Env: [
         `TARGET_IMAGE=${fullImageRef}`,
         `CONTAINER_ID=${containerId}`,
-        `HEALTH_CHECK_URL=${options.healthCheckUrl}`,
+        `HEALTH_CHECK_URL=${healthCheckUrl}`,
         `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
         `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
-        `STATUS_FILE=/status/update-status.json`,
       ],
       Labels: {
         [SIDECAR_LABEL]: "true",
         [UPDATE_LOCK_LABEL]: new Date().toISOString(),
       },
       HostConfig: {
-        Binds: [
-          "/var/run/docker.sock:/var/run/docker.sock",
-          `${statusVolumeName}:/status`,
-        ],
+        Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         ReadonlyRootfs: true,
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
       },
-    } as Docker.ContainerCreateOptions);
+    };
 
+    // Attach sidecar to the same Docker network so it can resolve
+    // the container name for health checks via Docker DNS
+    if (sidecarNetwork) {
+      (createOptions as any).NetworkingConfig = {
+        EndpointsConfig: {
+          [sidecarNetwork]: {},
+        },
+      };
+    }
+
+    const sidecar = await docker.createContainer(createOptions);
     await sidecar.start();
 
     const sidecarId = (sidecar as unknown as { id: string }).id;
@@ -212,87 +233,39 @@ export async function launchSidecar(
 }
 
 /**
- * Reads the update status from the status volume.
- * Uses a lightweight helper container to cat the file from the volume,
- * which works regardless of whether the sidecar is still running.
- * Returns null if no status volume exists or the file isn't available yet.
+ * Checks the exit status of the most recent sidecar container.
+ * Returns null if no exited sidecar container is found.
  */
-export async function readSidecarStatus(): Promise<SelfUpdateStatus | null> {
+async function getSidecarExitInfo(): Promise<{ exitCode: number; containerId: string } | null> {
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
-
-    // Find the status volume
-    const volumes = await docker.listVolumes({
-      filters: { name: [STATUS_VOLUME_PREFIX] },
-    });
-
-    if (!volumes.Volumes || volumes.Volumes.length === 0) {
-      return null;
-    }
-
-    // Use the most recent status volume (sorted by name which includes timestamp)
-    const volumeName = volumes.Volumes.sort((a, b) =>
-      b.Name.localeCompare(a.Name),
-    )[0].Name;
-
-    // Spawn a minimal helper container to read the status file
-    const helper = await docker.createContainer({
-      Image: "alpine:latest",
-      Cmd: ["cat", "/status/update-status.json"],
-      HostConfig: {
-        Binds: [`${volumeName}:/status:ro`],
-        AutoRemove: true,
+    const containers = await docker.listContainers({
+      all: true,
+      filters: {
+        label: [`${SIDECAR_LABEL}=true`],
+        status: ["exited", "dead"],
       },
-    } as Docker.ContainerCreateOptions);
-
-    // Attach before starting to capture output
-    const stream = await helper.attach({
-      stream: true,
-      stdout: true,
-      stderr: false,
     });
 
-    const outputPromise = new Promise<string>((resolve) => {
-      const chunks: Buffer[] = [];
-      stream.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      stream.on("end", () => {
-        const raw = Buffer.concat(chunks);
-        // Docker multiplexed stream: demux by stripping 8-byte headers
-        // Use dockerode's demuxer for correctness
-        resolve(raw.toString());
-      });
-    });
+    if (containers.length === 0) return null;
 
-    await helper.start();
-    await helper.wait();
+    const latest = containers.sort((a, b) => b.Created - a.Created)[0];
+    const container = docker.getContainer(latest.Id);
+    const info = await container.inspect();
 
-    const output = await outputPromise;
-
-    if (!output.trim()) return null;
-
-    // The output may contain Docker mux headers — try parsing as-is first,
-    // then strip non-JSON prefix if needed
-    const jsonStart = output.indexOf("{");
-    if (jsonStart === -1) return null;
-    const jsonStr = output.substring(jsonStart);
-
-    try {
-      return JSON.parse(jsonStr) as SelfUpdateStatus;
-    } catch (parseErr) {
-      logger.warn({ parseErr, raw: jsonStr.substring(0, 200) }, "Failed to parse sidecar status file");
-      return null;
-    }
+    return {
+      exitCode: info.State.ExitCode,
+      containerId: latest.Id,
+    };
   } catch (err) {
-    logger.debug({ err }, "Could not read sidecar status");
+    logger.warn({ err }, "Failed to get sidecar exit info");
     return null;
   }
 }
 
 /**
- * Cleans up orphaned sidecar containers and status volumes from previous updates.
- * Called during server startup.
+ * Cleans up orphaned sidecar containers from previous updates.
+ * Called during server startup, after finalizeLastUpdate.
  */
 export async function cleanupOrphanedSidecars(): Promise<void> {
   try {
@@ -322,63 +295,9 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
         );
       }
     }
-
-    // Clean up old status volumes
-    const volumes = await docker.listVolumes({
-      filters: { name: [STATUS_VOLUME_PREFIX] },
-    });
-
-    if (volumes.Volumes) {
-      for (const vol of volumes.Volumes) {
-        try {
-          const volume = docker.getVolume(vol.Name);
-          await volume.remove();
-          logger.info({ volume: vol.Name }, "Removed orphaned status volume");
-        } catch (err) {
-          logger.warn(
-            { err, volume: vol.Name },
-            "Failed to remove orphaned status volume",
-          );
-        }
-      }
-    }
   } catch (err) {
     logger.warn({ err }, "Failed to clean up orphaned sidecar resources");
   }
-}
-
-/**
- * Reads the last update result from a status volume (if one exists).
- * Returns the status and always cleans up status volumes afterward,
- * regardless of whether the status was readable.
- */
-export async function readAndCleanupLastUpdateResult(): Promise<SelfUpdateStatus | null> {
-  const status = await readSidecarStatus();
-
-  // Always clean up status volumes at startup — even if we couldn't read
-  // the status (e.g. sidecar crashed before writing). This prevents
-  // volume leaks across updates.
-  try {
-    const docker = await DockerService.getInstance().getDockerInstance();
-    const volumes = await docker.listVolumes({
-      filters: { name: [STATUS_VOLUME_PREFIX] },
-    });
-    if (volumes.Volumes) {
-      for (const vol of volumes.Volumes) {
-        try {
-          const volume = docker.getVolume(vol.Name);
-          await volume.remove();
-          logger.info({ volume: vol.Name }, "Cleaned up status volume");
-        } catch {
-          // Volume may still be in use by a running sidecar
-        }
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  return status;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,13 +330,12 @@ export async function createUpdateRecord(options: {
 }
 
 /**
- * Updates the state of the most recent in-progress update record.
- * Called on startup to reconcile the DB record with the sidecar's
- * final status (read from the Docker volume).
+ * Finalizes the most recent in-progress update record on startup.
+ * Uses the sidecar container's exit code to determine the outcome:
+ *   exit 0 → complete, exit non-0 → rollback-complete.
+ * If no sidecar container is found, assumes success (we are alive).
  */
-export async function finalizeUpdateRecord(
-  sidecarStatus: SelfUpdateStatus,
-): Promise<void> {
+export async function finalizeLastUpdate(): Promise<void> {
   // Find the most recent non-terminal update record
   const record = await prisma.selfUpdate.findFirst({
     where: {
@@ -433,22 +351,43 @@ export async function finalizeUpdateRecord(
     return;
   }
 
+  // If the sidecar is still running, don't finalize yet
+  const running = await isUpdateInProgress();
+  if (running) {
+    logger.info("Sidecar still running at startup, deferring finalization");
+    return;
+  }
+
+  const exitInfo = await getSidecarExitInfo();
+
   const now = new Date();
+  let state: string;
+  let errorMessage: string | null = null;
+
+  if (exitInfo) {
+    if (exitInfo.exitCode === 0) {
+      state = "complete";
+    } else {
+      state = "rollback-complete";
+      errorMessage = `Update sidecar exited with code ${exitInfo.exitCode}`;
+    }
+  } else {
+    // No sidecar container found (manually removed or cleaned up).
+    // Since we are running, the system is in a stable state.
+    state = "complete";
+  }
+
   await prisma.selfUpdate.update({
     where: { id: record.id },
     data: {
-      state: sidecarStatus.state,
-      progress: sidecarStatus.progress ?? null,
-      errorMessage: sidecarStatus.error ?? null,
+      state,
+      errorMessage,
       completedAt: now,
       durationMs: now.getTime() - record.startedAt.getTime(),
     },
   });
 
-  logger.info(
-    { updateId: record.id, state: sidecarStatus.state },
-    "Self-update record finalized",
-  );
+  logger.info({ updateId: record.id, state }, "Self-update record finalized");
 }
 
 /**
