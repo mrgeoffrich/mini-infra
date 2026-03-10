@@ -9,8 +9,26 @@ const logger = servicesLogger();
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
 
-// In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race)
+// In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race).
+// Acquired in the route handler before any async work; released in launchSidecar's finally block.
 let launchInProgress = false;
+
+/**
+ * Attempt to acquire the launch mutex. Returns true if acquired, false if already held.
+ * Must be called before any async work in the trigger flow to close the TOCTOU race window.
+ */
+export function acquireLaunchLock(): boolean {
+  if (launchInProgress) return false;
+  launchInProgress = true;
+  return true;
+}
+
+/**
+ * Release the launch mutex. Called in launchSidecar's finally block.
+ */
+export function releaseLaunchLock(): void {
+  launchInProgress = false;
+}
 
 export type SelfUpdateState =
   | "idle"
@@ -93,12 +111,17 @@ export function validateTargetImage(
   fullImageRef: string,
   allowedPattern: string,
 ): boolean {
-  // Convert glob-like pattern to regex: "ghcr.io/user/repo:*" → /^ghcr\.io\/user\/repo:.+$/
-  const escaped = allowedPattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".+");
-  const regex = new RegExp(`^${escaped}$`);
-  return regex.test(fullImageRef);
+  try {
+    // Convert glob-like pattern to regex: "ghcr.io/user/repo:*" → /^ghcr\.io\/user\/repo:[^:/@]+$/
+    const escaped = allowedPattern
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, "[^:/@]+");
+    const regex = new RegExp(`^${escaped}$`);
+    return regex.test(fullImageRef);
+  } catch {
+    // Invalid regex from malformed pattern
+    return false;
+  }
 }
 
 /**
@@ -129,11 +152,11 @@ export async function isUpdateInProgress(): Promise<boolean> {
 export async function launchSidecar(
   options: TriggerUpdateOptions,
 ): Promise<string> {
-  // Acquire in-memory mutex to prevent TOCTOU race between concurrent requests
-  if (launchInProgress) {
-    throw new Error("An update launch is already in progress");
+  // The caller (route handler) must have already acquired the lock via acquireLaunchLock().
+  // We verify it here as a safety check but do NOT re-acquire — that's the caller's job.
+  if (!launchInProgress) {
+    throw new Error("Launch lock not held — call acquireLaunchLock() before launchSidecar()");
   }
-  launchInProgress = true;
 
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
@@ -204,6 +227,7 @@ export async function launchSidecar(
         [UPDATE_LOCK_LABEL]: new Date().toISOString(),
       },
       HostConfig: {
+        AutoRemove: true,
         Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         ReadonlyRootfs: true,
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
@@ -228,7 +252,7 @@ export async function launchSidecar(
 
     return sidecarId;
   } finally {
-    launchInProgress = false;
+    releaseLaunchLock();
   }
 }
 
@@ -312,7 +336,6 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
 export async function createUpdateRecord(options: {
   targetTag: string;
   fullImageRef: string;
-  sidecarId: string;
   triggeredBy: string;
 }): Promise<string> {
   const record = await prisma.selfUpdate.create({
@@ -320,13 +343,25 @@ export async function createUpdateRecord(options: {
       targetTag: options.targetTag,
       fullImageRef: options.fullImageRef,
       state: "pending",
-      sidecarId: options.sidecarId,
       triggeredBy: options.triggeredBy,
     },
   });
 
   logger.info({ updateId: record.id }, "Self-update record created");
   return record.id;
+}
+
+/**
+ * Updates a SelfUpdate record with the sidecar container ID after launch.
+ */
+export async function updateUpdateRecordSidecarId(
+  updateId: string,
+  sidecarId: string,
+): Promise<void> {
+  await prisma.selfUpdate.update({
+    where: { id: updateId },
+    data: { sidecarId },
+  });
 }
 
 /**

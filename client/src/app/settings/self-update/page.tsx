@@ -59,7 +59,8 @@ import {
 const configSchema = z.object({
   allowedRegistryPattern: z
     .string()
-    .min(1, "Allowed registry pattern is required"),
+    .min(1, "Allowed registry pattern is required")
+    .regex(/:\*$/, 'Must end with ":*" (e.g. "ghcr.io/user/repo:*")'),
   sidecarImage: z.string().min(1, "Sidecar image is required"),
   healthCheckTimeoutMs: z.coerce.number().int().min(5000).max(300000),
   gracefulStopSeconds: z.coerce.number().int().min(5).max(120),

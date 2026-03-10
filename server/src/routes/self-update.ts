@@ -1,15 +1,21 @@
 import express from "express";
 import { z } from "zod";
+import { Channel, ServerEvent } from "@mini-infra/types";
 import { appLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
+import { emitToChannel } from "../lib/socket";
 import prisma from "../lib/prisma";
 import {
   launchSidecar,
   isUpdateInProgress,
   getOwnContainerId,
   createUpdateRecord,
+  updateUpdateRecordSidecarId,
   getLatestUpdateRecord,
+  acquireLaunchLock,
+  releaseLaunchLock,
+  validateTargetImage,
   type SelfUpdateStatus,
 } from "../services/self-update";
 
@@ -162,101 +168,147 @@ router.post(
         });
       }
 
-      // Check for existing update
-      const inProgress = await isUpdateInProgress();
-      if (inProgress) {
+      // Acquire the launch mutex BEFORE any async work to close the
+      // TOCTOU race window between concurrent trigger requests.
+      if (!acquireLaunchLock()) {
         return res.status(409).json({
           success: false,
           error: "An update is already in progress",
         });
       }
 
-      // Load configuration from settings
-      const settings = await prisma.systemSettings.findMany({
-        where: {
-          category: "self-update",
-          isActive: true,
-        },
-      });
-      const settingsMap = new Map(settings.map((s) => [s.key, s.value]));
+      try {
+        // Double-check via Docker that no sidecar container is running
+        const inProgress = await isUpdateInProgress();
+        if (inProgress) {
+          return res.status(409).json({
+            success: false,
+            error: "An update is already in progress",
+          });
+        }
 
-      const allowedRegistryPattern = settingsMap.get(
-        "allowed_registry_pattern",
-      );
-      if (!allowedRegistryPattern) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Self-update not configured. Set allowed_registry_pattern in self-update settings.",
+        // Load configuration from settings
+        const settings = await prisma.systemSettings.findMany({
+          where: {
+            category: "self-update",
+            isActive: true,
+          },
         });
-      }
+        const settingsMap = new Map(settings.map((s) => [s.key, s.value]));
 
-      const sidecarImage =
-        settingsMap.get("sidecar_image") ||
-        process.env.SIDECAR_IMAGE_TAG ||
-        null;
-      if (!sidecarImage) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Sidecar image not configured. Set sidecar_image in self-update settings.",
-        });
-      }
+        const allowedRegistryPattern = settingsMap.get(
+          "allowed_registry_pattern",
+        );
+        if (!allowedRegistryPattern) {
+          return res.status(400).json({
+            success: false,
+            error:
+              "Self-update not configured. Set allowed_registry_pattern in self-update settings.",
+          });
+        }
 
-      const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
-      const containerPort = appConfig.server.port;
-      const healthCheckTimeoutMs = parseInt(
-        settingsMap.get("health_check_timeout_ms") ?? "60000",
-        10,
-      );
-      const gracefulStopSeconds = parseInt(
-        settingsMap.get("graceful_stop_seconds") ?? "30",
-        10,
-      );
+        if (!allowedRegistryPattern.endsWith(":*")) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Invalid registry pattern — must end with ":*" (e.g. "ghcr.io/user/repo:*").',
+          });
+        }
 
-      // Derive full image ref from the registry pattern base + tag
-      // e.g. pattern "ghcr.io/user/repo:*" + tag "v2.1.0" → "ghcr.io/user/repo:v2.1.0"
-      const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
-      const fullImageRef = `${imageBase}:${targetTag}`;
+        const sidecarImage =
+          settingsMap.get("sidecar_image") ||
+          process.env.SIDECAR_IMAGE_TAG ||
+          null;
+        if (!sidecarImage) {
+          return res.status(400).json({
+            success: false,
+            error:
+              "Sidecar image not configured. Set sidecar_image in self-update settings.",
+          });
+        }
 
-      logger.info(
-        {
+        // Validate the sidecar image against the allowed registry pattern
+        // to prevent running arbitrary Docker images with host socket access
+        if (!validateTargetImage(sidecarImage, allowedRegistryPattern)) {
+          return res.status(400).json({
+            success: false,
+            error: `Sidecar image "${sidecarImage}" does not match allowed registry pattern "${allowedRegistryPattern}". The sidecar must come from the same trusted registry.`,
+          });
+        }
+
+        const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
+        const containerPort = appConfig.server.port;
+        const healthCheckTimeoutMs = parseInt(
+          settingsMap.get("health_check_timeout_ms") ?? "60000",
+          10,
+        );
+        const gracefulStopSeconds = parseInt(
+          settingsMap.get("graceful_stop_seconds") ?? "30",
+          10,
+        );
+
+        // Derive full image ref from the registry pattern base + tag
+        // e.g. pattern "ghcr.io/user/repo:*" + tag "v2.1.0" → "ghcr.io/user/repo:v2.1.0"
+        const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
+        const fullImageRef = `${imageBase}:${targetTag}`;
+
+        logger.info(
+          {
+            targetTag,
+            fullImageRef,
+            allowedRegistryPattern,
+            sidecarImage,
+            containerId,
+          },
+          "Self-update triggered",
+        );
+
+        // Persist to DB BEFORE launching the sidecar so the record exists
+        // even if the process crashes between launch and the response.
+        const updateId = await createUpdateRecord({
           targetTag,
+          fullImageRef,
+          triggeredBy: userId,
+        });
+
+        // Launch the sidecar — this is a fire-and-forget operation.
+        // The sidecar will stop this container, so we respond immediately.
+        const sidecarId = await launchSidecar({
           fullImageRef,
           allowedRegistryPattern,
           sidecarImage,
-          containerId,
-        },
-        "Self-update triggered",
-      );
+          containerPort,
+          healthCheckUrl,
+          healthCheckTimeoutMs,
+          gracefulStopSeconds,
+        });
 
-      // Launch the sidecar — this is a fire-and-forget operation.
-      // The sidecar will stop this container, so we respond immediately.
-      const sidecarId = await launchSidecar({
-        fullImageRef,
-        allowedRegistryPattern,
-        sidecarImage,
-        containerPort,
-        healthCheckUrl,
-        healthCheckTimeoutMs,
-        gracefulStopSeconds,
-      });
+        // Update the record with the sidecar container ID
+        await updateUpdateRecordSidecarId(updateId, sidecarId);
 
-      // Persist to DB so the new container knows an update was triggered
-      const updateId = await createUpdateRecord({
-        targetTag,
-        fullImageRef,
-        sidecarId,
-        triggeredBy: userId,
-      });
+        // Emit socket event so connected clients get immediate feedback
+        try {
+          emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_STATUS, {
+            state: "pulling",
+            targetTag,
+            startedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Socket emission failure should never block the update
+        }
 
-      res.status(202).json({
-        success: true,
-        message: "Update initiated. The server will restart shortly.",
-        updateId,
-        sidecarId,
-        targetTag,
-      });
+        res.status(202).json({
+          success: true,
+          message: "Update initiated. The server will restart shortly.",
+          updateId,
+          sidecarId,
+          targetTag,
+        });
+      } finally {
+        // Release the lock if launchSidecar was never called (early return / validation error).
+        // If launchSidecar WAS called, it releases the lock in its own finally block.
+        releaseLaunchLock();
+      }
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({
@@ -343,7 +395,8 @@ router.get("/config", requirePermission("settings:read"), async (req, res) => {
 const configSchema = z.object({
   allowedRegistryPattern: z
     .string()
-    .min(1, "Allowed registry pattern is required"),
+    .min(1, "Allowed registry pattern is required")
+    .regex(/:\*$/, 'Must end with ":*" (e.g. "ghcr.io/user/repo:*")'),
   sidecarImage: z.string().min(1, "Sidecar image is required"),
   healthCheckTimeoutMs: z.number().int().min(5000).max(300000).optional(),
   gracefulStopSeconds: z.number().int().min(5).max(120).optional(),
