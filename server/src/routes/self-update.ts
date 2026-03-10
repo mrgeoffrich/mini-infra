@@ -197,7 +197,10 @@ router.post(
         });
       }
 
-      const sidecarImage = settingsMap.get("sidecar_image");
+      const sidecarImage =
+        settingsMap.get("sidecar_image") ||
+        process.env.SIDECAR_IMAGE_TAG ||
+        null;
       if (!sidecarImage) {
         return res.status(400).json({
           success: false,
@@ -313,7 +316,10 @@ router.get("/config", requirePermission("settings:read"), async (req, res) => {
       config: {
         allowedRegistryPattern:
           settingsMap.get("allowed_registry_pattern") ?? null,
-        sidecarImage: settingsMap.get("sidecar_image") ?? null,
+        sidecarImage:
+          settingsMap.get("sidecar_image") ||
+          process.env.SIDECAR_IMAGE_TAG ||
+          null,
         healthCheckUrl:
           settingsMap.get("health_check_url") ?? "http://localhost:5000/health",
         healthCheckTimeoutMs: parseInt(

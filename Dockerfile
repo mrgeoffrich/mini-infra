@@ -129,6 +129,11 @@ RUN chmod +x /app/server/docker-entrypoint.sh
 # Copy user documentation for agent
 COPY --chown=node:node client/src/user-docs/ /app/agent/docs/
 
+# Bake in the matching sidecar image tag so the app always launches
+# the correct sidecar version during self-update.
+ARG SIDECAR_IMAGE_TAG=latest
+ENV SIDECAR_IMAGE_TAG=${SIDECAR_IMAGE_TAG}
+
 # Set environment to production
 ENV NODE_ENV=production
 

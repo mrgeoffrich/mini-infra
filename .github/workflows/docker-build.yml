@@ -20,6 +20,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  SIDECAR_IMAGE_NAME: ${{ github.repository }}-sidecar
 
 jobs:
   build-and-push:
@@ -42,6 +43,44 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ---- Sidecar image metadata & build ----
+
+      - name: Extract sidecar metadata (tags, labels)
+        id: sidecar-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push sidecar image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./sidecar
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.sidecar-meta.outputs.tags }}
+          labels: ${{ steps.sidecar-meta.outputs.labels }}
+          cache-from: type=gha,scope=sidecar
+          cache-to: type=gha,mode=max,scope=sidecar
+          platforms: linux/amd64
+
+      # ---- Compute the sidecar tag to bake into the main image ----
+
+      - name: Determine sidecar image tag
+        id: sidecar-tag
+        run: |
+          # Use the first tag from the metadata output (most specific)
+          FIRST_TAG=$(echo "${{ steps.sidecar-meta.outputs.tags }}" | head -n1)
+          echo "tag=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
+
+      # ---- Main image metadata & build ----
 
       - name: Extract metadata (tags, labels)
         id: meta
@@ -70,10 +109,14 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
       - name: Image digest
         if: github.event_name != 'pull_request'
-        run: echo "Image pushed successfully to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+        run: |
+          echo "Main image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "Sidecar image pushed to ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}"

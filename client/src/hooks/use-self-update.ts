@@ -240,7 +240,7 @@ export function useIsUpdateActive(): {
   error?: string;
   isReconnecting: boolean;
 } {
-  const { data, isError, localUpdateInProgress, localTargetTag } =
+  const { data, isError, isLoading, localUpdateInProgress, localTargetTag } =
     useSelfUpdateStatus();
 
   const serverState = data?.status?.state;
@@ -261,8 +261,10 @@ export function useIsUpdateActive(): {
     };
   }
 
-  // Server is unreachable but localStorage says we triggered an update
-  if (isError && localUpdateInProgress) {
+  // Server is unreachable (or still loading) but localStorage says we
+  // triggered an update recently — show the "Updating..." overlay
+  // immediately instead of a loading skeleton or error page.
+  if ((isError || isLoading) && localUpdateInProgress) {
     return {
       isActive: true,
       targetTag: localTargetTag,
