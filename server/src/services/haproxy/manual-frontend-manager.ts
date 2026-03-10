@@ -1,5 +1,5 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
-import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
+import { HAProxyDataPlaneClient, TransactionManager } from "./haproxy-dataplane-client";
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "@prisma/client";
 import { DockerExecutorService } from "../docker-executor";
@@ -608,55 +608,73 @@ export class ManualFrontendManager {
 
       // Check if this frontend uses a shared frontend
       if (frontend.sharedFrontendId) {
-        // Remove the route from the shared frontend
+        // Use a transaction to remove the route AND backend atomically.
+        // This prevents validation failures when the backend's server address
+        // is unresolvable (e.g., the container has been removed).
         logger.info(
           { frontendName, sharedFrontendId: frontend.sharedFrontendId, hostname: frontend.hostname },
-          "Removing route from shared frontend"
+          "Removing route and backend from shared frontend in transaction"
         );
 
-        await this.frontendManager.removeRouteFromSharedFrontend(
-          frontend.sharedFrontendId,
-          frontend.hostname,
-          haproxyClient,
-          prisma
-        );
+        const tm = new TransactionManager(haproxyClient);
+        await tm.executeInTransaction(async () => {
+          await this.frontendManager.removeRouteFromSharedFrontend(
+            frontend.sharedFrontendId!,
+            frontend.hostname,
+            haproxyClient,
+            prisma
+          );
+
+          // Remove backend from HAProxy within the same transaction
+          if (frontend.backendName) {
+            logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
+            try {
+              await haproxyClient["axiosInstance"].delete(
+                `/services/haproxy/configuration/backends/${frontend.backendName}`
+              );
+            } catch (error: any) {
+              if (error?.response?.status !== 404) {
+                logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
+              }
+            }
+          }
+        });
       } else {
         // Manual path: remove the dedicated frontend from HAProxy
         logger.info({ frontendName }, "Removing dedicated frontend from HAProxy");
         await this.frontendManager.removeFrontend(frontendName, haproxyClient);
-      }
 
-      // Remove backend from HAProxy
-      if (frontend.backendName) {
-        logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
-        try {
-          const version = await haproxyClient.getVersion();
-          await haproxyClient["axiosInstance"].delete(
-            `/services/haproxy/configuration/backends/${frontend.backendName}?version=${version}`
-          );
-        } catch (error: any) {
-          // If backend doesn't exist, log warning but continue
-          if (error?.response?.status !== 404) {
-            logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
+        // Remove backend from HAProxy
+        if (frontend.backendName) {
+          logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
+          try {
+            const version = await haproxyClient.getVersion();
+            await haproxyClient["axiosInstance"].delete(
+              `/services/haproxy/configuration/backends/${frontend.backendName}?version=${version}`
+            );
+          } catch (error: any) {
+            // If backend doesn't exist, log warning but continue
+            if (error?.response?.status !== 404) {
+              logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
+            }
           }
         }
       }
 
-      // Mark backend as removed in database
+      // Delete backend from database (servers cascade-delete)
       if (frontend.backendName && frontend.environmentId) {
         try {
-          await prisma.hAProxyBackend.updateMany({
+          await prisma.hAProxyBackend.deleteMany({
             where: {
               name: frontend.backendName,
               environmentId: frontend.environmentId,
             },
-            data: { status: 'removed' },
           });
-          logger.info({ backendName: frontend.backendName }, 'Backend marked as removed in database');
+          logger.info({ backendName: frontend.backendName }, 'Backend deleted from database');
         } catch (dbError) {
           logger.warn(
             { backendName: frontend.backendName, error: dbError instanceof Error ? dbError.message : 'Unknown error' },
-            'Failed to mark backend as removed in database (non-critical)'
+            'Failed to delete backend from database (non-critical)'
           );
         }
       }

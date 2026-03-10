@@ -36,6 +36,7 @@ export class ManualFrontendSetupService {
     request: CreateManualFrontendRequest,
     haproxyClient: HAProxyDataPlaneClient,
     userId: string,
+    haproxyContainerId: string,
     onStep?: SetupStepCallback,
   ): Promise<ManualFrontendSetupResult> {
     const hasNetworkJoin = request.needsNetworkJoin === true;
@@ -128,7 +129,7 @@ export class ManualFrontendSetupService {
             try {
               const cert = await this.prisma.tlsCertificate.findUnique({ where: { id: resolvedCertId } });
               if (cert?.blobName) {
-                const deployResult = await this.distributor.deployCertificate(cert.blobName);
+                const deployResult = await this.distributor.deployCertificate(cert.blobName, haproxyContainerId);
                 if (deployResult.success) {
                   emitStep("Deploy certificate to HAProxy", "completed", `Method: ${deployResult.method}`);
                 } else {

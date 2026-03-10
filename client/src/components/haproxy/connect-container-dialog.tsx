@@ -6,7 +6,7 @@
  * displays real-time progress via Socket.IO.
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { IconPlug } from "@tabler/icons-react";
 import { OperationProgressDialog } from "@/components/operation-progress-dialog";
@@ -35,12 +35,14 @@ export function ConnectContainerDialog({
   const startMutation = useStartConnectContainer();
   const progress = useConnectContainerProgress(operationId);
 
-  // Handle success
-  useEffect(() => {
+  // Navigate on close after success (user dismisses dialog manually)
+  const handleClose = () => {
+    setOperationId(null);
+    progress.reset();
     if (progress.state.phase === "success") {
       onSuccess?.();
     }
-  }, [progress.state.phase, onSuccess]);
+  };
 
   const handleConfirm = async () => {
     try {
@@ -49,11 +51,6 @@ export function ConnectContainerDialog({
     } catch {
       // Error handled by mutation's onError toast
     }
-  };
-
-  const handleClose = () => {
-    setOperationId(null);
-    progress.reset();
   };
 
   // Build the state: use progress state, but if we just fired the mutation

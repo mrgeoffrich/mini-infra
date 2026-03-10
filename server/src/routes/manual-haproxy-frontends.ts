@@ -121,7 +121,7 @@ function serializeFrontend(frontend: any): HAProxyFrontendInfo {
   };
 }
 
-async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlaneClient> {
+async function getHAProxyClient(environmentId: string): Promise<{ client: HAProxyDataPlaneClient; haproxyContainerId: string }> {
   // Get environment details
   const environment = await prisma.environment.findUnique({
     where: { id: environmentId },
@@ -179,7 +179,7 @@ async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlane
   const client = new HAProxyDataPlaneClient();
   await client.initialize(haproxyContainer.id);
 
-  return client;
+  return { client, haproxyContainerId: haproxyContainer.id };
 }
 
 // ====================
@@ -271,7 +271,7 @@ router.post(
       settingUpFrontends.add(guardedEnvironmentId);
 
       // Pre-flight: resolve HAProxy client synchronously (fails fast before 200)
-      const haproxyClient = await getHAProxyClient(request.environmentId);
+      const { client: haproxyClient, haproxyContainerId } = await getHAProxyClient(request.environmentId);
 
       const hasNetworkJoin = request.needsNetworkJoin === true;
       const totalSteps = (hasNetworkJoin ? 1 : 0) + (request.enableSsl ? 4 : 2);
@@ -303,6 +303,7 @@ router.post(
             request,
             haproxyClient,
             userId,
+            haproxyContainerId,
             (step, completedCount, totalSteps) => {
               try {
                 emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_STEP, {
@@ -448,7 +449,7 @@ router.put(
       }
 
       // Get HAProxy client
-      const haproxyClient = await getHAProxyClient(existingFrontend.environmentId);
+      const { client: haproxyClient } = await getHAProxyClient(existingFrontend.environmentId);
 
       // Update manual frontend
       const frontend = await manualFrontendManager.updateManualFrontend(
@@ -525,7 +526,7 @@ router.delete(
       }
 
       // Get HAProxy client
-      const haproxyClient = await getHAProxyClient(frontend.environmentId);
+      const { client: haproxyClient } = await getHAProxyClient(frontend.environmentId);
 
       // Delete manual frontend
       await manualFrontendManager.deleteManualFrontend(
