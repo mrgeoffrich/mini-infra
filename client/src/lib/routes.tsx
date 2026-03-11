@@ -49,9 +49,6 @@ import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
 import HAProxyInstancesPage from "@/app/haproxy/instances/page";
 import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
-import AgentTasksPage from "@/app/agent-tasks/page";
-import AgentTaskDetailPage from "@/app/agent-tasks/[id]/page";
-import AgentSidecarSettingsPage from "@/app/settings/agent-sidecar/page";
 import { HostPage } from "@/app/host/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
@@ -275,18 +272,6 @@ export const router = createBrowserRouter([
       {
         path: "settings-self-update",
         element: <SelfUpdateSettingsPage />,
-      },
-      {
-        path: "agent-tasks",
-        element: <AgentTasksPage />,
-      },
-      {
-        path: "agent-tasks/:id",
-        element: <AgentTaskDetailPage />,
-      },
-      {
-        path: "settings-agent-sidecar",
-        element: <AgentSidecarSettingsPage />,
       },
       {
         path: "bug-report-settings",

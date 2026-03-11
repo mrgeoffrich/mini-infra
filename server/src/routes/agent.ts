@@ -6,8 +6,13 @@ import {
   getAuthenticatedUser,
   getCurrentUserId,
 } from "../middleware/auth";
-import { getAgentService } from "../services/agent-service";
+import {
+  getAgentService,
+  isAgentAvailable,
+  getAgentUnavailableReason,
+} from "../services/agent-service";
 import { agentConversationService } from "../services/agent-conversation-service";
+import { isAgentSidecarHealthy } from "../services/agent-sidecar";
 import agentSettingsRouter from "./agent-settings";
 
 const logger = appLogger();
@@ -30,16 +35,20 @@ function getUserId(req: Request): string | null {
 // GET /status — public, no auth
 // ---------------------------------------------------------------------------
 
-router.get(
-  "/status",
-  (req: Request, res: Response) => {
-    const service = getAgentService();
-    res.json({ enabled: service !== null });
-  },
-);
+router.get("/status", (_req: Request, res: Response) => {
+  const enabled = isAgentAvailable();
+  const reason = getAgentUnavailableReason();
+  const sidecarAvailable = isAgentSidecarHealthy();
+
+  res.json({
+    enabled,
+    sidecarAvailable,
+    ...(reason ? { reason } : {}),
+  });
+});
 
 // ---------------------------------------------------------------------------
-// POST /sessions — create a new agent session
+// POST /sessions — create a new agent session (proxied to sidecar)
 // ---------------------------------------------------------------------------
 
 const createSessionSchema = z.object({
@@ -50,14 +59,19 @@ const createSessionSchema = z.object({
 
 router.post(
   "/sessions",
-  requirePermission('agent:use'),
+  requirePermission("agent:use"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
-      if (!service) {
+      if (!service || !isAgentAvailable()) {
+        const reason = getAgentUnavailableReason();
         res.status(503).json({
           error: "Agent service unavailable",
-          message: "ANTHROPIC_API_KEY is not configured",
+          message:
+            reason === "sidecar_unavailable" || reason === "sidecar_unhealthy"
+              ? "The AI assistant requires the sidecar container to be running"
+              : "ANTHROPIC_API_KEY is not configured",
+          reason,
         });
         return;
       }
@@ -83,7 +97,10 @@ router.post(
         parsed.data.currentPath,
         parsed.data.conversationId,
       );
-      res.status(201).json({ sessionId: result.sessionId, conversationId: result.conversationId });
+      res.status(201).json({
+        sessionId: result.sessionId,
+        conversationId: result.conversationId,
+      });
     } catch (error) {
       logger.error(
         { error: error instanceof Error ? error.message : "Unknown error" },
@@ -95,13 +112,13 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// GET /sessions/:sessionId/stream — SSE event stream
+// GET /sessions/:sessionId/stream — SSE relay from sidecar
 // ---------------------------------------------------------------------------
 
 router.get(
   "/sessions/:sessionId/stream",
-  requirePermission('agent:use'),
-  (req: Request, res: Response) => {
+  requirePermission("agent:use"),
+  async (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
       res.status(503).json({ error: "Agent service unavailable" });
@@ -109,15 +126,15 @@ router.get(
     }
 
     const { sessionId } = req.params;
-    const session = service.getSession(sessionId);
+    const mapping = service.getSessionMapping(sessionId);
 
-    if (!session) {
+    if (!mapping) {
       res.status(404).json({ error: "Session not found" });
       return;
     }
 
     const userId = getUserId(req);
-    if (session.userId !== userId) {
+    if (mapping.userId !== userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -128,13 +145,28 @@ router.get(
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    // Send initial connected event
-    res.write(
-      `data: ${JSON.stringify({ type: "connected", data: { sessionId } })}\n\n`,
-    );
+    // Connect to sidecar SSE stream
+    let upstreamBody: ReadableStream<Uint8Array> | null;
+    try {
+      upstreamBody = await service.connectToSidecarStream(sessionId);
+    } catch (err) {
+      logger.error({ err, sessionId }, "Failed to connect to sidecar stream");
+      res.write(
+        `data: ${JSON.stringify({ type: "error", data: { message: "Failed to connect to sidecar stream" } })}\n\n`,
+      );
+      res.write(`data: ${JSON.stringify({ type: "done", data: {} })}\n\n`);
+      res.end();
+      return;
+    }
 
-    // Register as subscriber
-    service.addSubscriber(sessionId, res);
+    if (!upstreamBody) {
+      res.write(
+        `data: ${JSON.stringify({ type: "error", data: { message: "Sidecar stream unavailable" } })}\n\n`,
+      );
+      res.write(`data: ${JSON.stringify({ type: "done", data: {} })}\n\n`);
+      res.end();
+      return;
+    }
 
     // Heartbeat every 15 seconds
     const heartbeat = setInterval(() => {
@@ -145,16 +177,53 @@ router.get(
       }
     }, 15_000);
 
-    // Cleanup on disconnect
+    // Pipe upstream SSE to client, parse and persist as side-effect
+    const reader = upstreamBody.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const pump = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Write chunk directly to client
+          res.write(chunk);
+
+          // Parse SSE events from buffer for persistence
+          const events = extractSSEEvents(buffer);
+          buffer = events.remaining;
+
+          for (const event of events.parsed) {
+            try {
+              service.persistFromSSEEvent(sessionId, event);
+            } catch {
+              // Non-critical
+            }
+          }
+        }
+      } catch {
+        // Stream closed
+      }
+      clearInterval(heartbeat);
+      res.end();
+    };
+
+    pump();
+
     req.on("close", () => {
       clearInterval(heartbeat);
-      service.removeSubscriber(sessionId, res);
+      reader.cancel();
     });
   },
 );
 
 // ---------------------------------------------------------------------------
-// PUT /sessions/:sessionId/context — update session context (e.g. current page)
+// PUT /sessions/:sessionId/context
 // ---------------------------------------------------------------------------
 
 const updateContextSchema = z.object({
@@ -163,8 +232,8 @@ const updateContextSchema = z.object({
 
 router.put(
   "/sessions/:sessionId/context",
-  requirePermission('agent:use'),
-  (req: Request, res: Response) => {
+  requirePermission("agent:use"),
+  async (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
       res.status(503).json({ error: "Agent service unavailable" });
@@ -172,15 +241,15 @@ router.put(
     }
 
     const { sessionId } = req.params;
-    const session = service.getSession(sessionId);
+    const mapping = service.getSessionMapping(sessionId);
 
-    if (!session) {
+    if (!mapping) {
       res.status(404).json({ error: "Session not found" });
       return;
     }
 
     const userId = getUserId(req);
-    if (session.userId !== userId) {
+    if (mapping.userId !== userId) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -194,7 +263,7 @@ router.put(
       return;
     }
 
-    service.updateCurrentPath(sessionId, parsed.data.currentPath);
+    await service.updateContext(sessionId, parsed.data.currentPath);
     res.json({ ok: true });
   },
 );
@@ -209,7 +278,7 @@ const sendMessageSchema = z.object({
 
 router.post(
   "/sessions/:sessionId/messages",
-  requirePermission('agent:use'),
+  requirePermission("agent:use"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -219,15 +288,15 @@ router.post(
       }
 
       const { sessionId } = req.params;
-      const session = service.getSession(sessionId);
+      const mapping = service.getSessionMapping(sessionId);
 
-      if (!session) {
+      if (!mapping) {
         res.status(404).json({ error: "Session not found" });
         return;
       }
 
       const userId = getUserId(req);
-      if (session.userId !== userId) {
+      if (mapping.userId !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -241,11 +310,12 @@ router.post(
         return;
       }
 
-      const sent = service.sendMessage(sessionId, parsed.data.message);
+      const sent = await service.sendMessage(sessionId, parsed.data.message);
       if (!sent) {
         res.status(409).json({
           error: "Session is not accepting messages",
-          message: "The agent session may have completed or been closed",
+          message:
+            "The agent session may have completed or been closed",
         });
         return;
       }
@@ -267,7 +337,7 @@ router.post(
 
 router.delete(
   "/sessions/:sessionId",
-  requirePermission('agent:use'),
+  requirePermission("agent:use"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -277,20 +347,20 @@ router.delete(
       }
 
       const { sessionId } = req.params;
-      const session = service.getSession(sessionId);
+      const mapping = service.getSessionMapping(sessionId);
 
-      if (!session) {
+      if (!mapping) {
         res.status(404).json({ error: "Session not found" });
         return;
       }
 
       const userId = getUserId(req);
-      if (session.userId !== userId) {
+      if (mapping.userId !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
 
-      service.deleteSession(sessionId);
+      await service.deleteSession(sessionId);
       res.json({ ok: true });
     } catch (error) {
       logger.error(
@@ -318,9 +388,12 @@ router.get(
       }
 
       const limitParam = req.query.limit;
-      const limit = limitParam ? Math.min(parseInt(String(limitParam), 10) || 50, 200) : 50;
+      const limit = limitParam
+        ? Math.min(parseInt(String(limitParam), 10) || 50, 200)
+        : 50;
 
-      const conversations = await agentConversationService.listConversations(userId, limit);
+      const conversations =
+        await agentConversationService.listConversations(userId, limit);
       res.json({ conversations });
     } catch (error) {
       logger.error(
@@ -361,10 +434,11 @@ router.get(
         return;
       }
 
-      const conversation = await agentConversationService.getConversationDetail(
-        paramParsed.data.id,
-        userId,
-      );
+      const conversation =
+        await agentConversationService.getConversationDetail(
+          paramParsed.data.id,
+          userId,
+        );
 
       if (!conversation) {
         res.status(404).json({ error: "Conversation not found" });
@@ -422,5 +496,54 @@ router.delete(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// SSE event parser for persistence side-effects
+// ---------------------------------------------------------------------------
+
+interface ParsedSSEEvent {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+function extractSSEEvents(buffer: string): {
+  parsed: ParsedSSEEvent[];
+  remaining: string;
+} {
+  const parsed: ParsedSSEEvent[] = [];
+  const lines = buffer.split("\n");
+  let remaining = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith("data: ")) {
+      const jsonStr = line.slice(6);
+      // Check if there's a blank line after (end of event)
+      if (i + 1 < lines.length && lines[i + 1] === "") {
+        try {
+          const event = JSON.parse(jsonStr) as ParsedSSEEvent;
+          if (event.type && event.data) {
+            parsed.push(event);
+          }
+        } catch {
+          // Malformed JSON, skip
+        }
+        i++; // Skip the blank line
+      } else if (i === lines.length - 1) {
+        // Incomplete event at end of buffer
+        remaining = line + "\n";
+      }
+    } else if (line.startsWith(":") || line === "") {
+      // Comment or blank line, skip
+      continue;
+    } else if (i === lines.length - 1 && line !== "") {
+      // Incomplete line at end of buffer
+      remaining = line;
+    }
+  }
+
+  return { parsed, remaining };
+}
 
 export default router;

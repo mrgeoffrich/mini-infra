@@ -12,12 +12,16 @@ import {
   IconAlertCircle,
   IconInfoCircle,
   IconTrash,
+  IconRefresh,
+  IconServer,
 } from "@tabler/icons-react";
 import {
   useAgentSettings,
   useUpdateAgentSettings,
   useValidateAgentApiKey,
   useDeleteAgentApiKey,
+  useAgentSidecarStatus,
+  useRestartAgentSidecar,
 } from "@/hooks/use-agent-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,6 +64,8 @@ export default function AiAssistantSettingsPage() {
   const { mutate: updateSettings, isPending: isSaving } = useUpdateAgentSettings();
   const { mutate: validateKey, isPending: isValidating } = useValidateAgentApiKey();
   const { mutate: deleteKey, isPending: isDeleting } = useDeleteAgentApiKey();
+  const { data: sidecarStatus } = useAgentSidecarStatus();
+  const { mutate: restartSidecar, isPending: isRestarting } = useRestartAgentSidecar();
 
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [validationResult, setValidationResult] = useState<{
@@ -152,6 +158,17 @@ export default function AiAssistantSettingsPage() {
     );
   };
 
+  const handleRestartSidecar = () => {
+    restartSidecar(undefined, {
+      onSuccess: () => {
+        toast.success("Sidecar container restarted");
+      },
+      onError: (err) => {
+        toast.error(err.message);
+      },
+    });
+  };
+
   const modelValue = selectedModel ?? settings.model.current;
   const modelChanged = selectedModel !== null && selectedModel !== settings.model.current;
 
@@ -166,13 +183,80 @@ export default function AiAssistantSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">AI Assistant</h1>
             <p className="text-muted-foreground">
-              Configure the AI assistant's API key, model, and view its capabilities
+              Configure the AI assistant's API key, model, and sidecar container
             </p>
           </div>
         </div>
       </div>
 
       <div className="px-4 lg:px-6 max-w-7xl space-y-4">
+        {/* Card 0: Sidecar Container Status */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <IconServer className="h-5 w-5" />
+              Sidecar Container
+            </CardTitle>
+            <CardDescription>
+              The AI assistant runs in an isolated sidecar container for safety
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Container Status</p>
+                <p className="text-xs text-muted-foreground">
+                  {sidecarStatus?.available
+                    ? `Running${sidecarStatus.containerId ? ` (${sidecarStatus.containerId})` : ""}`
+                    : sidecarStatus?.containerRunning
+                      ? "Container running but unhealthy"
+                      : "Not running"}
+                </p>
+              </div>
+              <StatusBadge available={!!sidecarStatus?.available} />
+            </div>
+
+            {sidecarStatus?.health && (
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Uptime</Label>
+                  <p className="text-sm font-medium">
+                    {Math.floor((sidecarStatus.health as { uptime: number }).uptime / 60)}m
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Active Sessions</Label>
+                  <p className="text-sm font-medium">
+                    {(sidecarStatus.health as { activeSessions?: number; activeTasks?: number }).activeSessions ??
+                      (sidecarStatus.health as { activeTasks?: number }).activeTasks ?? 0}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Total Processed</Label>
+                  <p className="text-sm font-medium">
+                    {(sidecarStatus.health as { totalSessionsProcessed?: number; totalTasksProcessed?: number }).totalSessionsProcessed ??
+                      (sidecarStatus.health as { totalTasksProcessed?: number }).totalTasksProcessed ?? 0}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRestartSidecar}
+              disabled={isRestarting}
+            >
+              {isRestarting ? (
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <IconRefresh className="h-4 w-4 mr-2" />
+              )}
+              {sidecarStatus?.available ? "Restart" : "Start"} Sidecar
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Card 1: API Key Configuration */}
         <Card>
           <CardHeader>

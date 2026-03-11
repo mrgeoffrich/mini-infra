@@ -1145,33 +1145,6 @@ model SelfUpdate {
   @@map("self_updates")
 }
 
-// Agent sidecar task tracking - audit log for sidecar-executed agent tasks
-
-model AgentTask {
-  id           String    @id @default(cuid())
-  externalId   String    // Task ID from sidecar (e.g., "task_01JQ...")
-  prompt       String    // User's original prompt
-  status       String    // running, completed, failed, cancelled, timeout
-  result       String?   // Final agent response (synced from sidecar)
-  errorMessage String?   // Error message if failed/timeout
-  tokenUsage   String?   // JSON string: { input: number, output: number }
-  triggeredBy  String    // User ID who triggered the task
-  context      String?   // JSON string: optional context object
-
-  // Timing
-  createdAt    DateTime  @default(now())
-  completedAt  DateTime?
-  durationMs   Int?
-
-  // Audit
-  updatedAt    DateTime  @updatedAt
-
-  @@index([status])
-  @@index([triggeredBy])
-  @@index([createdAt])
-  @@map("agent_tasks")
-}
-
 // Enums
 enum CertificateType {
   ACME    // Let's Encrypt via ACME protocol

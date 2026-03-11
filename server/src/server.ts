@@ -30,7 +30,7 @@ import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey } from "./services/agent-api-key";
 import { getEffectiveApiKey } from "./services/agent-settings-service";
-import { AgentService, setAgentService, getAgentService } from "./services/agent-service";
+import { AgentProxyService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
 import { ServiceRecoveryManager, EnvironmentHealthScheduler } from "./services/environment";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
@@ -454,13 +454,13 @@ const initializeServices = async () => {
     }
 
     if (anthropicKey) {
-      console.log("[STARTUP] Initializing agent service...");
+      console.log("[STARTUP] Initializing agent proxy service...");
       const agentApiKey = await initializeAgentApiKey();
       if (agentApiKey) {
-        const agentService = new AgentService(agentApiKey);
+        const agentService = new AgentProxyService();
         setAgentService(agentService);
-        logger.info("Agent service initialized");
-        console.log("[STARTUP] ✓ Agent service initialized");
+        logger.info("Agent proxy service initialized (execution via sidecar)");
+        console.log("[STARTUP] ✓ Agent proxy service initialized (execution via sidecar)");
       } else {
         logger.warn("Agent API key initialization failed, agent features disabled");
         console.log("[STARTUP] ⚠ Agent API key initialization failed");

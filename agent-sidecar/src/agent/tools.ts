@@ -211,6 +211,17 @@ function checkBashSafety(command: string): string | null {
   const trimmed = command.trim();
   if (!trimmed) return "Empty command";
 
+  // Reject newlines and tabs — a shell treats \n as a command terminator
+  if (/[\n\r\t]/.test(command)) {
+    return "Newlines and tabs are not allowed in commands.";
+  }
+
+  // No command chaining characters
+  const chainPattern = /[;|`]|\$\(|&&|\|\|/;
+  if (chainPattern.test(command)) {
+    return "Command chaining is not allowed in agent commands.";
+  }
+
   // Check against blocked patterns
   for (const { pattern, reason } of BLOCKED_PATTERNS) {
     if (pattern.test(command)) {
