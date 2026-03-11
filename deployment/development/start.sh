@@ -41,21 +41,29 @@ echo ""
 
 # Seed database from dev.db if requested
 if [ "$SEED_DB" = true ]; then
-    DEV_DB="$PROJECT_ROOT/server/dev.db"
+    DEV_DB="$PROJECT_ROOT/server/prisma/dev.db"
     if [ ! -f "$DEV_DB" ]; then
         echo -e "\033[0;31mERROR: Dev database not found at: $DEV_DB\033[0m"
         echo -e "\033[0;33mRun the dev server at least once to create it.\033[0m"
         exit 1
     fi
 
-    echo -e "\033[0;33mSeeding container database from server/dev.db...\033[0m"
+    echo -e "\033[0;33mSeeding container database from server/prisma/dev.db...\033[0m"
+
+    # Resolve the actual volume name (Docker Compose prefixes it with the project name)
+    VOLUME_NAME=$(docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" config --volumes | grep data | head -1)
+    COMPOSE_PROJECT=$(docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" config --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    FULL_VOLUME_NAME="${COMPOSE_PROJECT}_${VOLUME_NAME}"
+
+    # Checkpoint WAL to flush all data into the main db file before copying
+    sqlite3 "$DEV_DB" "PRAGMA wal_checkpoint(TRUNCATE);"
 
     # Ensure the volume exists
-    docker volume create mini-infra-dev-data 2>/dev/null || true
+    docker volume create "$FULL_VOLUME_NAME" 2>/dev/null || true
 
     # Copy dev.db into the volume as production.db using a temporary container
     docker run --rm \
-        -v mini-infra-dev-data:/app/data \
+        -v "$FULL_VOLUME_NAME":/app/data \
         -v "$DEV_DB":/tmp/dev.db:ro \
         alpine sh -c "cp /tmp/dev.db /app/data/production.db && chmod 644 /app/data/production.db"
 
