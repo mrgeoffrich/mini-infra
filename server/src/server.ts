@@ -11,6 +11,10 @@ import {
   clearLoggerCache,
   serializeError,
 } from "./lib/logger-factory";
+import {
+  ensureAgentSidecar,
+  stopHealthChecks as stopAgentSidecarHealthChecks,
+} from "./services/agent-sidecar";
 
 // Clear logger cache on startup to ensure new configuration is loaded
 clearLoggerCache();
@@ -214,6 +218,31 @@ const initializeServices = async () => {
     } catch (err) {
       logger.warn({ err }, "Self-update sidecar cleanup failed (non-fatal)");
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
+    }
+
+    // Provision agent sidecar (if enabled and running in Docker)
+    console.log("[STARTUP] Checking agent sidecar...");
+    try {
+      const agentSidecarResult = await ensureAgentSidecar();
+      if (agentSidecarResult) {
+        logger.info(
+          {
+            containerId: agentSidecarResult.containerId,
+            url: agentSidecarResult.url,
+          },
+          "Agent sidecar provisioned",
+        );
+        console.log("[STARTUP] ✓ Agent sidecar provisioned");
+      } else {
+        console.log(
+          "[STARTUP] Agent sidecar not started (disabled or not in Docker)",
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "Agent sidecar provisioning failed (non-fatal)");
+      console.log(
+        "[STARTUP] ⚠ Agent sidecar provisioning failed (non-fatal)",
+      );
     }
 
     // Initialize connectivity scheduler
@@ -558,6 +587,10 @@ startServer()
         await agentService.shutdown();
         logger.info("Agent service stopped");
       }
+
+      // Stop agent sidecar health checks (container has its own restart policy)
+      stopAgentSidecarHealthChecks();
+      logger.info("Agent sidecar health checks stopped");
 
       // Shut down Socket.IO before closing the HTTP server
       await shutdownSocketIO();

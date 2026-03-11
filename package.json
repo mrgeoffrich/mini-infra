@@ -5,7 +5,8 @@
     "client",
     "server",
     "lib",
-    "sidecar"
+    "sidecar",
+    "agent-sidecar"
   ],
   "scripts": {
     "dev": "node scripts/dev-with-restart.mjs",
@@ -18,7 +19,8 @@
     "build:client": "cd client && npm run build",
     "build:server": "npm run build:lib && cd server && npm run build",
     "build:sidecar": "cd sidecar && npm run build",
-    "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\"",
+    "build:agent-sidecar": "cd agent-sidecar && npm run build",
+    "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
     "start": "cd server && npm start",
     "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
     "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
