@@ -490,6 +490,36 @@ export const routeConfig: Record<string, RouteConfig> = {
     description: "Update Mini Infra via sidecar container",
   },
 
+  "/agent-tasks": {
+    path: "/agent-tasks",
+    title: "Agent Tasks",
+    icon: IconRobot,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "AI agent background tasks",
+    children: {
+      detail: {
+        path: "/agent-tasks/:id",
+        title: "Task Details",
+        breadcrumbLabel: "Details",
+        parent: "/agent-tasks",
+        showInNav: false,
+      },
+    },
+  },
+
+  "/settings-agent-sidecar": {
+    path: "/settings-agent-sidecar",
+    title: "Agent Sidecar",
+    breadcrumbLabel: "Agent Sidecar",
+    icon: IconRobot,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "AI agent sidecar container configuration",
+  },
+
   "/bug-report-settings": {
     path: "/bug-report-settings",
     title: "Bug Report Settings",
