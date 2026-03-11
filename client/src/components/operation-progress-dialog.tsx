@@ -187,7 +187,7 @@ export function OperationProgressDialog({
   };
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (!isOpen && phase === "executing") return; // Prevent close during execution
+    // Allow closing during execution — the global task tracker keeps watching
     if (!isOpen) {
       onClose?.();
     }
@@ -298,10 +298,15 @@ export function OperationProgressDialog({
           )}
 
           {phase === "executing" && (
-            <Button variant="outline" disabled>
-              <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              Please Wait...
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Minimize
+              </Button>
+              <Button variant="outline" disabled>
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                In Progress...
+              </Button>
+            </>
           )}
 
           {(phase === "success" || phase === "error") && (

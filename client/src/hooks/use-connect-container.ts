@@ -55,7 +55,7 @@ export function useStartConnectContainer() {
   });
 }
 
-export function useConnectContainerProgress(operationId: string | null) {
+export function useConnectContainerProgress(operationId: string | null, label?: string) {
   return useOperationProgress({
     channel: Channel.HAPROXY,
     startedEvent: ServerEvent.FRONTEND_SETUP_STARTED,
@@ -75,6 +75,10 @@ export function useConnectContainerProgress(operationId: string | null) {
     toasts: {
       success: "Container connected successfully",
       error: "Container connection failed",
+    },
+    tracker: {
+      type: "connect-container",
+      label: label ?? "Connecting container",
     },
   });
 }

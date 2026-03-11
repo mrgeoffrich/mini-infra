@@ -46,7 +46,7 @@ export function IssueCertificateDialog({
   const [domains, setDomains] = useState<string[]>([]);
 
   const startMutation = useStartCertIssuance();
-  const progress = useCertIssuanceProgress(operationId);
+  const progress = useCertIssuanceProgress(operationId, domains.length > 0 ? `Issuing cert for ${domains[0]}` : "Issuing certificate");
 
   const form = useForm<CertificateFormData>({
     resolver: zodResolver(certificateSchema),

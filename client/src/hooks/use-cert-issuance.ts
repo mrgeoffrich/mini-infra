@@ -59,7 +59,7 @@ export function useStartCertIssuance() {
   });
 }
 
-export function useCertIssuanceProgress(operationId: string | null) {
+export function useCertIssuanceProgress(operationId: string | null, label?: string) {
   return useOperationProgress({
     channel: Channel.TLS,
     startedEvent: ServerEvent.CERT_ISSUANCE_STARTED,
@@ -75,6 +75,10 @@ export function useCertIssuanceProgress(operationId: string | null) {
     toasts: {
       success: "Certificate issued successfully",
       error: "Certificate issuance failed",
+    },
+    tracker: {
+      type: "cert-issuance",
+      label: label ?? "Issuing certificate",
     },
   });
 }

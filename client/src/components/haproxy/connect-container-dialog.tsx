@@ -33,7 +33,7 @@ export function ConnectContainerDialog({
 }: ConnectContainerDialogProps) {
   const [operationId, setOperationId] = useState<string | null>(null);
   const startMutation = useStartConnectContainer();
-  const progress = useConnectContainerProgress(operationId);
+  const progress = useConnectContainerProgress(operationId, `Connecting ${request.containerName}`);
 
   // Navigate on close after success (user dismisses dialog manually)
   const handleClose = () => {

@@ -7,6 +7,7 @@ import { AgentChatFAB } from "@/components/agent/agent-chat-fab";
 import { AgentChatPanel } from "@/components/agent/agent-chat-panel";
 import { AgentSpotlightOverlay } from "@/components/agent/agent-spotlight-overlay";
 import { AgentNavigationHandler } from "@/components/agent/agent-navigation-handler";
+import { TaskTrackerProvider } from "@/components/task-tracker/task-tracker-provider";
 import { useSocket } from "@/hooks/use-socket";
 
 export function AppLayout() {
@@ -14,6 +15,7 @@ export function AppLayout() {
   useSocket();
   return (
     <AgentChatProvider>
+      <TaskTrackerProvider>
       <SidebarProvider
         style={
           {
@@ -34,6 +36,7 @@ export function AppLayout() {
         <AgentChatPanel />
         <AgentChatFAB />
       </SidebarProvider>
+      </TaskTrackerProvider>
       <AgentSpotlightOverlay />
       <AgentNavigationHandler />
     </AgentChatProvider>

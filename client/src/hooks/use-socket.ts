@@ -27,6 +27,10 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 let socket: TypedSocket | null = null;
 let connectionAttempted = false;
 
+// Reference counter for channel subscriptions — prevents premature
+// UNSUBSCRIBE when multiple components share the same channel.
+const channelRefCounts = new Map<string, number>();
+
 function getSocket(): TypedSocket {
   if (!socket) {
     socket = io({
@@ -182,10 +186,24 @@ export function useSocketChannel(
 
   useEffect(() => {
     if (!channel || !enabled || !connected) return;
-    socketInstance.emit(ClientEvent.SUBSCRIBE, channel);
+
+    const count = channelRefCounts.get(channel) ?? 0;
+    channelRefCounts.set(channel, count + 1);
+
+    // Only emit SUBSCRIBE on first reference
+    if (count === 0) {
+      socketInstance.emit(ClientEvent.SUBSCRIBE, channel);
+    }
 
     return () => {
-      socketInstance.emit(ClientEvent.UNSUBSCRIBE, channel);
+      const current = channelRefCounts.get(channel) ?? 1;
+      const next = current - 1;
+      if (next <= 0) {
+        channelRefCounts.delete(channel);
+        socketInstance.emit(ClientEvent.UNSUBSCRIBE, channel);
+      } else {
+        channelRefCounts.set(channel, next);
+      }
     };
   }, [socketInstance, channel, enabled, connected]);
 }

@@ -5,11 +5,13 @@
  * used by both Connect Container and TLS Certificate Issuance flows.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useContext } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ServerToClientEvents, SocketChannel } from "@mini-infra/types";
 import { useSocketChannel, useSocketEvent } from "./use-socket";
+import { TaskTrackerContext } from "@/lib/task-tracker-context";
+import type { TaskType } from "@/lib/task-tracker-types";
 
 export interface OperationStep {
   step: string;
@@ -68,6 +70,11 @@ export interface UseOperationProgressOptions<
   };
   /** Timeout in ms before transitioning to error (default: 5 minutes) */
   timeoutMs?: number;
+  /** Register this operation with the global task tracker */
+  tracker?: {
+    type: TaskType;
+    label: string;
+  };
 }
 
 export interface UseOperationProgressReturn {
@@ -95,12 +102,33 @@ export function useOperationProgress<
     invalidateKeys,
     toasts,
     timeoutMs = 5 * 60 * 1000,
+    tracker,
   } = options;
 
   const queryClient = useQueryClient();
   const [state, setState] = useState<OperationState>(INITIAL_STATE);
+  const trackerContext = useContext(TaskTrackerContext);
 
   const enabled = !!operationId;
+
+  // Register with the global task tracker when operationId becomes available
+  const prevOperationId = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      tracker &&
+      operationId &&
+      operationId !== prevOperationId.current &&
+      trackerContext
+    ) {
+      trackerContext.registerTask({
+        id: operationId,
+        type: tracker.type,
+        label: tracker.label,
+        channel: channel as string,
+      });
+    }
+    prevOperationId.current = operationId;
+  }, [operationId, tracker, trackerContext, channel]);
 
   // Subscribe to the channel eagerly (not gated on operationId) so we're
   // already listening when the server starts emitting events immediately

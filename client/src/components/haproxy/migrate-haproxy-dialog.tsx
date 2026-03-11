@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { Channel } from "@mini-infra/types";
 import {
   useMigrationPreview,
   useMigrateHAProxy,
   useMigrationProgress,
 } from "@/hooks/use-haproxy-remediation";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
 import {
   Dialog,
   DialogContent,
@@ -72,6 +74,7 @@ export function MigrateHAProxyDialog({
 
   const migrateMutation = useMigrateHAProxy();
   const migrationProgress = useMigrationProgress(environmentId);
+  const { registerTask } = useTaskTracker();
 
   const preview = previewResponse?.data;
 
@@ -101,6 +104,12 @@ export function MigrateHAProxyDialog({
     try {
       await migrateMutation.mutateAsync(environmentId);
       // HTTP responded with { started: true } — real progress comes via Socket.IO
+      registerTask({
+        id: environmentId,
+        type: "migration",
+        label: `Migrating HAProxy for ${environmentName}`,
+        channel: Channel.STACKS,
+      });
     } catch {
       setDialogState("error");
     }
