@@ -593,7 +593,7 @@ export default function DockerSettingsPage() {
 
 function MonitoringServiceCard() {
   const navigate = useNavigate();
-  const { data: monitoringStatus, isLoading } = useMonitoringStatus({ refetchInterval: 10000 });
+  const { data: monitoringStatus, isLoading } = useMonitoringStatus({});
   const applyMonitoring = useApplyMonitoring();
   const stopMonitoring = useStopMonitoring();
 

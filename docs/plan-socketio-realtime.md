@@ -23,7 +23,7 @@ Clients subscribe to rooms matching what they're viewing. The server emits to ro
 | Room Pattern | Purpose | Replaces Polling | Status |
 |---|---|---|---|
 | `containers` | Container list updates | 5s refetchInterval in `useContainers` | **Done** |
-| `container:{id}` | Single container status + logs | SSE log stream + per-container polling | Partial (status done, logs still SSE) |
+| `container:{id}` | Single container status + logs | SSE log stream + per-container polling | **Done** |
 | `deployments` | Active deployment list | 5-15s in `use-deployment-history` | **Done** |
 | `deployment:{id}` | Deployment progress & steps | 2-10s adaptive in `use-deployment-status` | **Done** |
 | `removal:{id}` | Removal operation progress | 2-5s adaptive in `use-removal-status` | **Done** |
@@ -31,7 +31,8 @@ Clients subscribe to rooms matching what they're viewing. The server emits to ro
 | `monitoring` | Monitoring stack status | 15s in `use-monitoring` | **Done** (via stacks+containers channels) |
 | `events` | User events feed | 5s adaptive in `use-events` | **Done** |
 | `connectivity` | Service health status | 30s in `use-settings` | **Done** |
-| `logs` | Centralized Loki log tailing | 2s conditional in `use-loki-logs` | Not started |
+| `haproxy` | HAProxy backend/frontend updates | 30s in `use-haproxy-backends`, `use-haproxy-frontend`, `use-haproxy-routes` | **Done** |
+| `logs` | Centralized Loki log tailing | 2s conditional in `use-loki-logs` | Deferred |
 | `stacks` | Stack status updates | 5s in `use-stacks` | **Done** (apply/destroy operations) |
 | `volumes` | Volume list and inspection | 5s + 2s adaptive in `use-volumes` | **Done** |
 | `networks` | Network list updates | 5s in `use-networks` | **Done** |
@@ -87,7 +88,7 @@ Each domain migrates independently. During migration, both polling and socket pu
 ### Phase 2: First Domain Migration — COMPLETE
 
 5. **Migrate containers** — server emits `containers:list` on Docker state change via `container-socket-emitter.ts`, client invalidates query cache
-6. **Migrate container logs** — *not yet done* (still uses SSE via EventSource)
+6. **Migrate container logs** — replaced SSE EventSource with Socket.IO streaming via `container-log-streamer.ts`; client falls back to SSE when socket unavailable
 
 ### Phase 3: Remaining Domains — COMPLETE
 
@@ -101,12 +102,22 @@ Each domain migrates independently. During migration, both polling and socket pu
 14. **Networks** — server emits `networks:list` from `container-socket-emitter.ts` (piggybacks on Docker events); client hook `use-networks` migrated
 15. **Backup health** — server emits `backup-health:status` from `backup-health-socket-emitter.ts`; client hook `use-self-backup` migrated
 
-### Phase 4: Cleanup — REMAINING
+### Phase 4: Cleanup — COMPLETE
 
-16. **Replace SSE container logs** — replace EventSource in `use-container-logs.ts` with Socket.IO events on `container:{id}` room (types already defined: `container:log`, `container:log:end`, `container:log:error`)
-17. **Replace SSE Loki log tailing** — implement `logs:entries` push via Socket.IO on `logs` channel
-18. **Lower-priority hooks** — some hooks still use polling but are low-frequency or config-based (e.g., `use-deployment-configs`, `use-haproxy-backends`, `use-auth-status`). These don't benefit much from socket push since their data rarely changes.
-19. **Prometheus queries** — `usePrometheusQuery` and `usePrometheusRangeQuery` remain on polling (time-series data with no discrete change events)
+16. **Replace SSE container logs** — replaced EventSource in `use-container-logs.ts` with Socket.IO streaming via `container-log-streamer.ts` on `container:{id}` room; SSE retained as fallback when socket is disconnected
+17. **Remove page-level polling overrides** — removed hardcoded `refetchInterval` from 9 page/component call sites that were overriding socket-aware hooks (`ContainerSummary`, `EventsPage`, `DeploymentsPage`, `DeploymentProgress`, `SiteHeader`, `DockerSettingsPage`, `ConnectedStatusCard`)
+18. **HAProxy hooks** — added `HAPROXY_BACKENDS_LIST` and `HAPROXY_FRONTENDS_LIST` events; created `haproxy-socket-emitter.ts`; wired into 4 server route files; made `use-haproxy-backends`, `use-haproxy-frontend`, `use-haproxy-routes` socket-aware; removed 6 page-level polling overrides
+19. **Deployment configs** — made `use-deployment-configs` socket-aware via `Channel.DEPLOYMENTS` / `DEPLOYMENT_COMPLETED`
+20. **Cloudflare hooks** — made `useCloudflareConnectivity` and `useCloudfareTunnels` socket-aware via `Channel.CONNECTIVITY` / `CONNECTIVITY_ALL`
+21. **Infrastructure & ports** — made `useInfrastructureStatus` and `useValidatePorts` socket-aware via `Channel.CONTAINERS` / `CONTAINERS_LIST`
+
+### Excluded from Migration (kept as-is)
+
+- **`use-auth-status.ts`** — session validation, security concern; 5-minute polling acceptable
+- **`usePrometheusQuery` / `usePrometheusRangeQuery`** — time-series data with no discrete change events
+- **`use-self-update.ts`** — per CLAUDE.md: "Socket IO is not required for the self patching or updating feature"
+- **`use-agent-session.ts`** — AI streaming SSE, separate protocol
+- **Loki log tailing (`use-loki-logs.ts`)** — requires server-side Loki WebSocket consumer; deferred to future phase
 
 ## Server Emitter Reference
 
@@ -123,3 +134,5 @@ Each domain migrates independently. During migration, both polling and socket pu
 | `routes/environments.ts` (inline) | `haproxy` | `migration:started`, `migration:step`, `migration:completed` |
 | `routes/tls-certificates.ts` (inline) | `tls` | `cert:issuance:started`, `cert:issuance:step`, `cert:issuance:completed` |
 | `routes/manual-haproxy-frontends.ts` (inline) | `haproxy` | `frontend:setup:started`, `frontend:setup:step`, `frontend:setup:completed` |
+| `haproxy-socket-emitter.ts` | `haproxy` | `haproxy:backends:list`, `haproxy:frontends:list` |
+| `container-log-streamer.ts` | `container:{id}` | `container:log`, `container:log:end`, `container:log:error` |

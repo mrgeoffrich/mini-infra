@@ -62,7 +62,6 @@ export function ConnectedStatusCard({
   const { data: connectivityData } = useConnectivityStatus({
     filters: { service: "github-app" },
     limit: 10,
-    refetchInterval: 30000,
   });
 
   const githubConnectivity = connectivityData?.data?.[0];

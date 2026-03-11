@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ContainerLogLine, ContainerLogEvent, ContainerLogOptions } from "@mini-infra/types/containers";
-import { DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES } from "@mini-infra/types";
+import { DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ClientEvent, ServerEvent } from "@mini-infra/types";
+import { useSocket } from "./use-socket";
 
 interface UseContainerLogsOptions extends ContainerLogOptions {
   containerId: string;
@@ -34,15 +35,17 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
   const [logs, setLogs] = useState<ContainerLogLine[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { socket, connected: socketConnected } = useSocket();
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const usingSocketRef = useRef(false);
 
   const clear = useCallback(() => {
     setLogs([]);
     setError(null);
   }, []);
 
-  const disconnect = useCallback(() => {
+  const disconnectSSE = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -51,14 +54,25 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    setIsConnected(false);
   }, []);
 
-  const connect = useCallback(() => {
-    // Disconnect any existing connection
-    disconnect();
+  const disconnectSocket = useCallback(() => {
+    if (usingSocketRef.current && containerId) {
+      socket.emit(ClientEvent.CONTAINER_LOGS_STOP, { containerId });
+      usingSocketRef.current = false;
+    }
+  }, [socket, containerId]);
 
-    // Build query parameters
+  const disconnect = useCallback(() => {
+    disconnectSocket();
+    disconnectSSE();
+    setIsConnected(false);
+  }, [disconnectSocket, disconnectSSE]);
+
+  // SSE fallback connection
+  const connectSSE = useCallback(() => {
+    disconnectSSE();
+
     const params = new URLSearchParams({
       tail: tail.toString(),
       follow: follow.toString(),
@@ -70,7 +84,6 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
     if (since) params.set("since", since);
     if (until) params.set("until", until);
 
-    // Create EventSource for SSE
     const url = `/api/containers/${containerId}/logs/stream?${params.toString()}`;
     const eventSource = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = eventSource;
@@ -87,7 +100,6 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
         if (logEvent.type === "log" && logEvent.data) {
           setLogs((prevLogs) => {
             const newLogs = [...prevLogs, logEvent.data!];
-            // Keep only the last maxLines entries (circular buffer)
             if (newLogs.length > maxLines) {
               return newLogs.slice(newLogs.length - maxLines);
             }
@@ -111,10 +123,9 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
       setError("Connection lost. Attempting to reconnect...");
       eventSource.close();
 
-      // Attempt to reconnect after 3 seconds
       if (follow) {
         reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
+          connectSSE();
         }, 3000);
       }
     };
@@ -128,18 +139,76 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
     since,
     until,
     maxLines,
-    disconnect,
+    disconnectSSE,
   ]);
 
-  const reconnect = useCallback(() => {
-    clear();
-    connect();
-  }, [clear, connect]);
+  // Socket.IO connection
+  const connectViaSocket = useCallback(() => {
+    disconnectSSE();
+    usingSocketRef.current = true;
+    setIsConnected(true);
+    setError(null);
 
-  // Connect/disconnect based on enabled flag
+    socket.emit(ClientEvent.CONTAINER_LOGS_START, {
+      containerId,
+      tail,
+      timestamps,
+    });
+  }, [socket, containerId, tail, timestamps, disconnectSSE]);
+
+  // Listen for Socket.IO log events
+  useEffect(() => {
+    if (!enabled || !containerId || !socketConnected) return;
+
+    const handleLog = (data: { containerId: string; line: ContainerLogLine }) => {
+      if (data.containerId !== containerId) return;
+      setLogs((prevLogs) => {
+        const newLogs = [...prevLogs, data.line];
+        if (newLogs.length > maxLines) {
+          return newLogs.slice(newLogs.length - maxLines);
+        }
+        return newLogs;
+      });
+    };
+
+    const handleEnd = (data: { containerId: string }) => {
+      if (data.containerId !== containerId) return;
+      setIsConnected(false);
+      usingSocketRef.current = false;
+    };
+
+    const handleError = (data: { containerId: string; error: string }) => {
+      if (data.containerId !== containerId) return;
+      setError(data.error);
+      setIsConnected(false);
+      usingSocketRef.current = false;
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socket.on(ServerEvent.CONTAINER_LOG as any, handleLog as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socket.on(ServerEvent.CONTAINER_LOG_END as any, handleEnd as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    socket.on(ServerEvent.CONTAINER_LOG_ERROR as any, handleError as any);
+
+    return () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socket.off(ServerEvent.CONTAINER_LOG as any, handleLog as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socket.off(ServerEvent.CONTAINER_LOG_END as any, handleEnd as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socket.off(ServerEvent.CONTAINER_LOG_ERROR as any, handleError as any);
+    };
+  }, [enabled, containerId, socketConnected, socket, maxLines]);
+
+  // Connect/disconnect based on enabled flag and socket availability
   useEffect(() => {
     if (enabled && containerId) {
-      connect();
+      if (socketConnected) {
+        connectViaSocket();
+      } else {
+        connectSSE();
+      }
     } else {
       disconnect();
     }
@@ -147,7 +216,17 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
     return () => {
       disconnect();
     };
-  }, [enabled, containerId, connect, disconnect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, containerId, socketConnected]);
+
+  const reconnect = useCallback(() => {
+    clear();
+    if (socketConnected) {
+      connectViaSocket();
+    } else {
+      connectSSE();
+    }
+  }, [clear, socketConnected, connectViaSocket, connectSSE]);
 
   return {
     logs,

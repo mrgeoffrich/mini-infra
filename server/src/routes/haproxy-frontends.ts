@@ -12,6 +12,7 @@ import {
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
 import { haproxyCertificateDeployer } from "../services/haproxy/haproxy-certificate-deployer";
 import DockerService from "../services/docker";
+import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
 
 const logger = appLogger();
 const router = express.Router();
@@ -252,6 +253,7 @@ router.post(
         "Created shared frontend via API"
       );
 
+      emitHAProxyUpdate();
       res.status(201).json({
         success: true,
         data: {
@@ -402,6 +404,7 @@ router.post(
         "Configured SSL on frontend via API"
       );
 
+      emitHAProxyUpdate();
       res.json({
         success: true,
         message: "SSL configured successfully",
@@ -841,6 +844,7 @@ router.post(
         "Route added to shared frontend via API"
       );
 
+      emitHAProxyUpdate();
       res.status(201).json({
         success: true,
         data: route,
@@ -996,6 +1000,7 @@ router.patch(
         "Route updated on shared frontend via API"
       );
 
+      emitHAProxyUpdate();
       res.json({
         success: true,
         data: updatedRoute ? {
@@ -1118,6 +1123,7 @@ router.delete(
         "Route removed from shared frontend via API"
       );
 
+      emitHAProxyUpdate();
       res.json({
         success: true,
         message: "Route removed successfully",

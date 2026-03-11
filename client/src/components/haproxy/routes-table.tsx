@@ -40,9 +40,7 @@ export function RoutesTable({ frontendName, frontendId, environmentId }: RoutesT
     isLoading,
     error,
     refetch,
-  } = useFrontendRoutes(frontendName, {
-    refetchInterval: 30000,
-  });
+  } = useFrontendRoutes(frontendName, {});
 
   const routes = routesResponse?.data?.routes || [];
 

@@ -13,6 +13,7 @@ import {
 } from "@mini-infra/types";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
+import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
 
 const logger = appLogger();
 const router = express.Router();
@@ -382,6 +383,7 @@ router.patch(
         message: "Backend updated successfully",
       };
 
+      emitHAProxyUpdate();
       res.json(response);
     } catch (error: any) {
       logger.error(
@@ -659,6 +661,7 @@ router.patch(
         message: "Server updated successfully",
       };
 
+      emitHAProxyUpdate();
       res.json(response);
     } catch (error: any) {
       logger.error(

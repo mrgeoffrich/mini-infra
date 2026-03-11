@@ -25,7 +25,6 @@ export function ContainerSummary() {
     useConnectivityStatus({
       filters: { service: "docker" },
       limit: 1,
-      refetchInterval: 10000, // Check every 10 seconds
     });
 
   // Get the latest Docker connectivity status
@@ -45,7 +44,6 @@ export function ContainerSummary() {
   } = useContainers({
     queryParams: {},
     enabled: isDockerConnected === true, // Only fetch when explicitly connected
-    refetchInterval: 30000, // Poll every 30 seconds
   });
 
   // Show loading state while checking connectivity

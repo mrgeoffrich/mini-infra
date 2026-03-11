@@ -366,9 +366,7 @@ export const DeploymentProgress = React.memo(function DeploymentProgress({
     data: statusResponse,
     isLoading,
     error,
-  } = useDeploymentStatus(deploymentId, {
-    refetchInterval: 2000, // Fast polling for real-time updates
-  });
+  } = useDeploymentStatus(deploymentId, {});
 
   const rollbackMutation = useDeploymentRollback({
     onSuccess: () => {

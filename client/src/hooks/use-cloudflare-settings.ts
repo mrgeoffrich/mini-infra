@@ -7,6 +7,8 @@ import type {
   CloudflareAddHostnameRequest,
   CloudflareHostnameResponse,
 } from "@mini-infra/types";
+import { Channel, ServerEvent } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 interface CloudflareSettingsResponse {
   success: boolean;
@@ -201,6 +203,18 @@ export function useTestCloudflareConnection() {
 
 // Hook for retrieving Cloudflare connectivity status
 export function useCloudflareConnectivity() {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  useSocketChannel(Channel.CONNECTIVITY);
+
+  useSocketEvent(
+    ServerEvent.CONNECTIVITY_ALL,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-connectivity"] });
+    },
+  );
+
   return useQuery<ConnectivityResponse>({
     queryKey: ["cloudflare-connectivity"],
     queryFn: async () => {
@@ -218,7 +232,8 @@ export function useCloudflareConnectivity() {
       return response.json();
     },
     staleTime: 60000, // 1 minute
-    refetchInterval: 300000, // 5 minutes
+    refetchInterval: connected ? false : 300000,
+    refetchOnReconnect: true,
   });
 }
 
@@ -257,6 +272,18 @@ export function useCloudflareConnectivityHistory(
 
 // Hook for retrieving Cloudflare tunnels
 export function useCloudfareTunnels() {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  useSocketChannel(Channel.CONNECTIVITY);
+
+  useSocketEvent(
+    ServerEvent.CONNECTIVITY_ALL,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+    },
+  );
+
   return useQuery<TunnelsResponse>({
     queryKey: ["cloudflare-tunnels"],
     queryFn: async () => {
@@ -274,7 +301,8 @@ export function useCloudfareTunnels() {
       return response.json();
     },
     staleTime: 60000, // 1 minute - matches backend cache TTL
-    refetchInterval: 120000, // 2 minutes
+    refetchInterval: connected ? false : 120000,
+    refetchOnReconnect: true,
     retry: (failureCount, error) => {
       // Don't retry on 401/403/404 errors
       if (error instanceof Error) {

@@ -41,22 +41,17 @@ export function DeploymentsPage() {
     limit: 50, // Get more for card view
     sortBy: "applicationName",
     sortOrder: "asc",
-    refetchInterval: 30000,
   });
 
   // Fetch active deployments for real-time updates
   const {
     data: activeDeploymentsResponse,
-  } = useActiveDeployments({
-    refetchInterval: 5000,
-  });
+  } = useActiveDeployments({});
 
   // Fetch latest deployments for all configurations (including completed ones)
   const {
     data: latestDeploymentsResponse,
-  } = useLatestDeployments({
-    refetchInterval: 15000,
-  });
+  } = useLatestDeployments({});
 
   // Fetch environments for displaying environment names
   const {

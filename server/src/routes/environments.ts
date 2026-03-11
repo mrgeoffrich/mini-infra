@@ -20,6 +20,7 @@ import { haproxyMigrationService } from '../services/haproxy/haproxy-migration-s
 import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
 import { emitToChannel } from '../lib/socket';
 import { Channel, ServerEvent } from '@mini-infra/types';
+import { emitHAProxyUpdate } from '../services/haproxy-socket-emitter';
 import DockerService from '../services/docker';
 import { portUtils } from '../services/port-utils';
 
@@ -998,6 +999,7 @@ router.post('/:id/migrate-haproxy', requirePermission('environments:write'), asy
           ...result,
           environmentId: id,
         });
+        emitHAProxyUpdate();
       } catch (error: any) {
         logger.error({ error: error.message, environmentId: id }, 'Background HAProxy migration failed');
         emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_COMPLETED, {

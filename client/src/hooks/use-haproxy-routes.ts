@@ -5,7 +5,12 @@ import {
   CreateRouteResponse,
   DeleteRouteResponse,
   HAProxyRouteInfo,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+
+const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -150,8 +155,23 @@ export function useFrontendRoutes(
   frontendName: string | undefined,
   options: UseHAProxyRoutesOptions = {},
 ) {
-  const { enabled = true, refetchInterval } = options;
+  const { enabled = true } = options;
   const correlationId = generateCorrelationId();
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
+
+  useSocketChannel(Channel.HAPROXY, enabled && !!frontendName);
+
+  useSocketEvent(
+    ServerEvent.HAPROXY_FRONTENDS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["haproxy-routes"] });
+    },
+    enabled && !!frontendName,
+  );
 
   return useQuery({
     queryKey: ["haproxy-routes", frontendName],

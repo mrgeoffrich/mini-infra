@@ -127,9 +127,7 @@ export function BackendsListPage() {
     isLoading,
     error,
     refetch,
-  } = useAllBackends({
-    refetchInterval: 30000,
-  });
+  } = useAllBackends({});
 
   const { data: environmentsResponse } = useEnvironments({
     filters: { limit: 100 },

@@ -64,9 +64,7 @@ export function FrontendsListPage() {
   const [frontendToDelete, setFrontendToDelete] = useState<HAProxyFrontendInfo | null>(null);
 
   // Fetch data
-  const { data: frontendsResponse, isLoading, error, refetch } = useAllFrontends({
-    refetchInterval: 30000, // Refetch every 30 seconds
-  });
+  const { data: frontendsResponse, isLoading, error, refetch } = useAllFrontends({});
 
   const { data: environmentsResponse } = useEnvironments({
     filters: { limit: 100 },

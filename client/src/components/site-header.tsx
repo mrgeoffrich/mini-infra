@@ -26,9 +26,7 @@ import { getHelpDocForRoute } from "@/lib/route-config";
 
 // Backup health indicator component
 function BackupHealthIndicator() {
-  const { data: healthData } = useBackupHealth({
-    refetchInterval: 60000, // Refresh every minute
-  });
+  const { data: healthData } = useBackupHealth({});
 
   if (!healthData?.health) {
     return null;
