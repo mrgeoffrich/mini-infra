@@ -126,6 +126,8 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 
 ## Socket.IO Conventions
 
+Note: Socket IO is not required for the self patching or updating feature.
+
 ### Client-Side Data Fetching
 - **No polling when socket is connected.** Rely on socket events to invalidate TanStack Query caches. Set `refetchInterval` to `false` when connected, fall back to polling only when disconnected.
 - **Use `refetchOnReconnect: true`** so data refreshes automatically after a socket reconnect (covers any events missed during disconnection).

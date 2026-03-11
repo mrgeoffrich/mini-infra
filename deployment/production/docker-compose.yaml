@@ -34,7 +34,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
       # Database
-      - DATABASE_URL=file:/app/data/production.db?foreign_keys=true
+      - DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
 
       # Container Management
       - CONTAINER_CACHE_TTL=${CONTAINER_CACHE_TTL:-3000}

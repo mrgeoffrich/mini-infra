@@ -138,7 +138,7 @@ ENV SIDECAR_IMAGE_TAG=${SIDECAR_IMAGE_TAG}
 ENV NODE_ENV=production
 
 # Default database location (can be overridden)
-ENV DATABASE_URL=file:/app/data/production.db?foreign_keys=true
+ENV DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
 
 WORKDIR /app/server
 
