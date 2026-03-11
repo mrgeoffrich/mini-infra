@@ -20,7 +20,11 @@ import {
   ContainerConfig,
   HealthCheckConfig,
   RollbackConfig,
+  Channel,
+  ServerEvent,
+  ParameterizedChannel,
 } from "@mini-infra/types";
+import { emitToChannel } from "../lib/socket";
 
 // ====================
 // Deployment Types
@@ -558,6 +562,28 @@ export class DeploymentOrchestrator {
         }
       }
 
+      // Emit deployment status via Socket.IO on every state transition
+      try {
+        const configurationId = state.context.configurationId || state.context.deploymentConfigId;
+        emitToChannel(Channel.DEPLOYMENTS, ServerEvent.DEPLOYMENT_STATUS, {
+          id: deploymentId,
+          configurationId,
+          status: (state.value === "completed" ? "completed" : state.value === "failed" ? "failed" : "deploying") as DeploymentStatus,
+          currentState: state.value as string,
+        });
+        emitToChannel(ParameterizedChannel.deployment(deploymentId), ServerEvent.DEPLOYMENT_STATUS, {
+          id: deploymentId,
+          configurationId,
+          status: (state.value === "completed" ? "completed" : state.value === "failed" ? "failed" : "deploying") as DeploymentStatus,
+          currentState: state.value as string,
+        });
+      } catch (error) {
+        deploymentLogger().error(
+          { deploymentId, error: error instanceof Error ? error.message : error },
+          "Failed to emit deployment status via socket",
+        );
+      }
+
       if (state.status === "done") {
         this.activeDeployments.delete(deploymentId);
 
@@ -679,6 +705,36 @@ export class DeploymentOrchestrator {
             },
             "HAProxy deployment actor completed and database updated",
           );
+
+          // Emit deployment completed via Socket.IO
+          try {
+            const completedData = {
+              id: deploymentId,
+              configurationId: state.context.configurationId || state.context.deploymentConfigId,
+              triggerType: state.context.triggerType || "manual",
+              triggeredBy: state.context.triggeredBy || null,
+              dockerImage: state.context.dockerImage,
+              status: finalStatus,
+              currentState: state.value as string,
+              startedAt: state.context.startTime ? new Date(state.context.startTime).toISOString() : new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              oldContainerId: state.context.oldContainerId || null,
+              newContainerId: state.context.newContainerId || state.context.containerId || null,
+              healthCheckPassed: finalStatus === "completed",
+              healthCheckLogs: null,
+              errorMessage: state.context.error || null,
+              errorDetails: null,
+              deploymentTime: state.context.startTime ? (Date.now() - state.context.startTime) / 1000 : null,
+              downtime: 0,
+            };
+            emitToChannel(Channel.DEPLOYMENTS, ServerEvent.DEPLOYMENT_COMPLETED, completedData);
+            emitToChannel(ParameterizedChannel.deployment(deploymentId), ServerEvent.DEPLOYMENT_COMPLETED, completedData);
+          } catch (emitError) {
+            deploymentLogger().error(
+              { deploymentId, error: emitError instanceof Error ? emitError.message : emitError },
+              "Failed to emit deployment completed via socket",
+            );
+          }
         } catch (error) {
           deploymentLogger().error(
             {
@@ -920,6 +976,21 @@ export class DeploymentOrchestrator {
         },
         "Created user event for deployment tracking",
       );
+
+      // Emit initial pending status via Socket.IO
+      try {
+        emitToChannel(Channel.DEPLOYMENTS, ServerEvent.DEPLOYMENT_STATUS, {
+          id: deployment.id,
+          configurationId: params.configurationId,
+          status: "pending" as DeploymentStatus,
+          currentState: "idle",
+        });
+      } catch (emitError) {
+        deploymentLogger().error(
+          { deploymentId: deployment.id, error: emitError instanceof Error ? emitError.message : emitError },
+          "Failed to emit initial deployment status via socket",
+        );
+      }
 
       // Prepare deployment config
       // Extract tag from params.dockerImage (which contains the effective tag from trigger request)
@@ -1233,6 +1304,36 @@ export class DeploymentOrchestrator {
           },
           "Updated deployment record for uninstall progress"
         );
+
+        // Emit removal status via Socket.IO
+        const stateRemovalProgressMap: Record<string, number> = {
+          'idle': 0,
+          'removing_from_lb': 20,
+          'removingFromLB': 20,
+          'dns_removal': 35,
+          'dnsRemoval': 35,
+          'stopping_application': 50,
+          'stoppingApplication': 50,
+          'removing_application': 70,
+          'removingApplication': 70,
+          'cleanup': 90,
+          'completed': 100,
+          'failed': 0,
+        };
+        const removalProgress = stateRemovalProgressMap[state.value as string] ?? 0;
+
+        emitToChannel(ParameterizedChannel.removal(deploymentId), ServerEvent.REMOVAL_STATUS, {
+          id: deploymentId,
+          configurationId: state.context.configurationId || state.context.deploymentConfigId,
+          applicationName: state.context.applicationName,
+          status: deploymentStatus as any,
+          currentState: state.value as string,
+          progress: removalProgress,
+          steps: [],
+          startedAt: state.context.startTime ? new Date(state.context.startTime).toISOString() : new Date().toISOString(),
+          completedAt: state.status === "done" ? new Date().toISOString() : null,
+          errorMessage: state.context.error || null,
+        });
       } catch (error) {
         deploymentLogger().error(
           {

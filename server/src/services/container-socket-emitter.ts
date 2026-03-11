@@ -48,9 +48,18 @@ export function setupContainerSocketEmitter(): void {
           totalCount: containers.length,
         });
 
+        // Also notify volumes and networks channels — Docker events often
+        // indicate that volumes/networks have changed (container create/remove).
+        emitToChannel(Channel.VOLUMES, ServerEvent.VOLUMES_LIST, {
+          count: -1, // Signal to invalidate; client will refetch
+        });
+        emitToChannel(Channel.NETWORKS, ServerEvent.NETWORKS_LIST, {
+          count: -1,
+        });
+
         logger.debug(
           { count: containers.length },
-          "Emitted containers:list via socket",
+          "Emitted containers:list, volumes:list, networks:list via socket",
         );
       } catch (error) {
         // Socket emit failures should never crash the service

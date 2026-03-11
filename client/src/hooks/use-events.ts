@@ -7,7 +7,10 @@ import {
   UserEventFilter,
   DeleteUserEventResponse,
   UserEventStatisticsResponse,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -177,7 +180,6 @@ export interface UseEventsOptions {
 export function useEvents(options: UseEventsOptions = {}) {
   const {
     enabled = true,
-    refetchInterval,
     retry = 3,
     filters = {},
     page = 1,
@@ -186,7 +188,35 @@ export function useEvents(options: UseEventsOptions = {}) {
     sortOrder = "desc",
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the events channel for push updates
+  useSocketChannel(Channel.EVENTS, enabled);
+
+  // When a new event is created, invalidate the events list
+  useSocketEvent(
+    ServerEvent.EVENT_CREATED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["eventStatistics"] });
+    },
+    enabled,
+  );
+
+  // When an event is updated, invalidate the events list
+  useSocketEvent(
+    ServerEvent.EVENT_UPDATED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["eventStatistics"] });
+    },
+    enabled,
+  );
+
+  // No polling when socket is connected
+  const refetchInterval = options.refetchInterval ?? (connected ? false : 5000);
 
   return useQuery({
     queryKey: ["events", filters, page, limit, sortBy, sortOrder],
@@ -223,20 +253,37 @@ export interface UseEventOptions {
 export function useEvent(id: string, options: UseEventOptions = {}) {
   const { enabled = true, refetchInterval, retry = 3 } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the events channel
+  useSocketChannel(Channel.EVENTS, enabled && !!id);
+
+  // When this event is updated, invalidate
+  useSocketEvent(
+    ServerEvent.EVENT_UPDATED,
+    (data) => {
+      if (data.id === id) {
+        queryClient.invalidateQueries({ queryKey: ["event", id] });
+      }
+    },
+    enabled && !!id,
+  );
 
   return useQuery({
     queryKey: ["event", id],
     queryFn: () => fetchEvent(id, correlationId),
     enabled: enabled && !!id,
-    refetchInterval: (query) => {
-      // Auto-refresh if event is running
-      const event = query.state.data?.data;
-      if (event?.status === "running" || event?.status === "pending") {
-        return refetchInterval || 5000;
-      }
-      return refetchInterval || false;
-    },
+    refetchInterval: connected
+      ? false
+      : (query: any) => {
+          const event = query.state.data?.data;
+          if (event?.status === "running" || event?.status === "pending") {
+            return refetchInterval || 5000;
+          }
+          return refetchInterval || false;
+        },
     retry:
       typeof retry === "function"
         ? retry
@@ -264,9 +311,14 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
 }
 
 export function useEventStatistics(options: { enabled?: boolean; refetchInterval?: number } = {}) {
-  const { enabled = true, refetchInterval = 30000 } = options;
+  const { enabled = true } = options;
+  const { connected } = useSocket();
 
   const correlationId = generateCorrelationId();
+
+  // Statistics are invalidated by useEvents' EVENT_CREATED/EVENT_UPDATED handlers.
+  // Just disable polling when socket is connected.
+  const refetchInterval = options.refetchInterval ?? (connected ? false : 30000);
 
   return useQuery({
     queryKey: ["eventStatistics"],

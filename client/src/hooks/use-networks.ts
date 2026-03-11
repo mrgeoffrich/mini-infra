@@ -4,10 +4,13 @@ import {
   DockerNetworkListResponse,
   DockerNetworkApiResponse,
   DockerNetworkDeleteResponse,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
 import { toast } from "sonner";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-const POLL_INTERVAL = 5000; // 5 seconds auto-refresh
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -80,11 +83,28 @@ export interface UseNetworksOptions {
 export function useNetworks(options: UseNetworksOptions = {}) {
   const {
     enabled = true,
-    refetchInterval = POLL_INTERVAL,
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the networks channel for push updates
+  useSocketChannel(Channel.NETWORKS, enabled);
+
+  // When server pushes a networks update, invalidate to refetch
+  useSocketEvent(
+    ServerEvent.NETWORKS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["docker-networks"] });
+    },
+    enabled,
+  );
+
+  // No polling when socket is connected; fall back to 5s when disconnected
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["docker-networks"],
