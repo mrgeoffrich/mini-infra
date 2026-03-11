@@ -25,7 +25,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Channel } from "@mini-infra/types";
 import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress } from "@/hooks/use-stacks";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
 
@@ -56,6 +58,7 @@ export const StackPlanView = React.memo(function StackPlanView({
   const applyProgress = useStackApplyProgress(stackId);
   const destroyMutation = useStackDestroy();
   const destroyProgress = useStackDestroyProgress(stackId);
+  const { registerTask } = useTaskTracker();
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
@@ -96,24 +99,56 @@ export const StackPlanView = React.memo(function StackPlanView({
     [],
   );
 
+  const stackName = plan?.stackName ?? stackId;
+
   const handleApplyAll = useCallback(() => {
     applyMutation.mutate({ stackId, options: {} });
-  }, [stackId, applyMutation]);
+    registerTask({
+      id: stackId,
+      type: "stack-apply",
+      label: `Applying ${stackName}`,
+      channel: Channel.STACKS,
+      totalSteps: plan?.actions.length ?? 0,
+      plannedStepNames: plan?.actions.map((a) => `${a.action} ${a.serviceName}`) ?? [],
+    });
+  }, [stackId, applyMutation, registerTask, stackName, plan]);
 
   const handleRedeploy = useCallback(() => {
     applyMutation.mutate({ stackId, options: { forcePull: true } });
-  }, [stackId, applyMutation]);
+    registerTask({
+      id: stackId,
+      type: "stack-apply",
+      label: `Redeploying ${stackName}`,
+      channel: Channel.STACKS,
+      totalSteps: plan?.actions.length ?? 0,
+    });
+  }, [stackId, applyMutation, registerTask, stackName, plan]);
 
   const handleApplySelected = useCallback(() => {
     applyMutation.mutate({
       stackId,
       options: { serviceNames: Array.from(selectedServices) },
     });
-  }, [stackId, selectedServices, applyMutation]);
+    registerTask({
+      id: stackId,
+      type: "stack-apply",
+      label: `Applying ${selectedServices.size} service(s) in ${stackName}`,
+      channel: Channel.STACKS,
+      totalSteps: selectedServices.size,
+    });
+  }, [stackId, selectedServices, applyMutation, registerTask, stackName]);
 
   const handleDestroy = useCallback(() => {
     destroyMutation.mutate(stackId);
-  }, [stackId, destroyMutation]);
+    registerTask({
+      id: stackId,
+      type: "stack-destroy",
+      label: `Destroying ${stackName}`,
+      channel: Channel.STACKS,
+      totalSteps: 1,
+      plannedStepNames: ["Destroy stack"],
+    });
+  }, [stackId, destroyMutation, registerTask, stackName]);
 
   // Show destroy in progress
   if (destroyProgress.destroying) {

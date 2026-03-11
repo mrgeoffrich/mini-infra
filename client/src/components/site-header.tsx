@@ -19,6 +19,7 @@ import {
 import { useBackupHealth } from "@/hooks/use-self-backup";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { TaskTrackerPopover } from "@/components/task-tracker/task-tracker-popover";
 import { useCurrentPageTitle, usePageTitle } from "@/hooks/use-page-title";
 import { getHelpDocForRoute } from "@/lib/route-config";
 
@@ -317,6 +318,7 @@ export function SiteHeader() {
               />
             </div>
             <BackupHealthIndicator />
+            <TaskTrackerPopover />
             <AssistedSetupButton />
             <HelpButton />
           </div>

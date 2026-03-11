@@ -140,6 +140,13 @@ Note: Socket IO is not required for the self patching or updating feature.
 - **Extract shared logic** (e.g., health calculators) into separate modules so both REST routes and socket emitters can reuse them.
 - **Event types and channel constants** are defined in `lib/types/socket-events.ts` — always use `Channel.*` and `ServerEvent.*` constants, never raw strings.
 
+### Task Tracker for Long-Running Operations
+- Long-running operations (certificate issuance, container connect, stack deploys, container removal, HAProxy migrations) are tracked via a **global task tracker** in the frontend.
+- The tracker lives in `client/src/components/task-tracker/` with a context provider (`TaskTrackerProvider`), popover UI (`TaskTrackerPopover`), and detail dialog (`TaskDetailDialog`).
+- Each task type is defined in the **task type registry** (`client/src/lib/task-type-registry.ts`) which maps task types to labels, icons, step definitions, and Socket.IO channel/event bindings.
+- To add a new tracked task type: add an entry to the registry in `task-type-registry.ts` and call `trackTask()` from the relevant dialog/hook.
+- The tracker subscribes to Socket.IO events to show live step-by-step progress and persists task state across navigation.
+
 ## Key Commands
 
 ### Root Project (npm workspaces)

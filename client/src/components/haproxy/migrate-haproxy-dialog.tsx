@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { Channel } from "@mini-infra/types";
 import {
   useMigrationPreview,
   useMigrateHAProxy,
   useMigrationProgress,
 } from "@/hooks/use-haproxy-remediation";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
 import {
   Dialog,
   DialogContent,
@@ -72,6 +74,7 @@ export function MigrateHAProxyDialog({
 
   const migrateMutation = useMigrateHAProxy();
   const migrationProgress = useMigrationProgress(environmentId);
+  const { registerTask } = useTaskTracker();
 
   const preview = previewResponse?.data;
 
@@ -101,6 +104,12 @@ export function MigrateHAProxyDialog({
     try {
       await migrateMutation.mutateAsync(environmentId);
       // HTTP responded with { started: true } — real progress comes via Socket.IO
+      registerTask({
+        id: environmentId,
+        type: "migration",
+        label: `Migrating HAProxy for ${environmentName}`,
+        channel: Channel.STACKS,
+      });
     } catch {
       setDialogState("error");
     }
@@ -108,8 +117,13 @@ export function MigrateHAProxyDialog({
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
-      setDialogState("preview");
-      migrationProgress.reset();
+      // Only reset state if the migration is not in progress — the global
+      // task tracker continues watching, and resetting here would cause
+      // stale UI if the dialog is re-opened mid-migration.
+      if (dialogState !== "migrating") {
+        setDialogState("preview");
+        migrationProgress.reset();
+      }
     }
     onOpenChange(isOpen);
   };
