@@ -133,24 +133,27 @@ interface TaskDetailDialogProps {
 }
 
 export function TaskDetailDialog({ task, onClose }: TaskDetailDialogProps) {
-  const { dismissTask } = useTaskTracker();
+  const { dismissTask, getTask } = useTaskTracker();
 
-  if (!task) return null;
+  // Use live task from context so progress updates in real time
+  const liveTask = task ? (getTask(task.id) ?? task) : null;
 
-  const { operationState } = task;
+  if (!liveTask) return null;
+
+  const { operationState } = liveTask;
   const { phase, completedSteps, plannedStepNames, errors } = operationState;
   const isExecuting = phase === "executing";
   const displaySteps = buildDisplaySteps(completedSteps, plannedStepNames, isExecuting);
 
   const phaseTitle =
     phase === "success"
-      ? `${getTaskTitle(task.type)} — Complete`
+      ? `${getTaskTitle(liveTask.type)} — Complete`
       : phase === "error"
-        ? `${getTaskTitle(task.type)} — Failed`
-        : getTaskTitle(task.type);
+        ? `${getTaskTitle(liveTask.type)} — Failed`
+        : getTaskTitle(liveTask.type);
 
   const handleDismiss = () => {
-    dismissTask(task.id);
+    dismissTask(liveTask.id);
     onClose();
   };
 
@@ -159,10 +162,10 @@ export function TaskDetailDialog({ task, onClose }: TaskDetailDialogProps) {
       <DialogContent className="max-w-lg max-h-[85vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {getTaskIcon(task.type)}
+            {getTaskIcon(liveTask.type)}
             {phaseTitle}
           </DialogTitle>
-          <DialogDescription>{task.label}</DialogDescription>
+          <DialogDescription>{liveTask.label}</DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] overflow-y-auto pr-4 space-y-4">

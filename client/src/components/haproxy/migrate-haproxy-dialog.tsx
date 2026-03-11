@@ -117,8 +117,13 @@ export function MigrateHAProxyDialog({
 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
-      setDialogState("preview");
-      migrationProgress.reset();
+      // Only reset state if the migration is not in progress — the global
+      // task tracker continues watching, and resetting here would cause
+      // stale UI if the dialog is re-opened mid-migration.
+      if (dialogState !== "migrating") {
+        setDialogState("preview");
+        migrationProgress.reset();
+      }
     }
     onOpenChange(isOpen);
   };

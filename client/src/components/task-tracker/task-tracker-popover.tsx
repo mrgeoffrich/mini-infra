@@ -130,9 +130,10 @@ function CompletedTaskRow({
 // ====================
 
 export function TaskTrackerPopover() {
-  const { activeTasks, recentTasks, hasActiveTasks, dismissTask, dismissAllCompleted } =
+  const { activeTasks, recentTasks, hasActiveTasks, dismissTask, dismissAllCompleted, getTask } =
     useTaskTracker();
-  const [detailTask, setDetailTask] = useState<TrackedTask | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const detailTask = detailTaskId ? (getTask(detailTaskId) ?? null) : null;
 
   const totalVisible = activeTasks.length + recentTasks.length;
   if (totalVisible === 0) return null;
@@ -179,7 +180,7 @@ export function TaskTrackerPopover() {
                   <ActiveTaskRow
                     key={task.id}
                     task={task}
-                    onViewDetail={setDetailTask}
+                    onViewDetail={(t) => setDetailTaskId(t.id)}
                   />
                 ))}
               </div>
@@ -209,7 +210,7 @@ export function TaskTrackerPopover() {
                   <CompletedTaskRow
                     key={task.id}
                     task={task}
-                    onViewDetail={setDetailTask}
+                    onViewDetail={(t) => setDetailTaskId(t.id)}
                     onDismiss={dismissTask}
                   />
                 ))}
@@ -222,7 +223,7 @@ export function TaskTrackerPopover() {
       {/* Detail dialog */}
       <TaskDetailDialog
         task={detailTask}
-        onClose={() => setDetailTask(null)}
+        onClose={() => setDetailTaskId(null)}
       />
     </>
   );

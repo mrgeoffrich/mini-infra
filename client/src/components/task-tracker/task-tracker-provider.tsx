@@ -248,10 +248,13 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
     if (restoredIds.current.size === 0) return;
 
     const timer = setTimeout(() => {
+      // Capture and clear restored IDs outside setState to avoid ref mutation in updater
+      const idsToCheck = new Set(restoredIds.current);
+      restoredIds.current.clear();
       setTasks((prev) => {
         let changed = false;
         const next = new Map(prev);
-        for (const id of restoredIds.current) {
+        for (const id of idsToCheck) {
           const task = next.get(id);
           if (task && task.operationState.phase === "executing" && task.operationState.completedSteps.length === 0) {
             changed = true;
@@ -268,7 +271,6 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
             });
           }
         }
-        restoredIds.current.clear();
         return changed ? next : prev;
       });
     }, RESTORE_TIMEOUT_MS);
@@ -279,14 +281,14 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
   // Task update callback (stable reference for event listeners)
   const updateTask = useCallback(
     (id: string, updater: (prev: TrackedTask) => TrackedTask) => {
+      // Clear from restored set outside setState to avoid ref mutation in updater
+      restoredIds.current.delete(id);
       setTasks((prev) => {
         const task = prev.get(id);
         if (!task) return prev;
         const next = new Map(prev);
         const updated = updater(task);
         next.set(id, updated);
-        // Clear from restored set if we received any event
-        restoredIds.current.delete(id);
         return next;
       });
     },
@@ -295,8 +297,9 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
 
   const registerTask = useCallback((opts: RegisterTaskOptions) => {
     setTasks((prev) => {
-      // Don't re-register if already tracking
-      if (prev.has(opts.id)) return prev;
+      // Don't re-register if already executing with this ID
+      const existing = prev.get(opts.id);
+      if (existing && existing.operationState.phase === "executing") return prev;
 
       const next = new Map(prev);
       next.set(opts.id, {
@@ -397,15 +400,17 @@ export function TaskTrackerProvider({ children }: { children: React.ReactNode })
     ],
   );
 
-  // Render event listeners for all executing tasks
-  const executingTasks = useMemo(
-    () => Array.from(tasks.values()).filter((t) => t.operationState.phase === "executing"),
+  // Render event listeners for all tracked tasks (not just executing) so that
+  // unmounting doesn't prematurely decrement the channel ref count. The
+  // isExecuting flag inside each listener gates event processing.
+  const allTrackedTasks = useMemo(
+    () => Array.from(tasks.values()),
     [tasks],
   );
 
   return (
     <TaskTrackerContext.Provider value={contextValue}>
-      {executingTasks.map((task) => (
+      {allTrackedTasks.map((task) => (
         <TaskEventListener key={task.id} task={task} onUpdate={updateTask} />
       ))}
       {children}
