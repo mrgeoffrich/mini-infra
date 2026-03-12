@@ -6,6 +6,7 @@ import { loadbalancerLogger } from "../../lib/logger-factory";
 import { repairHAProxyConfig } from "./haproxy-config-repair";
 import prisma from "../../lib/prisma";
 import DockerService from "../docker";
+import { UserEventService } from "../user-events";
 
 const logger = loadbalancerLogger();
 
@@ -43,6 +44,9 @@ export function setupHAProxyCrashLoopWatcher(): void {
         "HAProxy crash loop detected — attempting config repair",
       );
 
+      const userEventService = new UserEventService(prisma);
+      let userEventId: string | undefined;
+
       try {
         // Look up environment name to derive the volume name
         const env = await prisma.environment.findUnique({
@@ -58,6 +62,25 @@ export function setupHAProxyCrashLoopWatcher(): void {
           return;
         }
 
+        // Create user event so the crash loop + repair is visible in the UI
+        const userEvent = await userEventService.createEvent({
+          eventType: "system_maintenance",
+          eventCategory: "infrastructure",
+          eventName: `HAProxy crash loop detected: ${env.name}`,
+          triggeredBy: "system",
+          status: "running",
+          resourceId: environmentId,
+          resourceType: "environment",
+          resourceName: env.name,
+          description: `HAProxy container "${sample.containerName}" died ${events.length} times in 60s. Attempting automatic config repair.`,
+          metadata: {
+            stackId,
+            containerName: sample.containerName,
+            dieCount: events.length,
+          },
+        });
+        userEventId = userEvent.id;
+
         const volumeName = `${env.name}-haproxy_haproxy_config`;
         const repaired = await repairHAProxyConfig(volumeName);
 
@@ -66,17 +89,41 @@ export function setupHAProxyCrashLoopWatcher(): void {
             { environmentId, volumeName },
             "HAProxy config repaired — Docker restart policy will restart the container",
           );
+          await userEventService.updateEvent(userEventId, {
+            status: "completed",
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            resultSummary: "Config repaired: injected Docker DNS resolvers. HAProxy will restart automatically.",
+          });
         } else {
           logger.info(
             { environmentId, volumeName },
             "HAProxy config already has resolvers — crash loop may have a different cause",
           );
+          await userEventService.updateEvent(userEventId, {
+            status: "completed",
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            resultSummary: "Config already has DNS resolvers — crash loop may have a different cause. Check HAProxy logs.",
+          });
         }
       } catch (err) {
         logger.error(
           { environmentId, stackId, error: err },
           "Failed to repair HAProxy config",
         );
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: "failed",
+              completedAt: new Date().toISOString(),
+              errorMessage: err instanceof Error ? err.message : String(err),
+              resultSummary: "Automatic config repair failed. Manual intervention required.",
+            });
+          } catch {
+            // Don't let event update failure mask the original error
+          }
+        }
       }
     },
   });
