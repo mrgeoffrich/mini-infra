@@ -50,6 +50,7 @@ import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
+import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -203,6 +204,10 @@ const initializeServices = async () => {
     // Wire up container state changes to Socket.IO
     setupContainerSocketEmitter();
     console.log("[STARTUP] ✓ Container socket emitter initialized");
+
+    // Wire up HAProxy crash loop detection and auto-repair
+    setupHAProxyCrashLoopWatcher();
+    console.log("[STARTUP] ✓ HAProxy crash loop watcher initialized");
 
     // Clean up orphaned sidecar containers from previous updates
     // and finalize any in-progress update record in the DB

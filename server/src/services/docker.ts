@@ -6,6 +6,7 @@ import { DockerContainerInfo } from "@mini-infra/types/containers";
 import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
+import type { DockerContainerEvent } from "../lib/docker-event-pattern-detector";
 
 class DockerService {
   private static instance: DockerService;
@@ -15,6 +16,7 @@ class DockerService {
   private reconnectInterval: NodeJS.Timeout | null = null;
   private dockerConfigService: DockerConfigService;
   private containerChangeCallbacks: Array<() => void> = [];
+  private containerEventCallbacks: Array<(event: DockerContainerEvent) => void> = [];
 
   private constructor() {
     // Initialize cache with 3-second TTL
@@ -336,6 +338,22 @@ class DockerService {
                   cb();
                 } catch (err) {
                   servicesLogger().error({ error: err }, "Container change callback failed");
+                }
+              }
+
+              // Fire typed container event callbacks (e.g., crash loop detector)
+              const typedEvent: DockerContainerEvent = {
+                action: event.Action,
+                containerId: event.id || event.Actor?.ID || "",
+                containerName: event.Actor?.Attributes?.name || "",
+                labels: event.Actor?.Attributes || {},
+                time: event.time || Math.floor(Date.now() / 1000),
+              };
+              for (const cb of this.containerEventCallbacks) {
+                try {
+                  cb(typedEvent);
+                } catch (err) {
+                  servicesLogger().error({ error: err }, "Container event callback failed");
                 }
               }
             } else if (event.Type === "network") {
@@ -743,6 +761,14 @@ class DockerService {
    */
   public onContainerChange(callback: () => void): void {
     this.containerChangeCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback to receive typed container events (action, labels, etc.).
+   * Used by the crash-loop detector and other event-driven watchers.
+   */
+  public onContainerEvent(callback: (event: DockerContainerEvent) => void): void {
+    this.containerEventCallbacks.push(callback);
   }
 
   /**

@@ -5,3 +5,5 @@ export { HAProxyRemediationService, haproxyRemediationService } from "./haproxy-
 export type { RemediationPreview } from "./haproxy-remediation-service";
 export { HaproxyCertificateDeployer, haproxyCertificateDeployer } from "./haproxy-certificate-deployer";
 export { HAProxyMigrationService, haproxyMigrationService } from "./haproxy-migration-service";
+export { setupHAProxyCrashLoopWatcher } from "./haproxy-crash-loop-watcher";
+export { repairHAProxyConfig, injectResolversIntoConfig } from "./haproxy-config-repair";
