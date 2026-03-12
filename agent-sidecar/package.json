@@ -10,7 +10,7 @@
     "lint:fix": "eslint --fix"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "express": "^5.2.1",
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",

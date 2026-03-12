@@ -106,6 +106,8 @@ mini-infra/
 ├── client/                # Vite + React 19 frontend application
 ├── server/                # Express.js 5 + Prisma backend
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
+├── sidecar/               # Self-update sidecar container (mini-infra-sidecar)
+├── agent-sidecar/         # AI agent sidecar container (mini-infra-agent-sidecar)
 ├── docs/                  # Project documentation and specs
 ├── .claude/               # Claude Code configuration
 ├── CLAUDE.md              # Claude Code context and instructions
@@ -144,10 +146,12 @@ Note: Socket IO is not required for the self patching or updating feature.
 
 ### Root Project (npm workspaces)
 - `npm run dev` - Start all three services: lib watch + server + client (recommended for development)
-- `npm run build` - Build lib then client (production build for frontend)
-- `npm run build:all` - Build lib then both client and server in parallel
+- `npm run build` - Build lib, server, then client (production build for frontend)
+- `npm run build:all` - Build lib then client, server, sidecar, and agent-sidecar in parallel
 - `npm run build:lib` - Build shared types package only
 - `npm run build:server` - Build lib then server
+- `npm run build:sidecar` - Build self-update sidecar
+- `npm run build:agent-sidecar` - Build AI agent sidecar
 - `npm install` - Install all workspace dependencies
 
 ### Frontend (client/) — run from project root
@@ -168,6 +172,14 @@ Note: Socket IO is not required for the self patching or updating feature.
 - `npm run lint:fix -w server` - Run ESLint with auto-fix
 - `npm run format -w server` - Format code with Prettier
 - `npm run format:check -w server` - Check code formatting
+
+### Self-Update Sidecar (sidecar/) — run from project root
+- `npm run build -w sidecar` - Build TypeScript to JavaScript
+- `npm test -w sidecar` - Run tests
+
+### Agent Sidecar (agent-sidecar/) — run from project root
+- `npm run build -w agent-sidecar` - Build TypeScript to JavaScript
+- `npm test -w agent-sidecar` - Run tests
 
 ### Shared Types (lib/) — run from project root
 - `npm run dev -w lib` - TypeScript watch mode (auto-recompile on changes)

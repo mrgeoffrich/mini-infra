@@ -74,7 +74,7 @@ export function createSessionsRouter(store: SessionStore): Router {
 
   // POST /sessions/:id/messages — send follow-up message
   router.post("/:id/messages", (req: Request, res: Response) => {
-    const session = store.getSession(req.params.id);
+    const session = store.getSession(String(req.params.id));
     if (!session) {
       res.status(404).json({ error: "Session not found" });
       return;
@@ -104,7 +104,7 @@ export function createSessionsRouter(store: SessionStore): Router {
 
   // GET /sessions/:id/stream — SSE event stream
   router.get("/:id/stream", (req: Request, res: Response) => {
-    const session = store.getSession(req.params.id);
+    const session = store.getSession(String(req.params.id));
     if (!session) {
       res.status(404).json({ error: "Session not found" });
       return;
@@ -180,7 +180,7 @@ export function createSessionsRouter(store: SessionStore): Router {
 
   // PUT /sessions/:id/context — update session context (e.g. current page)
   router.put("/:id/context", (req: Request, res: Response) => {
-    const session = store.getSession(req.params.id);
+    const session = store.getSession(String(req.params.id));
     if (!session) {
       res.status(404).json({ error: "Session not found" });
       return;
@@ -205,7 +205,7 @@ export function createSessionsRouter(store: SessionStore): Router {
 
   // DELETE /sessions/:id — close/abort a session
   router.delete("/:id", (req: Request, res: Response) => {
-    const session = store.getSession(req.params.id);
+    const session = store.getSession(String(req.params.id));
     if (!session) {
       res.status(404).json({ error: "Session not found" });
       return;
