@@ -326,7 +326,7 @@ router.post(
       logger.error({ error: errorMessage }, "Failed to trigger self-update");
       res.status(500).json({
         success: false,
-        error: "Failed to trigger self-update",
+        error: errorMessage,
       });
     }
   },

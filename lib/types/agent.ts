@@ -73,3 +73,55 @@ export interface AgentApiKeyValidationResponse {
   valid: boolean;
   message: string;
 }
+
+// Agent Sidecar types
+
+export type AgentSidecarTaskStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timeout";
+
+export interface AgentSidecarTaskSummary {
+  id: string;
+  externalId: string;
+  status: AgentSidecarTaskStatus;
+  prompt: string;
+  triggeredBy: string;
+  createdAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+}
+
+export interface AgentSidecarTaskDetail extends AgentSidecarTaskSummary {
+  result: string | null;
+  errorMessage: string | null;
+  tokenUsage: { input: number; output: number } | null;
+  context: Record<string, unknown> | null;
+  toolCalls?: Array<{
+    tool: string;
+    input: Record<string, unknown>;
+    timestamp: string;
+  }>;
+}
+
+export interface AgentSidecarStatus {
+  available: boolean;
+  containerRunning: boolean;
+  containerId: string | null;
+  health: {
+    status: "ok" | "unhealthy" | "unavailable";
+    uptime: number | null;
+    activeTasks: number;
+    totalTasksProcessed: number;
+  } | null;
+}
+
+export interface AgentSidecarConfig {
+  image: string | null;
+  model: string;
+  maxTurns: number;
+  timeoutMs: number;
+  autoStart: boolean;
+}

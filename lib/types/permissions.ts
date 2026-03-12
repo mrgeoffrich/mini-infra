@@ -346,7 +346,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     domain: "agent",
     label: "AI Agent",
-    description: "AI agent sessions and interactions",
+    description: "AI agent sessions and sidecar task management",
     permissions: [
       {
         scope: "agent:use",
@@ -355,6 +355,22 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Use AI Agent",
         description:
           "Create and manage AI agent sessions, send messages",
+      },
+      {
+        scope: "agent:read",
+        domain: "agent",
+        action: "read",
+        label: "View Agent Tasks",
+        description:
+          "View agent sidecar tasks, status, and history",
+      },
+      {
+        scope: "agent:write",
+        domain: "agent",
+        action: "write",
+        label: "Manage Agent Tasks",
+        description:
+          "Create, cancel agent sidecar tasks, restart sidecar",
       },
     ],
   },
@@ -471,6 +487,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "monitoring:read",
       "stacks:read",
       "agent:use",
+      "agent:read",
     ],
   },
   {

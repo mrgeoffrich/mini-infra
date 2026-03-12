@@ -2,6 +2,8 @@ import { useQuery, UseQueryResult } from "@tanstack/react-query";
 
 interface AgentStatusResponse {
   enabled: boolean;
+  sidecarAvailable: boolean;
+  reason?: string;
 }
 
 async function fetchAgentStatus(): Promise<AgentStatusResponse> {
@@ -22,9 +24,10 @@ export function useAgentStatus(): UseQueryResult<AgentStatusResponse, Error> {
   return useQuery({
     queryKey: ["agent", "status"],
     queryFn: fetchAgentStatus,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 30 * 1000,
+    gcTime: 60 * 1000,
     retry: 1,
+    refetchInterval: 30_000,
     refetchOnWindowFocus: false,
   });
 }

@@ -148,6 +148,7 @@ import permissionPresetsRoutes from "./routes/permission-presets";
 import stacksRoutes from "./routes/stacks";
 import stackTemplatesRoutes from "./routes/stack-templates";
 import selfUpdateRoutes from "./routes/self-update";
+import agentSidecarRoutes from "./routes/agent-sidecar";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -201,6 +202,7 @@ const routes = [
   { path: "/api/stacks", router: stacksRoutes, name: "stacksRoutes" },
   { path: "/api/stack-templates", router: stackTemplatesRoutes, name: "stackTemplatesRoutes" },
   { path: "/api/self-update", router: selfUpdateRoutes, name: "selfUpdateRoutes" },
+  { path: "/api/agent-sidecar", router: agentSidecarRoutes, name: "agentSidecarRoutes" },
 ];
 
 // Agent routes are always registered — the settings endpoint must be accessible

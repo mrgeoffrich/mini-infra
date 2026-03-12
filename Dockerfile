@@ -134,6 +134,9 @@ COPY --chown=node:node client/src/user-docs/ /app/agent/docs/
 ARG SIDECAR_IMAGE_TAG=latest
 ENV SIDECAR_IMAGE_TAG=${SIDECAR_IMAGE_TAG}
 
+ARG AGENT_SIDECAR_IMAGE_TAG=latest
+ENV AGENT_SIDECAR_IMAGE_TAG=${AGENT_SIDECAR_IMAGE_TAG}
+
 # Set environment to production
 ENV NODE_ENV=production
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconRobot, IconHelpCircle } from "@tabler/icons-react";
+import { IconRobot, IconHelpCircle, IconAlertTriangle } from "@tabler/icons-react";
 import {
   Dialog,
   DialogContent,
@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { useAgentStatus } from "@/hooks/use-agent-status";
 
 const capabilities = [
   "Access all product documentation for accurate, context-aware answers",
@@ -27,6 +28,32 @@ const examplePrompts = [
 
 export function AgentChatWelcome() {
   const [open, setOpen] = useState(false);
+  const { data: status } = useAgentStatus();
+
+  // Show unavailable message when sidecar is not running
+  if (status && !status.enabled) {
+    const reason = status.reason;
+    let message = "The AI assistant is currently unavailable.";
+    let detail = "Check the AI Assistant settings page for configuration.";
+
+    if (reason === "sidecar_unavailable" || reason === "sidecar_unhealthy") {
+      message = "The AI assistant requires the sidecar container.";
+      detail =
+        "The agent sidecar container is not running. Enable it in Settings > AI Assistant or restart it from the sidecar settings.";
+    } else if (reason === "api_key_not_configured") {
+      message = "The AI assistant needs an API key.";
+      detail =
+        "Configure an Anthropic API key in Settings > AI Assistant to enable the assistant.";
+    }
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-3">
+        <IconAlertTriangle className="size-10 text-amber-500/60" />
+        <span className="font-medium text-foreground">{message}</span>
+        <span className="text-xs text-center max-w-xs">{detail}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-3">

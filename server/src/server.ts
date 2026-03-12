@@ -11,6 +11,10 @@ import {
   clearLoggerCache,
   serializeError,
 } from "./lib/logger-factory";
+import {
+  ensureAgentSidecar,
+  stopHealthChecks as stopAgentSidecarHealthChecks,
+} from "./services/agent-sidecar";
 
 // Clear logger cache on startup to ensure new configuration is loaded
 clearLoggerCache();
@@ -26,7 +30,7 @@ import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey } from "./services/agent-api-key";
 import { getEffectiveApiKey } from "./services/agent-settings-service";
-import { AgentService, setAgentService, getAgentService } from "./services/agent-service";
+import { AgentProxyService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
 import { ServiceRecoveryManager, EnvironmentHealthScheduler } from "./services/environment";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
@@ -219,6 +223,31 @@ const initializeServices = async () => {
     } catch (err) {
       logger.warn({ err }, "Self-update sidecar cleanup failed (non-fatal)");
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
+    }
+
+    // Provision agent sidecar (if running in Docker)
+    console.log("[STARTUP] Checking agent sidecar...");
+    try {
+      const agentSidecarResult = await ensureAgentSidecar();
+      if (agentSidecarResult) {
+        logger.info(
+          {
+            containerId: agentSidecarResult.containerId,
+            url: agentSidecarResult.url,
+          },
+          "Agent sidecar provisioned",
+        );
+        console.log("[STARTUP] ✓ Agent sidecar provisioned");
+      } else {
+        console.log(
+          "[STARTUP] Agent sidecar not started (disabled or not in Docker)",
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "Agent sidecar provisioning failed (non-fatal)");
+      console.log(
+        "[STARTUP] ⚠ Agent sidecar provisioning failed (non-fatal)",
+      );
     }
 
     // Initialize connectivity scheduler
@@ -430,13 +459,13 @@ const initializeServices = async () => {
     }
 
     if (anthropicKey) {
-      console.log("[STARTUP] Initializing agent service...");
+      console.log("[STARTUP] Initializing agent proxy service...");
       const agentApiKey = await initializeAgentApiKey();
       if (agentApiKey) {
-        const agentService = new AgentService(agentApiKey);
+        const agentService = new AgentProxyService();
         setAgentService(agentService);
-        logger.info("Agent service initialized");
-        console.log("[STARTUP] ✓ Agent service initialized");
+        logger.info("Agent proxy service initialized (execution via sidecar)");
+        console.log("[STARTUP] ✓ Agent proxy service initialized (execution via sidecar)");
       } else {
         logger.warn("Agent API key initialization failed, agent features disabled");
         console.log("[STARTUP] ⚠ Agent API key initialization failed");
@@ -563,6 +592,10 @@ startServer()
         await agentService.shutdown();
         logger.info("Agent service stopped");
       }
+
+      // Stop agent sidecar health checks (container has its own restart policy)
+      stopAgentSidecarHealthChecks();
+      logger.info("Agent sidecar health checks stopped");
 
       // Shut down Socket.IO before closing the HTTP server
       await shutdownSocketIO();

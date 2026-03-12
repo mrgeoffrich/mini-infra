@@ -21,6 +21,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   SIDECAR_IMAGE_NAME: ${{ github.repository }}-sidecar
+  AGENT_SIDECAR_IMAGE_NAME: ${{ github.repository }}-agent-sidecar
 
 jobs:
   build-and-push:
@@ -63,7 +64,7 @@ jobs:
       - name: Build and push sidecar image
         uses: docker/build-push-action@v5
         with:
-          context: ./sidecar
+          context: ./update-sidecar
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.sidecar-meta.outputs.tags }}
           labels: ${{ steps.sidecar-meta.outputs.labels }}
@@ -87,6 +88,46 @@ jobs:
             TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
           fi
           # Fallback to first tag if no specific match
+          TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      # ---- Agent sidecar image metadata & build ----
+
+      - name: Extract agent sidecar metadata (tags, labels)
+        id: agent-sidecar-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.AGENT_SIDECAR_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push agent sidecar image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: agent-sidecar/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.agent-sidecar-meta.outputs.tags }}
+          labels: ${{ steps.agent-sidecar-meta.outputs.labels }}
+          cache-from: type=gha,scope=agent-sidecar
+          cache-to: type=gha,mode=max,scope=agent-sidecar
+          platforms: linux/amd64
+
+      - name: Determine agent sidecar image tag
+        id: agent-sidecar-tag
+        run: |
+          TAGS="${{ steps.agent-sidecar-meta.outputs.tags }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          else
+            TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
+          fi
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
@@ -121,6 +162,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
+            AGENT_SIDECAR_IMAGE_TAG=${{ steps.agent-sidecar-tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64

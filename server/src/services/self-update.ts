@@ -212,6 +212,25 @@ export async function launchSidecar(
       "Launching self-update sidecar",
     );
 
+    // Pull the sidecar image if not already present locally.
+    // docker.createContainer does NOT auto-pull like `docker run`.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        docker.pull(options.sidecarImage, (err: Error | null, stream: NodeJS.ReadableStream) => {
+          if (err) return reject(err);
+          // Wait for the pull to complete by consuming the stream
+          docker.modem.followProgress(stream, (progressErr: Error | null) => {
+            if (progressErr) return reject(progressErr);
+            resolve();
+          });
+        });
+      });
+      logger.info({ sidecarImage: options.sidecarImage }, "Sidecar image pulled");
+    } catch (pullErr) {
+      logger.error({ err: pullErr, sidecarImage: options.sidecarImage }, "Failed to pull sidecar image");
+      throw new Error(`Failed to pull sidecar image "${options.sidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+    }
+
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
       name: `mini-infra-sidecar-${Date.now()}`,

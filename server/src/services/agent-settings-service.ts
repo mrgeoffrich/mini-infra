@@ -4,7 +4,7 @@ import { agentLogger } from "../lib/logger-factory";
 import { agentConfig } from "../lib/config-new";
 import { githubAppService } from "./github-app";
 import {
-  AgentService,
+  AgentProxyService,
   setAgentService,
   getAgentService,
 } from "./agent-service";
@@ -230,15 +230,15 @@ export async function updateSettings(data: {
       process.env.ANTHROPIC_API_KEY = data.apiKey;
     }
 
-    // Initialize agent service if it wasn't running
+    // Initialize agent proxy service if it wasn't running
     if (!getAgentService()) {
       try {
         const agentApiKey = await initializeAgentApiKey();
         if (agentApiKey) {
-          const agentService = new AgentService(agentApiKey);
+          const agentService = new AgentProxyService();
           setAgentService(agentService);
           logger.info(
-            "Agent service initialized after API key configuration",
+            "Agent proxy service initialized after API key configuration",
           );
         }
       } catch (error) {

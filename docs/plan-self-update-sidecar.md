@@ -34,13 +34,13 @@ The self-update system has two components: a lightweight **sidecar** Node.js app
 | **Rollback integrity** | Old image is not removed until the new container passes health checks. Rollback recreates from the old image with the same inspected settings |
 | **Sidecar cleanup** | Sidecar sets `--rm` flag on itself so it's removed after exit. A cleanup job on Mini Infra startup also removes any orphaned sidecar containers |
 
-## Component 1: `sidecar/` Workspace Package
+## Component 1: `update-sidecar/` Workspace Package
 
-New npm workspace: `sidecar/` with its own `package.json`, `tsconfig.json`, and `Dockerfile`.
+New npm workspace: `update-sidecar/` with its own `package.json`, `tsconfig.json`, and `Dockerfile`.
 
 **Dependencies:** `dockerode`, `pino` (minimal — no Express, no Prisma).
 
-**Entry point:** `sidecar/src/index.ts`
+**Entry point:** `update-sidecar/src/index.ts`
 
 ### Input (environment variables)
 
@@ -87,7 +87,7 @@ Passed when the main app launches the sidecar container:
 
 ### Sidecar Dockerfile
 
-`sidecar/Dockerfile`:
+`update-sidecar/Dockerfile`:
 
 ```dockerfile
 FROM node:24-alpine
@@ -285,7 +285,7 @@ await cleanupOrphanedSidecars();
 ## New Files Summary
 
 ```
-sidecar/
+update-sidecar/
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
