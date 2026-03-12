@@ -243,6 +243,26 @@ async function createAgentSidecar(config: {
       "Creating agent sidecar container",
     );
 
+    // Pull the sidecar image if not already present locally.
+    // docker.createContainer does NOT auto-pull like `docker run`.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        docker.pull(config.image!, (err: Error | null, stream: NodeJS.ReadableStream) => {
+          if (err) return reject(err);
+          docker.modem.followProgress(stream, (progressErr: Error | null) => {
+            if (progressErr) return reject(progressErr);
+            resolve();
+          });
+        });
+      });
+      logger.info({ image: config.image }, "Agent sidecar image pulled");
+    } catch (pullErr) {
+      logger.error({ err: pullErr, image: config.image }, "Failed to pull agent sidecar image");
+      throw new Error(
+        `Failed to pull agent sidecar image "${config.image}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+      );
+    }
+
     const createOptions: Record<string, unknown> = {
       Image: config.image,
       name: AGENT_SIDECAR_CONTAINER_NAME,
