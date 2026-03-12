@@ -7,7 +7,10 @@ import {
   CreateUserEventRequest,
   UpdateUserEventRequest,
   UserEventMetadata,
+  Channel,
+  ServerEvent,
 } from '@mini-infra/types';
+import { emitToChannel } from '../../lib/socket';
 import type { UserEvent } from '@prisma/client';
 
 /**
@@ -71,7 +74,19 @@ export class UserEventService {
         'User event created successfully',
       );
 
-      return this.toEventInfo(event);
+      const eventInfo = this.toEventInfo(event);
+
+      // Emit via Socket.IO
+      try {
+        emitToChannel(Channel.EVENTS, ServerEvent.EVENT_CREATED, eventInfo);
+      } catch (emitError) {
+        this.logger.error(
+          { eventId: event.id, error: emitError instanceof Error ? emitError.message : emitError },
+          'Failed to emit event:created via socket',
+        );
+      }
+
+      return eventInfo;
     } catch (error) {
       this.logger.error(
         {
@@ -168,7 +183,19 @@ export class UserEventService {
         'User event updated successfully',
       );
 
-      return this.toEventInfo(event);
+      const eventInfo = this.toEventInfo(event);
+
+      // Emit via Socket.IO
+      try {
+        emitToChannel(Channel.EVENTS, ServerEvent.EVENT_UPDATED, eventInfo);
+      } catch (emitError) {
+        this.logger.error(
+          { eventId: event.id, error: emitError instanceof Error ? emitError.message : emitError },
+          'Failed to emit event:updated via socket',
+        );
+      }
+
+      return eventInfo;
     } catch (error) {
       this.logger.error(
         {

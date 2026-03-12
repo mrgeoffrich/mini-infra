@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { StackInfo } from "@mini-infra/types";
+import { Channel, ServerEvent } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 function generateCorrelationId(): string {
   return `monitoring-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -168,7 +170,47 @@ async function fetchMonitoringPlan(
 // Hooks
 
 export function useMonitoringStatus(options: { refetchInterval?: number; enabled?: boolean } = {}) {
-  const { refetchInterval = 15000, enabled = true } = options;
+  const { enabled = true } = options;
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  // Monitoring status changes when the monitoring stack is applied/destroyed.
+  // Subscribe to the stacks channel to catch those events.
+  useSocketChannel(Channel.STACKS, enabled);
+
+  // Also subscribe to containers channel since monitoring containers may start/stop
+  useSocketChannel(Channel.CONTAINERS, enabled);
+
+  // When stacks are applied or destroyed, invalidate monitoring status
+  useSocketEvent(
+    ServerEvent.STACK_APPLY_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+    },
+    enabled,
+  );
+
+  useSocketEvent(
+    ServerEvent.STACK_DESTROY_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+    },
+    enabled,
+  );
+
+  // When container list changes, monitoring container status may have changed
+  useSocketEvent(
+    ServerEvent.CONTAINERS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+    },
+    enabled,
+  );
+
+  // No polling when socket is connected; fall back to 15s when disconnected
+  const refetchInterval = options.refetchInterval ?? (connected ? false : 15000);
 
   return useQuery({
     queryKey: ["monitoringStatus"],
@@ -223,7 +265,10 @@ export function usePrometheusQuery(
   query: string,
   options: { enabled?: boolean; refetchInterval?: number } = {}
 ) {
-  const { enabled = true, refetchInterval = 15000 } = options;
+  const { enabled = true } = options;
+  // Prometheus queries are time-series data — keep polling but no socket event exists.
+  // Use the provided interval or default.
+  const refetchInterval = options.refetchInterval ?? 15000;
 
   return useQuery({
     queryKey: ["prometheusQuery", query],
@@ -242,7 +287,9 @@ export function usePrometheusRangeQuery(
   step: string = "15s",
   options: { enabled?: boolean; refetchInterval?: number } = {}
 ) {
-  const { enabled = true, refetchInterval = 30000 } = options;
+  const { enabled = true } = options;
+  // Prometheus range queries are time-series data — keep polling.
+  const refetchInterval = options.refetchInterval ?? 30000;
 
   return useQuery({
     queryKey: ["prometheusRangeQuery", query, rangeSeconds, step],

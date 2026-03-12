@@ -34,9 +34,7 @@ export function ServersTable({ backendName, environmentId }: ServersTableProps) 
     isLoading,
     error,
     refetch,
-  } = useBackendServers(backendName, environmentId, {
-    refetchInterval: 30000,
-  });
+  } = useBackendServers(backendName, environmentId, {});
 
   const servers = serversResponse?.data || [];
 

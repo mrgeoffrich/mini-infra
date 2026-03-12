@@ -9,7 +9,12 @@ import {
   DeploymentConfigFilter,
   DeploymentConfigSortOptions,
   UninstallDeploymentConfigResponse,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+
+const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -223,7 +228,6 @@ export function useDeploymentConfigs(
 ) {
   const {
     enabled = true,
-    refetchInterval,
     retry = 3,
     filters = {},
     page = 1,
@@ -233,6 +237,22 @@ export function useDeploymentConfigs(
   } = options;
 
   const correlationId = generateCorrelationId();
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
+
+  // Subscribe to deployments channel — configs may change after deployments complete
+  useSocketChannel(Channel.DEPLOYMENTS, enabled);
+
+  useSocketEvent(
+    ServerEvent.DEPLOYMENT_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["deploymentConfigs"] });
+    },
+    enabled,
+  );
 
   return useQuery({
     queryKey: ["deploymentConfigs", filters, page, limit, sortBy, sortOrder],
@@ -261,9 +281,9 @@ export function useDeploymentConfigs(
             // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;
           },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff with max 30s
-    staleTime: 10000, // Data is fresh for 10 seconds
-    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 10000,
+    gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });

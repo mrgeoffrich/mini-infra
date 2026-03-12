@@ -18,6 +18,7 @@ import type {
   SocketChannel,
 } from "@mini-infra/types";
 import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedChannel, MAX_SOCKET_SUBSCRIPTIONS, SOCKET_TRANSPORTS } from "@mini-infra/types";
+import { startLogStream, stopLogStream, cleanupSocketStreams } from "../services/container-log-streamer";
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
@@ -160,6 +161,13 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
       }
       const channel = ParameterizedChannel.container(data.containerId);
       joinChannel(socket, channel);
+
+      // Start the actual Docker log stream
+      startLogStream(socket, data.containerId, {
+        tail: data.tail,
+        timestamps: data.timestamps,
+      });
+
       logger.debug(
         {
           userId: socket.data.userId,
@@ -169,14 +177,13 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
         },
         "Container log streaming requested"
       );
-      // Actual log streaming will be handled by the container service
-      // when it emits events to the container:{id} room
     });
 
     socket.on(ClientEvent.CONTAINER_LOGS_STOP, (data) => {
       if (!isValidContainerId(data.containerId)) {
         return;
       }
+      stopLogStream(socket.id, data.containerId);
       const channel = ParameterizedChannel.container(data.containerId);
       leaveChannel(socket, channel);
       logger.debug(
@@ -187,6 +194,7 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
 
     // Handle disconnection
     socket.on("disconnect", (reason) => {
+      cleanupSocketStreams(socket.id);
       logger.info(
         {
           userId: socket.data.userId,

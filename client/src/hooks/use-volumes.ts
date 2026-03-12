@@ -12,10 +12,13 @@ import {
   FetchFileContentsRequest,
   FetchFileContentsResponse,
   VolumeFileContentResponse,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
 import { toast } from "sonner";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-const POLL_INTERVAL = 5000; // 5 seconds auto-refresh
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -88,11 +91,28 @@ export interface UseVolumesOptions {
 export function useVolumes(options: UseVolumesOptions = {}) {
   const {
     enabled = true,
-    refetchInterval = POLL_INTERVAL,
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the volumes channel for push updates
+  useSocketChannel(Channel.VOLUMES, enabled);
+
+  // When server pushes a volumes update, invalidate to refetch
+  useSocketEvent(
+    ServerEvent.VOLUMES_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["docker-volumes"] });
+    },
+    enabled,
+  );
+
+  // No polling when socket is connected; fall back to 5s when disconnected
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["docker-volumes"],

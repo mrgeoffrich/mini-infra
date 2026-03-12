@@ -52,9 +52,7 @@ export function FrontendDetailsPage() {
     isLoading,
     error,
     refetch,
-  } = useFrontendByName(frontendName, {
-    refetchInterval: 30000, // Refetch every 30 seconds
-  });
+  } = useFrontendByName(frontendName, {});
 
   // Fetch environments to get environment name
   const { data: environmentsResponse } = useEnvironments({

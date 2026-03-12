@@ -1,8 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HAProxyPortConfig,
   HAProxyPortValidationResult,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // ====================
 // Types
@@ -58,12 +61,30 @@ export function useValidatePorts(
     refetchInterval?: number | false;
   }
 ) {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+  const isEnabled = !!environmentId && (options?.enabled ?? true);
+
+  useSocketChannel(Channel.CONTAINERS, isEnabled);
+
+  useSocketEvent(
+    ServerEvent.CONTAINERS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["environments", environmentId, "validate-ports"] });
+    },
+    isEnabled,
+  );
+
+  const refetchInterval =
+    options?.refetchInterval ?? (connected ? false : 30000);
+
   return useQuery({
     queryKey: ["environments", environmentId, "validate-ports"],
     queryFn: () => fetchPortValidation(environmentId!),
-    enabled: !!environmentId && (options?.enabled ?? true),
-    refetchInterval: options?.refetchInterval ?? 30000, // Poll every 30 seconds by default
-    staleTime: 10000, // Consider data stale after 10 seconds
+    enabled: isEnabled,
+    refetchInterval,
+    staleTime: 10000,
+    refetchOnReconnect: true,
   });
 }
 

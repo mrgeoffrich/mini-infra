@@ -38,7 +38,6 @@ export function EventsPage() {
     limit: filters.limit,
     sortBy: filters.sortBy,
     sortOrder: filters.sortOrder,
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 
   const deleteEventMutation = useDeleteEvent();

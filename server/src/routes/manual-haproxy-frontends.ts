@@ -9,6 +9,7 @@ import { ManualFrontendSetupService } from "../services/haproxy/manual-frontend-
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
 import { emitToChannel } from "../lib/socket";
+import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
@@ -319,6 +320,7 @@ router.post(
             ...result,
             operationId,
           });
+          emitHAProxyUpdate();
         } catch (error: any) {
           logger.error({ error: error.message, operationId }, "Background manual frontend setup failed");
           emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_COMPLETED, {

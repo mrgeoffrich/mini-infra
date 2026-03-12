@@ -1,4 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Channel, ServerEvent } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Types for deployment infrastructure
 interface DeployInfrastructureRequest {
@@ -73,6 +75,19 @@ export function useDeployInfrastructure() {
 
 // Hook to get infrastructure status
 export function useInfrastructureStatus(networkName: string, enabled = true) {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  useSocketChannel(Channel.CONTAINERS, enabled && !!networkName);
+
+  useSocketEvent(
+    ServerEvent.CONTAINERS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["infrastructure-status"] });
+    },
+    enabled && !!networkName,
+  );
+
   return useQuery<InfrastructureStatusResponse, Error>({
     queryKey: ["infrastructure-status", networkName],
     queryFn: async () => {
@@ -97,7 +112,8 @@ export function useInfrastructureStatus(networkName: string, enabled = true) {
       return response.json();
     },
     enabled: enabled && !!networkName,
-    refetchInterval: 5000, // Refresh every 5 seconds to get live status
+    refetchInterval: connected ? false : 5000,
+    refetchOnReconnect: true,
   });
 }
 

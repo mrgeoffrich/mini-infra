@@ -15,7 +15,10 @@ import {
   BackupOperationInfo,
   BackupOperationType,
   BackupOperationStatus,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { emitToChannel } from "../../lib/socket";
 import type { BackupOperation } from "@prisma/client";
 
 /**
@@ -1022,6 +1025,32 @@ export class BackupExecutorService {
         },
         "Backup progress updated",
       );
+
+      // Emit progress via Socket.IO
+      try {
+        const eventData = {
+          operationId,
+          type: "backup" as const,
+          status: progressData.status,
+          progress: progressData.progress,
+          message: progressData.message,
+        };
+        if (progressData.status === "completed" || progressData.status === "failed") {
+          emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION_COMPLETED, {
+            operationId,
+            type: "backup",
+            success: progressData.status === "completed",
+            error: progressData.errorMessage,
+          });
+        } else {
+          emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION, eventData);
+        }
+      } catch (emitError) {
+        servicesLogger().error(
+          { operationId, error: emitError instanceof Error ? emitError.message : emitError },
+          "Failed to emit backup progress via socket",
+        );
+      }
     } catch (error) {
       servicesLogger().warn(
         {

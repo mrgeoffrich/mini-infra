@@ -5,7 +5,12 @@ import {
   HAProxyServerListResponse,
   UpdateBackendRequest,
   UpdateServerRequest,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+
+const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -178,8 +183,25 @@ export interface UseHAProxyBackendsOptions {
  * Hook to get all backends
  */
 export function useAllBackends(options: UseHAProxyBackendsOptions = {}) {
-  const { enabled = true, refetchInterval } = options;
+  const { enabled = true } = options;
   const correlationId = generateCorrelationId();
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
+
+  useSocketChannel(Channel.HAPROXY, enabled);
+
+  useSocketEvent(
+    ServerEvent.HAPROXY_BACKENDS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["haproxy-backends"] });
+      queryClient.invalidateQueries({ queryKey: ["haproxy-backend"] });
+      queryClient.invalidateQueries({ queryKey: ["haproxy-servers"] });
+    },
+    enabled,
+  );
 
   return useQuery({
     queryKey: ["haproxy-backends"],
@@ -198,6 +220,7 @@ export function useAllBackends(options: UseHAProxyBackendsOptions = {}) {
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
@@ -209,8 +232,12 @@ export function useBackendByName(
   environmentId: string | undefined,
   options: UseHAProxyBackendsOptions = {},
 ) {
-  const { enabled = true, refetchInterval } = options;
+  const { enabled = true } = options;
   const correlationId = generateCorrelationId();
+  const { connected } = useSocket();
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["haproxy-backend", backendName, environmentId],
@@ -231,6 +258,7 @@ export function useBackendByName(
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 
@@ -242,8 +270,12 @@ export function useBackendServers(
   environmentId: string | undefined,
   options: UseHAProxyBackendsOptions = {},
 ) {
-  const { enabled = true, refetchInterval } = options;
+  const { enabled = true } = options;
   const correlationId = generateCorrelationId();
+  const { connected } = useSocket();
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["haproxy-servers", backendName, environmentId],
@@ -264,6 +296,7 @@ export function useBackendServers(
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

@@ -6,7 +6,10 @@ import type { RestoreOperation } from "@prisma/client";
 import {
   RestoreOperationInfo,
   RestoreOperationStatus,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { emitToChannel } from "../../lib/socket";
 
 /**
  * DbOperations handles database-related operations for the restore executor:
@@ -56,6 +59,31 @@ export class DbOperations {
         },
         "Restore progress updated",
       );
+
+      // Emit progress via Socket.IO
+      try {
+        if (progressData.status === "completed" || progressData.status === "failed") {
+          emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION_COMPLETED, {
+            operationId,
+            type: "restore",
+            success: progressData.status === "completed",
+            error: progressData.errorMessage,
+          });
+        } else {
+          emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION, {
+            operationId,
+            type: "restore",
+            status: progressData.status,
+            progress: progressData.progress,
+            message: progressData.message,
+          });
+        }
+      } catch (emitError) {
+        servicesLogger().error(
+          { operationId, error: emitError instanceof Error ? emitError.message : emitError },
+          "Failed to emit restore progress via socket",
+        );
+      }
     } catch (error) {
       servicesLogger().error(
         {

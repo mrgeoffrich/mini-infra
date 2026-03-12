@@ -6,7 +6,10 @@ import {
   BackupOperationStatus,
   RestoreOperationStatus,
   OperationHistoryItem,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -173,17 +176,49 @@ export interface UseActiveOperationsOptions {
   retry?: number | boolean | ((failureCount: number, error: Error) => boolean);
 }
 
+const POLL_INTERVAL_DISCONNECTED = 3000; // 3s fallback when socket not connected
+
 /**
- * Hook to fetch all active (pending or running) backup and restore operations
+ * Hook to fetch all active (pending or running) backup and restore operations.
+ * Uses Socket.IO push events for real-time updates; falls back to polling when disconnected.
  */
 export function useActiveOperations(options: UseActiveOperationsOptions = {}) {
   const {
     enabled = true,
-    refetchInterval = 2000, // Poll every 2 seconds for real-time updates
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the postgres channel for push updates
+  useSocketChannel(Channel.POSTGRES, enabled);
+
+  // When server pushes operation progress, invalidate active operations
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["postgresActiveOperations"] });
+    },
+    enabled,
+  );
+
+  // When an operation completes, invalidate active operations and history
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["postgresActiveOperations"] });
+      queryClient.invalidateQueries({ queryKey: ["postgresOperationHistory"] });
+      queryClient.invalidateQueries({ queryKey: ["postgresBackupOperations"] });
+      queryClient.invalidateQueries({ queryKey: ["postgresRestoreOperations"] });
+    },
+    enabled,
+  );
+
+  // No polling when socket is connected; fall back when disconnected
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["postgresActiveOperations"],
@@ -219,7 +254,8 @@ export interface UseBackupProgressOptions {
 }
 
 /**
- * Hook to fetch progress for a specific backup operation
+ * Hook to fetch progress for a specific backup operation.
+ * Uses Socket.IO push events; falls back to polling when disconnected.
  */
 export function useBackupProgress(
   operationId: string,
@@ -227,11 +263,39 @@ export function useBackupProgress(
 ) {
   const {
     enabled = true,
-    refetchInterval = 3000, // Check progress every 3 seconds
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the postgres channel
+  useSocketChannel(Channel.POSTGRES, enabled && !!operationId);
+
+  // When this specific operation updates, invalidate
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION,
+    (data) => {
+      if (data.operationId === operationId) {
+        queryClient.invalidateQueries({ queryKey: ["postgresBackupProgress", operationId] });
+      }
+    },
+    enabled && !!operationId,
+  );
+
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION_COMPLETED,
+    (data) => {
+      if (data.operationId === operationId) {
+        queryClient.invalidateQueries({ queryKey: ["postgresBackupProgress", operationId] });
+      }
+    },
+    enabled && !!operationId,
+  );
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["postgresBackupProgress", operationId],
@@ -271,7 +335,8 @@ export interface UseRestoreProgressOptions {
 }
 
 /**
- * Hook to fetch progress for a specific restore operation
+ * Hook to fetch progress for a specific restore operation.
+ * Uses Socket.IO push events; falls back to polling when disconnected.
  */
 export function useRestoreProgress(
   operationId: string,
@@ -279,11 +344,39 @@ export function useRestoreProgress(
 ) {
   const {
     enabled = true,
-    refetchInterval = 3000, // Check progress every 3 seconds
     retry = 3,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the postgres channel
+  useSocketChannel(Channel.POSTGRES, enabled && !!operationId);
+
+  // When this specific operation updates, invalidate
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION,
+    (data) => {
+      if (data.operationId === operationId) {
+        queryClient.invalidateQueries({ queryKey: ["postgresRestoreProgress", operationId] });
+      }
+    },
+    enabled && !!operationId,
+  );
+
+  useSocketEvent(
+    ServerEvent.POSTGRES_OPERATION_COMPLETED,
+    (data) => {
+      if (data.operationId === operationId) {
+        queryClient.invalidateQueries({ queryKey: ["postgresRestoreProgress", operationId] });
+      }
+    },
+    enabled && !!operationId,
+  );
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["postgresRestoreProgress", operationId],
@@ -324,17 +417,23 @@ export interface UseOperationHistoryOptions {
 }
 
 /**
- * Hook to fetch operation history with filtering and pagination
+ * Hook to fetch operation history with filtering and pagination.
+ * Invalidated via Socket.IO when operations complete.
  */
 export function useOperationHistory(options: UseOperationHistoryOptions = {}) {
   const {
     enabled = true,
     filters = {},
-    refetchInterval = 30000, // Refresh every 30 seconds
     retry = 3,
   } = options;
 
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // History is already invalidated by useActiveOperations' POSTGRES_OPERATION_COMPLETED handler.
+  // Just disable polling when socket is connected.
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : 30000);
 
   return useQuery({
     queryKey: ["postgresOperationHistory", filters],

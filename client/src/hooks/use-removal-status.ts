@@ -1,9 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   RemovalStatus,
   RemovalOperationResponse,
   RemovalOperationInfo,
+  ServerEvent,
+  ParameterizedChannel,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -45,6 +48,8 @@ async function fetchRemovalStatus(
 // Removal Status Hooks
 // ====================
 
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
+
 export interface UseRemovalStatusOptions {
   enabled?: boolean;
   refetchInterval?: number;
@@ -57,8 +62,9 @@ export interface UseRemovalStatusOptions {
 }
 
 /**
- * Hook for fetching removal operation status with optional real-time polling
- * Automatically adjusts polling behavior based on removal status
+ * Hook for fetching removal operation status with real-time Socket.IO updates.
+ * Socket events update the TanStack Query cache directly; polling is only
+ * used as a fallback when the socket is disconnected.
  */
 export function useRemovalStatus(
   removalId: string,
@@ -70,63 +76,77 @@ export function useRemovalStatus(
     stopPollingOnTerminal = true,
   } = options;
 
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
   const correlationId = generateCorrelationId();
+
+  // Subscribe to the removal-specific channel for push updates
+  useSocketChannel(
+    removalId ? ParameterizedChannel.removal(removalId) : undefined,
+    enabled && !!removalId,
+  );
+
+  // When server pushes a removal status change, invalidate to refetch
+  useSocketEvent(
+    ServerEvent.REMOVAL_STATUS,
+    (data) => {
+      if (data.id === removalId) {
+        queryClient.invalidateQueries({ queryKey: ["removalStatus", removalId] });
+      }
+    },
+    enabled && !!removalId,
+  );
+
+  // No polling when socket is connected; fall back to adaptive polling when disconnected
+  const refetchInterval =
+    options.refetchInterval ??
+    (connected
+      ? false
+      : (query: any) => {
+          if (!query?.state?.data?.data) return POLL_INTERVAL_DISCONNECTED;
+
+          const status = query.state.data.data.status;
+          const terminalStates: RemovalStatus[] = ["completed", "failed"];
+
+          if (stopPollingOnTerminal && terminalStates.includes(status)) {
+            return false;
+          }
+
+          const activeStates: RemovalStatus[] = [
+            "in_progress", "removing_from_lb", "stopping_application",
+            "removing_application", "cleanup",
+          ];
+
+          if (activeStates.includes(status)) return 2000;
+          return 5000;
+        });
 
   return useQuery({
     queryKey: ["removalStatus", removalId],
     queryFn: () => fetchRemovalStatus(removalId, correlationId),
     enabled: enabled && !!removalId,
-    // Dynamic refetch interval based on removal status
-    refetchInterval: (query) => {
-      if (!query?.state?.data?.data) return false;
-
-      const status = query.state.data.data.status;
-      const terminalStates: RemovalStatus[] = ["completed", "failed"];
-
-      // Stop polling if removal is in terminal state and option is enabled
-      if (stopPollingOnTerminal && terminalStates.includes(status)) {
-        return false;
-      }
-
-      // More frequent polling for active removals
-      const activeStates: RemovalStatus[] = [
-        "in_progress",
-        "removing_from_lb",
-        "stopping_application",
-        "removing_application",
-        "cleanup",
-      ];
-
-      if (activeStates.includes(status)) {
-        return 2000; // Poll every 2 seconds during active removal
-      }
-
-      return 5000; // Default 5 second polling for other states
-    },
+    refetchInterval,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            // Don't retry on authentication errors
             if (
               error.message.includes("401") ||
               error.message.includes("Unauthorized")
             ) {
               return false;
             }
-            // Don't retry on not found errors
             if (
               error.message.includes("404") ||
               error.message.includes("Not found")
             ) {
               return false;
             }
-            // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;
           },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff with max 30s
-    staleTime: 1000, // Data is fresh for 1 second (real-time updates)
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    staleTime: 1000,
+    gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });

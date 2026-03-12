@@ -94,7 +94,6 @@ export function BackendDetailsPage() {
     isLoading,
     error,
   } = useBackendByName(backendName, environmentId || undefined, {
-    refetchInterval: 30000,
     enabled: !!backendName && !!environmentId,
   });
 

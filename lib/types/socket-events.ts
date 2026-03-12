@@ -162,6 +162,9 @@ export const ServerEvent = {
   STACK_APPLY_COMPLETED: "stack:apply:completed",
   STACK_DESTROY_STARTED: "stack:destroy:started",
   STACK_DESTROY_COMPLETED: "stack:destroy:completed",
+  // HAProxy
+  HAPROXY_BACKENDS_LIST: "haproxy:backends:list",
+  HAPROXY_FRONTENDS_LIST: "haproxy:frontends:list",
   // HAProxy Migration
   MIGRATION_STARTED: "migration:started",
   MIGRATION_STEP: "migration:step",
@@ -296,6 +299,12 @@ export interface ServerToClientEvents {
   "stack:destroy:started": (data: { stackId: string; stackName: string }) => void;
   /** Stack destroy completed */
   "stack:destroy:completed": (data: DestroyResult) => void;
+
+  // ── HAProxy ────────────────────────────────────────
+  /** HAProxy backends list updated */
+  "haproxy:backends:list": (data: { count: number }) => void;
+  /** HAProxy frontends list updated */
+  "haproxy:frontends:list": (data: { count: number }) => void;
 
   // ── HAProxy Migration ──────────────────────────────
   /** HAProxy migration started */

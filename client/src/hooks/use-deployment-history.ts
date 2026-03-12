@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
 import {
   DeploymentInfo,
@@ -7,7 +7,10 @@ import {
   DeploymentSortOptions,
   DeploymentStatus,
   DeploymentTriggerType,
+  Channel,
+  ServerEvent,
 } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
@@ -168,15 +171,18 @@ export function useRecentDeployments(
   });
 }
 
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
+
 /**
- * Hook for fetching active/running deployments
+ * Hook for fetching active/running deployments with real-time Socket.IO updates.
+ * Invalidates when any deployment status changes or completes.
  */
 export function useActiveDeployments(
   options: Omit<UseDeploymentHistoryOptions, 'filters'> = {},
 ) {
   const activeStatuses: DeploymentStatus[] = [
     "pending",
-    "preparing", 
+    "preparing",
     "deploying",
     "health_checking",
     "switching_traffic",
@@ -184,26 +190,49 @@ export function useActiveDeployments(
     "rolling_back",
   ];
 
-  // For active deployments, we want more frequent updates
-  const { refetchInterval = 5000, ...restOptions } = options;
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+  const { ...restOptions } = options;
+
+  // Subscribe to the global deployments channel
+  useSocketChannel(Channel.DEPLOYMENTS, restOptions.enabled !== false);
+
+  // When any deployment status changes, invalidate active deployments
+  useSocketEvent(
+    ServerEvent.DEPLOYMENT_STATUS,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
+    },
+    restOptions.enabled !== false,
+  );
+
+  // When a deployment completes, invalidate active deployments (it's no longer active)
+  useSocketEvent(
+    ServerEvent.DEPLOYMENT_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["activeDeployments"] });
+    },
+    restOptions.enabled !== false,
+  );
+
+  // No polling when socket is connected; fall back to 5s when disconnected
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
     queryKey: ["activeDeployments"],
     queryFn: async () => {
       const correlationId = generateCorrelationId();
-      
-      // Fetch all active deployments by querying with no specific status
-      // and filtering on the frontend
+
       const data = await fetchDeploymentHistory(
         {},
         1,
-        100, // Get more results to ensure we capture all active ones
+        100,
         "startedAt",
         "desc",
         correlationId,
       );
 
-      // Filter to only active deployments
       const activeDeployments = data.data.filter(deployment =>
         activeStatuses.includes(deployment.status as DeploymentStatus)
       );
@@ -217,7 +246,7 @@ export function useActiveDeployments(
     refetchInterval,
     retry: restOptions.retry ?? 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 2000, // Very fresh data for active deployments
+    staleTime: 2000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
@@ -225,37 +254,61 @@ export function useActiveDeployments(
 }
 
 /**
- * Hook for fetching the latest deployment for each configuration
- * This includes all deployments (active, completed, failed) to show the most recent status
+ * Hook for fetching the latest deployment for each configuration with Socket.IO updates.
+ * Invalidates when any deployment completes, so the latest-per-config view stays current.
  */
 export function useLatestDeployments(
   options: Omit<UseDeploymentHistoryOptions, 'filters'> = {},
 ) {
-  // For latest deployments, we want moderate refresh rate
-  const { refetchInterval = 15000, ...restOptions } = options;
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+  const { ...restOptions } = options;
+
+  // Subscribe to the global deployments channel
+  useSocketChannel(Channel.DEPLOYMENTS, restOptions.enabled !== false);
+
+  // When a deployment completes, invalidate latest deployments
+  useSocketEvent(
+    ServerEvent.DEPLOYMENT_COMPLETED,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
+    },
+    restOptions.enabled !== false,
+  );
+
+  // Also refresh when a new deployment starts (status changes from pending)
+  useSocketEvent(
+    ServerEvent.DEPLOYMENT_STATUS,
+    () => {
+      queryClient.invalidateQueries({ queryKey: ["latestDeployments"] });
+    },
+    restOptions.enabled !== false,
+  );
+
+  // No polling when socket is connected; fall back to 15s when disconnected
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : 15000);
 
   return useQuery({
     queryKey: ["latestDeployments"],
     queryFn: async () => {
       const correlationId = generateCorrelationId();
-      
-      // Fetch recent deployments (more than we need to ensure we get latest for each config)
+
       const data = await fetchDeploymentHistory(
         {},
         1,
-        100, // Get enough results to capture latest for each configuration
+        100,
         "startedAt",
         "desc",
         correlationId,
       );
 
-      // Create map of latest deployment per configuration
       const latestByConfig = new Map<string, DeploymentInfo>();
-      
+
       data.data.forEach(deployment => {
         const configId = deployment.configurationId;
         const existing = latestByConfig.get(configId);
-        
+
         if (!existing || new Date(deployment.startedAt) > new Date(existing.startedAt)) {
           latestByConfig.set(configId, deployment);
         }
@@ -271,7 +324,7 @@ export function useLatestDeployments(
     refetchInterval,
     retry: restOptions.retry ?? 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 10000, // Data is fresh for 10 seconds
+    staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
