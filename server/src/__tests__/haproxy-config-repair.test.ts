@@ -1,14 +1,28 @@
 import { injectResolversIntoConfig } from "../services/haproxy/haproxy-config-repair";
 
-// Mock logger
-vi.mock("../../lib/logger-factory", () => ({
-  loadbalancerLogger: () => ({
+// Mock logger — must export all logger factories since transitive imports resolve them
+vi.mock("../lib/logger-factory", () => {
+  const mockLogger = {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-  }),
-}));
+  };
+  return {
+    createLogger: vi.fn(() => mockLogger),
+    appLogger: vi.fn(() => mockLogger),
+    httpLogger: vi.fn(() => mockLogger),
+    prismaLogger: vi.fn(() => mockLogger),
+    servicesLogger: vi.fn(() => mockLogger),
+    dockerExecutorLogger: vi.fn(() => mockLogger),
+    deploymentLogger: vi.fn(() => mockLogger),
+    loadbalancerLogger: vi.fn(() => mockLogger),
+    selfBackupLogger: vi.fn(() => mockLogger),
+    tlsLogger: vi.fn(() => mockLogger),
+    clearLoggerCache: vi.fn(),
+    serializeError: vi.fn((e: any) => e),
+  };
+});
 
 const SAMPLE_CONFIG = `global
     log stdout local0

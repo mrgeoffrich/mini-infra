@@ -23,7 +23,8 @@ export function setupHAProxyCrashLoopWatcher(): void {
     matchEvent: (event: DockerContainerEvent) =>
       event.action === "die" &&
       event.labels["mini-infra.service"] === "haproxy" &&
-      !!event.labels["mini-infra.stack-id"],
+      !!event.labels["mini-infra.stack-id"] &&
+      !!event.labels["mini-infra.environment"],
     threshold: 3,
     windowMs: 60_000,
     cooldownMs: 5 * 60_000,

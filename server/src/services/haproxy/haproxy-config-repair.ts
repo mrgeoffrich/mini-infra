@@ -1,5 +1,6 @@
 import DockerService from "../docker";
 import { loadbalancerLogger } from "../../lib/logger-factory";
+import { DockerStreamDemuxer } from "../../lib/docker-stream";
 
 const logger = loadbalancerLogger();
 
@@ -93,18 +94,10 @@ export async function repairHAProxyConfig(
 
     configContent = await new Promise<string>((resolve, reject) => {
       const chunks: Buffer[] = [];
+      const demuxer = new DockerStreamDemuxer();
       logs.on("data", (chunk: Buffer) => {
-        // Docker multiplexed stream: strip 8-byte header from each frame
-        let offset = 0;
-        while (offset < chunk.length) {
-          if (offset + 8 > chunk.length) {
-            chunks.push(chunk.subarray(offset));
-            break;
-          }
-          const frameSize = chunk.readUInt32BE(offset + 4);
-          const payload = chunk.subarray(offset + 8, offset + 8 + frameSize);
-          chunks.push(payload);
-          offset += 8 + frameSize;
+        for (const frame of demuxer.push(chunk)) {
+          chunks.push(frame.data);
         }
       });
       logs.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
@@ -147,7 +140,10 @@ export async function repairHAProxyConfig(
 
   try {
     await writeContainer.start();
-    await writeContainer.wait();
+    const writeResult = await writeContainer.wait();
+    if (writeResult.StatusCode !== 0) {
+      throw new Error(`Config write failed with exit code ${writeResult.StatusCode}`);
+    }
   } finally {
     try {
       await writeContainer.remove({ force: true });
