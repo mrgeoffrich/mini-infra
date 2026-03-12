@@ -371,7 +371,7 @@ async function createAgentSidecar(
     return { containerId: sidecarId, url: sidecarUrl };
   } catch (err) {
     logger.error({ err }, "Failed to create agent sidecar container");
-    return null;
+    throw err;
   }
 }
 

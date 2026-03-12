@@ -182,6 +182,7 @@ router.post(
         });
       }
 
+      let iifeSpawned = false;
       try {
         // Double-check via Docker that no sidecar container is running
         const inProgress = await isUpdateInProgress();
@@ -290,7 +291,9 @@ router.post(
           targetTag,
         });
 
-        // Run sidecar launch in background with Socket.IO progress
+        // Run sidecar launch in background with Socket.IO progress.
+        // launchSidecar() releases the lock in its own finally block.
+        iifeSpawned = true;
         (async () => {
           const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
 
@@ -344,9 +347,10 @@ router.post(
           }
         })();
       } finally {
-        // Release the lock if launchSidecar was never called (early return / validation error).
-        // If launchSidecar WAS called, it releases the lock in its own finally block.
-        releaseLaunchLock();
+        // Release the lock only if the background IIFE was never spawned
+        // (early return / validation error). If it WAS spawned, launchSidecar()
+        // releases the lock in its own finally block.
+        if (!iifeSpawned) releaseLaunchLock();
       }
     } catch (error) {
       if (error instanceof z.ZodError) {
