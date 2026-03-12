@@ -19,7 +19,6 @@ const router = express.Router();
 const SETTINGS_CATEGORY = "agent-sidecar";
 
 const configSchema = z.object({
-  enabled: z.boolean().optional(),
   model: z.string().min(1).max(100).optional(),
   maxTurns: z.number().int().min(1).max(200).optional(),
   timeoutMs: z.number().int().min(10000).max(600000).optional(),
@@ -158,11 +157,6 @@ router.put(
       const updates = parsed.data;
       const settingEntries: Array<{ key: string; value: string }> = [];
 
-      if (updates.enabled !== undefined)
-        settingEntries.push({
-          key: "enabled",
-          value: String(updates.enabled),
-        });
       if (updates.model !== undefined)
         settingEntries.push({ key: "model", value: updates.model });
       if (updates.maxTurns !== undefined)

@@ -119,7 +119,6 @@ export interface AgentSidecarStatus {
 }
 
 export interface AgentSidecarConfig {
-  enabled: boolean;
   image: string | null;
   model: string;
   maxTurns: number;

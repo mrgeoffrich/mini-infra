@@ -50,7 +50,6 @@ async function getSettings(): Promise<Map<string, string>> {
 export async function getAgentSidecarConfig() {
   const settings = await getSettings();
   return {
-    enabled: settings.get("enabled") === "true",
     image: settings.get("image") || process.env.AGENT_SIDECAR_IMAGE_TAG || null,
     model: settings.get("model") || "claude-sonnet-4-6",
     maxTurns: parseInt(settings.get("max_turns") || "50", 10),
@@ -149,10 +148,6 @@ export async function ensureAgentSidecar(): Promise<{
   }
 
   const config = await getAgentSidecarConfig();
-  if (!config.enabled) {
-    logger.info("Agent sidecar is disabled in settings");
-    return null;
-  }
 
   if (!config.image) {
     logger.warn(
