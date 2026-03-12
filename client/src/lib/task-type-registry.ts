@@ -205,4 +205,27 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["agent", "status"],
     ],
   },
+
+  "self-update-launch": {
+    channel: Channel.SELF_UPDATE,
+    startedEvent: ServerEvent.SELF_UPDATE_LAUNCH_STARTED,
+    stepEvent: ServerEvent.SELF_UPDATE_LAUNCH_STEP,
+    completedEvent: ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED,
+    getId: (p) => p.operationId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalSteps,
+      plannedStepNames: p.stepNames ?? [],
+    }),
+    normalizeStep: (p) => p.step,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: (p.steps as Array<{ step: string; status: string; detail?: string }>).map((s) => ({
+        step: s.step,
+        status: s.status as OperationStep["status"],
+        detail: s.detail,
+      })),
+      errors: p.errors ?? [],
+    }),
+    invalidateKeys: () => [["self-update-status"]],
+  },
 };

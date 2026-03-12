@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { toast } from "sonner";
+import { Channel, ServerEvent } from "@mini-infra/types";
+import { useOperationProgress } from "./use-operation-progress";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -192,6 +195,7 @@ export function useSaveUpdateConfig() {
 
 /**
  * Triggers a self-update to the specified tag.
+ * Returns an operationId for tracking the sidecar launch via Socket.IO.
  * Stores state in localStorage so the UI survives a browser refresh.
  */
 export function useTriggerUpdate() {
@@ -211,7 +215,7 @@ export function useTriggerUpdate() {
       return res.json() as Promise<{
         success: boolean;
         updateId: string;
-        sidecarId: string;
+        operationId: string;
         targetTag: string;
       }>;
     },
@@ -223,6 +227,37 @@ export function useTriggerUpdate() {
         updateId: data.updateId,
       });
       queryClient.invalidateQueries({ queryKey: ["self-update-status"] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+/**
+ * Tracks the sidecar launch phase (pull + create + start) via Socket.IO.
+ * This covers only the launch; the actual update is tracked via polling.
+ */
+export function useSelfUpdateLaunchProgress(operationId: string | null, label?: string) {
+  return useOperationProgress({
+    channel: Channel.SELF_UPDATE,
+    startedEvent: ServerEvent.SELF_UPDATE_LAUNCH_STARTED,
+    stepEvent: ServerEvent.SELF_UPDATE_LAUNCH_STEP,
+    completedEvent: ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED,
+    operationId,
+    getOperationId: (p) => p.operationId,
+    getTotalSteps: (p) => p.totalSteps,
+    getStepNames: (p) => p.stepNames ?? [],
+    getStep: (p) => p.step,
+    getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
+    invalidateKeys: [["self-update-status"]],
+    toasts: {
+      success: "Update sidecar launched — server will restart shortly",
+      error: "Failed to launch update sidecar",
+    },
+    tracker: {
+      type: "self-update-launch",
+      label: label ?? "Launching update sidecar",
     },
   });
 }

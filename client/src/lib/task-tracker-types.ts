@@ -14,7 +14,8 @@ export type TaskType =
   | "stack-apply"
   | "stack-destroy"
   | "migration"
-  | "sidecar-startup";
+  | "sidecar-startup"
+  | "self-update-launch";
 
 export interface TrackedTask {
   /** Unique identifier — operationId, stackId, or environmentId */
