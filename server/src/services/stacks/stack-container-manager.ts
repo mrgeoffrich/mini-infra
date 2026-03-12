@@ -118,15 +118,17 @@ export class StackContainerManager {
     const image = `${service.dockerImage}:${service.dockerTag}`;
     const config = service.containerConfig;
 
-    // Convert ports to Docker format
-    const ports: Record<string, { HostPort: string }[]> | undefined = config.ports
-      ? Object.fromEntries(
-          config.ports.map((p) => [
-            `${p.containerPort}/${p.protocol}`,
-            [{ HostPort: String(p.hostPort) }],
-          ])
-        )
-      : undefined;
+    // Convert ports to Docker format (hostPort 0 means no host binding)
+    const exposedPorts = config.ports?.filter((p) => p.hostPort !== 0);
+    const ports: Record<string, { HostPort: string }[]> | undefined =
+      exposedPorts && exposedPorts.length > 0
+        ? Object.fromEntries(
+            exposedPorts.map((p) => [
+              `${p.containerPort}/${p.protocol}`,
+              [{ HostPort: String(p.hostPort) }],
+            ])
+          )
+        : undefined;
 
     // Convert mounts to Docker format, prefixing volume sources with projectName
     const mounts = config.mounts?.map((m) => ({
