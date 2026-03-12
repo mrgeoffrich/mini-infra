@@ -149,7 +149,7 @@ ok "Pushed to local registry"
 # ---------------------------------------------------------------------------
 step 4 "Building sidecar image..."
 
-docker build -q -t "${SIDECAR_IMAGE_NAME}:${SIDECAR_TAG}" -f "$PROJECT_ROOT/sidecar/Dockerfile" "$PROJECT_ROOT/sidecar" > /dev/null
+docker build -q -t "${SIDECAR_IMAGE_NAME}:${SIDECAR_TAG}" -f "$PROJECT_ROOT/update-sidecar/Dockerfile" "$PROJECT_ROOT/update-sidecar" > /dev/null
 ok "Built ${SIDECAR_IMAGE_NAME}:${SIDECAR_TAG}"
 
 # ---------------------------------------------------------------------------

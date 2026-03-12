@@ -64,7 +64,7 @@ jobs:
       - name: Build and push sidecar image
         uses: docker/build-push-action@v5
         with:
-          context: ./sidecar
+          context: ./update-sidecar
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.sidecar-meta.outputs.tags }}
           labels: ${{ steps.sidecar-meta.outputs.labels }}

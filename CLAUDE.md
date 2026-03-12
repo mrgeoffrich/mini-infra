@@ -106,7 +106,7 @@ mini-infra/
 ├── client/                # Vite + React 19 frontend application
 ├── server/                # Express.js 5 + Prisma backend
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
-├── sidecar/               # Self-update sidecar container (mini-infra-sidecar)
+├── update-sidecar/        # Self-update sidecar container (mini-infra-sidecar)
 ├── agent-sidecar/         # AI agent sidecar container (mini-infra-agent-sidecar)
 ├── docs/                  # Project documentation and specs
 ├── .claude/               # Claude Code configuration
@@ -173,9 +173,9 @@ Note: Socket IO is not required for the self patching or updating feature.
 - `npm run format -w server` - Format code with Prettier
 - `npm run format:check -w server` - Check code formatting
 
-### Self-Update Sidecar (sidecar/) — run from project root
-- `npm run build -w sidecar` - Build TypeScript to JavaScript
-- `npm test -w sidecar` - Run tests
+### Self-Update Sidecar (update-sidecar/) — run from project root
+- `npm run build -w update-sidecar` - Build TypeScript to JavaScript
+- `npm test -w update-sidecar` - Run tests
 
 ### Agent Sidecar (agent-sidecar/) — run from project root
 - `npm run build -w agent-sidecar` - Build TypeScript to JavaScript
