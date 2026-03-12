@@ -109,6 +109,7 @@ export interface AgentSidecarTaskDetail extends AgentSidecarTaskSummary {
 export interface AgentSidecarStatus {
   available: boolean;
   containerRunning: boolean;
+  containerId: string | null;
   health: {
     status: "ok" | "unhealthy" | "unavailable";
     uptime: number | null;
