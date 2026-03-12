@@ -179,4 +179,30 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["stacks"],
     ],
   },
+
+  "sidecar-startup": {
+    channel: Channel.AGENT_SIDECAR,
+    startedEvent: ServerEvent.SIDECAR_STARTUP_STARTED,
+    stepEvent: ServerEvent.SIDECAR_STARTUP_STEP,
+    completedEvent: ServerEvent.SIDECAR_STARTUP_COMPLETED,
+    getId: (p) => p.operationId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalSteps,
+      plannedStepNames: p.stepNames ?? [],
+    }),
+    normalizeStep: (p) => p.step,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: (p.steps as Array<{ step: string; status: string; detail?: string }>).map((s) => ({
+        step: s.step,
+        status: s.status as OperationStep["status"],
+        detail: s.detail,
+      })),
+      errors: p.errors ?? [],
+    }),
+    invalidateKeys: () => [
+      ["agent-sidecar", "status"],
+      ["agent", "status"],
+    ],
+  },
 };

@@ -225,10 +225,10 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
     }
 
-    // Provision agent sidecar (if running in Docker)
+    // Provision agent sidecar (if running in Docker and autoStart is enabled)
     console.log("[STARTUP] Checking agent sidecar...");
     try {
-      const agentSidecarResult = await ensureAgentSidecar();
+      const agentSidecarResult = await ensureAgentSidecar({ checkAutoStart: true });
       if (agentSidecarResult) {
         logger.info(
           {

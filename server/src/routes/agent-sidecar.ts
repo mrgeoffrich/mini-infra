@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
@@ -11,7 +12,10 @@ import {
   restartAgentSidecar,
   findAgentSidecar,
   getAgentSidecarConfig,
+  SIDECAR_STARTUP_STEPS,
 } from "../services/agent-sidecar";
+import { emitToChannel } from "../lib/socket";
+import { Channel, ServerEvent } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
@@ -78,32 +82,91 @@ router.get(
 );
 
 // ---------------------------------------------------------------------------
-// POST /restart — restart the agent sidecar
+// POST /restart — restart the agent sidecar (long-running, tracked via Socket.IO)
 // ---------------------------------------------------------------------------
+
+const restartingAgentSidecar = new Set<string>();
+const RESTART_GUARD_KEY = "agent-sidecar";
 
 router.post(
   "/restart",
   requirePermission("agent:write"),
   async (_req: express.Request, res: express.Response) => {
     try {
-      const result = await restartAgentSidecar();
-      if (!result) {
-        res.status(503).json({
+      if (restartingAgentSidecar.has(RESTART_GUARD_KEY)) {
+        res.status(409).json({
           success: false,
-          error: "Failed to restart agent sidecar",
-          message:
-            "The sidecar could not be started. Check settings and Docker availability.",
+          error: "Agent sidecar startup already in progress",
         });
         return;
       }
 
-      res.json({
-        success: true,
-        containerId: result.containerId.slice(0, 12),
-        url: result.url,
-      });
+      const operationId = randomUUID();
+      const stepNames = [...SIDECAR_STARTUP_STEPS];
+      const totalSteps = stepNames.length;
+
+      restartingAgentSidecar.add(RESTART_GUARD_KEY);
+
+      // Return immediately with operationId
+      res.json({ success: true, data: { operationId } });
+
+      // Run in background
+      (async () => {
+        const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
+
+        try {
+          emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_STARTED, {
+            operationId,
+            totalSteps,
+            stepNames: [...stepNames],
+          });
+
+          const result = await restartAgentSidecar({
+            onProgress: (step, completedCount, total) => {
+              steps.push(step);
+              try {
+                emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_STEP, {
+                  operationId,
+                  step,
+                  completedCount,
+                  totalSteps: total,
+                });
+              } catch { /* never break restart */ }
+            },
+          });
+
+          if (!result) {
+            emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_COMPLETED, {
+              operationId,
+              success: false,
+              steps,
+              errors: ["Sidecar could not be started. Check settings and Docker availability."],
+            });
+            return;
+          }
+
+          emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_COMPLETED, {
+            operationId,
+            success: true,
+            steps,
+            errors: [],
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.error({ err }, "Agent sidecar restart failed");
+          emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_COMPLETED, {
+            operationId,
+            success: false,
+            steps,
+            errors: [message],
+          });
+        } finally {
+          restartingAgentSidecar.delete(RESTART_GUARD_KEY);
+        }
+      })();
     } catch (err) {
-      logger.error({ err }, "Failed to restart agent sidecar");
+      restartingAgentSidecar.delete(RESTART_GUARD_KEY);
+      logger.error({ err }, "Failed to initiate agent sidecar restart");
       res.status(500).json({ success: false, error: "Internal server error" });
     }
   },

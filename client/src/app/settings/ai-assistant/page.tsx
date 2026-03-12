@@ -21,7 +21,8 @@ import {
   useValidateAgentApiKey,
   useDeleteAgentApiKey,
   useAgentSidecarStatus,
-  useRestartAgentSidecar,
+  useStartAgentSidecar,
+  useAgentSidecarStartupProgress,
 } from "@/hooks/use-agent-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,7 +66,13 @@ export default function AiAssistantSettingsPage() {
   const { mutate: validateKey, isPending: isValidating } = useValidateAgentApiKey();
   const { mutate: deleteKey, isPending: isDeleting } = useDeleteAgentApiKey();
   const { data: sidecarStatus } = useAgentSidecarStatus();
-  const { mutate: restartSidecar, isPending: isRestarting } = useRestartAgentSidecar();
+  const { mutateAsync: startSidecar, isPending: isStarting } = useStartAgentSidecar();
+  const [sidecarOperationId, setSidecarOperationId] = useState<string | null>(null);
+  const sidecarProgress = useAgentSidecarStartupProgress(
+    sidecarOperationId,
+    sidecarStatus?.available ? "Restarting agent sidecar" : "Starting agent sidecar",
+  );
+  const isSidecarInProgress = sidecarProgress.state.phase === "executing";
 
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [validationResult, setValidationResult] = useState<{
@@ -158,15 +165,13 @@ export default function AiAssistantSettingsPage() {
     );
   };
 
-  const handleRestartSidecar = () => {
-    restartSidecar(undefined, {
-      onSuccess: () => {
-        toast.success("Sidecar container restarted");
-      },
-      onError: (err) => {
-        toast.error(err.message);
-      },
-    });
+  const handleRestartSidecar = async () => {
+    try {
+      const result = await startSidecar();
+      setSidecarOperationId(result.operationId);
+    } catch {
+      // Error toast handled by mutation onError
+    }
   };
 
   const modelValue = selectedModel ?? settings.model.current;
@@ -245,14 +250,19 @@ export default function AiAssistantSettingsPage() {
               variant="outline"
               size="sm"
               onClick={handleRestartSidecar}
-              disabled={isRestarting}
+              disabled={isStarting || isSidecarInProgress}
             >
-              {isRestarting ? (
+              {isStarting || isSidecarInProgress ? (
                 <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <IconRefresh className="h-4 w-4 mr-2" />
               )}
-              {sidecarStatus?.available ? "Restart" : "Start"} Sidecar
+              {isStarting || isSidecarInProgress
+                ? "Starting..."
+                : sidecarStatus?.available
+                  ? "Restart"
+                  : "Start"}{" "}
+              {isStarting || isSidecarInProgress ? "" : "Sidecar"}
             </Button>
           </CardContent>
         </Card>
