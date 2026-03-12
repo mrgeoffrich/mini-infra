@@ -27,7 +27,7 @@ export function setupHAProxyCrashLoopWatcher(): void {
       !!event.labels["mini-infra.stack-id"] &&
       !!event.labels["mini-infra.environment"],
     threshold: 3,
-    windowMs: 60_000,
+    windowMs: 5 * 60_000,
     cooldownMs: 5 * 60_000,
     onDetected: async (events) => {
       const sample = events[0];
@@ -72,7 +72,7 @@ export function setupHAProxyCrashLoopWatcher(): void {
           resourceId: environmentId,
           resourceType: "environment",
           resourceName: env.name,
-          description: `HAProxy container "${sample.containerName}" died ${events.length} times in 60s. Attempting automatic config repair.`,
+          description: `HAProxy container "${sample.containerName}" died ${events.length} times in 5 minutes. Attempting automatic config repair.`,
           metadata: {
             stackId,
             containerName: sample.containerName,
