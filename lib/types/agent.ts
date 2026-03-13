@@ -28,6 +28,7 @@ export interface AgentConversationSummary {
   id: string;
   userId: string;
   title: string;
+  sdkSessionId?: string | null;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
 }

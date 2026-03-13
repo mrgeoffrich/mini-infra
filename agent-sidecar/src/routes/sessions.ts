@@ -8,11 +8,8 @@ import { logger } from "../logger";
 const createSessionSchema = z.object({
   message: z.string().min(1).max(4000),
   currentPath: z.string().max(500).optional(),
-  context: z.record(z.unknown()).optional(),
-});
-
-const sendMessageSchema = z.object({
-  message: z.string().min(1).max(4000),
+  context: z.record(z.string(), z.unknown()).optional(),
+  sdkSessionId: z.string().max(500).optional(),
 });
 
 const updateContextSchema = z.object({
@@ -50,7 +47,7 @@ export function createSessionsRouter(store: SessionStore): Router {
     }
 
     // Start agent execution asynchronously (fire-and-forget)
-    runSession(session.id, store, initialMessage).catch((err) => {
+    runSession(session.id, store, initialMessage, parsed.data.sdkSessionId).catch((err) => {
       logger.error(
         { err, sessionId: session.id },
         "Unhandled error in session runner",
@@ -72,34 +69,14 @@ export function createSessionsRouter(store: SessionStore): Router {
     });
   });
 
-  // POST /sessions/:id/messages — send follow-up message
-  router.post("/:id/messages", (req: Request, res: Response) => {
-    const session = store.getSession(String(req.params.id));
-    if (!session) {
-      res.status(404).json({ error: "Session not found" });
-      return;
-    }
-
-    if (session.status !== "running") {
-      res.status(409).json({
-        error: "Session is not running",
-        message: `Session is in '${session.status}' state and cannot accept messages`,
-      });
-      return;
-    }
-
-    const parsed = sendMessageSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "Validation error",
-        details: parsed.error.issues,
-      });
-      return;
-    }
-
-    session.queue.push(parsed.data.message);
-    logger.debug({ sessionId: session.id }, "Message pushed to session queue");
-    res.json({ ok: true });
+  // POST /sessions/:id/messages — send follow-up message (deprecated)
+  // In the Agent SDK model, follow-up messages create new sessions with resume.
+  // This endpoint is kept for backward compatibility.
+  router.post("/:id/messages", (_req: Request, res: Response) => {
+    res.status(409).json({
+      error: "In-session follow-ups are not supported",
+      message: "Send follow-up messages by creating a new session with sdkSessionId for resume",
+    });
   });
 
   // GET /sessions/:id/stream — SSE event stream

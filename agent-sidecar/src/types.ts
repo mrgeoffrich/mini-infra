@@ -74,6 +74,7 @@ export interface Session {
   id: string;
   status: SessionStatus;
   currentPath: string;
+  sdkSessionId: string | null;
   tokenUsage: TokenUsage;
   turns: number;
   createdAt: string; // ISO 8601
@@ -90,6 +91,7 @@ export interface CreateSessionRequest {
   message: string;
   currentPath?: string;
   context?: Record<string, unknown>;
+  sdkSessionId?: string;
 }
 
 /** POST /sessions response (201) */

@@ -541,6 +541,9 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               markAllThinkingComplete();
               clearThinkingIndex();
               setSessionStatus("done");
+              // Clear session so next follow-up creates a new sidecar session
+              // (with resume via sdkSessionId). The activeConversationId is preserved.
+              setSession(null);
               break;
             }
 

@@ -52,6 +52,8 @@ class AgentProxyService {
     let conversationId: string;
     let initialSequence = 0;
 
+    let sdkSessionId: string | undefined;
+
     if (existingConversationId) {
       const existing = await agentConversationService.getConversationDetail(
         existingConversationId,
@@ -64,6 +66,13 @@ class AgentProxyService {
           -1,
         );
         initialSequence = maxSeq + 1;
+        // Look up the SDK session ID for resume
+        const storedSdkSessionId = await agentConversationService.getSdkSessionId(
+          existingConversationId,
+        );
+        if (storedSdkSessionId) {
+          sdkSessionId = storedSdkSessionId;
+        }
       } else {
         conversationId = await agentConversationService.createConversation(
           userId,
@@ -80,7 +89,7 @@ class AgentProxyService {
     // 2. Proxy to sidecar
     const response = await proxyToSidecar("/sessions", {
       method: "POST",
-      body: { message, currentPath },
+      body: { message, currentPath, sdkSessionId },
     });
 
     if (!response.ok) {
@@ -210,6 +219,22 @@ class AgentProxyService {
     if (!mapping) return;
 
     switch (event.type) {
+      case "init": {
+        // Capture the SDK session ID returned by the sidecar
+        const sdkId = event.data.sdkSessionId as string | undefined;
+        if (sdkId && mapping.conversationId) {
+          agentConversationService
+            .updateSdkSessionId(mapping.conversationId, sdkId)
+            .catch((err: unknown) => {
+              logger.warn(
+                { err, sessionId, sdkSessionId: sdkId },
+                "Failed to persist SDK session ID",
+              );
+            });
+        }
+        break;
+      }
+
       case "tool_use":
         // Buffer tool input; flushed when tool_result arrives
         mapping.pendingToolUse.set(event.data.toolId as string, {
