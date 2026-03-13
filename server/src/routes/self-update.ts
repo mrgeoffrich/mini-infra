@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
@@ -14,8 +15,11 @@ import {
   acquireLaunchLock,
   releaseLaunchLock,
   validateTargetImage,
+  SELF_UPDATE_LAUNCH_STEPS,
   type SelfUpdateStatus,
 } from "../services/self-update";
+import { emitToChannel } from "../lib/socket";
+import { Channel, ServerEvent } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
@@ -140,6 +144,9 @@ router.post("/check", requirePermission("settings:read"), async (req, res) => {
 
 /**
  * POST /trigger - Trigger a self-update to the specified tag
+ *
+ * Returns an operationId immediately; the sidecar pull + launch runs in the
+ * background with progress emitted via Socket.IO on the SELF_UPDATE channel.
  */
 router.post(
   "/trigger",
@@ -175,6 +182,7 @@ router.post(
         });
       }
 
+      let iifeSpawned = false;
       try {
         // Double-check via Docker that no sidecar container is running
         const inProgress = await isUpdateInProgress();
@@ -270,32 +278,79 @@ router.post(
           triggeredBy: userId,
         });
 
-        // Launch the sidecar — this is a fire-and-forget operation.
-        // The sidecar will stop this container, so we respond immediately.
-        const sidecarId = await launchSidecar({
-          fullImageRef,
-          allowedRegistryPattern,
-          sidecarImage,
-          containerPort,
-          healthCheckUrl,
-          healthCheckTimeoutMs,
-          gracefulStopSeconds,
-        });
+        const operationId = randomUUID();
+        const stepNames = [...SELF_UPDATE_LAUNCH_STEPS];
+        const totalSteps = stepNames.length;
 
-        // Update the record with the sidecar container ID
-        await updateUpdateRecordSidecarId(updateId, sidecarId);
-
+        // Return immediately with operationId
         res.status(202).json({
           success: true,
           message: "Update initiated. The server will restart shortly.",
           updateId,
-          sidecarId,
+          operationId,
           targetTag,
         });
+
+        // Run sidecar launch in background with Socket.IO progress.
+        // launchSidecar() releases the lock in its own finally block.
+        iifeSpawned = true;
+        (async () => {
+          const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
+
+          try {
+            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_STARTED, {
+              operationId,
+              totalSteps,
+              stepNames: [...stepNames],
+              targetTag,
+            });
+
+            const sidecarId = await launchSidecar({
+              fullImageRef,
+              allowedRegistryPattern,
+              sidecarImage,
+              containerPort,
+              healthCheckUrl,
+              healthCheckTimeoutMs,
+              gracefulStopSeconds,
+              onProgress: (step, completedCount, total) => {
+                steps.push(step);
+                try {
+                  emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_STEP, {
+                    operationId,
+                    step,
+                    completedCount,
+                    totalSteps: total,
+                  });
+                } catch { /* never break launch */ }
+              },
+            });
+
+            // Update the record with the sidecar container ID
+            await updateUpdateRecordSidecarId(updateId, sidecarId);
+
+            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED, {
+              operationId,
+              success: true,
+              steps,
+              errors: [],
+            });
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error({ err }, "Self-update sidecar launch failed");
+            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED, {
+              operationId,
+              success: false,
+              steps,
+              errors: [message],
+            });
+          }
+        })();
       } finally {
-        // Release the lock if launchSidecar was never called (early return / validation error).
-        // If launchSidecar WAS called, it releases the lock in its own finally block.
-        releaseLaunchLock();
+        // Release the lock only if the background IIFE was never spawned
+        // (early return / validation error). If it WAS spawned, launchSidecar()
+        // releases the lock in its own finally block.
+        if (!iifeSpawned) releaseLaunchLock();
       }
     } catch (error) {
       if (error instanceof z.ZodError) {

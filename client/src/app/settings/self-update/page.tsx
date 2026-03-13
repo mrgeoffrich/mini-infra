@@ -48,6 +48,7 @@ import {
   useSelfUpdateCheck,
   useSaveUpdateConfig,
   useTriggerUpdate,
+  useSelfUpdateLaunchProgress,
   useIsUpdateActive,
   type SelfUpdateStatus,
 } from "@/hooks/use-self-update";
@@ -105,12 +106,17 @@ function StateBadge({ state }: { state: SelfUpdateStatus["state"] }) {
 export default function SelfUpdateSettingsPage() {
   const [triggerTag, setTriggerTag] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [launchOperationId, setLaunchOperationId] = useState<string | null>(null);
 
   // Hooks
   const { data: configData, isLoading: configLoading } = useSelfUpdateConfig();
   const saveConfig = useSaveUpdateConfig();
   const checkUpdate = useSelfUpdateCheck();
   const triggerUpdate = useTriggerUpdate();
+  useSelfUpdateLaunchProgress(
+    launchOperationId,
+    triggerTag ? `Launching update to ${triggerTag}` : "Launching update sidecar",
+  );
   const {
     isActive,
     state,
@@ -185,10 +191,8 @@ export default function SelfUpdateSettingsPage() {
   const handleConfirmUpdate = () => {
     setConfirmOpen(false);
     triggerUpdate.mutate(triggerTag.trim(), {
-      onSuccess: () => {
-        toastWithCopy.success(
-          "Update initiated. The server will restart shortly.",
-        );
+      onSuccess: (data) => {
+        setLaunchOperationId(data.operationId);
         setTriggerTag("");
       },
       onError: (err) => {

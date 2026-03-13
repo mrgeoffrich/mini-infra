@@ -38,6 +38,8 @@ export const STATIC_SOCKET_CHANNELS = [
   "backup-health",
   "tls",
   "haproxy",
+  "agent-sidecar",
+  "self-update",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -74,6 +76,8 @@ export const Channel = {
   BACKUP_HEALTH: "backup-health",
   TLS: "tls",
   HAPROXY: "haproxy",
+  AGENT_SIDECAR: "agent-sidecar",
+  SELF_UPDATE: "self-update",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -185,6 +189,14 @@ export const ServerEvent = {
   FRONTEND_SETUP_STARTED: "frontend:setup:started",
   FRONTEND_SETUP_STEP: "frontend:setup:step",
   FRONTEND_SETUP_COMPLETED: "frontend:setup:completed",
+  // Agent Sidecar Startup
+  SIDECAR_STARTUP_STARTED: "sidecar:startup:started",
+  SIDECAR_STARTUP_STEP: "sidecar:startup:step",
+  SIDECAR_STARTUP_COMPLETED: "sidecar:startup:completed",
+  // Self-Update Launch
+  SELF_UPDATE_LAUNCH_STARTED: "self-update:launch:started",
+  SELF_UPDATE_LAUNCH_STEP: "self-update:launch:step",
+  SELF_UPDATE_LAUNCH_COMPLETED: "self-update:launch:completed",
 } as const;
 
 /** Client → Server event names */
@@ -383,6 +395,51 @@ export interface ServerToClientEvents {
   /** Manual frontend setup completed (success or failure) */
   "frontend:setup:completed": (data: ManualFrontendSetupResult & {
     operationId: string;
+  }) => void;
+
+  // ── Agent Sidecar Startup ──────────────────────────
+  /** Agent sidecar startup started */
+  "sidecar:startup:started": (data: {
+    operationId: string;
+    totalSteps: number;
+    stepNames?: string[];
+  }) => void;
+  /** Agent sidecar startup step completed */
+  "sidecar:startup:step": (data: {
+    operationId: string;
+    step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string };
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** Agent sidecar startup completed (success or failure) */
+  "sidecar:startup:completed": (data: {
+    operationId: string;
+    success: boolean;
+    steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }>;
+    errors: string[];
+  }) => void;
+
+  // ── Self-Update Launch ─────────────────────────────
+  /** Self-update sidecar launch started */
+  "self-update:launch:started": (data: {
+    operationId: string;
+    totalSteps: number;
+    stepNames?: string[];
+    targetTag: string;
+  }) => void;
+  /** Self-update sidecar launch step completed */
+  "self-update:launch:step": (data: {
+    operationId: string;
+    step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string };
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** Self-update sidecar launch completed (success or failure) */
+  "self-update:launch:completed": (data: {
+    operationId: string;
+    success: boolean;
+    steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }>;
+    errors: string[];
   }) => void;
 
 }
