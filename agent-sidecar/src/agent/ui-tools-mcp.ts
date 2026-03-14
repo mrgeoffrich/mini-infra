@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { tool, createSdkMcpServer } from "./sdk";
 import { SSEEvent } from "../types";
-import type { ToolResultEmitter } from "./runner";
 
 type BroadcastFn = (event: SSEEvent) => void;
 type GetCurrentPathFn = () => string;
@@ -14,7 +13,6 @@ type GetCurrentPathFn = () => string;
 export function createUiToolsMcpServer(
   broadcast: BroadcastFn,
   getCurrentPath: GetCurrentPathFn,
-  emitter: ToolResultEmitter,
 ) {
   const highlightTool = tool(
     "highlight_element",
@@ -42,7 +40,6 @@ export function createUiToolsMcpServer(
         },
       });
       const text = `Highlight request sent for element "${args.elementId}"${args.tooltip ? ` with tooltip "${args.tooltip}"` : ""}.`;
-      emitter("highlight_element", { content: text, isError: false });
       return {
         content: [{ type: "text" as const, text }],
       };
@@ -82,7 +79,6 @@ export function createUiToolsMcpServer(
         parts.push(`will attempt to highlight "${args.highlightElementId}" after navigation`);
       }
       const text = parts.join(". ") + ".";
-      emitter("navigate_to", { content: text, isError: false });
       return {
         content: [{ type: "text" as const, text }],
       };
@@ -98,7 +94,6 @@ export function createUiToolsMcpServer(
     async () => {
       const currentPath = getCurrentPath();
       const text = currentPath || "unknown";
-      emitter("get_current_page", { content: text, isError: false });
       return {
         content: [{ type: "text" as const, text }],
       };

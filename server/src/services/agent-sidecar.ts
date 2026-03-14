@@ -155,8 +155,18 @@ export async function ensureAgentSidecar(options?: {
 } | null> {
   const containerId = getOwnContainerId();
   if (!containerId) {
-    logger.info("Not running in Docker, agent sidecar disabled");
-    return null;
+    // Dev mode: connect to locally-running sidecar process
+    const devUrl = process.env.AGENT_SIDECAR_DEV_URL;
+    if (!devUrl) {
+      logger.info("Not running in Docker and AGENT_SIDECAR_DEV_URL not set, agent sidecar disabled");
+      return null;
+    }
+
+    sidecarUrl = devUrl;
+    internalToken = null;
+    startHealthChecks();
+    logger.info({ sidecarUrl }, "Dev mode: connected to local agent sidecar process");
+    return { containerId: "dev-local", url: sidecarUrl };
   }
 
   const config = await getAgentSidecarConfig();
@@ -387,6 +397,14 @@ async function createAgentSidecar(
 
 export async function removeAgentSidecar(): Promise<void> {
   stopHealthChecks();
+
+  // Dev mode: no Docker container to manage, just clear state
+  if (!getOwnContainerId()) {
+    sidecarUrl = null;
+    internalToken = null;
+    sidecarHealthy = false;
+    return;
+  }
 
   const existing = await findAgentSidecar();
   if (!existing) {

@@ -40,7 +40,10 @@ router.get(
   async (_req: express.Request, res: express.Response) => {
     try {
       const containerId = getOwnContainerId();
-      if (!containerId) {
+      const sidecarUrl = getAgentSidecarUrl();
+      const healthy = isAgentSidecarHealthy();
+
+      if (!containerId && !sidecarUrl) {
         res.json({
           success: true,
           available: false,
@@ -50,10 +53,6 @@ router.get(
         });
         return;
       }
-
-      const sidecarUrl = getAgentSidecarUrl();
-      const existing = await findAgentSidecar();
-      const healthy = isAgentSidecarHealthy();
 
       let health = null;
       if (sidecarUrl && healthy) {
@@ -66,6 +65,20 @@ router.get(
           // Sidecar unreachable
         }
       }
+
+      // Dev mode: no Docker container info
+      if (!containerId) {
+        res.json({
+          success: true,
+          available: !!sidecarUrl && healthy,
+          containerRunning: false,
+          containerId: "dev-local",
+          health,
+        });
+        return;
+      }
+
+      const existing = await findAgentSidecar();
 
       res.json({
         success: true,
