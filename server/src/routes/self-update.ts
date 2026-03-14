@@ -256,7 +256,7 @@ router.post(
         const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
         const containerPort = appConfig.server.port;
         const healthCheckTimeoutMs = parseInt(
-          settingsMap.get("health_check_timeout_ms") ?? "60000",
+          settingsMap.get("health_check_timeout_ms") ?? "180000",
           10,
         );
         const gracefulStopSeconds = parseInt(
@@ -299,6 +299,7 @@ router.post(
         // Run sidecar launch in background with Socket.IO progress.
         // launchSidecar() releases the lock in its own finally block.
         iifeSpawned = true;
+        const launchStartTime = Date.now();
         (async () => {
           const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
 
@@ -344,6 +345,20 @@ router.post(
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
             logger.error({ err }, "Self-update sidecar launch failed");
+
+            // Mark the DB record as failed so the UI doesn't spin forever
+            try {
+              await prisma.selfUpdate.update({
+                where: { id: updateId },
+                data: {
+                  state: "failed",
+                  errorMessage: message,
+                  completedAt: new Date(),
+                  durationMs: Date.now() - launchStartTime,
+                },
+              });
+            } catch { /* best-effort DB update */ }
+
             emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED, {
               operationId,
               success: false,
@@ -417,7 +432,7 @@ router.get("/config", requirePermission("settings:read"), async (req, res) => {
           process.env.SIDECAR_IMAGE_TAG ||
           null,
         healthCheckTimeoutMs: parseInt(
-          settingsMap.get("health_check_timeout_ms") ?? "60000",
+          settingsMap.get("health_check_timeout_ms") ?? "180000",
           10,
         ),
         gracefulStopSeconds: parseInt(
@@ -476,7 +491,7 @@ router.put(
         { key: "sidecar_image", value: validated.sidecarImage },
         {
           key: "health_check_timeout_ms",
-          value: String(validated.healthCheckTimeoutMs ?? 60000),
+          value: String(validated.healthCheckTimeoutMs ?? 180000),
         },
         {
           key: "graceful_stop_seconds",

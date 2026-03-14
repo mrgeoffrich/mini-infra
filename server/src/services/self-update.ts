@@ -276,7 +276,7 @@ export async function launchSidecar(
       `TARGET_IMAGE=${fullImageRef}`,
       `CONTAINER_ID=${containerId}`,
       `HEALTH_CHECK_URL=${healthCheckUrl}`,
-      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
+      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 180000}`,
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
 
@@ -522,6 +522,18 @@ export async function recoverStaleUpdate(): Promise<void> {
   });
 
   if (!record) return;
+
+  // Grace period: don't recover records created less than 5 minutes ago.
+  // The sidecar launch process (image pull + container creation) can take
+  // several seconds, during which no sidecar container exists yet.
+  // Without this grace period, polling the status endpoint during image
+  // pulling would prematurely mark the record as "failed".
+  const ageMs = Date.now() - record.startedAt.getTime();
+  if (ageMs < 5 * 60 * 1000) {
+    // Also check the in-memory launch lock — if we're actively launching,
+    // the sidecar container may not exist yet but the launch is in progress.
+    if (launchInProgress) return;
+  }
 
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover
