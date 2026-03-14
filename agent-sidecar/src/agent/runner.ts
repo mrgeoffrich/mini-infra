@@ -88,7 +88,10 @@ export async function runSession(
       },
       // Auto-approve read-only and MCP tools; Bash and Write go through canUseTool
       allowedTools: [
+        "Bash",
         "Read",
+        "Glob",
+        "Grep",
         "mcp__mini-infra-infra__*",
         "mcp__mini-infra-ui__*",
       ],
@@ -102,15 +105,6 @@ export async function runSession(
           const violation = checkBashSafety(command);
           if (violation) {
             return { behavior: "deny" as const, message: `BLOCKED: ${violation}` };
-          }
-        }
-        if (toolName === "Write") {
-          const filePath = String(input.file_path ?? "");
-          if (filePath && !filePath.startsWith("/tmp/agent-work")) {
-            return {
-              behavior: "deny" as const,
-              message: "Files can only be written to /tmp/agent-work/",
-            };
           }
         }
         return { behavior: "allow" as const };

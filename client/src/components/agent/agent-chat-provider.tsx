@@ -29,6 +29,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     model,
     activeConversationId,
     sendMessage,
+    stopSession,
     startNewChat,
     loadConversation,
   } = useAgentSession(location.pathname);
@@ -70,6 +71,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         session,
         model,
         sendMessage: wrappedSendMessage,
+        stopSession,
         startNewChat,
         activeConversationId,
         conversations,

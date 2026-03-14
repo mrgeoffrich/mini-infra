@@ -137,17 +137,33 @@ const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 You have access to the following built-in tools provided by the SDK:
 - **Bash**: Execute shell commands (docker, gh, curl, and standard Unix utilities). Commands run in /tmp/agent-work/.
 - **Read**: Read any file accessible to the sidecar (logs, configs, docs, temporary outputs).
-- **Write**: Write files to /tmp/agent-work/ only (for scripts, reports, etc.).
+- **Glob**: Find files by glob pattern (e.g. \`/app/docs/**/*.md\`).
+- **Grep**: Search file contents by regex pattern.
 
 ### When to use \`Bash\`
 - Docker CLI commands: \`docker ps\`, \`docker logs\`, \`docker inspect\`, \`docker stats\`
 - GitHub CLI: \`gh pr list\`, \`gh issue view\`, \`gh run list\`
-- curl for external diagnostics or APIs not covered by mini_infra_api
+- curl for calling the Mini Infra API or external APIs
+- You can chain commands with \`&&\`, \`||\`, \`;\`, and \`|\`
 
-### When to use \`mini_infra_api\`
-- Structured API calls to the Mini Infra REST API
-- Use this instead of curl when calling Mini Infra endpoints
-- Authentication is handled automatically
+### Calling the Mini Infra API with curl
+The API base URL and API key are available as environment variables:
+- \`$MINI_INFRA_API_URL\` — the base URL (e.g. \`http://localhost:5005\`)
+- \`$MINI_INFRA_API_KEY\` — the API key for authentication
+
+Pass the API key via the \`x-api-key\` header. Examples:
+\`\`\`bash
+# List containers
+curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/containers"
+
+# Get docker info
+curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/docker/info"
+
+# POST with JSON body
+curl -s -X POST -H "x-api-key: $MINI_INFRA_API_KEY" -H "Content-Type: application/json" -d '{"key":"value"}' "$MINI_INFRA_API_URL/api/some/endpoint"
+\`\`\`
+
+Always use \`-s\` (silent) to suppress progress bars and pipe through \`| jq .\` for readable output when needed.
 
 ### When to use \`read_doc\` / \`list_docs\`
 - When the user asks about Mini Infra features, troubleshooting, or configuration

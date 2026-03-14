@@ -6,9 +6,6 @@ import { logger } from "../logger";
 // Environment config
 // ---------------------------------------------------------------------------
 
-const MINI_INFRA_API_URL =
-  process.env.MINI_INFRA_API_URL ?? "http://localhost:5005";
-const MINI_INFRA_API_KEY = process.env.MINI_INFRA_API_KEY ?? "";
 const DOCS_DIR = process.env.DOCS_DIR ?? "/app/docs";
 
 // ---------------------------------------------------------------------------
@@ -73,10 +70,10 @@ export function checkBashSafety(command: string): string | null {
     return "Newlines and tabs are not allowed in commands.";
   }
 
-  // No command chaining characters (pipe | is allowed for diagnostic commands)
-  const chainPattern = /[;`]|\$\(|&&|\|\|/;
-  if (chainPattern.test(command)) {
-    return "Command chaining is not allowed in agent commands.";
+  // Block backticks and $() subshells — chaining with &&, ||, ; and pipes is allowed
+  const subshellPattern = /[`]|\$\(/;
+  if (subshellPattern.test(command)) {
+    return "Subshell execution (backticks, $()) is not allowed in agent commands.";
   }
 
   // Check against blocked patterns
@@ -96,61 +93,6 @@ export function checkBashSafety(command: string): string | null {
 export interface ToolResult {
   content: string;
   isError: boolean;
-}
-
-async function executeMiniInfraApi(input: {
-  method: string;
-  path: string;
-  body?: Record<string, unknown>;
-  query?: Record<string, string>;
-}): Promise<ToolResult> {
-  const { method, path: apiPath, body, query } = input;
-
-  let url = `${MINI_INFRA_API_URL}${apiPath}`;
-  if (query && Object.keys(query).length > 0) {
-    const params = new URLSearchParams(query);
-    url += `?${params.toString()}`;
-  }
-
-  try {
-    const headers: Record<string, string> = {
-      "x-api-key": MINI_INFRA_API_KEY,
-      "Content-Type": "application/json",
-    };
-
-    const fetchOptions: RequestInit = {
-      method,
-      headers,
-      signal: AbortSignal.timeout(30_000),
-    };
-
-    if (body && ["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
-      fetchOptions.body = JSON.stringify(body);
-    }
-
-    const response = await fetch(url, fetchOptions);
-    const text = await response.text();
-
-    let content: string;
-    try {
-      const json = JSON.parse(text);
-      content = JSON.stringify(json, null, 2);
-    } catch {
-      content = text;
-    }
-
-    if (!response.ok) {
-      return {
-        content: `HTTP ${response.status} ${response.statusText}\n${content}`,
-        isError: true,
-      };
-    }
-
-    return { content, isError: false };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return { content: `API request failed: ${message}`, isError: true };
-  }
 }
 
 async function executeListDocs(input: {
@@ -229,15 +171,6 @@ export async function executeTool(
   );
 
   switch (name) {
-    case "mini_infra_api":
-      return executeMiniInfraApi(
-        input as {
-          method: string;
-          path: string;
-          body?: Record<string, unknown>;
-          query?: Record<string, string>;
-        },
-      );
     case "list_docs":
       return executeListDocs(input as { category?: string });
     case "read_doc":
