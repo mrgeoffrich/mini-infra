@@ -3,7 +3,8 @@ import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
-import appConfig from "../lib/config-new";
+import appConfig, { agentConfig } from "../lib/config-new";
+import { getEffectiveModel } from "./agent-settings-service";
 
 const logger = servicesLogger();
 
@@ -51,8 +52,9 @@ export async function getAgentSidecarConfig() {
   const settings = await getSettings();
   return {
     image: settings.get("image") || process.env.AGENT_SIDECAR_IMAGE_TAG || null,
-    model: settings.get("model") || "claude-sonnet-4-6",
-    maxTurns: parseInt(settings.get("max_turns") || "50", 10),
+    model: await getEffectiveModel(),
+    thinking: agentConfig.thinking,
+    effort: agentConfig.effort,
     timeoutMs: parseInt(settings.get("timeout_ms") || "300000", 10),
     autoStart: settings.get("auto_start") !== "false",
   };
@@ -137,17 +139,42 @@ export function stopHealthChecks(): void {
 // Sidecar lifecycle
 // ---------------------------------------------------------------------------
 
-export async function ensureAgentSidecar(): Promise<{
+export type SidecarProgressCallback = (
+  step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string },
+  completedCount: number,
+  totalSteps: number,
+) => void;
+
+export async function ensureAgentSidecar(options?: {
+  onProgress?: SidecarProgressCallback;
+  checkAutoStart?: boolean;
+}): Promise<{
   containerId: string;
   url: string;
 } | null> {
   const containerId = getOwnContainerId();
   if (!containerId) {
-    logger.info("Not running in Docker, agent sidecar disabled");
-    return null;
+    // Dev mode: connect to locally-running sidecar process
+    const devUrl = process.env.AGENT_SIDECAR_DEV_URL;
+    if (!devUrl) {
+      logger.info("Not running in Docker and AGENT_SIDECAR_DEV_URL not set, agent sidecar disabled");
+      return null;
+    }
+
+    sidecarUrl = devUrl;
+    internalToken = null;
+    startHealthChecks();
+    logger.info({ sidecarUrl }, "Dev mode: connected to local agent sidecar process");
+    return { containerId: "dev-local", url: sidecarUrl };
   }
 
   const config = await getAgentSidecarConfig();
+
+  // Respect autoStart setting when called at startup
+  if (options?.checkAutoStart && !config.autoStart) {
+    logger.info("Agent sidecar auto-start is disabled");
+    return null;
+  }
 
   if (!config.image) {
     logger.warn(
@@ -178,9 +205,9 @@ export async function ensureAgentSidecar(): Promise<{
       const containerName = info.Name.replace(/^\//, "");
 
       sidecarUrl = `http://${containerName}:${SIDECAR_PORT}`;
-      internalToken =
-        info.Config.Env?.find((e: string) => e.startsWith("SIDECAR_AUTH_TOKEN="))
-          ?.split("=")[1] || null;
+      const tokenPrefix = "SIDECAR_AUTH_TOKEN=";
+      const tokenEnv = info.Config.Env?.find((e: string) => e.startsWith(tokenPrefix));
+      internalToken = tokenEnv ? tokenEnv.slice(tokenPrefix.length) : null;
 
       startHealthChecks();
       return { containerId: existing.id, url: sidecarUrl };
@@ -201,16 +228,42 @@ export async function ensureAgentSidecar(): Promise<{
   }
 
   // Create new sidecar
-  return createAgentSidecar(config);
+  return createAgentSidecar(config, options?.onProgress);
 }
 
-async function createAgentSidecar(config: {
-  image: string | null;
-  model: string;
-  maxTurns: number;
-  timeoutMs: number;
-}): Promise<{ containerId: string; url: string } | null> {
+/** Step names used for progress reporting */
+export const SIDECAR_STARTUP_STEPS = [
+  "Pull sidecar image",
+  "Create container",
+  "Start container",
+  "Verify health",
+] as const;
+
+async function createAgentSidecar(
+  config: {
+    image: string | null;
+    model: string;
+    thinking: string;
+    effort: string;
+    timeoutMs: number;
+  },
+  onProgress?: SidecarProgressCallback,
+): Promise<{ containerId: string; url: string } | null> {
   if (!config.image) return null;
+
+  const totalSteps = SIDECAR_STARTUP_STEPS.length;
+  let completedCount = 0;
+
+  const reportStep = (
+    step: string,
+    status: "completed" | "failed" | "skipped",
+    detail?: string,
+  ) => {
+    if (status === "completed") completedCount++;
+    try {
+      onProgress?.({ step, status, detail }, completedCount, totalSteps);
+    } catch { /* never break caller */ }
+  };
 
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
@@ -243,6 +296,28 @@ async function createAgentSidecar(config: {
       "Creating agent sidecar container",
     );
 
+    // Step 1: Pull the sidecar image
+    try {
+      await new Promise<void>((resolve, reject) => {
+        docker.pull(config.image!, (err: Error | null, stream: NodeJS.ReadableStream) => {
+          if (err) return reject(err);
+          docker.modem.followProgress(stream, (progressErr: Error | null) => {
+            if (progressErr) return reject(progressErr);
+            resolve();
+          });
+        });
+      });
+      logger.info({ image: config.image }, "Agent sidecar image pulled");
+      reportStep("Pull sidecar image", "completed", config.image);
+    } catch (pullErr) {
+      logger.error({ err: pullErr, image: config.image }, "Failed to pull agent sidecar image");
+      reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
+      throw new Error(
+        `Failed to pull agent sidecar image "${config.image}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+      );
+    }
+
+    // Step 2: Create container
     const createOptions: Record<string, unknown> = {
       Image: config.image,
       name: AGENT_SIDECAR_CONTAINER_NAME,
@@ -257,13 +332,17 @@ async function createAgentSidecar(config: {
         `SIDECAR_AUTH_TOKEN=${internalToken}`,
         `PORT=${SIDECAR_PORT}`,
         `AGENT_MODEL=${config.model}`,
-        `AGENT_MAX_TURNS=${config.maxTurns}`,
+        `AGENT_THINKING=${config.thinking}`,
+        `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,
         `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
       ],
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
       HostConfig: {
-        Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
+        Binds: [
+          "/var/run/docker.sock:/var/run/docker.sock",
+          "mini-infra-agent-sessions:/home/node/.claude",
+        ],
         RestartPolicy: { Name: "unless-stopped" },
         Memory: 512 * 1024 * 1024,
         MemorySwap: 512 * 1024 * 1024,
@@ -282,23 +361,47 @@ async function createAgentSidecar(config: {
     const sidecar = await docker.createContainer(
       createOptions as Docker.ContainerCreateOptions,
     );
+    reportStep("Create container", "completed");
+
+    // Step 3: Start container
     await sidecar.start();
 
     const sidecarId = (sidecar as unknown as { id: string }).id;
     sidecarUrl = `http://${AGENT_SIDECAR_CONTAINER_NAME}:${SIDECAR_PORT}`;
 
     logger.info({ sidecarId, sidecarUrl }, "Agent sidecar container started");
+    reportStep("Start container", "completed", sidecarId.slice(0, 12));
 
+    // Step 4: Verify health
     startHealthChecks();
+    // Give the sidecar a moment to start accepting connections
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await checkSidecarHealth();
+    if (sidecarHealthy) {
+      reportStep("Verify health", "completed");
+    } else {
+      // Container started but health check didn't pass yet — not fatal,
+      // the periodic health check will pick it up
+      reportStep("Verify health", "completed", "Health check pending — container is starting");
+    }
+
     return { containerId: sidecarId, url: sidecarUrl };
   } catch (err) {
     logger.error({ err }, "Failed to create agent sidecar container");
-    return null;
+    throw err;
   }
 }
 
 export async function removeAgentSidecar(): Promise<void> {
   stopHealthChecks();
+
+  // Dev mode: no Docker container to manage, just clear state
+  if (!getOwnContainerId()) {
+    sidecarUrl = null;
+    internalToken = null;
+    sidecarHealthy = false;
+    return;
+  }
 
   const existing = await findAgentSidecar();
   if (!existing) {
@@ -328,12 +431,14 @@ export async function removeAgentSidecar(): Promise<void> {
   sidecarHealthy = false;
 }
 
-export async function restartAgentSidecar(): Promise<{
+export async function restartAgentSidecar(options?: {
+  onProgress?: SidecarProgressCallback;
+}): Promise<{
   containerId: string;
   url: string;
 } | null> {
   await removeAgentSidecar();
-  return ensureAgentSidecar();
+  return ensureAgentSidecar({ onProgress: options?.onProgress });
 }
 
 // ---------------------------------------------------------------------------

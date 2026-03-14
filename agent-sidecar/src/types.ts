@@ -74,8 +74,10 @@ export interface Session {
   id: string;
   status: SessionStatus;
   currentPath: string;
+  sdkSessionId: string | null;
   tokenUsage: TokenUsage;
   turns: number;
+  errorMessage: string | null;
   createdAt: string; // ISO 8601
   completedAt: string | null;
   durationMs: number | null;
@@ -90,6 +92,7 @@ export interface CreateSessionRequest {
   message: string;
   currentPath?: string;
   context?: Record<string, unknown>;
+  sdkSessionId?: string;
 }
 
 /** POST /sessions response (201) */
@@ -97,11 +100,6 @@ export interface CreateSessionResponse {
   id: string;
   status: SessionStatus;
   createdAt: string;
-}
-
-/** POST /sessions/:id/messages request body */
-export interface SendMessageRequest {
-  message: string;
 }
 
 /** PUT /sessions/:id/context request body */

@@ -14,9 +14,10 @@ let shuttingDown = false;
 function startDev() {
   console.log("\x1b[36m[dev-restart]\x1b[0m Starting dev server...");
 
-  child = spawn("npx", ["concurrently", "npm run dev:lib", "npm run dev:server", "npm run dev:client"], {
+  child = spawn("npx", ["concurrently", "npm run dev:lib", "npm run dev:server", "npm run dev:client", "npm run dev:agent-sidecar"], {
     cwd: ROOT,
     stdio: "inherit",
+    env: { ...process.env, AGENT_SIDECAR_DEV_URL: "http://localhost:3100" },
   });
 
   child.on("exit", (code) => {

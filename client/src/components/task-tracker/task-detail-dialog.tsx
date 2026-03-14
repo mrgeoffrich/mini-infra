@@ -25,6 +25,8 @@ import {
   IconStack2,
   IconTrash,
   IconArrowsShuffle,
+  IconRocket,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
@@ -105,6 +107,10 @@ function getTaskTitle(type: TaskType): string {
       return "Stack Destroy";
     case "migration":
       return "HAProxy Migration";
+    case "sidecar-startup":
+      return "Agent Sidecar Startup";
+    case "self-update-launch":
+      return "Self-Update Launch";
   }
 }
 
@@ -120,6 +126,10 @@ function getTaskIcon(type: TaskType) {
       return <IconTrash className="h-5 w-5" />;
     case "migration":
       return <IconArrowsShuffle className="h-5 w-5" />;
+    case "sidecar-startup":
+      return <IconRocket className="h-5 w-5" />;
+    case "self-update-launch":
+      return <IconRefresh className="h-5 w-5" />;
   }
 }
 

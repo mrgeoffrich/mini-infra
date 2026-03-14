@@ -13,7 +13,7 @@ import {
 } from "./lib/logger-factory";
 import {
   ensureAgentSidecar,
-  stopHealthChecks as stopAgentSidecarHealthChecks,
+  removeAgentSidecar,
 } from "./services/agent-sidecar";
 
 // Clear logger cache on startup to ensure new configuration is loaded
@@ -236,10 +236,10 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
     }
 
-    // Provision agent sidecar (if running in Docker)
+    // Provision agent sidecar (if running in Docker and autoStart is enabled)
     console.log("[STARTUP] Checking agent sidecar...");
     try {
-      const agentSidecarResult = await ensureAgentSidecar();
+      const agentSidecarResult = await ensureAgentSidecar({ checkAutoStart: true });
       if (agentSidecarResult) {
         logger.info(
           {
@@ -604,9 +604,13 @@ startServer()
         logger.info("Agent service stopped");
       }
 
-      // Stop agent sidecar health checks (container has its own restart policy)
-      stopAgentSidecarHealthChecks();
-      logger.info("Agent sidecar health checks stopped");
+      // Stop and remove the agent sidecar container (it has no persistent state)
+      try {
+        await removeAgentSidecar();
+        logger.info("Agent sidecar stopped and removed");
+      } catch (err) {
+        logger.warn({ err }, "Failed to remove agent sidecar during shutdown (non-fatal)");
+      }
 
       // Shut down Socket.IO before closing the HTTP server
       await shutdownSocketIO();

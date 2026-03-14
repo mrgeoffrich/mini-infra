@@ -14,14 +14,14 @@ Use this deployment to:
 
 ### 1. Create Environment File
 
-Create a `.env` file in this directory:
+Ensure a `.env` file exists at `server/.env` (the start script reads it from there):
 
 ```bash
 SESSION_SECRET=<generate with: openssl rand -base64 32>
 API_KEY_SECRET=<generate with: openssl rand -base64 32>
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:5000/auth/google/callback
+GOOGLE_CALLBACK_URL=http://localhost:3005/auth/google/callback
 ```
 
 ### 2. Run the Startup Script
@@ -37,38 +37,56 @@ GOOGLE_CALLBACK_URL=http://localhost:5000/auth/google/callback
 ```
 
 The script will:
-- Check for the `.env` file
-- Build the Docker image from the local Dockerfile
-- Start the services with docker-compose
+1. Check for the `.env` file
+2. Start a **local Docker registry** on port 5051 (used by both the main app and the agent sidecar)
+3. Build the **agent sidecar** image and push it to the local registry
+4. Build the **main app** image (with the registry-prefixed sidecar tag baked in) and start all services
+
+## Architecture
+
+The development deployment runs three containers:
+
+| Container | Purpose | Port |
+|---|---|---|
+| `mini-infra-dev-registry` | Local Docker registry for sidecar images | 5051 |
+| `mini-infra-dev` | Main Mini Infra application | 3005 (mapped to 5000 internal) |
+| `mini-infra-agent-sidecar` | AI agent sidecar (spawned by mini-infra-dev at startup) | 3100 (internal only) |
+
+The local registry solves the problem of the main app needing to `docker pull` the agent sidecar image at runtime. In production, images come from ghcr.io; in development, the local registry serves the same purpose for locally-built images.
 
 ## What's Different from Production?
 
 - **Builds locally** instead of pulling from ghcr.io
+- **Local Docker registry** on port 5051 for sidecar images
 - Uses `mini-infra-dev` container name (won't conflict with production)
-- Uses separate volumes (`mini-infra-dev-data`, etc.)
+- Uses separate volumes (`mini-infra-dev-data`, `mini-infra-dev-logs`, `mini-infra-dev-registry`)
 - Log level defaults to `debug` for more verbose output
-- OpenTelemetry resource attributes set to `development` environment
 
 ## Common Commands
 
+All compose commands should include the compose file path when run from the project root:
+
 ```bash
 # View logs
-docker compose logs -f mini-infra
+docker compose -f deployment/development/docker-compose.yaml logs -f
 
 # Check status
-docker compose ps
+docker compose -f deployment/development/docker-compose.yaml ps
 
-# Rebuild after code changes
-docker compose up -d --build
+# Full rebuild and restart (recommended — rebuilds sidecar + main app)
+./deployment/development/start.sh
 
 # Stop services
-docker compose down
+docker compose -f deployment/development/docker-compose.yaml down
 
 # Stop and remove volumes (clean slate)
-docker compose down -v
+docker compose -f deployment/development/docker-compose.yaml down -v
 
 # Execute commands in container
-docker compose exec mini-infra sh
+docker exec -it mini-infra-dev sh
+
+# Seed container database from local dev.db
+./deployment/development/start.sh --seed-db
 ```
 
 ## Notes
@@ -77,6 +95,7 @@ docker compose exec mini-infra sh
 - The build process includes multi-stage builds for lib, client, and server
 - Database migrations run automatically on container startup
 - Requires Docker socket access (`/var/run/docker.sock`) for container management features
+- The agent sidecar image tag (`localhost:5051/mini-infra-agent-sidecar:latest`) is baked into the main image at build time via the `AGENT_SIDECAR_IMAGE_TAG` build arg
 
 ## Testing Self-Update Locally
 
@@ -84,13 +103,12 @@ The `test-self-update.sh` script lets you test the self-update sidecar mechanism
 
 ### How It Works
 
-The self-update feature uses a sidecar container that swaps the running Mini Infra container with a new image version. Normally it pulls from a remote registry, but for local testing the script:
+The self-update feature uses a sidecar container that swaps the running Mini Infra container with a new image version. Normally it pulls from a remote registry, but for local testing the script reuses the local registry (started by `start.sh`) to:
 
-1. **Automatically** starts a local Docker registry container on port 5051 (no manual setup needed — localhost is exempt from Docker's HTTPS requirement)
-2. Builds the main app image and pushes it to the local registry as `localhost:5051/mini-infra:v2-test`
-3. Builds the sidecar image and tags it as `localhost:5051/mini-infra-sidecar:v1-test`
-4. Configures the running app's self-update settings to point at the local registry
-5. Triggers the update via the API and tails the sidecar logs
+1. Build the main app image and push it to the local registry as `localhost:5051/mini-infra:v2-test`
+2. Build the update sidecar image and tag it as `localhost:5051/mini-infra-sidecar:v1-test`
+3. Configure the running app's self-update settings to point at the local registry
+4. Trigger the update via the API and tail the sidecar logs
 
 Everything is handled by the script — you just need a running `mini-infra-dev` container and an API key.
 
@@ -155,6 +173,7 @@ curl -s -H 'x-api-key: <KEY>' http://localhost:3005/api/self-update/status | pyt
 |----------|----------|-------------------|
 | Testing Docker builds | ✅ Yes | ❌ No |
 | Testing docker-compose | ✅ Yes | ❌ No |
+| Testing agent sidecar | ✅ Yes | ❌ No |
 | Rapid code iteration | ❌ No | ✅ Yes |
 | Testing in production-like environment | ✅ Yes | ❌ No |
 | Debugging with hot reload | ❌ No | ✅ Yes |

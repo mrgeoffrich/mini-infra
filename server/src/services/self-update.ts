@@ -59,6 +59,12 @@ export interface UpdateCheckResult {
   availableTags: string[];
 }
 
+export type UpdateProgressCallback = (
+  step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string },
+  completedCount: number,
+  totalSteps: number,
+) => void;
+
 export interface TriggerUpdateOptions {
   fullImageRef: string; // Full image reference (e.g. "ghcr.io/user/repo:v2.1.0")
   allowedRegistryPattern: string;
@@ -67,7 +73,15 @@ export interface TriggerUpdateOptions {
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
+  onProgress?: UpdateProgressCallback;
 }
+
+/** Step names used for progress reporting */
+export const SELF_UPDATE_LAUNCH_STEPS = [
+  "Pull sidecar image",
+  "Create sidecar container",
+  "Start sidecar container",
+] as const;
 
 /**
  * Reads the container ID of the currently running Mini Infra instance.
@@ -159,6 +173,20 @@ export async function launchSidecar(
     throw new Error("Launch lock not held — call acquireLaunchLock() before launchSidecar()");
   }
 
+  const totalSteps = SELF_UPDATE_LAUNCH_STEPS.length;
+  let completedCount = 0;
+
+  const reportStep = (
+    step: string,
+    status: "completed" | "failed" | "skipped",
+    detail?: string,
+  ) => {
+    if (status === "completed") completedCount++;
+    try {
+      options.onProgress?.({ step, status, detail }, completedCount, totalSteps);
+    } catch { /* never break caller */ }
+  };
+
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
     const containerId = getOwnContainerId();
@@ -220,8 +248,7 @@ export async function launchSidecar(
       "Launching self-update sidecar",
     );
 
-    // Pull the sidecar image if not already present locally.
-    // docker.createContainer does NOT auto-pull like `docker run`.
+    // Step 1: Pull the sidecar image
     try {
       const pullAuth = sidecarCreds
         ? { authconfig: { username: sidecarCreds.username, password: sidecarCreds.password } }
@@ -237,11 +264,14 @@ export async function launchSidecar(
         });
       });
       logger.info({ sidecarImage: options.sidecarImage }, "Sidecar image pulled");
+      reportStep("Pull sidecar image", "completed", options.sidecarImage);
     } catch (pullErr) {
       logger.error({ err: pullErr, sidecarImage: options.sidecarImage }, "Failed to pull sidecar image");
+      reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
       throw new Error(`Failed to pull sidecar image "${options.sidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
     }
 
+    // Step 2: Create sidecar container
     // Pass target image registry credentials to the sidecar as env vars
     const sidecarEnv = [
       `TARGET_IMAGE=${fullImageRef}`,
@@ -282,10 +312,14 @@ export async function launchSidecar(
     }
 
     const sidecar = await docker.createContainer(createOptions);
+    reportStep("Create sidecar container", "completed");
+
+    // Step 3: Start sidecar container
     await sidecar.start();
 
     const sidecarId = (sidecar as unknown as { id: string }).id;
     logger.info({ sidecarId }, "Sidecar container started");
+    reportStep("Start sidecar container", "completed", sidecarId.slice(0, 12));
 
     return sidecarId;
   } finally {

@@ -156,7 +156,6 @@ export async function getSettings(): Promise<AgentSettingsResponse> {
     advanced: {
       thinking: agentConfig.thinking,
       effort: agentConfig.effort,
-      maxTurns: agentConfig.maxTurns,
     },
   };
 }

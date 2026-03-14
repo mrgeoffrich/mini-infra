@@ -5,6 +5,8 @@ import {
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Channel, ServerEvent } from "@mini-infra/types";
 import type {
   AgentSettingsResponse,
   UpdateAgentSettingsRequest,
@@ -12,6 +14,7 @@ import type {
   AgentSidecarStatus,
   AgentSidecarConfig,
 } from "@mini-infra/types";
+import { useOperationProgress } from "./use-operation-progress";
 
 async function fetchAgentSettings(): Promise<AgentSettingsResponse> {
   const response = await fetch("/api/agent/settings", {
@@ -180,12 +183,11 @@ export function useUpdateAgentSidecarConfig(): UseMutationResult<
   });
 }
 
-export function useRestartAgentSidecar(): UseMutationResult<
-  { containerId: string; url: string },
+export function useStartAgentSidecar(): UseMutationResult<
+  { operationId: string },
   Error,
   void
 > {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/agent-sidecar/restart", {
@@ -195,13 +197,37 @@ export function useRestartAgentSidecar(): UseMutationResult<
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to restart sidecar: ${response.status}`);
+        throw new Error(body.error || `Failed to start sidecar: ${response.status}`);
       }
-      return response.json();
+      const result = await response.json();
+      return { operationId: result.data.operationId };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent-sidecar", "status"] });
-      queryClient.invalidateQueries({ queryKey: ["agent", "status"] });
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+}
+
+export function useAgentSidecarStartupProgress(operationId: string | null, label?: string) {
+  return useOperationProgress({
+    channel: Channel.AGENT_SIDECAR,
+    startedEvent: ServerEvent.SIDECAR_STARTUP_STARTED,
+    stepEvent: ServerEvent.SIDECAR_STARTUP_STEP,
+    completedEvent: ServerEvent.SIDECAR_STARTUP_COMPLETED,
+    operationId,
+    getOperationId: (p) => p.operationId,
+    getTotalSteps: (p) => p.totalSteps,
+    getStepNames: (p) => p.stepNames ?? [],
+    getStep: (p) => p.step,
+    getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
+    invalidateKeys: [["agent-sidecar", "status"], ["agent", "status"]],
+    toasts: {
+      success: "Agent sidecar started successfully",
+      error: "Agent sidecar startup failed",
+    },
+    tracker: {
+      type: "sidecar-startup",
+      label: label ?? "Starting agent sidecar",
     },
   });
 }

@@ -76,7 +76,7 @@ function buildDocsIndex(): string {
   }
 
   const lines: string[] = ["## Available Documentation", ""];
-  lines.push("Use the `read_doc` tool to read any of these files.", "");
+  lines.push("Use the `read_doc` MCP tool or the built-in `Read` tool to read any of these files.", "");
 
   for (const [category, categoryDocs] of byCategory) {
     categoryDocs.sort((a, b) => a.order - b.order);
@@ -133,7 +133,13 @@ You MUST follow these rules at all times:
 
 const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 
-### When to use \`bash\`
+### Built-in Tools
+You have access to the following built-in tools provided by the SDK:
+- **Bash**: Execute shell commands (docker, gh, curl, and standard Unix utilities). Commands run in /tmp/agent-work/.
+- **Read**: Read any file accessible to the sidecar (logs, configs, docs, temporary outputs).
+- **Write**: Write files to /tmp/agent-work/ only (for scripts, reports, etc.).
+
+### When to use \`Bash\`
 - Docker CLI commands: \`docker ps\`, \`docker logs\`, \`docker inspect\`, \`docker stats\`
 - GitHub CLI: \`gh pr list\`, \`gh issue view\`, \`gh run list\`
 - curl for external diagnostics or APIs not covered by mini_infra_api
@@ -147,10 +153,7 @@ const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 - When the user asks about Mini Infra features, troubleshooting, or configuration
 - Read the relevant documentation file before answering feature questions
 - Use \`list_docs\` first if you're unsure which doc to read
-
-### When to use \`read_file\` / \`write_file\`
-- read_file: Read any file accessible to the sidecar (logs, configs, temporary outputs)
-- write_file: Write temporary files to /tmp/agent-work/ only (for scripts, reports, etc.)`;
+- You can also use the built-in \`Read\` tool to read docs directly from /app/docs/`;
 
 const API_REFERENCE = `## Mini Infra API Endpoints
 

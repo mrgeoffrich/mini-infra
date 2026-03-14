@@ -1,14 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { v4 as uuidv4 } from "uuid";
-import { SessionStore, AgentMessageQueue } from "../session-store";
-import { TokenUsage, SSEEvent } from "../types";
+import { query, type SDKMessage } from "./sdk";
+import { SessionStore } from "../session-store";
+import { SSEEvent } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
-import { TOOL_DEFINITIONS, executeTool, summarizeOutput } from "./tools";
-import {
-  UI_TOOL_DEFINITIONS,
-  UI_TOOL_NAMES,
-  executeUITool,
-} from "./ui-tools";
+import { checkBashSafety } from "./tools";
+import { createInfraToolsMcpServer } from "./infra-tools-mcp";
+import { createUiToolsMcpServer } from "./ui-tools-mcp";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -16,28 +13,29 @@ import { logger } from "../logger";
 // ---------------------------------------------------------------------------
 
 const AGENT_MODEL = process.env.AGENT_MODEL ?? "claude-sonnet-4-6";
-const AGENT_MAX_TURNS = parseInt(process.env.AGENT_MAX_TURNS ?? "50", 10);
 const AGENT_TIMEOUT_MS = parseInt(
   process.env.AGENT_TIMEOUT_MS ?? "300000",
   10,
 );
-const MAX_TOKENS = 16384;
-
-// Extended thinking config
-const THINKING_ENABLED = process.env.AGENT_THINKING === "enabled";
-const THINKING_BUDGET = parseInt(
-  process.env.AGENT_THINKING_BUDGET ?? "10000",
-  10,
-);
+const AGENT_THINKING = (process.env.AGENT_THINKING ?? "adaptive") as
+  | "adaptive"
+  | "enabled"
+  | "disabled";
+const AGENT_EFFORT = (process.env.AGENT_EFFORT ?? "medium") as
+  | "low"
+  | "medium"
+  | "high"
+  | "max";
 
 // ---------------------------------------------------------------------------
-// Agent runner — streaming + multi-turn
+// Agent runner — Agent SDK query()
 // ---------------------------------------------------------------------------
 
 export async function runSession(
   sessionId: string,
   store: SessionStore,
   initialMessage: string,
+  sdkSessionId?: string,
 ): Promise<void> {
   const session = store.getSession(sessionId);
   if (!session) {
@@ -45,16 +43,19 @@ export async function runSession(
     return;
   }
 
-  const client = new Anthropic();
   const systemPrompt = buildSystemPrompt();
-  const allTools = [...TOOL_DEFINITIONS, ...UI_TOOL_DEFINITIONS];
 
   const timeoutHandle = setTimeout(() => {
     logger.warn({ sessionId }, "Session timed out");
     session.abortController.abort();
   }, AGENT_TIMEOUT_MS);
 
-  const cumulativeUsage: TokenUsage = { input: 0, output: 0 };
+  // Create MCP servers per-session (UI tools need the session's broadcast/path)
+  const infraMcpServer = createInfraToolsMcpServer();
+  const uiMcpServer = createUiToolsMcpServer(
+    (event: SSEEvent) => emitSSE(store, sessionId, event),
+    () => session.currentPath,
+  );
 
   // Emit init event
   emitSSE(store, sessionId, {
@@ -62,196 +63,231 @@ export async function runSession(
     data: { sessionId, model: AGENT_MODEL },
   });
 
-  // Add the initial user message
-  session.messages.push({
-    role: "user",
-    content: initialMessage,
-  });
+  let capturedSdkSessionId: string | null = sdkSessionId ?? null;
+  let assistantUuid = uuidv4();
 
-  const queue = session.queue;
-  let waitingForUser = false;
-
+  // Track streaming state for SSE mapping
+  const currentBlockTypes = new Map<number, string>();
+  const pendingToolInputs = new Map<
+    number,
+    { id: string; name: string; inputJson: string }
+  >();
   try {
-    let turns = 0;
+    const queryOptions: Record<string, unknown> = {
+      model: AGENT_MODEL,
+      systemPrompt,
+      cwd: "/tmp/agent-work",
+      abortController: session.abortController,
+      // Use the SDK's built-in tools instead of custom MCP tools
+      tools: ["Bash", "Read", "Write"],
+      additionalDirectories: ["/app/docs"],
+      // Domain-specific MCP servers (API calls, docs, UI guidance)
+      mcpServers: {
+        "mini-infra-infra": infraMcpServer,
+        "mini-infra-ui": uiMcpServer,
+      },
+      // Auto-approve read-only and MCP tools; Bash and Write go through canUseTool
+      allowedTools: [
+        "Read",
+        "mcp__mini-infra-infra__*",
+        "mcp__mini-infra-ui__*",
+      ],
+      // Safety checks for Bash commands and Write paths
+      canUseTool: async (
+        toolName: string,
+        input: Record<string, unknown>,
+      ) => {
+        if (toolName === "Bash") {
+          const command = String(input.command ?? "");
+          const violation = checkBashSafety(command);
+          if (violation) {
+            return { behavior: "deny" as const, message: `BLOCKED: ${violation}` };
+          }
+        }
+        if (toolName === "Write") {
+          const filePath = String(input.file_path ?? "");
+          if (filePath && !filePath.startsWith("/tmp/agent-work")) {
+            return {
+              behavior: "deny" as const,
+              message: "Files can only be written to /tmp/agent-work/",
+            };
+          }
+        }
+        return { behavior: "allow" as const };
+      },
+      includePartialMessages: true,
+      thinking:
+        AGENT_THINKING === "disabled"
+          ? { type: "disabled" as const }
+          : AGENT_THINKING === "enabled"
+            ? { type: "enabled" as const }
+            : { type: "adaptive" as const },
+      effort: AGENT_EFFORT,
+    };
 
-    while (turns < AGENT_MAX_TURNS) {
+    if (sdkSessionId) {
+      queryOptions.resume = sdkSessionId;
+    }
+
+    const stream = query({
+      prompt: initialMessage,
+      options: queryOptions as Parameters<typeof query>[0]["options"],
+    });
+
+    for await (const message of stream) {
       if (session.abortController.signal.aborted) {
-        handleAbort(store, sessionId, session);
+        handleAbort(store, sessionId);
         return;
       }
 
-      // Run one streaming API call
-      const assistantUuid = uuidv4();
-      session.currentTurnUuid = assistantUuid;
-      session.currentBlockTypes.clear();
-      session.pendingToolInputs.clear();
-
-      // Build request params
-      const params: Anthropic.Messages.MessageCreateParamsStreaming = {
-        model: AGENT_MODEL,
-        max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        messages: session.messages,
-        tools: allTools,
-        stream: true,
-      };
-
-      // Add thinking support if enabled
-      if (THINKING_ENABLED) {
-        (params as unknown as Record<string, unknown>).thinking = {
-          type: "enabled",
-          budget_tokens: THINKING_BUDGET,
-        };
-      }
-
-      const stream = client.messages.stream(params, {
-        signal: session.abortController.signal,
-      });
-
-      // Process streaming events
-      for await (const event of stream) {
-        if (session.abortController.signal.aborted) {
-          handleAbort(store, sessionId, session);
-          return;
-        }
-
-        processStreamEvent(store, sessionId, session, event, assistantUuid);
-      }
-
-      // Get the final message
-      const message = await stream.finalMessage();
-
-      // Accumulate token usage
-      cumulativeUsage.input += message.usage.input_tokens;
-      cumulativeUsage.output += message.usage.output_tokens;
-      store.updateTokenUsage(sessionId, { ...cumulativeUsage });
-
-      // Emit complete content blocks from the final message
-      emitFinalContentBlocks(store, sessionId, message, assistantUuid);
-
-      // Emit assistant_message_stop
-      emitSSE(store, sessionId, {
-        type: "assistant_message_stop",
-        data: { assistantUuid },
-      });
-
-      // Add assistant message to conversation
-      session.messages.push({
-        role: "assistant",
-        content: message.content,
-      });
-
-      // Handle stop reason
-      if (message.stop_reason === "tool_use") {
-        // Execute tools and continue
-        const toolBlocks = message.content.filter(
-          (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
-        );
-
-        const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-
-        for (const toolBlock of toolBlocks) {
-          if (session.abortController.signal.aborted) {
-            handleAbort(store, sessionId, session);
-            return;
-          }
-
-          const input = toolBlock.input as Record<string, unknown>;
-          let result: { content: string; isError: boolean };
-
-          if (UI_TOOL_NAMES.has(toolBlock.name)) {
-            // UI tool — execute and emit SSE event
-            const uiResult = executeUITool(
-              toolBlock.name,
-              input,
-              session.currentPath,
-            );
-            result = { content: uiResult.content, isError: uiResult.isError };
-            if (uiResult.sseEvent) {
-              emitSSE(store, sessionId, uiResult.sseEvent);
-            }
-          } else {
-            // Infrastructure tool
-            result = await executeTool(toolBlock.name, input);
-          }
-
-          // Emit tool_result
-          emitSSE(store, sessionId, {
-            type: "tool_result",
-            data: {
-              toolId: toolBlock.id,
-              output: summarizeOutput(toolBlock.name, result),
-            },
-          });
-
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: toolBlock.id,
-            content: result.content,
-            is_error: result.isError,
-          });
-        }
-
-        // Add tool results to conversation
-        session.messages.push({
-          role: "user",
-          content: toolResults,
+      // Capture SDK session ID from the first message that has one
+      if (
+        !capturedSdkSessionId &&
+        "session_id" in message &&
+        typeof (message as Record<string, unknown>).session_id === "string"
+      ) {
+        capturedSdkSessionId = (message as Record<string, unknown>).session_id as string;
+        // Re-emit init with the SDK session ID so the server can capture it
+        emitSSE(store, sessionId, {
+          type: "init",
+          data: { sessionId, model: AGENT_MODEL, sdkSessionId: capturedSdkSessionId },
         });
-
-        turns++;
-        store.incrementTurns(sessionId);
-        continue;
       }
 
-      if (message.stop_reason === "end_turn") {
-        // Agent is done with this turn — wait for follow-up or close
-        waitingForUser = true;
+      // Handle message types from the Agent SDK
+      const msgType = (message as Record<string, unknown>).type as string;
 
-        // Wait for the next user message from the queue
-        const nextMessage = await waitForNextMessage(queue, session);
-        if (nextMessage === null) {
-          // Queue closed or aborted — session is done
+      switch (msgType) {
+        case "stream_event": {
+          const event = (message as unknown as { event: Record<string, unknown> }).event;
+          processStreamEvent(
+            store,
+            sessionId,
+            { currentBlockTypes, pendingToolInputs },
+            event,
+            assistantUuid,
+          );
           break;
         }
 
-        // Add user message to conversation
-        session.messages.push({
-          role: "user",
-          content: nextMessage,
-        });
+        case "assistant": {
+          const assistantMessage = message as {
+            type: "assistant";
+            message: {
+              content: Array<{
+                type: string;
+                text?: string;
+                thinking?: string;
+                signature?: string;
+              }>;
+            };
+          };
+          assistantUuid = uuidv4();
 
-        waitingForUser = false;
-        turns++;
-        store.incrementTurns(sessionId);
-        continue;
+          // Emit final content blocks
+          if (assistantMessage.message) {
+            emitFinalContentBlocks(
+              store,
+              sessionId,
+              assistantMessage.message,
+              assistantUuid,
+            );
+          }
+
+          // Emit assistant_message_stop
+          emitSSE(store, sessionId, {
+            type: "assistant_message_stop",
+            data: { assistantUuid },
+          });
+
+          // Reset block tracking for next turn
+          currentBlockTypes.clear();
+          pendingToolInputs.clear();
+
+          store.incrementTurns(sessionId);
+          break;
+        }
+
+        case "user": {
+          // Skip replayed messages during resume
+          if ((message as Record<string, unknown>).isReplay) break;
+
+          // Extract tool results from synthetic user messages
+          const userMsg = message as {
+            type: "user";
+            message?: { content?: unknown };
+          };
+          const content = userMsg.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content as Array<Record<string, unknown>>) {
+              if (block.type === "tool_result") {
+                const resultContent = block.content;
+                let output = "";
+                if (typeof resultContent === "string") {
+                  output = resultContent;
+                } else if (Array.isArray(resultContent)) {
+                  output = (resultContent as Array<{ type?: string; text?: string }>)
+                    .filter((b) => b.type === "text")
+                    .map((b) => b.text ?? "")
+                    .filter(Boolean)
+                    .join("\n");
+                }
+                emitSSE(store, sessionId, {
+                  type: "tool_result",
+                  data: {
+                    toolId: block.tool_use_id as string,
+                    output: summarizeOutputText(output),
+                  },
+                });
+              }
+            }
+          }
+          break;
+        }
+
+        case "result": {
+          // Final result from the SDK
+          const resultMsg = message as {
+            type: "result";
+            subtype: string;
+            duration_ms?: number;
+            num_turns?: number;
+            total_cost_usd?: number;
+          };
+          if (resultMsg.subtype === "success") {
+            store.completeSession(sessionId);
+          } else {
+            const errorMsg = (message as { errors?: string[] }).errors?.[0] ?? "Agent query failed";
+            store.failSession(sessionId, errorMsg);
+            emitSSE(store, sessionId, {
+              type: "error",
+              data: { message: errorMsg },
+            });
+          }
+          break;
+        }
+
+        case "system": {
+          // Init or status message — capture model/session info
+          break;
+        }
+
+        default:
+          break;
       }
-
-      // Unexpected stop reason — done
-      break;
     }
 
-    // Session complete (either max turns or normal completion)
-    if (turns >= AGENT_MAX_TURNS) {
-      store.failSession(
-        sessionId,
-        `Agent exceeded maximum turns (${AGENT_MAX_TURNS})`,
-      );
-      emitSSE(store, sessionId, {
-        type: "error",
-        data: {
-          message: `Agent exceeded maximum turns (${AGENT_MAX_TURNS})`,
-        },
-      });
-    } else {
+    // If we didn't already transition to completed
+    const currentSession = store.getSession(sessionId);
+    if (currentSession?.status === "running") {
       store.completeSession(sessionId);
     }
   } catch (err: unknown) {
     if (session.abortController.signal.aborted) {
-      handleAbort(store, sessionId, session);
+      handleAbort(store, sessionId);
       return;
     }
 
-    // Genuine error
     const message =
       err instanceof Error ? err.message : "Unknown agent error";
     logger.error({ err, sessionId }, "Agent runner error");
@@ -262,7 +298,6 @@ export async function runSession(
     });
   } finally {
     clearTimeout(timeoutHandle);
-    session.currentTurnUuid = null;
 
     // Emit result and done
     const finalSession = store.getSession(sessionId);
@@ -273,6 +308,7 @@ export async function runSession(
         cost: 0,
         duration: finalSession?.durationMs ?? 0,
         turns: finalSession?.turns ?? 0,
+        sdkSessionId: capturedSdkSessionId,
       },
     });
     emitSSE(store, sessionId, { type: "done", data: {} });
@@ -280,44 +316,47 @@ export async function runSession(
 }
 
 // ---------------------------------------------------------------------------
-// Stream event processor
+// Stream event processor (reused from raw SDK streaming events)
 // ---------------------------------------------------------------------------
+
+interface StreamState {
+  currentBlockTypes: Map<number, string>;
+  pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }>;
+}
 
 function processStreamEvent(
   store: SessionStore,
   sessionId: string,
-  session: ReturnType<SessionStore["getSession"]> & object,
-  event: Anthropic.Messages.RawMessageStreamEvent,
+  state: StreamState,
+  event: Record<string, unknown>,
   assistantUuid: string,
 ): void {
-  switch (event.type) {
-    case "message_start": {
-      // Capture the message ID for consistency
-      if (event.message?.id) {
-        (session as { currentTurnUuid: string | null }).currentTurnUuid =
-          event.message.id;
-      }
-      break;
-    }
+  const eventType = event.type as string;
 
+  switch (eventType) {
     case "content_block_start": {
-      const block = event.content_block;
-      const index = event.index;
-      (session as { currentBlockTypes: Map<number, string> }).currentBlockTypes.set(
-        index,
-        block.type,
-      );
+      const block = event.content_block as {
+        type: string;
+        id?: string;
+        name?: string;
+      };
+      const index = event.index as number;
+      state.currentBlockTypes.set(index, block.type);
 
       if (block.type === "tool_use") {
-        const toolBlock = block as Anthropic.Messages.ToolUseBlock;
-        // Start accumulating input JSON
-        (session as { pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }> }).pendingToolInputs.set(
-          index,
-          { id: toolBlock.id, name: toolBlock.name, inputJson: "" },
-        );
+        const toolId = block.id!;
+        const toolName = block.name!;
+        state.pendingToolInputs.set(index, {
+          id: toolId,
+          name: toolName,
+          inputJson: "",
+        });
         emitSSE(store, sessionId, {
           type: "tool_start",
-          data: { toolName: toolBlock.name, toolId: toolBlock.id },
+          data: {
+            toolName,
+            toolId,
+          },
         });
       } else if (block.type === "thinking") {
         emitSSE(store, sessionId, {
@@ -329,13 +368,19 @@ function processStreamEvent(
     }
 
     case "content_block_delta": {
-      const delta = event.delta;
-      const index = event.index;
+      const delta = event.delta as {
+        type: string;
+        text?: string;
+        thinking?: string;
+        signature?: string;
+        partial_json?: string;
+      };
+      const index = event.index as number;
 
       if (delta.type === "text_delta") {
         emitSSE(store, sessionId, {
           type: "text_delta",
-          data: { content: delta.text },
+          data: { content: delta.text ?? "" },
         });
       } else if (delta.type === "thinking_delta") {
         emitSSE(store, sessionId, {
@@ -343,7 +388,7 @@ function processStreamEvent(
           data: {
             assistantUuid,
             blockIndex: index,
-            content: (delta as { thinking: string }).thinking,
+            content: delta.thinking ?? "",
           },
         });
       } else if (delta.type === "signature_delta") {
@@ -352,25 +397,24 @@ function processStreamEvent(
           data: {
             assistantUuid,
             blockIndex: index,
-            signature: (delta as { signature: string }).signature,
+            signature: delta.signature ?? "",
           },
         });
       } else if (delta.type === "input_json_delta") {
-        const pending = (session as { pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }> }).pendingToolInputs.get(index);
+        const pending = state.pendingToolInputs.get(index);
         if (pending) {
-          pending.inputJson += (delta as { partial_json: string }).partial_json;
+          pending.inputJson += delta.partial_json ?? "";
         }
       }
       break;
     }
 
     case "content_block_stop": {
-      const index = event.index;
-      const blockType = (session as { currentBlockTypes: Map<number, string> }).currentBlockTypes.get(index);
+      const index = event.index as number;
+      const blockType = state.currentBlockTypes.get(index);
 
-      // Emit tool_use with accumulated input when tool_use block stops
       if (blockType === "tool_use") {
-        const pending = (session as { pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }> }).pendingToolInputs.get(index);
+        const pending = state.pendingToolInputs.get(index);
         if (pending) {
           let input: Record<string, unknown> = {};
           try {
@@ -391,47 +435,45 @@ function processStreamEvent(
       break;
     }
 
-    // message_delta and message_stop are handled after the stream loop
     default:
       break;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Emit final content blocks from the complete message
+// Emit final content blocks from a complete assistant message
 // ---------------------------------------------------------------------------
 
 function emitFinalContentBlocks(
   store: SessionStore,
   sessionId: string,
-  message: Anthropic.Messages.Message,
+  message: {
+    content: Array<{
+      type: string;
+      text?: string;
+      thinking?: string;
+      signature?: string;
+    }>;
+  },
   assistantUuid: string,
 ): void {
   for (const [blockIndex, block] of message.content.entries()) {
     if (block.type === "text") {
       emitSSE(store, sessionId, {
         type: "text",
-        data: { content: block.text, uuid: assistantUuid },
+        data: { content: block.text ?? "", uuid: assistantUuid },
       });
     } else if (block.type === "thinking") {
-      const thinkingBlock = block as {
-        type: "thinking";
-        thinking: string;
-        signature?: string;
-      };
       emitSSE(store, sessionId, {
         type: "thinking_complete",
         data: {
           assistantUuid,
           blockIndex,
-          content: thinkingBlock.thinking,
-          signature: thinkingBlock.signature,
+          content: block.thinking ?? "",
+          signature: block.signature,
         },
       });
-    } else if (
-      "type" in block &&
-      (block as { type: string }).type === "redacted_thinking"
-    ) {
+    } else if (block.type === "redacted_thinking") {
       emitSSE(store, sessionId, {
         type: "thinking_redacted",
         data: {
@@ -441,7 +483,6 @@ function emitFinalContentBlocks(
         },
       });
     }
-    // tool_use blocks are already emitted during streaming
   }
 }
 
@@ -457,11 +498,7 @@ function emitSSE(
   store.emitSSE(sessionId, event);
 }
 
-function handleAbort(
-  store: SessionStore,
-  sessionId: string,
-  session: ReturnType<SessionStore["getSession"]> & object,
-): void {
+function handleAbort(store: SessionStore, sessionId: string): void {
   const currentSession = store.getSession(sessionId);
   if (currentSession?.status === "running") {
     store.cancelSession(sessionId);
@@ -472,38 +509,13 @@ function handleAbort(
   });
 }
 
-async function waitForNextMessage(
-  queue: AgentMessageQueue,
-  session: { abortController: AbortController },
-): Promise<string | null> {
-  // Race the queue against the abort signal
-  return new Promise<string | null>((resolve) => {
-    if (session.abortController.signal.aborted) {
-      resolve(null);
-      return;
-    }
-
-    const onAbort = () => {
-      resolve(null);
-    };
-    session.abortController.signal.addEventListener("abort", onAbort, {
-      once: true,
-    });
-
-    const iterator = queue[Symbol.asyncIterator]();
-    iterator.next().then(
-      (result) => {
-        session.abortController.signal.removeEventListener("abort", onAbort);
-        if (result.done) {
-          resolve(null);
-        } else {
-          resolve(result.value);
-        }
-      },
-      () => {
-        session.abortController.signal.removeEventListener("abort", onAbort);
-        resolve(null);
-      },
-    );
-  });
+function summarizeOutputText(text: string): string {
+  if (text.length <= 200) return text;
+  const lines = text.split("\n");
+  if (lines.length > 10) {
+    const head = lines.slice(0, 3).join("\n");
+    const tail = lines.slice(-3).join("\n");
+    return `${head}\n... (${lines.length} lines total) ...\n${tail}`;
+  }
+  return text.slice(0, 200) + "...";
 }

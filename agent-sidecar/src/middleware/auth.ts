@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { timingSafeEqual } from "crypto";
 import { logger } from "../logger";
 
 const AUTH_TOKEN = process.env.SIDECAR_AUTH_TOKEN;
@@ -25,7 +26,9 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
-  if (token !== AUTH_TOKEN) {
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(AUTH_TOKEN);
+  if (tokenBuf.length !== expectedBuf.length || !timingSafeEqual(tokenBuf, expectedBuf)) {
     logger.warn({ path: req.path }, "Invalid auth token");
     res.status(403).json({ error: "Forbidden" });
     return;
