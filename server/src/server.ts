@@ -236,6 +236,19 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
     }
 
+    // Load ANTHROPIC_API_KEY from database before provisioning the sidecar,
+    // so the key is available in process.env when the container is created.
+    let anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      const dbKey = await getEffectiveApiKey();
+      if (dbKey) {
+        process.env.ANTHROPIC_API_KEY = dbKey;
+        anthropicKey = dbKey;
+        logger.info("Loaded ANTHROPIC_API_KEY from database settings");
+        console.log("[STARTUP] Loaded ANTHROPIC_API_KEY from database settings");
+      }
+    }
+
     // Provision agent sidecar (if running in Docker and autoStart is enabled)
     console.log("[STARTUP] Checking agent sidecar...");
     try {
@@ -456,19 +469,7 @@ const initializeServices = async () => {
       }
     }
 
-    // Initialize AI agent service (requires ANTHROPIC_API_KEY from env or DB)
-    let anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      // Check database for a previously configured API key
-      const dbKey = await getEffectiveApiKey();
-      if (dbKey) {
-        process.env.ANTHROPIC_API_KEY = dbKey;
-        anthropicKey = dbKey;
-        logger.info("Loaded ANTHROPIC_API_KEY from database settings");
-        console.log("[STARTUP] Loaded ANTHROPIC_API_KEY from database settings");
-      }
-    }
-
+    // Initialize AI agent service (requires ANTHROPIC_API_KEY loaded earlier)
     if (anthropicKey) {
       console.log("[STARTUP] Initializing agent proxy service...");
       const agentApiKey = await initializeAgentApiKey();
