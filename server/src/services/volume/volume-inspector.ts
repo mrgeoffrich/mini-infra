@@ -2,7 +2,8 @@ import { servicesLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { VolumeFileContentService } from "./volume-file-content";
 import prisma from "../../lib/prisma";
-import { VolumeFileInfo, VolumeInspectionStatus } from "@mini-infra/types";
+import { VolumeFileInfo, VolumeInspectionStatus, Channel, ServerEvent } from "@mini-infra/types";
+import { emitToChannel } from "../../lib/socket";
 
 export interface VolumeInspectionResult {
   fileCount: number;
@@ -161,6 +162,21 @@ export class VolumeInspectorService {
         },
       });
 
+      const finalStatus = result.exitCode === 0 ? "completed" : "failed";
+
+      // Notify connected clients via Socket.IO
+      try {
+        emitToChannel(Channel.VOLUMES, ServerEvent.VOLUME_INSPECTION_COMPLETED, {
+          volumeName,
+          status: finalStatus,
+        });
+      } catch (emitError) {
+        servicesLogger().error(
+          { error: emitError instanceof Error ? emitError.message : "Unknown error", volumeName },
+          "Failed to emit volume inspection completed event",
+        );
+      }
+
       servicesLogger().info(
         {
           volumeName,
@@ -185,6 +201,19 @@ export class VolumeInspectorService {
           errorMessage,
         },
       });
+
+      // Notify connected clients via Socket.IO
+      try {
+        emitToChannel(Channel.VOLUMES, ServerEvent.VOLUME_INSPECTION_COMPLETED, {
+          volumeName,
+          status: "failed",
+        });
+      } catch (emitError) {
+        servicesLogger().error(
+          { error: emitError instanceof Error ? emitError.message : "Unknown error", volumeName },
+          "Failed to emit volume inspection failed event",
+        );
+      }
 
       servicesLogger().error(
         {

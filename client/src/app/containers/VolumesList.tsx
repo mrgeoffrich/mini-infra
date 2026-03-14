@@ -59,7 +59,6 @@ function VolumeActions({ volume }: { volume: DockerVolume }) {
   const { data: inspection } = useVolumeInspection({
     volumeName: volume.name,
     enabled: true,
-    refetchInterval: false, // Only poll when explicitly requested
   });
 
   const isInspecting = inspection?.status === "running" || inspection?.status === "pending";

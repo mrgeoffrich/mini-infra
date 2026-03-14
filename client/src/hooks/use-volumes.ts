@@ -284,7 +284,6 @@ export function useInspectVolume(options: UseInspectVolumeOptions = {}) {
 export interface UseVolumeInspectionOptions {
   volumeName: string;
   enabled?: boolean;
-  refetchInterval?: number | false;
   onComplete?: (inspection: VolumeInspection) => void;
 }
 
@@ -292,26 +291,32 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
   const {
     volumeName,
     enabled = true,
-    refetchInterval,
     onComplete,
   } = options;
 
+  const queryClient = useQueryClient();
   const correlationId = `get-inspection-${volumeName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+  // Subscribe to the volumes channel for inspection push updates
+  useSocketChannel(Channel.VOLUMES, enabled);
+
+  // When server pushes inspection completed, invalidate the query to refetch
+  useSocketEvent(
+    ServerEvent.VOLUME_INSPECTION_COMPLETED,
+    (data) => {
+      if (data.volumeName === volumeName) {
+        queryClient.invalidateQueries({
+          queryKey: ["volume-inspection", volumeName],
+        });
+      }
+    },
+    enabled,
+  );
 
   const query = useQuery({
     queryKey: ["volume-inspection", volumeName],
     queryFn: () => fetchVolumeInspection(volumeName, correlationId),
     enabled: enabled && !!volumeName,
-    // Auto-refresh while inspection is running
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      // If inspection is running, poll every 2 seconds
-      if (data?.status === "running" || data?.status === "pending") {
-        return refetchInterval !== undefined ? refetchInterval : 2000;
-      }
-      // Stop polling once completed or failed
-      return false;
-    },
     retry: (failureCount: number, error: Error) => {
       // Don't retry on 404 (inspection doesn't exist yet)
       if (error.message.includes("Inspection not found")) {
