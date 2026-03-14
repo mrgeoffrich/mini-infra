@@ -202,11 +202,11 @@ export function useTriggerUpdate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (targetTag: string) => {
+    mutationFn: async (params: { targetTag: string; keepSidecar?: boolean }) => {
       const res = await fetch("/api/self-update/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetTag }),
+        body: JSON.stringify({ targetTag: params.targetTag, keepSidecar: params.keepSidecar }),
       });
       if (!res.ok) {
         const err = await res.json();

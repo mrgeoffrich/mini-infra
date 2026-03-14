@@ -10,6 +10,7 @@ const logger = servicesLogger();
 
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
+const SIDECAR_KEEP_LABEL = "mini-infra.sidecar-keep";
 
 // In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race).
 // Acquired in the route handler before any async work; released in launchSidecar's finally block.
@@ -74,6 +75,7 @@ export interface TriggerUpdateOptions {
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
+  keepSidecar?: boolean; // Keep sidecar container after update for diagnostics
   onProgress?: UpdateProgressCallback;
 }
 
@@ -278,16 +280,21 @@ export async function launchSidecar(
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
 
+    const labels: Record<string, string> = {
+      [SIDECAR_LABEL]: "true",
+      [UPDATE_LOCK_LABEL]: new Date().toISOString(),
+    };
+    if (options.keepSidecar) {
+      labels[SIDECAR_KEEP_LABEL] = "true";
+    }
+
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
       name: `mini-infra-sidecar-${Date.now()}`,
       Env: sidecarEnv,
-      Labels: {
-        [SIDECAR_LABEL]: "true",
-        [UPDATE_LOCK_LABEL]: new Date().toISOString(),
-      },
+      Labels: labels,
       HostConfig: {
-        AutoRemove: true,
+        AutoRemove: !options.keepSidecar,
         Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         ReadonlyRootfs: true,
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
@@ -369,6 +376,15 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
     });
 
     for (const containerInfo of containers) {
+      // Skip containers marked for diagnostic retention
+      if (containerInfo.Labels?.[SIDECAR_KEEP_LABEL] === "true") {
+        logger.info(
+          { containerId: containerInfo.Id },
+          "Skipping sidecar container cleanup — marked for diagnostic retention",
+        );
+        continue;
+      }
+
       try {
         const container = docker.getContainer(containerInfo.Id);
         await container.remove({ v: false });
