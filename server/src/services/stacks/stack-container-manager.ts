@@ -118,16 +118,25 @@ export class StackContainerManager {
     const image = `${service.dockerImage}:${service.dockerTag}`;
     const config = service.containerConfig;
 
-    // Convert ports to Docker format (hostPort 0 means no host binding)
-    const exposedPorts = config.ports?.filter((p) => p.hostPort !== 0);
+    // Convert ports to Docker format
+    // hostPort 0 means no exposure at all; exposeOnHost false means expose internally only (no host binding)
+    const hostBoundPorts = config.ports?.filter((p) => p.hostPort !== 0 && p.exposeOnHost !== false);
+    const internalOnlyPorts = config.ports?.filter((p) => p.exposeOnHost === false && p.hostPort !== 0);
+
     const ports: Record<string, { HostPort: string }[]> | undefined =
-      exposedPorts && exposedPorts.length > 0
+      hostBoundPorts && hostBoundPorts.length > 0
         ? Object.fromEntries(
-            exposedPorts.map((p) => [
+            hostBoundPorts.map((p) => [
               `${p.containerPort}/${p.protocol}`,
               [{ HostPort: String(p.hostPort) }],
             ])
           )
+        : undefined;
+
+    // Ports to expose on the container without host binding (for internal network access)
+    const internalPorts =
+      internalOnlyPorts && internalOnlyPorts.length > 0
+        ? internalOnlyPorts.map((p) => `${p.containerPort}/${p.protocol}`)
         : undefined;
 
     // Convert mounts to Docker format, prefixing volume sources with projectName
@@ -180,6 +189,7 @@ export class StackContainerManager {
       entrypoint: config.entrypoint,
       user: config.user,
       ports,
+      internalPorts,
       mounts,
       networks: options.networkNames,
       restartPolicy: config.restartPolicy,

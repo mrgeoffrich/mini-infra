@@ -978,6 +978,9 @@ export class StackReconciler {
 
     for (const [serviceName, def] of resolvedDefinitions) {
       for (const port of def.containerConfig.ports ?? []) {
+        // Skip internal-only ports — they don't bind to host so can't conflict
+        if (port.exposeOnHost === false || port.hostPort === 0) continue;
+
         const key = `${port.hostPort}/${port.protocol}`;
         const conflict = usedPorts.get(key);
         if (!conflict) continue;

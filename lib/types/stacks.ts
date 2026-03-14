@@ -33,7 +33,7 @@ export interface StackContainerConfig {
   entrypoint?: string[];
   user?: string;
   env?: Record<string, string>;
-  ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp' }[];
+  ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean }[];
   mounts?: { source: string; target: string; type: 'volume' | 'bind'; readOnly?: boolean }[];
   labels?: Record<string, string>;
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';

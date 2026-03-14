@@ -254,6 +254,7 @@ export class DockerExecutorService {
     options: ContainerExecutionOptions & {
       name?: string;
       ports?: Record<string, { HostPort: string }[]>;
+      internalPorts?: string[];
       volumes?: string[];
       mounts?: Array<{
         Target: string;

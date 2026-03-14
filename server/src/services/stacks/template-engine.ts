@@ -128,6 +128,9 @@ function coerceServiceDefinitionTypes(def: StackServiceDefinition): StackService
       ...p,
       containerPort: Number(p.containerPort),
       hostPort: Number(p.hostPort),
+      ...(p.exposeOnHost !== undefined && {
+        exposeOnHost: p.exposeOnHost === true || p.exposeOnHost === ('true' as unknown),
+      }),
     }));
   }
 

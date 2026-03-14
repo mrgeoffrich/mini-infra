@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import os from 'os';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { networkUtils } from '../../network-utils';
@@ -78,7 +79,8 @@ export class HAProxyDataPlaneClientBase {
   }
 
   /**
-   * Discover HAProxy DataPlane API endpoint from container
+   * Discover HAProxy DataPlane API endpoint from container.
+   * Tries host port binding first, falls back to container network IP.
    */
   private async discoverHAProxyEndpoint(containerId: string): Promise<HAProxyEndpointInfo> {
     try {
@@ -95,29 +97,25 @@ export class HAProxyDataPlaneClientBase {
       // Get container name (remove leading slash)
       const containerName = containerInfo.Name?.replace(/^\//, '') || containerId.slice(0, 12);
 
-      // Check if DataPlane API port is exposed
+      // Try host port binding first
       const ports = containerInfo.NetworkSettings?.Ports || {};
       const dataplanePort = ports['5555/tcp'];
 
-      if (!dataplanePort || dataplanePort.length === 0) {
-        throw new Error('DataPlane API port 5555 is not exposed on HAProxy container');
+      if (dataplanePort && dataplanePort.length > 0) {
+        const hostBinding = dataplanePort[0];
+        if (hostBinding && hostBinding.HostPort) {
+          const hostIp = await networkUtils.getDockerHostIP();
+          const baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
+          return { baseUrl, containerName, containerId };
+        }
       }
 
-      // Get the host port from the container binding
-      const hostBinding = dataplanePort[0];
-      if (!hostBinding || !hostBinding.HostPort) {
-        throw new Error('DataPlane API port 5555 is not bound to a host port');
-      }
-
-      // Use the configured Docker host IP from system settings
-      const hostIp = await networkUtils.getDockerHostIP();
-      const baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
-
-      return {
-        baseUrl,
-        containerName,
-        containerId
-      };
+      // Fallback: connect via container's internal IP on a shared Docker network
+      logger.info(
+        { containerId: containerId.slice(0, 12) },
+        'DataPlane API port 5555 not bound to host, falling back to container network'
+      );
+      return this.discoverViaContainerNetwork(docker, containerInfo, containerName, containerId);
     } catch (error) {
       logger.error(
         {
@@ -128,6 +126,87 @@ export class HAProxyDataPlaneClientBase {
       );
       throw error;
     }
+  }
+
+  /**
+   * Discover the DataPlane API endpoint via Docker container networking.
+   * If mini-infra doesn't share a network with the HAProxy container, it auto-joins one.
+   */
+  private async discoverViaContainerNetwork(
+    docker: import('dockerode'),
+    containerInfo: import('dockerode').ContainerInspectInfo,
+    containerName: string,
+    containerId: string
+  ): Promise<HAProxyEndpointInfo> {
+    const networks = containerInfo.NetworkSettings?.Networks || {};
+    const networkEntries = Object.entries(networks);
+
+    if (networkEntries.length === 0) {
+      throw new Error('HAProxy container has no network connections');
+    }
+
+    // Determine our own container ID
+    const myHostname = os.hostname();
+    let myContainer;
+    try {
+      myContainer = docker.getContainer(myHostname);
+      await myContainer.inspect(); // Verify we can access ourselves
+    } catch {
+      throw new Error(
+        'DataPlane API port 5555 is not bound to a host port and container network fallback ' +
+        'is unavailable (mini-infra does not appear to be running in Docker)'
+      );
+    }
+
+    const myInfo = await myContainer.inspect();
+    const myNetworks = Object.keys(myInfo.NetworkSettings?.Networks || {});
+
+    // Check for an existing shared network
+    for (const [netName, netInfo] of networkEntries) {
+      if (myNetworks.includes(netName) && netInfo.IPAddress) {
+        logger.info(
+          { network: netName, containerIp: netInfo.IPAddress },
+          'Found shared network with HAProxy container'
+        );
+        return {
+          baseUrl: `http://${netInfo.IPAddress}:5555/v3`,
+          containerName,
+          containerId,
+        };
+      }
+    }
+
+    // No shared network — join the HAProxy container's network
+    const [targetNetworkName, targetNetInfo] = networkEntries[0];
+    const network = docker.getNetwork(targetNetworkName);
+    await network.connect({ Container: myHostname });
+
+    logger.info(
+      { network: targetNetworkName },
+      'Auto-joined HAProxy network for DataPlane API access'
+    );
+
+    // Use the HAProxy container's IP on that network
+    if (targetNetInfo.IPAddress) {
+      return {
+        baseUrl: `http://${targetNetInfo.IPAddress}:5555/v3`,
+        containerName,
+        containerId,
+      };
+    }
+
+    // Re-inspect in case IP wasn't populated yet
+    const updatedInfo = await docker.getContainer(containerId).inspect();
+    const updatedNet = updatedInfo.NetworkSettings?.Networks?.[targetNetworkName];
+    if (updatedNet?.IPAddress) {
+      return {
+        baseUrl: `http://${updatedNet.IPAddress}:5555/v3`,
+        containerName,
+        containerId,
+      };
+    }
+
+    throw new Error('Could not determine HAProxy container IP after joining network');
   }
 
   /**
