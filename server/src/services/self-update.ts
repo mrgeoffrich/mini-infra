@@ -10,6 +10,7 @@ const logger = servicesLogger();
 
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
+const SIDECAR_KEEP_LABEL = "mini-infra.sidecar-keep";
 
 // In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race).
 // Acquired in the route handler before any async work; released in launchSidecar's finally block.
@@ -74,6 +75,7 @@ export interface TriggerUpdateOptions {
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
+  keepSidecar?: boolean; // Keep sidecar container after update for diagnostics
   onProgress?: UpdateProgressCallback;
 }
 
@@ -278,16 +280,21 @@ export async function launchSidecar(
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
 
+    const labels: Record<string, string> = {
+      [SIDECAR_LABEL]: "true",
+      [UPDATE_LOCK_LABEL]: new Date().toISOString(),
+    };
+    if (options.keepSidecar) {
+      labels[SIDECAR_KEEP_LABEL] = "true";
+    }
+
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
       name: `mini-infra-sidecar-${Date.now()}`,
       Env: sidecarEnv,
-      Labels: {
-        [SIDECAR_LABEL]: "true",
-        [UPDATE_LOCK_LABEL]: new Date().toISOString(),
-      },
+      Labels: labels,
       HostConfig: {
-        AutoRemove: true,
+        AutoRemove: !options.keepSidecar,
         Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         ReadonlyRootfs: true,
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
@@ -369,6 +376,15 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
     });
 
     for (const containerInfo of containers) {
+      // Skip containers marked for diagnostic retention
+      if (containerInfo.Labels?.[SIDECAR_KEEP_LABEL] === "true") {
+        logger.info(
+          { containerId: containerInfo.Id },
+          "Skipping sidecar container cleanup — marked for diagnostic retention",
+        );
+        continue;
+      }
+
       try {
         const container = docker.getContainer(containerInfo.Id);
         await container.remove({ v: false });
@@ -510,19 +526,41 @@ export async function recoverStaleUpdate(): Promise<void> {
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover
 
+  // Check if an exited sidecar container exists (keepSidecar=true prevents AutoRemove).
+  // If so, finalize from its exit code rather than assuming a crash.
+  const exitInfo = await getSidecarExitInfo();
+
   const now = new Date();
+  let state: string;
+  let errorMessage: string | null;
+
+  if (exitInfo) {
+    // Sidecar exited and container still exists — use its exit code
+    if (exitInfo.exitCode === 0) {
+      state = "complete";
+      errorMessage = null;
+    } else {
+      state = "rollback-complete";
+      errorMessage = `Update sidecar exited with code ${exitInfo.exitCode}`;
+    }
+  } else {
+    // No sidecar container at all — it was auto-removed, likely a crash
+    state = "failed";
+    errorMessage = "Update sidecar exited unexpectedly (container auto-removed)";
+  }
+
   await prisma.selfUpdate.update({
     where: { id: record.id },
     data: {
-      state: "failed",
-      errorMessage: "Update sidecar exited unexpectedly (container auto-removed)",
+      state,
+      errorMessage,
       completedAt: now,
       durationMs: now.getTime() - record.startedAt.getTime(),
     },
   });
 
   logger.info(
-    { updateId: record.id },
+    { updateId: record.id, state },
     "Recovered stale update record — sidecar no longer running",
   );
 }

@@ -10,12 +10,6 @@ import type {
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-interface CloudflareSettingsResponse {
-  success: boolean;
-  settings?: CloudflareSettingResponse;
-  message?: string;
-}
-
 interface UpdateCloudflareSettingsPayload {
   api_token: string;
   account_id?: string;
@@ -78,7 +72,7 @@ interface TunnelConfigResponse {
 
 // Hook for retrieving current Cloudflare settings
 export function useCloudflareSettings() {
-  return useQuery<CloudflareSettingsResponse>({
+  return useQuery<CloudflareSettingResponse>({
     queryKey: ["cloudflare-settings"],
     queryFn: async () => {
       const response = await fetch("/api/settings/cloudflare", {
@@ -113,7 +107,7 @@ export function useUpdateCloudflareSettings() {
   const queryClient = useQueryClient();
 
   return useMutation<
-    CloudflareSettingsResponse,
+    CloudflareSettingResponse,
     Error,
     UpdateCloudflareSettingsPayload
   >({

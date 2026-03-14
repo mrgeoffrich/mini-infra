@@ -18,8 +18,6 @@ const GRACEFUL_STOP_SECONDS = parseInt(
   process.env.GRACEFUL_STOP_SECONDS ?? "30",
   10,
 );
-const REGISTRY_USERNAME = process.env.REGISTRY_USERNAME || undefined;
-const REGISTRY_PASSWORD = process.env.REGISTRY_PASSWORD || undefined;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -42,23 +40,16 @@ async function main(): Promise<void> {
 
   try {
     // -----------------------------------------------------------------------
-    // 1. Pull the target image (best-effort — server pre-pulls before launch)
+    // 1. Verify the target image exists locally (pre-pulled by the server)
     // -----------------------------------------------------------------------
-    logger.info({ state: "pulling", targetTag: TARGET_IMAGE }, "Update status: pulling");
+    logger.info({ state: "pulling", targetTag: TARGET_IMAGE }, "Update status: verifying image");
     try {
-      await pullImage(docker, TARGET_IMAGE);
-    } catch (pullErr) {
-      // Check if the image already exists locally (pre-pulled by the server)
-      try {
-        await docker.getImage(TARGET_IMAGE).inspect();
-        logger.warn(
-          { err: pullErr, image: TARGET_IMAGE },
-          "Pull failed but image exists locally (pre-pulled by server), continuing",
-        );
-      } catch {
-        // Image doesn't exist locally either — cannot proceed
-        throw pullErr;
-      }
+      await docker.getImage(TARGET_IMAGE).inspect();
+      logger.info({ image: TARGET_IMAGE }, "Target image found locally (pre-pulled by server)");
+    } catch {
+      throw new Error(
+        `Target image "${TARGET_IMAGE}" not found locally. The server must pre-pull the image before launching the sidecar.`,
+      );
     }
 
     // -----------------------------------------------------------------------
@@ -160,55 +151,6 @@ async function main(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Pulls a Docker image, logging layer-level progress.
- */
-async function pullImage(docker: Docker, image: string): Promise<void> {
-  const hasAuth = !!(REGISTRY_USERNAME && REGISTRY_PASSWORD);
-  logger.info({ image, hasAuth }, "Pulling image");
-
-  const pullOptions = hasAuth
-    ? { authconfig: { username: REGISTRY_USERNAME, password: REGISTRY_PASSWORD } }
-    : {};
-  const stream = await docker.pull(image, pullOptions);
-
-  await new Promise<void>((resolve, reject) => {
-    const layerProgress = new Map<string, { current: number; total: number }>();
-
-    docker.modem.followProgress(
-      stream,
-      (err: Error | null) => {
-        if (err) reject(err);
-        else resolve();
-      },
-      (event: { id?: string; status?: string; progressDetail?: { current?: number; total?: number } }) => {
-        if (event.id && event.progressDetail?.total) {
-          layerProgress.set(event.id, {
-            current: event.progressDetail.current ?? 0,
-            total: event.progressDetail.total,
-          });
-
-          let totalBytes = 0;
-          let downloadedBytes = 0;
-          for (const lp of layerProgress.values()) {
-            totalBytes += lp.total;
-            downloadedBytes += lp.current;
-          }
-
-          const progress =
-            totalBytes > 0
-              ? Math.round((downloadedBytes / totalBytes) * 100)
-              : 0;
-
-          logger.info({ state: "pulling", progress, image }, `Pull progress: ${progress}%`);
-        }
-      },
-    );
-  });
-
-  logger.info({ image }, "Image pulled successfully");
-}
 
 /**
  * Creates a new container with the target image and captured settings.

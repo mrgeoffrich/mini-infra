@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -105,6 +107,7 @@ function StateBadge({ state }: { state: SelfUpdateStatus["state"] }) {
 
 export default function SelfUpdateSettingsPage() {
   const [triggerTag, setTriggerTag] = useState("");
+  const [keepSidecar, setKeepSidecar] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [launchOperationId, setLaunchOperationId] = useState<string | null>(null);
 
@@ -190,15 +193,18 @@ export default function SelfUpdateSettingsPage() {
 
   const handleConfirmUpdate = () => {
     setConfirmOpen(false);
-    triggerUpdate.mutate(triggerTag.trim(), {
-      onSuccess: (data) => {
-        setLaunchOperationId(data.operationId);
-        setTriggerTag("");
+    triggerUpdate.mutate(
+      { targetTag: triggerTag.trim(), keepSidecar: keepSidecar || undefined },
+      {
+        onSuccess: (data) => {
+          setLaunchOperationId(data.operationId);
+          setTriggerTag("");
+        },
+        onError: (err) => {
+          toastWithCopy.error(err.message);
+        },
       },
-      onError: (err) => {
-        toastWithCopy.error(err.message);
-      },
-    });
+    );
   };
 
   // -------------------------------------------------------------------------
@@ -436,6 +442,17 @@ export default function SelfUpdateSettingsPage() {
               )}
               Update
             </Button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="keep-sidecar"
+              checked={keepSidecar}
+              onCheckedChange={(checked) => setKeepSidecar(checked === true)}
+            />
+            <Label htmlFor="keep-sidecar" className="text-sm font-normal cursor-pointer">
+              Keep sidecar container after update (for diagnostics)
+            </Label>
           </div>
 
           <p className="text-xs text-muted-foreground">

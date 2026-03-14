@@ -22,7 +22,7 @@ export default function DnsPage() {
   const refreshMutation = useRefreshDnsCache();
 
   const isCloudflareConfigured =
-    cloudflare.data?.settings?.data?.isConfigured ?? false;
+    cloudflare.data?.data?.isConfigured ?? false;
 
   const zones = data?.data?.zones ?? [];
   const lastRefreshed = data?.data?.lastRefreshed;

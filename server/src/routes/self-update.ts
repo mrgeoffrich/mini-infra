@@ -35,6 +35,7 @@ const triggerSchema = z.object({
       /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
       "Invalid tag format. Enter just the tag (e.g. v2.1.0), not a full image reference.",
     ),
+  keepSidecar: z.boolean().optional(),
 });
 
 /**
@@ -158,7 +159,7 @@ router.post(
   async (req, res) => {
     try {
       // Validate request body
-      const { targetTag } = triggerSchema.parse(req.body);
+      const { targetTag, keepSidecar } = triggerSchema.parse(req.body);
 
       const userId = getCurrentUserId(req);
       if (!userId) {
@@ -317,6 +318,7 @@ router.post(
               healthCheckUrl,
               healthCheckTimeoutMs,
               gracefulStopSeconds,
+              keepSidecar,
               onProgress: (step, completedCount, total) => {
                 steps.push(step);
                 try {
