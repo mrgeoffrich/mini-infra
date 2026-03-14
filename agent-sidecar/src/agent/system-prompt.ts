@@ -76,7 +76,10 @@ function buildDocsIndex(): string {
   }
 
   const lines: string[] = ["## Available Documentation", ""];
-  lines.push("Use the `read_doc` MCP tool or the built-in `Read` tool to read any of these files.", "");
+  lines.push(
+    "Use the `read_doc` MCP tool or the built-in `Read` tool to read any of these files.",
+    "",
+  );
 
   for (const [category, categoryDocs] of byCategory) {
     categoryDocs.sort((a, b) => a.order - b.order);
@@ -165,11 +168,8 @@ curl -s -X POST -H "x-api-key: $MINI_INFRA_API_KEY" -H "Content-Type: applicatio
 
 Always use \`-s\` (silent) to suppress progress bars and pipe through \`| jq .\` for readable output when needed.
 
-### When to use \`read_doc\` / \`list_docs\`
-- When the user asks about Mini Infra features, troubleshooting, or configuration
-- Read the relevant documentation file before answering feature questions
-- Use \`list_docs\` first if you're unsure which doc to read
-- You can also use the built-in \`Read\` tool to read docs directly from /app/docs/`;
+### User Documentation
+User-facing documentation is stored in \`/app/docs/\`. These markdown files describe how the Mini Infra UI works, including page layouts, features, workflows, and configuration options. When the user asks how something works in the UI, search the docs first using \`Glob\` (e.g. \`/app/docs/**/*.md\`) and \`Grep\` to find relevant articles before answering. You can also use the \`list_docs\` and \`read_doc\` MCP tools to browse and read documentation files.`;
 
 const API_REFERENCE = `## Mini Infra API Endpoints
 
@@ -248,10 +248,7 @@ export function buildSystemPrompt(): string {
     API_REFERENCE,
   ].join("\n\n");
 
-  logger.info(
-    { promptLength: cachedPrompt.length },
-    "System prompt assembled",
-  );
+  logger.info({ promptLength: cachedPrompt.length }, "System prompt assembled");
 
   return cachedPrompt;
 }
