@@ -230,28 +230,10 @@ router.post(
         const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
         const fullImageRef = `${imageBase}:${targetTag}`;
 
-        const sidecarImage =
-          settingsMap.get("sidecar_image") ||
-          process.env.SIDECAR_IMAGE_TAG ||
-          null;
-        if (!sidecarImage) {
-          return res.status(400).json({
-            success: false,
-            error:
-              "Sidecar image not configured. Set sidecar_image in self-update settings.",
-          });
-        }
-
-        // Validate the sidecar image against a pattern derived from the
-        // allowed registry.  The CI convention is that the sidecar image
-        // lives at "{repo}-sidecar:{tag}" (e.g. mini-infra-sidecar:v1.0.0).
-        const sidecarAllowedPattern = `${imageBase}-sidecar:*`;
-        if (!validateTargetImage(sidecarImage, sidecarAllowedPattern)) {
-          return res.status(400).json({
-            success: false,
-            error: `Sidecar image "${sidecarImage}" does not match expected pattern "${sidecarAllowedPattern}". The sidecar must come from the same trusted registry.`,
-          });
-        }
+        // Derive sidecar and agent-sidecar images from the same base + tag
+        // so all three containers use a consistent version.
+        const sidecarImage = `${imageBase}-sidecar:${targetTag}`;
+        const agentSidecarImage = `${imageBase}-agent-sidecar:${targetTag}`;
 
         const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
         const containerPort = appConfig.server.port;
@@ -270,6 +252,7 @@ router.post(
             fullImageRef,
             allowedRegistryPattern,
             sidecarImage,
+            agentSidecarImage,
             containerId,
           },
           "Self-update triggered",
@@ -315,6 +298,7 @@ router.post(
               fullImageRef,
               allowedRegistryPattern,
               sidecarImage,
+              agentSidecarImage,
               containerPort,
               healthCheckUrl,
               healthCheckTimeoutMs,
