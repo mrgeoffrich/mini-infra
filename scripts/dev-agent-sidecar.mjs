@@ -58,7 +58,7 @@ if (existsSync(DB_PATH)) {
   try {
     const result = execFileSync(
       "sqlite3",
-      [DB_PATH, "SELECT value FROM SystemSettings WHERE category='agent' AND key='agent_api_key' AND isActive=1 LIMIT 1;"],
+      [DB_PATH, "SELECT value FROM system_settings WHERE category='agent' AND key='agent_api_key' AND isActive=1 LIMIT 1;"],
       { encoding: "utf-8", timeout: 5000 },
     ).trim();
     if (result) {
