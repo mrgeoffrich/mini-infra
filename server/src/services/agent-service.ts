@@ -125,28 +125,6 @@ class AgentProxyService {
     return { sessionId, conversationId };
   }
 
-  async sendMessage(sessionId: string, message: string): Promise<boolean> {
-    const mapping = this.sessions.get(sessionId);
-    if (!mapping) return false;
-
-    const response = await proxyToSidecar(`/sessions/${sessionId}/messages`, {
-      method: "POST",
-      body: { message },
-    });
-
-    if (!response.ok) {
-      logger.warn(
-        { sessionId, status: response.status },
-        "Failed to send message to sidecar",
-      );
-      return false;
-    }
-
-    // Persist follow-up user message
-    this.persistMessage(sessionId, "user", message);
-    return true;
-  }
-
   async updateContext(
     sessionId: string,
     currentPath: string,

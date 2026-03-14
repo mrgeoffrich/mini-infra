@@ -10,7 +10,7 @@
  * until you restart dev. On subsequent runs the key persists in the DB.
  */
 
-import { spawn, execSync } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -56,8 +56,9 @@ let agentApiKey = "";
 
 if (existsSync(DB_PATH)) {
   try {
-    const result = execSync(
-      `sqlite3 "${DB_PATH}" "SELECT value FROM SystemSettings WHERE category='agent' AND key='agent_api_key' AND isActive=1 LIMIT 1;"`,
+    const result = execFileSync(
+      "sqlite3",
+      [DB_PATH, "SELECT value FROM SystemSettings WHERE category='agent' AND key='agent_api_key' AND isActive=1 LIMIT 1;"],
       { encoding: "utf-8", timeout: 5000 },
     ).trim();
     if (result) {

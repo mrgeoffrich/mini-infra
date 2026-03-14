@@ -73,8 +73,8 @@ export function checkBashSafety(command: string): string | null {
     return "Newlines and tabs are not allowed in commands.";
   }
 
-  // No command chaining characters
-  const chainPattern = /[;|`]|\$\(|&&|\|\|/;
+  // No command chaining characters (pipe | is allowed for diagnostic commands)
+  const chainPattern = /[;`]|\$\(|&&|\|\|/;
   if (chainPattern.test(command)) {
     return "Command chaining is not allowed in agent commands.";
   }
@@ -199,7 +199,7 @@ async function executeListDocs(input: {
 
 async function executeReadDoc(input: { path: string }): Promise<ToolResult> {
   const resolved = path.resolve(DOCS_DIR, input.path);
-  if (!resolved.startsWith(DOCS_DIR)) {
+  if (resolved !== DOCS_DIR && !resolved.startsWith(DOCS_DIR + path.sep)) {
     return {
       content: "Path traversal outside docs directory is not allowed",
       isError: true,

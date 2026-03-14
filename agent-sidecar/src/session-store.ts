@@ -45,6 +45,7 @@ export class SessionStore {
       sdkSessionId: req.sdkSessionId ?? null,
       tokenUsage: { input: 0, output: 0 },
       turns: 0,
+      errorMessage: null,
       createdAt: now,
       completedAt: null,
       durationMs: null,
@@ -99,7 +100,12 @@ export class SessionStore {
   }
 
   failSession(id: string, error: string): boolean {
-    return this.transitionSession(id, "failed");
+    const result = this.transitionSession(id, "failed");
+    if (result) {
+      const session = this.sessions.get(id);
+      if (session) session.errorMessage = error;
+    }
+    return result;
   }
 
   cancelSession(id: string): boolean {

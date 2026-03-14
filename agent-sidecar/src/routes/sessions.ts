@@ -69,16 +69,6 @@ export function createSessionsRouter(store: SessionStore): Router {
     });
   });
 
-  // POST /sessions/:id/messages — send follow-up message (deprecated)
-  // In the Agent SDK model, follow-up messages create new sessions with resume.
-  // This endpoint is kept for backward compatibility.
-  router.post("/:id/messages", (_req: Request, res: Response) => {
-    res.status(409).json({
-      error: "In-session follow-ups are not supported",
-      message: "Send follow-up messages by creating a new session with sdkSessionId for resume",
-    });
-  });
-
   // GET /sessions/:id/stream — SSE event stream
   router.get("/:id/stream", (req: Request, res: Response) => {
     const session = store.getSession(String(req.params.id));

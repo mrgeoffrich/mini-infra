@@ -206,9 +206,9 @@ export async function ensureAgentSidecar(options?: {
       const containerName = info.Name.replace(/^\//, "");
 
       sidecarUrl = `http://${containerName}:${SIDECAR_PORT}`;
-      internalToken =
-        info.Config.Env?.find((e: string) => e.startsWith("SIDECAR_AUTH_TOKEN="))
-          ?.split("=")[1] || null;
+      const tokenPrefix = "SIDECAR_AUTH_TOKEN=";
+      const tokenEnv = info.Config.Env?.find((e: string) => e.startsWith(tokenPrefix));
+      internalToken = tokenEnv ? tokenEnv.slice(tokenPrefix.length) : null;
 
       startHealthChecks();
       return { containerId: existing.id, url: sidecarUrl };
