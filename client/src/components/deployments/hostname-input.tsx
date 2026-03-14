@@ -148,11 +148,11 @@ export function HostnameInput({
             {conflictDetails?.dnsInfo && (
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {conflictDetails.dnsInfo.matchedZone ? (
-                  <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50">
+                  <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50 dark:border-green-700 dark:text-green-400 dark:bg-green-950">
                     Zone: {conflictDetails.dnsInfo.zoneName}
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700 bg-yellow-50">
+                  <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700 bg-yellow-50 dark:border-yellow-700 dark:text-yellow-400 dark:bg-yellow-950">
                     No matching DNS zone
                   </Badge>
                 )}

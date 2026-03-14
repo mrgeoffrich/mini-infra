@@ -42,6 +42,7 @@ export class DnsCacheService {
       const zones = await cloudflareDNSService.listZones();
       const seenZoneIds = new Set<string>();
       const seenRecordIds = new Set<string>();
+      const failedZoneCfIds = new Set<string>();
       let totalRecords = 0;
 
       // Process zones in batches of 3 to avoid rate limiting
@@ -79,50 +80,31 @@ export class DnsCacheService {
 
             // Fetch and upsert records for this zone
             const records = await cloudflareDNSService.listDNSRecords(zone.id);
-            for (const record of records) {
-              const dbRecord = await this.prisma.dnsCacheRecord.upsert({
-                where: { cloudflareRecordId: record.id },
-                create: {
-                  cloudflareRecordId: record.id,
-                  zoneId: dbZone.id,
-                  type: record.type,
-                  name: record.name,
-                  content: record.content,
-                  ttl: record.ttl,
-                  proxied: record.proxied,
-                  proxiable: record.proxiable,
-                  locked: record.locked,
-                  zoneName: zone.name,
-                  createdOn: record.created_on || null,
-                  modifiedOn: record.modified_on || null,
-                  cachedAt: new Date(),
-                },
-                update: {
-                  zoneId: dbZone.id,
-                  type: record.type,
-                  name: record.name,
-                  content: record.content,
-                  ttl: record.ttl,
-                  proxied: record.proxied,
-                  proxiable: record.proxiable,
-                  locked: record.locked,
-                  zoneName: zone.name,
-                  createdOn: record.created_on || null,
-                  modifiedOn: record.modified_on || null,
-                  cachedAt: new Date(),
-                },
-              });
-              seenRecordIds.add(dbRecord.id);
-            }
+            await this.upsertRecordsBatch(dbZone.id, zone.name, records, seenRecordIds);
 
             totalRecords += records.length;
             return { zoneName: zone.name, recordCount: records.length };
           })
         );
 
-        for (const result of results) {
-          if (result.status === "rejected") {
-            logger.error({ error: result.reason }, "Failed to cache zone data");
+        for (let j = 0; j < results.length; j++) {
+          if (results[j].status === "rejected") {
+            failedZoneCfIds.add(batch[j].id);
+            logger.error({ error: (results[j] as PromiseRejectedResult).reason }, "Failed to cache zone data");
+          }
+        }
+      }
+
+      // Preserve cached data for zones that failed to refresh
+      if (failedZoneCfIds.size > 0) {
+        const failedDbZones = await this.prisma.dnsCacheZone.findMany({
+          where: { cloudflareZoneId: { in: Array.from(failedZoneCfIds) } },
+          include: { records: { select: { id: true } } },
+        });
+        for (const z of failedDbZones) {
+          seenZoneIds.add(z.id);
+          for (const r of z.records) {
+            seenRecordIds.add(r.id);
           }
         }
       }
@@ -156,6 +138,66 @@ export class DnsCacheService {
       throw error;
     } finally {
       this.isRefreshing = false;
+    }
+  }
+
+  /**
+   * Batch upsert DNS records for a zone.
+   * Deletes existing records for the zone and creates all new ones in a single transaction,
+   * which is faster than individual upserts for zones with many records.
+   */
+  private async upsertRecordsBatch(
+    dbZoneId: string,
+    zoneName: string,
+    records: Array<{
+      id: string;
+      type: string;
+      name: string;
+      content: string;
+      ttl: number;
+      proxied: boolean;
+      proxiable: boolean;
+      locked: boolean;
+      created_on?: string | null;
+      modified_on?: string | null;
+    }>,
+    seenRecordIds: Set<string>
+  ): Promise<void> {
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      // Delete old records for this zone
+      await tx.dnsCacheRecord.deleteMany({ where: { zoneId: dbZoneId } });
+
+      // Bulk create all records
+      if (records.length > 0) {
+        await tx.dnsCacheRecord.createMany({
+          data: records.map((record) => ({
+            cloudflareRecordId: record.id,
+            zoneId: dbZoneId,
+            type: record.type,
+            name: record.name,
+            content: record.content,
+            ttl: record.ttl,
+            proxied: record.proxied,
+            proxiable: record.proxiable,
+            locked: record.locked,
+            zoneName,
+            createdOn: record.created_on || null,
+            modifiedOn: record.modified_on || null,
+            cachedAt: now,
+          })),
+        });
+      }
+    });
+
+    // Track the new record IDs for stale cleanup
+    const newRecords = await this.prisma.dnsCacheRecord.findMany({
+      where: { zoneId: dbZoneId },
+      select: { id: true },
+    });
+    for (const r of newRecords) {
+      seenRecordIds.add(r.id);
     }
   }
 
