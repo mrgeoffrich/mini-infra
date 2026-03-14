@@ -1,11 +1,13 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconBrandGithub, IconKey } from "@tabler/icons-react";
+import { IconBrandGithub, IconKey, IconRefresh, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   useGitHubSavePackagePat,
   useGitHubOAuthRevoke,
+  useGitHubSyncRegistry,
 } from "@/hooks/use-github-app";
 import { TokenInput } from "./token-input";
 
@@ -18,6 +20,7 @@ export function PackageAccessSection({
 }: PackageAccessSectionProps) {
   const savePat = useGitHubSavePackagePat();
   const oauthRevoke = useGitHubOAuthRevoke();
+  const syncRegistry = useGitHubSyncRegistry();
   const [patInput, setPatInput] = useState("");
   const [showPatInput, setShowPatInput] = useState(false);
 
@@ -26,8 +29,11 @@ export function PackageAccessSection({
     savePat.mutate(
       { token: patInput.trim() },
       {
-        onSuccess: () => {
-          toast.success("Token saved! GHCR packages should now be visible.");
+        onSuccess: (data) => {
+          const msg = data.registryCredentialCreated
+            ? `Token saved and GHCR registry credentials configured for ${data.githubUsername}.`
+            : "Token saved! GHCR packages should now be visible.";
+          toast.success(msg);
           setPatInput("");
           setShowPatInput(false);
         },
@@ -49,6 +55,17 @@ export function PackageAccessSection({
     });
   };
 
+  const handleSyncRegistry = () => {
+    syncRegistry.mutate(undefined, {
+      onSuccess: (data) => {
+        toast.success(data.message);
+      },
+      onError: (error) => {
+        toast.error(`Failed to sync: ${error.message}`);
+      },
+    });
+  };
+
   return (
     <div className="mt-4 p-3 rounded-md border bg-muted/30">
       <div className="text-sm">
@@ -62,27 +79,52 @@ export function PackageAccessSection({
               <Badge variant="outline" className="ml-1 text-amber-600 border-amber-600">Not Configured</Badge>
             )}
           </p>
-          {oauthAuthorized && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive h-7"
-              onClick={handleRevokePat}
-              disabled={oauthRevoke.isPending}
-            >
-              Remove
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {oauthAuthorized && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={handleSyncRegistry}
+                  disabled={syncRegistry.isPending}
+                >
+                  {syncRegistry.isPending ? (
+                    <IconLoader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <IconRefresh className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Sync to Registry
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive h-7"
+                  onClick={handleRevokePat}
+                  disabled={oauthRevoke.isPending}
+                >
+                  Remove
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-        {!oauthAuthorized && (
+        {!oauthAuthorized ? (
           <p className="text-muted-foreground mt-1">
-            A personal access token with <code className="text-xs bg-muted px-1 py-0.5 rounded">read:packages</code> scope
-            is needed to list GHCR container packages (GitHub App tokens cannot access them).
+            Create a classic personal access token with <code className="text-xs bg-muted px-1 py-0.5 rounded">read:packages</code> and{" "}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">write:packages</code> scopes.
+            This will configure both package listing and{" "}
+            <Link to="/settings/registry-credentials" className="text-primary underline underline-offset-4 hover:text-primary/80">
+              GHCR registry credentials
+            </Link>{" "}
+            for pulling images.
           </p>
-        )}
-        {oauthAuthorized && (
+        ) : (
           <p className="text-muted-foreground mt-1">
-            Personal access token is configured. GHCR container packages are accessible.
+            Personal access token is configured for package listing and{" "}
+            <Link to="/settings/registry-credentials" className="text-primary underline underline-offset-4 hover:text-primary/80">
+              GHCR registry credentials
+            </Link>.
           </p>
         )}
       </div>
@@ -94,14 +136,14 @@ export function PackageAccessSection({
             size="sm"
             onClick={() => {
               window.open(
-                "https://github.com/settings/tokens/new?description=mini-infra+package+access&scopes=read:packages",
+                "https://github.com/settings/tokens/new?description=mini-infra+ghcr+access&scopes=read:packages,write:packages",
                 "_blank",
               );
               setShowPatInput(true);
             }}
           >
             <IconBrandGithub className="mr-2 h-4 w-4" />
-            Generate Token on GitHub
+            Generate Classic Token on GitHub
           </Button>
         </div>
       )}
@@ -109,7 +151,7 @@ export function PackageAccessSection({
       {!oauthAuthorized && showPatInput && (
         <TokenInput
           placeholder="ghp_..."
-          promptText="Generate the token on GitHub, then paste it below:"
+          promptText="Generate the classic token on GitHub, then paste it below:"
           value={patInput}
           onChange={setPatInput}
           onSave={handleSavePat}

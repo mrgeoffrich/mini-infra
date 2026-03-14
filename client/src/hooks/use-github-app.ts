@@ -6,7 +6,6 @@ import type {
   GitHubAppPackageVersion,
   GitHubAppRepository,
   GitHubAppActionsRun,
-  GitHubAppRegistryTokenResponse,
   GitHubAppSetupCompleteResponse,
   GitHubAgentAccessLevel,
 } from "@mini-infra/types";
@@ -114,22 +113,6 @@ export function useDeleteGitHubApp() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
-    },
-  });
-}
-
-// Hook for creating a GHCR registry credential from the GitHub App
-export function useCreateGhcrCredential() {
-  const queryClient = useQueryClient();
-
-  return useMutation<GitHubAppRegistryTokenResponse, Error>({
-    mutationFn: () =>
-      fetchAndUnwrap<GitHubAppRegistryTokenResponse>(
-        "/api/settings/github-app/registry-token",
-        { method: "POST" },
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
     },
   });
 }
@@ -243,9 +226,13 @@ export function useGitHubAppActionRuns(
 export function useGitHubSavePackagePat() {
   const queryClient = useQueryClient();
 
-  return useMutation<{ message: string }, Error, { token: string }>({
+  return useMutation<
+    { message: string; registryCredentialCreated?: boolean; githubUsername?: string },
+    Error,
+    { token: string }
+  >({
     mutationFn: (payload) =>
-      fetchAndUnwrap<{ message: string }>(
+      fetchAndUnwrap<{ message: string; registryCredentialCreated?: boolean; githubUsername?: string }>(
         "/api/settings/github-app/oauth/pat",
         {
           method: "POST",
@@ -256,6 +243,26 @@ export function useGitHubSavePackagePat() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
       queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
+      queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
+    },
+  });
+}
+
+// Hook for syncing stored PAT to GHCR registry credentials
+export function useGitHubSyncRegistry() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { message: string; githubUsername?: string },
+    Error
+  >({
+    mutationFn: () =>
+      fetchAndUnwrap<{ message: string; githubUsername?: string }>(
+        "/api/settings/github-app/oauth/sync-registry",
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
     },
   });
 }

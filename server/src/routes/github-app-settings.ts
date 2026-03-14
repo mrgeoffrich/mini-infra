@@ -10,8 +10,45 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubAppService } from "../services/github-app";
+import { RegistryCredentialService } from "../services/registry-credential";
+import prisma from "../lib/prisma";
 
 const router = express.Router();
+
+/**
+ * Upsert a ghcr.io registry credential, handling the unique constraint
+ * by searching for both active and inactive credentials.
+ */
+async function upsertGhcrCredential(
+  githubUsername: string,
+  token: string,
+  userId: string,
+): Promise<void> {
+  const registryCredentialService = new RegistryCredentialService(prisma);
+
+  // Search including inactive credentials to avoid unique constraint violation
+  const allCredentials = await registryCredentialService.getAllCredentials(true);
+  const existing = allCredentials.find((c) => c.registryUrl === "ghcr.io");
+
+  if (existing) {
+    await registryCredentialService.updateCredential(
+      existing.id,
+      { username: githubUsername, password: token, isActive: true },
+      userId,
+    );
+  } else {
+    await registryCredentialService.createCredential(
+      {
+        name: "GitHub Container Registry",
+        registryUrl: "ghcr.io",
+        username: githubUsername,
+        password: token,
+        isDefault: false,
+      },
+      userId,
+    );
+  }
+}
 
 // Request validation schemas
 const manifestSchema = z.object({
@@ -370,57 +407,6 @@ router.delete("/", requirePermission('settings:write') as RequestHandler, (async
 }) as RequestHandler);
 
 /**
- * POST /api/settings/github-app/registry-token - Create/update GHCR registry credential
- */
-router.post("/registry-token", requirePermission('settings:write') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  const requestId = req.headers["x-request-id"] as string;
-  const user = getAuthenticatedUser(req);
-  const userId = user?.id || "system";
-
-  logger.debug(
-    {
-      requestId,
-      userId,
-    },
-    "GHCR registry token creation requested",
-  );
-
-  try {
-    await githubAppService.createOrUpdateGhcrCredential(userId);
-
-    logger.debug(
-      {
-        requestId,
-        userId,
-      },
-      "GHCR registry token created/updated successfully",
-    );
-
-    res.json({
-      success: true,
-      data: {
-        message: "GHCR registry credential created/updated successfully",
-      },
-    });
-  } catch (error) {
-    logger.error(
-      {
-        requestId,
-        userId,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      "Failed to create/update GHCR registry token",
-    );
-
-    next(error);
-  }
-}) as RequestHandler);
-
-/**
  * GET /api/settings/github-app/oauth/authorize - Start OAuth user authorization flow
  * Returns a URL to redirect the user to GitHub for authorization.
  */
@@ -551,6 +537,20 @@ router.post("/oauth/pat", requirePermission('settings:write') as RequestHandler,
       });
     }
 
+    const userData = await response.json();
+    const githubUsername = userData.login as string;
+
+    // Check token scopes from response header
+    const scopes = response.headers.get("x-oauth-scopes") || "";
+    const hasPackageScope = scopes.split(",").some((s: string) => s.trim() === "read:packages" || s.trim() === "write:packages");
+
+    if (!hasPackageScope) {
+      return res.status(400).json({
+        success: false,
+        error: "Token is missing the read:packages scope — please create a classic token with read:packages and write:packages scopes",
+      });
+    }
+
     // Store the PAT using the OAuth token fields (reusing the same storage)
     await Promise.all([
       githubAppService.set("oauth_access_token", token, userId),
@@ -565,11 +565,30 @@ router.post("/oauth/pat", requirePermission('settings:write') as RequestHandler,
       // ignore if not exists
     }
 
+    // Auto-create/update ghcr.io registry credential
+    let registryCredentialCreated = false;
+    try {
+      await upsertGhcrCredential(githubUsername, token, userId);
+      registryCredentialCreated = true;
+      logger.info({ requestId, userId, githubUsername }, "GHCR registry credential auto-created from PAT");
+    } catch (regError) {
+      logger.warn(
+        { requestId, userId, error: regError instanceof Error ? regError.message : String(regError) },
+        "Failed to auto-create GHCR registry credential",
+      );
+    }
+
     logger.info({ requestId, userId }, "GitHub PAT saved for package access");
 
     res.json({
       success: true,
-      data: { message: "Personal access token saved successfully" },
+      data: {
+        message: registryCredentialCreated
+          ? "Token saved and GHCR registry credentials configured"
+          : "Token saved but failed to create registry credentials",
+        registryCredentialCreated,
+        githubUsername,
+      },
     });
   } catch (error) {
     logger.error(
@@ -579,6 +598,72 @@ router.post("/oauth/pat", requirePermission('settings:write') as RequestHandler,
         error: error instanceof Error ? error.message : "Unknown error",
       },
       "Failed to save PAT",
+    );
+    next(error);
+  }
+}) as RequestHandler);
+
+/**
+ * POST /api/settings/github-app/oauth/sync-registry - Sync stored PAT to GHCR registry credentials
+ */
+router.post("/oauth/sync-registry", requirePermission('settings:write') as RequestHandler, (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  const requestId = req.headers["x-request-id"] as string;
+  const user = getAuthenticatedUser(req);
+  const userId = user?.id || "system";
+
+  try {
+    // Read the stored PAT
+    const token = await githubAppService.get("oauth_access_token");
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: "No package access token is configured — save one first",
+      });
+    }
+
+    // Validate the token and get the GitHub username
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "mini-infra",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(400).json({
+        success: false,
+        error: "Stored token is no longer valid — please remove and re-add it",
+      });
+    }
+
+    const userData = await response.json();
+    const githubUsername = userData.login as string;
+
+    // Create/update the ghcr.io registry credential
+    await upsertGhcrCredential(githubUsername, token, userId);
+
+    logger.info({ requestId, userId, githubUsername }, "GHCR registry credential synced from PAT");
+
+    res.json({
+      success: true,
+      data: {
+        message: `Registry credentials synced for ${githubUsername}`,
+        githubUsername,
+      },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        requestId,
+        userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      "Failed to sync GHCR registry credential",
     );
     next(error);
   }
@@ -597,12 +682,15 @@ router.post("/oauth/revoke", requirePermission('settings:write') as RequestHandl
   const userId = user?.id || "system";
 
   try {
-    // Clear the stored OAuth tokens
-    await Promise.all([
-      githubAppService.delete("oauth_access_token", userId),
-      githubAppService.delete("oauth_refresh_token", userId),
-      githubAppService.delete("oauth_expires_at", userId),
-    ]);
+    // Clear the stored OAuth tokens (ignore errors for keys that don't exist)
+    const keysToDelete = ["oauth_access_token", "oauth_refresh_token", "oauth_expires_at"];
+    await Promise.all(
+      keysToDelete.map((key) =>
+        githubAppService.delete(key, userId).catch(() => {
+          // Key doesn't exist, ignore
+        }),
+      ),
+    );
 
     logger.info({ requestId, userId }, "GitHub OAuth tokens revoked");
 

@@ -22,13 +22,11 @@ import { StatusBadge } from "@/components/connectivity-status";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import {
   useTestGitHubApp,
-  useCreateGhcrCredential,
   useDeleteGitHubApp,
 } from "@/hooks/use-github-app";
 import {
   IconBrandGithub,
   IconLoader2,
-  IconPackage,
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
@@ -55,7 +53,6 @@ export function ConnectedStatusCard({
   agentAccessLevel,
 }: ConnectedStatusCardProps) {
   const testConnection = useTestGitHubApp();
-  const createGhcrCredential = useCreateGhcrCredential();
   const deleteApp = useDeleteGitHubApp();
 
   // Fetch connectivity status
@@ -79,17 +76,6 @@ export function ConnectedStatusCard({
       },
       onError: (error) => {
         toast.error(`Connection test failed: ${error.message}`);
-      },
-    });
-  };
-
-  const handleRefreshToken = () => {
-    createGhcrCredential.mutate(undefined, {
-      onSuccess: (data) => {
-        toast.success(data.message || "GHCR token refreshed successfully");
-      },
-      onError: (error) => {
-        toast.error(`Failed to refresh GHCR token: ${error.message}`);
       },
     });
   };
@@ -165,20 +151,6 @@ export function ConnectedStatusCard({
           )}
           Test Connection
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRefreshToken}
-          disabled={createGhcrCredential.isPending}
-        >
-          {createGhcrCredential.isPending ? (
-            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <IconPackage className="mr-2 h-4 w-4" />
-          )}
-          Refresh GHCR Token
-        </Button>
-
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
