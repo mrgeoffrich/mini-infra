@@ -4,7 +4,7 @@ import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions, ContainerExecutionResult, ContainerProgress } from "./types";
 import { inferTaskType, generateTaskId } from "./utils";
-import { parseDockerStreamChunk } from "../../lib/docker-stream";
+import { DockerStreamDemuxer } from "../../lib/docker-stream";
 
 /**
  * ContainerExecutor - Executes short-lived, task-specific Docker containers
@@ -262,18 +262,20 @@ export class ContainerExecutor {
         stderr: true,
       });
 
-      // Demultiplex Docker stream
+      // Demultiplex Docker stream using buffered parser to handle
+      // chunks that contain multiple or partial frames
       const stdout = new Readable({ read() { } });
       const stderr = new Readable({ read() { } });
+      const demuxer = new DockerStreamDemuxer();
 
       stream.on("data", (chunk: Buffer) => {
-        const frame = parseDockerStreamChunk(chunk);
-        if (!frame) return;
-
-        if (frame.stream === "stdout") {
-          stdout.push(frame.data);
-        } else if (frame.stream === "stderr") {
-          stderr.push(frame.data);
+        const frames = demuxer.push(chunk);
+        for (const frame of frames) {
+          if (frame.stream === "stdout") {
+            stdout.push(frame.data);
+          } else if (frame.stream === "stderr") {
+            stderr.push(frame.data);
+          }
         }
       });
 

@@ -1,7 +1,7 @@
 import Docker from "dockerode";
 import { DEFAULT_LOG_TAIL_LINES } from "@mini-infra/types";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
-import { parseDockerStreamChunk } from "../../lib/docker-stream";
+import { DockerStreamDemuxer } from "../../lib/docker-stream";
 
 /**
  * ContainerMonitor - Monitors container status and captures logs
@@ -104,14 +104,16 @@ export class ContainerMonitor {
           reject(new Error('Log capture timeout'));
         }, 30000); // 30 second timeout
 
-        stream.on("data", (chunk: Buffer) => {
-          const frame = parseDockerStreamChunk(chunk);
-          if (!frame) return;
+        const demuxer = new DockerStreamDemuxer();
 
-          if (frame.stream === "stdout") {
-            stdoutChunks.push(frame.data);
-          } else if (frame.stream === "stderr") {
-            stderrChunks.push(frame.data);
+        stream.on("data", (chunk: Buffer) => {
+          const frames = demuxer.push(chunk);
+          for (const frame of frames) {
+            if (frame.stream === "stdout") {
+              stdoutChunks.push(frame.data);
+            } else if (frame.stream === "stderr") {
+              stderrChunks.push(frame.data);
+            }
           }
         });
 

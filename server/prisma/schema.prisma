@@ -666,6 +666,9 @@ model RegistryCredential {
   createdBy             String   // User ID
   updatedBy             String   // User ID
 
+  // Token expiry tracking (for auto-managed credentials like GHCR)
+  tokenExpiresAt        DateTime?
+
   // Validation tracking
   lastValidatedAt       DateTime?
   validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'

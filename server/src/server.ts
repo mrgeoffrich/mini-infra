@@ -54,6 +54,8 @@ import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
+import { RegistryCredentialService } from "./services/registry-credential";
+import { githubAppService } from "./services/github-app";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 
 // Global scheduler instances
@@ -198,6 +200,15 @@ const initializeServices = async () => {
   try {
     // Initialize security secrets FIRST (other services depend on these)
     await initializeSecuritySecrets();
+
+    // Register GHCR token auto-refresher so expired tokens are
+    // transparently renewed before any image pull
+    RegistryCredentialService.registerTokenRefresher(async (registryUrl) => {
+      if (registryUrl === "ghcr.io") {
+        await githubAppService.createOrUpdateGhcrCredential("system");
+      }
+    });
+    console.log("[STARTUP] ✓ Registry token auto-refresher registered");
 
     // Initialize Docker service
     console.log("[STARTUP] Initializing Docker service...");

@@ -175,6 +175,7 @@ export const ServerEvent = {
   MIGRATION_COMPLETED: "migration:completed",
   // Volumes
   VOLUMES_LIST: "volumes:list",
+  VOLUME_INSPECTION_COMPLETED: "volume:inspection:completed",
   // Networks
   NETWORKS_LIST: "networks:list",
   // Backup Health
@@ -340,6 +341,8 @@ export interface ServerToClientEvents {
   // ── Volumes ─────────────────────────────────────────
   /** Volume list updated */
   "volumes:list": (data: { count: number }) => void;
+  /** Volume inspection completed or failed */
+  "volume:inspection:completed": (data: { volumeName: string; status: "completed" | "failed" }) => void;
 
   // ── Networks ────────────────────────────────────────
   /** Network list updated */
