@@ -4,6 +4,7 @@ import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import { RegistryCredentialService } from "./registry-credential";
+import { RegistryManager } from "./docker-executor/registry-manager";
 
 const logger = servicesLogger();
 
@@ -79,6 +80,7 @@ export interface TriggerUpdateOptions {
 /** Step names used for progress reporting */
 export const SELF_UPDATE_LAUNCH_STEPS = [
   "Pull sidecar image",
+  "Pull target image",
   "Create sidecar container",
   "Start sidecar container",
 ] as const;
@@ -229,11 +231,6 @@ export async function launchSidecar(
       (n) => n !== "host" && n !== "none" && n !== "bridge",
     ) ?? ownNetworks[0];
 
-    // Look up registry credentials for both images
-    const registryCredentialService = new RegistryCredentialService(prisma);
-    const sidecarCreds = await registryCredentialService.getCredentialsForImage(options.sidecarImage);
-    const targetCreds = await registryCredentialService.getCredentialsForImage(fullImageRef);
-
     logger.info(
       {
         sidecarImage: options.sidecarImage,
@@ -242,27 +239,15 @@ export async function launchSidecar(
         containerName,
         healthCheckUrl,
         sidecarNetwork,
-        hasSidecarCreds: !!sidecarCreds,
-        hasTargetCreds: !!targetCreds,
       },
       "Launching self-update sidecar",
     );
 
     // Step 1: Pull the sidecar image
+    const registryCredentialService = new RegistryCredentialService(prisma);
     try {
-      const pullAuth = sidecarCreds
-        ? { authconfig: { username: sidecarCreds.username, password: sidecarCreds.password } }
-        : {};
-      await new Promise<void>((resolve, reject) => {
-        docker.pull(options.sidecarImage, pullAuth, (err: Error | null, stream?: NodeJS.ReadableStream) => {
-          if (err || !stream) return reject(err ?? new Error("No stream returned from docker.pull"));
-          // Wait for the pull to complete by consuming the stream
-          docker.modem.followProgress(stream, (progressErr: Error | null) => {
-            if (progressErr) return reject(progressErr);
-            resolve();
-          });
-        });
-      });
+      const registryManager = new RegistryManager(docker, registryCredentialService);
+      await registryManager.pullImageWithAutoAuth(options.sidecarImage);
       logger.info({ sidecarImage: options.sidecarImage }, "Sidecar image pulled");
       reportStep("Pull sidecar image", "completed", options.sidecarImage);
     } catch (pullErr) {
@@ -271,8 +256,20 @@ export async function launchSidecar(
       throw new Error(`Failed to pull sidecar image "${options.sidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
     }
 
-    // Step 2: Create sidecar container
-    // Pass target image registry credentials to the sidecar as env vars
+    // Step 2: Pull the target image (server has working registry credentials)
+    try {
+      const registryManager = new RegistryManager(docker, registryCredentialService);
+      await registryManager.pullImageWithAutoAuth(fullImageRef);
+      logger.info({ targetImage: fullImageRef }, "Target image pulled");
+      reportStep("Pull target image", "completed", fullImageRef);
+    } catch (pullErr) {
+      logger.error({ err: pullErr, targetImage: fullImageRef }, "Failed to pull target image");
+      reportStep("Pull target image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
+      throw new Error(`Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+    }
+
+    // Step 3: Create sidecar container
+    // Target image is already pre-pulled, so no registry credentials needed
     const sidecarEnv = [
       `TARGET_IMAGE=${fullImageRef}`,
       `CONTAINER_ID=${containerId}`,
@@ -280,10 +277,6 @@ export async function launchSidecar(
       `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
-    if (targetCreds) {
-      sidecarEnv.push(`REGISTRY_USERNAME=${targetCreds.username}`);
-      sidecarEnv.push(`REGISTRY_PASSWORD=${targetCreds.password}`);
-    }
 
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
@@ -314,7 +307,7 @@ export async function launchSidecar(
     const sidecar = await docker.createContainer(createOptions);
     reportStep("Create sidecar container", "completed");
 
-    // Step 3: Start sidecar container
+    // Step 4: Start sidecar container
     await sidecar.start();
 
     const sidecarId = (sidecar as unknown as { id: string }).id;
