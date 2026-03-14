@@ -18,6 +18,8 @@ const GRACEFUL_STOP_SECONDS = parseInt(
   process.env.GRACEFUL_STOP_SECONDS ?? "30",
   10,
 );
+const REGISTRY_USERNAME = process.env.REGISTRY_USERNAME || undefined;
+const REGISTRY_PASSWORD = process.env.REGISTRY_PASSWORD || undefined;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -149,9 +151,13 @@ async function main(): Promise<void> {
  * Pulls a Docker image, logging layer-level progress.
  */
 async function pullImage(docker: Docker, image: string): Promise<void> {
-  logger.info({ image }, "Pulling image");
+  const hasAuth = !!(REGISTRY_USERNAME && REGISTRY_PASSWORD);
+  logger.info({ image, hasAuth }, "Pulling image");
 
-  const stream = await docker.pull(image);
+  const pullOptions = hasAuth
+    ? { authconfig: { username: REGISTRY_USERNAME, password: REGISTRY_PASSWORD } }
+    : {};
+  const stream = await docker.pull(image, pullOptions);
 
   await new Promise<void>((resolve, reject) => {
     const layerProgress = new Map<string, { current: number; total: number }>();

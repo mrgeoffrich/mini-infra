@@ -14,6 +14,7 @@ import {
   acquireLaunchLock,
   releaseLaunchLock,
   validateTargetImage,
+  recoverStaleUpdate,
   type SelfUpdateStatus,
 } from "../services/self-update";
 
@@ -42,6 +43,9 @@ const triggerSchema = z.object({
  */
 router.get("/status", requirePermission("settings:read"), async (req, res) => {
   try {
+    // Recover stale updates where sidecar crashed and auto-removed
+    await recoverStaleUpdate();
+
     // Check if an update sidecar is currently running
     const inProgress = await isUpdateInProgress();
 

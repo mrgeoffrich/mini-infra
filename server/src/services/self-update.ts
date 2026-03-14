@@ -3,6 +3,7 @@ import fs from "fs";
 import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import prisma from "../lib/prisma";
+import { RegistryCredentialService } from "./registry-credential";
 
 const logger = servicesLogger();
 
@@ -200,6 +201,11 @@ export async function launchSidecar(
       (n) => n !== "host" && n !== "none" && n !== "bridge",
     ) ?? ownNetworks[0];
 
+    // Look up registry credentials for both images
+    const registryCredentialService = new RegistryCredentialService(prisma);
+    const sidecarCreds = await registryCredentialService.getCredentialsForImage(options.sidecarImage);
+    const targetCreds = await registryCredentialService.getCredentialsForImage(fullImageRef);
+
     logger.info(
       {
         sidecarImage: options.sidecarImage,
@@ -208,6 +214,8 @@ export async function launchSidecar(
         containerName,
         healthCheckUrl,
         sidecarNetwork,
+        hasSidecarCreds: !!sidecarCreds,
+        hasTargetCreds: !!targetCreds,
       },
       "Launching self-update sidecar",
     );
@@ -215,9 +223,12 @@ export async function launchSidecar(
     // Pull the sidecar image if not already present locally.
     // docker.createContainer does NOT auto-pull like `docker run`.
     try {
+      const pullAuth = sidecarCreds
+        ? { authconfig: { username: sidecarCreds.username, password: sidecarCreds.password } }
+        : {};
       await new Promise<void>((resolve, reject) => {
-        docker.pull(options.sidecarImage, (err: Error | null, stream: NodeJS.ReadableStream) => {
-          if (err) return reject(err);
+        docker.pull(options.sidecarImage, pullAuth, (err: Error | null, stream?: NodeJS.ReadableStream) => {
+          if (err || !stream) return reject(err ?? new Error("No stream returned from docker.pull"));
           // Wait for the pull to complete by consuming the stream
           docker.modem.followProgress(stream, (progressErr: Error | null) => {
             if (progressErr) return reject(progressErr);
@@ -231,16 +242,23 @@ export async function launchSidecar(
       throw new Error(`Failed to pull sidecar image "${options.sidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
     }
 
+    // Pass target image registry credentials to the sidecar as env vars
+    const sidecarEnv = [
+      `TARGET_IMAGE=${fullImageRef}`,
+      `CONTAINER_ID=${containerId}`,
+      `HEALTH_CHECK_URL=${healthCheckUrl}`,
+      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
+      `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
+    ];
+    if (targetCreds) {
+      sidecarEnv.push(`REGISTRY_USERNAME=${targetCreds.username}`);
+      sidecarEnv.push(`REGISTRY_PASSWORD=${targetCreds.password}`);
+    }
+
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
       name: `mini-infra-sidecar-${Date.now()}`,
-      Env: [
-        `TARGET_IMAGE=${fullImageRef}`,
-        `CONTAINER_ID=${containerId}`,
-        `HEALTH_CHECK_URL=${healthCheckUrl}`,
-        `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
-        `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
-      ],
+      Env: sidecarEnv,
       Labels: {
         [SIDECAR_LABEL]: "true",
         [UPDATE_LOCK_LABEL]: new Date().toISOString(),
@@ -442,6 +460,44 @@ export async function finalizeLastUpdate(): Promise<void> {
   });
 
   logger.info({ updateId: record.id, state }, "Self-update record finalized");
+}
+
+/**
+ * Detects and recovers stale update records.
+ * If the DB record is in a non-terminal state but no sidecar container
+ * is running, the sidecar crashed (and AutoRemove destroyed it).
+ * Mark the record as failed so the UI doesn't spin forever.
+ */
+export async function recoverStaleUpdate(): Promise<void> {
+  const record = await prisma.selfUpdate.findFirst({
+    where: {
+      state: {
+        notIn: ["complete", "rollback-complete", "failed"],
+      },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+
+  if (!record) return;
+
+  const running = await isUpdateInProgress();
+  if (running) return; // Sidecar is still alive, nothing to recover
+
+  const now = new Date();
+  await prisma.selfUpdate.update({
+    where: { id: record.id },
+    data: {
+      state: "failed",
+      errorMessage: "Update sidecar exited unexpectedly (container auto-removed)",
+      completedAt: now,
+      durationMs: now.getTime() - record.startedAt.getTime(),
+    },
+  });
+
+  logger.info(
+    { updateId: record.id },
+    "Recovered stale update record — sidecar no longer running",
+  );
 }
 
 /**
