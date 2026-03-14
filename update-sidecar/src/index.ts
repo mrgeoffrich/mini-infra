@@ -42,10 +42,24 @@ async function main(): Promise<void> {
 
   try {
     // -----------------------------------------------------------------------
-    // 1. Pull the target image
+    // 1. Pull the target image (best-effort — server pre-pulls before launch)
     // -----------------------------------------------------------------------
     logger.info({ state: "pulling", targetTag: TARGET_IMAGE }, "Update status: pulling");
-    await pullImage(docker, TARGET_IMAGE);
+    try {
+      await pullImage(docker, TARGET_IMAGE);
+    } catch (pullErr) {
+      // Check if the image already exists locally (pre-pulled by the server)
+      try {
+        await docker.getImage(TARGET_IMAGE).inspect();
+        logger.warn(
+          { err: pullErr, image: TARGET_IMAGE },
+          "Pull failed but image exists locally (pre-pulled by server), continuing",
+        );
+      } catch {
+        // Image doesn't exist locally either — cannot proceed
+        throw pullErr;
+      }
+    }
 
     // -----------------------------------------------------------------------
     // 2. Inspect the running container to capture its settings
