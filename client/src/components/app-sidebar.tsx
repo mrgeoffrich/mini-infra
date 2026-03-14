@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { IconInnerShadowTop, IconPalette, IconDashboard, IconBook, IconArrowLeft, IconBrandGithub } from "@tabler/icons-react";
+import { IconInnerShadowTop, IconPalette, IconDashboard, IconBook, IconArrowLeft, IconBrandGithub, IconRocket, IconSettings } from "@tabler/icons-react";
 
 import { NavUser } from "@/components/nav-user";
 import {
@@ -19,7 +19,8 @@ import {
   SidebarGroupLabel,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
-import { getNavigationSections } from "@/lib/route-config";
+import { cn } from "@/lib/utils";
+import { getNavigationSectionsForPanel, getPanelForPath, type NavPanel } from "@/lib/route-config";
 import { useSystemSettings } from "@/hooks/use-settings";
 import { getDocsByCategory } from "@/lib/doc-loader";
 
@@ -95,112 +96,62 @@ function HelpSidebarContent() {
   );
 }
 
+// Icon rail buttons for switching between Operations and Admin panels
+const panelConfig: Array<{ panel: NavPanel; icon: typeof IconRocket; label: string }> = [
+  { panel: "operations", icon: IconRocket, label: "Operations" },
+  { panel: "admin", icon: IconSettings, label: "Admin" },
+];
+
 // Standard app sidebar content - shown on all non-help routes
 function AppSidebarContent() {
-  const navSections = getNavigationSections();
   const location = useLocation();
+  const [activePanel, setActivePanel] = React.useState<NavPanel>(() =>
+    getPanelForPath(location.pathname)
+  );
+
+  // Auto-switch panel when navigating to a route in a different panel
+  React.useEffect(() => {
+    const detected = getPanelForPath(location.pathname);
+    setActivePanel(detected);
+  }, [location.pathname]);
+
+  const navSections = getNavigationSectionsForPanel(activePanel);
 
   return (
     <>
-      {/* Dashboard - standalone at top */}
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                tooltip="Dashboard"
-                isActive={location.pathname === "/dashboard"}
-              >
-                <Link to="/dashboard">
-                  <IconDashboard />
-                  <span>Dashboard</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      {/* Panel Tabs */}
+      <div className="flex px-2 pt-2 border-b border-sidebar-border">
+        {panelConfig.map(({ panel, icon: PanelIcon, label }) => (
+          <button
+            key={panel}
+            onClick={() => setActivePanel(panel)}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium transition-colors -mb-px",
+              activePanel === panel
+                ? "border border-sidebar-border border-b-transparent rounded-t-md bg-sidebar text-sidebar-accent-foreground"
+                : "border border-transparent text-muted-foreground hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <PanelIcon className="size-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {/* Render each navigation section */}
-      {navSections.map((section) => (
-        <SidebarGroup key={section.id}>
-          <SidebarGroupLabel className="text-xs text-muted-foreground">
-            {section.label}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {section.items.map((item) => {
-                const isActive = item.items
-                  ? location.pathname.startsWith(item.url)
-                  : location.pathname === item.url;
-
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      tooltip={item.title}
-                      isActive={isActive}
-                    >
-                      <Link to={item.url}>
-                        {item.icon && <item.icon />}
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                    {item.items && isActive && (
-                      <SidebarMenuSub>
-                        {item.items.map((subItem) => (
-                          <SidebarMenuSubItem key={subItem.title}>
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={location.pathname === subItem.url}
-                            >
-                              <Link to={subItem.url}>
-                                {subItem.icon && <subItem.icon />}
-                                <span>{subItem.title}</span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
-                      </SidebarMenuSub>
-                    )}
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      ))}
-
-      {/* Push dev section to bottom */}
-      <div className="mt-auto">
-        {/* Development-only Design Tools section */}
-        {import.meta.env.VITE_SHOW_DEV_MENU === 'true' && (
+      {/* Dashboard - shown on operations panel */}
+      {activePanel === "operations" && (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-xs text-muted-foreground">
-              Development
-            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    isActive={location.pathname === "/design/icons"}
+                    tooltip="Dashboard"
+                    isActive={location.pathname === "/dashboard"}
                   >
-                    <Link to="/design/icons">
-                      <IconPalette className="size-4" />
-                      <span>Icon Reference</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === "/bug-report-settings"}
-                  >
-                    <Link to="/bug-report-settings">
-                      <IconBrandGithub className="size-4" />
-                      <span>Bug Report Settings</span>
+                    <Link to="/dashboard">
+                      <IconDashboard />
+                      <span>Dashboard</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -208,7 +159,93 @@ function AppSidebarContent() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-      </div>
+
+        {/* Render navigation sections for active panel */}
+        {navSections.map((section) => (
+          <SidebarGroup key={section.id}>
+            <SidebarGroupLabel className="text-xs text-muted-foreground">
+              {section.label}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.items.map((item) => {
+                  const isActive = item.items
+                    ? location.pathname.startsWith(item.url)
+                    : location.pathname === item.url;
+
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip={item.title}
+                        isActive={isActive}
+                      >
+                        <Link to={item.url}>
+                          {item.icon && <item.icon />}
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      {item.items && isActive && (
+                        <SidebarMenuSub>
+                          {item.items.map((subItem) => (
+                            <SidebarMenuSubItem key={subItem.title}>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location.pathname === subItem.url}
+                              >
+                                <Link to={subItem.url}>
+                                  {subItem.icon && <subItem.icon />}
+                                  <span>{subItem.title}</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+
+        {/* Development-only section - admin panel only */}
+        {activePanel === "admin" && import.meta.env.VITE_SHOW_DEV_MENU === 'true' && (
+          <div className="mt-auto">
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-xs text-muted-foreground">
+                Development
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/design/icons"}
+                    >
+                      <Link to="/design/icons">
+                        <IconPalette className="size-4" />
+                        <span>Icon Reference</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/bug-report-settings"}
+                    >
+                      <Link to="/bug-report-settings">
+                        <IconBrandGithub className="size-4" />
+                        <span>Bug Report Settings</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </div>
+        )}
     </>
   );
 }
