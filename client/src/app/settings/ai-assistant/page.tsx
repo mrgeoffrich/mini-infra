@@ -508,13 +508,9 @@ export default function AiAssistantSettingsPage() {
                 <Label className="text-xs text-muted-foreground">Effort Level</Label>
                 <p className="text-sm font-medium">{settings.advanced.effort}</p>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Max Turns</Label>
-                <p className="text-sm font-medium">{settings.advanced.maxTurns}</p>
-              </div>
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
-              Set via <code>AGENT_THINKING</code>, <code>AGENT_EFFORT</code>, and <code>AGENT_MAX_TURNS</code> environment variables.
+              Set via <code>AGENT_THINKING</code> and <code>AGENT_EFFORT</code> environment variables.
             </p>
           </CardContent>
         </Card>

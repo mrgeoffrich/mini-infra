@@ -53,6 +53,22 @@ export class AgentConversationService {
     });
   }
 
+  async updateSdkSessionId(conversationId: string, sdkSessionId: string): Promise<void> {
+    await prisma.agentConversation.update({
+      where: { id: conversationId },
+      data: { sdkSessionId },
+    });
+    logger.debug({ conversationId, sdkSessionId }, "Updated SDK session ID");
+  }
+
+  async getSdkSessionId(conversationId: string): Promise<string | null> {
+    const conv = await prisma.agentConversation.findUnique({
+      where: { id: conversationId },
+      select: { sdkSessionId: true },
+    });
+    return conv?.sdkSessionId ?? null;
+  }
+
   async touchConversation(conversationId: string): Promise<void> {
     await prisma.agentConversation.update({
       where: { id: conversationId },
@@ -70,6 +86,7 @@ export class AgentConversationService {
       id: c.id,
       userId: c.userId,
       title: c.title,
+      sdkSessionId: c.sdkSessionId ?? null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     }));
@@ -118,6 +135,7 @@ export class AgentConversationService {
       id: conv.id,
       userId: conv.userId,
       title: conv.title,
+      sdkSessionId: conv.sdkSessionId ?? null,
       createdAt: conv.createdAt.toISOString(),
       updatedAt: conv.updatedAt.toISOString(),
       messages,

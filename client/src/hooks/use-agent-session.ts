@@ -541,6 +541,9 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               markAllThinkingComplete();
               clearThinkingIndex();
               setSessionStatus("done");
+              // Clear session so next follow-up creates a new sidecar session
+              // (with resume via sdkSessionId). The activeConversationId is preserved.
+              setSession(null);
               break;
             }
 
@@ -621,54 +624,33 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       setSessionStatus("connecting");
 
       try {
-        if (!session) {
-          // Create new session, optionally linked to an existing conversation
-          const response = await fetch("/api/agent/sessions", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message,
-              currentPath,
-              conversationId: activeConversationId ?? undefined,
-            }),
-          });
+        // Always create a new session. Follow-ups are handled via session resume
+        // (sdkSessionId) by linking to the existing conversation.
+        const response = await fetch("/api/agent/sessions", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message,
+            currentPath,
+            conversationId: activeConversationId ?? undefined,
+          }),
+        });
 
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "Unknown error");
-            throw new Error(`Failed to create session: ${errorText}`);
-          }
-
-          const data = (await response.json()) as { sessionId: string; conversationId: string };
-          const newSession: AgentSession = {
-            sessionId: data.sessionId,
-            conversationId: data.conversationId,
-          };
-          setSession(newSession);
-          setActiveConversationId(data.conversationId);
-          hasRestoredRef.current = true;
-          connectSSE(newSession.sessionId);
-        } else {
-          // Send follow-up message
-          const response = await fetch(
-            `/api/agent/sessions/${session.sessionId}/messages`,
-            {
-              method: "POST",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ message }),
-            },
-          );
-
-          if (!response.ok) {
-            const errorText = await response
-              .text()
-              .catch(() => "Unknown error");
-            throw new Error(`Failed to send message: ${errorText}`);
-          }
-
-          setSessionStatus("streaming");
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Unknown error");
+          throw new Error(`Failed to create session: ${errorText}`);
         }
+
+        const data = (await response.json()) as { sessionId: string; conversationId: string };
+        const newSession: AgentSession = {
+          sessionId: data.sessionId,
+          conversationId: data.conversationId,
+        };
+        setSession(newSession);
+        setActiveConversationId(data.conversationId);
+        hasRestoredRef.current = true;
+        connectSSE(newSession.sessionId);
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to send message";
@@ -687,7 +669,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentPath is intentionally omitted to avoid recreating on every navigation
-    [session, activeConversationId, connectSSE, markAllThinkingComplete, clearThinkingIndex],
+    [activeConversationId, connectSSE, markAllThinkingComplete, clearThinkingIndex],
   );
 
   const startNewChat = useCallback(() => {

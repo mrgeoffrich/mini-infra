@@ -13,7 +13,7 @@ import {
 } from "./lib/logger-factory";
 import {
   ensureAgentSidecar,
-  stopHealthChecks as stopAgentSidecarHealthChecks,
+  removeAgentSidecar,
 } from "./services/agent-sidecar";
 
 // Clear logger cache on startup to ensure new configuration is loaded
@@ -593,9 +593,13 @@ startServer()
         logger.info("Agent service stopped");
       }
 
-      // Stop agent sidecar health checks (container has its own restart policy)
-      stopAgentSidecarHealthChecks();
-      logger.info("Agent sidecar health checks stopped");
+      // Stop and remove the agent sidecar container (it has no persistent state)
+      try {
+        await removeAgentSidecar();
+        logger.info("Agent sidecar stopped and removed");
+      } catch (err) {
+        logger.warn({ err }, "Failed to remove agent sidecar during shutdown (non-fatal)");
+      }
 
       // Shut down Socket.IO before closing the HTTP server
       await shutdownSocketIO();

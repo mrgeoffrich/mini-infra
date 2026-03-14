@@ -14,6 +14,7 @@
     "dev:lib": "cd lib && npm run dev",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
+    "dev:agent-sidecar": "node scripts/dev-agent-sidecar.mjs",
     "build": "npm run build:server && npm run build:client",
     "build:lib": "cd lib && npm run build",
     "build:client": "cd client && npm run build",

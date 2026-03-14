@@ -34,8 +34,8 @@ COPY --from=builder /app/dist/ ./dist/
 COPY client/src/user-docs/ /app/docs/
 COPY .claude/ /app/.claude/
 
-# Create agent working directory
-RUN mkdir -p /tmp/agent-work && chown -R node:node /app /tmp/agent-work
+# Create agent working directory and SDK session persistence directory
+RUN mkdir -p /tmp/agent-work /home/node/.claude && chown -R node:node /app /tmp/agent-work /home/node/.claude
 
 USER node
 

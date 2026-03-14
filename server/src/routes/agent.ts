@@ -269,69 +269,6 @@ router.put(
 );
 
 // ---------------------------------------------------------------------------
-// POST /sessions/:sessionId/messages — send follow-up message
-// ---------------------------------------------------------------------------
-
-const sendMessageSchema = z.object({
-  message: z.string().min(1).max(4000),
-});
-
-router.post(
-  "/sessions/:sessionId/messages",
-  requirePermission("agent:use"),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const service = getAgentService();
-      if (!service) {
-        res.status(503).json({ error: "Agent service unavailable" });
-        return;
-      }
-
-      const { sessionId } = req.params;
-      const mapping = service.getSessionMapping(sessionId);
-
-      if (!mapping) {
-        res.status(404).json({ error: "Session not found" });
-        return;
-      }
-
-      const userId = getUserId(req);
-      if (mapping.userId !== userId) {
-        res.status(403).json({ error: "Forbidden" });
-        return;
-      }
-
-      const parsed = sendMessageSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: "Validation error",
-          details: parsed.error.issues,
-        });
-        return;
-      }
-
-      const sent = await service.sendMessage(sessionId, parsed.data.message);
-      if (!sent) {
-        res.status(409).json({
-          error: "Session is not accepting messages",
-          message:
-            "The agent session may have completed or been closed",
-        });
-        return;
-      }
-
-      res.json({ ok: true });
-    } catch (error) {
-      logger.error(
-        { error: error instanceof Error ? error.message : "Unknown error" },
-        "Failed to send message to agent session",
-      );
-      next(error);
-    }
-  },
-);
-
-// ---------------------------------------------------------------------------
 // DELETE /sessions/:sessionId — close session
 // ---------------------------------------------------------------------------
 
@@ -511,16 +448,20 @@ function extractSSEEvents(buffer: string): {
   remaining: string;
 } {
   const parsed: ParsedSSEEvent[] = [];
-  const lines = buffer.split("\n");
-  let remaining = "";
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  // SSE events are separated by double newlines (\n\n).
+  // Split on that boundary — the last segment may be incomplete.
+  const segments = buffer.split("\n\n");
+  const remaining = segments.pop() ?? ""; // Last segment is potentially incomplete
 
-    if (line.startsWith("data: ")) {
-      const jsonStr = line.slice(6);
-      // Check if there's a blank line after (end of event)
-      if (i + 1 < lines.length && lines[i + 1] === "") {
+  for (const segment of segments) {
+    const trimmed = segment.trim();
+    if (!trimmed || trimmed.startsWith(":")) continue; // Comment or empty
+
+    // Extract the data field(s) from this event block
+    for (const line of trimmed.split("\n")) {
+      if (line.startsWith("data: ")) {
+        const jsonStr = line.slice(6);
         try {
           const event = JSON.parse(jsonStr) as ParsedSSEEvent;
           if (event.type && event.data) {
@@ -529,17 +470,7 @@ function extractSSEEvents(buffer: string): {
         } catch {
           // Malformed JSON, skip
         }
-        i++; // Skip the blank line
-      } else if (i === lines.length - 1) {
-        // Incomplete event at end of buffer
-        remaining = line + "\n";
       }
-    } else if (line.startsWith(":") || line === "") {
-      // Comment or blank line, skip
-      continue;
-    } else if (i === lines.length - 1 && line !== "") {
-      // Incomplete line at end of buffer
-      remaining = line;
     }
   }
 

@@ -56,7 +56,6 @@ const configSchema = z.object({
     model: z.string(),
     thinking: z.enum(["adaptive", "enabled", "disabled"]),
     effort: z.enum(["low", "medium", "high", "max"]),
-    maxTurns: z.number(),
   }),
 });
 
@@ -175,7 +174,6 @@ const appConfig: Config = {
       | "medium"
       | "high"
       | "max",
-    maxTurns: getConfigValue("agent.maxTurns", "AGENT_MAX_TURNS", 20),
   },
   security: {
     allowInsecure: (() => {

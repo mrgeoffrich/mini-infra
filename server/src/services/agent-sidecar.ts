@@ -3,7 +3,8 @@ import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
-import appConfig from "../lib/config-new";
+import appConfig, { agentConfig } from "../lib/config-new";
+import { getEffectiveModel } from "./agent-settings-service";
 
 const logger = servicesLogger();
 
@@ -51,8 +52,9 @@ export async function getAgentSidecarConfig() {
   const settings = await getSettings();
   return {
     image: settings.get("image") || process.env.AGENT_SIDECAR_IMAGE_TAG || null,
-    model: settings.get("model") || "claude-sonnet-4-6",
-    maxTurns: parseInt(settings.get("max_turns") || "50", 10),
+    model: await getEffectiveModel(),
+    thinking: agentConfig.thinking,
+    effort: agentConfig.effort,
     timeoutMs: parseInt(settings.get("timeout_ms") || "300000", 10),
     autoStart: settings.get("auto_start") !== "false",
   };
@@ -152,8 +154,18 @@ export async function ensureAgentSidecar(options?: {
 } | null> {
   const containerId = getOwnContainerId();
   if (!containerId) {
-    logger.info("Not running in Docker, agent sidecar disabled");
-    return null;
+    // Dev mode: connect to locally-running sidecar process
+    const devUrl = process.env.AGENT_SIDECAR_DEV_URL;
+    if (!devUrl) {
+      logger.info("Not running in Docker and AGENT_SIDECAR_DEV_URL not set, agent sidecar disabled");
+      return null;
+    }
+
+    sidecarUrl = devUrl;
+    internalToken = null;
+    startHealthChecks();
+    logger.info({ sidecarUrl }, "Dev mode: connected to local agent sidecar process");
+    return { containerId: "dev-local", url: sidecarUrl };
   }
 
   const config = await getAgentSidecarConfig();
@@ -193,9 +205,9 @@ export async function ensureAgentSidecar(options?: {
       const containerName = info.Name.replace(/^\//, "");
 
       sidecarUrl = `http://${containerName}:${SIDECAR_PORT}`;
-      internalToken =
-        info.Config.Env?.find((e: string) => e.startsWith("SIDECAR_AUTH_TOKEN="))
-          ?.split("=")[1] || null;
+      const tokenPrefix = "SIDECAR_AUTH_TOKEN=";
+      const tokenEnv = info.Config.Env?.find((e: string) => e.startsWith(tokenPrefix));
+      internalToken = tokenEnv ? tokenEnv.slice(tokenPrefix.length) : null;
 
       startHealthChecks();
       return { containerId: existing.id, url: sidecarUrl };
@@ -231,7 +243,8 @@ async function createAgentSidecar(
   config: {
     image: string | null;
     model: string;
-    maxTurns: number;
+    thinking: string;
+    effort: string;
     timeoutMs: number;
   },
   onProgress?: SidecarProgressCallback,
@@ -319,13 +332,17 @@ async function createAgentSidecar(
         `SIDECAR_AUTH_TOKEN=${internalToken}`,
         `PORT=${SIDECAR_PORT}`,
         `AGENT_MODEL=${config.model}`,
-        `AGENT_MAX_TURNS=${config.maxTurns}`,
+        `AGENT_THINKING=${config.thinking}`,
+        `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,
         `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
       ],
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
       HostConfig: {
-        Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
+        Binds: [
+          "/var/run/docker.sock:/var/run/docker.sock",
+          "mini-infra-agent-sessions:/home/node/.claude",
+        ],
         RestartPolicy: { Name: "unless-stopped" },
         Memory: 512 * 1024 * 1024,
         MemorySwap: 512 * 1024 * 1024,
@@ -377,6 +394,14 @@ async function createAgentSidecar(
 
 export async function removeAgentSidecar(): Promise<void> {
   stopHealthChecks();
+
+  // Dev mode: no Docker container to manage, just clear state
+  if (!getOwnContainerId()) {
+    sidecarUrl = null;
+    internalToken = null;
+    sidecarHealthy = false;
+    return;
+  }
 
   const existing = await findAgentSidecar();
   if (!existing) {

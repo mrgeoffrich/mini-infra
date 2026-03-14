@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
 import { EventEmitter } from "events";
-import type Anthropic from "@anthropic-ai/sdk";
 import {
   Session,
   SessionStatus,
@@ -15,71 +14,12 @@ const MAX_SESSIONS = 20;
 const MAX_CONCURRENT = 5;
 
 // ---------------------------------------------------------------------------
-// AgentMessageQueue — AsyncIterable<string> for multi-turn conversations
-// ---------------------------------------------------------------------------
-
-export class AgentMessageQueue implements AsyncIterable<string> {
-  private buffer: string[] = [];
-  private resolve: ((value: IteratorResult<string>) => void) | null = null;
-  private closed = false;
-
-  push(content: string): void {
-    if (this.resolve) {
-      const r = this.resolve;
-      this.resolve = null;
-      r({ value: content, done: false });
-    } else {
-      this.buffer.push(content);
-    }
-  }
-
-  close(): void {
-    this.closed = true;
-    if (this.resolve) {
-      const r = this.resolve;
-      this.resolve = null;
-      r({ value: undefined as unknown as string, done: true });
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<string> {
-    return {
-      next: (): Promise<IteratorResult<string>> => {
-        if (this.buffer.length > 0) {
-          return Promise.resolve({
-            value: this.buffer.shift()!,
-            done: false,
-          });
-        }
-        if (this.closed) {
-          return Promise.resolve({
-            value: undefined as unknown as string,
-            done: true,
-          });
-        }
-        return new Promise((resolve) => {
-          this.resolve = resolve;
-        });
-      },
-    };
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Internal session state (superset of the Session interface)
 // ---------------------------------------------------------------------------
 
 interface InternalSession extends Session {
-  queue: AgentMessageQueue;
   abortController: AbortController;
   emitter: EventEmitter;
-  messages: Anthropic.Messages.MessageParam[];
-  /** Stable message ID for the current streaming turn. */
-  currentTurnUuid: string | null;
-  /** Monotonically increasing block index tracker per turn. */
-  currentBlockTypes: Map<number, string>;
-  /** Accumulated tool_use input JSON keyed by block index. */
-  pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,18 +42,15 @@ export class SessionStore {
       id,
       status: "running",
       currentPath: req.currentPath ?? "",
+      sdkSessionId: req.sdkSessionId ?? null,
       tokenUsage: { input: 0, output: 0 },
       turns: 0,
+      errorMessage: null,
       createdAt: now,
       completedAt: null,
       durationMs: null,
-      queue: new AgentMessageQueue(),
       abortController: new AbortController(),
       emitter: new EventEmitter(),
-      messages: [],
-      currentTurnUuid: null,
-      currentBlockTypes: new Map(),
-      pendingToolInputs: new Map(),
     };
 
     this.sessions.set(id, session);
@@ -163,7 +100,12 @@ export class SessionStore {
   }
 
   failSession(id: string, error: string): boolean {
-    return this.transitionSession(id, "failed");
+    const result = this.transitionSession(id, "failed");
+    if (result) {
+      const session = this.sessions.get(id);
+      if (session) session.errorMessage = error;
+    }
+    return result;
   }
 
   cancelSession(id: string): boolean {
@@ -243,7 +185,6 @@ export class SessionStore {
     if (!session) return false;
 
     session.abortController.abort();
-    session.queue.close();
 
     if (session.status === "running") {
       session.status = "cancelled";

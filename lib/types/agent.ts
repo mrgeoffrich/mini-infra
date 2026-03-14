@@ -28,6 +28,7 @@ export interface AgentConversationSummary {
   id: string;
   userId: string;
   title: string;
+  sdkSessionId?: string | null;
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
 }
@@ -59,7 +60,6 @@ export interface AgentSettingsResponse {
   advanced: {
     thinking: string;
     effort: string;
-    maxTurns: number;
   };
 }
 
@@ -121,7 +121,6 @@ export interface AgentSidecarStatus {
 export interface AgentSidecarConfig {
   image: string | null;
   model: string;
-  maxTurns: number;
   timeoutMs: number;
   autoStart: boolean;
 }
