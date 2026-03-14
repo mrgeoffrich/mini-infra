@@ -76,9 +76,6 @@ export async function runSession(
     number,
     { id: string; name: string; inputJson: string }
   >();
-  let isReplayingMessages = !!sdkSessionId; // Skip emitting replayed messages during resume
-  let replayedAssistantCount = 0; // Track replayed assistant messages to detect fresh content
-
   try {
     const queryOptions: Record<string, unknown> = {
       model: AGENT_MODEL,
@@ -167,23 +164,6 @@ export async function runSession(
 
       switch (msgType) {
         case "stream_event": {
-          if (isReplayingMessages) {
-            // Check if this stream event signals the start of a new (non-replayed) turn.
-            // The SDK emits stream_event with type "message_start" before content deltas.
-            // Once we've seen at least one complete replayed assistant message, a new
-            // message_start means we've transitioned to fresh content.
-            const event = (message as unknown as { event: Record<string, unknown> }).event;
-            if (
-              replayedAssistantCount > 0 &&
-              (event.type === "message_start" || event.type === "content_block_start")
-            ) {
-              isReplayingMessages = false;
-              // Fall through to process this event normally
-            } else {
-              break;
-            }
-          }
-
           const event = (message as unknown as { event: Record<string, unknown> }).event;
           processStreamEvent(
             store,
@@ -196,12 +176,6 @@ export async function runSession(
         }
 
         case "assistant": {
-          // A complete assistant message — during replay these represent prior turns
-          if (isReplayingMessages) {
-            replayedAssistantCount++;
-          }
-          isReplayingMessages = false; // Any new assistant message means we're past replay
-
           const assistantMessage = message as {
             type: "assistant";
             message: {
@@ -277,7 +251,6 @@ export async function runSession(
         }
 
         case "result": {
-          isReplayingMessages = false;
           // Final result from the SDK
           const resultMsg = message as {
             type: "result";
@@ -301,7 +274,6 @@ export async function runSession(
 
         case "system": {
           // Init or status message — capture model/session info
-          isReplayingMessages = false;
           break;
         }
 
