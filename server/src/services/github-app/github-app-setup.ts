@@ -254,6 +254,8 @@ export class GitHubAppSetup {
       (c) => c.registryUrl === "ghcr.io",
     );
 
+    const tokenExpiresAt = new Date(expiresAt);
+
     if (existingGhcr) {
       // Update existing credential with new token
       await registryCredentialService.updateCredential(
@@ -262,6 +264,7 @@ export class GitHubAppSetup {
           username: "x-access-token",
           password: token,
           description: `Auto-managed by GitHub App. Token expires at ${expiresAt}`,
+          tokenExpiresAt,
         },
         userId,
       );
@@ -280,6 +283,7 @@ export class GitHubAppSetup {
           password: token,
           description: `Auto-managed by GitHub App. Token expires at ${expiresAt}`,
           isDefault: false,
+          tokenExpiresAt,
         },
         userId,
       );

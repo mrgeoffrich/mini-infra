@@ -666,6 +666,9 @@ model RegistryCredential {
   createdBy             String   // User ID
   updatedBy             String   // User ID
 
+  // Token expiry tracking (for auto-managed credentials like GHCR)
+  tokenExpiresAt        DateTime?
+
   // Validation tracking
   lastValidatedAt       DateTime?
   validationStatus      String?  // 'valid', 'invalid', 'pending', 'error'
@@ -1079,13 +1082,14 @@ model VolumeFileContent {
 
 /// AgentConversation model for storing per-user AI assistant conversation threads
 model AgentConversation {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String    // First ~80 chars of first user message
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // Soft-delete timestamp; null = active
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String    // First ~80 chars of first user message
+  sdkSessionId String?   // Claude SDK session ID for resumable conversations
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // Soft-delete timestamp; null = active
 
   messages  AgentConversationMessage[]
 

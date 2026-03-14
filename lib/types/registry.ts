@@ -15,6 +15,7 @@ export interface RegistryCredential {
   updatedAt: Date;
   createdBy: string;
   updatedBy: string;
+  tokenExpiresAt?: Date;
   lastValidatedAt?: Date;
   validationStatus?: 'valid' | 'invalid' | 'pending' | 'error';
   validationMessage?: string;
@@ -28,6 +29,7 @@ export interface CreateRegistryCredentialRequest {
   isDefault?: boolean;
   isActive?: boolean;
   description?: string;
+  tokenExpiresAt?: Date;
 }
 
 export interface UpdateRegistryCredentialRequest {
@@ -37,6 +39,7 @@ export interface UpdateRegistryCredentialRequest {
   isDefault?: boolean;
   isActive?: boolean;
   description?: string;
+  tokenExpiresAt?: Date;
 }
 
 export interface RegistryCredentialResponse {
