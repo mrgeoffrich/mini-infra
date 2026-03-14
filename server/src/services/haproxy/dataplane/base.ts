@@ -1,8 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
-import os from 'os';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { networkUtils } from '../../network-utils';
+import { getOwnContainerId } from '../../self-update';
 import { HAProxyEndpointInfo } from './types';
 
 const logger = loadbalancerLogger();
@@ -145,19 +145,16 @@ export class HAProxyDataPlaneClientBase {
       throw new Error('HAProxy container has no network connections');
     }
 
-    // Determine our own container ID
-    const myHostname = os.hostname();
-    let myContainer;
-    try {
-      myContainer = docker.getContainer(myHostname);
-      await myContainer.inspect(); // Verify we can access ourselves
-    } catch {
+    // Determine our own container ID using the same robust detection as self-update
+    const selfId = getOwnContainerId();
+    if (!selfId) {
       throw new Error(
         'DataPlane API port 5555 is not bound to a host port and container network fallback ' +
         'is unavailable (mini-infra does not appear to be running in Docker)'
       );
     }
 
+    const myContainer = docker.getContainer(selfId);
     const myInfo = await myContainer.inspect();
     const myNetworks = Object.keys(myInfo.NetworkSettings?.Networks || {});
 
@@ -179,12 +176,24 @@ export class HAProxyDataPlaneClientBase {
     // No shared network — join the HAProxy container's network
     const [targetNetworkName, targetNetInfo] = networkEntries[0];
     const network = docker.getNetwork(targetNetworkName);
-    await network.connect({ Container: myHostname });
 
-    logger.info(
-      { network: targetNetworkName },
-      'Auto-joined HAProxy network for DataPlane API access'
-    );
+    try {
+      await network.connect({ Container: selfId });
+      logger.info(
+        { network: targetNetworkName },
+        'Auto-joined HAProxy network for DataPlane API access'
+      );
+    } catch (connectError: any) {
+      // Ignore "already connected" errors (Docker returns 403) for idempotency
+      const msg = connectError?.message || connectError?.statusMessage || '';
+      if (!msg.includes('already exists') && connectError?.statusCode !== 403) {
+        throw connectError;
+      }
+      logger.debug(
+        { network: targetNetworkName },
+        'Already connected to HAProxy network'
+      );
+    }
 
     // Use the HAProxy container's IP on that network
     if (targetNetInfo.IPAddress) {
