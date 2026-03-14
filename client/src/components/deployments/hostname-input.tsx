@@ -140,10 +140,30 @@ export function HostnameInput({
 
       if (isValid && isAvailable) {
         return (
-          <Alert className="mt-2 border-green-200 bg-green-50">
-            <IconCircleCheck className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-700">{message}</AlertDescription>
-          </Alert>
+          <div className="space-y-2">
+            <Alert className="mt-2 border-green-200 bg-green-50">
+              <IconCircleCheck className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-700">{message}</AlertDescription>
+            </Alert>
+            {conflictDetails?.dnsInfo && (
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {conflictDetails.dnsInfo.matchedZone ? (
+                  <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50">
+                    Zone: {conflictDetails.dnsInfo.zoneName}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs border-yellow-300 text-yellow-700 bg-yellow-50">
+                    No matching DNS zone
+                  </Badge>
+                )}
+                {conflictDetails.dnsInfo.existingRecords && conflictDetails.dnsInfo.existingRecords.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Existing: {conflictDetails.dnsInfo.existingRecords.map(r => `${r.type} → ${r.content}`).join(", ")}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         );
       }
 

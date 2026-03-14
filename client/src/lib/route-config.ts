@@ -18,6 +18,7 @@ import {
   IconShield,
   IconHistory,
   IconDownload,
+  IconWorld,
 } from "@tabler/icons-react";
 
 export interface RouteMetadata {
@@ -361,6 +362,16 @@ export const routeConfig: Record<string, RouteConfig> = {
         showInNav: false,
       },
     },
+  },
+
+  "/dns": {
+    path: "/dns",
+    title: "DNS Zones",
+    icon: IconWorld,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "networking",
+    description: "View cached DNS zones and records from Cloudflare",
   },
 
   "/connectivity-docker": {

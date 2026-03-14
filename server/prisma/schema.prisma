@@ -1384,3 +1384,46 @@ model StackTemplateConfigFile {
   @@index([versionId])
   @@map("stack_template_config_files")
 }
+
+// Cached DNS zone from Cloudflare
+model DnsCacheZone {
+  id               String   @id @default(cuid())
+  cloudflareZoneId String   @unique
+  name             String
+  status           String
+  paused           Boolean  @default(false)
+  type             String
+  nameServers      String   // JSON-encoded string[]
+  createdOn        String?
+  modifiedOn       String?
+  cachedAt         DateTime @default(now())
+
+  records DnsCacheRecord[]
+
+  @@index([name])
+  @@map("dns_cache_zones")
+}
+
+// Cached DNS record from Cloudflare
+model DnsCacheRecord {
+  id                 String       @id @default(cuid())
+  cloudflareRecordId String       @unique
+  zoneId             String
+  zone               DnsCacheZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  type               String
+  name               String
+  content            String
+  ttl                Int
+  proxied            Boolean      @default(false)
+  proxiable          Boolean      @default(true)
+  locked             Boolean      @default(false)
+  zoneName           String
+  createdOn          String?
+  modifiedOn         String?
+  cachedAt           DateTime     @default(now())
+
+  @@index([zoneId])
+  @@index([name])
+  @@index([type])
+  @@map("dns_cache_records")
+}

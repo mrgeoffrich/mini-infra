@@ -2,7 +2,7 @@
 // Deployment Configuration Types
 // ====================
 
-import { DeploymentDNSRecordInfo } from './dns';
+import { DeploymentDNSRecordInfo, DnsHostnameCheckResult } from './dns';
 
 // Port configuration for containers
 export interface DeploymentPort {
@@ -337,6 +337,7 @@ export interface HostnameValidationResult {
     cloudflareZone?: string;
     conflictingConfigId?: string;
     conflictingConfigName?: string;
+    dnsInfo?: DnsHostnameCheckResult;
   };
   suggestions?: string[];
 }

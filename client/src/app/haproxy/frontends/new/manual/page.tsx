@@ -54,6 +54,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { StepIndicator, type Step } from "@/components/haproxy/step-indicator";
+import { DnsZoneIndicator } from "@/components/dns/dns-zone-indicator";
 import { ContainerEligibilityBadge } from "@/components/haproxy/container-eligibility-badge";
 import { ConnectContainerDialog } from "@/components/haproxy/connect-container-dialog";
 
@@ -589,6 +590,7 @@ function FrontendConfigurationCard({
               <FormDescription>
                 The domain name for this frontend
               </FormDescription>
+              <DnsZoneIndicator hostname={hostname} />
               {hostname && !hostnameAvailable && (
                 <Alert variant="destructive">
                   <IconAlertCircle className="w-4 h-4" />

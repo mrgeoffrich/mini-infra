@@ -38,6 +38,7 @@ import { EnvironmentsPage } from "@/app/environments/page";
 import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
 import CertificatesPage from "@/app/certificates/page";
 import CertificateDetailsPage from "@/app/certificates/[id]/page";
+import DnsPage from "@/app/dns/page";
 import TlsSettingsPage from "@/app/settings/tls/page";
 import AiAssistantSettingsPage from "@/app/settings/ai-assistant/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
@@ -176,6 +177,10 @@ export const router = createBrowserRouter([
       {
         path: "certificates/:id",
         element: <CertificateDetailsPage />,
+      },
+      {
+        path: "dns",
+        element: <DnsPage />,
       },
       {
         path: "haproxy",
