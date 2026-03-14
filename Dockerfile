@@ -137,6 +137,10 @@ ENV SIDECAR_IMAGE_TAG=${SIDECAR_IMAGE_TAG}
 ARG AGENT_SIDECAR_IMAGE_TAG=latest
 ENV AGENT_SIDECAR_IMAGE_TAG=${AGENT_SIDECAR_IMAGE_TAG}
 
+# Bake in the application version for display in the UI.
+ARG BUILD_VERSION=dev
+ENV BUILD_VERSION=${BUILD_VERSION}
+
 # Set environment to production
 ENV NODE_ENV=production
 
