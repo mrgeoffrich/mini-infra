@@ -94,7 +94,7 @@ export class GitHubAppService extends ConfigurationService {
 
     this.auth = new GitHubAppAuth(ctx);
     this.oauth = new GitHubAppOAuth(ctx);
-    this.setup = new GitHubAppSetup(ctx, this.auth, prismaClient);
+    this.setup = new GitHubAppSetup(ctx, this.auth);
     this.resources = new GitHubAppResources(ctx, this.auth, this.oauth);
     this.validation = new GitHubAppValidation(validationCtx, this.auth, this.oauth);
   }
@@ -147,10 +147,6 @@ export class GitHubAppService extends ConfigurationService {
 
   async refreshInstallation(userId: string): Promise<{ found: boolean; installationId?: string }> {
     return this.setup.refreshInstallation(userId);
-  }
-
-  async createOrUpdateGhcrCredential(userId: string): Promise<void> {
-    return this.setup.createOrUpdateGhcrCredential(userId);
   }
 
   // --- Resources (delegated) ---

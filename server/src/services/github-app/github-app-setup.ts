@@ -1,17 +1,14 @@
-import { PrismaClient } from "../../lib/prisma";
-import { RegistryCredentialService } from "../registry-credential";
 import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppContext } from "./github-app-constants";
 import { GitHubAppAuth } from "./github-app-auth";
 
 /**
  * Handles GitHub App manifest flow registration, setup completion,
- * installation refresh, and GHCR credential management.
+ * and installation refresh.
  */
 export class GitHubAppSetup {
   constructor(
     private ctx: GitHubAppContext,
     private auth: GitHubAppAuth,
-    private prisma: PrismaClient,
   ) {}
 
   /**
@@ -154,21 +151,6 @@ export class GitHubAppSetup {
       );
     }
 
-    // Step 4: Auto-create GHCR registry credential
-    try {
-      await this.createOrUpdateGhcrCredential(userId);
-    } catch (ghcrError) {
-      this.ctx.logger.warn(
-        {
-          error:
-            ghcrError instanceof Error
-              ? ghcrError.message
-              : String(ghcrError),
-        },
-        "Failed to auto-create GHCR credential, can be done manually later",
-      );
-    }
-
     return {
       appSlug: appData.slug,
       owner: ownerLogin,
@@ -223,75 +205,7 @@ export class GitHubAppSetup {
       "GitHub App installation found and stored via refresh",
     );
 
-    // Now that we have an installation, auto-create GHCR credential
-    try {
-      await this.createOrUpdateGhcrCredential(userId);
-    } catch (ghcrError) {
-      this.ctx.logger.warn(
-        { error: ghcrError instanceof Error ? ghcrError.message : String(ghcrError) },
-        "Failed to auto-create GHCR credential after installation refresh",
-      );
-    }
-
     return { found: true, installationId };
   }
 
-  /**
-   * Create or update a GHCR (GitHub Container Registry) credential.
-   * Uses the installation token as the password with username "x-access-token".
-   *
-   * @param userId - The user performing the operation (for audit trails)
-   */
-  async createOrUpdateGhcrCredential(userId: string): Promise<void> {
-    const { token, expiresAt } = await this.auth.generateInstallationToken();
-
-    const registryCredentialService = new RegistryCredentialService(this.prisma);
-
-    // Check if any GHCR credential already exists (by registryUrl, regardless of name)
-    const existingCredentials =
-      await registryCredentialService.getAllCredentials();
-    const existingGhcr = existingCredentials.find(
-      (c) => c.registryUrl === "ghcr.io",
-    );
-
-    const tokenExpiresAt = new Date(expiresAt);
-
-    if (existingGhcr) {
-      // Update existing credential with new token
-      await registryCredentialService.updateCredential(
-        existingGhcr.id,
-        {
-          username: "x-access-token",
-          password: token,
-          description: `Auto-managed by GitHub App. Token expires at ${expiresAt}`,
-          tokenExpiresAt,
-        },
-        userId,
-      );
-
-      this.ctx.logger.info(
-        { credentialId: existingGhcr.id, expiresAt },
-        "Updated GHCR credential with new installation token",
-      );
-    } else {
-      // Create new GHCR credential
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "GitHub App (auto-managed)",
-          registryUrl: "ghcr.io",
-          username: "x-access-token",
-          password: token,
-          description: `Auto-managed by GitHub App. Token expires at ${expiresAt}`,
-          isDefault: false,
-          tokenExpiresAt,
-        },
-        userId,
-      );
-
-      this.ctx.logger.info(
-        { credentialId: credential.id, expiresAt },
-        "Created GHCR credential from GitHub App installation token",
-      );
-    }
-  }
 }

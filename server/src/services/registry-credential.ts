@@ -1,5 +1,4 @@
 import prisma, { PrismaClient } from "../lib/prisma";
-import type { RegistryCredential as PrismaRegistryCredential } from "@prisma/client";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
 import { getApiKeySecret } from "../lib/security-config";
@@ -14,24 +13,6 @@ import { DockerExecutorService } from "./docker-executor";
 export class RegistryCredentialService {
   private prisma: PrismaClient;
   private encryptionKey: string | null;
-
-  /**
-   * Optional callback to refresh an expired token for a given registry URL.
-   * Registered at app startup to avoid circular dependencies.
-   */
-  private static tokenRefresher: ((registryUrl: string) => Promise<void>) | null = null;
-
-  /**
-   * Register a callback that refreshes expired auto-managed tokens.
-   * Called once at startup with a function that knows how to refresh
-   * (e.g., via GitHubAppService for ghcr.io).
-   */
-  static registerTokenRefresher(refresher: (registryUrl: string) => Promise<void>): void {
-    RegistryCredentialService.tokenRefresher = refresher;
-  }
-
-  /** Buffer time: refresh tokens 5 minutes before actual expiry */
-  private static readonly TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
   constructor(prisma: PrismaClient, encryptionKey?: string) {
     this.prisma = prisma;
@@ -151,17 +132,12 @@ export class RegistryCredentialService {
     );
 
     // 2. Find exact match in database
-    let credential = await this.prisma.registryCredential.findFirst({
+    const credential = await this.prisma.registryCredential.findFirst({
       where: {
         registryUrl,
         isActive: true,
       },
     });
-
-    // 3. If credential has an expiry, check if it needs refreshing
-    if (credential) {
-      credential = await this.ensureFreshToken(credential, registryUrl);
-    }
 
     if (credential) {
       servicesLogger().info(
@@ -193,68 +169,6 @@ export class RegistryCredentialService {
       "No credentials found for image",
     );
     return null;
-  }
-
-  /**
-   * Check if a credential's token is expired (or about to expire) and refresh it.
-   * Returns the refreshed credential, or the original if no refresh was needed/possible.
-   */
-  private async ensureFreshToken(
-    credential: PrismaRegistryCredential,
-    registryUrl: string,
-  ): Promise<PrismaRegistryCredential> {
-    if (!credential.tokenExpiresAt) {
-      return credential;
-    }
-
-    const now = Date.now();
-    const expiresAt = new Date(credential.tokenExpiresAt).getTime();
-    const bufferMs = RegistryCredentialService.TOKEN_EXPIRY_BUFFER_MS;
-
-    if (expiresAt - now > bufferMs) {
-      // Token is still fresh
-      return credential;
-    }
-
-    if (!RegistryCredentialService.tokenRefresher) {
-      servicesLogger().warn(
-        { registryUrl, expiresAt: credential.tokenExpiresAt },
-        "Token is expired but no refresher is registered",
-      );
-      return credential;
-    }
-
-    servicesLogger().info(
-      { registryUrl, expiresAt: credential.tokenExpiresAt },
-      "Token expired or expiring soon, refreshing",
-    );
-
-    try {
-      await RegistryCredentialService.tokenRefresher(registryUrl);
-
-      // Re-fetch the credential after refresh
-      const refreshed = await this.prisma.registryCredential.findFirst({
-        where: { registryUrl, isActive: true },
-      });
-
-      if (refreshed) {
-        servicesLogger().info(
-          { registryUrl, newExpiresAt: refreshed.tokenExpiresAt },
-          "Token refreshed successfully",
-        );
-        return refreshed;
-      }
-    } catch (error) {
-      servicesLogger().error(
-        {
-          registryUrl,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        "Failed to refresh token, using existing credential",
-      );
-    }
-
-    return credential;
   }
 
   // ====================
