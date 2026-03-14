@@ -526,19 +526,41 @@ export async function recoverStaleUpdate(): Promise<void> {
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover
 
+  // Check if an exited sidecar container exists (keepSidecar=true prevents AutoRemove).
+  // If so, finalize from its exit code rather than assuming a crash.
+  const exitInfo = await getSidecarExitInfo();
+
   const now = new Date();
+  let state: string;
+  let errorMessage: string | null;
+
+  if (exitInfo) {
+    // Sidecar exited and container still exists — use its exit code
+    if (exitInfo.exitCode === 0) {
+      state = "complete";
+      errorMessage = null;
+    } else {
+      state = "rollback-complete";
+      errorMessage = `Update sidecar exited with code ${exitInfo.exitCode}`;
+    }
+  } else {
+    // No sidecar container at all — it was auto-removed, likely a crash
+    state = "failed";
+    errorMessage = "Update sidecar exited unexpectedly (container auto-removed)";
+  }
+
   await prisma.selfUpdate.update({
     where: { id: record.id },
     data: {
-      state: "failed",
-      errorMessage: "Update sidecar exited unexpectedly (container auto-removed)",
+      state,
+      errorMessage,
       completedAt: now,
       durationMs: now.getTime() - record.startedAt.getTime(),
     },
   });
 
   logger.info(
-    { updateId: record.id },
+    { updateId: record.id, state },
     "Recovered stale update record — sidecar no longer running",
   );
 }
