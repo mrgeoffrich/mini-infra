@@ -29,10 +29,6 @@ export function AgentChatHeader() {
           </Badge>
         )}
         <span
-          className="size-2 rounded-full bg-green-500"
-          title="Available"
-        />
-        <span
           className={cn(
             "size-2 rounded-full",
             isProcessing ? "bg-green-500 animate-pulse" : "bg-gray-400",

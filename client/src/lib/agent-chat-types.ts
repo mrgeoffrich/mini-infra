@@ -85,6 +85,7 @@ export interface AgentChatContextType {
   session: AgentSession | null;
   model: string | null;
   sendMessage: (message: string) => Promise<void>;
+  stopSession: () => void;
   startNewChat: () => void;
   // Conversation history
   activeConversationId: string | null;

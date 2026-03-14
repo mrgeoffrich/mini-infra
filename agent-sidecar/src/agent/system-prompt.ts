@@ -76,7 +76,10 @@ function buildDocsIndex(): string {
   }
 
   const lines: string[] = ["## Available Documentation", ""];
-  lines.push("Use the `read_doc` MCP tool or the built-in `Read` tool to read any of these files.", "");
+  lines.push(
+    "Use the `read_doc` MCP tool or the built-in `Read` tool to read any of these files.",
+    "",
+  );
 
   for (const [category, categoryDocs] of byCategory) {
     categoryDocs.sort((a, b) => a.order - b.order);
@@ -137,23 +140,36 @@ const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 You have access to the following built-in tools provided by the SDK:
 - **Bash**: Execute shell commands (docker, gh, curl, and standard Unix utilities). Commands run in /tmp/agent-work/.
 - **Read**: Read any file accessible to the sidecar (logs, configs, docs, temporary outputs).
-- **Write**: Write files to /tmp/agent-work/ only (for scripts, reports, etc.).
+- **Glob**: Find files by glob pattern (e.g. \`/app/docs/**/*.md\`).
+- **Grep**: Search file contents by regex pattern.
 
 ### When to use \`Bash\`
 - Docker CLI commands: \`docker ps\`, \`docker logs\`, \`docker inspect\`, \`docker stats\`
 - GitHub CLI: \`gh pr list\`, \`gh issue view\`, \`gh run list\`
-- curl for external diagnostics or APIs not covered by mini_infra_api
+- curl for calling the Mini Infra API or external APIs
+- You can chain commands with \`&&\`, \`||\`, \`;\`, and \`|\`
 
-### When to use \`mini_infra_api\`
-- Structured API calls to the Mini Infra REST API
-- Use this instead of curl when calling Mini Infra endpoints
-- Authentication is handled automatically
+### Calling the Mini Infra API with curl
+The API base URL and API key are available as environment variables:
+- \`$MINI_INFRA_API_URL\` — the base URL (e.g. \`http://localhost:5005\`)
+- \`$MINI_INFRA_API_KEY\` — the API key for authentication
 
-### When to use \`read_doc\` / \`list_docs\`
-- When the user asks about Mini Infra features, troubleshooting, or configuration
-- Read the relevant documentation file before answering feature questions
-- Use \`list_docs\` first if you're unsure which doc to read
-- You can also use the built-in \`Read\` tool to read docs directly from /app/docs/`;
+Pass the API key via the \`x-api-key\` header. Examples:
+\`\`\`bash
+# List containers
+curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/containers"
+
+# Get docker info
+curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/docker/info"
+
+# POST with JSON body
+curl -s -X POST -H "x-api-key: $MINI_INFRA_API_KEY" -H "Content-Type: application/json" -d '{"key":"value"}' "$MINI_INFRA_API_URL/api/some/endpoint"
+\`\`\`
+
+Always use \`-s\` (silent) to suppress progress bars and pipe through \`| jq .\` for readable output when needed.
+
+### User Documentation
+User-facing documentation is stored in \`/app/docs/\`. These markdown files describe how the Mini Infra UI works, including page layouts, features, workflows, and configuration options. When the user asks how something works in the UI, search the docs first using \`Glob\` (e.g. \`/app/docs/**/*.md\`) and \`Grep\` to find relevant articles before answering. You can also use the \`list_docs\` and \`read_doc\` MCP tools to browse and read documentation files.`;
 
 const API_REFERENCE = `## Mini Infra API Endpoints
 
@@ -232,10 +248,7 @@ export function buildSystemPrompt(): string {
     API_REFERENCE,
   ].join("\n\n");
 
-  logger.info(
-    { promptLength: cachedPrompt.length },
-    "System prompt assembled",
-  );
+  logger.info({ promptLength: cachedPrompt.length }, "System prompt assembled");
 
   return cachedPrompt;
 }

@@ -28,6 +28,7 @@ interface UseAgentSessionResult {
   model: string | null;
   activeConversationId: string | null;
   sendMessage: (message: string) => Promise<void>;
+  stopSession: () => void;
   startNewChat: () => void;
   loadConversation: (conversationId: string, messages: ChatMessage[]) => void;
 }
@@ -676,6 +677,45 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     [activeConversationId, connectSSE, markAllThinkingComplete, clearThinkingIndex],
   );
 
+  const stopSession = useCallback(() => {
+    if (!session) return;
+
+    // Close the EventSource immediately so we don't receive the
+    // cancellation error event from the sidecar.
+    closeEventSource();
+
+    // Flush any remaining streaming text as an assistant message
+    const remaining = streamingTextRef.current;
+    streamingTextRef.current = "";
+    setStreamingText("");
+    if (remaining.trim()) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: remaining,
+          timestamp: Date.now(),
+        },
+      ]);
+    }
+
+    markAllThinkingComplete();
+    clearThinkingIndex();
+    setSessionStatus("done");
+
+    // Tell the backend to cancel the session (fire-and-forget)
+    fetch(`/api/agent/sessions/${session.sessionId}`, {
+      method: "DELETE",
+      credentials: "include",
+    }).catch(() => {
+      // Ignore errors on cleanup
+    });
+
+    // Clear session so next message creates a new one
+    setSession(null);
+  }, [session, closeEventSource, markAllThinkingComplete, clearThinkingIndex]);
+
   const startNewChat = useCallback(() => {
     closeEventSource();
 
@@ -733,6 +773,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     model,
     activeConversationId,
     sendMessage,
+    stopSession,
     startNewChat,
     loadConversation,
   };

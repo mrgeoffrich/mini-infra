@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, type KeyboardEvent } from "react";
-import { IconSend } from "@tabler/icons-react";
+import { IconSend, IconPlayerStopFilled } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 
 export function AgentChatInput() {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { sendMessage, sessionStatus } = useAgentChat();
+  const { sendMessage, stopSession, sessionStatus } = useAgentChat();
   const disabled = sessionStatus === "connecting";
   const sending =
     sessionStatus === "streaming" || sessionStatus === "waiting";
@@ -54,14 +54,25 @@ export function AgentChatInput() {
           rows={1}
           className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 min-h-10 max-h-32"
         />
-        <Button
-          size="icon"
-          className="size-9 shrink-0"
-          onClick={handleSend}
-          disabled={disabled || sending || !value.trim()}
-        >
-          <IconSend className="size-4" />
-        </Button>
+        {sending ? (
+          <Button
+            size="icon"
+            variant="destructive"
+            className="size-9 shrink-0"
+            onClick={stopSession}
+          >
+            <IconPlayerStopFilled className="size-4" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            className="size-9 shrink-0"
+            onClick={handleSend}
+            disabled={disabled || !value.trim()}
+          >
+            <IconSend className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
