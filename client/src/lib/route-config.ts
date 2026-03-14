@@ -577,6 +577,13 @@ export interface NavSection {
   }>;
 }
 
+export type NavPanel = "operations" | "admin";
+
+const panelSections: Record<NavPanel, string[]> = {
+  operations: ["applications", "databases", "networking", "monitoring"],
+  admin: ["connectivity", "administration"],
+};
+
 // Get navigation items grouped by section
 export function getNavigationSections(): NavSection[] {
   const sections = new Map<string, NavSection>();
@@ -644,6 +651,26 @@ export function getNavigationSections(): NavSection[] {
   return sectionDefinitions
     .map((def) => sections.get(def.id)!)
     .filter((section) => section.items.length > 0);
+}
+
+// Get navigation sections filtered by panel
+export function getNavigationSectionsForPanel(panel: NavPanel): NavSection[] {
+  const allSections = getNavigationSections();
+  const allowedSections = panelSections[panel];
+  return allSections.filter((section) => allowedSections.includes(section.id));
+}
+
+// Determine which panel a route belongs to based on its navSection
+export function getPanelForPath(pathname: string): NavPanel {
+  const metadata = getRouteMetadata(pathname);
+  if (metadata?.navSection) {
+    for (const [panel, sections] of Object.entries(panelSections)) {
+      if (sections.includes(metadata.navSection)) {
+        return panel as NavPanel;
+      }
+    }
+  }
+  return "operations";
 }
 
 export function generateBreadcrumbs(pathname: string): Array<{
