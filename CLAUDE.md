@@ -209,6 +209,17 @@ Note: Socket IO is not required for the self patching or updating feature.
 **Cons**: Security risk - container has full Docker control
 **Use Case**: Trusted environments, development, single-host deployments
 
+## Critical Coding Patterns
+
+These are the most commonly missed patterns. See `server/CLAUDE.md` for the full service guide.
+
+* **Never use raw `docker.pull()`** — always use `DockerExecutorService.pullImageWithAutoAuth()` which handles registry credential lookup, authentication, and token refresh automatically.
+* **Never create Docker clients directly** — use `DockerService.getInstance()` (singleton with caching, event streaming, and timeout protection).
+* **Never use raw dockerode calls** — use `DockerService` wrappers (e.g., `listContainers()`, `getContainer()`) which add caching, error handling, and sensitive label redaction.
+* **Always use `ConfigurationServiceFactory`** to create config services — never instantiate `DockerConfigService`, `AzureStorageService`, etc. directly.
+* **All configuration mutations require `userId`** for audit trail — `set()`, `delete()`, and `create()` methods all track who made the change.
+* **Use `Channel.*` and `ServerEvent.*` constants** for Socket.IO — never use raw strings for event names or channels.
+
 ## Logging Architecture
 
 The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
