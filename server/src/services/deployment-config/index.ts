@@ -17,6 +17,7 @@ import {
   HostnameValidationResult,
 } from "@mini-infra/types";
 import { CloudflareService } from "../cloudflare";
+import { DnsCacheService } from "../dns";
 import { DeploymentOrchestrator } from "../deployment-orchestrator";
 
 import { ConfigValidator } from "./config-validator";
@@ -79,7 +80,7 @@ export class DeploymentConfigurationManager extends ConfigurationService {
     );
 
     const cloudflareService = new CloudflareService(prismaInstance);
-    this.hostnameValidator = new HostnameValidator(prismaInstance, cloudflareService);
+    this.hostnameValidator = new HostnameValidator(prismaInstance, cloudflareService, DnsCacheService.getInstance());
 
     this.containerQueryService = new ContainerQueryService(prismaInstance);
   }

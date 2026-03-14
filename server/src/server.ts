@@ -38,6 +38,7 @@ import { SelfBackupScheduler } from "./services/backup";
 import serverHealthScheduler from "./services/postgres-server/health-scheduler";
 import { UserEventCleanupScheduler } from "./services/user-events";
 import prisma from "./lib/prisma";
+import { DnsCacheService, DnsCacheScheduler } from "./services/dns";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { TlsConfigService } from "./services/tls/tls-config";
 import { AzureStorageCertificateStore } from "./services/tls/azure-storage-certificate-store";
@@ -65,6 +66,7 @@ let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
+let dnsCacheScheduler: DnsCacheScheduler | null = null;
 
 /**
  * Initialize security secrets from database or generate new ones
@@ -419,6 +421,20 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ TLS renewal scheduler initialization failed (non-fatal)");
     }
 
+    // Initialize DNS cache scheduler
+    try {
+      console.log("[STARTUP] Initializing DNS cache scheduler...");
+      const dnsCacheService = new DnsCacheService(prisma);
+      DnsCacheService.setInstance(dnsCacheService);
+      dnsCacheScheduler = new DnsCacheScheduler(dnsCacheService);
+      await dnsCacheScheduler.start();
+      logger.info("DNS cache scheduler initialized successfully");
+      console.log("[STARTUP] ✓ DNS cache scheduler initialized");
+    } catch (error) {
+      logger.warn({ error }, "Failed to initialize DNS cache scheduler (non-fatal)");
+      console.log("[STARTUP] ⚠ DNS cache scheduler initialization failed (non-fatal)");
+    }
+
     // Seed default permission presets if not already present
     console.log("[STARTUP] Seeding default permission presets...");
     await seedDefaultPresets();
@@ -585,6 +601,12 @@ startServer()
       if (tlsRenewalScheduler) {
         tlsRenewalScheduler.stop();
         logger.info("TLS renewal scheduler stopped");
+      }
+
+      // Stop DNS cache scheduler
+      if (dnsCacheScheduler) {
+        dnsCacheScheduler.stop();
+        logger.info("DNS cache scheduler stopped");
       }
 
       // Shutdown agent service

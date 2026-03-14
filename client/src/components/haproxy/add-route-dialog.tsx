@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useCreateRoute } from "@/hooks/use-haproxy-routes";
 import { SSLCertificateSelect } from "./ssl-certificate-select";
+import { DnsZoneIndicator } from "@/components/dns/dns-zone-indicator";
 import { toast } from "sonner";
 
 const addRouteSchema = z.object({
@@ -132,6 +133,7 @@ export function AddRouteDialog({
                   <FormDescription>
                     The domain name that will route to this backend
                   </FormDescription>
+                  <DnsZoneIndicator hostname={field.value} />
                   <FormMessage />
                 </FormItem>
               )}

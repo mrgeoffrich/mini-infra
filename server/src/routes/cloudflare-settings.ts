@@ -11,6 +11,7 @@ const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { CloudflareService } from "../services/cloudflare";
+import { DnsCacheService } from "../services/dns";
 import {
   CreateCloudflareSettingRequest,
   UpdateCloudflareSettingRequest,
@@ -190,6 +191,21 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 
     // Validate the configuration
     const validationResponse = await cloudflareConfigService.validate();
+
+    // Trigger DNS cache refresh after successful Cloudflare configuration
+    if (validationResponse.isValid) {
+      try {
+        const dnsCacheService = DnsCacheService.getInstance();
+        if (dnsCacheService) {
+          // Fire-and-forget: don't block the response
+          dnsCacheService.refreshCache().catch((err) => {
+            logger.warn({ error: err }, "Failed to refresh DNS cache after Cloudflare configuration");
+          });
+        }
+      } catch (err) {
+        logger.warn({ error: err }, "Failed to trigger DNS cache refresh");
+      }
+    }
 
     const response: CloudflareSettingResponse = {
       success: true,

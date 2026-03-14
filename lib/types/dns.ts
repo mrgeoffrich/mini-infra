@@ -72,3 +72,57 @@ export interface DeploymentDNSRecordInfo {
   updatedAt: string;
   errorMessage?: string;
 }
+
+// ====================
+// DNS Cache Types
+// ====================
+
+export interface DnsCachedZone {
+  id: string;
+  cloudflareZoneId: string;
+  name: string;
+  status: string;
+  paused: boolean;
+  type: string;
+  nameServers: string[];
+  createdOn: string | null;
+  modifiedOn: string | null;
+  cachedAt: string;
+  recordCount: number;
+}
+
+export interface DnsCachedRecord {
+  id: string;
+  cloudflareRecordId: string;
+  type: string;
+  name: string;
+  content: string;
+  ttl: number;
+  proxied: boolean;
+  proxiable: boolean;
+  locked: boolean;
+  zoneName: string;
+  createdOn: string | null;
+  modifiedOn: string | null;
+}
+
+export interface DnsZonesResponse {
+  success: boolean;
+  data: { zones: DnsCachedZone[]; lastRefreshed: string | null };
+}
+
+export interface DnsZoneRecordsResponse {
+  success: boolean;
+  data: { zone: DnsCachedZone; records: DnsCachedRecord[] };
+}
+
+export interface DnsRefreshResponse {
+  success: boolean;
+  data: { zonesUpdated: number; recordsUpdated: number; lastRefreshed: string };
+}
+
+export interface DnsHostnameCheckResult {
+  matchedZone: boolean;
+  zoneName?: string;
+  existingRecords?: Array<{ type: string; content: string; proxied: boolean }>;
+}

@@ -1,15 +1,18 @@
 import { PrismaClient } from "../../lib/prisma";
 import { servicesLogger } from "../../lib/logger-factory";
-import { HostnameValidationResult } from "@mini-infra/types";
+import { HostnameValidationResult, DnsHostnameCheckResult } from "@mini-infra/types";
 import { CloudflareService } from "../cloudflare";
+import { DnsCacheService } from "../dns";
 
 export class HostnameValidator {
   private prisma: PrismaClient;
   private cloudflareService: CloudflareService;
+  private dnsCacheService: DnsCacheService | null;
 
-  constructor(prisma: PrismaClient, cloudflareService: CloudflareService) {
+  constructor(prisma: PrismaClient, cloudflareService: CloudflareService, dnsCacheService?: DnsCacheService | null) {
     this.prisma = prisma;
     this.cloudflareService = cloudflareService;
+    this.dnsCacheService = dnsCacheService ?? null;
   }
 
   /**
@@ -73,7 +76,7 @@ export class HostnameValidator {
         }
       });
 
-      const conflictDetails = {
+      const conflictDetails: HostnameValidationResult['conflictDetails'] = {
         existsInCloudflare: false,
         existsInDeploymentConfigs: !!existingConfig,
         cloudflareZone: undefined as string | undefined,
@@ -140,6 +143,20 @@ export class HostnameValidator {
           conflictDetails,
           suggestions: this.generateHostnameSuggestions(hostname, "cloudflare")
         };
+      }
+
+      // Check cached DNS data for zone membership and existing records
+      let dnsInfo: DnsHostnameCheckResult | undefined;
+      try {
+        if (this.dnsCacheService) {
+          dnsInfo = await this.dnsCacheService.checkHostname(hostname);
+          conflictDetails.dnsInfo = dnsInfo;
+        }
+      } catch (dnsError) {
+        logger.warn({
+          hostname,
+          error: dnsError instanceof Error ? dnsError.message : "Unknown error"
+        }, "Failed to check DNS cache for hostname");
       }
 
       // Hostname is available
