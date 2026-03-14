@@ -3,7 +3,8 @@ import { servicesLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
-import appConfig from "../lib/config-new";
+import appConfig, { agentConfig } from "../lib/config-new";
+import { getEffectiveModel } from "./agent-settings-service";
 
 const logger = servicesLogger();
 
@@ -51,8 +52,10 @@ export async function getAgentSidecarConfig() {
   const settings = await getSettings();
   return {
     image: settings.get("image") || process.env.AGENT_SIDECAR_IMAGE_TAG || null,
-    model: settings.get("model") || "claude-sonnet-4-6",
-    maxTurns: parseInt(settings.get("max_turns") || "50", 10),
+    model: await getEffectiveModel(),
+    maxTurns: agentConfig.maxTurns,
+    thinking: agentConfig.thinking,
+    effort: agentConfig.effort,
     timeoutMs: parseInt(settings.get("timeout_ms") || "300000", 10),
     autoStart: settings.get("auto_start") !== "false",
   };
@@ -232,6 +235,8 @@ async function createAgentSidecar(
     image: string | null;
     model: string;
     maxTurns: number;
+    thinking: string;
+    effort: string;
     timeoutMs: number;
   },
   onProgress?: SidecarProgressCallback,
@@ -320,6 +325,8 @@ async function createAgentSidecar(
         `PORT=${SIDECAR_PORT}`,
         `AGENT_MODEL=${config.model}`,
         `AGENT_MAX_TURNS=${config.maxTurns}`,
+        `AGENT_THINKING=${config.thinking}`,
+        `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,
         `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
       ],

@@ -1,11 +1,25 @@
 services:
+  registry:
+    image: registry:2
+    container_name: mini-infra-dev-registry
+    restart: unless-stopped
+    ports:
+      - "5051:5000"
+    volumes:
+      - mini-infra-dev-registry:/var/lib/registry
+
   mini-infra:
     build:
       context: ../../
       dockerfile: Dockerfile
+      args:
+        AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG:-localhost:5051/mini-infra-agent-sidecar:latest}
     container_name: mini-infra-dev
     user: root
     restart: unless-stopped
+    depends_on:
+      registry:
+        condition: service_started
     ports:
       - "${MINI_INFRA_PORT:-3005}:5000"
     volumes:
@@ -61,4 +75,6 @@ volumes:
   mini-infra-dev-data:
     driver: local
   mini-infra-dev-logs:
+    driver: local
+  mini-infra-dev-registry:
     driver: local

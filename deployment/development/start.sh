@@ -17,6 +17,11 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
 ENV_FILE="$PROJECT_ROOT/server/.env"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
+
+# Local registry configuration
+REGISTRY_HOST="localhost:5051"
+AGENT_SIDECAR_IMAGE="$REGISTRY_HOST/mini-infra-agent-sidecar:latest"
 
 # Check if .env file exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -51,8 +56,8 @@ if [ "$SEED_DB" = true ]; then
     echo -e "\033[0;33mSeeding container database from server/prisma/dev.db...\033[0m"
 
     # Resolve the actual volume name (Docker Compose prefixes it with the project name)
-    VOLUME_NAME=$(docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" config --volumes | grep data | head -1)
-    COMPOSE_PROJECT=$(docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" config --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    VOLUME_NAME=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --volumes | grep data | head -1)
+    COMPOSE_PROJECT=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
     FULL_VOLUME_NAME="${COMPOSE_PROJECT}_${VOLUME_NAME}"
 
     # Checkpoint WAL to flush all data into the main db file before copying
@@ -70,8 +75,40 @@ if [ "$SEED_DB" = true ]; then
     echo -e "\033[0;32mDatabase seeded successfully.\033[0m"
 fi
 
-# Build and start Docker Compose with explicit env file
-docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" up -d --build
+# ---------------------------------------------------------------------------
+# Step 1: Ensure the local registry is running
+# ---------------------------------------------------------------------------
+echo -e "\033[0;36mEnsuring local Docker registry is running...\033[0m"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d registry
+
+# Wait for registry to be ready
+for i in $(seq 1 10); do
+    if curl -sf http://$REGISTRY_HOST/v2/ >/dev/null 2>&1; then
+        break
+    fi
+    if [ "$i" -eq 10 ]; then
+        echo -e "\033[0;31mERROR: Local registry failed to start\033[0m"
+        exit 1
+    fi
+    sleep 1
+done
+echo -e "\033[0;32mLocal registry is ready at $REGISTRY_HOST\033[0m"
+
+# ---------------------------------------------------------------------------
+# Step 2: Build and push the agent sidecar image to the local registry
+# ---------------------------------------------------------------------------
+echo -e "\033[0;36mBuilding agent sidecar image...\033[0m"
+docker build -t "$AGENT_SIDECAR_IMAGE" -f "$PROJECT_ROOT/agent-sidecar/Dockerfile" "$PROJECT_ROOT"
+
+echo -e "\033[0;36mPushing agent sidecar image to local registry...\033[0m"
+docker push "$AGENT_SIDECAR_IMAGE"
+echo -e "\033[0;32mAgent sidecar image pushed to $AGENT_SIDECAR_IMAGE\033[0m"
+
+# ---------------------------------------------------------------------------
+# Step 3: Build and start Mini Infra (with the registry-prefixed sidecar tag)
+# ---------------------------------------------------------------------------
+AGENT_SIDECAR_IMAGE_TAG="$AGENT_SIDECAR_IMAGE" \
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 
 if [ $? -eq 0 ]; then
     echo ""

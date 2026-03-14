@@ -3,7 +3,7 @@ import { query, type SDKMessage } from "./sdk";
 import { SessionStore } from "../session-store";
 import { SSEEvent } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
-import { summarizeOutput, type ToolResult } from "./tools";
+import { checkBashSafety } from "./tools";
 import { createInfraToolsMcpServer } from "./infra-tools-mcp";
 import { createUiToolsMcpServer } from "./ui-tools-mcp";
 import { logger } from "../logger";
@@ -17,13 +17,19 @@ const AGENT_TIMEOUT_MS = parseInt(
   process.env.AGENT_TIMEOUT_MS ?? "300000",
   10,
 );
-const MAX_TOKENS = 16384;
-
-// ---------------------------------------------------------------------------
-// Tool result emitter type — used by MCP servers to emit tool_result SSE events
-// ---------------------------------------------------------------------------
-
-export type ToolResultEmitter = (toolName: string, result: ToolResult) => void;
+const AGENT_MAX_TURNS = parseInt(
+  process.env.AGENT_MAX_TURNS ?? "20",
+  10,
+);
+const AGENT_THINKING = (process.env.AGENT_THINKING ?? "adaptive") as
+  | "adaptive"
+  | "enabled"
+  | "disabled";
+const AGENT_EFFORT = (process.env.AGENT_EFFORT ?? "medium") as
+  | "low"
+  | "medium"
+  | "high"
+  | "max";
 
 // ---------------------------------------------------------------------------
 // Agent runner — Agent SDK query()
@@ -48,34 +54,11 @@ export async function runSession(
     session.abortController.abort();
   }, AGENT_TIMEOUT_MS);
 
-  // Track pending tool_use_ids from stream events so MCP handlers can emit
-  // tool_result SSE events with the correct tool_use_id.
-  const pendingToolUseIds: Array<{ toolUseId: string; plainName: string }> = [];
-
-  // Tool result emitter — called from MCP handlers after tool execution.
-  // Pops the matching pending tool_use_id and emits tool_result SSE.
-  const toolResultEmitter: ToolResultEmitter = (toolName: string, result: ToolResult) => {
-    // Find matching pending tool_use_id (first match by name)
-    const idx = pendingToolUseIds.findIndex((p) => p.plainName === toolName);
-    if (idx >= 0) {
-      const { toolUseId } = pendingToolUseIds[idx];
-      pendingToolUseIds.splice(idx, 1);
-      emitSSE(store, sessionId, {
-        type: "tool_result",
-        data: {
-          toolId: toolUseId,
-          output: summarizeOutputText(result.content),
-        },
-      });
-    }
-  };
-
   // Create MCP servers per-session (UI tools need the session's broadcast/path)
-  const infraMcpServer = createInfraToolsMcpServer(toolResultEmitter);
+  const infraMcpServer = createInfraToolsMcpServer();
   const uiMcpServer = createUiToolsMcpServer(
     (event: SSEEvent) => emitSSE(store, sessionId, event),
     () => session.currentPath,
-    toolResultEmitter,
   );
 
   // Emit init event
@@ -98,25 +81,55 @@ export async function runSession(
   try {
     const queryOptions: Record<string, unknown> = {
       model: AGENT_MODEL,
-      maxTokens: MAX_TOKENS,
       systemPrompt,
       cwd: "/tmp/agent-work",
+      abortController: session.abortController,
+      // Use the SDK's built-in tools instead of custom MCP tools
+      tools: ["Bash", "Read", "Write"],
+      additionalDirectories: ["/app/docs"],
+      // Domain-specific MCP servers (API calls, docs, UI guidance)
       mcpServers: {
         "mini-infra-infra": infraMcpServer,
         "mini-infra-ui": uiMcpServer,
       },
+      // Auto-approve read-only and MCP tools; Bash and Write go through canUseTool
       allowedTools: [
-        "mcp__mini-infra-infra__bash",
-        "mcp__mini-infra-infra__mini_infra_api",
-        "mcp__mini-infra-infra__read_file",
-        "mcp__mini-infra-infra__write_file",
-        "mcp__mini-infra-infra__list_docs",
-        "mcp__mini-infra-infra__read_doc",
-        "mcp__mini-infra-ui__highlight_element",
-        "mcp__mini-infra-ui__navigate_to",
-        "mcp__mini-infra-ui__get_current_page",
+        "Read",
+        "mcp__mini-infra-infra__*",
+        "mcp__mini-infra-ui__*",
       ],
-      permissionTool: async () => ({ behavior: "allow" as const }),
+      // Safety checks for Bash commands and Write paths
+      canUseTool: async (
+        toolName: string,
+        input: Record<string, unknown>,
+      ) => {
+        if (toolName === "Bash") {
+          const command = String(input.command ?? "");
+          const violation = checkBashSafety(command);
+          if (violation) {
+            return { behavior: "deny" as const, message: `BLOCKED: ${violation}` };
+          }
+        }
+        if (toolName === "Write") {
+          const filePath = String(input.file_path ?? "");
+          if (filePath && !filePath.startsWith("/tmp/agent-work")) {
+            return {
+              behavior: "deny" as const,
+              message: "Files can only be written to /tmp/agent-work/",
+            };
+          }
+        }
+        return { behavior: "allow" as const };
+      },
+      includePartialMessages: true,
+      maxTurns: AGENT_MAX_TURNS,
+      thinking:
+        AGENT_THINKING === "disabled"
+          ? { type: "disabled" as const }
+          : AGENT_THINKING === "enabled"
+            ? { type: "enabled" as const }
+            : { type: "adaptive" as const },
+      effort: AGENT_EFFORT,
     };
 
     if (sdkSessionId) {
@@ -160,7 +173,7 @@ export async function runSession(
           processStreamEvent(
             store,
             sessionId,
-            { currentBlockTypes, pendingToolInputs, pendingToolUseIds },
+            { currentBlockTypes, pendingToolInputs },
             event,
             assistantUuid,
           );
@@ -208,6 +221,43 @@ export async function runSession(
           break;
         }
 
+        case "user": {
+          // Skip replayed messages during resume
+          if ((message as Record<string, unknown>).isReplay) break;
+
+          // Extract tool results from synthetic user messages
+          const userMsg = message as {
+            type: "user";
+            message?: { content?: unknown };
+          };
+          const content = userMsg.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content as Array<Record<string, unknown>>) {
+              if (block.type === "tool_result") {
+                const resultContent = block.content;
+                let output = "";
+                if (typeof resultContent === "string") {
+                  output = resultContent;
+                } else if (Array.isArray(resultContent)) {
+                  output = (resultContent as Array<{ type?: string; text?: string }>)
+                    .filter((b) => b.type === "text")
+                    .map((b) => b.text ?? "")
+                    .filter(Boolean)
+                    .join("\n");
+                }
+                emitSSE(store, sessionId, {
+                  type: "tool_result",
+                  data: {
+                    toolId: block.tool_use_id as string,
+                    output: summarizeOutputText(output),
+                  },
+                });
+              }
+            }
+          }
+          break;
+        }
+
         case "result": {
           isReplayingMessages = false;
           // Final result from the SDK
@@ -221,7 +271,7 @@ export async function runSession(
           if (resultMsg.subtype === "success") {
             store.completeSession(sessionId);
           } else {
-            const errorMsg = (message as { error?: string }).error ?? "Agent query failed";
+            const errorMsg = (message as { errors?: string[] }).errors?.[0] ?? "Agent query failed";
             store.failSession(sessionId, errorMsg);
             emitSSE(store, sessionId, {
               type: "error",
@@ -234,11 +284,6 @@ export async function runSession(
         case "system": {
           // Init or status message — capture model/session info
           isReplayingMessages = false;
-          break;
-        }
-
-        case "user": {
-          // Replayed user message during resume — skip
           break;
         }
 
@@ -292,16 +337,6 @@ export async function runSession(
 interface StreamState {
   currentBlockTypes: Map<number, string>;
   pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }>;
-  pendingToolUseIds: Array<{ toolUseId: string; plainName: string }>;
-}
-
-/**
- * Extract the plain tool name from an MCP-prefixed name.
- * e.g. "mcp__mini-infra-infra__bash" → "bash"
- */
-function stripMcpPrefix(name: string): string {
-  const parts = name.split("__");
-  return parts.length >= 3 ? parts.slice(2).join("__") : name;
 }
 
 function processStreamEvent(
@@ -409,12 +444,6 @@ function processStreamEvent(
               toolId: pending.id,
               input,
             },
-          });
-
-          // Track pending tool_use_id for the MCP handler to emit tool_result
-          state.pendingToolUseIds.push({
-            toolUseId: pending.id,
-            plainName: stripMcpPrefix(pending.name),
           });
         }
       }
