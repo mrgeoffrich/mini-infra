@@ -541,6 +541,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               markAllThinkingComplete();
               clearThinkingIndex();
               setSessionStatus("done");
+              // Close the EventSource before the server ends the connection,
+              // otherwise the browser fires onerror and shows a spurious
+              // "Connection lost" error.
+              closeEventSource();
               // Clear session so next follow-up creates a new sidecar session
               // (with resume via sdkSessionId). The activeConversationId is preserved.
               setSession(null);
