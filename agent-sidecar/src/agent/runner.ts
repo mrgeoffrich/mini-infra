@@ -79,14 +79,14 @@ export async function runSession(
       cwd: "/tmp/agent-work",
       abortController: session.abortController,
       // Use the SDK's built-in tools instead of custom MCP tools
-      tools: ["Bash", "Read", "Write"],
+      tools: ["Bash", "Read", "Glob", "Grep"],
       additionalDirectories: ["/app/docs"],
       // Domain-specific MCP servers (API calls, docs, UI guidance)
       mcpServers: {
         "mini-infra-infra": infraMcpServer,
         "mini-infra-ui": uiMcpServer,
       },
-      // Auto-approve read-only and MCP tools; Bash and Write go through canUseTool
+      // Auto-approve read-only and MCP tools; Bash goes through canUseTool
       allowedTools: [
         "Bash",
         "Read",
@@ -95,7 +95,7 @@ export async function runSession(
         "mcp__mini-infra-infra__*",
         "mcp__mini-infra-ui__*",
       ],
-      // Safety checks for Bash commands and Write paths
+      // Safety checks for Bash commands
       canUseTool: async (
         toolName: string,
         input: Record<string, unknown>,
