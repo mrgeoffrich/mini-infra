@@ -24,7 +24,6 @@ const SETTINGS_CATEGORY = "agent-sidecar";
 
 const configSchema = z.object({
   model: z.string().min(1).max(100).optional(),
-  maxTurns: z.number().int().min(1).max(200).optional(),
   timeoutMs: z.number().int().min(10000).max(600000).optional(),
   autoStart: z.boolean().optional(),
   image: z.string().min(1).max(500).optional(),
@@ -235,11 +234,6 @@ router.put(
 
       if (updates.model !== undefined)
         settingEntries.push({ key: "model", value: updates.model });
-      if (updates.maxTurns !== undefined)
-        settingEntries.push({
-          key: "max_turns",
-          value: String(updates.maxTurns),
-        });
       if (updates.timeoutMs !== undefined)
         settingEntries.push({
           key: "timeout_ms",

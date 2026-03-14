@@ -60,7 +60,6 @@ export interface AgentSettingsResponse {
   advanced: {
     thinking: string;
     effort: string;
-    maxTurns: number;
   };
 }
 
@@ -122,7 +121,6 @@ export interface AgentSidecarStatus {
 export interface AgentSidecarConfig {
   image: string | null;
   model: string;
-  maxTurns: number;
   timeoutMs: number;
   autoStart: boolean;
 }

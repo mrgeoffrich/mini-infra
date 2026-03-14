@@ -53,7 +53,6 @@ export async function getAgentSidecarConfig() {
   return {
     image: settings.get("image") || process.env.AGENT_SIDECAR_IMAGE_TAG || null,
     model: await getEffectiveModel(),
-    maxTurns: agentConfig.maxTurns,
     thinking: agentConfig.thinking,
     effort: agentConfig.effort,
     timeoutMs: parseInt(settings.get("timeout_ms") || "300000", 10),
@@ -244,7 +243,6 @@ async function createAgentSidecar(
   config: {
     image: string | null;
     model: string;
-    maxTurns: number;
     thinking: string;
     effort: string;
     timeoutMs: number;
@@ -334,7 +332,6 @@ async function createAgentSidecar(
         `SIDECAR_AUTH_TOKEN=${internalToken}`,
         `PORT=${SIDECAR_PORT}`,
         `AGENT_MODEL=${config.model}`,
-        `AGENT_MAX_TURNS=${config.maxTurns}`,
         `AGENT_THINKING=${config.thinking}`,
         `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,

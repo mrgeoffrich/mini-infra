@@ -17,10 +17,6 @@ const AGENT_TIMEOUT_MS = parseInt(
   process.env.AGENT_TIMEOUT_MS ?? "300000",
   10,
 );
-const AGENT_MAX_TURNS = parseInt(
-  process.env.AGENT_MAX_TURNS ?? "20",
-  10,
-);
 const AGENT_THINKING = (process.env.AGENT_THINKING ?? "adaptive") as
   | "adaptive"
   | "enabled"
@@ -120,7 +116,6 @@ export async function runSession(
         return { behavior: "allow" as const };
       },
       includePartialMessages: true,
-      maxTurns: AGENT_MAX_TURNS,
       thinking:
         AGENT_THINKING === "disabled"
           ? { type: "disabled" as const }
