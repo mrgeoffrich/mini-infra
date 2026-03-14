@@ -24,6 +24,7 @@ export class LongRunningContainerManager {
     options: ContainerExecutionOptions & {
       name?: string;
       ports?: Record<string, { HostPort: string }[]>;
+      internalPorts?: string[]; // Ports to expose on the container without host binding (e.g., ['5555/tcp'])
       volumes?: string[];
       mounts?: Array<{
         Target: string;
@@ -112,6 +113,16 @@ export class LongRunningContainerManager {
         }
         // Then bind them to host ports
         containerOptions.HostConfig.PortBindings = options.ports;
+      }
+
+      // Add internal-only ports (exposed on container but not bound to host)
+      if (options.internalPorts) {
+        if (!containerOptions.ExposedPorts) {
+          containerOptions.ExposedPorts = {};
+        }
+        for (const port of options.internalPorts) {
+          containerOptions.ExposedPorts[port] = {};
+        }
       }
 
       // Add bind mounts
