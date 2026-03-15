@@ -20,6 +20,7 @@ import {
 import {
   IconAlertCircle,
   IconCheck,
+  IconCircleDashed,
   IconDownload,
   IconLoader2,
   IconRefresh,
@@ -41,7 +42,7 @@ import {
 
 const STATE_LABELS: Record<SelfUpdateStatus["state"], string> = {
   idle: "Idle",
-  pending: "Update sidecar running",
+  pending: "Preparing update...",
   checking: "Checking for updates...",
   pulling: "Pulling new image...",
   inspecting: "Inspecting container...",
@@ -77,7 +78,7 @@ export default function SelfUpdateSettingsPage() {
   // Hooks
   const checkUpdate = useSelfUpdateCheck();
   const triggerUpdate = useTriggerUpdate();
-  useSelfUpdateLaunchProgress(
+  const launchProgress = useSelfUpdateLaunchProgress(
     launchOperationId,
     triggerTag ? `Launching update to ${triggerTag}` : "Launching update sidecar",
   );
@@ -132,6 +133,25 @@ export default function SelfUpdateSettingsPage() {
   // -------------------------------------------------------------------------
 
   if (isActive) {
+    const { state: progressState } = launchProgress;
+    const hasLaunchSteps =
+      progressState.plannedStepNames.length > 0 ||
+      progressState.completedSteps.length > 0;
+    // Build a set of completed/failed step names for quick lookup
+    const completedStepMap = new Map(
+      progressState.completedSteps.map((s) => [s.step, s]),
+    );
+    // Determine the next step being worked on (first planned step not yet completed)
+    const stepsToShow = hasLaunchSteps
+      ? progressState.plannedStepNames
+      : [];
+
+    // Once the sidecar is launched, show a final "Update sidecar running" step
+    const sidecarRunning =
+      progressState.phase === "success" ||
+      (hasLaunchSteps &&
+        progressState.completedSteps.length >= progressState.totalSteps);
+
     return (
       <div className="container mx-auto max-w-4xl space-y-6 py-8">
         <Card>
@@ -145,10 +165,77 @@ export default function SelfUpdateSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Status */}
-            <div className="flex items-center justify-center">
-              {state && <StateBadge state={state} />}
-            </div>
+            {/* Launch step progress */}
+            {hasLaunchSteps && (
+              <div className="mx-auto max-w-md space-y-2">
+                {stepsToShow.map((stepName) => {
+                  const completed = completedStepMap.get(stepName);
+                  const isCurrentStep =
+                    !completed &&
+                    stepsToShow.indexOf(stepName) ===
+                      progressState.completedSteps.length;
+
+                  return (
+                    <div
+                      key={stepName}
+                      className="flex items-center gap-3 text-sm"
+                    >
+                      {completed ? (
+                        completed.status === "failed" ? (
+                          <IconX className="h-4 w-4 shrink-0 text-destructive" />
+                        ) : completed.status === "skipped" ? (
+                          <IconCircleDashed className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <IconCheck className="h-4 w-4 shrink-0 text-green-500" />
+                        )
+                      ) : isCurrentStep ? (
+                        <IconLoader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                      ) : (
+                        <IconCircleDashed className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                      )}
+                      <span
+                        className={
+                          completed
+                            ? completed.status === "failed"
+                              ? "text-destructive"
+                              : "text-foreground"
+                            : isCurrentStep
+                              ? "text-foreground"
+                              : "text-muted-foreground/50"
+                        }
+                      >
+                        {stepName}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* Sidecar running step */}
+                <div className="flex items-center gap-3 text-sm">
+                  {sidecarRunning ? (
+                    <IconLoader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                  ) : (
+                    <IconCircleDashed className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                  )}
+                  <span
+                    className={
+                      sidecarRunning
+                        ? "text-foreground"
+                        : "text-muted-foreground/50"
+                    }
+                  >
+                    Update sidecar running
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Fallback status badge when no launch steps available */}
+            {!hasLaunchSteps && (
+              <div className="flex items-center justify-center">
+                {state && <StateBadge state={state} />}
+              </div>
+            )}
 
             {/* Reconnection notice */}
             {isReconnecting ? (
@@ -161,9 +248,9 @@ export default function SelfUpdateSettingsPage() {
               </Alert>
             ) : (
               <p className="text-center text-sm text-muted-foreground">
-                The update sidecar is replacing the running container.
-                The server will restart automatically when the update
-                completes.
+                {sidecarRunning
+                  ? "The update sidecar is replacing the running container. The server will restart automatically when the update completes."
+                  : "Preparing update — pulling images and launching the update sidecar..."}
               </p>
             )}
           </CardContent>
