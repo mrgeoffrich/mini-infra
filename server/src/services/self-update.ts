@@ -71,6 +71,7 @@ export interface TriggerUpdateOptions {
   fullImageRef: string; // Full image reference (e.g. "ghcr.io/user/repo:v2.1.0")
   allowedRegistryPattern: string;
   sidecarImage: string;
+  agentSidecarImage?: string; // Pre-pull so it's available after update
   containerPort: number;
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
@@ -83,6 +84,7 @@ export interface TriggerUpdateOptions {
 export const SELF_UPDATE_LAUNCH_STEPS = [
   "Pull sidecar image",
   "Pull target image",
+  "Pull agent sidecar image",
   "Create sidecar container",
   "Start sidecar container",
 ] as const;
@@ -270,13 +272,29 @@ export async function launchSidecar(
       throw new Error(`Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
     }
 
-    // Step 3: Create sidecar container
+    // Step 3: Pull the agent sidecar image (pre-pull so it's available after update)
+    if (options.agentSidecarImage) {
+      try {
+        const registryManager = new RegistryManager(docker, registryCredentialService);
+        await registryManager.pullImageWithAutoAuth(options.agentSidecarImage);
+        logger.info({ agentSidecarImage: options.agentSidecarImage }, "Agent sidecar image pulled");
+        reportStep("Pull agent sidecar image", "completed", options.agentSidecarImage);
+      } catch (pullErr) {
+        logger.error({ err: pullErr, agentSidecarImage: options.agentSidecarImage }, "Failed to pull agent sidecar image");
+        reportStep("Pull agent sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
+        throw new Error(`Failed to pull agent sidecar image "${options.agentSidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+      }
+    } else {
+      reportStep("Pull agent sidecar image", "skipped", "No agent sidecar image configured");
+    }
+
+    // Step 4: Create sidecar container
     // Target image is already pre-pulled, so no registry credentials needed
     const sidecarEnv = [
       `TARGET_IMAGE=${fullImageRef}`,
       `CONTAINER_ID=${containerId}`,
       `HEALTH_CHECK_URL=${healthCheckUrl}`,
-      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 60000}`,
+      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 180000}`,
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
 
@@ -314,7 +332,7 @@ export async function launchSidecar(
     const sidecar = await docker.createContainer(createOptions);
     reportStep("Create sidecar container", "completed");
 
-    // Step 4: Start sidecar container
+    // Step 5: Start sidecar container
     await sidecar.start();
 
     const sidecarId = (sidecar as unknown as { id: string }).id;
@@ -522,6 +540,17 @@ export async function recoverStaleUpdate(): Promise<void> {
   });
 
   if (!record) return;
+
+  // Fast path: in-memory lock says launch is actively in progress.
+  if (launchInProgress) return;
+
+  // Grace period: don't recover records created less than 5 minutes ago.
+  // The sidecar launch process (image pull + container creation) can take
+  // several minutes, during which no sidecar container exists yet.
+  // Without this grace period, polling the status endpoint during image
+  // pulling would prematurely mark the record as "failed".
+  const ageMs = Date.now() - record.startedAt.getTime();
+  if (ageMs < 5 * 60 * 1000) return;
 
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover

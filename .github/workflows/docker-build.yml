@@ -163,6 +163,7 @@ jobs:
           build-args: |
             SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
             AGENT_SIDECAR_IMAGE_TAG=${{ steps.agent-sidecar-tag.outputs.tag }}
+            BUILD_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64

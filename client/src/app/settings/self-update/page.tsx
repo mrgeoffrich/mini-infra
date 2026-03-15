@@ -106,7 +106,7 @@ function StateBadge({ state }: { state: SelfUpdateStatus["state"] }) {
 // ---------------------------------------------------------------------------
 
 export default function SelfUpdateSettingsPage() {
-  const [triggerTag, setTriggerTag] = useState("");
+  const [triggerTag, setTriggerTag] = useState<"latest" | "production" | "">("");
   const [keepSidecar, setKeepSidecar] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [launchOperationId, setLaunchOperationId] = useState<string | null>(null);
@@ -186,15 +186,16 @@ export default function SelfUpdateSettingsPage() {
     });
   };
 
-  const handleTriggerUpdate = () => {
-    if (!triggerTag.trim()) return;
+  const handleTriggerUpdate = (channel: "latest" | "production") => {
+    setTriggerTag(channel);
     setConfirmOpen(true);
   };
 
   const handleConfirmUpdate = () => {
+    if (!triggerTag) return;
     setConfirmOpen(false);
     triggerUpdate.mutate(
-      { targetTag: triggerTag.trim(), keepSidecar: keepSidecar || undefined },
+      { targetTag: triggerTag, keepSidecar: keepSidecar || undefined },
       {
         onSuccess: (data) => {
           setLaunchOperationId(data.operationId);
@@ -424,23 +425,28 @@ export default function SelfUpdateSettingsPage() {
           </div>
 
           <div className="flex gap-2">
-            <Input
-              placeholder="e.g. v2.1.0 or latest"
-              value={triggerTag}
-              onChange={(e) => setTriggerTag(e.target.value)}
-            />
             <Button
-              onClick={handleTriggerUpdate}
-              disabled={
-                !triggerTag.trim() || triggerUpdate.isPending
-              }
+              onClick={() => handleTriggerUpdate("latest")}
+              disabled={triggerUpdate.isPending}
+              variant="outline"
             >
-              {triggerUpdate.isPending ? (
+              {triggerUpdate.isPending && triggerTag === "latest" ? (
                 <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <IconDownload className="h-4 w-4 mr-2" />
               )}
-              Update
+              Update to Latest
+            </Button>
+            <Button
+              onClick={() => handleTriggerUpdate("production")}
+              disabled={triggerUpdate.isPending}
+            >
+              {triggerUpdate.isPending && triggerTag === "production" ? (
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <IconDownload className="h-4 w-4 mr-2" />
+              )}
+              Update to Production
             </Button>
           </div>
 
@@ -456,8 +462,8 @@ export default function SelfUpdateSettingsPage() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Enter an image tag. The full image reference is derived from the
-            configured registry pattern.
+            Pulls all three images (main, sidecar, agent sidecar) with the
+            selected tag before starting the update.
           </p>
         </CardContent>
       </Card>

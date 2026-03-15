@@ -97,6 +97,7 @@ app.get("/health", ((req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     environment: appConfig.server.nodeEnv,
     uptime: process.uptime(),
+    version: process.env.BUILD_VERSION || "dev",
   });
 }) as RequestHandler);
 

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useUser } from "@/hooks/use-user";
 import { useLogout } from "@/hooks/use-logout";
+import { useVersion } from "@/hooks/use-version";
 import { IconLoader2, IconLogout, IconDotsVertical, IconSettings, IconBug } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { BugReportDialog } from "@/components/bug-report-dialog";
@@ -25,6 +26,7 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const { user, isLoading } = useUser();
   const { logout, isLoggingOut } = useLogout();
+  const version = useVersion();
   const [bugReportOpen, setBugReportOpen] = useState(false);
 
   if (isLoading || !user) {
@@ -148,6 +150,14 @@ export function NavUser() {
                   </>
                 )}
               </DropdownMenuItem>
+              {version && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {version}
+                  </div>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>
