@@ -89,9 +89,6 @@ COPY --chown=node:node server/prisma/schema.prisma ./server/prisma/schema.prisma
 # Create directories with proper ownership
 RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 
-# Switch to non-root user for security BEFORE running npm/prisma
-USER node
-
 # Install production dependencies only
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     npm install --workspace=lib --workspace=server --omit=dev

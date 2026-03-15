@@ -118,6 +118,7 @@ async function createContainer(
   const container = await docker.createContainer({
     Image: image,
     name: settings.name,
+    User: settings.user,
     Env: settings.env,
     Labels: settings.labels,
     ExposedPorts: settings.exposedPorts,

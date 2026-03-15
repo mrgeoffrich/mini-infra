@@ -8,6 +8,7 @@ import { logger } from "./logger";
  */
 export interface CapturedContainerSettings {
   name: string;
+  user?: string;
   env: string[];
   labels: Record<string, string>;
   exposedPorts: Record<string, Record<string, never>>;
@@ -87,6 +88,7 @@ export async function inspectContainer(
 
   const settings: CapturedContainerSettings = {
     name,
+    user: info.Config.User || undefined,
     env: info.Config.Env ?? [],
     labels,
     exposedPorts,
