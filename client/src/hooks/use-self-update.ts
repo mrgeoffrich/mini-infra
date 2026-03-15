@@ -11,6 +11,7 @@ import { useOperationProgress } from "./use-operation-progress";
 export interface SelfUpdateStatus {
   state:
     | "idle"
+    | "pending"
     | "checking"
     | "pulling"
     | "inspecting"
@@ -33,15 +34,6 @@ export interface SelfUpdateCheckResult {
   available: boolean;
   reason?: string;
   containerId?: string;
-  configured?: boolean;
-  allowedRegistryPattern?: string | null;
-}
-
-export interface SelfUpdateConfig {
-  allowedRegistryPattern: string | null;
-  sidecarImage: string | null;
-  healthCheckTimeoutMs: number;
-  gracefulStopSeconds: number;
 }
 
 interface SelfUpdateLocalState {
@@ -155,45 +147,6 @@ export function useSelfUpdateCheck() {
 }
 
 /**
- * Fetches the self-update configuration.
- */
-export function useSelfUpdateConfig() {
-  return useQuery<{ success: boolean; config: SelfUpdateConfig }>({
-    queryKey: ["self-update-config"],
-    queryFn: async () => {
-      const res = await fetch("/api/self-update/config");
-      if (!res.ok) throw new Error("Failed to fetch update config");
-      return res.json();
-    },
-  });
-}
-
-/**
- * Saves the self-update configuration.
- */
-export function useSaveUpdateConfig() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (config: Partial<SelfUpdateConfig>) => {
-      const res = await fetch("/api/self-update/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to save config");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["self-update-config"] });
-    },
-  });
-}
-
-/**
  * Triggers a self-update to the specified tag.
  * Returns an operationId for tracking the sidecar launch via Socket.IO.
  * Stores state in localStorage so the UI survives a browser refresh.
@@ -202,11 +155,11 @@ export function useTriggerUpdate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (params: { targetTag: string; keepSidecar?: boolean }) => {
+    mutationFn: async (params: { targetTag: string }) => {
       const res = await fetch("/api/self-update/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetTag: params.targetTag, keepSidecar: params.keepSidecar }),
+        body: JSON.stringify({ targetTag: params.targetTag }),
       });
       if (!res.ok) {
         const err = await res.json();

@@ -10,7 +10,9 @@ const logger = servicesLogger();
 
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";
-const SIDECAR_KEEP_LABEL = "mini-infra.sidecar-keep";
+// Sidecar containers are always kept (AutoRemove: false) so that
+// finalizeLastUpdate() can inspect their exit code after a restart.
+// cleanupOrphanedSidecars() removes them once the update record is finalized.
 
 // In-memory mutex to prevent concurrent sidecar launches (fixes TOCTOU race).
 // Acquired in the route handler before any async work; released in launchSidecar's finally block.
@@ -35,6 +37,7 @@ export function releaseLaunchLock(): void {
 
 export type SelfUpdateState =
   | "idle"
+  | "pending"
   | "checking"
   | "pulling"
   | "inspecting"
@@ -76,7 +79,6 @@ export interface TriggerUpdateOptions {
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
   healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
-  keepSidecar?: boolean; // Keep sidecar container after update for diagnostics
   onProgress?: UpdateProgressCallback;
 }
 
@@ -302,9 +304,6 @@ export async function launchSidecar(
       [SIDECAR_LABEL]: "true",
       [UPDATE_LOCK_LABEL]: new Date().toISOString(),
     };
-    if (options.keepSidecar) {
-      labels[SIDECAR_KEEP_LABEL] = "true";
-    }
 
     const createOptions: Docker.ContainerCreateOptions = {
       Image: options.sidecarImage,
@@ -312,7 +311,7 @@ export async function launchSidecar(
       Env: sidecarEnv,
       Labels: labels,
       HostConfig: {
-        AutoRemove: !options.keepSidecar,
+        AutoRemove: false,
         Binds: ["/var/run/docker.sock:/var/run/docker.sock"],
         ReadonlyRootfs: true,
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
@@ -346,12 +345,30 @@ export async function launchSidecar(
 }
 
 /**
- * Checks the exit status of the most recent sidecar container.
- * Returns null if no exited sidecar container is found.
+ * Checks the exit status of a specific sidecar container by ID.
+ * Falls back to finding the most recent exited sidecar if no ID is provided.
+ * Returns null if no matching exited sidecar container is found.
  */
-async function getSidecarExitInfo(): Promise<{ exitCode: number; containerId: string } | null> {
+async function getSidecarExitInfo(sidecarId?: string | null): Promise<{ exitCode: number; containerId: string } | null> {
   try {
     const docker = await DockerService.getInstance().getDockerInstance();
+
+    // If we have a specific sidecar ID, inspect it directly
+    if (sidecarId) {
+      try {
+        const container = docker.getContainer(sidecarId);
+        const info = await container.inspect();
+        if (info.State.Status === "exited" || info.State.Status === "dead") {
+          return { exitCode: info.State.ExitCode, containerId: sidecarId };
+        }
+        // Container exists but hasn't exited yet
+        return null;
+      } catch {
+        // Container not found (already removed) — fall through to generic search
+      }
+    }
+
+    // Fallback: find any exited sidecar container
     const containers = await docker.listContainers({
       all: true,
       filters: {
@@ -394,15 +411,6 @@ export async function cleanupOrphanedSidecars(): Promise<void> {
     });
 
     for (const containerInfo of containers) {
-      // Skip containers marked for diagnostic retention
-      if (containerInfo.Labels?.[SIDECAR_KEEP_LABEL] === "true") {
-        logger.info(
-          { containerId: containerInfo.Id },
-          "Skipping sidecar container cleanup — marked for diagnostic retention",
-        );
-        continue;
-      }
-
       try {
         const container = docker.getContainer(containerInfo.Id);
         await container.remove({ v: false });
@@ -491,7 +499,9 @@ export async function finalizeLastUpdate(): Promise<void> {
     return;
   }
 
-  const exitInfo = await getSidecarExitInfo();
+  // Use the specific sidecar ID from the update record to avoid
+  // picking up stale containers from previous update attempts.
+  const exitInfo = await getSidecarExitInfo(record.sidecarId);
 
   const now = new Date();
   let state: string;
@@ -555,9 +565,9 @@ export async function recoverStaleUpdate(): Promise<void> {
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover
 
-  // Check if an exited sidecar container exists (keepSidecar=true prevents AutoRemove).
-  // If so, finalize from its exit code rather than assuming a crash.
-  const exitInfo = await getSidecarExitInfo();
+  // Check if the specific sidecar container has exited.
+  // Since sidecars are always kept (AutoRemove: false), we can inspect the exit code.
+  const exitInfo = await getSidecarExitInfo(record.sidecarId);
 
   const now = new Date();
   let state: string;

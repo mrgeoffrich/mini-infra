@@ -14,7 +14,6 @@ import {
   getLatestUpdateRecord,
   acquireLaunchLock,
   releaseLaunchLock,
-  validateTargetImage,
   recoverStaleUpdate,
   SELF_UPDATE_LAUNCH_STEPS,
   type SelfUpdateStatus,
@@ -24,6 +23,15 @@ import { Channel, ServerEvent } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
+
+// ---------------------------------------------------------------------------
+// Hardcoded update configuration
+// ---------------------------------------------------------------------------
+
+const ALLOWED_REGISTRY_PATTERN = "ghcr.io/mrgeoffrich/mini-infra:*";
+const IMAGE_BASE = ALLOWED_REGISTRY_PATTERN.replace(/:\*$/, "");
+const HEALTH_CHECK_TIMEOUT_MS = 180000; // 3 minutes
+const GRACEFUL_STOP_SECONDS = 30;
 
 // Validation schema for trigger request
 const triggerSchema = z.object({
@@ -35,7 +43,6 @@ const triggerSchema = z.object({
       /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
       "Invalid tag format. Enter just the tag (e.g. v2.1.0), not a full image reference.",
     ),
-  keepSidecar: z.boolean().optional(),
 });
 
 /**
@@ -72,7 +79,7 @@ router.get("/status", requirePermission("settings:read"), async (req, res) => {
       // Fallback: sidecar exists but no details available
       return res.json({
         success: true,
-        status: { state: "pulling" } as SelfUpdateStatus,
+        status: { state: "pending" } as SelfUpdateStatus,
       });
     }
 
@@ -119,22 +126,10 @@ router.post("/check", requirePermission("settings:read"), async (req, res) => {
       });
     }
 
-    // Read configured registry pattern from settings
-    const registrySetting = await prisma.systemSettings.findUnique({
-      where: {
-        category_key: {
-          category: "self-update",
-          key: "allowed_registry_pattern",
-        },
-      },
-    });
-
     res.json({
       success: true,
       available: true,
       containerId,
-      configured: !!registrySetting?.value,
-      allowedRegistryPattern: registrySetting?.value ?? null,
     });
   } catch (error) {
     const errorMessage =
@@ -159,7 +154,7 @@ router.post(
   async (req, res) => {
     try {
       // Validate request body
-      const { targetTag, keepSidecar } = triggerSchema.parse(req.body);
+      const { targetTag } = triggerSchema.parse(req.body);
 
       const userId = getCurrentUserId(req);
       if (!userId) {
@@ -198,59 +193,15 @@ router.post(
           });
         }
 
-        // Load configuration from settings
-        const settings = await prisma.systemSettings.findMany({
-          where: {
-            category: "self-update",
-            isActive: true,
-          },
-        });
-        const settingsMap = new Map(settings.map((s) => [s.key, s.value]));
-
-        const allowedRegistryPattern = settingsMap.get(
-          "allowed_registry_pattern",
-        );
-        if (!allowedRegistryPattern) {
-          return res.status(400).json({
-            success: false,
-            error:
-              "Self-update not configured. Set allowed_registry_pattern in self-update settings.",
-          });
-        }
-
-        if (!allowedRegistryPattern.endsWith(":*")) {
-          return res.status(400).json({
-            success: false,
-            error:
-              'Invalid registry pattern — must end with ":*" (e.g. "ghcr.io/user/repo:*").',
-          });
-        }
-
-        // Derive image base from registry pattern (e.g. "ghcr.io/user/repo:*" → "ghcr.io/user/repo")
-        const imageBase = allowedRegistryPattern.replace(/:\*$/, "");
-        const fullImageRef = `${imageBase}:${targetTag}`;
-
-        // Derive sidecar and agent-sidecar images from the same base + tag
-        // so all three containers use a consistent version.
-        const sidecarImage = `${imageBase}-sidecar:${targetTag}`;
-        const agentSidecarImage = `${imageBase}-agent-sidecar:${targetTag}`;
-
-        const healthCheckUrl = settingsMap.get("health_check_url") || undefined;
+        const fullImageRef = `${IMAGE_BASE}:${targetTag}`;
+        const sidecarImage = `${IMAGE_BASE}-sidecar:${targetTag}`;
+        const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
         const containerPort = appConfig.server.port;
-        const healthCheckTimeoutMs = parseInt(
-          settingsMap.get("health_check_timeout_ms") ?? "180000",
-          10,
-        );
-        const gracefulStopSeconds = parseInt(
-          settingsMap.get("graceful_stop_seconds") ?? "30",
-          10,
-        );
 
         logger.info(
           {
             targetTag,
             fullImageRef,
-            allowedRegistryPattern,
             sidecarImage,
             agentSidecarImage,
             containerId,
@@ -296,14 +247,12 @@ router.post(
 
             const sidecarId = await launchSidecar({
               fullImageRef,
-              allowedRegistryPattern,
+              allowedRegistryPattern: ALLOWED_REGISTRY_PATTERN,
               sidecarImage,
               agentSidecarImage,
               containerPort,
-              healthCheckUrl,
-              healthCheckTimeoutMs,
-              gracefulStopSeconds,
-              keepSidecar,
+              healthCheckTimeoutMs: HEALTH_CHECK_TIMEOUT_MS,
+              gracefulStopSeconds: GRACEFUL_STOP_SECONDS,
               onProgress: (step, completedCount, total) => {
                 steps.push(step);
                 try {
@@ -387,157 +336,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: errorMessage,
-      });
-    }
-  },
-);
-
-/**
- * GET /config - Get self-update configuration
- */
-router.get("/config", requirePermission("settings:read"), async (req, res) => {
-  try {
-    const settings = await prisma.systemSettings.findMany({
-      where: {
-        category: "self-update",
-        isActive: true,
-      },
-    });
-
-    const settingsMap = new Map(settings.map((s) => [s.key, s.value]));
-
-    res.json({
-      success: true,
-      config: {
-        allowedRegistryPattern:
-          settingsMap.get("allowed_registry_pattern") ?? null,
-        sidecarImage:
-          settingsMap.get("sidecar_image") ||
-          process.env.SIDECAR_IMAGE_TAG ||
-          null,
-        healthCheckTimeoutMs: parseInt(
-          settingsMap.get("health_check_timeout_ms") ?? "180000",
-          10,
-        ),
-        gracefulStopSeconds: parseInt(
-          settingsMap.get("graceful_stop_seconds") ?? "30",
-          10,
-        ),
-      },
-    });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logger.error(
-      { error: errorMessage },
-      "Failed to get self-update configuration",
-    );
-    res.status(500).json({
-      success: false,
-      error: "Failed to get self-update configuration",
-    });
-  }
-});
-
-// Validation schema for config update
-const configSchema = z.object({
-  allowedRegistryPattern: z
-    .string()
-    .min(1, "Allowed registry pattern is required")
-    .regex(/:\*$/, 'Must end with ":*" (e.g. "ghcr.io/user/repo:*")'),
-  sidecarImage: z.string().min(1, "Sidecar image is required"),
-  healthCheckTimeoutMs: z.number().int().min(5000).max(300000).optional(),
-  gracefulStopSeconds: z.number().int().min(5).max(120).optional(),
-});
-
-/**
- * PUT /config - Update self-update configuration
- */
-router.put(
-  "/config",
-  requirePermission("settings:write"),
-  async (req, res) => {
-    try {
-      const validated = configSchema.parse(req.body);
-      const userId = getCurrentUserId(req);
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: "User not authenticated",
-        });
-      }
-
-      const settingsToUpdate = [
-        {
-          key: "allowed_registry_pattern",
-          value: validated.allowedRegistryPattern,
-        },
-        { key: "sidecar_image", value: validated.sidecarImage },
-        {
-          key: "health_check_timeout_ms",
-          value: String(validated.healthCheckTimeoutMs ?? 180000),
-        },
-        {
-          key: "graceful_stop_seconds",
-          value: String(validated.gracefulStopSeconds ?? 30),
-        },
-      ];
-
-      for (const setting of settingsToUpdate) {
-        await prisma.systemSettings.upsert({
-          where: {
-            category_key: {
-              category: "self-update",
-              key: setting.key,
-            },
-          },
-          create: {
-            category: "self-update",
-            key: setting.key,
-            value: setting.value,
-            isEncrypted: false,
-            isActive: true,
-            createdBy: userId,
-            updatedBy: userId,
-          },
-          update: {
-            value: setting.value,
-            updatedBy: userId,
-            updatedAt: new Date(),
-          },
-        });
-      }
-
-      logger.info(
-        {
-          allowedRegistryPattern: validated.allowedRegistryPattern,
-          sidecarImage: validated.sidecarImage,
-        },
-        "Self-update configuration updated",
-      );
-
-      res.json({
-        success: true,
-        message: "Self-update configuration updated successfully",
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: error.issues,
-        });
-      }
-
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      logger.error(
-        { error: errorMessage },
-        "Failed to update self-update configuration",
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to update configuration",
       });
     }
   },

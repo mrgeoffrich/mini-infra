@@ -1,7 +1,4 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -10,22 +7,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +20,6 @@ import {
 import {
   IconAlertCircle,
   IconCheck,
-  IconDeviceFloppy,
   IconDownload,
   IconLoader2,
   IconRefresh,
@@ -46,9 +28,7 @@ import {
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import {
-  useSelfUpdateConfig,
   useSelfUpdateCheck,
-  useSaveUpdateConfig,
   useTriggerUpdate,
   useSelfUpdateLaunchProgress,
   useIsUpdateActive,
@@ -56,28 +36,12 @@ import {
 } from "@/hooks/use-self-update";
 
 // ---------------------------------------------------------------------------
-// Config form schema
-// ---------------------------------------------------------------------------
-
-const configSchema = z.object({
-  allowedRegistryPattern: z
-    .string()
-    .min(1, "Allowed registry pattern is required")
-    .regex(/:\*$/, 'Must end with ":*" (e.g. "ghcr.io/user/repo:*")'),
-  sidecarImage: z.string().min(1, "Sidecar image is required"),
-  healthCheckTimeoutMs: z.coerce.number().int().min(5000).max(300000),
-  gracefulStopSeconds: z.coerce.number().int().min(5).max(120),
-});
-
-type ConfigFormData = z.output<typeof configSchema>;
-type ConfigFormInput = z.input<typeof configSchema>;
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const STATE_LABELS: Record<SelfUpdateStatus["state"], string> = {
   idle: "Idle",
+  pending: "Update sidecar running",
   checking: "Checking for updates...",
   pulling: "Pulling new image...",
   inspecting: "Inspecting container...",
@@ -107,13 +71,10 @@ function StateBadge({ state }: { state: SelfUpdateStatus["state"] }) {
 
 export default function SelfUpdateSettingsPage() {
   const [triggerTag, setTriggerTag] = useState<"latest" | "production" | "">("");
-  const [keepSidecar, setKeepSidecar] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [launchOperationId, setLaunchOperationId] = useState<string | null>(null);
 
   // Hooks
-  const { data: configData, isLoading: configLoading } = useSelfUpdateConfig();
-  const saveConfig = useSaveUpdateConfig();
   const checkUpdate = useSelfUpdateCheck();
   const triggerUpdate = useTriggerUpdate();
   useSelfUpdateLaunchProgress(
@@ -124,58 +85,16 @@ export default function SelfUpdateSettingsPage() {
     isActive,
     state,
     targetTag,
-    progress,
     error: updateError,
     isReconnecting,
   } = useIsUpdateActive();
 
-  // Form
-  const form = useForm<ConfigFormInput, unknown, ConfigFormData>({
-    resolver: zodResolver(configSchema),
-    defaultValues: {
-      allowedRegistryPattern: "",
-      sidecarImage: "",
-      healthCheckTimeoutMs: 60000,
-      gracefulStopSeconds: 30,
-    },
-    mode: "onChange",
-  });
-
-  // Populate form when config loads
-  useEffect(() => {
-    if (configData?.config) {
-      const c = configData.config;
-      form.reset({
-        allowedRegistryPattern: c.allowedRegistryPattern ?? "",
-        sidecarImage: c.sidecarImage ?? "",
-        healthCheckTimeoutMs: c.healthCheckTimeoutMs ?? 60000,
-        gracefulStopSeconds: c.gracefulStopSeconds ?? 30,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- form.reset is stable; only re-run when server data changes
-  }, [configData]);
-
   // Handlers
-  const handleSaveConfig = async (data: ConfigFormData) => {
-    try {
-      await saveConfig.mutateAsync(data);
-      toastWithCopy.success("Self-update configuration saved");
-    } catch (err) {
-      toastWithCopy.error(
-        err instanceof Error ? err.message : "Failed to save",
-      );
-    }
-  };
-
   const handleCheckDocker = () => {
     checkUpdate.mutate(undefined, {
       onSuccess: (data) => {
         if (data.available) {
-          toastWithCopy.success(
-            data.configured
-              ? "Running in Docker and configured for updates"
-              : "Running in Docker but not yet configured",
-          );
+          toastWithCopy.success("Running in Docker and ready for updates");
         } else {
           toastWithCopy.warning(data.reason ?? "Self-update not available");
         }
@@ -195,7 +114,7 @@ export default function SelfUpdateSettingsPage() {
     if (!triggerTag) return;
     setConfirmOpen(false);
     triggerUpdate.mutate(
-      { targetTag: triggerTag, keepSidecar: keepSidecar || undefined },
+      { targetTag: triggerTag },
       {
         onSuccess: (data) => {
           setLaunchOperationId(data.operationId);
@@ -231,18 +150,8 @@ export default function SelfUpdateSettingsPage() {
               {state && <StateBadge state={state} />}
             </div>
 
-            {/* Progress bar for image pull */}
-            {state === "pulling" && progress !== undefined && (
-              <div className="space-y-2">
-                <Progress value={progress} />
-                <p className="text-center text-sm text-muted-foreground">
-                  {progress}% downloaded
-                </p>
-              </div>
-            )}
-
             {/* Reconnection notice */}
-            {isReconnecting && (
+            {isReconnecting ? (
               <Alert>
                 <IconLoader2 className="h-4 w-4 animate-spin" />
                 <AlertDescription>
@@ -250,58 +159,13 @@ export default function SelfUpdateSettingsPage() {
                   online...
                 </AlertDescription>
               </Alert>
+            ) : (
+              <p className="text-center text-sm text-muted-foreground">
+                The update sidecar is replacing the running container.
+                The server will restart automatically when the update
+                completes.
+              </p>
             )}
-
-            {/* Step indicator */}
-            <div className="space-y-3">
-              {(
-                [
-                  "pulling",
-                  "inspecting",
-                  "stopping",
-                  "creating",
-                  "health-checking",
-                ] as const
-              ).map((step) => {
-                const steps = [
-                  "pulling",
-                  "inspecting",
-                  "stopping",
-                  "creating",
-                  "health-checking",
-                ];
-                const currentIdx = state ? steps.indexOf(state) : -1;
-                const stepIdx = steps.indexOf(step);
-                const isDone = currentIdx > stepIdx;
-                const isCurrent = state === step;
-
-                return (
-                  <div
-                    key={step}
-                    className="flex items-center gap-3 text-sm"
-                  >
-                    {isDone ? (
-                      <IconCheck className="h-4 w-4 text-green-500" />
-                    ) : isCurrent ? (
-                      <IconLoader2 className="h-4 w-4 animate-spin text-blue-500" />
-                    ) : (
-                      <div className="h-4 w-4 rounded-full border border-muted-foreground/30" />
-                    )}
-                    <span
-                      className={
-                        isCurrent
-                          ? "font-medium"
-                          : isDone
-                            ? "text-muted-foreground"
-                            : "text-muted-foreground/50"
-                      }
-                    >
-                      {STATE_LABELS[step]}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -316,31 +180,6 @@ export default function SelfUpdateSettingsPage() {
     state === "complete" ||
     state === "rollback-complete" ||
     state === "failed";
-
-  // -------------------------------------------------------------------------
-  // Loading
-  // -------------------------------------------------------------------------
-
-  if (configLoading) {
-    return (
-      <div className="container mx-auto max-w-4xl space-y-6 py-8">
-        <div className="space-y-1">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   // -------------------------------------------------------------------------
   // Main UI
@@ -402,9 +241,9 @@ export default function SelfUpdateSettingsPage() {
             Trigger Update
           </CardTitle>
           <CardDescription>
-            Enter the target tag and initiate an update. The full image
-            reference is built from the configured registry pattern. The server
-            will restart during this process.
+            Pulls all three images (main, sidecar, agent sidecar) with the
+            selected tag and launches the update sidecar. The server will
+            restart during this process.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -449,124 +288,6 @@ export default function SelfUpdateSettingsPage() {
               Update to Production
             </Button>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="keep-sidecar"
-              checked={keepSidecar}
-              onCheckedChange={(checked) => setKeepSidecar(checked === true)}
-            />
-            <Label htmlFor="keep-sidecar" className="text-sm font-normal cursor-pointer">
-              Keep sidecar container after update (for diagnostics)
-            </Label>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Pulls all three images (main, sidecar, agent sidecar) with the
-            selected tag before starting the update.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Configuration Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Update Configuration</CardTitle>
-          <CardDescription>
-            Configure the sidecar image, allowed registry, and health check
-            parameters.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSaveConfig)}
-              className="space-y-4"
-            >
-              <FormField
-                control={form.control}
-                name="allowedRegistryPattern"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Allowed Registry Pattern</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="ghcr.io/mrgeoffrich/mini-infra:*"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Glob pattern for allowed image references. Use * as a
-                      wildcard for the tag.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="sidecarImage"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sidecar Image</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="ghcr.io/mrgeoffrich/mini-infra-sidecar:latest"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Docker image for the update sidecar container.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="healthCheckTimeoutMs"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Health Check Timeout (ms)</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} value={field.value as number} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="gracefulStopSeconds"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Graceful Stop Timeout (s)</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} value={field.value as number} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={saveConfig.isPending || !form.formState.isDirty}
-              >
-                {saveConfig.isPending ? (
-                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <IconDeviceFloppy className="h-4 w-4 mr-2" />
-                )}
-                Save Configuration
-              </Button>
-            </form>
-          </Form>
         </CardContent>
       </Card>
 
