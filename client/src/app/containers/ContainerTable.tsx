@@ -92,14 +92,19 @@ const ContainerPortsCell = React.memo(
       );
     }
 
+    const formatPort = (port: ContainerInfo["ports"][0]) =>
+      port.public ? `${port.public}:${port.private}/${port.type}` : `${port.private}/${port.type}`;
+
     // If only one port, display it directly
     if (ports.length === 1) {
       const port = ports[0];
       return (
         <div className="flex items-center min-h-[2rem]">
-          <Badge variant="outline" className="text-xs whitespace-nowrap">
-            {port.public ? `${port.public}:${port.private}` : port.private}/
-            {port.type}
+          <Badge
+            variant="outline"
+            className={`text-xs whitespace-nowrap ${!port.public ? "border-dashed text-muted-foreground" : ""}`}
+          >
+            {formatPort(port)}
           </Badge>
         </div>
       );
@@ -109,11 +114,11 @@ const ContainerPortsCell = React.memo(
     const firstPort = ports[0];
     return (
       <div className="flex flex-wrap gap-1 min-h-[2rem] items-center">
-        <Badge variant="outline" className="text-xs whitespace-nowrap">
-          {firstPort.public
-            ? `${firstPort.public}:${firstPort.private}`
-            : firstPort.private}
-          /{firstPort.type}
+        <Badge
+          variant="outline"
+          className={`text-xs whitespace-nowrap ${!firstPort.public ? "border-dashed text-muted-foreground" : ""}`}
+        >
+          {formatPort(firstPort)}
         </Badge>
         <Popover>
           <PopoverTrigger asChild>
@@ -133,14 +138,21 @@ const ContainerPortsCell = React.memo(
                     key={index}
                     className="flex items-center justify-between text-sm"
                   >
-                    <span className="font-mono">
+                    <span className={`font-mono ${!port.public ? "text-muted-foreground" : ""}`}>
                       {port.public
                         ? `${port.public}:${port.private}`
                         : port.private}
                     </span>
-                    <Badge variant="outline" className="text-xs">
-                      {port.type}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      {!port.public && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          internal
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        {port.type}
+                      </Badge>
+                    </div>
                   </div>
                 ))}
               </div>
