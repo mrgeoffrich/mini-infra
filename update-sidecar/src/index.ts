@@ -79,16 +79,10 @@ async function main(): Promise<void> {
     // 4. Create and start the new container
     // -----------------------------------------------------------------------
     logger.info({ state: "creating" }, "Update status: creating");
-    const { container: newContainer, additionalNetworks } = await createContainer(docker, TARGET_IMAGE, settings);
+    const newContainer = await createContainer(docker, TARGET_IMAGE, settings);
     newContainerId = (newContainer as unknown as { id: string }).id;
     await newContainer.start();
     logger.info({ newContainerId }, "New container started");
-
-    // Connect to additional networks after start (Docker API limitation:
-    // only one network can be attached at creation time)
-    if (additionalNetworks.size > 0) {
-      await connectAdditionalNetworks(docker, newContainerId, additionalNetworks);
-    }
 
     // -----------------------------------------------------------------------
     // 5. Health-check the new container
@@ -160,54 +154,14 @@ async function main(): Promise<void> {
 
 /**
  * Creates a new container with the target image and captured settings.
- *
- * Docker API only connects a container to ONE network at creation time.
- * If the original container was on multiple networks, we create with the
- * primary network (matching HostConfig.NetworkMode) and then explicitly
- * connect to additional networks after the container is started.
+ * All networks are passed at creation time (requires Docker API >= 1.44).
  */
 async function createContainer(
   docker: Docker,
   image: string,
   settings: CapturedContainerSettings,
-): Promise<{ container: Docker.Container; additionalNetworks: Map<string, { Aliases?: string[] }> }> {
+): Promise<Docker.Container> {
   logger.info({ image, name: settings.name }, "Creating new container");
-
-  // Determine the primary network (from NetworkMode)
-  const primaryNetwork = settings.hostConfig.NetworkMode;
-  const allNetworks = settings.networkingConfig.EndpointsConfig;
-  const networkNames = Object.keys(allNetworks);
-
-  // Build NetworkingConfig with only the primary network
-  const primaryNetworkConfig: CapturedContainerSettings["networkingConfig"] = {
-    EndpointsConfig: {},
-  };
-
-  // Collect additional networks to connect after start
-  const additionalNetworks = new Map<string, { Aliases?: string[] }>();
-
-  for (const [netName, netConfig] of Object.entries(allNetworks)) {
-    if (netName === primaryNetwork) {
-      primaryNetworkConfig.EndpointsConfig[netName] = netConfig;
-    } else {
-      additionalNetworks.set(netName, netConfig);
-    }
-  }
-
-  // If primary network wasn't in EndpointsConfig, use first network
-  if (Object.keys(primaryNetworkConfig.EndpointsConfig).length === 0 && networkNames.length > 0) {
-    primaryNetworkConfig.EndpointsConfig[networkNames[0]] = allNetworks[networkNames[0]];
-    for (let i = 1; i < networkNames.length; i++) {
-      additionalNetworks.set(networkNames[i], allNetworks[networkNames[i]]);
-    }
-  }
-
-  if (additionalNetworks.size > 0) {
-    logger.info(
-      { primaryNetwork, additionalNetworks: [...additionalNetworks.keys()] },
-      "Container has multiple networks — will connect additional networks after start",
-    );
-  }
 
   const container = await docker.createContainer({
     Image: image,
@@ -216,34 +170,10 @@ async function createContainer(
     Labels: settings.labels,
     ExposedPorts: settings.exposedPorts,
     HostConfig: settings.hostConfig,
-    NetworkingConfig: primaryNetworkConfig,
+    NetworkingConfig: settings.networkingConfig,
   } as Docker.ContainerCreateOptions);
 
-  return { container, additionalNetworks };
-}
-
-/**
- * Connects a container to additional Docker networks after it has been started.
- */
-async function connectAdditionalNetworks(
-  docker: Docker,
-  containerId: string,
-  additionalNetworks: Map<string, { Aliases?: string[] }>,
-): Promise<void> {
-  for (const [netName, netConfig] of additionalNetworks) {
-    try {
-      const network = docker.getNetwork(netName);
-      await network.connect({
-        Container: containerId,
-        EndpointConfig: {
-          Aliases: netConfig.Aliases,
-        },
-      });
-      logger.info({ network: netName, containerId }, "Connected container to additional network");
-    } catch (err) {
-      logger.warn({ err, network: netName, containerId }, "Failed to connect container to additional network (non-fatal)");
-    }
-  }
+  return container;
 }
 
 /**
