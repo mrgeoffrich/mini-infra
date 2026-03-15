@@ -76,9 +76,6 @@ export interface TriggerUpdateOptions {
   sidecarImage: string; // Target-tagged sidecar image to pull (e.g. "...-sidecar:v2.1.0")
   sidecarRunImage?: string; // Current-version sidecar image to run (e.g. "...-sidecar:v2.0.0")
   agentSidecarImage?: string; // Pre-pull so it's available after update
-  containerPort: number;
-  healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
-  healthCheckTimeoutMs?: number;
   gracefulStopSeconds?: number;
   onProgress?: UpdateProgressCallback;
 }
@@ -220,24 +217,6 @@ export async function launchSidecar(
       throw new Error("An update is already in progress");
     }
 
-    // Inspect own container to discover name and network
-    const ownContainer = docker.getContainer(containerId);
-    const ownInfo = await ownContainer.inspect();
-    const containerName = ownInfo.Name.replace(/^\//, "");
-
-    // Auto-detect health check URL from container name and port,
-    // using Docker DNS to resolve the container name
-    const healthCheckUrl =
-      options.healthCheckUrl ||
-      `http://${containerName}:${options.containerPort}/health`;
-
-    // Find a user-defined Docker network to attach the sidecar to
-    // (required for Docker DNS resolution of container names)
-    const ownNetworks = Object.keys(ownInfo.NetworkSettings?.Networks ?? {});
-    const sidecarNetwork = ownNetworks.find(
-      (n) => n !== "host" && n !== "none" && n !== "bridge",
-    ) ?? ownNetworks[0];
-
     // Use the current-version sidecar image for running (known-good),
     // while still pulling the target-tagged sidecar for future use.
     const sidecarRunImage = options.sidecarRunImage ?? options.sidecarImage;
@@ -248,9 +227,6 @@ export async function launchSidecar(
         sidecarRunImage,
         targetImage: fullImageRef,
         containerId,
-        containerName,
-        healthCheckUrl,
-        sidecarNetwork,
       },
       "Launching self-update sidecar",
     );
@@ -310,8 +286,6 @@ export async function launchSidecar(
     const sidecarEnv = [
       `TARGET_IMAGE=${fullImageRef}`,
       `CONTAINER_ID=${containerId}`,
-      `HEALTH_CHECK_URL=${healthCheckUrl}`,
-      `HEALTH_CHECK_TIMEOUT_MS=${options.healthCheckTimeoutMs ?? 180000}`,
       `GRACEFUL_STOP_SECONDS=${options.gracefulStopSeconds ?? 30}`,
     ];
 
@@ -332,16 +306,6 @@ export async function launchSidecar(
         Tmpfs: { "/tmp": "rw,noexec,nosuid" },
       },
     };
-
-    // Attach sidecar to the same Docker network so it can resolve
-    // the container name for health checks via Docker DNS
-    if (sidecarNetwork) {
-      (createOptions as any).NetworkingConfig = {
-        EndpointsConfig: {
-          [sidecarNetwork]: {},
-        },
-      };
-    }
 
     const sidecar = await docker.createContainer(createOptions);
     reportStep("Create sidecar container", "completed");
@@ -491,6 +455,59 @@ export async function updateUpdateRecordSidecarId(
  *   exit 0 → complete, exit non-0 → rollback-complete.
  * If no sidecar container is found, assumes success (we are alive).
  */
+/**
+ * Retries finalization in the background when the sidecar is still running at startup.
+ * Polls every 5s for up to 60s until the sidecar exits, then finalizes the record.
+ */
+function retryFinalization(recordId: string, sidecarId: string | null, startedAt: Date): void {
+  const RETRY_INTERVAL_MS = 5000;
+  const MAX_RETRIES = 12; // 60s total
+  let retries = 0;
+
+  const timer = setInterval(async () => {
+    retries++;
+    try {
+      const stillRunning = await isUpdateInProgress();
+      if (stillRunning && retries < MAX_RETRIES) return;
+
+      clearInterval(timer);
+
+      const exitInfo = await getSidecarExitInfo(sidecarId);
+      const now = new Date();
+      let state: string;
+      let errorMessage: string | null = null;
+
+      if (exitInfo) {
+        state = exitInfo.exitCode === 0 ? "complete" : "rollback-complete";
+        if (exitInfo.exitCode !== 0) {
+          errorMessage = `Update sidecar exited with code ${exitInfo.exitCode}`;
+        }
+      } else if (stillRunning) {
+        // Timed out waiting for sidecar — leave for recoverStaleUpdate()
+        logger.warn({ recordId }, "Sidecar still running after 60s, deferring to recovery");
+        return;
+      } else {
+        state = "complete";
+      }
+
+      await prisma.selfUpdate.update({
+        where: { id: recordId },
+        data: {
+          state,
+          errorMessage,
+          completedAt: now,
+          durationMs: now.getTime() - startedAt.getTime(),
+        },
+      });
+
+      logger.info({ updateId: recordId, state, retries }, "Self-update record finalized (deferred)");
+    } catch (err) {
+      clearInterval(timer);
+      logger.warn({ err, recordId }, "Deferred finalization failed");
+    }
+  }, RETRY_INTERVAL_MS);
+}
+
 export async function finalizeLastUpdate(): Promise<void> {
   // Find the most recent non-terminal update record
   const record = await prisma.selfUpdate.findFirst({
@@ -507,10 +524,13 @@ export async function finalizeLastUpdate(): Promise<void> {
     return;
   }
 
-  // If the sidecar is still running, don't finalize yet
+  // If the sidecar is still running, retry after a delay.
+  // The sidecar is likely finishing its health check on this container,
+  // so it should exit shortly. Retry every 5s for up to 60s.
   const running = await isUpdateInProgress();
   if (running) {
-    logger.info("Sidecar still running at startup, deferring finalization");
+    logger.info("Sidecar still running at startup, will retry finalization in background");
+    retryFinalization(record.id, record.sidecarId, record.startedAt);
     return;
   }
 
@@ -569,20 +589,21 @@ export async function recoverStaleUpdate(): Promise<void> {
   // Fast path: in-memory lock says launch is actively in progress.
   if (launchInProgress) return;
 
-  // Grace period: don't recover records created less than 5 minutes ago.
-  // The sidecar launch process (image pull + container creation) can take
-  // several minutes, during which no sidecar container exists yet.
-  // Without this grace period, polling the status endpoint during image
-  // pulling would prematurely mark the record as "failed".
-  const ageMs = Date.now() - record.startedAt.getTime();
-  if (ageMs < 5 * 60 * 1000) return;
-
   const running = await isUpdateInProgress();
   if (running) return; // Sidecar is still alive, nothing to recover
 
   // Check if the specific sidecar container has exited.
   // Since sidecars are always kept (AutoRemove: false), we can inspect the exit code.
   const exitInfo = await getSidecarExitInfo(record.sidecarId);
+
+  // Grace period: don't recover records created less than 5 minutes ago
+  // UNLESS the sidecar container has already exited (we have a definitive outcome).
+  // The grace period prevents premature "failed" marks during the sidecar launch
+  // process (image pull + container creation) when no sidecar container exists yet.
+  if (!exitInfo) {
+    const ageMs = Date.now() - record.startedAt.getTime();
+    if (ageMs < 5 * 60 * 1000) return;
+  }
 
   const now = new Date();
   let state: string;

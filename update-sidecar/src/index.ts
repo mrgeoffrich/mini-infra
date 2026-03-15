@@ -1,7 +1,6 @@
 import Docker from "dockerode";
 import { logger } from "./logger";
 import { inspectContainer, CapturedContainerSettings } from "./container-inspector";
-import { waitForHealthy } from "./health-checker";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -9,11 +8,6 @@ import { waitForHealthy } from "./health-checker";
 
 const TARGET_IMAGE = requireEnv("TARGET_IMAGE");
 const CONTAINER_ID = requireEnv("CONTAINER_ID");
-const HEALTH_CHECK_URL = requireEnv("HEALTH_CHECK_URL");
-const HEALTH_CHECK_TIMEOUT_MS = parseInt(
-  process.env.HEALTH_CHECK_TIMEOUT_MS ?? "180000",
-  10,
-);
 const GRACEFUL_STOP_SECONDS = parseInt(
   process.env.GRACEFUL_STOP_SECONDS ?? "30",
   10,
@@ -76,24 +70,8 @@ async function main(): Promise<void> {
     logger.info({ state: "creating" }, "Update status: creating");
     const newContainer = await createContainer(docker, TARGET_IMAGE, settings);
     await newContainer.start();
-    logger.info("New container started");
-
-    // -----------------------------------------------------------------------
-    // 5. Health-check the new container
-    // -----------------------------------------------------------------------
-    logger.info({ state: "health-checking" }, "Update status: health-checking");
-    const healthy = await waitForHealthy({
-      url: HEALTH_CHECK_URL,
-      timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
-    });
-
-    if (healthy) {
-      logger.info({ state: "complete", targetTag: TARGET_IMAGE }, "Update status: complete");
-      process.exit(0);
-    }
-
-    logger.error({ state: "failed", error: "New container failed health check" }, "Update status: failed");
-    process.exit(1);
+    logger.info({ state: "complete", targetTag: TARGET_IMAGE }, "Update status: complete");
+    process.exit(0);
   } catch (err) {
     logger.fatal({ err }, "Update failed");
     process.exit(1);

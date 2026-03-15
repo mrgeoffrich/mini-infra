@@ -2,7 +2,6 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
-import appConfig from "../lib/config-new";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
@@ -30,7 +29,6 @@ const router = express.Router();
 
 const ALLOWED_REGISTRY_PATTERN = "ghcr.io/mrgeoffrich/mini-infra:*";
 const IMAGE_BASE = ALLOWED_REGISTRY_PATTERN.replace(/:\*$/, "");
-const HEALTH_CHECK_TIMEOUT_MS = 180000; // 3 minutes
 const GRACEFUL_STOP_SECONDS = 30;
 
 // Validation schema for trigger request
@@ -196,7 +194,6 @@ router.post(
         const fullImageRef = `${IMAGE_BASE}:${targetTag}`;
         const sidecarImage = `${IMAGE_BASE}-sidecar:${targetTag}`;
         const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
-        const containerPort = appConfig.server.port;
 
         // Run the sidecar using the current (known-good) version rather than
         // the target version, so a broken sidecar in a new release can't
@@ -263,8 +260,6 @@ router.post(
               sidecarImage,
               sidecarRunImage,
               agentSidecarImage,
-              containerPort,
-              healthCheckTimeoutMs: HEALTH_CHECK_TIMEOUT_MS,
               gracefulStopSeconds: GRACEFUL_STOP_SECONDS,
               onProgress: (step, completedCount, total) => {
                 steps.push(step);
