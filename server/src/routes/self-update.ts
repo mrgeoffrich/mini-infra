@@ -201,7 +201,9 @@ router.post(
         // Run the sidecar using the current (known-good) version rather than
         // the target version, so a broken sidecar in a new release can't
         // brick the update process. Falls back to target tag in dev mode.
-        const currentVersion = process.env.BUILD_VERSION;
+        // BUILD_VERSION includes the "v" prefix (e.g. "v1.4.5") but image
+        // tags do not (e.g. "1.4.5"), so strip it.
+        const currentVersion = process.env.BUILD_VERSION?.replace(/^v/, "");
         const sidecarRunImage =
           currentVersion && currentVersion !== "dev"
             ? `${IMAGE_BASE}-sidecar:${currentVersion}`
