@@ -198,11 +198,21 @@ router.post(
         const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
         const containerPort = appConfig.server.port;
 
+        // Run the sidecar using the current (known-good) version rather than
+        // the target version, so a broken sidecar in a new release can't
+        // brick the update process. Falls back to target tag in dev mode.
+        const currentVersion = process.env.BUILD_VERSION;
+        const sidecarRunImage =
+          currentVersion && currentVersion !== "dev"
+            ? `${IMAGE_BASE}-sidecar:${currentVersion}`
+            : undefined;
+
         logger.info(
           {
             targetTag,
             fullImageRef,
             sidecarImage,
+            sidecarRunImage: sidecarRunImage ?? sidecarImage,
             agentSidecarImage,
             containerId,
           },
@@ -249,6 +259,7 @@ router.post(
               fullImageRef,
               allowedRegistryPattern: ALLOWED_REGISTRY_PATTERN,
               sidecarImage,
+              sidecarRunImage,
               agentSidecarImage,
               containerPort,
               healthCheckTimeoutMs: HEALTH_CHECK_TIMEOUT_MS,

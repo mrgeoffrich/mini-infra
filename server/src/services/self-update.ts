@@ -73,7 +73,8 @@ export type UpdateProgressCallback = (
 export interface TriggerUpdateOptions {
   fullImageRef: string; // Full image reference (e.g. "ghcr.io/user/repo:v2.1.0")
   allowedRegistryPattern: string;
-  sidecarImage: string;
+  sidecarImage: string; // Target-tagged sidecar image to pull (e.g. "...-sidecar:v2.1.0")
+  sidecarRunImage?: string; // Current-version sidecar image to run (e.g. "...-sidecar:v2.0.0")
   agentSidecarImage?: string; // Pre-pull so it's available after update
   containerPort: number;
   healthCheckUrl?: string; // Optional override (auto-detected from container name + port)
@@ -237,9 +238,14 @@ export async function launchSidecar(
       (n) => n !== "host" && n !== "none" && n !== "bridge",
     ) ?? ownNetworks[0];
 
+    // Use the current-version sidecar image for running (known-good),
+    // while still pulling the target-tagged sidecar for future use.
+    const sidecarRunImage = options.sidecarRunImage ?? options.sidecarImage;
+
     logger.info(
       {
         sidecarImage: options.sidecarImage,
+        sidecarRunImage,
         targetImage: fullImageRef,
         containerId,
         containerName,
@@ -249,17 +255,26 @@ export async function launchSidecar(
       "Launching self-update sidecar",
     );
 
-    // Step 1: Pull the sidecar image
+    // Step 1: Pull sidecar images
+    // Always pull the target-tagged sidecar (for future updates from the new version).
+    // Also pull the current-version sidecar if different (the one we'll actually run).
     const registryCredentialService = new RegistryCredentialService(prisma);
     try {
       const registryManager = new RegistryManager(docker, registryCredentialService);
       await registryManager.pullImageWithAutoAuth(options.sidecarImage);
       logger.info({ sidecarImage: options.sidecarImage }, "Sidecar image pulled");
-      reportStep("Pull sidecar image", "completed", options.sidecarImage);
+
+      // Also ensure the current-version sidecar is available locally
+      if (sidecarRunImage !== options.sidecarImage) {
+        await registryManager.pullImageWithAutoAuth(sidecarRunImage);
+        logger.info({ sidecarRunImage }, "Current-version sidecar image pulled");
+      }
+
+      reportStep("Pull sidecar image", "completed", sidecarRunImage);
     } catch (pullErr) {
-      logger.error({ err: pullErr, sidecarImage: options.sidecarImage }, "Failed to pull sidecar image");
+      logger.error({ err: pullErr, sidecarImage: options.sidecarImage, sidecarRunImage }, "Failed to pull sidecar image");
       reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(`Failed to pull sidecar image "${options.sidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+      throw new Error(`Failed to pull sidecar image: ${pullErr instanceof Error ? pullErr.message : pullErr}`);
     }
 
     // Step 2: Pull the target image (server has working registry credentials)
@@ -306,7 +321,7 @@ export async function launchSidecar(
     };
 
     const createOptions: Docker.ContainerCreateOptions = {
-      Image: options.sidecarImage,
+      Image: sidecarRunImage,
       name: `mini-infra-sidecar-${Date.now()}`,
       Env: sidecarEnv,
       Labels: labels,
