@@ -632,23 +632,23 @@ class DockerService {
     const uniquePorts = new Map<string, DockerContainerInfo["ports"][0]>();
 
     ports.forEach((port) => {
-      // Only include ports that have a public port mapping (exposed ports)
-      if (!port.PublicPort) {
-        return;
-      }
-
-      const key = `${port.PrivatePort}-${port.PublicPort}-${port.Type}`;
+      const key = port.PublicPort
+        ? `${port.PrivatePort}-${port.PublicPort}-${port.Type}`
+        : `${port.PrivatePort}-exposed-${port.Type}`;
       if (!uniquePorts.has(key)) {
         uniquePorts.set(key, {
           private: port.PrivatePort,
-          public: port.PublicPort,
+          ...(port.PublicPort ? { public: port.PublicPort } : {}),
           type: port.Type === "tcp" ? "tcp" : "udp",
         });
       }
     });
 
-    // Sort ports for consistent display: by private port ascending, then by type (tcp before udp)
+    // Sort ports for consistent display: published ports first, then by private port ascending, then by type (tcp before udp)
     return Array.from(uniquePorts.values()).sort((a, b) => {
+      // Published ports come before exposed-only ports
+      if (a.public && !b.public) return -1;
+      if (!a.public && b.public) return 1;
       if (a.private !== b.private) {
         return a.private - b.private;
       }

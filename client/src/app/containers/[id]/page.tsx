@@ -212,7 +212,12 @@ export default function ContainerDetailPage() {
                 <dd className="flex flex-wrap gap-1">
                   {container.ports.length > 0 ? (
                     container.ports.map((port, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
+                      <Badge
+                        key={index}
+                        variant="outline"
+                        className={`text-xs ${!port.public ? "border-dashed text-muted-foreground" : ""}`}
+                        title={port.public ? "Published to host" : "Exposed (internal only)"}
+                      >
                         {port.public ? `${port.public}:${port.private}` : port.private}/{port.type}
                       </Badge>
                     ))
