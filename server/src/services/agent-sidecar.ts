@@ -338,7 +338,7 @@ async function createAgentSidecar(
         `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
         // Forward OpenTelemetry config if present
         ...Object.entries(process.env)
-          .filter(([key]) => key.startsWith("OTEL_") || key === "CLAUDE_CODE_ENABLE_TELEMETRY")
+          .filter(([key]) => key.startsWith("OTEL_") || key === "CLAUDE_CODE_ENABLE_TELEMETRY" || key === "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA")
           .map(([key, value]) => `${key}=${value}`),
       ],
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
