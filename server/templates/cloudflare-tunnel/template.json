@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 1,
+  "builtinVersion": 2,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Cloudflare tunnel connector for exposing services to the internet via HAProxy",
@@ -11,12 +11,6 @@
       "type": "string",
       "default": "",
       "description": "Cloudflare tunnel token (auto-populated when managed tunnel is created)"
-    },
-    {
-      "name": "haproxy-network",
-      "type": "string",
-      "default": "",
-      "description": "HAProxy Docker network name to join (auto-populated when managed tunnel is created)"
     }
   ],
   "networks": [],
@@ -29,7 +23,7 @@
       "dockerTag": "latest",
       "containerConfig": {
         "command": ["tunnel", "--no-autoupdate", "run", "--token", "{{params.tunnel-token}}"],
-        "joinNetworks": ["{{params.haproxy-network}}"],
+        "joinEnvironmentNetworks": ["tunnel"],
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD-SHELL", "wget --spider -q http://localhost:2000/ready || exit 1"],

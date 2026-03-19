@@ -42,7 +42,7 @@ import {
   useCreateManagedTunnel,
   useDeleteManagedTunnel,
 } from "@/hooks/use-cloudflare-settings";
-import { useStackApply, useStackDestroy } from "@/hooks/use-stacks";
+import { useStackApply, useStackDestroy, useStackValidation } from "@/hooks/use-stacks";
 import { toast } from "sonner";
 
 interface EnvironmentInfo {
@@ -71,6 +71,7 @@ export function ManagedTunnelCard({
   const deleteMutation = useDeleteManagedTunnel();
   const applyMutation = useStackApply();
   const destroyMutation = useStackDestroy();
+  const { data: validation } = useStackValidation(tunnel?.stackId ?? "", !!tunnel?.stackId);
 
   const isLocalOnly = environment.networkType !== "internet";
   const hasTunnel = !!tunnel;
@@ -232,7 +233,12 @@ export function ManagedTunnelCard({
               size="sm"
               onClick={handleDeploy}
               disabled={
-                applyMutation.isPending || !tunnel.hasToken
+                applyMutation.isPending || !tunnel.hasToken || (validation != null && !validation.valid)
+              }
+              title={
+                validation && !validation.valid
+                  ? `Missing parameters: ${validation.errors.map((e) => e.description || e.name).join(", ")}`
+                  : undefined
               }
             >
               {applyMutation.isPending ? (

@@ -26,7 +26,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Channel } from "@mini-infra/types";
-import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress } from "@/hooks/use-stacks";
+import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation } from "@/hooks/use-stacks";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
@@ -59,6 +59,8 @@ export const StackPlanView = React.memo(function StackPlanView({
   const destroyMutation = useStackDestroy();
   const destroyProgress = useStackDestroyProgress(stackId);
   const { registerTask } = useTaskTracker();
+  const { data: validation } = useStackValidation(stackId);
+  const hasValidationErrors = validation && !validation.valid;
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
@@ -281,7 +283,7 @@ export const StackPlanView = React.memo(function StackPlanView({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={applyMutation.isPending || destroyMutation.isPending}
+                  disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
                 >
                   <IconCloudDownload className="h-4 w-4 mr-2" />
                   {applyMutation.isPending ? "Pulling..." : "Redeploy Containers"}
@@ -324,7 +326,7 @@ export const StackPlanView = React.memo(function StackPlanView({
               variant="ghost"
               size="sm"
               onClick={handleApplyAll}
-              disabled={applyMutation.isPending || destroyMutation.isPending}
+              disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
             >
               <IconRefresh className="h-4 w-4 mr-2" />
               Sync Anyway
@@ -435,11 +437,23 @@ export const StackPlanView = React.memo(function StackPlanView({
         </CardContent>
       </Card>
 
+      {/* Validation warning */}
+      {hasValidationErrors && (
+        <Alert variant="destructive">
+          <IconAlertTriangle className="h-4 w-4" />
+          <AlertTitle>Missing Parameters</AlertTitle>
+          <AlertDescription>
+            The following parameters must be configured before applying:{" "}
+            {validation.errors.map((e) => e.description || e.name).join(", ")}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Apply buttons */}
       <div className="flex gap-2">
         <Button
           onClick={handleApplyAll}
-          disabled={applyMutation.isPending || destroyMutation.isPending}
+          disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
         >
           <IconRocket className="h-4 w-4 mr-2" />
           {applyMutation.isPending ? "Starting..." : "Apply All"}
@@ -448,7 +462,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           <Button
             variant="outline"
             onClick={handleApplySelected}
-            disabled={applyMutation.isPending || destroyMutation.isPending}
+            disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
           >
             Apply Selected ({selectedServices.size})
           </Button>

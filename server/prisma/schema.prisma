@@ -417,12 +417,14 @@ model EnvironmentNetwork {
   environmentId String
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   name          String
+  purpose       String   @default("custom") // 'applications', 'tunnel', 'custom'
   driver        String   @default("bridge")
   options       Json?    // Network options
   dockerId      String?  // Docker network ID when created
   createdAt     DateTime @default(now())
 
   @@unique([environmentId, name])
+  @@unique([environmentId, purpose])
   @@index([environmentId])
   @@map("environment_networks")
 }

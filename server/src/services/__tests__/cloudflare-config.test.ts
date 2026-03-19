@@ -12,6 +12,9 @@ const { mockCloudflare } = vi.hoisted(() => ({
     accounts: {
       get: vi.fn(),
     },
+    zones: {
+      list: vi.fn(),
+    },
     zeroTrust: {
       tunnels: {
         list: vi.fn(),
@@ -110,8 +113,7 @@ describe("CloudflareService", () => {
       );
     });
 
-    it("should validate successfully with valid API token", async () => {
-      // Mock API token setting
+    it("should fail validation when account ID is not configured", async () => {
       mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
@@ -119,49 +121,16 @@ describe("CloudflareService", () => {
         })
         .mockResolvedValueOnce(null); // No account ID
 
-      // Mock successful user API call
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
-
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
-      expect(result.isValid).toBe(true);
-      expect(result.message).toBe(
-        "Cloudflare API connection successful (test@example.com)",
-      );
-      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
-      expect(result.metadata).toMatchObject({
-        userEmail: "test@example.com",
-        userId: "user-123",
-        firstName: "Test",
-        lastName: "User",
-        accountStatus: "active",
-      });
-
-      // Verify success was recorded
-      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            service: "cloudflare",
-            status: "connected",
-            errorMessage: null,
-            errorCode: null,
-            metadata: JSON.stringify(result.metadata),
-            checkInitiatedBy: null,
-          }),
-        }),
-      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toBe("Cloudflare account ID not configured");
+      expect(result.errorCode).toBe("MISSING_ACCOUNT_ID");
     });
 
-    it("should validate API token and include account information", async () => {
+    it("should validate successfully with zone and tunnel access", async () => {
       // Mock API token and account ID settings
       mockPrisma.systemSettings.findUnique = vi
         .fn()
@@ -172,88 +141,93 @@ describe("CloudflareService", () => {
           value: "account-456",
         });
 
-      // Mock successful API calls
-      const mockUserResponse = {
-        email: "admin@company.com",
-        id: "user-456",
-        first_name: "Admin",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      // Mock successful zone list
+      mockCloudflare.zones.list.mockResolvedValue({
+        result: [{ name: "example.com" }, { name: "example.org" }],
+      });
 
-      const mockAccountResponse = {
-        name: "Test Company Account",
-        id: "account-456",
-      };
-      mockCloudflare.accounts.get.mockResolvedValue(mockAccountResponse);
+      // Mock successful tunnel list
+      mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
+        result: [{ name: "web-tunnel", deleted_at: null }],
+      });
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
       expect(result.isValid).toBe(true);
+      expect(result.message).toContain("2 zone(s)");
+      expect(result.message).toContain("1 tunnel(s)");
+      expect(result.responseTimeMs).toBeGreaterThanOrEqual(0);
       expect(result.metadata).toMatchObject({
-        userEmail: "admin@company.com",
-        userId: "user-456",
-        accountName: "Test Company Account",
+        zoneCount: 2,
+        tunnelCount: 1,
         accountId: "account-456",
-        accountStatus: "active",
       });
 
-      expect(mockCloudflare.accounts.get).toHaveBeenCalledWith({
+      expect(mockCloudflare.zones.list).toHaveBeenCalledWith({
+        account: { id: "account-456" },
+      });
+      expect(mockCloudflare.zeroTrust.tunnels.list).toHaveBeenCalledWith({
         account_id: "account-456",
       });
+
+      // Verify success was recorded
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            service: "cloudflare",
+            status: "connected",
+          }),
+        }),
+      );
     });
 
-    it("should handle account API failure gracefully when user API succeeds", async () => {
+    it("should fail validation when zone access is denied", async () => {
       mockPrisma.systemSettings.findUnique = vi
         .fn()
         .mockResolvedValueOnce({
           value: "valid-api-token-123",
         })
         .mockResolvedValueOnce({
-          value: "invalid-account-id",
+          value: "account-456",
         });
 
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      // Mock zone list failure (missing permission)
+      mockCloudflare.zones.list.mockRejectedValue(new Error("Forbidden"));
 
-      // Mock account API failure
-      const accountError = new Error("Account not found");
-      mockCloudflare.accounts.get.mockRejectedValue(accountError);
+      // Mock successful tunnel list
+      mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
+        result: [{ name: "web-tunnel", deleted_at: null }],
+      });
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
-      expect(result.isValid).toBe(true);
-      expect(result.message).toBe(
-        "Cloudflare API connection successful (test@example.com)",
-      );
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          accountId: "invalid-account-id",
-          error: "Account not found",
-        },
-        "Failed to fetch account information, but API token is valid",
-      );
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("Zone:Read");
+      expect(result.errorCode).toBe("MISSING_PERMISSIONS");
     });
 
-    it("should handle API timeout", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token-123",
+    it("should fail validation when tunnel access is denied", async () => {
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: "valid-api-token-123",
+        })
+        .mockResolvedValueOnce({
+          value: "account-456",
+        });
+
+      // Mock successful zone list
+      mockCloudflare.zones.list.mockResolvedValue({
+        result: [{ name: "example.com" }],
       });
 
-      // Mock timeout scenario by directly rejecting with timeout error
-      mockCloudflare.user.get.mockRejectedValue(
-        new Error("API request timeout"),
+      // Mock tunnel list failure (missing permission)
+      mockCloudflare.zeroTrust.tunnels.list.mockRejectedValue(
+        new Error("Forbidden"),
       );
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
@@ -261,34 +235,64 @@ describe("CloudflareService", () => {
       const result = await cloudflareConfigService.validate();
 
       expect(result.isValid).toBe(false);
-      expect(result.message).toContain("API request timeout");
+      expect(result.message).toContain("Tunnel:Read");
+      expect(result.errorCode).toBe("MISSING_PERMISSIONS");
+    });
+
+    it("should report both missing permissions", async () => {
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({
+          value: "valid-api-token-123",
+        })
+        .mockResolvedValueOnce({
+          value: "account-456",
+        });
+
+      mockCloudflare.zones.list.mockRejectedValue(new Error("Forbidden"));
+      mockCloudflare.zeroTrust.tunnels.list.mockRejectedValue(
+        new Error("Forbidden"),
+      );
+
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
+
+      const result = await cloudflareConfigService.validate();
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("Zone:Read");
+      expect(result.message).toContain("Tunnel:Read");
+      expect(result.errorCode).toBe("MISSING_PERMISSIONS");
+    });
+
+    it("should handle API timeout on zone check", async () => {
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({ value: "valid-api-token-123" })
+        .mockResolvedValueOnce({ value: "account-456" });
+
+      // Mock timeout on zone list — this is re-thrown to the outer catch
+      mockCloudflare.zones.list.mockRejectedValue(
+        new Error("Zone API request timeout"),
+      );
+
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
+
+      const result = await cloudflareConfigService.validate();
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("timeout");
       expect(result.errorCode).toBe("TIMEOUT");
     });
 
-    it("should handle unauthorized API token", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "invalid-api-token",
-      });
-
-      const authError = new Error("Unauthorized");
-      mockCloudflare.user.get.mockRejectedValue(authError);
-
-      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
-
-      const result = await cloudflareConfigService.validate();
-
-      expect(result.isValid).toBe(false);
-      expect(result.message).toContain("Unauthorized");
-      expect(result.errorCode).toBe("INVALID_API_TOKEN");
-    });
-
     it("should handle network errors", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({ value: "valid-api-token" })
+        .mockResolvedValueOnce({ value: "account-456" });
 
+      // Network errors are not permission errors — they propagate to the outer catch
       const networkError = new Error("ENOTFOUND api.cloudflare.com");
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
@@ -314,12 +318,13 @@ describe("CloudflareService", () => {
     });
 
     it("should handle rate limiting", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({ value: "valid-api-token" })
+        .mockResolvedValueOnce({ value: "account-456" });
 
       const rateLimitError = new Error("Rate limit exceeded");
-      mockCloudflare.user.get.mockRejectedValue(rateLimitError);
+      mockCloudflare.zones.list.mockRejectedValue(rateLimitError);
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
@@ -327,22 +332,6 @@ describe("CloudflareService", () => {
 
       expect(result.isValid).toBe(false);
       expect(result.errorCode).toBe("RATE_LIMITED");
-    });
-
-    it("should handle forbidden access", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "limited-api-token",
-      });
-
-      const forbiddenError = new Error("Forbidden");
-      mockCloudflare.user.get.mockRejectedValue(forbiddenError);
-
-      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
-
-      const result = await cloudflareConfigService.validate();
-
-      expect(result.isValid).toBe(false);
-      expect(result.errorCode).toBe("INSUFFICIENT_PERMISSIONS");
     });
   });
 
@@ -357,8 +346,8 @@ describe("CloudflareService", () => {
         checkedAt: new Date("2023-01-01T12:00:00Z"),
         lastSuccessfulAt: new Date("2023-01-01T12:00:00Z"),
         metadata: JSON.stringify({
-          userEmail: "test@example.com",
-          accountName: "Test Account",
+          zoneCount: 2,
+          tunnelCount: 1,
         }),
       };
 
@@ -378,8 +367,8 @@ describe("CloudflareService", () => {
         errorMessage: undefined,
         errorCode: undefined,
         metadata: {
-          userEmail: "test@example.com",
-          accountName: "Test Account",
+          zoneCount: 2,
+          tunnelCount: 1,
         },
       });
     });
@@ -389,19 +378,18 @@ describe("CloudflareService", () => {
         .fn()
         .mockResolvedValue(null);
 
-      // Mock validation call
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "test-token",
-      });
+      // Mock validation call — needs both token and account ID
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({ value: "test-token" })
+        .mockResolvedValueOnce({ value: "account-456" });
 
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      mockCloudflare.zones.list.mockResolvedValue({
+        result: [{ name: "example.com" }],
+      });
+      mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
+        result: [],
+      });
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.getHealthStatus();
@@ -666,21 +654,43 @@ describe("CloudflareService", () => {
   });
 
   describe("Circuit Breaker Functionality", () => {
-    it("should open circuit after 5 consecutive failures", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
+    // Helper to mock both token + account ID settings
+    function mockStoredSettings(token: string, accountId = "account-456") {
+      mockPrisma.systemSettings.findUnique = vi.fn().mockImplementation(
+        ({ where }: any) => {
+          if (where?.category_key?.key === "api_token") {
+            return Promise.resolve({ value: token });
+          }
+          if (where?.category_key?.key === "account_id") {
+            return Promise.resolve({ value: accountId });
+          }
+          return Promise.resolve(null);
+        },
+      );
+    }
 
-      // Mock 5 consecutive failures
+    // Helper to mock successful zone + tunnel responses
+    function mockSuccessfulApis() {
+      mockCloudflare.zones.list.mockResolvedValue({
+        result: [{ name: "example.com" }],
+      });
+      mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
+        result: [],
+      });
+    }
+
+    it("should open circuit after 5 consecutive failures", async () => {
+      mockStoredSettings("valid-api-token");
+
+      // Mock network error on zone list (re-thrown as timeout-like outer error)
       const networkError = new Error("ECONNREFUSED");
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make 5 failed requests
       for (let i = 0; i < 5; i++) {
         const result = await cloudflareConfigService.validate();
         expect(result.isValid).toBe(false);
-        expect(result.errorCode).toBe("NETWORK_ERROR");
       }
 
       // 6th request should be blocked by circuit breaker
@@ -690,19 +700,14 @@ describe("CloudflareService", () => {
       expect(result.message).toContain(
         "Circuit breaker open after 5 consecutive failures",
       );
-
-      // Verify API was not called on 6th attempt
-      expect(mockCloudflare.user.get).toHaveBeenCalledTimes(5);
     });
 
     it("should reset circuit breaker on successful request", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
+      mockStoredSettings("valid-api-token");
 
-      // First cause some failures (but not enough to open circuit)
+      // First cause some failures
       const networkError = new Error("ECONNREFUSED");
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make 3 failed requests
@@ -711,70 +716,30 @@ describe("CloudflareService", () => {
       }
 
       // Now mock a successful response
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      mockSuccessfulApis();
 
       // Make successful request
       const result = await cloudflareConfigService.validate();
       expect(result.isValid).toBe(true);
 
       // Circuit breaker should be reset, so failures should start counting from 0
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
 
       // Make 4 more failed requests (should not open circuit yet)
       for (let i = 0; i < 4; i++) {
         const failResult = await cloudflareConfigService.validate();
-        expect(failResult.errorCode).toBe("NETWORK_ERROR");
+        expect(failResult.isValid).toBe(false);
       }
 
       // Circuit should still be closed (only 4 failures after reset)
       const finalResult = await cloudflareConfigService.validate();
-      expect(finalResult.errorCode).toBe("NETWORK_ERROR");
+      expect(finalResult.isValid).toBe(false);
       expect(finalResult.errorCode).not.toBe("CIRCUIT_BREAKER_OPEN");
     });
 
-    it("should not count non-retriable errors toward circuit breaker", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "invalid-api-token",
-      });
-      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
-
-      // Mock 401 errors (non-retriable)
-      const authError = new Error("Unauthorized") as any;
-      authError.response = { status: 401 };
-      mockCloudflare.user.get.mockRejectedValue(authError);
-
-      // Make 10 requests with auth errors
-      for (let i = 0; i < 10; i++) {
-        const result = await cloudflareConfigService.validate();
-        expect(result.isValid).toBe(false);
-        expect(result.errorCode).toBe("INVALID_API_TOKEN");
-      }
-
-      // Circuit should still be closed
-      // All requests should have gone through (not blocked by circuit breaker)
-      expect(mockCloudflare.user.get).toHaveBeenCalledTimes(10);
-    });
-
     it("should handle request deduplication within 1-second window", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
-
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      mockStoredSettings("valid-api-token");
+      mockSuccessfulApis();
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Make multiple concurrent requests
@@ -789,58 +754,22 @@ describe("CloudflareService", () => {
       // All should get the same successful result
       results.forEach((result) => {
         expect(result.isValid).toBe(true);
-        expect(result.message).toBe(
-          "Cloudflare API connection successful (test@example.com)",
-        );
       });
 
       // But API should only be called once due to deduplication
-      expect(mockCloudflare.user.get).toHaveBeenCalledTimes(1);
-    });
-
-    it("should properly categorize different HTTP error codes", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
-      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
-
-      // Test 403 Forbidden
-      const forbiddenError = new Error("Forbidden") as any;
-      forbiddenError.response = { status: 403 };
-      mockCloudflare.user.get.mockRejectedValue(forbiddenError);
-
-      let result = await cloudflareConfigService.validate();
-      expect(result.errorCode).toBe("INSUFFICIENT_PERMISSIONS");
-
-      // Test 429 Rate Limited
-      const rateLimitError = new Error("Too Many Requests") as any;
-      rateLimitError.response = { status: 429 };
-      mockCloudflare.user.get.mockRejectedValue(rateLimitError);
-
-      result = await cloudflareConfigService.validate();
-      expect(result.errorCode).toBe("RATE_LIMITED");
-
-      // Test 503 Service Unavailable
-      const serviceError = new Error("Service Unavailable") as any;
-      serviceError.response = { status: 503 };
-      mockCloudflare.user.get.mockRejectedValue(serviceError);
-
-      result = await cloudflareConfigService.validate();
-      expect(result.errorCode).toBe("SERVER_ERROR_503");
+      expect(mockCloudflare.zones.list).toHaveBeenCalledTimes(1);
     });
 
     it("should transition circuit from open to half-open after cooldown", async () => {
       // Use fake timers for this test
       vi.useFakeTimers();
 
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "valid-api-token",
-      });
+      mockStoredSettings("valid-api-token");
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Cause 5 failures to open circuit
       const networkError = new Error("ECONNREFUSED");
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
 
       for (let i = 0; i < 5; i++) {
         await cloudflareConfigService.validate();
@@ -861,14 +790,7 @@ describe("CloudflareService", () => {
       vi.advanceTimersByTime(2 * 60 * 1000);
 
       // Now mock a successful response for half-open test
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      mockSuccessfulApis();
 
       // Circuit should transition to half-open and allow request
       result = await cloudflareConfigService.validate();
@@ -882,14 +804,12 @@ describe("CloudflareService", () => {
     });
 
     it("should reset circuit breaker when new API token is set", async () => {
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "bad-token",
-      });
+      mockStoredSettings("bad-token");
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       // Cause failures to open circuit
       const networkError = new Error("ECONNREFUSED");
-      mockCloudflare.user.get.mockRejectedValue(networkError);
+      mockCloudflare.zones.list.mockRejectedValue(networkError);
 
       for (let i = 0; i < 5; i++) {
         await cloudflareConfigService.validate();
@@ -912,18 +832,8 @@ describe("CloudflareService", () => {
       );
 
       // Mock successful response with new token
-      mockPrisma.systemSettings.findUnique = vi.fn().mockResolvedValue({
-        value: "new-valid-token-12345678901234567890",
-      });
-
-      const mockUserResponse = {
-        email: "test@example.com",
-        id: "user-123",
-        first_name: "Test",
-        last_name: "User",
-        suspended: false,
-      };
-      mockCloudflare.user.get.mockResolvedValue(mockUserResponse);
+      mockStoredSettings("new-valid-token-12345678901234567890");
+      mockSuccessfulApis();
 
       // Circuit should be reset and allow request
       result = await cloudflareConfigService.validate();

@@ -20,8 +20,9 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent } from '@mini-infra/types';
+import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue } from '@mini-infra/types';
 import { emitToChannel } from '../lib/socket';
+import { mergeParameterValues } from '../services/stacks/utils';
 
 const router = Router();
 const logger = appLogger();
@@ -312,6 +313,41 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
   }
 });
 
+// GET /:stackId/validate — Validate stack parameters before apply
+router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, res) => {
+  try {
+    const stack = await prisma.stack.findUnique({
+      where: { id: req.params.stackId },
+      select: { parameters: true, parameterValues: true },
+    });
+    if (!stack) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+
+    const paramDefs = (stack.parameters as unknown as StackParameterDefinition[]) ?? [];
+    const paramValues = mergeParameterValues(
+      paramDefs,
+      (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
+    );
+
+    const errors: Array<{ name: string; description?: string; error: string }> = [];
+    for (const def of paramDefs) {
+      const value = paramValues[def.name];
+      if (value === '' || value === undefined || value === null) {
+        errors.push({ name: def.name, description: def.description, error: 'Parameter is required but has no value' });
+      }
+    }
+
+    res.json({
+      success: true,
+      valid: errors.length === 0,
+      errors,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message ?? 'Validation failed' });
+  }
+});
+
 // POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)
 router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, res) => {
   const stackId = req.params.stackId;
@@ -324,6 +360,32 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     // Prevent concurrent applies on the same stack
     if (applyingStacks.has(stackId)) {
       return res.status(409).json({ success: false, message: 'Stack apply already in progress' });
+    }
+
+    // Validate that all required parameters have non-empty values
+    const stack = await prisma.stack.findUnique({
+      where: { id: stackId },
+      select: { parameters: true, parameterValues: true },
+    });
+    if (!stack) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+
+    const paramDefs = (stack.parameters as unknown as StackParameterDefinition[]) ?? [];
+    const paramValues = mergeParameterValues(
+      paramDefs,
+      (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
+    );
+    const emptyParams = paramDefs.filter((def) => {
+      const value = paramValues[def.name];
+      return value === '' || value === undefined || value === null;
+    });
+    if (emptyParams.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Stack has parameters that are not configured',
+        parameters: emptyParams.map((p) => ({ name: p.name, description: p.description })),
+      });
     }
 
     const dockerExecutor = new DockerExecutorService();

@@ -19,6 +19,11 @@ const numberOrTemplateMin1 = z.union([
   z.string().regex(templateStringPattern, "Must be a {{params.name}} template reference"),
 ]);
 
+const booleanOrTemplate = z.union([
+  z.boolean(),
+  z.string().regex(templateStringPattern, "Must be a {{params.name}} template reference"),
+]);
+
 // Stack parameter schemas
 
 const stackParameterValueSchema = z.union([z.string(), z.number(), z.boolean()]);
@@ -60,6 +65,7 @@ export const stackContainerConfigSchema = z.object({
         containerPort: numberOrTemplate,
         hostPort: numberOrTemplate,
         protocol: z.enum(["tcp", "udp"]),
+        exposeOnHost: booleanOrTemplate.optional(),
       })
     )
     .optional(),
@@ -84,6 +90,7 @@ export const stackContainerConfigSchema = z.object({
     .optional(),
   labels: z.record(z.string(), z.string()).optional(),
   joinNetworks: z.array(z.string().min(1)).optional(),
+  joinEnvironmentNetworks: z.array(z.enum(["applications", "tunnel"])).optional(),
   restartPolicy: z
     .enum(["no", "always", "unless-stopped", "on-failure"])
     .optional(),

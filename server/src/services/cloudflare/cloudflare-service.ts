@@ -152,6 +152,18 @@ export class CloudflareService extends ConfigurationService {
   }
 
   /**
+   * Check if an error indicates a permission/auth issue (401/403/Forbidden/Unauthorized)
+   * vs a transient issue (network, timeout, rate limit) that should propagate.
+   */
+  private isPermissionError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    const status = (error as any)?.response?.status ?? (error as any)?.status;
+    if (status === 401 || status === 403) return true;
+    const lower = msg.toLowerCase();
+    return lower.includes("forbidden") || lower.includes("unauthorized") || lower.includes("authentication");
+  }
+
+  /**
    * Perform the actual validation logic
    * @param startTime The start time of the validation request
    * @param settings Optional settings to validate with (overrides stored settings)
@@ -193,52 +205,110 @@ export class CloudflareService extends ConfigurationService {
         return result;
       }
 
-      // Create Cloudflare client with timeout
+      if (!accountId) {
+        const result: ValidationResult = {
+          isValid: false,
+          message: "Cloudflare account ID not configured",
+          errorCode: "MISSING_ACCOUNT_ID",
+          responseTimeMs: Date.now() - startTime,
+        };
+
+        await this.recordConnectivityStatus(
+          "failed",
+          result.responseTimeMs,
+          result.message,
+          result.errorCode,
+        );
+
+        return result;
+      }
+
+      // Create Cloudflare client
       const cf = new Cloudflare({
         apiToken,
       });
 
-      // Test API connectivity by fetching user information
-      const userResponse = (await Promise.race([
-        cf.user.get(),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("API request timeout")),
-            CloudflareService.TIMEOUT_MS,
+      const metadata: Record<string, any> = {};
+      const missingPermissions: string[] = [];
+
+      // Validate Zone:Read permission by listing zones
+      try {
+        const zonesResponse = (await Promise.race([
+          cf.zones.list({ account: { id: accountId } }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Zone API request timeout")),
+              CloudflareService.TIMEOUT_MS,
+            ),
           ),
-        ),
-      ])) as any;
+        ])) as any;
+
+        const zones = zonesResponse.result || [];
+        metadata.zoneCount = zones.length;
+        metadata.zones = zones.slice(0, 10).map((z: any) => z.name);
+      } catch (zoneError) {
+        if (this.isPermissionError(zoneError)) {
+          missingPermissions.push("Zone:Read");
+          servicesLogger().warn(
+            { accountId, error: zoneError instanceof Error ? zoneError.message : "Unknown error" },
+            "Cloudflare token lacks Zone:Read permission",
+          );
+        } else {
+          throw zoneError; // Network errors, timeouts, rate limits — let outer catch handle
+        }
+      }
+
+      // Validate Tunnel:Read permission by listing tunnels
+      try {
+        const tunnelsResponse = (await Promise.race([
+          cf.zeroTrust.tunnels.list({ account_id: accountId }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Tunnel API request timeout")),
+              CloudflareService.TIMEOUT_MS,
+            ),
+          ),
+        ])) as any;
+
+        const tunnels = tunnelsResponse.result || [];
+        metadata.tunnelCount = tunnels.length;
+        metadata.tunnels = tunnels
+          .filter((t: any) => !t.deleted_at)
+          .slice(0, 10)
+          .map((t: any) => t.name);
+      } catch (tunnelError) {
+        if (this.isPermissionError(tunnelError)) {
+          missingPermissions.push("Tunnel:Read");
+          servicesLogger().warn(
+            { accountId, error: tunnelError instanceof Error ? tunnelError.message : "Unknown error" },
+            "Cloudflare token lacks Tunnel:Read permission",
+          );
+        } else {
+          throw tunnelError; // Network errors, timeouts, rate limits — let outer catch handle
+        }
+      }
 
       const responseTime = Date.now() - startTime;
+      metadata.accountId = accountId;
 
-      // Extract account information if available
-      const metadata: Record<string, any> = {
-        userEmail: userResponse.email,
-        userId: userResponse.id,
-        firstName: userResponse.first_name,
-        lastName: userResponse.last_name,
-        accountStatus: userResponse.suspended ? "suspended" : "active",
-      };
+      if (missingPermissions.length > 0) {
+        const result: ValidationResult = {
+          isValid: false,
+          message: `API token is missing required permissions: ${missingPermissions.join(", ")}`,
+          errorCode: "MISSING_PERMISSIONS",
+          responseTimeMs: responseTime,
+          metadata,
+        };
 
-      // Test account access if account ID is configured
-      let accountInfo = null;
-      if (accountId) {
-        try {
-          accountInfo = await cf.accounts.get({ account_id: accountId });
-          metadata.accountName = accountInfo.name;
-          metadata.accountId = accountInfo.id;
-        } catch (accountError) {
-          servicesLogger().warn(
-            {
-              accountId,
-              error:
-                accountError instanceof Error
-                  ? accountError.message
-                  : "Unknown error",
-            },
-            "Failed to fetch account information, but API token is valid",
-          );
-        }
+        await this.recordConnectivityStatus(
+          "failed",
+          result.responseTimeMs,
+          result.message,
+          result.errorCode,
+          metadata,
+        );
+
+        return result;
       }
 
       // Record success for circuit breaker
@@ -246,7 +316,7 @@ export class CloudflareService extends ConfigurationService {
 
       const result: ValidationResult = {
         isValid: true,
-        message: `Cloudflare API connection successful (${userResponse.email})`,
+        message: `Cloudflare API connection successful — ${metadata.zoneCount} zone(s), ${metadata.tunnelCount} tunnel(s)`,
         responseTimeMs: responseTime,
         metadata,
       };
@@ -262,8 +332,8 @@ export class CloudflareService extends ConfigurationService {
       servicesLogger().info(
         this.circuitBreaker.redact({
           responseTime,
-          userEmail: userResponse.email,
-          accountStatus: metadata.accountStatus,
+          zoneCount: metadata.zoneCount,
+          tunnelCount: metadata.tunnelCount,
           circuitState: this.circuitBreaker.state,
         }),
         "Cloudflare API validation successful",

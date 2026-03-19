@@ -37,6 +37,7 @@ export interface StackContainerConfig {
   mounts?: { source: string; target: string; type: 'volume' | 'bind'; readOnly?: boolean }[];
   labels?: Record<string, string>;
   joinNetworks?: string[];
+  joinEnvironmentNetworks?: string[];
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
   healthcheck?: {
     test: string[];

@@ -708,6 +708,24 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
 }
 
 /**
+ * POST /api/environments/:id/remediate-networks
+ * Create any missing environment networks based on network type
+ */
+router.post('/:id/remediate-networks', requirePermission('environments:write'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await environmentManager.remediateNetworks(id);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to remediate networks');
+    if (error.message === 'Environment not found') {
+      return res.status(404).json({ error: 'Environment not found' });
+    }
+    res.status(500).json({ error: 'Internal server error', message: error.message });
+  }
+});
+
+/**
  * POST /api/environments/:id/remediate-haproxy
  * Trigger full HAProxy remediation for an environment
  */

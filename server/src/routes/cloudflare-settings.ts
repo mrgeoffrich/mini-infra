@@ -1454,29 +1454,16 @@ router.post(
         userId,
       );
 
-      // Update the cloudflare-tunnel stack's parameterValues with the token and HAProxy network name
+      // Update the cloudflare-tunnel stack's parameterValues with the token
       const token = await cloudflareConfigService.getManagedTunnelToken(environmentId);
-      const [stack, haproxyStack] = await Promise.all([
-        prisma.stack.findFirst({
-          where: {
-            name: "cloudflare-tunnel",
-            environmentId,
-            status: { not: "removed" },
-          },
-          select: { id: true, status: true, parameterValues: true },
-        }),
-        prisma.stack.findFirst({
-          where: {
-            name: "haproxy",
-            environmentId,
-            status: { not: "removed" },
-          },
-          select: { name: true },
-        }),
-      ]);
-      const haproxyNetworkName = haproxyStack
-        ? `${environment.name}-${haproxyStack.name}_network`
-        : "";
+      const stack = await prisma.stack.findFirst({
+        where: {
+          name: "cloudflare-tunnel",
+          environmentId,
+          status: { not: "removed" },
+        },
+        select: { id: true, status: true, parameterValues: true },
+      });
 
       if (token && stack) {
         try {
@@ -1488,7 +1475,6 @@ router.post(
               parameterValues: {
                 ...existingParams,
                 "tunnel-token": token,
-                "haproxy-network": haproxyNetworkName,
               },
               status: "pending",
             },
@@ -1613,7 +1599,6 @@ router.delete(
             parameterValues: {
               ...existingParams,
               "tunnel-token": "",
-              "haproxy-network": "",
             },
             status: "undeployed",
           },
