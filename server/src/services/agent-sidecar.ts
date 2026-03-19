@@ -5,6 +5,7 @@ import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
 import appConfig, { agentConfig } from "../lib/config-new";
 import { getEffectiveModel } from "./agent-settings-service";
+import { getAgentApiKey } from "./agent-api-key";
 
 const logger = servicesLogger();
 
@@ -328,7 +329,7 @@ async function createAgentSidecar(
       Env: [
         `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ""}`,
         `MINI_INFRA_API_URL=http://${containerName}:${appConfig.server.port}`,
-        `MINI_INFRA_API_KEY=${process.env.API_KEY_SECRET || ""}`,
+        `MINI_INFRA_API_KEY=${getAgentApiKey() || ""}`,
         `SIDECAR_AUTH_TOKEN=${internalToken}`,
         `PORT=${SIDECAR_PORT}`,
         `AGENT_MODEL=${config.model}`,

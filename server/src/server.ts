@@ -28,7 +28,7 @@ import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
-import { initializeAgentApiKey } from "./services/agent-api-key";
+import { initializeAgentApiKey, getAgentApiKey } from "./services/agent-api-key";
 import { getEffectiveApiKey } from "./services/agent-settings-service";
 import { AgentProxyService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
@@ -238,6 +238,12 @@ const initializeServices = async () => {
         logger.info("Loaded ANTHROPIC_API_KEY from database settings");
         console.log("[STARTUP] Loaded ANTHROPIC_API_KEY from database settings");
       }
+    }
+
+    // Initialize agent API key before provisioning the sidecar,
+    // so MINI_INFRA_API_KEY is available when the container is created.
+    if (anthropicKey) {
+      await initializeAgentApiKey();
     }
 
     // Provision agent sidecar (if running in Docker and autoStart is enabled)
@@ -474,10 +480,10 @@ const initializeServices = async () => {
       }
     }
 
-    // Initialize AI agent service (requires ANTHROPIC_API_KEY loaded earlier)
+    // Initialize AI agent proxy service (agent API key was initialized earlier)
     if (anthropicKey) {
       console.log("[STARTUP] Initializing agent proxy service...");
-      const agentApiKey = await initializeAgentApiKey();
+      const agentApiKey = getAgentApiKey();
       if (agentApiKey) {
         const agentService = new AgentProxyService();
         setAgentService(agentService);
