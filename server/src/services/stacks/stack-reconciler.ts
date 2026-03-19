@@ -667,6 +667,7 @@ export class StackReconciler {
         // Join external networks if specified (e.g., HAProxy network for cloudflared)
         if (serviceDef.containerConfig.joinNetworks?.length) {
           for (const netName of serviceDef.containerConfig.joinNetworks) {
+            if (!netName) continue;
             try {
               await this.containerManager.connectToNetwork(containerId, netName);
               log.info({ service: action.serviceName, network: netName }, 'Joined external network');
@@ -719,6 +720,7 @@ export class StackReconciler {
         // Join external networks if specified (e.g., HAProxy network for cloudflared)
         if (serviceDef.containerConfig.joinNetworks?.length) {
           for (const netName of serviceDef.containerConfig.joinNetworks) {
+            if (!netName) continue;
             try {
               await this.containerManager.connectToNetwork(containerId, netName);
               log.info({ service: action.serviceName, network: netName }, 'Joined external network');

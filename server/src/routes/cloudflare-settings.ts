@@ -1456,43 +1456,75 @@ router.post(
 
       // Update the cloudflare-tunnel stack's parameterValues with the token and HAProxy network name
       const token = await cloudflareConfigService.getManagedTunnelToken(environmentId);
-      const haproxyStack = await prisma.stack.findFirst({
-        where: {
-          name: "haproxy",
-          environmentId,
-          status: { not: "removed" },
-        },
-        select: { name: true },
-      });
+      const [stack, haproxyStack] = await Promise.all([
+        prisma.stack.findFirst({
+          where: {
+            name: "cloudflare-tunnel",
+            environmentId,
+            status: { not: "removed" },
+          },
+          select: { id: true, status: true, parameterValues: true },
+        }),
+        prisma.stack.findFirst({
+          where: {
+            name: "haproxy",
+            environmentId,
+            status: { not: "removed" },
+          },
+          select: { name: true },
+        }),
+      ]);
       const haproxyNetworkName = haproxyStack
         ? `${environment.name}-${haproxyStack.name}_network`
         : "";
 
-      if (token) {
-        await prisma.stack.updateMany({
-          where: { name: "cloudflare-tunnel", environmentId },
-          data: {
-            parameterValues: {
-              "tunnel-token": token,
-              "haproxy-network": haproxyNetworkName,
+      if (token && stack) {
+        try {
+          const existingParams =
+            (stack.parameterValues as Record<string, string>) ?? {};
+          await prisma.stack.update({
+            where: { id: stack.id },
+            data: {
+              parameterValues: {
+                ...existingParams,
+                "tunnel-token": token,
+                "haproxy-network": haproxyNetworkName,
+              },
+              status: "pending",
             },
-            status: "pending",
-          },
-        });
+          });
+        } catch (stackError) {
+          logger.error(
+            {
+              error:
+                stackError instanceof Error
+                  ? stackError.message
+                  : "Unknown",
+            },
+            "Failed to update stack after tunnel creation, rolling back",
+          );
+          try {
+            await cloudflareConfigService.deleteManagedTunnel(
+              environmentId,
+              userId,
+            );
+          } catch (rollbackError) {
+            logger.error(
+              {
+                error:
+                  rollbackError instanceof Error
+                    ? rollbackError.message
+                    : "Unknown",
+              },
+              "Failed to roll back tunnel creation — manual cleanup may be required",
+            );
+          }
+          throw stackError;
+        }
       }
 
       // Invalidate tunnel cache
       tunnelCache.clear();
-
-      // Get stack info for response
-      const stack = await prisma.stack.findFirst({
-        where: {
-          name: "cloudflare-tunnel",
-          environmentId,
-          status: { not: "removed" },
-        },
-        select: { id: true, status: true },
-      });
 
       const response: ManagedTunnelResponse = {
         success: true,
@@ -1502,7 +1534,7 @@ router.post(
           environmentId,
           hasToken: !!token,
           stackId: stack?.id,
-          stackStatus: stack?.status,
+          stackStatus: token && stack ? "pending" : stack?.status,
         },
         message: "Managed tunnel created successfully",
       };
@@ -1567,12 +1599,19 @@ router.delete(
 
       await cloudflareConfigService.deleteManagedTunnel(environmentId, userId);
 
-      // Clear the stack's parameterValues
+      // Clear tunnel-specific parameterValues while preserving others
       if (stack) {
+        const fullStack = await prisma.stack.findUnique({
+          where: { id: stack.id },
+          select: { parameterValues: true },
+        });
+        const existingParams =
+          (fullStack?.parameterValues as Record<string, string>) ?? {};
         await prisma.stack.update({
           where: { id: stack.id },
           data: {
             parameterValues: {
+              ...existingParams,
               "tunnel-token": "",
               "haproxy-network": "",
             },

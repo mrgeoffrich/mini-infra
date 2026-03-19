@@ -108,14 +108,14 @@ export function ManagedTunnelCard({
     }
   };
 
-  const handleStop = async () => {
+  const handleRemove = async () => {
     if (!tunnel?.stackId) return;
     try {
       await destroyMutation.mutateAsync(tunnel.stackId);
-      toast.success("Stopping cloudflared...");
+      toast.success("Removing cloudflared...");
     } catch (error) {
       toast.error(
-        `Failed to stop: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Failed to remove: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   };
@@ -244,12 +244,12 @@ export function ManagedTunnelCard({
             </Button>
           )}
 
-          {/* Tunnel is deployed — show stop button */}
+          {/* Tunnel is deployed — show remove button */}
           {hasTunnel && isDeployed && tunnel.stackId && (
             <Button
               size="sm"
               variant="outline"
-              onClick={handleStop}
+              onClick={handleRemove}
               disabled={destroyMutation.isPending}
             >
               {destroyMutation.isPending ? (
@@ -257,7 +257,7 @@ export function ManagedTunnelCard({
               ) : (
                 <IconPlayerStop className="h-4 w-4 mr-1" />
               )}
-              Stop
+              Remove
             </Button>
           )}
 
