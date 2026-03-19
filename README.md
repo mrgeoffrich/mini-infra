@@ -106,7 +106,6 @@ If the AI assistant is enabled (`ANTHROPIC_API_KEY`), you can trace agent intera
 |---|---|
 | `ENABLE_BETA_TRACING_DETAILED` | Set to `1` to enable detailed beta tracing |
 | `BETA_TRACING_ENDPOINT` | URL of the tracing backend to receive trace data |
-| `OTEL_LOG_USER_PROMPTS` | Set to `true` to include user prompts in trace output |
 
 For the dev Docker deployment, add these to your `deployment/development/.env` file and restart (or run `./start.sh --just-copy-env` to refresh env vars without rebuilding).
 

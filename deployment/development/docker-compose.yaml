@@ -61,7 +61,6 @@ services:
       # OpenTelemetry (Optional)
       - ENABLE_BETA_TRACING_DETAILED=${ENABLE_BETA_TRACING_DETAILED:-}
       - BETA_TRACING_ENDPOINT=${BETA_TRACING_ENDPOINT:-}
-      - OTEL_LOG_USER_PROMPTS=${OTEL_LOG_USER_PROMPTS:-}
 
     healthcheck:
       test:
