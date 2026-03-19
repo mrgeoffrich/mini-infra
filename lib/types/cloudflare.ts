@@ -381,3 +381,36 @@ export interface UpdateCloudflareDNSRecordRequest {
   ttl?: number;
   proxied?: boolean;
 }
+
+// ====================
+// Managed Tunnel Types
+// ====================
+
+export interface ManagedTunnelInfo {
+  tunnelId: string;
+  tunnelName: string;
+  environmentId: string;
+  hasToken: boolean;
+  createdAt?: string;
+}
+
+export interface ManagedTunnelWithStack extends ManagedTunnelInfo {
+  stackId?: string;
+  stackStatus?: string;
+}
+
+export interface ManagedTunnelListResponse {
+  success: boolean;
+  data: ManagedTunnelWithStack[];
+  message?: string;
+}
+
+export interface ManagedTunnelResponse {
+  success: boolean;
+  data: ManagedTunnelWithStack | null;
+  message?: string;
+}
+
+export interface CreateManagedTunnelRequest {
+  name: string;
+}

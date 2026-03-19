@@ -1146,4 +1146,274 @@ export class CloudflareService extends ConfigurationService {
       userId,
     );
   }
+
+  // ====================
+  // Managed Tunnel Methods
+  // ====================
+
+  private managedTunnelKey(environmentId: string, suffix: string): string {
+    return `managed_tunnel_${suffix}_${environmentId}`;
+  }
+
+  /**
+   * Create a managed Cloudflare tunnel for an environment
+   * Creates the tunnel via Cloudflare API, retrieves the token, and stores both
+   */
+  async createManagedTunnel(
+    environmentId: string,
+    name: string,
+    userId: string,
+  ): Promise<{ tunnelId: string; tunnelName: string }> {
+    // Check circuit breaker
+    if (this.circuitBreaker.isOpen()) {
+      throw new Error("Circuit breaker is open, cannot create tunnel");
+    }
+
+    const apiToken = await this.getApiToken();
+    const accountId = await this.getAccountId();
+
+    if (!apiToken || !accountId) {
+      throw new Error("Cloudflare API token and account ID must be configured");
+    }
+
+    // Check for existing managed tunnel
+    const existingId = await this.get(this.managedTunnelKey(environmentId, "id"));
+    if (existingId) {
+      throw new Error(`A managed tunnel already exists for this environment (ID: ${existingId})`);
+    }
+
+    const cf = new Cloudflare({ apiToken });
+    let tunnelId: string | undefined;
+
+    try {
+      // Create the tunnel
+      const tunnelResponse = (await Promise.race([
+        cf.zeroTrust.tunnels.cloudflared.create({
+          account_id: accountId,
+          name,
+          config_src: "cloudflare",
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Tunnel creation timeout")),
+            CloudflareService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as any;
+
+      tunnelId = tunnelResponse.id;
+      if (!tunnelId) {
+        throw new Error("Tunnel creation returned no ID");
+      }
+
+      servicesLogger().info(
+        this.circuitBreaker.redact({ tunnelId, name }),
+        "Created Cloudflare tunnel",
+      );
+
+      // Retrieve the tunnel token
+      const tokenResponse = (await Promise.race([
+        cf.zeroTrust.tunnels.cloudflared.token.get(tunnelId, {
+          account_id: accountId,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Token retrieval timeout")),
+            CloudflareService.TIMEOUT_MS,
+          ),
+        ),
+      ])) as string;
+
+      if (!tokenResponse) {
+        throw new Error("Token retrieval returned empty token");
+      }
+
+      // Set default ingress config (catch-all 404)
+      try {
+        await this.updateTunnelConfig(tunnelId, {
+          ingress: [{ service: "http_status:404" }],
+        });
+      } catch (err) {
+        servicesLogger().warn(
+          { tunnelId, error: err instanceof Error ? err.message : "Unknown" },
+          "Failed to set default ingress config, continuing",
+        );
+      }
+
+      // Store tunnel metadata
+      await this.set(this.managedTunnelKey(environmentId, "id"), tunnelId, userId);
+      await this.set(this.managedTunnelKey(environmentId, "name"), name, userId);
+      await this.set(this.managedTunnelKey(environmentId, "token"), tokenResponse, userId);
+      await this.set(
+        this.managedTunnelKey(environmentId, "created_at"),
+        new Date().toISOString(),
+        userId,
+      );
+
+      this.circuitBreaker.recordSuccess();
+
+      return { tunnelId, tunnelName: name };
+    } catch (error) {
+      // If tunnel was created but token retrieval failed, clean up the tunnel
+      if (tunnelId) {
+        try {
+          await cf.zeroTrust.tunnels.cloudflared.delete(tunnelId, {
+            account_id: accountId,
+          });
+          servicesLogger().info(
+            { tunnelId },
+            "Cleaned up tunnel after failed token retrieval",
+          );
+        } catch (cleanupErr) {
+          servicesLogger().error(
+            {
+              tunnelId,
+              error: cleanupErr instanceof Error ? cleanupErr.message : "Unknown",
+            },
+            "Failed to clean up tunnel after error — manual cleanup may be required",
+          );
+        }
+      }
+
+      const { errorCode, isRetriable } = this.circuitBreaker.parseError(error);
+      if (isRetriable) {
+        this.circuitBreaker.recordFailure(errorCode);
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a managed Cloudflare tunnel for an environment
+   * Removes the tunnel from Cloudflare and clears stored settings
+   */
+  async deleteManagedTunnel(
+    environmentId: string,
+    userId: string,
+  ): Promise<void> {
+    const tunnelId = await this.get(this.managedTunnelKey(environmentId, "id"));
+    if (!tunnelId) {
+      throw new Error("No managed tunnel exists for this environment");
+    }
+
+    const apiToken = await this.getApiToken();
+    const accountId = await this.getAccountId();
+
+    if (apiToken && accountId) {
+      try {
+        const cf = new Cloudflare({ apiToken });
+        await Promise.race([
+          cf.zeroTrust.tunnels.cloudflared.delete(tunnelId, {
+            account_id: accountId,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Tunnel deletion timeout")),
+              CloudflareService.TIMEOUT_MS,
+            ),
+          ),
+        ]);
+
+        servicesLogger().info(
+          this.circuitBreaker.redact({ tunnelId }),
+          "Deleted Cloudflare tunnel",
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown";
+        servicesLogger().error(
+          this.circuitBreaker.redact({ tunnelId, error: errorMessage }),
+          "Failed to delete tunnel from Cloudflare — clearing local settings anyway",
+        );
+        // Continue to clear local settings even if API deletion fails
+      }
+    }
+
+    // Clear all managed tunnel settings
+    for (const suffix of ["id", "name", "token", "created_at"]) {
+      try {
+        await this.delete(this.managedTunnelKey(environmentId, suffix), userId);
+      } catch {
+        // Key might not exist, continue
+      }
+    }
+  }
+
+  /**
+   * Get managed tunnel info for an environment
+   * Never exposes the actual tunnel token
+   */
+  async getManagedTunnelInfo(
+    environmentId: string,
+  ): Promise<{
+    tunnelId: string;
+    tunnelName: string;
+    hasToken: boolean;
+    createdAt?: string;
+  } | null> {
+    const tunnelId = await this.get(this.managedTunnelKey(environmentId, "id"));
+    if (!tunnelId) return null;
+
+    const tunnelName =
+      (await this.get(this.managedTunnelKey(environmentId, "name"))) ?? "unknown";
+    const token = await this.get(this.managedTunnelKey(environmentId, "token"));
+    const createdAt = await this.get(
+      this.managedTunnelKey(environmentId, "created_at"),
+    );
+
+    return {
+      tunnelId,
+      tunnelName,
+      hasToken: !!token,
+      createdAt: createdAt ?? undefined,
+    };
+  }
+
+  /**
+   * Get managed tunnel token for an environment (internal use for stack deployment)
+   */
+  async getManagedTunnelToken(environmentId: string): Promise<string | null> {
+    return this.get(this.managedTunnelKey(environmentId, "token"));
+  }
+
+  /**
+   * Get all managed tunnels across all environments
+   * Returns a map of environmentId → tunnel info
+   */
+  async getAllManagedTunnels(): Promise<
+    Map<
+      string,
+      { tunnelId: string; tunnelName: string; hasToken: boolean; createdAt?: string }
+    >
+  > {
+    const result = new Map<
+      string,
+      { tunnelId: string; tunnelName: string; hasToken: boolean; createdAt?: string }
+    >();
+
+    try {
+      // Find all managed_tunnel_id_* settings
+      const tunnelSettings = await this.prisma.systemSettings.findMany({
+        where: {
+          category: this.category,
+          key: { startsWith: "managed_tunnel_id_" },
+        },
+      });
+
+      for (const setting of tunnelSettings) {
+        const environmentId = setting.key.replace("managed_tunnel_id_", "");
+        const info = await this.getManagedTunnelInfo(environmentId);
+        if (info) {
+          result.set(environmentId, info);
+        }
+      }
+    } catch (error) {
+      servicesLogger().error(
+        { error: error instanceof Error ? error.message : "Unknown" },
+        "Failed to get all managed tunnels",
+      );
+    }
+
+    return result;
+  }
 }

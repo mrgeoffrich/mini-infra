@@ -664,6 +664,18 @@ export class StackReconciler {
           }
         );
 
+        // Join external networks if specified (e.g., HAProxy network for cloudflared)
+        if (serviceDef.containerConfig.joinNetworks?.length) {
+          for (const netName of serviceDef.containerConfig.joinNetworks) {
+            try {
+              await this.containerManager.connectToNetwork(containerId, netName);
+              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
+            } catch (err: any) {
+              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            }
+          }
+        }
+
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
         return {
@@ -703,6 +715,18 @@ export class StackReconciler {
             networkNames,
           }
         );
+
+        // Join external networks if specified (e.g., HAProxy network for cloudflared)
+        if (serviceDef.containerConfig.joinNetworks?.length) {
+          for (const netName of serviceDef.containerConfig.joinNetworks) {
+            try {
+              await this.containerManager.connectToNetwork(containerId, netName);
+              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
+            } catch (err: any) {
+              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            }
+          }
+        }
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 

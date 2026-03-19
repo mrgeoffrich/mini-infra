@@ -83,6 +83,7 @@ export const stackContainerConfigSchema = z.object({
     )
     .optional(),
   labels: z.record(z.string(), z.string()).optional(),
+  joinNetworks: z.array(z.string().min(1)).optional(),
   restartPolicy: z
     .enum(["no", "always", "unless-stopped", "on-failure"])
     .optional(),

@@ -52,6 +52,7 @@ interface Tunnel {
 
 interface TunnelStatusProps {
   className?: string;
+  managedTunnelIds?: Set<string>;
 }
 
 // Component for adding a new hostname
@@ -322,7 +323,7 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
   );
 }
 
-export function TunnelStatus({ className }: TunnelStatusProps) {
+export function TunnelStatus({ className, managedTunnelIds }: TunnelStatusProps) {
   const {
     data: tunnels,
     isLoading,
@@ -506,7 +507,12 @@ export function TunnelStatus({ className }: TunnelStatusProps) {
                           )}
                         />
                         <div className="text-left">
-                          <div className="font-medium">{tunnel.name}</div>
+                          <div className="font-medium flex items-center gap-2">
+                            {tunnel.name}
+                            {managedTunnelIds?.has(tunnel.id) && (
+                              <Badge variant="secondary" className="text-xs py-0">Managed</Badge>
+                            )}
+                          </div>
                           <div className="text-sm text-muted-foreground">
                             {connectionCount}{" "}
                             {connectionCount === 1
