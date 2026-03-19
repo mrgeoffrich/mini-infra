@@ -134,9 +134,6 @@ You MUST follow these rules at all times:
 - Be concise — summarize large outputs rather than dumping raw JSON
 - Always use \`-s\` (silent) flag with curl to suppress progress bars`;
 
-const MINI_INFRA_API_URL = process.env.MINI_INFRA_API_URL || "http://localhost:5005";
-const MINI_INFRA_API_KEY = process.env.MINI_INFRA_API_KEY || "";
-
 const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 
 ### Built-in Tools
@@ -149,34 +146,22 @@ You have access to the following built-in tools provided by the SDK:
 ### When to use \`Bash\`
 - Docker CLI commands: \`docker ps\`, \`docker logs\`, \`docker inspect\`, \`docker stats\`
 - GitHub CLI: \`gh pr list\`, \`gh issue view\`, \`gh run list\`
-- curl for calling the Mini Infra API or external APIs
 - You can chain commands with \`&&\`, \`||\`, \`;\`, and \`|\`
 
-### Calling the Mini Infra API with curl
-Use the following base URL and API key directly in your curl commands (do NOT use environment variables — use these literal values):
-- **Base URL**: \`${MINI_INFRA_API_URL}\`
-- **API Key**: \`${MINI_INFRA_API_KEY}\`
+### Calling the Mini Infra API
+**Always use the \`api_request\` MCP tool** to call the Mini Infra REST API. It handles the base URL and authentication automatically. Do NOT use curl for Mini Infra API calls.
 
-Pass the API key via the \`x-api-key\` header. Examples:
-\`\`\`bash
-# List containers
-curl -s -H "x-api-key: ${MINI_INFRA_API_KEY}" "${MINI_INFRA_API_URL}/api/containers"
-
-# Get docker info
-curl -s -H "x-api-key: ${MINI_INFRA_API_KEY}" "${MINI_INFRA_API_URL}/api/docker/info"
-
-# POST with JSON body
-curl -s -X POST -H "x-api-key: ${MINI_INFRA_API_KEY}" -H "Content-Type: application/json" -d '{"key":"value"}' "${MINI_INFRA_API_URL}/api/some/endpoint"
-\`\`\`
-
-Always use \`-s\` (silent) to suppress progress bars and pipe through \`| jq .\` for readable output when needed.
+Examples:
+- List containers: \`api_request(method: "GET", path: "/api/containers")\`
+- Get docker info: \`api_request(method: "GET", path: "/api/docker/info")\`
+- POST with body: \`api_request(method: "POST", path: "/api/some/endpoint", body: '{"key":"value"}')\`
 
 ### User Documentation
 User-facing documentation is stored in \`/app/docs/\`. These markdown files describe how the Mini Infra UI works, including page layouts, features, workflows, and configuration options. When the user asks how something works in the UI, search the docs first using \`Glob\` (e.g. \`/app/docs/**/*.md\`) and \`Grep\` to find relevant articles before answering. You can also use the \`list_docs\` and \`read_doc\` MCP tools to browse and read documentation files.`;
 
 const API_REFERENCE = `## Mini Infra API Endpoints
 
-Base URL: \`${MINI_INFRA_API_URL}\`. Always pass the API key via \`x-api-key\` header.
+Use the \`api_request\` MCP tool to call these endpoints. Authentication is handled automatically.
 
 ### Health
 - GET /health — Server health check
