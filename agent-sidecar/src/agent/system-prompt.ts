@@ -134,6 +134,9 @@ You MUST follow these rules at all times:
 - Be concise — summarize large outputs rather than dumping raw JSON
 - Always use \`-s\` (silent) flag with curl to suppress progress bars`;
 
+const MINI_INFRA_API_URL = process.env.MINI_INFRA_API_URL || "http://localhost:5005";
+const MINI_INFRA_API_KEY = process.env.MINI_INFRA_API_KEY || "";
+
 const TOOL_USAGE_GUIDELINES = `## Tool Usage Guidelines
 
 ### Built-in Tools
@@ -150,20 +153,20 @@ You have access to the following built-in tools provided by the SDK:
 - You can chain commands with \`&&\`, \`||\`, \`;\`, and \`|\`
 
 ### Calling the Mini Infra API with curl
-The API base URL and API key are available as environment variables:
-- \`$MINI_INFRA_API_URL\` — the base URL (e.g. \`http://localhost:5005\`)
-- \`$MINI_INFRA_API_KEY\` — the API key for authentication
+Use the following base URL and API key directly in your curl commands (do NOT use environment variables — use these literal values):
+- **Base URL**: \`${MINI_INFRA_API_URL}\`
+- **API Key**: \`${MINI_INFRA_API_KEY}\`
 
 Pass the API key via the \`x-api-key\` header. Examples:
 \`\`\`bash
 # List containers
-curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/containers"
+curl -s -H "x-api-key: ${MINI_INFRA_API_KEY}" "${MINI_INFRA_API_URL}/api/containers"
 
 # Get docker info
-curl -s -H "x-api-key: $MINI_INFRA_API_KEY" "$MINI_INFRA_API_URL/api/docker/info"
+curl -s -H "x-api-key: ${MINI_INFRA_API_KEY}" "${MINI_INFRA_API_URL}/api/docker/info"
 
 # POST with JSON body
-curl -s -X POST -H "x-api-key: $MINI_INFRA_API_KEY" -H "Content-Type: application/json" -d '{"key":"value"}' "$MINI_INFRA_API_URL/api/some/endpoint"
+curl -s -X POST -H "x-api-key: ${MINI_INFRA_API_KEY}" -H "Content-Type: application/json" -d '{"key":"value"}' "${MINI_INFRA_API_URL}/api/some/endpoint"
 \`\`\`
 
 Always use \`-s\` (silent) to suppress progress bars and pipe through \`| jq .\` for readable output when needed.
@@ -173,7 +176,7 @@ User-facing documentation is stored in \`/app/docs/\`. These markdown files desc
 
 const API_REFERENCE = `## Mini Infra API Endpoints
 
-Base URL is provided via environment variable. Authentication is automatic.
+Base URL: \`${MINI_INFRA_API_URL}\`. Always pass the API key via \`x-api-key\` header.
 
 ### Health
 - GET /health — Server health check
