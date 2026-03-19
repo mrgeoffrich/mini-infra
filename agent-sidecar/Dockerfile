@@ -21,7 +21,8 @@ RUN apk add --no-cache \
     github-cli \
     curl \
     git \
-    bash
+    bash \
+    jq
 
 WORKDIR /app
 
