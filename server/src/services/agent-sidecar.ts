@@ -336,6 +336,10 @@ async function createAgentSidecar(
         `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,
         `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
+        // Forward OpenTelemetry config if present
+        ...["ENABLE_BETA_TRACING_DETAILED", "BETA_TRACING_ENDPOINT"]
+          .filter((key) => process.env[key] !== undefined)
+          .map((key) => `${key}=${process.env[key]}`),
       ],
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
       HostConfig: {

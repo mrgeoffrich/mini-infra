@@ -6,9 +6,11 @@
 set -e
 
 SEED_DB=false
+JUST_COPY_ENV=false
 for arg in "$@"; do
     case "$arg" in
         --seed-db) SEED_DB=true ;;
+        --just-copy-env) JUST_COPY_ENV=true ;;
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -39,6 +41,14 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
+# Quick env refresh: recreate the container with updated env vars (no rebuild)
+if [ "$JUST_COPY_ENV" = true ]; then
+    echo -e "\033[0;36mRecreating mini-infra container with updated .env...\033[0m"
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --force-recreate mini-infra
+    echo -e "\033[0;32mEnvironment updated successfully.\033[0m"
+    exit 0
+fi
+
 echo -e "\033[0;32mBuilding and starting Mini Infra development deployment...\033[0m"
 echo -e "\033[0;36mUsing .env file: $ENV_FILE\033[0m"
 echo -e "\033[0;36mBuilding from local Dockerfile...\033[0m"
@@ -60,17 +70,20 @@ if [ "$SEED_DB" = true ]; then
     COMPOSE_PROJECT=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
     FULL_VOLUME_NAME="${COMPOSE_PROJECT}_${VOLUME_NAME}"
 
-    # Checkpoint WAL to flush all data into the main db file before copying
-    sqlite3 "$DEV_DB" "PRAGMA wal_checkpoint(TRUNCATE);"
+    # Create a clean backup copy to avoid WAL/SHM corruption issues
+    SEED_TMP=$(mktemp /tmp/mini-infra-seed-XXXXXX.db)
+    sqlite3 "$DEV_DB" ".backup '$SEED_TMP'"
 
     # Ensure the volume exists
     docker volume create "$FULL_VOLUME_NAME" 2>/dev/null || true
 
-    # Copy dev.db into the volume as production.db using a temporary container
+    # Copy the clean backup into the volume as production.db
     docker run --rm \
         -v "$FULL_VOLUME_NAME":/app/data \
-        -v "$DEV_DB":/tmp/dev.db:ro \
-        alpine sh -c "cp /tmp/dev.db /app/data/production.db && chmod 644 /app/data/production.db"
+        -v "$SEED_TMP":/tmp/seed.db:ro \
+        alpine sh -c "cp /tmp/seed.db /app/data/production.db && chmod 644 /app/data/production.db"
+
+    rm -f "$SEED_TMP"
 
     echo -e "\033[0;32mDatabase seeded successfully.\033[0m"
 fi

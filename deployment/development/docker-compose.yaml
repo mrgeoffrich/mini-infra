@@ -58,6 +58,10 @@ services:
       # AI Agent (Optional)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
+      # OpenTelemetry (Optional)
+      - ENABLE_BETA_TRACING_DETAILED=${ENABLE_BETA_TRACING_DETAILED:-}
+      - BETA_TRACING_ENDPOINT=${BETA_TRACING_ENDPOINT:-}
+
     healthcheck:
       test:
         [

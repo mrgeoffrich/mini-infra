@@ -98,6 +98,17 @@ Pre-built Docker images and deployment configurations are available in the [`dep
 - [`deployment/development/README.md`](deployment/development/README.md) for local Docker development
 - [`deployment/production/DEPLOYMENT.md`](deployment/production/DEPLOYMENT.md) for production deployment
 
+## Agent Tracing
+
+If the AI assistant is enabled (`ANTHROPIC_API_KEY`), you can trace agent interactions using the Claude Agent SDK's built-in beta tracing. Set these environment variables on the Mini Infra server — they are automatically forwarded to the agent sidecar container:
+
+| Variable | Description |
+|---|---|
+| `ENABLE_BETA_TRACING_DETAILED` | Set to `1` to enable detailed beta tracing |
+| `BETA_TRACING_ENDPOINT` | URL of the tracing backend to receive trace data |
+
+For the dev Docker deployment, add these to your `deployment/development/.env` file and restart (or run `./start.sh --just-copy-env` to refresh env vars without rebuilding).
+
 ## Running Tests
 
 ```bash
