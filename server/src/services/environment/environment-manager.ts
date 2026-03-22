@@ -210,10 +210,10 @@ export class EnvironmentManager {
 
   /**
    * Remediate environment networks — create any missing network records
-   * for the environment based on its current network type.
-   * Returns the list of networks that were created.
+   * and fix names that don't match the expected convention.
+   * Returns the list of networks that were created or renamed.
    */
-  public async remediateNetworks(environmentId: string): Promise<{ created: string[]; existing: string[] }> {
+  public async remediateNetworks(environmentId: string): Promise<{ created: string[]; renamed: string[]; existing: string[] }> {
     const environment = await this.prisma.environment.findUnique({
       where: { id: environmentId },
       include: { networks: true },
@@ -223,14 +223,25 @@ export class EnvironmentManager {
     }
 
     const expected = this.getExpectedNetworks(environment.name, environment.networkType);
-    const existingPurposes = new Set(environment.networks.map((n) => n.purpose));
+    const existingByPurpose = new Map(environment.networks.map((n) => [n.purpose, n]));
 
     const created: string[] = [];
+    const renamed: string[] = [];
     const existing: string[] = [];
 
     for (const net of expected) {
-      if (existingPurposes.has(net.purpose)) {
-        existing.push(net.name);
+      const existingNet = existingByPurpose.get(net.purpose);
+      if (existingNet) {
+        if (existingNet.name !== net.name) {
+          // Name doesn't match convention — update it
+          await this.prisma.environmentNetwork.update({
+            where: { id: existingNet.id },
+            data: { name: net.name },
+          });
+          renamed.push(`${existingNet.name} -> ${net.name}`);
+        } else {
+          existing.push(net.name);
+        }
       } else {
         await this.prisma.environmentNetwork.create({
           data: {
@@ -244,8 +255,8 @@ export class EnvironmentManager {
       }
     }
 
-    this.logger.info({ environmentId, created, existing }, 'Remediated environment networks');
-    return { created, existing };
+    this.logger.info({ environmentId, created, renamed, existing }, 'Remediated environment networks');
+    return { created, renamed, existing };
   }
 
   public async getEnvironmentById(id: string): Promise<Environment | null> {
