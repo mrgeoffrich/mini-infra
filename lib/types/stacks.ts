@@ -36,6 +36,8 @@ export interface StackContainerConfig {
   ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean }[];
   mounts?: { source: string; target: string; type: 'volume' | 'bind'; readOnly?: boolean }[];
   labels?: Record<string, string>;
+  joinNetworks?: string[];
+  joinEnvironmentNetworks?: string[];
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
   healthcheck?: {
     test: string[];

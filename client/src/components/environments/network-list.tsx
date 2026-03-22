@@ -25,8 +25,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { IconPlus, IconRefresh, IconNetwork, IconDots, IconEdit, IconTrash, IconAlertCircle } from "@tabler/icons-react";
+import { IconPlus, IconRefresh, IconNetwork, IconDots, IconEdit, IconTrash, IconAlertCircle, IconFirstAidKit, IconLoader2 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface NetworkListProps {
   environmentId: string;
@@ -50,6 +52,38 @@ export function NetworkList({ environmentId, className }: NetworkListProps) {
     isRefetching,
   } = useEnvironmentNetworks(environmentId, {
     refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  const remediateMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/environments/${environmentId}/remediate-networks`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || data.error || "Failed to remediate networks");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const messages: string[] = [];
+      if (data.created?.length > 0) {
+        messages.push(`Created: ${data.created.join(", ")}`);
+      }
+      if (data.renamed?.length > 0) {
+        messages.push(`Renamed: ${data.renamed.join(", ")}`);
+      }
+      if (messages.length > 0) {
+        toast.success(messages.join(". "));
+      } else {
+        toast.info("All expected networks already exist");
+      }
+      refetch();
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to remediate networks: ${err.message}`);
+    },
   });
 
   const networks = networksData?.networks || [];
@@ -125,6 +159,19 @@ export function NetworkList({ environmentId, className }: NetworkListProps) {
                 Refresh
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => remediateMutation.mutate()}
+                disabled={remediateMutation.isPending}
+              >
+                {remediateMutation.isPending ? (
+                  <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <IconFirstAidKit className="h-4 w-4 mr-1" />
+                )}
+                Remediate
+              </Button>
+              <Button
                 size="sm"
                 onClick={() => setCreateDialogOpen(true)}
               >
@@ -161,6 +208,7 @@ export function NetworkList({ environmentId, className }: NetworkListProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Purpose</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -174,6 +222,13 @@ export function NetworkList({ environmentId, className }: NetworkListProps) {
                         <IconNetwork className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">{network.name}</span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {network.purpose && network.purpose !== "custom" ? (
+                        <Badge variant="secondary">{network.purpose}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">custom</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">{network.driver}</Badge>

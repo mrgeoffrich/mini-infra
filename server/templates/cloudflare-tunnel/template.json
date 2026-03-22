@@ -1,0 +1,41 @@
+{
+  "name": "cloudflare-tunnel",
+  "displayName": "Cloudflare Tunnel",
+  "builtinVersion": 2,
+  "scope": "environment",
+  "category": "infrastructure",
+  "description": "Cloudflare tunnel connector for exposing services to the internet via HAProxy",
+  "parameters": [
+    {
+      "name": "tunnel-token",
+      "type": "string",
+      "default": "",
+      "description": "Cloudflare tunnel token (auto-populated when managed tunnel is created)"
+    }
+  ],
+  "networks": [],
+  "volumes": [],
+  "services": [
+    {
+      "serviceName": "cloudflared",
+      "serviceType": "Stateful",
+      "dockerImage": "cloudflare/cloudflared",
+      "dockerTag": "latest",
+      "containerConfig": {
+        "command": ["tunnel", "--no-autoupdate", "run", "--token", "{{params.tunnel-token}}"],
+        "joinEnvironmentNetworks": ["tunnel"],
+        "restartPolicy": "unless-stopped",
+        "healthcheck": {
+          "test": ["CMD-SHELL", "wget --spider -q http://localhost:2000/ready || exit 1"],
+          "interval": 30,
+          "timeout": 5,
+          "retries": 3,
+          "startPeriod": 15
+        },
+        "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

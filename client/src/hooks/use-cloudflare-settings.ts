@@ -6,6 +6,8 @@ import type {
   CloudflareTunnelConfig,
   CloudflareAddHostnameRequest,
   CloudflareHostnameResponse,
+  ManagedTunnelListResponse,
+  ManagedTunnelResponse,
 } from "@mini-infra/types";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
@@ -518,6 +520,123 @@ export function useRemoveTunnelHostname() {
     },
     onError: (error) => {
       console.error("Failed to remove hostname from tunnel:", error.message);
+    },
+  });
+}
+
+// ====================
+// Managed Tunnel Hooks
+// ====================
+
+// Hook for listing all managed tunnels across environments
+export function useManagedTunnels() {
+  return useQuery<ManagedTunnelListResponse>({
+    queryKey: ["managed-tunnels"],
+    queryFn: async () => {
+      const response = await fetch("/api/settings/cloudflare/managed-tunnels", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to fetch managed tunnels",
+        }));
+        throw new Error(errorData.message || "Failed to fetch managed tunnels");
+      }
+      return response.json();
+    },
+    staleTime: 30000,
+  });
+}
+
+// Hook for getting managed tunnel for a specific environment
+export function useManagedTunnel(environmentId: string | undefined) {
+  return useQuery<ManagedTunnelResponse>({
+    queryKey: ["managed-tunnel", environmentId],
+    queryFn: async () => {
+      if (!environmentId) throw new Error("Environment ID is required");
+      const response = await fetch(
+        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          message: "Failed to fetch managed tunnel",
+        }));
+        throw new Error(errorData.message || "Failed to fetch managed tunnel");
+      }
+      return response.json();
+    },
+    enabled: !!environmentId,
+    staleTime: 30000,
+  });
+}
+
+// Hook for creating a managed tunnel
+export function useCreateManagedTunnel() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    ManagedTunnelResponse,
+    Error,
+    { environmentId: string; name: string }
+  >({
+    mutationFn: async ({ environmentId, name }) => {
+      const response = await fetch(
+        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name }),
+        },
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: "Failed to create managed tunnel",
+        }));
+        throw new Error(
+          errorData.error || errorData.message || "Failed to create managed tunnel",
+        );
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["managed-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["managed-tunnel"] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+    },
+  });
+}
+
+// Hook for deleting a managed tunnel
+export function useDeleteManagedTunnel() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ success: boolean; message?: string }, Error, string>({
+    mutationFn: async (environmentId: string) => {
+      const response = await fetch(
+        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: "Failed to delete managed tunnel",
+        }));
+        throw new Error(
+          errorData.error || errorData.message || "Failed to delete managed tunnel",
+        );
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["managed-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["managed-tunnel"] });
+      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
   });
 }

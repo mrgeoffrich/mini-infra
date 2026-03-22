@@ -110,6 +110,26 @@ async function fetchStackPlan(
   return data;
 }
 
+async function fetchStackValidation(
+  stackId: string,
+  correlationId?: string,
+): Promise<StackValidationResult> {
+  const response = await fetch(`/api/stacks/${stackId}/validate`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to validate stack: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}
+
 async function applyStack(
   stackId: string,
   options: ApplyStackRequest,
@@ -132,7 +152,8 @@ async function applyStack(
     if (response.status === 409) {
       throw new Error("Stack apply already in progress");
     }
-    throw new Error(`Failed to apply stack: ${response.statusText}`);
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.message || `Failed to apply stack: ${response.statusText}`);
   }
 
   const data = await response.json();
@@ -252,8 +273,36 @@ async function destroyStack(
 }
 
 // ====================
+// Stack Types
+// ====================
+
+export interface StackValidationError {
+  name: string;
+  description?: string;
+  error: string;
+}
+
+export interface StackValidationResult {
+  success: boolean;
+  valid: boolean;
+  errors: StackValidationError[];
+}
+
+// ====================
 // Stack Hooks
 // ====================
+
+export function useStackValidation(stackId: string, enabled = true) {
+  const correlationId = generateCorrelationId();
+
+  return useQuery<StackValidationResult>({
+    queryKey: ["stackValidation", stackId],
+    queryFn: () => fetchStackValidation(stackId, correlationId),
+    enabled: !!stackId && enabled,
+    staleTime: 10000,
+    gcTime: 2 * 60 * 1000,
+  });
+}
 
 export function useStacks(environmentId?: string, options?: { scope?: string }) {
   const correlationId = generateCorrelationId();

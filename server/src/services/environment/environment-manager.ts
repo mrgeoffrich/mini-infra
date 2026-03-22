@@ -107,6 +107,11 @@ export class EnvironmentManager {
       });
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment record created (ID: ${environmentData.id})`);
 
+      // Create environment networks based on network type
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Creating environment networks...`);
+      await this.createEnvironmentNetworks(environmentData.id, environmentData.name, environmentData.networkType);
+      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment networks created`);
+
       // If services are provided, create them
       if (request.services && request.services.length > 0) {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Adding ${request.services.length} service(s) to environment...`);
@@ -167,6 +172,91 @@ export class EnvironmentManager {
 
       throw error;
     }
+  }
+
+  /**
+   * Get the expected network definitions for an environment based on its network type.
+   */
+  private getExpectedNetworks(envName: string, networkType: string): Array<{ name: string; purpose: string }> {
+    const networks: Array<{ name: string; purpose: string }> = [
+      { name: `${envName}-applications`, purpose: 'applications' },
+    ];
+    if (networkType === 'internet') {
+      networks.push({ name: `${envName}-tunnel`, purpose: 'tunnel' });
+    }
+    return networks;
+  }
+
+  /**
+   * Create environment network records based on network type.
+   * All environments get an 'applications' network.
+   * Internet-facing environments also get a 'tunnel' network.
+   */
+  private async createEnvironmentNetworks(environmentId: string, envName: string, networkType: string): Promise<void> {
+    const expected = this.getExpectedNetworks(envName, networkType);
+    for (const net of expected) {
+      await this.prisma.environmentNetwork.upsert({
+        where: { environmentId_purpose: { environmentId, purpose: net.purpose } },
+        create: {
+          environmentId,
+          name: net.name,
+          purpose: net.purpose,
+          driver: 'bridge',
+        },
+        update: {},
+      });
+    }
+  }
+
+  /**
+   * Remediate environment networks — create any missing network records
+   * and fix names that don't match the expected convention.
+   * Returns the list of networks that were created or renamed.
+   */
+  public async remediateNetworks(environmentId: string): Promise<{ created: string[]; renamed: string[]; existing: string[] }> {
+    const environment = await this.prisma.environment.findUnique({
+      where: { id: environmentId },
+      include: { networks: true },
+    });
+    if (!environment) {
+      throw new Error('Environment not found');
+    }
+
+    const expected = this.getExpectedNetworks(environment.name, environment.networkType);
+    const existingByPurpose = new Map(environment.networks.map((n) => [n.purpose, n]));
+
+    const created: string[] = [];
+    const renamed: string[] = [];
+    const existing: string[] = [];
+
+    for (const net of expected) {
+      const existingNet = existingByPurpose.get(net.purpose);
+      if (existingNet) {
+        if (existingNet.name !== net.name) {
+          // Name doesn't match convention — update it
+          await this.prisma.environmentNetwork.update({
+            where: { id: existingNet.id },
+            data: { name: net.name },
+          });
+          renamed.push(`${existingNet.name} -> ${net.name}`);
+        } else {
+          existing.push(net.name);
+        }
+      } else {
+        await this.prisma.environmentNetwork.create({
+          data: {
+            environmentId,
+            name: net.name,
+            purpose: net.purpose,
+            driver: 'bridge',
+          },
+        });
+        created.push(net.name);
+      }
+    }
+
+    this.logger.info({ environmentId, created, renamed, existing }, 'Remediated environment networks');
+    return { created, renamed, existing };
   }
 
   public async getEnvironmentById(id: string): Promise<Environment | null> {

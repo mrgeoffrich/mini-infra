@@ -70,7 +70,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   const envTemplates = templates.filter((t) => t.scope === "environment");
   if (envTemplates.length > 0) {
     const environments = await prisma.environment.findMany({
-      select: { id: true },
+      select: { id: true, networkType: true },
     });
 
     log.info(
@@ -90,7 +90,8 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
             definition: template.definition as any,
             configFiles: template.configFiles,
           });
-          await syncStackFromTemplate(prisma, templateId, template, env.id, log);
+          const overrides = getEnvironmentParameterOverrides(template.name, env.networkType);
+          await syncStackFromTemplate(prisma, templateId, template, env.id, log, overrides);
         } catch (error) {
           log.error(
             { error, stackName: template.name, environmentId: env.id },
@@ -125,6 +126,12 @@ export async function syncBuiltinStacksForEnvironment(
     return;
   }
 
+  const environment = await prisma.environment.findUnique({
+    where: { id: environmentId },
+    select: { networkType: true },
+  });
+  const networkType = environment?.networkType ?? "local";
+
   const envTemplates = templates.filter((t) => t.scope === "environment");
   for (const template of envTemplates) {
     try {
@@ -137,7 +144,8 @@ export async function syncBuiltinStacksForEnvironment(
         definition: template.definition as any,
         configFiles: template.configFiles,
       });
-      await syncStackFromTemplate(prisma, templateId, template, environmentId, log);
+      const overrides = getEnvironmentParameterOverrides(template.name, networkType);
+      await syncStackFromTemplate(prisma, templateId, template, environmentId, log, overrides);
     } catch (error) {
       log.error(
         { error, stackName: template.name },
@@ -145,6 +153,21 @@ export async function syncBuiltinStacksForEnvironment(
       );
     }
   }
+}
+
+/**
+ * Return parameter overrides for a stack based on the environment's network type.
+ * Internet-facing environments should not expose HAProxy ports on the host
+ * since traffic arrives via Cloudflare tunnels.
+ */
+function getEnvironmentParameterOverrides(
+  stackName: string,
+  networkType: string
+): Record<string, StackParameterValue> {
+  if (stackName === "haproxy" && networkType === "internet") {
+    return { "expose-on-host": false };
+  }
+  return {};
 }
 
 /**
@@ -157,7 +180,8 @@ async function syncStackFromTemplate(
   templateId: string,
   template: LoadedTemplate,
   environmentId: string | null,
-  log: ReturnType<typeof servicesLogger>
+  log: ReturnType<typeof servicesLogger>,
+  parameterOverrides: Record<string, StackParameterValue> = {}
 ): Promise<void> {
   const { definition } = template;
 
@@ -169,7 +193,7 @@ async function syncStackFromTemplate(
   if (!existing) {
     log.info({ stackName: template.name }, "Creating built-in stack from template");
     const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
-    const defaultValues = mergeParameterValues(paramDefs, {});
+    const defaultValues = mergeParameterValues(paramDefs, parameterOverrides);
 
     await prisma.stack.create({
       data: {
@@ -217,6 +241,27 @@ async function syncStackFromTemplate(
     );
   }
 
+  // Apply environment-driven parameter overrides to existing non-running stacks
+  // (e.g. expose-on-host=false for internet-facing HAProxy)
+  const canApplyOverrides = ["undeployed", "error", "pending"].includes(existing.status);
+  if (Object.keys(parameterOverrides).length > 0 && canApplyOverrides) {
+    const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
+    const needsUpdate = Object.entries(parameterOverrides).some(
+      ([key, value]) => existingValues[key] !== value
+    );
+    if (needsUpdate) {
+      const updatedValues = { ...existingValues, ...parameterOverrides };
+      await prisma.stack.update({
+        where: { id: existing.id },
+        data: { parameterValues: updatedValues as any },
+      });
+      log.info(
+        { stackName: template.name, overrides: parameterOverrides },
+        "Applied environment parameter overrides to existing stack"
+      );
+    }
+  }
+
   // DB version matches → no-op
   if (existing.builtinVersion >= template.builtinVersion) {
     log.debug(
@@ -238,7 +283,7 @@ async function syncStackFromTemplate(
 
   const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
   const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
-  const mergedValues = mergeParameterValues(paramDefs, existingValues);
+  const mergedValues = mergeParameterValues(paramDefs, { ...existingValues, ...parameterOverrides });
 
   await prisma.$transaction(async (tx) => {
     await tx.stackService.deleteMany({

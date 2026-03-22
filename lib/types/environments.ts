@@ -2,6 +2,7 @@ import { ServiceStatus, ApplicationServiceHealthStatus } from './services';
 
 export type EnvironmentType = 'production' | 'nonproduction';
 export type EnvironmentNetworkType = 'local' | 'internet';
+export type EnvironmentNetworkPurpose = 'applications' | 'tunnel' | 'custom';
 
 export interface Environment {
   id: string;
@@ -41,6 +42,7 @@ export interface EnvironmentNetwork {
   id: string;
   environmentId: string;
   name: string;
+  purpose: EnvironmentNetworkPurpose;
   driver: string;
   options?: Record<string, any>;
   dockerId?: string;
