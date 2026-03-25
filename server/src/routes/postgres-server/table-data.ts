@@ -36,8 +36,8 @@ const tableDataRequestSchema = z.object({
 router.get("/", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
 
     const tables = await tableDataService.getTableList(serverId, userId, databaseId);
 
@@ -77,9 +77,9 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
 router.get("/:tableName/data", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
-    const tableName = req.params.tableName;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
+    const tableName = String(req.params.tableName);
 
     // Validate and parse query parameters
     const validatedParams = tableDataRequestSchema.parse({

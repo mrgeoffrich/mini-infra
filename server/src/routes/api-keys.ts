@@ -152,7 +152,7 @@ router.patch(
   requirePermission("api-keys:write") as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
-    const { keyId } = req.params;
+    const keyId = String(req.params.keyId);
     const requestId = req.headers["x-request-id"] as string;
 
     try {
@@ -190,7 +190,7 @@ router.post(
   requirePermission("api-keys:write") as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
-    const { keyId } = req.params;
+    const keyId = String(req.params.keyId);
     const requestId = req.headers["x-request-id"] as string;
 
     try {
@@ -230,7 +230,7 @@ router.delete(
   requirePermission("api-keys:write") as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
-    const { keyId } = req.params;
+    const keyId = String(req.params.keyId);
     const requestId = req.headers["x-request-id"] as string;
 
     try {

@@ -140,7 +140,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.id;
+    const serverId = String(req.params.id);
 
     const server = await postgresServerService.getServer(serverId, userId);
 
@@ -175,7 +175,7 @@ router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
 router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.id;
+    const serverId = String(req.params.id);
     const validatedData = updateServerSchema.parse(req.body);
 
     const server = await postgresServerService.updateServer(serverId, userId, validatedData);
@@ -219,7 +219,7 @@ router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
 router.delete("/:id", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.id;
+    const serverId = String(req.params.id);
 
     await postgresServerService.deleteServer(serverId, userId);
 
@@ -292,7 +292,7 @@ router.post("/test-connection", requirePermission('postgres:write'), async (req,
 router.post("/:id/test", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.id;
+    const serverId = String(req.params.id);
 
     const result = await postgresServerService.testServerConnection(serverId, userId);
 
@@ -333,7 +333,7 @@ router.post("/:id/test", requirePermission('postgres:write'), async (req, res) =
 router.get("/:id/info", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.id;
+    const serverId = String(req.params.id);
 
     const info = await postgresServerService.getServerInfo(serverId, userId);
 

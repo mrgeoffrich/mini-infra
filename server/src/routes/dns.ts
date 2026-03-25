@@ -57,7 +57,7 @@ router.get(
         });
       }
 
-      const { zoneId } = req.params;
+      const zoneId = String(req.params.zoneId);
       const zone = await dnsCacheService.getZone(zoneId);
 
       if (!zone) {
@@ -132,7 +132,7 @@ router.get(
         });
       }
 
-      const { hostname } = req.params;
+      const hostname = String(req.params.hostname);
       const result = await dnsCacheService.checkHostname(hostname);
 
       res.json({

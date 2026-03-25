@@ -359,7 +359,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Fetch frontend
       const frontend = await prisma.hAProxyFrontend.findUnique({
@@ -409,7 +409,7 @@ router.put(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Validate request body
       const validationResult = updateManualFrontendSchema.safeParse(req.body);
@@ -499,7 +499,7 @@ router.delete(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Get frontend to determine environment
       const frontend = await prisma.hAProxyFrontend.findUnique({

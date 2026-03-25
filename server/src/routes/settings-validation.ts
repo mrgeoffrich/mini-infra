@@ -70,7 +70,7 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const service = req.params.service;
+  const service = String(req.params.service);
 
   logger.debug(
     {

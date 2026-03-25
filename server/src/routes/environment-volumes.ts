@@ -27,7 +27,7 @@ const updateVolumeSchema = z.object({
 
 router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
@@ -51,7 +51,7 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
 
 router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const validatedData = createVolumeSchema.parse(req.body);
 
     const environment = await environmentManager.getEnvironmentById(id);
@@ -110,7 +110,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
 
 router.put('/:volumeId', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id, volumeId } = req.params;
+    const id = String(req.params.id); const volumeId = String(req.params.volumeId);
     const validatedData = updateVolumeSchema.parse(req.body);
 
     const environment = await environmentManager.getEnvironmentById(id);
@@ -172,7 +172,7 @@ router.put('/:volumeId', requirePermission('environments:write'), async (req, re
 
 router.delete('/:volumeId', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id, volumeId } = req.params;
+    const id = String(req.params.id); const volumeId = String(req.params.volumeId);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {

@@ -43,7 +43,7 @@ const changePasswordSchema = z.object({
 router.get("/", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
 
     const users = await userManagementService.listManagedUsers(serverId, userId);
 
@@ -81,7 +81,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
 router.post("/", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
     const validatedData = createUserSchema.parse(req.body);
 
     const user = await userManagementService.createUser(serverId, userId, validatedData);
@@ -125,8 +125,8 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
-    const serverId = req.params.serverId;
-    const managedUserId = req.params.userId;
+    const serverId = String(req.params.serverId);
+    const managedUserId = String(req.params.userId);
 
     const user = await userManagementService.getUserDetails(serverId, authUserId, managedUserId);
 
@@ -168,8 +168,8 @@ router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
 router.put("/:userId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
-    const serverId = req.params.serverId;
-    const managedUserId = req.params.userId;
+    const serverId = String(req.params.serverId);
+    const managedUserId = String(req.params.userId);
     const validatedData = updateUserSchema.parse(req.body);
 
     const user = await userManagementService.updateUser(serverId, authUserId, managedUserId, validatedData);
@@ -220,8 +220,8 @@ router.put("/:userId", requirePermission('postgres:write'), async (req, res) => 
 router.delete("/:userId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
-    const serverId = req.params.serverId;
-    const managedUserId = req.params.userId;
+    const serverId = String(req.params.serverId);
+    const managedUserId = String(req.params.userId);
 
     await userManagementService.dropUser(serverId, authUserId, managedUserId);
 
@@ -260,8 +260,8 @@ router.delete("/:userId", requirePermission('postgres:write'), async (req, res) 
 router.post("/:userId/password", requirePermission('postgres:write'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
-    const serverId = req.params.serverId;
-    const managedUserId = req.params.userId;
+    const serverId = String(req.params.serverId);
+    const managedUserId = String(req.params.userId);
     const validatedData = changePasswordSchema.parse(req.body);
 
     await userManagementService.changePassword(serverId, authUserId, managedUserId, validatedData.password);
@@ -309,7 +309,7 @@ router.post("/:userId/password", requirePermission('postgres:write'), async (req
 router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
 
     const result = await userManagementService.syncUsers(serverId, userId);
 
@@ -342,8 +342,8 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:userId/grants", requirePermission('postgres:read'), async (req, res) => {
   try {
     const authUserId = getUserId(req);
-    const serverId = req.params.serverId;
-    const managedUserId = req.params.userId;
+    const serverId = String(req.params.serverId);
+    const managedUserId = String(req.params.userId);
 
     const grants = await grantManagementService.listGrantsForUser(serverId, authUserId, managedUserId);
 

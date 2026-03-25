@@ -53,7 +53,7 @@ router.get(
   requirePermission('deployments:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { configId } = req.params;
+      const configId = String(req.params.configId);
 
       // Validate CUID format
       if (!z.string().cuid().safeParse(configId).success) {
@@ -110,7 +110,7 @@ router.post(
   requirePermission('deployments:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { configId } = req.params;
+      const configId = String(req.params.configId);
 
       // Validate CUID format
       if (!z.string().cuid().safeParse(configId).success) {
@@ -189,7 +189,7 @@ router.delete(
   requirePermission('deployments:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { configId } = req.params;
+      const configId = String(req.params.configId);
 
       // Validate CUID format
       if (!z.string().cuid().safeParse(configId).success) {

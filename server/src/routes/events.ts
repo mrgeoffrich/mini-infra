@@ -253,7 +253,7 @@ router.get(
   requirePermission('events:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const event = await userEventService.getEventById(req.params.id);
+      const event = await userEventService.getEventById(String(req.params.id));
 
       if (!event) {
         return res.status(404).json({
@@ -329,7 +329,7 @@ router.patch(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updateData: UpdateUserEventRequest = req.body;
-      const event = await userEventService.updateEvent(req.params.id, updateData);
+      const event = await userEventService.updateEvent(String(req.params.id), updateData);
 
       const response: UserEventResponse = {
         success: true,
@@ -362,7 +362,7 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { logs } = req.body;
-      const event = await userEventService.appendLogs(req.params.id, logs);
+      const event = await userEventService.appendLogs(String(req.params.id), logs);
 
       const response: UserEventResponse = {
         success: true,
@@ -393,7 +393,7 @@ router.delete(
   requirePermission('events:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await userEventService.deleteEvent(req.params.id);
+      await userEventService.deleteEvent(String(req.params.id));
 
       const response: DeleteUserEventResponse = {
         success: true,

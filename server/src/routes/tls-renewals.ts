@@ -73,7 +73,7 @@ router.get("/", requirePermission('tls:read'), async (req, res) => {
  */
 router.get("/:id", requirePermission('tls:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const renewal = await prisma.tlsCertificateRenewal.findUnique({
       where: { id },
@@ -119,7 +119,7 @@ router.get("/:id", requirePermission('tls:read'), async (req, res) => {
  */
 router.get("/certificate/:certificateId", requirePermission('tls:read'), async (req, res) => {
   try {
-    const { certificateId } = req.params;
+    const certificateId = String(req.params.certificateId);
 
     // Verify certificate exists
     const certificate = await prisma.tlsCertificate.findUnique({

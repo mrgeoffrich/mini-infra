@@ -244,7 +244,7 @@ router.get("/", requirePermission('tls:read'), async (req, res) => {
  */
 router.get("/:id", requirePermission('tls:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const certificate = await prisma.tlsCertificate.findUnique({
       where: { id },
@@ -286,7 +286,7 @@ router.get("/:id", requirePermission('tls:read'), async (req, res) => {
  */
 router.post("/:id/renew", requirePermission('tls:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const user = getAuthenticatedUser(req);
     const userId = user?.id || "unknown";
 
@@ -319,7 +319,7 @@ router.post("/:id/renew", requirePermission('tls:write'), async (req, res) => {
  */
 router.delete("/:id", requirePermission('tls:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const user = getAuthenticatedUser(req);
     const userId = user?.id || "unknown";
 

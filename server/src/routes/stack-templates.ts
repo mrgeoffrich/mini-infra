@@ -51,7 +51,7 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
 router.get('/:templateId', requirePermission('stacks:read'), async (req, res) => {
   try {
     const service = getTemplateService();
-    const template = await service.getTemplate(req.params.templateId);
+    const template = await service.getTemplate(String(req.params.templateId));
 
     if (!template) {
       return res.status(404).json({ success: false, message: 'Template not found' });
@@ -69,12 +69,12 @@ router.get('/:templateId/versions', requirePermission('stacks:read'), async (req
     const service = getTemplateService();
 
     // Verify template exists
-    const template = await service.getTemplate(req.params.templateId);
+    const template = await service.getTemplate(String(req.params.templateId));
     if (!template) {
       return res.status(404).json({ success: false, message: 'Template not found' });
     }
 
-    const versions = await service.listVersions(req.params.templateId);
+    const versions = await service.listVersions(String(req.params.templateId));
     res.json({ success: true, data: versions });
   } catch (error) {
     handleTemplateError(error, res, 'Failed to list template versions');
@@ -85,9 +85,9 @@ router.get('/:templateId/versions', requirePermission('stacks:read'), async (req
 router.get('/:templateId/versions/:versionId', requirePermission('stacks:read'), async (req, res) => {
   try {
     const service = getTemplateService();
-    const version = await service.getTemplateVersion(req.params.versionId);
+    const version = await service.getTemplateVersion(String(req.params.versionId));
 
-    if (!version || version.templateId !== req.params.templateId) {
+    if (!version || version.templateId !== String(req.params.templateId)) {
       return res.status(404).json({ success: false, message: 'Version not found' });
     }
 
@@ -127,7 +127,7 @@ router.patch('/:templateId', requirePermission('stacks:write'), async (req, res)
     }
 
     const service = getTemplateService();
-    const template = await service.updateTemplateMeta(req.params.templateId, parsed.data);
+    const template = await service.updateTemplateMeta(String(req.params.templateId), parsed.data);
 
     res.json({ success: true, data: template });
   } catch (error) {
@@ -145,7 +145,7 @@ router.post('/:templateId/draft', requirePermission('stacks:write'), async (req,
 
     const service = getTemplateService();
     const version = await service.createOrUpdateDraft(
-      req.params.templateId,
+      String(req.params.templateId),
       parsed.data as any,
       (req as any).user?.id
     );
@@ -165,7 +165,7 @@ router.post('/:templateId/publish', requirePermission('stacks:write'), async (re
     }
 
     const service = getTemplateService();
-    const version = await service.publishDraft(req.params.templateId, parsed.data);
+    const version = await service.publishDraft(String(req.params.templateId), parsed.data);
 
     logger.info(
       { templateId: req.params.templateId, version: version.version },
@@ -181,7 +181,7 @@ router.post('/:templateId/publish', requirePermission('stacks:write'), async (re
 router.delete('/:templateId/draft', requirePermission('stacks:write'), async (req, res) => {
   try {
     const service = getTemplateService();
-    await service.discardDraft(req.params.templateId);
+    await service.discardDraft(String(req.params.templateId));
 
     res.json({ success: true, message: 'Draft discarded' });
   } catch (error) {
@@ -193,7 +193,7 @@ router.delete('/:templateId/draft', requirePermission('stacks:write'), async (re
 router.delete('/:templateId', requirePermission('stacks:write'), async (req, res) => {
   try {
     const service = getTemplateService();
-    await service.archiveTemplate(req.params.templateId);
+    await service.archiveTemplate(String(req.params.templateId));
 
     res.json({ success: true, message: 'Template archived' });
   } catch (error) {
@@ -212,7 +212,7 @@ router.post('/:templateId/instantiate', requirePermission('stacks:write'), async
     const service = getTemplateService();
     const stack = await service.createStackFromTemplate(
       {
-        templateId: req.params.templateId,
+        templateId: String(req.params.templateId),
         ...parsed.data,
       },
       (req as any).user?.id

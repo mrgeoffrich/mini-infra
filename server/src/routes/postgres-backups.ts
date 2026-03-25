@@ -128,7 +128,7 @@ function mapBackupOperationToInfo(operation: any) {
 router.get("/backups/:databaseId", requirePermission('postgres:read'), async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
-  const { databaseId } = req.params;
+  const databaseId = String(req.params.databaseId);
 
   try {
     logger.debug(
@@ -220,7 +220,7 @@ router.post(
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
-    const { databaseId } = req.params;
+    const databaseId = String(req.params.databaseId);
 
     if (!user) {
       return res.status(401).json({
@@ -350,7 +350,7 @@ router.get(
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
-    const { backupId } = req.params;
+    const backupId = String(req.params.backupId);
 
     if (!user) {
       return res.status(401).json({
@@ -445,7 +445,7 @@ router.delete(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;
-    const { backupId } = req.params;
+    const backupId = String(req.params.backupId);
 
     try {
       logger.debug({ requestId, userId, backupId }, "Deleting backup operation");
@@ -543,7 +543,7 @@ router.get(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;
-    const { backupId } = req.params;
+    const backupId = String(req.params.backupId);
 
     try {
       logger.debug(
