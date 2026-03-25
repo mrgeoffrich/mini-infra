@@ -62,7 +62,7 @@ export async function runSession(
     data: { sessionId, model: AGENT_MODEL },
   });
 
-  let capturedSdkSessionId: string | null = session.sdkSessionId;
+  let capturedClaudeSessionId: string | null = session.claudeSessionId;
   let capturedCostUsd: number | null = null;
   let assistantUuid = uuidv4();
 
@@ -253,14 +253,13 @@ export async function runSession(
             errors?: string[];
           };
 
-          // Capture SDK session ID so follow-up messages use the real one
+          // Capture the real Claude session ID so follow-up messages use it
           if (resultMsg.session_id) {
-            capturedSdkSessionId = resultMsg.session_id;
-            // Update the store so pushMessage() uses the real SDK session ID
-            session.sdkSessionId = capturedSdkSessionId;
+            capturedClaudeSessionId = resultMsg.session_id;
+            session.claudeSessionId = capturedClaudeSessionId;
             emitSSE(store, sessionId, {
               type: "init",
-              data: { sessionId, model: AGENT_MODEL, sdkSessionId: capturedSdkSessionId },
+              data: { sessionId, model: AGENT_MODEL, claudeSessionId: capturedClaudeSessionId },
             });
           }
           if (resultMsg.total_cost_usd != null) {
@@ -281,10 +280,11 @@ export async function runSession(
             emitSSE(store, sessionId, {
               type: "result",
               data: {
+                sessionId,
                 success: true,
                 cost: capturedCostUsd ?? 0,
                 turns: session.turns,
-                sdkSessionId: capturedSdkSessionId,
+                claudeSessionId: capturedClaudeSessionId,
                 isTurnResult: true,
               },
             });
@@ -338,11 +338,12 @@ export async function runSession(
     emitSSE(store, sessionId, {
       type: "result",
       data: {
+        sessionId,
         success: finalSession?.status === "completed",
         cost: capturedCostUsd ?? 0,
         duration: finalSession?.durationMs ?? 0,
         turns: finalSession?.turns ?? 0,
-        sdkSessionId: capturedSdkSessionId,
+        claudeSessionId: capturedClaudeSessionId,
       },
     });
     emitSSE(store, sessionId, { type: "done", data: {} });

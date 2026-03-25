@@ -9,7 +9,6 @@ const createSessionSchema = z.object({
   message: z.string().min(1).max(4000),
   currentPath: z.string().max(500).optional(),
   context: z.record(z.string(), z.unknown()).optional(),
-  sdkSessionId: z.string().max(500).optional(),
 });
 
 const sendMessageSchema = z.object({

@@ -47,23 +47,19 @@ export class SessionStore {
       messageText += `\n\nContext: ${JSON.stringify(req.context, null, 2)}`;
     }
 
-    // Pre-generate an SDK session ID for the AsyncIterable prompt.
-    // The SDK may override this, but we need one to construct SDKUserMessage.
-    const initialSdkSessionId = req.sdkSessionId ?? uuidv4();
-
     const messageQueue = new AsyncMessageQueue<SDKUserMessage>();
     messageQueue.push({
       type: "user",
       message: { role: "user", content: messageText },
       parent_tool_use_id: null,
-      session_id: initialSdkSessionId,
+      session_id: "",
     });
 
     const session: InternalSession = {
       id,
       status: "running",
       currentPath: req.currentPath ?? "",
-      sdkSessionId: initialSdkSessionId,
+      claudeSessionId: null,
       tokenUsage: { input: 0, output: 0 },
       turns: 0,
       errorMessage: null,
@@ -212,7 +208,7 @@ export class SessionStore {
       type: "user",
       message: { role: "user", content: text },
       parent_tool_use_id: null,
-      session_id: session.sdkSessionId ?? "",
+      session_id: session.claudeSessionId ?? "",
     });
     return true;
   }
