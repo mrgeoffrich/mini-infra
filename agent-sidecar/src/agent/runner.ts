@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { query, type SDKMessage } from "./sdk";
+import { tap } from "@mrgeoffrich/claude-agent-sdk-tap";
+import { createHttpSink } from "@mrgeoffrich/claude-agent-sdk-tap/transport";
 import { SessionStore } from "../session-store";
 import { SSEEvent } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
@@ -34,8 +36,6 @@ const AGENT_EFFORT = (process.env.AGENT_EFFORT ?? "medium") as
 export async function runSession(
   sessionId: string,
   store: SessionStore,
-  initialMessage: string,
-  sdkSessionId?: string,
 ): Promise<void> {
   const session = store.getSession(sessionId);
   if (!session) {
@@ -63,7 +63,8 @@ export async function runSession(
     data: { sessionId, model: AGENT_MODEL },
   });
 
-  let capturedSdkSessionId: string | null = sdkSessionId ?? null;
+  let capturedSdkSessionId: string | null = session.sdkSessionId;
+  let capturedCostUsd: number | null = null;
   let assistantUuid = uuidv4();
 
   // Track streaming state for SSE mapping
@@ -72,6 +73,20 @@ export async function runSession(
     number,
     { id: string; name: string; inputJson: string }
   >();
+
+  // Set up tap HTTP sink outside try so it's accessible in finally
+  const TAP_COLLECTOR_URL = process.env.TAP_COLLECTOR_URL;
+  const tapSink = TAP_COLLECTOR_URL
+    ? createHttpSink(TAP_COLLECTOR_URL, {
+        headers: process.env.TAP_COLLECTOR_AUTH
+          ? { Authorization: process.env.TAP_COLLECTOR_AUTH }
+          : undefined,
+        batchSize: 10,
+        flushIntervalMs: 2000,
+        onError: (err: unknown) => logger.warn({ err }, "Tap HTTP sink error"),
+      })
+    : null;
+
   try {
     const queryOptions: Record<string, unknown> = {
       model: AGENT_MODEL,
@@ -119,33 +134,19 @@ export async function runSession(
       effort: AGENT_EFFORT,
     };
 
-    if (sdkSessionId) {
-      queryOptions.resume = sdkSessionId;
-    }
-
-    const stream = query({
-      prompt: initialMessage,
+    const rawStream = query({
+      prompt: session.messageQueue,
       options: queryOptions as Parameters<typeof query>[0]["options"],
     });
+
+    const stream = tapSink
+      ? tap(rawStream, {}, { onMessage: tapSink.send })
+      : rawStream;
 
     for await (const message of stream) {
       if (session.abortController.signal.aborted) {
         handleAbort(store, sessionId);
         return;
-      }
-
-      // Capture SDK session ID from the first message that has one
-      if (
-        !capturedSdkSessionId &&
-        "session_id" in message &&
-        typeof (message as Record<string, unknown>).session_id === "string"
-      ) {
-        capturedSdkSessionId = (message as Record<string, unknown>).session_id as string;
-        // Re-emit init with the SDK session ID so the server can capture it
-        emitSSE(store, sessionId, {
-          type: "init",
-          data: { sessionId, model: AGENT_MODEL, sdkSessionId: capturedSdkSessionId },
-        });
       }
 
       // Handle message types from the Agent SDK
@@ -240,22 +241,53 @@ export async function runSession(
         }
 
         case "result": {
-          // Final result from the SDK
+          // Per-turn result from the SDK. With AsyncIterable prompt, "success"
+          // means the agent finished the current message — not that the session
+          // is over. The session ends when the queue closes (generator exits).
           const resultMsg = message as {
             type: "result";
             subtype: string;
+            session_id?: string;
             duration_ms?: number;
             num_turns?: number;
             total_cost_usd?: number;
+            errors?: string[];
           };
-          if (resultMsg.subtype === "success") {
-            store.completeSession(sessionId);
-          } else {
-            const errorMsg = (message as { errors?: string[] }).errors?.[0] ?? "Agent query failed";
+
+          // Capture SDK session ID so follow-up messages use the real one
+          if (resultMsg.session_id) {
+            capturedSdkSessionId = resultMsg.session_id;
+            // Update the store so pushMessage() uses the real SDK session ID
+            session.sdkSessionId = capturedSdkSessionId;
+            emitSSE(store, sessionId, {
+              type: "init",
+              data: { sessionId, model: AGENT_MODEL, sdkSessionId: capturedSdkSessionId },
+            });
+          }
+          if (resultMsg.total_cost_usd != null) {
+            capturedCostUsd = resultMsg.total_cost_usd;
+          }
+
+          if (resultMsg.subtype !== "success") {
+            const errorMsg = resultMsg.errors?.[0] ?? "Agent query failed";
             store.failSession(sessionId, errorMsg);
             emitSSE(store, sessionId, {
               type: "error",
               data: { message: errorMsg },
+            });
+          }
+          // On success: emit a turn-complete marker so the frontend knows the
+          // agent is idle and ready for the next message
+          else {
+            emitSSE(store, sessionId, {
+              type: "result",
+              data: {
+                success: true,
+                cost: capturedCostUsd ?? 0,
+                turns: session.turns,
+                sdkSessionId: capturedSdkSessionId,
+                isTurnResult: true,
+              },
             });
           }
           break;
@@ -293,13 +325,22 @@ export async function runSession(
   } finally {
     clearTimeout(timeoutHandle);
 
+    // Flush any buffered tap messages
+    if (tapSink) {
+      try {
+        await tapSink.flush();
+      } catch (err) {
+        logger.warn({ err }, "Failed to flush tap sink");
+      }
+    }
+
     // Emit result and done
     const finalSession = store.getSession(sessionId);
     emitSSE(store, sessionId, {
       type: "result",
       data: {
         success: finalSession?.status === "completed",
-        cost: 0,
+        cost: capturedCostUsd ?? 0,
         duration: finalSession?.durationMs ?? 0,
         turns: finalSession?.turns ?? 0,
         sdkSessionId: capturedSdkSessionId,

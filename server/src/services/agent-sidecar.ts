@@ -341,6 +341,10 @@ async function createAgentSidecar(
         ...["ENABLE_BETA_TRACING_DETAILED", "BETA_TRACING_ENDPOINT"]
           .filter((key) => process.env[key] !== undefined)
           .map((key) => `${key}=${process.env[key]}`),
+        // Forward tap collector config if present
+        ...["TAP_COLLECTOR_URL", "TAP_COLLECTOR_AUTH"]
+          .filter((key) => process.env[key] !== undefined)
+          .map((key) => `${key}=${process.env[key]}`),
       ],
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
       HostConfig: {

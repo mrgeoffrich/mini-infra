@@ -12,6 +12,10 @@ const createSessionSchema = z.object({
   sdkSessionId: z.string().max(500).optional(),
 });
 
+const sendMessageSchema = z.object({
+  message: z.string().min(1).max(4000),
+});
+
 const updateContextSchema = z.object({
   currentPath: z.string().max(500),
 });
@@ -38,16 +42,11 @@ export function createSessionsRouter(store: SessionStore): Router {
       return;
     }
 
+    // createSession builds the initial SDKUserMessage and pushes it into the queue
     const session = store.createSession(parsed.data);
 
-    // Build initial message with optional context
-    let initialMessage = parsed.data.message;
-    if (parsed.data.context && Object.keys(parsed.data.context).length > 0) {
-      initialMessage += `\n\nContext: ${JSON.stringify(parsed.data.context, null, 2)}`;
-    }
-
     // Start agent execution asynchronously (fire-and-forget)
-    runSession(session.id, store, initialMessage, parsed.data.sdkSessionId).catch((err) => {
+    runSession(session.id, store).catch((err) => {
       logger.error(
         { err, sessionId: session.id },
         "Unhandled error in session runner",
@@ -143,6 +142,47 @@ export function createSessionsRouter(store: SessionStore): Router {
       logger.debug({ sessionId: session.id }, "SSE client disconnected");
       cleanup();
     });
+  });
+
+  // POST /sessions/:id/messages — send a follow-up message to a running session
+  router.post("/:id/messages", (req: Request, res: Response) => {
+    const session = store.getSession(String(req.params.id));
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    if (session.status !== "running") {
+      res.status(409).json({
+        error: "Session not running",
+        message: `Session is ${session.status} and cannot accept new messages.`,
+      });
+      return;
+    }
+
+    const parsed = sendMessageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Validation error",
+        details: parsed.error.issues,
+      });
+      return;
+    }
+
+    const pushed = store.pushMessage(session.id, parsed.data.message);
+    if (!pushed) {
+      res.status(409).json({
+        error: "Failed to send message",
+        message: "Session queue is closed.",
+      });
+      return;
+    }
+
+    logger.info(
+      { sessionId: session.id, message: parsed.data.message.slice(0, 100) },
+      "Follow-up message sent",
+    );
+    res.json({ ok: true });
   });
 
   // PUT /sessions/:id/context — update session context (e.g. current page)
