@@ -4,9 +4,7 @@
   "workspaces": [
     "client",
     "server",
-    "lib",
-    "update-sidecar",
-    "agent-sidecar"
+    "lib"
   ],
   "scripts": {
     "dev": "node scripts/dev-with-restart.mjs",
@@ -19,8 +17,8 @@
     "build:lib": "cd lib && npm run build",
     "build:client": "cd client && npm run build",
     "build:server": "npm run build:lib && cd server && npm run build",
-    "build:sidecar": "cd update-sidecar && npm run build",
-    "build:agent-sidecar": "cd agent-sidecar && npm run build",
+    "build:sidecar": "cd update-sidecar && npm install && npm run build",
+    "build:agent-sidecar": "cd agent-sidecar && npm install && npm run build",
     "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
     "start": "cd server && npm start",
     "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
