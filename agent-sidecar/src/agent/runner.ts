@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { query, type SDKMessage } from "./sdk";
-import { tap } from "@mrgeoffrich/claude-agent-sdk-tap";
+import { tappedQuery } from "@mrgeoffrich/claude-agent-sdk-tap";
 import { createHttpSink } from "@mrgeoffrich/claude-agent-sdk-tap/transport";
 import { SessionStore } from "../session-store";
 import { SSEEvent } from "../types";
@@ -134,14 +133,14 @@ export async function runSession(
       effort: AGENT_EFFORT,
     };
 
-    const rawStream = query({
-      prompt: session.messageQueue,
-      options: queryOptions as Parameters<typeof query>[0]["options"],
-    });
-
-    const stream = tapSink
-      ? tap(rawStream, {}, { onMessage: tapSink.send })
-      : rawStream;
+    const stream = tappedQuery(
+      {
+        prompt: session.messageQueue,
+        options: queryOptions as Parameters<typeof tappedQuery>[0]["options"],
+      },
+      {},
+      tapSink ? { onMessage: tapSink.send } : undefined,
+    );
 
     for await (const message of stream) {
       if (session.abortController.signal.aborted) {
