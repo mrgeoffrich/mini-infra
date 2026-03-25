@@ -45,6 +45,55 @@ export class StackReconciler {
     this.containerManager = new StackContainerManager(dockerExecutor);
   }
 
+  /**
+   * Resolve environment network purposes to Docker network names.
+   * Collects all unique purposes from joinEnvironmentNetworks across services,
+   * looks them up in the EnvironmentNetwork table, and returns a map of purpose → Docker name.
+   */
+  private async resolveEnvironmentNetworks(
+    environmentId: string | null,
+    resolvedDefinitions: Map<string, StackServiceDefinition>
+  ): Promise<Map<string, string>> {
+    if (!environmentId) return new Map();
+
+    const purposes = new Set<string>();
+    for (const def of resolvedDefinitions.values()) {
+      for (const purpose of def.containerConfig.joinEnvironmentNetworks ?? []) {
+        purposes.add(purpose);
+      }
+    }
+
+    if (purposes.size === 0) return new Map();
+
+    const envNetworks = await this.prisma.environmentNetwork.findMany({
+      where: { environmentId, purpose: { in: [...purposes] } },
+    });
+
+    return new Map(envNetworks.map((n) => [n.purpose, n.name]));
+  }
+
+  /**
+   * Connect a container to all environment networks declared in joinEnvironmentNetworks.
+   * Silently skips purposes that don't exist for this environment.
+   */
+  private async joinEnvironmentNetworks(
+    containerId: string,
+    serviceDef: StackServiceDefinition,
+    envNetworkMap: Map<string, string>,
+    log: any
+  ): Promise<void> {
+    for (const purpose of serviceDef.containerConfig.joinEnvironmentNetworks ?? []) {
+      const netName = envNetworkMap.get(purpose);
+      if (!netName) continue;
+      try {
+        await this.containerManager.connectToNetwork(containerId, netName);
+        log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined environment network');
+      } catch (err: any) {
+        log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: err.message }, 'Failed to join environment network');
+      }
+    }
+  }
+
   async plan(stackId: string): Promise<StackPlan> {
     const log = servicesLogger().child({ operation: 'stack-plan', stackId });
 
@@ -240,7 +289,23 @@ export class StackReconciler {
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
       const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
-      // 5. Ensure infrastructure — create networks and volumes
+      // 5a. Ensure environment networks exist in Docker
+      const envNetworkMap = await this.resolveEnvironmentNetworks(stack.environmentId, resolvedDefinitions);
+      for (const [purpose, netName] of envNetworkMap) {
+        const exists = await this.dockerExecutor.networkExists(netName);
+        if (!exists) {
+          log.info({ network: netName, purpose }, 'Creating environment network');
+          await this.dockerExecutor.createNetwork(netName, stack.environment?.name ?? '', {
+            driver: 'bridge',
+            labels: {
+              'mini-infra.environment': stack.environmentId!,
+              'mini-infra.network-purpose': purpose,
+            },
+          });
+        }
+      }
+
+      // 5b. Ensure stack-owned networks and volumes
       const networks = stack.networks as unknown as StackNetwork[];
       const volumes = stack.volumes as unknown as StackVolume[];
       const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
@@ -306,14 +371,14 @@ export class StackReconciler {
             const result = await this.applyStatelessWeb(
               action, svc!, serviceDef!, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log
+              actionStart, log, envNetworkMap
             );
             serviceResults.push(result);
           } else {
             const result = await this.applyStateful(
               action, svc, serviceDef, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log
+              actionStart, log, envNetworkMap
             );
             serviceResults.push(result);
           }
@@ -641,7 +706,8 @@ export class StackReconciler {
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
-    log: any
+    log: any,
+    envNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     switch (action.action) {
       case 'create': {
@@ -663,6 +729,22 @@ export class StackReconciler {
             networkNames,
           }
         );
+
+        // Join external networks if specified (e.g., HAProxy network for cloudflared)
+        if (serviceDef.containerConfig.joinNetworks?.length) {
+          for (const netName of serviceDef.containerConfig.joinNetworks) {
+            if (!netName) continue;
+            try {
+              await this.containerManager.connectToNetwork(containerId, netName);
+              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
+            } catch (err: any) {
+              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            }
+          }
+        }
+
+        // Join environment networks by purpose
+        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -703,6 +785,22 @@ export class StackReconciler {
             networkNames,
           }
         );
+
+        // Join external networks if specified (e.g., HAProxy network for cloudflared)
+        if (serviceDef.containerConfig.joinNetworks?.length) {
+          for (const netName of serviceDef.containerConfig.joinNetworks) {
+            if (!netName) continue;
+            try {
+              await this.containerManager.connectToNetwork(containerId, netName);
+              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
+            } catch (err: any) {
+              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            }
+          }
+        }
+
+        // Join environment networks by purpose
+        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -752,7 +850,8 @@ export class StackReconciler {
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
-    log: any
+    log: any,
+    envNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
     if (!routing) {
@@ -782,9 +881,18 @@ export class StackReconciler {
           }
         );
 
-        // Connect to HAProxy network
-        const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
-        await this.containerManager.connectToNetwork(containerId, haproxyCtx.haproxyNetworkName);
+        // Connect to environment networks (including HAProxy's applications network)
+        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
+
+        // Fallback: if no environment network, try runtime HAProxy context
+        if (!envNetworkMap.has('applications')) {
+          try {
+            const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
+            await this.containerManager.connectToNetwork(containerId, haproxyCtx.haproxyNetworkName);
+          } catch (err: any) {
+            log.warn({ error: err.message }, 'Failed to connect to HAProxy network via runtime inspection');
+          }
+        }
 
         // Wait for healthy
         const healthy = await this.containerManager.waitForHealthy(containerId);
@@ -853,9 +961,18 @@ export class StackReconciler {
           }
         );
 
-        // Connect green to HAProxy network
-        const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
-        await this.containerManager.connectToNetwork(greenId, haproxyCtx.haproxyNetworkName);
+        // Connect green to environment networks (including HAProxy's applications network)
+        await this.joinEnvironmentNetworks(greenId, serviceDef, envNetworkMap, log);
+
+        // Fallback: if no environment network, try runtime HAProxy context
+        if (!envNetworkMap.has('applications')) {
+          try {
+            const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
+            await this.containerManager.connectToNetwork(greenId, haproxyCtx.haproxyNetworkName);
+          } catch (err: any) {
+            log.warn({ error: err.message }, 'Failed to connect to HAProxy network via runtime inspection');
+          }
+        }
 
         // Wait for green healthy
         const healthy = await this.containerManager.waitForHealthy(greenId);

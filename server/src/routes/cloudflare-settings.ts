@@ -23,6 +23,9 @@ import {
   CloudflareTunnelInfo,
   CloudflareAddHostnameRequest,
   CloudflareHostnameResponse,
+  ManagedTunnelListResponse,
+  ManagedTunnelResponse,
+  ManagedTunnelWithStack,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -1295,6 +1298,327 @@ router.delete(
         });
       }
 
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+// ====================
+// Managed Tunnel Endpoints
+// ====================
+
+const createManagedTunnelSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(
+      /^[a-zA-Z0-9_-]+$/,
+      "Tunnel name can only contain letters, numbers, hyphens, and underscores",
+    ),
+});
+
+// GET /api/settings/cloudflare/managed-tunnels — List all managed tunnels
+router.get(
+  "/managed-tunnels",
+  requirePermission("settings:read"),
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const tunnelsMap = await cloudflareConfigService.getAllManagedTunnels();
+
+      // Get cloudflare-tunnel stack status per environment
+      const stacks = await prisma.stack.findMany({
+        where: { name: "cloudflare-tunnel", status: { not: "removed" } },
+        select: { id: true, environmentId: true, status: true },
+      });
+      const stackByEnv = new Map(
+        stacks.map((s) => [s.environmentId, s]),
+      );
+
+      const data: ManagedTunnelWithStack[] = [];
+      for (const [environmentId, info] of tunnelsMap) {
+        const stack = stackByEnv.get(environmentId);
+        data.push({
+          tunnelId: info.tunnelId,
+          tunnelName: info.tunnelName,
+          environmentId,
+          hasToken: info.hasToken,
+          createdAt: info.createdAt,
+          stackId: stack?.id,
+          stackStatus: stack?.status,
+        });
+      }
+
+      const response: ManagedTunnelListResponse = {
+        success: true,
+        data,
+      };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+// GET /api/settings/cloudflare/managed-tunnels/:environmentId — Get managed tunnel for an environment
+router.get(
+  "/managed-tunnels/:environmentId",
+  requirePermission("settings:read"),
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { environmentId } = req.params;
+
+      const info = await cloudflareConfigService.getManagedTunnelInfo(environmentId);
+
+      // Get stack status
+      const stack = await prisma.stack.findFirst({
+        where: {
+          name: "cloudflare-tunnel",
+          environmentId,
+          status: { not: "removed" },
+        },
+        select: { id: true, status: true },
+      });
+
+      const data: ManagedTunnelWithStack | null = info
+        ? {
+            ...info,
+            environmentId,
+            stackId: stack?.id,
+            stackStatus: stack?.status,
+          }
+        : null;
+
+      const response: ManagedTunnelResponse = {
+        success: true,
+        data,
+      };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+// POST /api/settings/cloudflare/managed-tunnels/:environmentId — Create managed tunnel
+router.post(
+  "/managed-tunnels/:environmentId",
+  requirePermission("settings:write"),
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { environmentId } = req.params;
+      const user = getAuthenticatedUser(req);
+      const userId = user?.id || "system";
+
+      // Validate request body
+      const parsed = createManagedTunnelSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid request",
+          details: parsed.error.issues,
+        });
+      }
+
+      // Verify environment exists and is internet-facing
+      const environment = await prisma.environment.findUnique({
+        where: { id: environmentId },
+      });
+      if (!environment) {
+        return res.status(404).json({
+          success: false,
+          error: "Environment not found",
+        });
+      }
+      if (environment.networkType !== "internet") {
+        return res.status(400).json({
+          success: false,
+          error: "Managed tunnels can only be created for internet-facing environments",
+        });
+      }
+
+      // Check for existing managed tunnel
+      const existing = await cloudflareConfigService.getManagedTunnelInfo(environmentId);
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          error: "A managed tunnel already exists for this environment",
+          data: existing,
+        });
+      }
+
+      // Create the tunnel
+      const result = await cloudflareConfigService.createManagedTunnel(
+        environmentId,
+        parsed.data.name,
+        userId,
+      );
+
+      // Update the cloudflare-tunnel stack's parameterValues with the token
+      const token = await cloudflareConfigService.getManagedTunnelToken(environmentId);
+      const stack = await prisma.stack.findFirst({
+        where: {
+          name: "cloudflare-tunnel",
+          environmentId,
+          status: { not: "removed" },
+        },
+        select: { id: true, status: true, parameterValues: true },
+      });
+
+      if (token && stack) {
+        try {
+          const existingParams =
+            (stack.parameterValues as Record<string, string>) ?? {};
+          await prisma.stack.update({
+            where: { id: stack.id },
+            data: {
+              parameterValues: {
+                ...existingParams,
+                "tunnel-token": token,
+              },
+              status: "pending",
+            },
+          });
+        } catch (stackError) {
+          logger.error(
+            {
+              error:
+                stackError instanceof Error
+                  ? stackError.message
+                  : "Unknown",
+            },
+            "Failed to update stack after tunnel creation, rolling back",
+          );
+          try {
+            await cloudflareConfigService.deleteManagedTunnel(
+              environmentId,
+              userId,
+            );
+          } catch (rollbackError) {
+            logger.error(
+              {
+                error:
+                  rollbackError instanceof Error
+                    ? rollbackError.message
+                    : "Unknown",
+              },
+              "Failed to roll back tunnel creation — manual cleanup may be required",
+            );
+          }
+          throw stackError;
+        }
+      }
+
+      // Invalidate tunnel cache
+      tunnelCache.clear();
+
+      const response: ManagedTunnelResponse = {
+        success: true,
+        data: {
+          tunnelId: result.tunnelId,
+          tunnelName: result.tunnelName,
+          environmentId,
+          hasToken: !!token,
+          stackId: stack?.id,
+          stackStatus: token && stack ? "pending" : stack?.status,
+        },
+        message: "Managed tunnel created successfully",
+      };
+      res.status(201).json(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      logger.error(
+        { error: errorMessage },
+        "Failed to create managed tunnel",
+      );
+
+      if (errorMessage.includes("already exists")) {
+        return res.status(409).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+
+      if (
+        errorMessage.includes("API token") ||
+        errorMessage.includes("account ID")
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+
+      next(error);
+    }
+  }) as RequestHandler,
+);
+
+// DELETE /api/settings/cloudflare/managed-tunnels/:environmentId — Delete managed tunnel
+router.delete(
+  "/managed-tunnels/:environmentId",
+  requirePermission("settings:write"),
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { environmentId } = req.params;
+      const user = getAuthenticatedUser(req);
+      const userId = user?.id || "system";
+
+      // Check the cloudflare-tunnel stack status — must be stopped
+      const stack = await prisma.stack.findFirst({
+        where: {
+          name: "cloudflare-tunnel",
+          environmentId,
+          status: { not: "removed" },
+        },
+        select: { id: true, status: true },
+      });
+
+      if (stack && stack.status === "synced") {
+        return res.status(409).json({
+          success: false,
+          error:
+            "The cloudflare-tunnel stack is still running. Stop it before deleting the tunnel.",
+        });
+      }
+
+      await cloudflareConfigService.deleteManagedTunnel(environmentId, userId);
+
+      // Clear tunnel-specific parameterValues while preserving others
+      if (stack) {
+        const fullStack = await prisma.stack.findUnique({
+          where: { id: stack.id },
+          select: { parameterValues: true },
+        });
+        const existingParams =
+          (fullStack?.parameterValues as Record<string, string>) ?? {};
+        await prisma.stack.update({
+          where: { id: stack.id },
+          data: {
+            parameterValues: {
+              ...existingParams,
+              "tunnel-token": "",
+            },
+            status: "undeployed",
+          },
+        });
+      }
+
+      // Invalidate tunnel cache
+      tunnelCache.clear();
+
+      res.json({
+        success: true,
+        message: "Managed tunnel deleted successfully",
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      logger.error(
+        { error: errorMessage },
+        "Failed to delete managed tunnel",
+      );
       next(error);
     }
   }) as RequestHandler,
