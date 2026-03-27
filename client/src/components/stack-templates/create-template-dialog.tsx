@@ -43,7 +43,7 @@ const createTemplateSchema = z.object({
   displayName: z.string().min(1, "Display name is required"),
   description: z.string().optional(),
   scope: z.enum(["host", "environment"], {
-    required_error: "Scope is required",
+    message: "Scope is required",
   }),
   category: z.string().optional(),
 });
@@ -63,7 +63,7 @@ export function CreateTemplateDialog({
   const createMutation = useCreateStackTemplate();
 
   const form = useForm<CreateTemplateFormValues>({
-    resolver: zodResolver(createTemplateSchema),
+    resolver: zodResolver(createTemplateSchema) as any,
     defaultValues: {
       name: "",
       displayName: "",

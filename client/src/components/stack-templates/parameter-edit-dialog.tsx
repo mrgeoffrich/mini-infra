@@ -68,7 +68,7 @@ export function ParameterEditDialog({
   const isEditing = parameter !== null;
 
   const form = useForm<ParameterFormValues>({
-    resolver: zodResolver(parameterSchema),
+    resolver: zodResolver(parameterSchema) as any,
     defaultValues: {
       name: "",
       type: "string",

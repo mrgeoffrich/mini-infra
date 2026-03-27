@@ -40,7 +40,7 @@ export function TemplateMetadataCard({
   const updateMutation = useUpdateStackTemplate();
 
   const form = useForm<MetadataFormValues>({
-    resolver: zodResolver(metadataSchema),
+    resolver: zodResolver(metadataSchema) as any,
     defaultValues: {
       displayName: template.displayName,
       description: template.description ?? "",

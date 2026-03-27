@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import type { StackTemplateInfo, StackTemplateVersionInfo } from "@mini-infra/types";
 
 interface VersionSidebarProps {
@@ -34,7 +34,7 @@ export function VersionSidebar({
           Version History
         </span>
       </div>
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         <div className="px-2 pb-4 space-y-1">
           {/* Draft entry */}
           {draftVersion && (
@@ -139,7 +139,7 @@ export function VersionSidebar({
             </details>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
