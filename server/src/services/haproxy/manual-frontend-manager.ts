@@ -53,11 +53,6 @@ export class ManualFrontendManager {
         where: { id: environmentId },
         include: {
           networks: true,
-          services: {
-            where: {
-              serviceName: "haproxy",
-            },
-          },
         },
       });
 

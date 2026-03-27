@@ -73,20 +73,18 @@ function serializeServer(server: any): HAProxyServerInfo {
 async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlaneClient> {
   const environment = await prisma.environment.findUnique({
     where: { id: environmentId },
-    include: {
-      services: {
-        where: { serviceName: "haproxy" },
-      },
-    },
   });
 
   if (!environment) {
     throw new Error(`Environment not found: ${environmentId}`);
   }
 
-  const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
-  if (!haproxyService) {
-    throw new Error(`HAProxy service not found for environment: ${environmentId}`);
+  const haproxyStack = await prisma.stack.findFirst({
+    where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+  });
+
+  if (!haproxyStack) {
+    throw new Error(`HAProxy stack not found for environment: ${environmentId}`);
   }
 
   const dockerService = DockerService.getInstance();

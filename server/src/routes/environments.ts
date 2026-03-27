@@ -5,11 +5,8 @@ import {
   UpdateEnvironmentRequest,
   AddServiceToEnvironmentRequest,
   UpdateEnvironmentServiceRequest,
-  ListEnvironmentsRequest,
   EnvironmentType,
   ServiceConfiguration,
-  ServiceStatus,
-  ServiceStatusValues
 } from '@mini-infra/types';
 import { EnvironmentManager, ServiceRegistry } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
@@ -52,7 +49,6 @@ const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
   networkType: z.enum(['local', 'internet']).optional(),
-  isActive: z.boolean().optional()
 });
 
 const addServiceSchema = z.object({
@@ -67,7 +63,6 @@ const updateServiceSchema = z.object({
 
 const listEnvironmentsSchema = z.object({
   type: z.enum(['production', 'nonproduction']).optional(),
-  status: z.string().optional(),
   page: z.coerce.number().min(1).optional(),
   limit: z.coerce.number().min(1).max(100).optional()
 });
@@ -78,11 +73,10 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
     // Validate query parameters
     const validatedQuery = listEnvironmentsSchema.parse(req.query);
-    const { type, status, page = 1, limit = 20 } = validatedQuery;
+    const { type, page = 1, limit = 20 } = validatedQuery;
 
     const result = await environmentManager.listEnvironments(
       type,
-      status as ServiceStatus | undefined,
       page,
       limit
     );
@@ -288,156 +282,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : 'Failed to delete environment'
-    });
-  }
-});
-
-
-router.get('/:id/status', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const status = await environmentManager.getEnvironmentStatus(id);
-
-    if (!status) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json(status);
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to get environment status');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment status'
-    });
-  }
-});
-
-
-// Validate ports for environment before starting
-router.get('/:id/validate-ports', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    // Check if environment exists
-    const environment = await prisma.environment.findUnique({
-      where: { id },
-      include: { services: true }
-    });
-
-    if (!environment) {
-      return res.status(404).json({
-        success: false,
-        error: 'Environment not found'
-      });
-    }
-
-    // Check if environment has HAProxy service
-    const hasHAProxy = environment.services.some(s => s.serviceType === 'haproxy');
-    if (!hasHAProxy) {
-      return res.json({
-        success: true,
-        data: {
-          isValid: true,
-          message: 'No HAProxy service configured',
-          unavailablePorts: []
-        }
-      });
-    }
-
-    // Validate ports for the environment
-    const { config, validation } = await portUtils.validatePortsForEnvironment(id);
-
-    logger.debug({
-      environmentId: id,
-      config,
-      validation
-    }, 'Port validation result');
-
-    res.json({
-      success: true,
-      data: {
-        config,
-        validation
-      }
-    });
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to validate ports');
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to validate ports'
-    });
-  }
-});
-
-
-router.post('/:id/start', requirePermission('environments:write'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const userId = (req.user as any)?.id;
-
-    const result = await environmentManager.startEnvironment(id, userId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Failed to start environment',
-        message: result.message,
-        details: result.details
-      });
-    }
-
-    logger.debug({
-      environmentId: id,
-      duration: result.duration,
-      userId
-    }, 'Environment started via API');
-
-    res.json(result);
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to start environment');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to start environment'
-    });
-  }
-});
-
-
-router.post('/:id/stop', requirePermission('environments:write'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const userId = (req.user as any)?.id;
-
-    const result = await environmentManager.stopEnvironment(id, userId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Failed to stop environment',
-        message: result.message,
-        details: result.details
-      });
-    }
-
-    logger.debug({
-      environmentId: id,
-      duration: result.duration,
-      userId
-    }, 'Environment stopped via API');
-
-    res.json(result);
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to stop environment');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to stop environment'
     });
   }
 });
@@ -659,23 +503,18 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
   // Get environment details
   const environment = await prisma.environment.findUnique({
     where: { id: environmentId },
-    include: {
-      services: {
-        where: {
-          serviceName: "haproxy",
-        },
-      },
-    },
   });
 
   if (!environment) {
     throw new Error(`Environment not found: ${environmentId}`);
   }
 
-  const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
+  const haproxyStack = await prisma.stack.findFirst({
+    where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+  });
 
-  if (!haproxyService) {
-    throw new Error(`HAProxy service not configured for environment: ${environment.name}`);
+  if (!haproxyStack) {
+    throw new Error(`HAProxy stack not configured for environment: ${environment.name}`);
   }
 
   // Find HAProxy container using Docker
@@ -742,12 +581,14 @@ router.post('/:id/remediate-haproxy', requirePermission('environments:write'), a
       });
     }
 
-    // Check if environment has HAProxy service
-    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
-    if (!hasHAProxy) {
+    // Check if environment has HAProxy stack
+    const haproxyStack = await prisma.stack.findFirst({
+      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+    });
+    if (!haproxyStack) {
       return res.status(400).json({
-        error: 'No HAProxy service',
-        message: 'This environment does not have an HAProxy service configured'
+        error: 'No HAProxy stack',
+        message: 'This environment does not have an HAProxy stack configured'
       });
     }
 
@@ -797,14 +638,16 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
       });
     }
 
-    // Check if environment has HAProxy service
-    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
-    if (!hasHAProxy) {
+    // Check if environment has HAProxy stack
+    const haproxyStack = await prisma.stack.findFirst({
+      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+    });
+    if (!haproxyStack) {
       return res.status(200).json({
         success: true,
         data: {
           hasHAProxy: false,
-          message: 'This environment does not have an HAProxy service configured'
+          message: 'This environment does not have an HAProxy stack configured'
         }
       });
     }
@@ -891,12 +734,14 @@ router.get('/:id/remediation-preview', requirePermission('environments:read'), a
       });
     }
 
-    // Check if environment has HAProxy service
-    const hasHAProxy = environment.services.some(s => s.serviceName === 'haproxy');
-    if (!hasHAProxy) {
+    // Check if environment has HAProxy stack
+    const haproxyStackCheck = await prisma.stack.findFirst({
+      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+    });
+    if (!haproxyStackCheck) {
       return res.status(400).json({
-        error: 'No HAProxy service',
-        message: 'This environment does not have an HAProxy service configured'
+        error: 'No HAProxy stack',
+        message: 'This environment does not have an HAProxy stack configured'
       });
     }
 

@@ -187,11 +187,6 @@ router.post(
       // Get environment details
       const environment = await prisma.environment.findUnique({
         where: { id: environmentId },
-        include: {
-          services: {
-            where: { serviceName: "haproxy" },
-          },
-        },
       });
 
       if (!environment) {
@@ -201,11 +196,14 @@ router.post(
         });
       }
 
-      const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
-      if (!haproxyService) {
+      const haproxyStack = await prisma.stack.findFirst({
+        where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+      });
+
+      if (!haproxyStack) {
         return res.status(400).json({
           success: false,
-          error: "Environment does not have HAProxy service",
+          error: "Environment does not have HAProxy stack",
         });
       }
 
@@ -653,13 +651,6 @@ async function getHAProxyClientForFrontend(frontendName: string): Promise<HAProx
   // Get environment details
   const environment = await prisma.environment.findUnique({
     where: { id: frontend.environmentId },
-    include: {
-      services: {
-        where: {
-          serviceName: "haproxy",
-        },
-      },
-    },
   });
 
   if (!environment) {
