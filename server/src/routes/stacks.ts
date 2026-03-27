@@ -33,7 +33,7 @@ const applyingStacks = new Set<string>();
 // GET / — List stacks
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const { environmentId, scope } = req.query;
+    const { environmentId, scope, source } = req.query;
     const where: any = { status: { not: 'removed' } };
     if (scope === 'host') {
       where.environmentId = null;
@@ -41,11 +41,27 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
       where.environmentId = environmentId;
     }
 
+    // Filter by template source if specified
+    if (source === 'user') {
+      where.template = { source: 'user' };
+    } else if (source === 'system') {
+      where.OR = [
+        { template: { source: 'system' } },
+        { templateId: null },
+      ];
+    } else if (scope === 'host' || environmentId) {
+      // When listing for host/environment, exclude user stacks by default
+      where.OR = [
+        { template: { source: 'system' } },
+        { templateId: null },
+      ];
+    }
+
     const stacks = await prisma.stack.findMany({
       where,
       include: {
         services: true,
-        template: { select: { currentVersion: { select: { version: true } } } },
+        template: { select: { source: true, currentVersion: { select: { version: true } } } },
       },
       orderBy: { name: 'asc' },
     });
