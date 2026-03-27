@@ -52,6 +52,7 @@ const versionSummary = {
   publishedAt: true,
   createdAt: true,
   createdById: true,
+  _count: { select: { services: true } },
 };
 
 export class StackTemplateService {
@@ -897,6 +898,7 @@ export class StackTemplateService {
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       createdById: version.createdById,
+      serviceCount: version._count?.services ?? version.services?.length,
       services: version.services?.map(serializeTemplateService),
       configFiles: version.configFiles?.map(serializeTemplateConfigFile),
     };

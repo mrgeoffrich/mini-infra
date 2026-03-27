@@ -116,6 +116,7 @@ export interface StackTemplateVersionInfo {
   publishedAt: string | null;
   createdAt: string;
   createdById: string | null;
+  serviceCount?: number;
   services?: StackTemplateServiceInfo[];
   configFiles?: StackTemplateConfigFileInfo[];
 }

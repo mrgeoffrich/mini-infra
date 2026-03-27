@@ -89,7 +89,7 @@ export default function ApplicationsPage() {
   }, [envData]);
 
   const getServiceCount = (app: StackTemplateInfo): number => {
-    return app.currentVersion?.services?.length ?? 0;
+    return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
   };
 
   const handleDeploy = (app: StackTemplateInfo) => {
