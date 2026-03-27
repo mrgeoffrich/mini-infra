@@ -173,12 +173,9 @@ describe("importDeploymentConfig", () => {
   });
 
   it("should return 404 for missing deployment configuration", async () => {
-    await expect(
-      service.importDeploymentConfig("nonexistent-id", testUserId)
-    ).rejects.toThrow(TemplateError);
-
     try {
       await service.importDeploymentConfig("nonexistent-id", testUserId);
+      fail("Expected importDeploymentConfig to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(TemplateError);
       expect((error as TemplateError).statusCode).toBe(404);
