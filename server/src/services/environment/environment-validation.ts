@@ -53,16 +53,6 @@ export class EnvironmentValidationService {
         };
       }
 
-      if (!environment.isActive) {
-        return {
-          isValid: false,
-          environmentId,
-          environmentName: environment.name,
-          errorMessage: `Environment '${environment.name}' is not active`,
-          errorCode: "ENVIRONMENT_INACTIVE"
-        };
-      }
-
       // Find HAProxy container in this environment
       const haproxyValidation = await this.findHAProxyContainer(environmentId, environment.name);
       if (!haproxyValidation.isValid) {

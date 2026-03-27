@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { EnvironmentManager, ServiceRegistry } from '../services/environment';
+import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
@@ -10,7 +10,6 @@ const logger = appLogger();
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);
-const serviceRegistry = ServiceRegistry.getInstance();
 
 // Validation schemas
 const createVolumeSchema = z.object({
@@ -188,23 +187,6 @@ router.delete('/:volumeId', requirePermission('environments:write'), async (req,
       return res.status(404).json({
         error: 'Volume not found',
         message: `Volume with ID ${volumeId} does not exist in this environment`
-      });
-    }
-
-    // Check if any services are using this volume
-    const servicesUsingVolume = [];
-    for (const service of environment.services) {
-      const serviceMetadata = serviceRegistry.getServiceMetadata(service.serviceType);
-      if (serviceMetadata?.requiredVolumes.some(v => `${environment.name}-${v.name}` === existingVolume.name)) {
-        servicesUsingVolume.push(service.serviceName);
-      }
-    }
-
-    if (servicesUsingVolume.length > 0) {
-      return res.status(400).json({
-        error: 'Volume in use',
-        message: 'Cannot delete volume that is required by services',
-        details: { servicesUsingVolume }
       });
     }
 

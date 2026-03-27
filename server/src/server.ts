@@ -32,7 +32,6 @@ import { initializeAgentApiKey, getAgentApiKey } from "./services/agent-api-key"
 import { getEffectiveApiKey } from "./services/agent-settings-service";
 import { AgentProxyService, setAgentService, getAgentService } from "./services/agent-service";
 import { PostgresDatabaseHealthScheduler } from "./services/postgres";
-import { ServiceRecoveryManager, EnvironmentHealthScheduler } from "./services/environment";
 import { ApplicationServiceFactory } from "./services/application-service-factory";
 import { SelfBackupScheduler } from "./services/backup";
 import serverHealthScheduler from "./services/postgres-server/health-scheduler";
@@ -62,7 +61,6 @@ let connectivityScheduler: ConnectivityScheduler | null = null;
 let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
-let environmentHealthScheduler: EnvironmentHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
@@ -311,13 +309,6 @@ const initializeServices = async () => {
     logger.info("ApplicationServiceFactory configured with Docker service");
     console.log("[STARTUP] ✓ ApplicationServiceFactory configured");
 
-    // Perform service recovery to restore running environments after restart
-    console.log("[STARTUP] Performing service recovery...");
-    const serviceRecoveryManager = new ServiceRecoveryManager(dockerService, serviceFactory);
-    await serviceRecoveryManager.performRecovery();
-    logger.info("Service recovery completed successfully");
-    console.log("[STARTUP] ✓ Service recovery completed");
-
     // Sync built-in stack definitions
     console.log("[STARTUP] Syncing built-in stack definitions...");
     await syncBuiltinStacks(prisma);
@@ -332,17 +323,6 @@ const initializeServices = async () => {
     } catch (err) {
       logger.debug({ error: err }, "Monitoring network connection skipped (non-fatal)");
     }
-
-    // Initialize environment health scheduler (monitors service state every 5 minutes)
-    console.log("[STARTUP] Initializing environment health scheduler...");
-    environmentHealthScheduler = new EnvironmentHealthScheduler(
-      dockerService,
-      serviceFactory,
-      5 * 60 * 1000 // 5 minutes
-    );
-    environmentHealthScheduler.start();
-    logger.info("Environment health scheduler initialized successfully");
-    console.log("[STARTUP] ✓ Environment health scheduler initialized");
 
     // Initialize self-backup scheduler
     console.log("[STARTUP] Initializing self-backup scheduler...");
@@ -572,11 +552,6 @@ startServer()
       if (postgresDatabaseHealthScheduler) {
         postgresDatabaseHealthScheduler.stop();
         logger.info("PostgreSQL database health scheduler stopped");
-      }
-
-      if (environmentHealthScheduler) {
-        environmentHealthScheduler.stop();
-        logger.info("Environment health scheduler stopped");
       }
 
       if (backupScheduler) {

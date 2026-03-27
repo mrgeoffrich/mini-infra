@@ -3,12 +3,9 @@ import { z } from 'zod';
 import {
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
-  AddServiceToEnvironmentRequest,
-  UpdateEnvironmentServiceRequest,
   EnvironmentType,
-  ServiceConfiguration,
 } from '@mini-infra/types';
-import { EnvironmentManager, ServiceRegistry } from '../services/environment';
+import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
@@ -19,7 +16,6 @@ import { emitToChannel } from '../lib/socket';
 import { Channel, ServerEvent } from '@mini-infra/types';
 import { emitHAProxyUpdate } from '../services/haproxy-socket-emitter';
 import DockerService from '../services/docker';
-import { portUtils } from '../services/port-utils';
 
 const router = Router();
 const logger = appLogger();
@@ -29,7 +25,6 @@ const migratingEnvironments = new Set<string>();
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);
-const serviceRegistry = ServiceRegistry.getInstance();
 
 // Validation schemas
 const createEnvironmentSchema = z.object({
@@ -37,11 +32,6 @@ const createEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']),
   networkType: z.enum(['local', 'internet']).optional(),
-  services: z.array(z.object({
-    serviceName: z.string().min(1).max(100),
-    serviceType: z.string().min(1),
-    config: z.record(z.string(), z.any()).optional()
-  })).optional()
 });
 
 const updateEnvironmentSchema = z.object({
@@ -49,16 +39,6 @@ const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
   networkType: z.enum(['local', 'internet']).optional(),
-});
-
-const addServiceSchema = z.object({
-  serviceName: z.string().min(1).max(100),
-  serviceType: z.string().min(1),
-  config: z.record(z.string(), z.any()).optional()
-});
-
-const updateServiceSchema = z.object({
-  config: z.record(z.string(), z.any()).optional()
 });
 
 const listEnvironmentsSchema = z.object({
@@ -116,25 +96,11 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
     const request: CreateEnvironmentRequest = req.body;
     const userId = (req.user as any)?.id;
 
-    // Validate service types if provided
-    if (request.services) {
-      for (const serviceConfig of request.services) {
-        if (!serviceRegistry.isServiceTypeAvailable(serviceConfig.serviceType)) {
-          return res.status(400).json({
-            error: 'Invalid service type',
-            message: `Unknown service type: ${serviceConfig.serviceType}`,
-            availableTypes: serviceRegistry.getAvailableServiceTypes()
-          });
-        }
-      }
-    }
-
     const environment = await environmentManager.createEnvironment(request, userId);
 
     logger.debug({
       environmentId: environment.id,
       environmentName: environment.name,
-      serviceCount: environment.services.length,
       userId
     }, 'Environment created via API');
 
@@ -286,163 +252,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
   }
 });
 
-
-router.get('/:id/services', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const environment = await environmentManager.getEnvironmentById(id);
-
-    if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json(environment.services);
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment services');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment services'
-    });
-  }
-});
-
-
-router.post('/:id/services', requirePermission('environments:write'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const request: AddServiceToEnvironmentRequest = req.body;
-
-    // Validate service type
-    if (!serviceRegistry.isServiceTypeAvailable(request.serviceType)) {
-      return res.status(400).json({
-        error: 'Invalid service type',
-        message: `Unknown service type: ${request.serviceType}`,
-        availableTypes: serviceRegistry.getAvailableServiceTypes()
-      });
-    }
-
-    await environmentManager.addServiceToEnvironment(id, request);
-
-    // Return updated environment
-    const environment = await environmentManager.getEnvironmentById(id);
-
-    logger.debug({
-      environmentId: id,
-      serviceName: request.serviceName,
-      serviceType: request.serviceType
-    }, 'Service added to environment via API');
-
-    res.status(201).json(environment);
-
-  } catch (error) {
-    logger.error({
-      error,
-      environmentId: req.params.id,
-      request: req.body
-    }, 'Failed to add service to environment');
-
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return res.status(409).json({
-        error: 'Service name already exists',
-        message: 'A service with this name already exists in the environment'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to add service to environment'
-    });
-  }
-});
-
-
-router.get('/services/available', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const services = serviceRegistry.getAllServiceMetadata();
-
-    res.json({ services });
-
-  } catch (error) {
-    logger.error({ error }, 'Failed to get available services');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve available services'
-    });
-  }
-});
-
-
-router.get('/services/available/:serviceType', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const serviceType = String(req.params.serviceType);
-    const { environmentId } = req.query;
-
-    const definition = serviceRegistry.getServiceDefinition(serviceType);
-
-    if (!definition) {
-      return res.status(404).json({
-        error: 'Service type not found',
-        message: `Service type ${serviceType} is not available`,
-        availableTypes: serviceRegistry.getAvailableServiceTypes()
-      });
-    }
-
-    // Clone the metadata to avoid modifying the cached version
-    let exposedPorts = [...definition.metadata.exposedPorts];
-
-    // For HAProxy, calculate dynamic ports based on environment context
-    if (serviceType === 'haproxy' && environmentId && typeof environmentId === 'string') {
-      try {
-        const { portUtils } = await import('../services/port-utils');
-        const portConfig = await portUtils.getHAProxyPortsForEnvironment(environmentId);
-
-        // Update the HTTP and HTTPS port mappings with dynamic values
-        exposedPorts = exposedPorts.map(port => {
-          if (port.name === 'http') {
-            return { ...port, hostPort: portConfig.httpPort };
-          } else if (port.name === 'https') {
-            return { ...port, hostPort: portConfig.httpsPort };
-          }
-          return port;
-        });
-
-        logger.debug({
-          serviceType,
-          environmentId,
-          httpPort: portConfig.httpPort,
-          httpsPort: portConfig.httpsPort,
-          source: portConfig.source
-        }, 'Dynamic HAProxy ports calculated for environment');
-      } catch (error) {
-        logger.warn({ error, environmentId }, 'Failed to get dynamic HAProxy ports, using defaults');
-        // Fall back to default ports if calculation fails
-      }
-    }
-
-    res.json({
-      serviceType: definition.serviceType,
-      description: definition.description,
-      version: definition.metadata.version,
-      requiredNetworks: definition.metadata.requiredNetworks,
-      requiredVolumes: definition.metadata.requiredVolumes,
-      exposedPorts: exposedPorts,
-      dependencies: definition.metadata.dependencies,
-      tags: definition.metadata.tags
-    });
-
-  } catch (error) {
-    logger.error({ error, serviceType: req.params.serviceType }, 'Failed to get service type metadata');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve service type metadata'
-    });
-  }
-});
 
 // Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
 router.get('/:id/networks', requirePermission('environments:read'), async (req, res) => {
