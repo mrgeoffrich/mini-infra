@@ -423,7 +423,7 @@ describe("Container Routes", () => {
 
   describe("GET /api/containers/:id", () => {
     const mockContainer: DockerContainerInfo = {
-      id: "test-container-id",
+      id: "abcdef123456",
       name: "test-container",
       status: "running",
       image: "nginx",
@@ -440,11 +440,11 @@ describe("Container Routes", () => {
       mockDockerInstance.getContainer.mockResolvedValue(mockContainer);
 
       const response = await request(app)
-        .get("/api/containers/test-container-id")
+        .get("/api/containers/abcdef123456")
         .expect(200);
 
       expect(response.body).toMatchObject({
-        id: "test-container-id",
+        id: "abcdef123456",
         name: "test-container",
         status: "running",
         image: "nginx",
@@ -454,11 +454,11 @@ describe("Container Routes", () => {
       });
 
       expect(mockDockerInstance.getContainer).toHaveBeenCalledWith(
-        "test-container-id",
+        "abcdef123456",
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.objectContaining({
-          containerId: "test-container-id",
+          containerId: "abcdef123456",
           containerName: "test-container",
           containerStatus: "running",
         }),
@@ -481,17 +481,17 @@ describe("Container Routes", () => {
       mockDockerInstance.getContainer.mockResolvedValue(null);
 
       const response = await request(app)
-        .get("/api/containers/non-existent-container-id")
+        .get("/api/containers/abcdef789012")
         .expect(404);
 
       expect(response.body).toMatchObject({
         error: "Not Found",
-        message: "Container with ID 'non-existent-container-id' not found",
+        message: "Container with ID 'abcdef789012' not found",
       });
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          containerId: "non-existent-container-id",
+          containerId: "abcdef789012",
         }),
         "Container not found",
       );
@@ -501,7 +501,7 @@ describe("Container Routes", () => {
       mockDockerInstance.isConnected.mockReturnValue(false);
 
       const response = await request(app)
-        .get("/api/containers/test-container-id")
+        .get("/api/containers/abcdef123456")
         .expect(503);
 
       expect(response.body).toMatchObject({
@@ -516,7 +516,7 @@ describe("Container Routes", () => {
       );
 
       const response = await request(app)
-        .get("/api/containers/test-container-id")
+        .get("/api/containers/abcdef123456")
         .expect(504);
 
       expect(response.body).toMatchObject({

@@ -328,8 +328,12 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
-        <Tabs defaultValue="services" className="w-full">
+        <Tabs defaultValue="stacks" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="stacks" className="flex items-center gap-2">
+              <IconStack2 className="h-4 w-4" />
+              Stacks
+            </TabsTrigger>
             <TabsTrigger value="services" className="flex items-center gap-2">
               <IconServer className="h-4 w-4" />
               Services
@@ -342,11 +346,11 @@ export function EnvironmentDetailPage() {
               <IconDatabase className="h-4 w-4" />
               Volumes
             </TabsTrigger>
-            <TabsTrigger value="stacks" className="flex items-center gap-2">
-              <IconStack2 className="h-4 w-4" />
-              Stacks
-            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="stacks" forceMount >
+            <StacksList environmentId={environment.id} />
+          </TabsContent>
 
           <TabsContent value="services" className="space-y-6" forceMount >
             <Card>
@@ -431,10 +435,6 @@ export function EnvironmentDetailPage() {
 
           <TabsContent value="volumes" forceMount >
             <VolumeList environmentId={environment.id} />
-          </TabsContent>
-
-          <TabsContent value="stacks" forceMount >
-            <StacksList environmentId={environment.id} />
           </TabsContent>
         </Tabs>
       </div>
