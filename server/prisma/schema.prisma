@@ -373,7 +373,6 @@ model Environment {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  services    EnvironmentService[]
   networks    EnvironmentNetwork[]
   volumes     EnvironmentVolume[]
   deploymentConfigurations DeploymentConfiguration[]
@@ -384,28 +383,6 @@ model Environment {
   @@index([type])
   @@index([networkType])
   @@map("environments")
-}
-
-// EnvironmentService - Tracks services within an environment
-model EnvironmentService {
-  id            String   @id @default(cuid())
-  environmentId String
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  serviceName   String   // e.g., 'haproxy', 'redis', 'rabbitmq'
-  serviceType   String   // Class name implementing IApplicationService
-  status        String   @default("uninitialized") // ServiceStatus
-  health        String   @default("unknown") // HealthStatus
-  config        Json     // Service-specific configuration
-  startedAt     DateTime?
-  stoppedAt     DateTime?
-  lastError     Json?    // Error details
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@unique([environmentId, serviceName])
-  @@index([environmentId])
-  @@index([status])
-  @@map("environment_services")
 }
 
 // EnvironmentNetwork - Tracks Docker networks for environments
