@@ -201,6 +201,25 @@ router.delete('/:templateId', requirePermission('stacks:write'), async (req, res
   }
 });
 
+// POST /import-deployment/:configId — Import a DeploymentConfiguration as a user template
+router.post('/import-deployment/:configId', requirePermission('stacks:write'), async (req, res) => {
+  try {
+    const service = getTemplateService();
+    const template = await service.importDeploymentConfig(
+      String(req.params.configId),
+      (req as any).user?.id
+    );
+
+    logger.info(
+      { configId: req.params.configId, templateId: template.id, templateName: template.name },
+      'Deployment configuration imported as template'
+    );
+    res.status(201).json({ success: true, data: template });
+  } catch (error) {
+    handleTemplateError(error, res, 'Failed to import deployment configuration');
+  }
+});
+
 // POST /:templateId/instantiate — Create stack from template
 router.post('/:templateId/instantiate', requirePermission('stacks:write'), async (req, res) => {
   try {

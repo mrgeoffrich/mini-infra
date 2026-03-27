@@ -583,6 +583,165 @@ export class StackTemplateService {
   }
 
   // =====================
+  // Import from DeploymentConfiguration
+  // =====================
+
+  async importDeploymentConfig(
+    configId: string,
+    createdById?: string
+  ): Promise<StackTemplateInfo> {
+    // Look up the DeploymentConfiguration
+    const config = await this.prisma.deploymentConfiguration.findUnique({
+      where: { id: configId },
+    });
+
+    if (!config) {
+      throw new TemplateError("Deployment configuration not found", 404);
+    }
+
+    const containerConfig = config.containerConfig as any;
+    const healthCheckConfig = config.healthCheckConfig as any;
+    const rollbackConfig = config.rollbackConfig as any;
+
+    // Determine service type: StatelessWeb if hostname + listeningPort, else Stateful
+    const hasRouting = !!(config.hostname && config.listeningPort);
+    const serviceType = hasRouting ? "StatelessWeb" : "Stateful";
+
+    // Map environment array → env object
+    const env: Record<string, string> = {};
+    if (Array.isArray(containerConfig?.environment)) {
+      for (const e of containerConfig.environment) {
+        if (e.name && e.value !== undefined) {
+          env[e.name] = String(e.value);
+        }
+      }
+    }
+
+    // Map ports
+    const ports = Array.isArray(containerConfig?.ports)
+      ? containerConfig.ports.map((p: any) => ({
+          containerPort: p.containerPort,
+          hostPort: p.hostPort ?? p.containerPort,
+          protocol: p.protocol ?? "tcp",
+        }))
+      : [];
+
+    // Map volumes → mounts (bind type)
+    const mounts = Array.isArray(containerConfig?.volumes)
+      ? containerConfig.volumes.map((v: any) => ({
+          source: v.hostPath,
+          target: v.containerPath,
+          type: "bind" as const,
+          readOnly: v.mode === "ro",
+        }))
+      : [];
+
+    // Map labels
+    const labels = containerConfig?.labels ?? {};
+
+    // Map networks → joinNetworks
+    const joinNetworks = Array.isArray(containerConfig?.networks)
+      ? containerConfig.networks
+      : [];
+
+    // Build healthcheck in Docker format
+    let healthcheck: any = undefined;
+    if (healthCheckConfig?.endpoint) {
+      const method = healthCheckConfig.method ?? "GET";
+      const endpoint = healthCheckConfig.endpoint;
+      const port = config.listeningPort ?? 80;
+      healthcheck = {
+        test: [
+          "CMD-SHELL",
+          `curl -f -X ${method} http://localhost:${port}${endpoint} || exit 1`,
+        ],
+        interval: (healthCheckConfig.interval ?? 30000) * 1000000, // ms → ns
+        timeout: (healthCheckConfig.timeout ?? 5000) * 1000000,
+        retries: healthCheckConfig.retries ?? 3,
+        startPeriod: 10000000000, // 10s default in ns
+      };
+    }
+
+    // Build container config
+    const stackContainerConfig: any = {
+      env,
+      ports,
+      mounts,
+      labels,
+      joinNetworks,
+      restartPolicy: "unless-stopped",
+    };
+    if (healthcheck) {
+      stackContainerConfig.healthcheck = healthcheck;
+    }
+
+    // Build routing config for StatelessWeb
+    let routing: any = undefined;
+    if (hasRouting) {
+      routing = {
+        hostname: config.hostname!,
+        listeningPort: config.listeningPort!,
+        enableSsl: config.enableSsl ?? false,
+        tlsCertificateId: config.tlsCertificateId ?? undefined,
+      };
+    }
+
+    // Build docker image with registry prefix
+    const dockerImage = config.dockerRegistry
+      ? `${config.dockerRegistry}/${config.dockerImage}`
+      : config.dockerImage;
+
+    // Build default parameter values from rollback config and environment
+    const defaultParameterValues: Record<string, any> = {};
+    if (rollbackConfig) {
+      if (rollbackConfig.enabled !== undefined) {
+        defaultParameterValues.rollbackEnabled = rollbackConfig.enabled;
+      }
+      if (rollbackConfig.maxWaitTime !== undefined) {
+        defaultParameterValues.rollbackMaxWaitTime = rollbackConfig.maxWaitTime;
+      }
+      if (rollbackConfig.keepOldContainer !== undefined) {
+        defaultParameterValues.rollbackKeepOldContainer = rollbackConfig.keepOldContainer;
+      }
+    }
+    if (config.environmentId) {
+      defaultParameterValues.environmentId = config.environmentId;
+    }
+
+    // Build the service definition
+    const service: StackServiceDefinition = {
+      serviceName: config.applicationName,
+      serviceType,
+      dockerImage,
+      dockerTag: config.dockerTag,
+      containerConfig: stackContainerConfig,
+      dependsOn: [],
+      order: 0,
+      routing,
+    };
+
+    // Create the template via createUserTemplate
+    const template = await this.createUserTemplate(
+      {
+        name: config.applicationName,
+        displayName: config.applicationName,
+        scope: "environment",
+        services: [service],
+        networks: [],
+        volumes: [],
+        defaultParameterValues,
+      },
+      createdById
+    );
+
+    // Publish the draft immediately
+    await this.publishDraft(template.id);
+
+    // Return the full template with the published version
+    return (await this.getTemplate(template.id))!;
+  }
+
+  // =====================
   // Stack Creation from Template
   // =====================
 
