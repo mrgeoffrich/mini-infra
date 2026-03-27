@@ -40,8 +40,12 @@ export class AddContainerToLB {
             if (!context.containerPort) {
                 throw new Error('Container port is required for server configuration');
             }
-            if (!context.config?.healthCheck) {
-                throw new Error('Health check configuration is required for server setup');
+            // Health check configuration - prefer source-agnostic context fields,
+            // fall back to config.healthCheck for legacy callers
+            if (!context.healthCheckEndpoint && !context.config?.healthCheck) {
+                logger.info({
+                    deploymentId: context.deploymentId,
+                }, 'No explicit health check config, using defaults');
             }
 
             // Initialize HAProxy DataPlane client
@@ -86,9 +90,16 @@ export class AddContainerToLB {
                 }, 'HAProxy backend already exists, skipping creation');
             }
 
-            // Extract health check configuration from deployment config
-            const healthCheck: HealthCheckConfig = context.config.healthCheck;
-            const healthCheckEndpoint = healthCheck.endpoint || '/health';
+            // Resolve health check configuration - prefer source-agnostic context fields
+            const healthCheckEndpoint = context.healthCheckEndpoint
+                ?? context.config?.healthCheck?.endpoint
+                ?? '/health';
+            const healthCheckInterval = context.healthCheckInterval
+                ?? context.config?.healthCheck?.interval
+                ?? 2000;
+            const healthCheckRetries = context.healthCheckRetries
+                ?? context.config?.healthCheck?.retries
+                ?? 2;
 
             // Configure server with health check settings
             // Use container name for DNS resolution (preferred) or fall back to IP address
@@ -100,8 +111,8 @@ export class AddContainerToLB {
                 port: context.containerPort,
                 check: 'enabled',
                 check_path: healthCheckEndpoint,
-                inter: healthCheck.interval || 2000, // Default 2 seconds
-                rise: Math.max(2, healthCheck.retries || 2), // At least 2 successful checks to mark UP
+                inter: healthCheckInterval,
+                rise: Math.max(2, healthCheckRetries),
                 fall: 3, // 3 failed checks to mark DOWN
                 weight: 100,
                 enabled: true,
