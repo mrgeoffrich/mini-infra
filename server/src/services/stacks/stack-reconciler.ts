@@ -714,6 +714,9 @@ export class StackReconciler {
         if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Creating service');
 
+        // Remove any pre-existing container with the same name (e.g. from a failed apply or manual creation)
+        await this.removeConflictingContainer(`${projectName}-${action.serviceName}`, stackId, log);
+
         await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
@@ -864,6 +867,9 @@ export class StackReconciler {
     switch (action.action) {
       case 'create': {
         log.info({ service: action.serviceName }, 'Creating StatelessWeb service');
+
+        // Remove any pre-existing container with the same name (e.g. from a failed apply or manual creation)
+        await this.removeConflictingContainer(containerName, stackId, log);
 
         await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
@@ -1063,6 +1069,27 @@ export class StackReconciler {
 
       default:
         throw new Error(`Unknown action: ${action.action}`);
+    }
+  }
+
+  private async removeConflictingContainer(
+    containerName: string,
+    stackId: string,
+    log: any
+  ): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+    const allContainers = await docker.listContainers({ all: true });
+    const conflict = allContainers.find(
+      (c) =>
+        c.Names?.some((n) => n.replace(/^\//, '') === containerName) &&
+        c.Labels['mini-infra.stack-id'] !== stackId
+    );
+    if (conflict) {
+      log.warn(
+        { containerName, conflictId: conflict.Id.slice(0, 12) },
+        'Removing conflicting container with same name before create'
+      );
+      await this.containerManager.stopAndRemoveContainer(conflict.Id);
     }
   }
 
