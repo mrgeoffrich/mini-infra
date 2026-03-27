@@ -296,7 +296,7 @@ router.post(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
       const validationResult = configureSSLSchema.safeParse(req.body);
 
       if (!validationResult.success) {
@@ -434,7 +434,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Fetch frontend
       const frontend = await prisma.hAProxyFrontend.findUnique({
@@ -502,7 +502,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { configId } = req.params;
+      const configId = String(req.params.configId);
 
       // Validate CUID format
       if (!z.string().cuid().safeParse(configId).success) {
@@ -559,7 +559,7 @@ router.post(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { configId } = req.params;
+      const configId = String(req.params.configId);
 
       // Validate CUID format
       if (!z.string().cuid().safeParse(configId).success) {
@@ -709,7 +709,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Fetch frontend
       const frontend = await prisma.hAProxyFrontend.findUnique({
@@ -781,7 +781,7 @@ router.post(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName } = req.params;
+      const frontendName = String(req.params.frontendName);
 
       // Validate request body
       const validationResult = createRouteSchema.safeParse(req.body);
@@ -893,7 +893,7 @@ router.patch(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName, routeId } = req.params;
+      const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
 
       // Validate route ID
       if (!z.string().cuid().safeParse(routeId).success) {
@@ -1049,7 +1049,7 @@ router.delete(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { frontendName, routeId } = req.params;
+      const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
 
       // Validate route ID
       if (!z.string().cuid().safeParse(routeId).success) {

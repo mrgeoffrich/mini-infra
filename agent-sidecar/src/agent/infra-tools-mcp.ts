@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool, createSdkMcpServer } from "./sdk";
+import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { executeTool, type ToolResult } from "./tools";
 
 const MINI_INFRA_API_URL = process.env.MINI_INFRA_API_URL || "http://localhost:5005";

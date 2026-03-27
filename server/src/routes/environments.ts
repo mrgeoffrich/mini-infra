@@ -166,7 +166,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
 
 router.get('/:id', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
 
@@ -191,7 +191,7 @@ router.get('/:id', requirePermission('environments:read'), async (req, res) => {
 
 router.put('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const request: UpdateEnvironmentRequest = req.body;
 
     const environment = await environmentManager.updateEnvironment(id, request);
@@ -230,7 +230,7 @@ router.put('/:id', requirePermission('environments:write'), async (req, res) => 
 
 router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
     const userId = (req.user as any)?.id;
 
@@ -295,7 +295,7 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
 
 router.get('/:id/status', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const status = await environmentManager.getEnvironmentStatus(id);
 
@@ -321,7 +321,7 @@ router.get('/:id/status', requirePermission('environments:read'), async (req, re
 // Validate ports for environment before starting
 router.get('/:id/validate-ports', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Check if environment exists
     const environment = await prisma.environment.findUnique({
@@ -379,7 +379,7 @@ router.get('/:id/validate-ports', requirePermission('environments:read'), async 
 
 router.post('/:id/start', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const userId = (req.user as any)?.id;
 
     const result = await environmentManager.startEnvironment(id, userId);
@@ -412,7 +412,7 @@ router.post('/:id/start', requirePermission('environments:write'), async (req, r
 
 router.post('/:id/stop', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const userId = (req.user as any)?.id;
 
     const result = await environmentManager.stopEnvironment(id, userId);
@@ -445,7 +445,7 @@ router.post('/:id/stop', requirePermission('environments:write'), async (req, re
 
 router.get('/:id/services', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
 
@@ -470,7 +470,7 @@ router.get('/:id/services', requirePermission('environments:read'), async (req, 
 
 router.post('/:id/services', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const request: AddServiceToEnvironmentRequest = req.body;
 
     // Validate service type
@@ -535,7 +535,7 @@ router.get('/services/available', requirePermission('environments:read'), async 
 
 router.get('/services/available/:serviceType', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { serviceType } = req.params;
+    const serviceType = String(req.params.serviceType);
     const { environmentId } = req.query;
 
     const definition = serviceRegistry.getServiceDefinition(serviceType);
@@ -603,7 +603,7 @@ router.get('/services/available/:serviceType', requirePermission('environments:r
 // Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
 router.get('/:id/networks', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
@@ -627,7 +627,7 @@ router.get('/:id/networks', requirePermission('environments:read'), async (req, 
 // Volumes routes - inline instead of sub-router to avoid Express 5 mounting complexity
 router.get('/:id/volumes', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
@@ -713,7 +713,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
  */
 router.post('/:id/remediate-networks', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const result = await environmentManager.remediateNetworks(id);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -731,7 +731,7 @@ router.post('/:id/remediate-networks', requirePermission('environments:write'), 
  */
 router.post('/:id/remediate-haproxy', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
@@ -786,7 +786,7 @@ router.post('/:id/remediate-haproxy', requirePermission('environments:write'), a
  */
 router.get('/:id/haproxy-status', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
@@ -880,7 +880,7 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
  */
 router.get('/:id/remediation-preview', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
@@ -934,7 +934,7 @@ router.get('/:id/remediation-preview', requirePermission('environments:read'), a
  */
 router.get('/:id/migration-preview', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
@@ -966,7 +966,7 @@ router.get('/:id/migration-preview', requirePermission('environments:read'), asy
  */
 router.post('/:id/migrate-haproxy', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {

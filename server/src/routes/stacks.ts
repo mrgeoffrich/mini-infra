@@ -61,7 +61,7 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
 router.get('/:stackId', requirePermission('stacks:read'), async (req, res) => {
   try {
     const stack = await prisma.stack.findUnique({
-      where: { id: req.params.stackId },
+      where: { id: String(req.params.stackId) },
       include: {
         services: { orderBy: { order: 'asc' } },
         template: { select: { currentVersion: { select: { version: true } } } },
@@ -141,7 +141,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { stackId } = req.params;
+    const stackId = String(req.params.stackId);
     const existing = await prisma.stack.findUnique({
       where: { id: stackId },
       include: { services: true },
@@ -199,7 +199,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
 // DELETE /:stackId — Delete stack
 router.delete('/:stackId', requirePermission('stacks:write'), async (req, res) => {
   try {
-    const { stackId } = req.params;
+    const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });
 
     if (!stack) {
@@ -247,7 +247,7 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { stackId, serviceName } = req.params;
+    const stackId = String(req.params.stackId); const serviceName = String(req.params.serviceName);
 
     const service = await prisma.stackService.findFirst({
       where: { stackId, serviceName },
@@ -301,7 +301,7 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
-    const plan = await reconciler.plan(req.params.stackId);
+    const plan = await reconciler.plan(String(req.params.stackId));
 
     res.json({ success: true, data: plan });
   } catch (error: any) {
@@ -317,7 +317,7 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
 router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, res) => {
   try {
     const stack = await prisma.stack.findUnique({
-      where: { id: req.params.stackId },
+      where: { id: String(req.params.stackId) },
       select: { parameters: true, parameterValues: true },
     });
     if (!stack) {
@@ -350,7 +350,7 @@ router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, r
 
 // POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)
 router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, res) => {
-  const stackId = req.params.stackId;
+  const stackId = String(req.params.stackId);
   try {
     const parsed = applyStackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -515,7 +515,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
 
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, and DB record
 router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, res) => {
-  const stackId = req.params.stackId;
+  const stackId = String(req.params.stackId);
   try {
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });
     if (!stack) {
@@ -569,7 +569,7 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
 // GET /:stackId/status — Current status with container state
 router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const { stackId } = req.params;
+    const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({
       where: { id: stackId },
       include: {
@@ -616,7 +616,7 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
 // GET /:stackId/history — List deployment history
 router.get('/:stackId/history', requirePermission('stacks:read'), async (req, res) => {
   try {
-    const { stackId } = req.params;
+    const stackId = String(req.params.stackId);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const offset = parseInt(req.query.offset as string) || 0;
 
@@ -646,7 +646,7 @@ router.get('/:stackId/history', requirePermission('stacks:read'), async (req, re
 router.get('/:stackId/history/:deploymentId', requirePermission('stacks:read'), async (req, res) => {
   try {
     const deployment = await prisma.stackDeployment.findFirst({
-      where: { id: req.params.deploymentId, stackId: req.params.stackId },
+      where: { id: String(req.params.deploymentId), stackId: String(req.params.stackId) },
     });
 
     if (!deployment) {

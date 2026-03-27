@@ -71,7 +71,7 @@ router.patch(
   "/:id",
   requirePermission("api-keys:write") as RequestHandler,
   (async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const result = updatePresetBodySchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ error: "Validation error", details: result.error.issues });
@@ -94,7 +94,7 @@ router.delete(
   "/:id",
   requirePermission("api-keys:write") as RequestHandler,
   (async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = String(req.params.id);
     try {
       await deletePreset(id);
       res.json({ success: true, message: "Permission preset deleted" });

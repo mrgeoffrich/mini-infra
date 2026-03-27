@@ -125,7 +125,7 @@ router.get(
       return;
     }
 
-    const { sessionId } = req.params;
+    const sessionId = String(req.params.sessionId);
     const mapping = service.getSessionMapping(sessionId);
 
     if (!mapping) {
@@ -240,7 +240,7 @@ router.put(
       return;
     }
 
-    const { sessionId } = req.params;
+    const sessionId = String(req.params.sessionId);
     const mapping = service.getSessionMapping(sessionId);
 
     if (!mapping) {
@@ -283,7 +283,7 @@ router.delete(
         return;
       }
 
-      const { sessionId } = req.params;
+      const sessionId = String(req.params.sessionId);
       const mapping = service.getSessionMapping(sessionId);
 
       if (!mapping) {

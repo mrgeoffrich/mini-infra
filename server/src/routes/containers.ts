@@ -423,7 +423,7 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const containerId = req.params.id;
+  const containerId = String(req.params.id);
 
   logger.debug(
     {
@@ -532,7 +532,7 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const containerId = req.params.id;
+  const containerId = String(req.params.id);
 
   logger.debug(
     {
@@ -707,7 +707,7 @@ router.get("/by-deployment/:deploymentId", requirePermission('containers:read') 
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const { deploymentId } = req.params;
+  const deploymentId = String(req.params.deploymentId);
 
   logger.debug(
     {
@@ -825,7 +825,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const containerId = req.params.id;
+  const containerId = String(req.params.id);
 
   logger.debug(
     {
@@ -1080,7 +1080,7 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const containerId = req.params.id;
+  const containerId = String(req.params.id);
   const action = req.params.action as ContainerAction;
 
   logger.debug(

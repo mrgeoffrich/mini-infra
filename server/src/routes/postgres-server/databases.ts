@@ -38,7 +38,7 @@ const changeDatabaseOwnerSchema = z.object({
 router.get("/", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
 
     const databases = await databaseManagementService.listManagedDatabases(serverId, userId);
 
@@ -76,7 +76,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
 router.post("/", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
     const validatedData = createDatabaseSchema.parse(req.body);
 
     const database = await databaseManagementService.createDatabase(serverId, userId, validatedData);
@@ -123,8 +123,8 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:dbId", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
 
     const database = await databaseManagementService.getDatabaseDetails(serverId, userId, databaseId);
 
@@ -169,8 +169,8 @@ router.get("/:dbId", requirePermission('postgres:read'), async (req, res) => {
 router.delete("/:dbId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
 
     await databaseManagementService.dropDatabase(serverId, userId, databaseId);
 
@@ -209,8 +209,8 @@ router.delete("/:dbId", requirePermission('postgres:write'), async (req, res) =>
 router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
     const validatedData = changeDatabaseOwnerSchema.parse(req.body);
 
     const updatedDatabase = await databaseManagementService.changeOwner(
@@ -270,7 +270,7 @@ router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res)
 router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
+    const serverId = String(req.params.serverId);
 
     const result = await databaseManagementService.syncDatabases(serverId, userId);
 
@@ -303,8 +303,8 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:dbId/grants", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const serverId = req.params.serverId;
-    const databaseId = req.params.dbId;
+    const serverId = String(req.params.serverId);
+    const databaseId = String(req.params.dbId);
 
     const grants = await grantManagementService.listGrantsForDatabase(serverId, userId, databaseId);
 

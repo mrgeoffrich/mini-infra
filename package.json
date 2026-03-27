@@ -4,29 +4,27 @@
   "workspaces": [
     "client",
     "server",
-    "lib",
-    "update-sidecar",
-    "agent-sidecar"
+    "lib"
   ],
   "scripts": {
     "dev": "node scripts/dev-with-restart.mjs",
     "dev:all": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:lib": "cd lib && npm run dev",
-    "dev:client": "cd client && npm run dev",
-    "dev:server": "cd server && npm run dev",
+    "dev:lib": "npm run dev -w lib",
+    "dev:client": "npm run dev -w client",
+    "dev:server": "npm run dev -w server",
     "dev:agent-sidecar": "node scripts/dev-agent-sidecar.mjs",
     "build": "npm run build:server && npm run build:client",
-    "build:lib": "cd lib && npm run build",
-    "build:client": "cd client && npm run build",
-    "build:server": "npm run build:lib && cd server && npm run build",
-    "build:sidecar": "cd update-sidecar && npm run build",
-    "build:agent-sidecar": "cd agent-sidecar && npm run build",
+    "build:lib": "npm run build -w lib",
+    "build:client": "npm run build -w client",
+    "build:server": "npm run build:lib && npm run build -w server",
+    "build:sidecar": "npm --prefix update-sidecar install && npm --prefix update-sidecar run build",
+    "build:agent-sidecar": "npm --prefix agent-sidecar install && npm --prefix agent-sidecar run build",
     "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
-    "start": "cd server && npm start",
-    "install:all": "npm install && npm install --workspace=client && npm install --workspace=server",
+    "start": "npm start -w server",
+    "install:all": "npm install",
     "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
-    "format": "cd server && npm run format",
-    "format:check": "cd server && npm run format:check"
+    "format": "npm run format -w server",
+    "format:check": "npm run format:check -w server"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

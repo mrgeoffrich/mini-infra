@@ -8,6 +8,8 @@ import {
   SSEEvent,
   CreateSessionRequest,
 } from "./types";
+import { AsyncMessageQueue } from "./async-message-queue";
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "./logger";
 
 const MAX_SESSIONS = 20;
@@ -20,6 +22,7 @@ const MAX_CONCURRENT = 5;
 interface InternalSession extends Session {
   abortController: AbortController;
   emitter: EventEmitter;
+  messageQueue: AsyncMessageQueue<SDKUserMessage>;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,11 +41,25 @@ export class SessionStore {
     const id = `sess_${uuidv4().replace(/-/g, "").slice(0, 16)}`;
     const now = new Date().toISOString();
 
+    // Build the initial message content (with optional context appended)
+    let messageText = req.message;
+    if (req.context && Object.keys(req.context).length > 0) {
+      messageText += `\n\nContext: ${JSON.stringify(req.context, null, 2)}`;
+    }
+
+    const messageQueue = new AsyncMessageQueue<SDKUserMessage>();
+    messageQueue.push({
+      type: "user",
+      message: { role: "user", content: messageText },
+      parent_tool_use_id: null,
+      session_id: "",
+    });
+
     const session: InternalSession = {
       id,
       status: "running",
       currentPath: req.currentPath ?? "",
-      sdkSessionId: req.sdkSessionId ?? null,
+      claudeSessionId: null,
       tokenUsage: { input: 0, output: 0 },
       turns: 0,
       errorMessage: null,
@@ -51,6 +68,7 @@ export class SessionStore {
       durationMs: null,
       abortController: new AbortController(),
       emitter: new EventEmitter(),
+      messageQueue,
     };
 
     this.sessions.set(id, session);
@@ -137,6 +155,7 @@ export class SessionStore {
     session.completedAt = now;
     session.durationMs =
       new Date(now).getTime() - new Date(session.createdAt).getTime();
+    session.messageQueue.close();
 
     logger.info(
       { sessionId: id, status: newStatus, durationMs: session.durationMs },
@@ -180,10 +199,25 @@ export class SessionStore {
   // Session cleanup
   // -----------------------------------------------------------------------
 
+  /** Push a follow-up message into a running session's queue. */
+  pushMessage(id: string, text: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session || session.status !== "running") return false;
+
+    session.messageQueue.push({
+      type: "user",
+      message: { role: "user", content: text },
+      parent_tool_use_id: null,
+      session_id: session.claudeSessionId ?? "",
+    });
+    return true;
+  }
+
   deleteSession(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
 
+    session.messageQueue.close();
     session.abortController.abort();
 
     if (session.status === "running") {

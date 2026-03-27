@@ -73,7 +73,7 @@ router.get("/packages/:packageName/versions", requirePermission('settings:read')
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
-  const { packageName } = req.params;
+  const packageName = String(req.params.packageName);
 
   logger.debug(
     {
@@ -177,7 +177,7 @@ router.get("/repos/:owner/:repo/actions/runs", requirePermission('settings:read'
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id || "system";
-  const { owner, repo } = req.params;
+  const owner = String(req.params.owner); const repo = String(req.params.repo);
 
   logger.debug(
     {

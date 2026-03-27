@@ -205,7 +205,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { backendName } = req.params;
+      const backendName = String(req.params.backendName);
       const { environmentId } = req.query;
 
       if (!environmentId || typeof environmentId !== "string") {
@@ -269,7 +269,7 @@ router.patch(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { backendName } = req.params;
+      const backendName = String(req.params.backendName);
       const { environmentId } = req.query;
 
       if (!environmentId || typeof environmentId !== "string") {
@@ -408,7 +408,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { backendName } = req.params;
+      const backendName = String(req.params.backendName);
       const { environmentId } = req.query;
 
       if (!environmentId || typeof environmentId !== "string") {
@@ -468,7 +468,7 @@ router.get(
   requirePermission('haproxy:read') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { backendName, serverName } = req.params;
+      const backendName = String(req.params.backendName); const serverName = String(req.params.serverName);
       const { environmentId } = req.query;
 
       if (!environmentId || typeof environmentId !== "string") {
@@ -541,7 +541,7 @@ router.patch(
   requirePermission('haproxy:write') as RequestHandler,
   async (req: Request, res: Response) => {
     try {
-      const { backendName, serverName } = req.params;
+      const backendName = String(req.params.backendName); const serverName = String(req.params.serverName);
       const { environmentId } = req.query;
 
       if (!environmentId || typeof environmentId !== "string") {

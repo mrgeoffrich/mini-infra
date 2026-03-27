@@ -196,7 +196,7 @@ router.get('/loki/label/:name/values', requirePermission('monitoring:read'), asy
     if (start && typeof start === 'string') params.set('start', start);
     if (end && typeof end === 'string') params.set('end', end);
 
-    const response = await fetch(`${LOKI_URL}/loki/api/v1/label/${encodeURIComponent(req.params.name)}/values?${params}`);
+    const response = await fetch(`${LOKI_URL}/loki/api/v1/label/${encodeURIComponent(String(req.params.name))}/values?${params}`);
     const data = await response.json();
     res.json(data);
   } catch (error) {

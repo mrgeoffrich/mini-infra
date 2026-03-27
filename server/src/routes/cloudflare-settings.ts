@@ -915,7 +915,7 @@ router.get("/tunnels/:id/config", requirePermission('settings:read') as RequestH
 
     // Fetch tunnel configuration
     const tunnelConfig =
-      await cloudflareConfigService.getTunnelConfig(tunnelId);
+      await cloudflareConfigService.getTunnelConfig(String(tunnelId));
 
     if (!tunnelConfig) {
       return res.status(404).json({
@@ -1092,7 +1092,7 @@ router.post("/tunnels/:id/hostnames", requirePermission('settings:write') as Req
 
     // Add hostname to tunnel configuration
     const updatedConfig = await cloudflareConfigService.addHostname(
-      tunnelId,
+      String(tunnelId),
       hostname,
       service,
       path,
@@ -1199,7 +1199,7 @@ router.delete(
 
     try {
       // URL decode hostname in case it contains special characters
-      const decodedHostname = decodeURIComponent(hostname);
+      const decodedHostname = decodeURIComponent(String(hostname));
 
       // Check if API token and account ID are configured
       const apiToken = await cloudflareConfigService.getApiToken();
@@ -1223,7 +1223,7 @@ router.delete(
 
       // Remove hostname from tunnel configuration
       const updatedConfig = await cloudflareConfigService.removeHostname(
-        tunnelId,
+        String(tunnelId),
         decodedHostname,
         path as string | undefined,
       );
@@ -1366,7 +1366,7 @@ router.get(
   requirePermission("settings:read"),
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { environmentId } = req.params;
+      const environmentId = String(req.params.environmentId);
 
       const info = await cloudflareConfigService.getManagedTunnelInfo(environmentId);
 
@@ -1406,7 +1406,7 @@ router.post(
   requirePermission("settings:write"),
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { environmentId } = req.params;
+      const environmentId = String(req.params.environmentId);
       const user = getAuthenticatedUser(req);
       const userId = user?.id || "system";
 
@@ -1561,7 +1561,7 @@ router.delete(
   requirePermission("settings:write"),
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { environmentId } = req.params;
+      const environmentId = String(req.params.environmentId);
       const user = getAuthenticatedUser(req);
       const userId = user?.id || "system";
 

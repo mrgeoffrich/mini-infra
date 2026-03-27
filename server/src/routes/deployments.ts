@@ -466,7 +466,7 @@ router.get(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       const config = await deploymentConfigService.getDeploymentConfig(
         id,
@@ -509,7 +509,7 @@ router.put(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Validate request body
       const parseResult = updateConfigSchema.safeParse(req.body);
@@ -577,7 +577,7 @@ router.delete(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Get deployment configuration
       const config = await deploymentConfigService.getDeploymentConfig(id);
@@ -775,7 +775,7 @@ router.get(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Get deployment with steps and containers
       const deployment = await prisma.deployment.findFirst({
@@ -877,7 +877,7 @@ router.post(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Verify deployment exists
       const deployment = await prisma.deployment.findFirst({
@@ -1101,7 +1101,7 @@ router.get(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Get deployment with containers
       const deployment = await prisma.deployment.findFirst({
@@ -1167,7 +1167,7 @@ router.get(
         });
       }
 
-      const { removalId } = req.params;
+      const removalId = String(req.params.removalId);
 
       // Get removal operation status from orchestrator
       const status = deploymentOrchestrator.getRemovalOperationStatus(removalId);
@@ -1247,7 +1247,7 @@ router.delete(
         });
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       // Get deployment configuration
       const config = await deploymentConfigService.getDeploymentConfig(id);

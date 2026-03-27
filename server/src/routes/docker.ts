@@ -70,7 +70,7 @@ router.delete(
   requirePermission('docker:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
 
       if (!id) {
         return res.status(400).json({
@@ -164,7 +164,7 @@ router.delete(
   requirePermission('docker:write'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.params;
+      const name = String(req.params.name);
 
       if (!name) {
         return res.status(400).json({
@@ -218,7 +218,7 @@ router.post(
   requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.params;
+      const name = String(req.params.name);
 
       if (!name) {
         return res.status(400).json({
@@ -282,7 +282,7 @@ router.get(
   requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.params;
+      const name = String(req.params.name);
 
       if (!name) {
         return res.status(400).json({
@@ -344,7 +344,7 @@ router.post(
   requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.params;
+      const name = String(req.params.name);
       const { filePaths } = req.body as FetchFileContentsRequest;
 
       if (!name) {
@@ -418,7 +418,7 @@ router.get(
   requirePermission('docker:read'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name } = req.params;
+      const name = String(req.params.name);
       const { path } = req.query;
 
       if (!name) {

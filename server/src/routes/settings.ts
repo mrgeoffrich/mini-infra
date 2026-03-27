@@ -364,7 +364,7 @@ router.get("/:id", requirePermission('settings:read') as RequestHandler, (async 
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const settingId = req.params.id;
+  const settingId = String(req.params.id);
 
   logger.debug(
     {
@@ -451,7 +451,7 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const settingId = req.params.id;
+  const settingId = String(req.params.id);
 
   logger.debug(
     {
@@ -591,7 +591,7 @@ router.delete("/:id", requirePermission('settings:write') as RequestHandler, (as
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
-  const settingId = req.params.id;
+  const settingId = String(req.params.id);
 
   logger.debug(
     {

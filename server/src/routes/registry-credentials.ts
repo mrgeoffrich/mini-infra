@@ -62,7 +62,7 @@ router.get("/", requirePermission('registry:read'), async (req, res) => {
 router.get("/:id", requirePermission('registry:read'), async (req, res) => {
   try {
     const credential = await registryCredentialService.getCredential(
-      req.params.id,
+      String(req.params.id),
     );
 
     if (!credential) {
@@ -138,7 +138,7 @@ router.put("/:id", requirePermission('registry:write'), async (req, res) => {
     }
 
     const credential = await registryCredentialService.updateCredential(
-      req.params.id,
+      String(req.params.id),
       validatedData,
       userId,
     );
@@ -170,7 +170,7 @@ router.put("/:id", requirePermission('registry:write'), async (req, res) => {
 // DELETE /api/registry-credentials/:id
 router.delete("/:id", requirePermission('registry:write'), async (req, res) => {
   try {
-    await registryCredentialService.deleteCredential(req.params.id);
+    await registryCredentialService.deleteCredential(String(req.params.id));
 
     logger.info(
       { credentialId: req.params.id },
@@ -189,7 +189,7 @@ router.delete("/:id", requirePermission('registry:write'), async (req, res) => {
 // POST /api/registry-credentials/:id/set-default
 router.post("/:id/set-default", requirePermission('registry:write'), async (req, res) => {
   try {
-    await registryCredentialService.setDefaultCredential(req.params.id);
+    await registryCredentialService.setDefaultCredential(String(req.params.id));
 
     logger.info(
       { credentialId: req.params.id },
@@ -214,7 +214,7 @@ router.post("/:id/test", requirePermission('registry:write'), async (req, res) =
     const testImage = req.body?.testImage; // Optional test image from request body
 
     const result = await registryCredentialService.validateCredential(
-      req.params.id,
+      String(req.params.id),
       testImage,
     );
 

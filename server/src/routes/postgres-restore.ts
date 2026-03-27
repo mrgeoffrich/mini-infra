@@ -493,7 +493,7 @@ router.post(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { databaseId } = req.params;
+    const databaseId = String(req.params.databaseId);
 
     if (!user?.id) {
       return res.status(401).json({
@@ -690,7 +690,7 @@ router.get(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { operationId } = req.params;
+    const operationId = String(req.params.operationId);
 
     if (!user?.id) {
       return res.status(401).json({
@@ -782,7 +782,7 @@ router.get(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { containerName } = req.params;
+    const containerName = String(req.params.containerName);
 
     if (!user?.id) {
       return res.status(401).json({
@@ -862,7 +862,7 @@ router.get(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { databaseId } = req.params;
+    const databaseId = String(req.params.databaseId);
 
     if (!user?.id) {
       return res.status(401).json({
@@ -971,7 +971,7 @@ router.get(
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
-    const { operationId } = req.params;
+    const operationId = String(req.params.operationId);
 
     if (!user?.id) {
       return res.status(401).json({

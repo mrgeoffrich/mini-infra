@@ -27,7 +27,7 @@ const updateNetworkSchema = z.object({
 
 router.get('/', requirePermission('environments:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
@@ -51,7 +51,7 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
 
 router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const validatedData = createNetworkSchema.parse(req.body);
 
     const environment = await environmentManager.getEnvironmentById(id);
@@ -110,7 +110,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
 
 router.put('/:networkId', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id, networkId } = req.params;
+    const id = String(req.params.id); const networkId = String(req.params.networkId);
     const validatedData = updateNetworkSchema.parse(req.body);
 
     const environment = await environmentManager.getEnvironmentById(id);
@@ -172,7 +172,7 @@ router.put('/:networkId', requirePermission('environments:write'), async (req, r
 
 router.delete('/:networkId', requirePermission('environments:write'), async (req, res) => {
   try {
-    const { id, networkId } = req.params;
+    const id = String(req.params.id); const networkId = String(req.params.networkId);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {

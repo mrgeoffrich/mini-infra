@@ -147,7 +147,7 @@ router.get("/health", requirePermission('backups:read'), async (req, res) => {
  */
 router.get("/:id", requirePermission('backups:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const backup = await prisma.selfBackup.findUnique({
       where: { id },
@@ -203,7 +203,7 @@ router.get("/:id", requirePermission('backups:read'), async (req, res) => {
  */
 router.get("/:id/download", requirePermission('backups:read'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Fetch backup from database
     const backup = await prisma.selfBackup.findUnique({
@@ -290,7 +290,7 @@ router.get("/:id/download", requirePermission('backups:read'), async (req, res) 
  */
 router.delete("/:id", requirePermission('backups:write'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Check if backup exists
     const backup = await prisma.selfBackup.findUnique({

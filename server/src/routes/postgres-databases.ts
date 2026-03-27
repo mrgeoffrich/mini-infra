@@ -274,7 +274,7 @@ router.get("/:id", requirePermission('postgres:read') as RequestHandler, (async 
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const databaseId = req.params.id;
+  const databaseId = String(req.params.id);
 
   logger.debug(
     {
@@ -470,7 +470,7 @@ router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const databaseId = req.params.id;
+  const databaseId = String(req.params.id);
 
   logger.debug(
     {
@@ -610,7 +610,7 @@ router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (as
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const databaseId = req.params.id;
+  const databaseId = String(req.params.id);
 
   logger.debug(
     {
@@ -713,7 +713,7 @@ router.post("/:id/test", requirePermission('postgres:write') as RequestHandler, 
   next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
-  const databaseId = req.params.id;
+  const databaseId = String(req.params.id);
 
   logger.debug(
     {

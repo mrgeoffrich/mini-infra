@@ -109,7 +109,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
 router.get("/:grantId", requirePermission('postgres:read'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const grantId = req.params.grantId;
+    const grantId = String(req.params.grantId);
 
     const grant = await grantManagementService.getGrantDetails(userId, grantId);
 
@@ -141,7 +141,7 @@ router.get("/:grantId", requirePermission('postgres:read'), async (req, res) => 
 router.put("/:grantId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const grantId = req.params.grantId;
+    const grantId = String(req.params.grantId);
     const validatedData = updateGrantSchema.parse(req.body);
 
     const grant = await grantManagementService.updateGrant(userId, grantId, validatedData);
@@ -182,7 +182,7 @@ router.put("/:grantId", requirePermission('postgres:write'), async (req, res) =>
 router.delete("/:grantId", requirePermission('postgres:write'), async (req, res) => {
   try {
     const userId = getUserId(req);
-    const grantId = req.params.grantId;
+    const grantId = String(req.params.grantId);
 
     await grantManagementService.deleteGrant(userId, grantId);
 

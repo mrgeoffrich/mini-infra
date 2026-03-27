@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { tool, createSdkMcpServer } from "./sdk";
+import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { SSEEvent } from "../types";
 
 type BroadcastFn = (event: SSEEvent) => void;

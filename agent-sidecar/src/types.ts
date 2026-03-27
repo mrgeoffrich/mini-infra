@@ -74,7 +74,8 @@ export interface Session {
   id: string;
   status: SessionStatus;
   currentPath: string;
-  sdkSessionId: string | null;
+  /** The session ID returned by the Claude Agent SDK after the first turn. */
+  claudeSessionId: string | null;
   tokenUsage: TokenUsage;
   turns: number;
   errorMessage: string | null;
@@ -92,7 +93,6 @@ export interface CreateSessionRequest {
   message: string;
   currentPath?: string;
   context?: Record<string, unknown>;
-  sdkSessionId?: string;
 }
 
 /** POST /sessions response (201) */
