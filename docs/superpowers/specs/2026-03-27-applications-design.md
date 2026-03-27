@@ -9,11 +9,13 @@ Replace the user-facing "Deployments" concept with "Applications." Applications 
 Add a `source` field to the `Stack` model:
 
 ```prisma
-source  String  @default("system")  // "system" | "user"
+source  StackTemplateSource  @default(system)  // system | user
 ```
 
+Reuses the existing `StackTemplateSource` enum already used by `StackTemplate`.
+
 - Index on `source` for efficient filtering.
-- Existing stacks default to `"system"` via migration.
+- Existing stacks default to `system` via migration.
 - No other schema changes.
 
 ## API Changes
