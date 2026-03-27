@@ -260,7 +260,7 @@ describe("DockerService", () => {
         id: "test-container-id",
       });
 
-      eventCallback(Buffer.from(containerEvent));
+      eventCallback(Buffer.from(containerEvent + "\n"));
 
       expect(mockCache.flushAll).toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -289,8 +289,8 @@ describe("DockerService", () => {
       dockerService = DockerService.getInstance();
       await dockerService.initialize();
 
-      // Simulate malformed event data
-      eventCallback(Buffer.from("invalid json"));
+      // Simulate malformed event data (with newline so buffer flushes the line)
+      eventCallback(Buffer.from("invalid json\n"));
 
       expect(mockCache.flushAll).not.toHaveBeenCalled();
       expect(mockLogger.error).toHaveBeenCalledWith(
@@ -651,16 +651,17 @@ describe("DockerService", () => {
     it("should transform port data correctly", () => {
       const mockPorts = [
         { PrivatePort: 80, PublicPort: 8080, Type: "tcp" },
-        { PrivatePort: 443, Type: "tcp" }, // No public port - will be excluded
+        { PrivatePort: 443, Type: "tcp" }, // No public port - exposed only
         { PrivatePort: 53, PublicPort: 5353, Type: "udp" },
       ];
 
       const result = (dockerService as any).transformPorts(mockPorts);
 
-      // Ports without PublicPort are excluded; results sorted by private port ascending
+      // All ports included (published and exposed); sorted by private port ascending
       expect(result).toEqual([
         { private: 53, public: 5353, type: "udp" },
         { private: 80, public: 8080, type: "tcp" },
+        { private: 443, type: "tcp" },
       ]);
     });
 

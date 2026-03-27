@@ -29,6 +29,24 @@ export class CustomError extends Error implements AppError {
   }
 }
 
+/**
+ * Error from an external service API (Cloudflare, Azure, Docker, GitHub).
+ * Always treated as operational — the message is shown to the user.
+ * Uses 502 (Bad Gateway) by default since the upstream service returned the error.
+ */
+export class ServiceError extends CustomError {
+  public serviceName: string;
+
+  constructor(
+    message: string,
+    statusCode: number = 502,
+    serviceName: string = "external",
+  ) {
+    super(message, statusCode, true);
+    this.serviceName = serviceName;
+  }
+}
+
 // Error handling middleware - Express 5 compliant with ErrorRequestHandler type
 export const errorHandler: ErrorRequestHandler = (
   error: AppError | ZodError,
@@ -59,17 +77,22 @@ export const errorHandler: ErrorRequestHandler = (
 
   // Handle operational errors (expected errors)
   if (error.isOperational) {
+    const serviceName =
+      error instanceof ServiceError ? error.serviceName : undefined;
     logger.warn(
       {
         requestId,
         method: req.method,
         path: req.path,
+        ...(serviceName && { serviceName }),
         error: {
           name: error.name,
           message: error.message,
         },
       },
-      "Operational error",
+      serviceName
+        ? `${serviceName} service error: ${error.message}`
+        : "Operational error",
     );
 
     return res.status(error.statusCode || 500).json({

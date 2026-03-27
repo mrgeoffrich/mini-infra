@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import NodeCache from "node-cache";
+import { toServiceError } from "../lib/service-error-mapper";
 import { servicesLogger } from "../lib/logger-factory";
 import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
@@ -320,63 +321,84 @@ class DockerService {
       }
 
       if (stream) {
+        // Docker event stream sends newline-delimited JSON (NDJSON).
+        // Chunks may contain multiple events or split an event across chunks,
+        // so we buffer and parse line-by-line.
+        let buffer = "";
         stream.on("data", (data) => {
-          try {
-            const event = JSON.parse(data.toString());
-            if (event.Type === "container") {
-              servicesLogger().debug(
-                {
-                  action: event.Action,
-                  containerId: event.id,
-                },
-                "Container event received, invalidating cache",
-              );
-              this.cache.flushAll();
-              // Notify registered listeners (e.g., socket emitter)
-              for (const cb of this.containerChangeCallbacks) {
-                try {
-                  cb();
-                } catch (err) {
-                  servicesLogger().error({ error: err }, "Container change callback failed");
-                }
-              }
+          buffer += data.toString();
+          const lines = buffer.split("\n");
+          // Keep the last (possibly incomplete) segment in the buffer
+          buffer = lines.pop() || "";
 
-              // Fire typed container event callbacks (e.g., crash loop detector)
-              const typedEvent: DockerContainerEvent = {
-                action: event.Action,
-                containerId: event.id || event.Actor?.ID || "",
-                containerName: event.Actor?.Attributes?.name || "",
-                labels: event.Actor?.Attributes || {},
-                time: event.time || Math.floor(Date.now() / 1000),
-              };
-              for (const cb of this.containerEventCallbacks) {
-                try {
-                  cb(typedEvent);
-                } catch (err) {
-                  servicesLogger().error({ error: err }, "Container event callback failed");
-                }
-              }
-            } else if (event.Type === "network") {
-              servicesLogger().debug(
-                {
-                  action: event.Action,
-                  networkId: event.id,
-                },
-                "Network event received, invalidating network cache",
-              );
-              this.cache.del("networks");
-            } else if (event.Type === "volume") {
-              servicesLogger().debug(
-                {
-                  action: event.Action,
-                  volumeName: event.Actor?.Attributes?.name,
-                },
-                "Volume event received, invalidating volume cache",
-              );
-              this.cache.del("volumes");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            let event;
+            try {
+              event = JSON.parse(trimmed);
+            } catch (error) {
+              servicesLogger().error({ error }, "Failed to parse Docker event");
+              continue;
             }
-          } catch (error) {
-            servicesLogger().error({ error }, "Failed to parse Docker event");
+
+            try {
+              if (event.Type === "container") {
+                servicesLogger().debug(
+                  {
+                    action: event.Action,
+                    containerId: event.id,
+                  },
+                  "Container event received, invalidating cache",
+                );
+                this.cache.flushAll();
+                // Notify registered listeners (e.g., socket emitter)
+                for (const cb of this.containerChangeCallbacks) {
+                  try {
+                    cb();
+                  } catch (err) {
+                    servicesLogger().error({ error: err }, "Container change callback failed");
+                  }
+                }
+
+                // Fire typed container event callbacks (e.g., crash loop detector)
+                const typedEvent: DockerContainerEvent = {
+                  action: event.Action,
+                  containerId: event.id || event.Actor?.ID || "",
+                  containerName: event.Actor?.Attributes?.name || "",
+                  labels: event.Actor?.Attributes || {},
+                  time: event.time || Math.floor(Date.now() / 1000),
+                };
+                for (const cb of this.containerEventCallbacks) {
+                  try {
+                    cb(typedEvent);
+                  } catch (err) {
+                    servicesLogger().error({ error: err }, "Container event callback failed");
+                  }
+                }
+              } else if (event.Type === "network") {
+                servicesLogger().debug(
+                  {
+                    action: event.Action,
+                    networkId: event.id,
+                  },
+                  "Network event received, invalidating network cache",
+                );
+                this.cache.del("networks");
+              } else if (event.Type === "volume") {
+                servicesLogger().debug(
+                  {
+                    action: event.Action,
+                    volumeName: event.Actor?.Attributes?.name,
+                  },
+                  "Volume event received, invalidating volume cache",
+                );
+                this.cache.del("volumes");
+              }
+            } catch (error) {
+              servicesLogger().error({ error }, "Error handling Docker event");
+            }
           }
         });
 
@@ -486,7 +508,7 @@ class DockerService {
         },
         "Failed to get container details",
       );
-      throw error;
+      throw toServiceError(error, "docker");
     });
   }
 
@@ -568,7 +590,7 @@ class DockerService {
         },
         "Failed to get container environment variables",
       );
-      throw error;
+      throw toServiceError(error, "docker");
     });
   }
 
@@ -983,7 +1005,7 @@ class DockerService {
           `Cannot remove volume ${name}: volume is in use by one or more containers`,
         );
       }
-      throw error;
+      throw toServiceError(error, "docker");
     }
   }
 

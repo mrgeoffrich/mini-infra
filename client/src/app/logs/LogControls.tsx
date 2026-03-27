@@ -71,11 +71,11 @@ export function LogControls({
             updateFilter("services", v === "__all__" ? [] : [v])
           }
         >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All Services" />
+          <SelectTrigger className="w-72">
+            <SelectValue placeholder="All Containers" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Services</SelectItem>
+            <SelectItem value="__all__">All Containers</SelectItem>
             {services.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}

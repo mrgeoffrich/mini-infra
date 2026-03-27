@@ -7,6 +7,7 @@ import {
   GitHubIssue,
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
+import { toServiceError } from "../lib/service-error-mapper";
 import { servicesLogger } from "../lib/logger-factory";
 import { Octokit } from "@octokit/rest";
 import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
@@ -372,7 +373,7 @@ export class GitHubService extends ConfigurationService {
         "Failed to create GitHub issue",
       );
 
-      throw error;
+      throw toServiceError(error, "github");
     }
   }
 

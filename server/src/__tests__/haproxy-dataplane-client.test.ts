@@ -217,7 +217,7 @@ describe('HAProxyDataPlaneClient', () => {
       mockContainer.inspect.mockResolvedValue(mockContainerInfoNoPort);
 
       await expect(client.initialize('container123')).rejects.toThrow(
-        'DataPlane API port 5555 is not exposed on HAProxy container'
+        'DataPlane API port 5555 is not bound to a host port and container network fallback is unavailable (mini-infra does not appear to be running in Docker)'
       );
     });
 
