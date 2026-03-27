@@ -102,8 +102,8 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
     }
   }
 
-  // 3. Clean up orphaned per-environment monitoring stacks from old sync logic
-  await cleanupOrphanedMonitoringStacks(prisma, log);
+  // 3. Clean up orphaned stacks from old sync logic
+  await cleanupOrphanedStacks(prisma, templates, log);
 
   log.info("Built-in stack sync complete");
 }
@@ -311,11 +311,13 @@ async function syncStackFromTemplate(
   });
 }
 
-async function cleanupOrphanedMonitoringStacks(
+async function cleanupOrphanedStacks(
   prisma: PrismaClient,
+  templates: LoadedTemplate[],
   log: ReturnType<typeof servicesLogger>
 ): Promise<void> {
-  const orphaned = await prisma.stack.findMany({
+  // Clean up orphaned per-environment monitoring stacks (from old sync logic)
+  const orphanedMonitoring = await prisma.stack.findMany({
     where: {
       name: "monitoring",
       environmentId: { not: null },
@@ -325,13 +327,40 @@ async function cleanupOrphanedMonitoringStacks(
     select: { id: true },
   });
 
-  if (orphaned.length > 0) {
+  if (orphanedMonitoring.length > 0) {
     log.info(
-      { count: orphaned.length },
+      { count: orphanedMonitoring.length },
       "Cleaning up orphaned per-environment monitoring stacks"
     );
-    for (const s of orphaned) {
+    for (const s of orphanedMonitoring) {
       await prisma.stack.delete({ where: { id: s.id } });
+    }
+  }
+
+  // Clean up orphaned host-level stacks for environment-scoped templates
+  const envScopedNames = templates
+    .filter((t) => t.scope === "environment")
+    .map((t) => t.name);
+
+  if (envScopedNames.length > 0) {
+    const orphanedHostLevel = await prisma.stack.findMany({
+      where: {
+        name: { in: envScopedNames },
+        environmentId: null,
+        builtinVersion: { not: null },
+        status: "undeployed",
+      },
+      select: { id: true, name: true },
+    });
+
+    if (orphanedHostLevel.length > 0) {
+      log.info(
+        { count: orphanedHostLevel.length, stacks: orphanedHostLevel.map((s) => s.name) },
+        "Cleaning up orphaned host-level stacks for environment-scoped templates"
+      );
+      for (const s of orphanedHostLevel) {
+        await prisma.stack.delete({ where: { id: s.id } });
+      }
     }
   }
 }
