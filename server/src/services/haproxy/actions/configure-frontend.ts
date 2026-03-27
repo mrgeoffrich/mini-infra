@@ -50,7 +50,7 @@ export class ConfigureFrontend {
       let enableSsl: boolean | undefined;
       let tlsCertificateId: string | null | undefined;
       let certificateStatus: string | null | undefined;
-      let sourceType: string = 'deployment';
+      let sourceType: 'stack' | 'manual' | 'deployment' = 'deployment';
       let sourceId: string | undefined = context.deploymentConfigId;
 
       if (context.hostname) {
@@ -159,7 +159,7 @@ export class ConfigureFrontend {
       // Add route to shared frontend
       const route = await haproxyFrontendManager.addRouteToSharedFrontend(
         sharedFrontend.id,
-        hostname,
+        hostname!,
         backendName,
         sourceType,
         sourceId!,

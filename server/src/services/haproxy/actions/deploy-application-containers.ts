@@ -41,7 +41,7 @@ export class DeployApplicationContainers {
                 ports: context.containerPorts ?? [],
                 volumes: context.containerVolumes ?? [],
                 environment: context.containerEnvironment
-                    ? Object.entries(context.containerEnvironment).map(([k, v]: [string, string]) => `${k}=${v}`)
+                    ? Object.entries(context.containerEnvironment as Record<string, string>).map(([k, v]) => `${k}=${v}`)
                     : [],
                 labels: context.containerLabels ?? {},
                 networks: context.containerNetworks ?? [context.haproxyNetworkName],
