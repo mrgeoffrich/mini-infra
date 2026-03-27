@@ -10,6 +10,24 @@ import {
   StackServiceRouting,
 } from '@mini-infra/types';
 
+// Mock runStateMachineToCompletion so StatelessWeb services go through state machine
+const mockRunStateMachine = vi.fn();
+vi.mock('../services/stacks/state-machine-runner', () => ({
+  runStateMachineToCompletion: (...args: any[]) => mockRunStateMachine(...args),
+}));
+
+// Mock EnvironmentValidationService used by buildStateMachineContext
+vi.mock('../services/environment', () => ({
+  EnvironmentValidationService: class {
+    getHAProxyEnvironmentContext = vi.fn().mockResolvedValue({
+      environmentId: 'env-1',
+      environmentName: 'prod',
+      haproxyContainerId: 'haproxy-container-id',
+      haproxyNetworkName: 'haproxy_network',
+    });
+  },
+}));
+
 // --- Test data factories ---
 
 function makeStatelessWebServiceRow(overrides: Record<string, unknown> = {}) {
@@ -276,9 +294,19 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       Config: { Healthcheck: null },
       State: { Status: 'running', Health: null },
     });
+    // Default: state machine completes successfully
+    mockRunStateMachine.mockResolvedValue({
+      value: 'completed',
+      status: 'done',
+      context: {
+        containerId: 'new-container-id',
+        newContainerId: 'new-container-id',
+        error: undefined,
+      },
+    });
   });
 
-  it('creates a StatelessWeb service — pulls, creates container, connects to haproxy network, sets up routing, enables traffic, configures DNS', async () => {
+  it('creates a StatelessWeb service via initial deployment state machine', async () => {
     const stack = makeStackRow([{ serviceName: 'web-app' }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
     mockListContainers.mockResolvedValue([]);
@@ -294,38 +322,20 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       containerId: 'new-container-id',
     });
 
-    // Verify image pull
-    expect(mockPullImageWithAutoAuth).toHaveBeenCalledWith('myapp/web:1.0.0');
-
-    // Verify container created
-    expect(mockCreateLongRunningContainer).toHaveBeenCalledTimes(1);
-
-    // Verify connected to HAProxy network
-    expect(mockGetNetwork).toHaveBeenCalledWith('haproxy_network');
-    expect(mockNetworkConnect).toHaveBeenCalledWith({ Container: 'new-container-id' });
-
-    // Verify routing setup
-    expect(mockGetHAProxyContext).toHaveBeenCalledWith('env-1');
-    expect(mockSetupBackendAndServer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        serviceName: 'web-app',
-        containerId: 'new-container-id',
-        stackName: 'webapp',
-      }),
-      expect.any(Object)
-    );
-    expect(mockConfigureRoute).toHaveBeenCalled();
-    expect(mockEnableTraffic).toHaveBeenCalled();
-
-    // Verify DNS configured
-    expect(mockConfigureDNS).toHaveBeenCalledWith(
-      'app.example.com',
-      'env-1',
-      expect.objectContaining({ hostname: 'app.example.com' })
-    );
+    // Verify state machine was invoked with initial deployment machine
+    expect(mockRunStateMachine).toHaveBeenCalledTimes(1);
+    const [machine, context] = mockRunStateMachine.mock.calls[0];
+    expect(machine.id).toBe('initialDeployment');
+    expect(context).toMatchObject({
+      applicationName: expect.stringContaining('stk-webapp-web-app'),
+      dockerImage: 'myapp/web:1.0.0',
+      hostname: 'app.example.com',
+      containerPort: 3000,
+      enableSsl: true,
+    });
   });
 
-  it('recreates a StatelessWeb service (blue-green) — creates green alongside blue, enables green, drains blue, removes blue', async () => {
+  it('recreates a StatelessWeb service via blue-green deployment state machine', async () => {
     const stack = makeStackRow([{ serviceName: 'web-app' }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
 
@@ -344,29 +354,21 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       containerId: 'new-container-id',
     });
 
-    // Green container was created
-    expect(mockCreateLongRunningContainer).toHaveBeenCalledTimes(1);
-
-    // Connected to HAProxy network
-    expect(mockNetworkConnect).toHaveBeenCalledWith({ Container: 'new-container-id' });
-
-    // Green enabled
-    expect(mockEnableTraffic).toHaveBeenCalled();
-
-    // Blue drained and removed
-    expect(mockDrainAndRemoveServer).toHaveBeenCalled();
-    expect(mockContainerStop).toHaveBeenCalled();
+    // Verify state machine was invoked with blue-green machine
+    expect(mockRunStateMachine).toHaveBeenCalledTimes(1);
+    const [machine, context] = mockRunStateMachine.mock.calls[0];
+    expect(machine.id).toBe('blueGreenDeployment');
+    expect(context).toMatchObject({
+      oldContainerId: 'container-web-app',
+      hostname: 'app.example.com',
+    });
   });
 
-  it('removes a StatelessWeb service — removes route, removes DNS, stops container', async () => {
+  it('removes a StatelessWeb service via removal state machine', async () => {
     const stack = makeStackRow([{ serviceName: 'web-app' }]);
     const svc = stack.services[0];
     const hash = computeHashForService(stack, svc as any);
 
-    mockFindUniqueOrThrow.mockResolvedValue(stack);
-    // web-app is synced, but there's an orphan we'll use a different approach
-    // Actually let's create a scenario with an orphaned StatelessWeb container
-    // We have web-app defined but also an orphaned 'old-web' container
     const stackWithOrphan = makeStackRow([{ serviceName: 'web-app' }]);
     mockFindUniqueOrThrow.mockResolvedValue(stackWithOrphan);
 
@@ -381,24 +383,21 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     expect(result.success).toBe(true);
     const removeResult = result.serviceResults.find((r) => r.serviceName === 'old-web');
     expect(removeResult).toMatchObject({ action: 'remove', success: true });
-
-    // Orphaned container stopped
-    expect(mockContainerStop).toHaveBeenCalled();
   });
 
-  it('handles healthcheck failure on create — stops/removes container, no routing configured', async () => {
+  it('handles state machine failure on create — maps rollback state to error result', async () => {
     const stack = makeStackRow([{ serviceName: 'web-app', configFiles: [], initCommands: [] }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
     mockListContainers.mockResolvedValue([]);
 
-    // Make healthcheck fail
-    let callCount = 0;
-    mockContainerInspect.mockImplementation(() => {
-      callCount++;
-      return Promise.resolve({
-        Config: { Healthcheck: { Test: ['CMD', 'curl', '-f', 'http://localhost:3000/health'] } },
-        State: { Status: 'running', Health: { Status: callCount > 2 ? 'unhealthy' : 'starting' } },
-      });
+    // State machine reaches rollbackComplete (health check failure triggers rollback)
+    mockRunStateMachine.mockResolvedValue({
+      value: 'rollbackComplete',
+      status: 'done',
+      context: {
+        containerId: undefined,
+        error: 'Health check timeout',
+      },
     });
 
     const result = await reconciler.apply('stack-1');
@@ -408,20 +407,11 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       serviceName: 'web-app',
       action: 'create',
       success: false,
-      error: 'Healthcheck timeout',
+      error: 'Health check timeout',
     });
-
-    // Container should have been stopped/removed after healthcheck failure
-    expect(mockContainerStop).toHaveBeenCalled();
-
-    // No routing should have been configured
-    expect(mockSetupBackendAndServer).not.toHaveBeenCalled();
-    expect(mockConfigureRoute).not.toHaveBeenCalled();
-    expect(mockEnableTraffic).not.toHaveBeenCalled();
-    expect(mockConfigureDNS).not.toHaveBeenCalled();
   });
 
-  it('handles healthcheck failure on recreate — removes green, blue stays live', async () => {
+  it('handles state machine failure on recreate — maps rollback state to error result', async () => {
     const stack = makeStackRow([{ serviceName: 'web-app', configFiles: [], initCommands: [] }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
 
@@ -429,14 +419,14 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       makeContainerInfo('web-app', { 'mini-infra.definition-hash': 'sha256:stale' }, 'myapp/web:0.9.0'),
     ]);
 
-    // Make healthcheck fail
-    let callCount = 0;
-    mockContainerInspect.mockImplementation(() => {
-      callCount++;
-      return Promise.resolve({
-        Config: { Healthcheck: { Test: ['CMD', 'curl', '-f', 'http://localhost:3000/health'] } },
-        State: { Status: 'running', Health: { Status: callCount > 2 ? 'unhealthy' : 'starting' } },
-      });
+    // State machine reaches rollbackComplete
+    mockRunStateMachine.mockResolvedValue({
+      value: 'rollbackComplete',
+      status: 'done',
+      context: {
+        newContainerId: undefined,
+        error: 'Health check timeout',
+      },
     });
 
     const result = await reconciler.apply('stack-1');
@@ -446,16 +436,16 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       serviceName: 'web-app',
       action: 'recreate',
       success: false,
-      error: 'Healthcheck timeout',
+      error: 'Health check timeout',
     });
 
-    // Green stopped/removed but NO drain/remove of blue
-    expect(mockContainerStop).toHaveBeenCalled();
-    expect(mockDrainAndRemoveServer).not.toHaveBeenCalled();
-    expect(mockEnableTraffic).not.toHaveBeenCalled();
+    // Verify blue-green machine was used
+    const [machine, context] = mockRunStateMachine.mock.calls[0];
+    expect(machine.id).toBe('blueGreenDeployment');
+    expect(context.oldContainerId).toBe('container-web-app');
   });
 
-  it('skips DNS for external provider', async () => {
+  it('passes external DNS provider as internet networkType to state machine', async () => {
     const stack = makeStackRow([{
       serviceName: 'web-app',
       routing: {
@@ -471,12 +461,9 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     const result = await reconciler.apply('stack-1');
 
     expect(result.success).toBe(true);
-    // DNS should NOT have been configured since dns.provider is 'external'
-    // The reconciler checks if routing.dns is defined, and it is, so configureDNS is called.
-    // But the StackRoutingManager.configureDNS skips for 'external' provider.
-    // Since we mock configureDNS, we verify it's still called (the filtering is inside the real impl).
-    // The important thing is the overall flow succeeds.
-    expect(mockConfigureDNS).toHaveBeenCalled();
+    // Verify the state machine context has networkType 'internet' for external DNS
+    const [, context] = mockRunStateMachine.mock.calls[0];
+    expect(context.networkType).toBe('internet');
   });
 
   it('throws if routingManager not provided for StatelessWeb', async () => {
@@ -513,16 +500,16 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     expect(result.success).toBe(true);
     expect(result.serviceResults).toHaveLength(2);
 
-    // StatelessWeb uses routing
+    // StatelessWeb uses state machine
     const webResult = result.serviceResults.find((r) => r.serviceName === 'web-app');
     expect(webResult).toMatchObject({ action: 'create', success: true });
-    expect(mockSetupBackendAndServer).toHaveBeenCalled();
+    expect(mockRunStateMachine).toHaveBeenCalledTimes(1);
 
-    // Stateful does NOT use routing
+    // Stateful does NOT use state machine — uses procedural path
     const redisResult = result.serviceResults.find((r) => r.serviceName === 'redis');
     expect(redisResult).toMatchObject({ action: 'create', success: true });
 
-    // Two containers created total
-    expect(mockCreateLongRunningContainer).toHaveBeenCalledTimes(2);
+    // Stateful container created via procedural path
+    expect(mockCreateLongRunningContainer).toHaveBeenCalledTimes(1);
   });
 });

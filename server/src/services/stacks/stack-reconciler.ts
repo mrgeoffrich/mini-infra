@@ -25,6 +25,11 @@ import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
+import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
+import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
+import { removalDeploymentMachine } from '../haproxy/removal-deployment-state-machine';
+import { runStateMachineToCompletion } from './state-machine-runner';
+import { EnvironmentValidationService } from '../environment';
 import {
   buildStackTemplateContext,
   buildContainerMap,
@@ -841,6 +846,83 @@ export class StackReconciler {
     }
   }
 
+  /**
+   * Build state machine context from stack service definition and routing config.
+   * Maps stack fields to the flat context fields expected by the deployment state machine actions.
+   */
+  private async buildStateMachineContext(
+    action: ServiceAction,
+    serviceDef: StackServiceDefinition,
+    projectName: string,
+    stackId: string,
+    stack: any,
+    serviceHashes: Map<string, string>,
+    envNetworkMap: Map<string, string>
+  ): Promise<Record<string, unknown>> {
+    const routing = serviceDef.routing!;
+    const containerName = `${projectName}-${action.serviceName}`;
+    const envValidation = new EnvironmentValidationService();
+    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
+
+    if (!haproxyCtx) {
+      throw new Error(`HAProxy environment context not available for environment ${stack.environmentId}`);
+    }
+
+    const dockerImage = `${serviceDef.dockerImage}:${serviceDef.dockerTag}`;
+    const envRecord = serviceDef.containerConfig.env ?? {};
+
+    // Build networks list including environment networks
+    const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
+    for (const dockerName of envNetworkMap.values()) {
+      if (!containerNetworks.includes(dockerName)) {
+        containerNetworks.push(dockerName);
+      }
+    }
+
+    return {
+      deploymentId: `stack-${stackId}-${action.serviceName}-${Date.now()}`,
+      configurationId: stackId,
+      deploymentConfigId: '',
+      applicationName: `stk-${stack.name}-${action.serviceName}`,
+      dockerImage,
+
+      environmentId: haproxyCtx.environmentId,
+      environmentName: haproxyCtx.environmentName,
+      haproxyContainerId: haproxyCtx.haproxyContainerId,
+      haproxyNetworkName: haproxyCtx.haproxyNetworkName,
+
+      triggerType: 'manual',
+      startTime: Date.now(),
+
+      // Source-agnostic fields
+      hostname: routing.hostname,
+      enableSsl: routing.enableSsl ?? false,
+      tlsCertificateId: routing.tlsCertificateId,
+      certificateStatus: routing.enableSsl && routing.tlsCertificateId ? 'ACTIVE' : undefined,
+      networkType: routing.dns?.provider === 'external' ? 'internet' : 'local',
+      healthCheckEndpoint: '/health',
+      healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
+        ? serviceDef.containerConfig.healthcheck.interval * 1000
+        : 2000,
+      healthCheckRetries: serviceDef.containerConfig.healthcheck?.retries ?? 2,
+      containerPorts: serviceDef.containerConfig.ports ?? [],
+      containerVolumes: [],
+      containerEnvironment: envRecord,
+      containerLabels: {
+        'mini-infra.stack': stack.name,
+        'mini-infra.stack-id': stackId,
+        'mini-infra.service': action.serviceName,
+        'mini-infra.environment': stack.environmentId,
+        'mini-infra.definition-hash': serviceHashes.get(action.serviceName) ?? '',
+        'mini-infra.stack-version': String(stack.version),
+        ...(serviceDef.containerConfig.labels ?? {}),
+      },
+      containerNetworks,
+      containerPort: routing.listeningPort,
+      containerName,
+    };
+  }
+
   private async applyStatelessWeb(
     action: ServiceAction,
     svc: any,
@@ -861,209 +943,139 @@ export class StackReconciler {
       throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
     }
 
-    const routingManager = this.routingManager!;
-    const containerName = `${projectName}-${action.serviceName}`;
+    const baseContext = await this.buildStateMachineContext(
+      action, serviceDef, projectName, stackId, stack, serviceHashes, envNetworkMap
+    );
 
     switch (action.action) {
       case 'create': {
-        log.info({ service: action.serviceName }, 'Creating StatelessWeb service');
+        log.info({ service: action.serviceName }, 'Creating StatelessWeb service via initial deployment state machine');
 
-        // Remove any pre-existing container with the same name (e.g. from a failed apply or manual creation)
-        await this.removeConflictingContainer(containerName, stackId, log);
-
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
-
-        const containerId = await this.containerManager.createAndStartContainer(
-          action.serviceName,
-          serviceDef,
-          {
-            projectName,
-            stackId,
-            stackName: stack.name,
-            stackVersion: stack.version,
-            environmentId: stack.environmentId,
-            definitionHash: serviceHashes.get(action.serviceName)!,
-            networkNames,
-          }
+        // Prepare config files and init commands before the state machine runs
+        await prepareServiceContainer(
+          this.containerManager,
+          svc,
+          resolvedConfigsMap.get(action.serviceName) ?? [],
+          projectName
         );
 
-        // Connect to environment networks (including HAProxy's applications network)
-        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
-
-        // Fallback: if no environment network, try runtime HAProxy context
-        if (!envNetworkMap.has('applications')) {
-          try {
-            const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
-            await this.containerManager.connectToNetwork(containerId, haproxyCtx.haproxyNetworkName);
-          } catch (err: any) {
-            log.warn({ error: err.message }, 'Failed to connect to HAProxy network via runtime inspection');
-          }
-        }
-
-        // Wait for healthy
-        const healthy = await this.containerManager.waitForHealthy(containerId);
-        if (!healthy) {
-          log.error({ service: action.serviceName, containerId }, 'Healthcheck failed, rolling back');
-          await this.containerManager.stopAndRemoveContainer(containerId);
-          return {
-            serviceName: action.serviceName,
-            action: 'create',
-            success: false,
-            duration: Date.now() - actionStart,
-            containerId,
-            error: 'Healthcheck timeout',
-          };
-        }
-
-        // Setup HAProxy routing
-        const haproxyClient = new HAProxyDataPlaneClient();
-        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
-          serviceName: action.serviceName,
-          containerId,
-          containerName,
-          routing,
-          environmentId: stack.environmentId,
-          stackId,
-          stackName: stack.name,
+        const initialContext = {
+          ...baseContext,
+          containerId: undefined,
+          applicationReady: false,
+          haproxyConfigured: false,
+          healthChecksPassed: false,
+          frontendConfigured: false,
+          dnsConfigured: false,
+          trafficEnabled: false,
+          validationErrors: 0,
+          error: undefined,
+          retryCount: 0,
+          frontendName: undefined,
+          dnsRecordId: undefined,
         };
 
-        const { backendName, serverName } = await routingManager.setupBackendAndServer(routingCtx, haproxyClient);
-        await routingManager.configureRoute(routingCtx, backendName, haproxyClient);
-        await routingManager.enableTraffic(backendName, serverName, haproxyClient);
+        const finalState = await runStateMachineToCompletion(
+          initialDeploymentMachine,
+          initialContext,
+          (actor) => actor.send({ type: 'START_DEPLOYMENT' })
+        );
 
-        // Configure DNS if needed
-        if (routing.dns) {
-          await routingManager.configureDNS(routing.hostname, stack.environmentId, routing);
-        }
-
+        const success = finalState.value === 'completed';
         return {
           serviceName: action.serviceName,
           action: 'create',
-          success: true,
+          success,
           duration: Date.now() - actionStart,
-          containerId,
+          containerId: (finalState.context as any).containerId,
+          error: success ? undefined : (finalState.context as any).error ?? 'Deployment failed',
         };
       }
 
       case 'recreate': {
-        log.info({ service: action.serviceName }, 'Recreating StatelessWeb service (blue-green)');
+        log.info({ service: action.serviceName }, 'Recreating StatelessWeb service via blue-green state machine');
 
         const oldContainer = containerByService.get(action.serviceName);
 
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
-
-        // Create green container (blue stays running)
-        const greenId = await this.containerManager.createAndStartContainer(
-          action.serviceName,
-          serviceDef,
-          {
-            projectName,
-            stackId,
-            stackName: stack.name,
-            stackVersion: stack.version,
-            environmentId: stack.environmentId,
-            definitionHash: serviceHashes.get(action.serviceName)!,
-            networkNames,
-          }
+        await prepareServiceContainer(
+          this.containerManager,
+          svc,
+          resolvedConfigsMap.get(action.serviceName) ?? [],
+          projectName
         );
 
-        // Connect green to environment networks (including HAProxy's applications network)
-        await this.joinEnvironmentNetworks(greenId, serviceDef, envNetworkMap, log);
+        const blueGreenContext = {
+          ...baseContext,
+          blueHealthy: false,
+          greenHealthy: false,
+          greenBackendConfigured: false,
+          frontendConfigured: false,
+          dnsConfigured: false,
+          trafficOpenedToGreen: false,
+          trafficValidated: false,
+          blueDraining: false,
+          blueDrained: false,
+          validationErrors: 0,
+          drainStartTime: undefined,
+          monitoringStartTime: undefined,
+          error: undefined,
+          retryCount: 0,
+          activeConnections: 0,
+          oldContainerId: oldContainer?.Id,
+          newContainerId: undefined,
+          containerIpAddress: undefined,
+          frontendName: undefined,
+          dnsRecordId: undefined,
+        };
 
-        // Fallback: if no environment network, try runtime HAProxy context
-        if (!envNetworkMap.has('applications')) {
-          try {
-            const haproxyCtx = await routingManager.getHAProxyContext(stack.environmentId);
-            await this.containerManager.connectToNetwork(greenId, haproxyCtx.haproxyNetworkName);
-          } catch (err: any) {
-            log.warn({ error: err.message }, 'Failed to connect to HAProxy network via runtime inspection');
-          }
-        }
+        const finalState = await runStateMachineToCompletion(
+          blueGreenDeploymentMachine,
+          blueGreenContext,
+          (actor) => actor.send({ type: 'START_DEPLOYMENT' })
+        );
 
-        // Wait for green healthy
-        const healthy = await this.containerManager.waitForHealthy(greenId);
-        if (!healthy) {
-          log.error({ service: action.serviceName, containerId: greenId }, 'Green healthcheck failed, keeping blue');
-          await this.containerManager.stopAndRemoveContainer(greenId);
-          return {
-            serviceName: action.serviceName,
-            action: 'recreate',
-            success: false,
-            duration: Date.now() - actionStart,
-            error: 'Healthcheck timeout',
-          };
-        }
-
-        // Setup HAProxy for green
-        const haproxyClient = new HAProxyDataPlaneClient();
-        const backendName = `stk-${stack.name}-${action.serviceName}`;
-        const greenServerName = `${action.serviceName}-${greenId.slice(0, 8)}`;
-
-        await haproxyClient.addServer(backendName, {
-          name: greenServerName,
-          address: containerName,
-          port: routing.listeningPort,
-          check: 'enabled',
-        });
-
-        await routingManager.enableTraffic(backendName, greenServerName, haproxyClient);
-
-        // Drain and remove blue
-        if (oldContainer) {
-          const oldServerName = `${action.serviceName}-${oldContainer.Id.slice(0, 8)}`;
-          await routingManager.drainAndRemoveServer(backendName, oldServerName, haproxyClient);
-          await this.containerManager.stopAndRemoveContainer(oldContainer.Id);
-        }
-
+        const success = finalState.value === 'completed';
         return {
           serviceName: action.serviceName,
           action: 'recreate',
-          success: true,
+          success,
           duration: Date.now() - actionStart,
-          containerId: greenId,
+          containerId: (finalState.context as any).newContainerId,
+          error: success ? undefined : (finalState.context as any).error ?? 'Blue-green deployment failed',
         };
       }
 
       case 'remove': {
-        log.info({ service: action.serviceName }, 'Removing StatelessWeb service');
+        log.info({ service: action.serviceName }, 'Removing StatelessWeb service via removal state machine');
 
-        const haproxyClient = new HAProxyDataPlaneClient();
-        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
-          serviceName: action.serviceName,
-          containerId: '',
-          containerName,
-          routing,
-          environmentId: stack.environmentId,
-          stackId,
-          stackName: stack.name,
+        const container = containerByService.get(action.serviceName);
+
+        const removalContext = {
+          ...baseContext,
+          containerId: container?.Id,
+          containersToRemove: container ? [container.Id] : [],
+          lbRemovalComplete: false,
+          frontendRemoved: false,
+          dnsRemoved: false,
+          applicationStopped: false,
+          applicationRemoved: false,
+          error: undefined,
+          retryCount: 0,
         };
 
-        // Remove HAProxy route
-        await routingManager.removeRoute(routingCtx, haproxyClient);
+        const finalState = await runStateMachineToCompletion(
+          removalDeploymentMachine,
+          removalContext,
+          (actor) => actor.send({ type: 'START_REMOVAL' })
+        );
 
-        // Remove DNS
-        if (routing.dns) {
-          await routingManager.removeDNS(routing.hostname);
-        }
-
-        // Remove server from backend and stop container
-        const container = containerByService.get(action.serviceName);
-        if (container) {
-          const backendName = `stk-${stack.name}-${action.serviceName}`;
-          const serverName = `${action.serviceName}-${container.Id.slice(0, 8)}`;
-          try {
-            await haproxyClient.deleteServer(backendName, serverName);
-          } catch (err: any) {
-            log.warn({ backendName, serverName, error: err.message }, 'Failed to delete server from backend');
-          }
-          await this.containerManager.stopAndRemoveContainer(container.Id);
-        }
-
+        const success = finalState.value === 'completed';
         return {
           serviceName: action.serviceName,
           action: 'remove',
-          success: true,
+          success,
           duration: Date.now() - actionStart,
+          error: success ? undefined : (finalState.context as any).error ?? 'Removal failed',
         };
       }
 
