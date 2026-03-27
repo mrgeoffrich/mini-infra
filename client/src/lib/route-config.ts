@@ -16,6 +16,7 @@ import {
   IconServer,
   IconSettings,
   IconShield,
+  IconTemplate,
   IconHistory,
   IconDownload,
   IconWorld,
@@ -525,6 +526,25 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Update Mini Infra via sidecar container",
+  },
+
+  "/stack-templates": {
+    path: "/stack-templates",
+    title: "Stack Templates",
+    icon: IconTemplate,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Create and manage reusable stack blueprints",
+    children: {
+      detail: {
+        path: "/stack-templates/:templateId",
+        title: "Stack Template",
+        breadcrumbLabel: "Details",
+        parent: "/stack-templates",
+        showInNav: false,
+      },
+    },
   },
 
   "/bug-report-settings": {

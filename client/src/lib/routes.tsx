@@ -56,6 +56,8 @@ import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
 import { HostPage } from "@/app/host/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
+import StackTemplatesPage from "@/app/stack-templates/page";
+import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -296,6 +298,14 @@ export const router = createBrowserRouter([
       {
         path: "bug-report-settings",
         element: <GitHubSettingsPage />,
+      },
+      {
+        path: "stack-templates",
+        element: <StackTemplatesPage />,
+      },
+      {
+        path: "stack-templates/:templateId",
+        element: <StackTemplateDetailPage />,
       },
       {
         path: "user/settings",
