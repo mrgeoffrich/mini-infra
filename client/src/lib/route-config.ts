@@ -534,7 +534,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconTemplate,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "applications",
     description: "Create and manage reusable stack blueprints",
     children: {
       detail: {
