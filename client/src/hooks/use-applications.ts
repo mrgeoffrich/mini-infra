@@ -491,14 +491,16 @@ export function useDeployApplication() {
     mutationFn: async ({
       templateId,
       name,
+      environmentId,
     }: {
       templateId: string;
       name: string;
+      environmentId: string;
     }) => {
       // Instantiate a stack from the template
       const stackResult = await instantiateApplication(
         templateId,
-        { name },
+        { name, environmentId },
         correlationId,
       );
       // Apply/deploy the stack

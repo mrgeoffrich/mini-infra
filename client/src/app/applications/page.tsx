@@ -16,10 +16,10 @@ import {
 import {
   useApplications,
   useDeleteApplication,
-  useDeployApplication,
   useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
+import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -48,19 +48,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ImportDeploymentDialog } from "./import-deployment-dialog";
+import { DeployApplicationDialog } from "./deploy-application-dialog";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
 export default function ApplicationsPage() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useApplications();
   const deleteApplication = useDeleteApplication();
-  const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
   const { data: stacksData } = useUserStacks();
+  const { data: envData } = useEnvironments();
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
-  const [deployingId, setDeployingId] = useState<string | null>(null);
+  const [deployTarget, setDeployTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
@@ -77,20 +78,22 @@ export default function ApplicationsPage() {
     return map;
   }, [userStacks]);
 
+  // Build a map from environmentId to environment name
+  const environmentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const environments = envData?.environments ?? [];
+    for (const env of environments) {
+      map.set(env.id, env.name);
+    }
+    return map;
+  }, [envData]);
+
   const getServiceCount = (app: StackTemplateInfo): number => {
     return app.currentVersion?.services?.length ?? 0;
   };
 
-  const handleDeploy = async (app: StackTemplateInfo) => {
-    setDeployingId(app.id);
-    try {
-      await deployApplication.mutateAsync({
-        templateId: app.id,
-        name: app.name,
-      });
-    } finally {
-      setDeployingId(null);
-    }
+  const handleDeploy = (app: StackTemplateInfo) => {
+    setDeployTarget(app);
   };
 
   const handleStop = async (app: StackTemplateInfo) => {
@@ -285,17 +288,29 @@ export default function ApplicationsPage() {
                         <Badge variant="destructive">Archived</Badge>
                       )}
                       {stackByTemplateId.has(app.id) && (
-                        <Badge
-                          variant={
-                            stackByTemplateId.get(app.id)?.status === "synced"
-                              ? "default"
-                              : "outline"
-                          }
-                        >
-                          {stackByTemplateId.get(app.id)?.status === "synced"
-                            ? "Running"
-                            : stackByTemplateId.get(app.id)?.status ?? "Deployed"}
-                        </Badge>
+                        <>
+                          <Badge
+                            variant={
+                              stackByTemplateId.get(app.id)?.status === "synced"
+                                ? "default"
+                                : "outline"
+                            }
+                          >
+                            {stackByTemplateId.get(app.id)?.status === "synced"
+                              ? "Running"
+                              : stackByTemplateId.get(app.id)?.status ?? "Deployed"}
+                          </Badge>
+                          {stackByTemplateId.get(app.id)?.environmentId &&
+                            environmentNameById.get(
+                              stackByTemplateId.get(app.id)!.environmentId!,
+                            ) && (
+                              <Badge variant="outline">
+                                {environmentNameById.get(
+                                  stackByTemplateId.get(app.id)!.environmentId!,
+                                )}
+                              </Badge>
+                            )}
+                        </>
                       )}
                     </div>
 
@@ -303,14 +318,9 @@ export default function ApplicationsPage() {
                       <Button
                         size="sm"
                         className="flex-1"
-                        disabled={deployingId === app.id}
                         onClick={() => handleDeploy(app)}
                       >
-                        {deployingId === app.id ? (
-                          <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
-                        ) : (
-                          <IconPlayerPlay className="h-4 w-4 mr-1" />
-                        )}
+                        <IconPlayerPlay className="h-4 w-4 mr-1" />
                         Deploy
                       </Button>
                       <Button
@@ -335,6 +345,15 @@ export default function ApplicationsPage() {
           </div>
         )}
       </div>
+
+      {/* Deploy application dialog */}
+      <DeployApplicationDialog
+        open={!!deployTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeployTarget(null);
+        }}
+        application={deployTarget}
+      />
 
       {/* Import deployment dialog */}
       <ImportDeploymentDialog

@@ -704,10 +704,6 @@ export class StackTemplateService {
         defaultParameterValues.rollbackKeepOldContainer = rollbackConfig.keepOldContainer;
       }
     }
-    if (config.environmentId) {
-      defaultParameterValues.environmentId = config.environmentId;
-    }
-
     // Build the service definition
     const service: StackServiceDefinition = {
       serviceName: config.applicationName,

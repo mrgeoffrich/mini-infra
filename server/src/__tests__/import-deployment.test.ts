@@ -140,12 +140,12 @@ describe("importDeploymentConfig", () => {
     // tlsCertificateId is null in the test data (FK constraint)
     expect(svc.routing!.enableSsl).toBe(true);
 
-    // Default parameter values (rollback + environment)
+    // Default parameter values (rollback only, environmentId is not stored on template)
     const dpv = version.defaultParameterValues as any;
     expect(dpv.rollbackEnabled).toBe(true);
     expect(dpv.rollbackMaxWaitTime).toBe(30000);
     expect(dpv.rollbackKeepOldContainer).toBe(false);
-    expect(dpv.environmentId).toBe(testEnvironmentId);
+    expect(dpv.environmentId).toBeUndefined();
   });
 
   it("should import a deployment config without routing as Stateful", async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   IconLoader2,
   IconFileImport,
@@ -13,11 +13,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { useDeploymentConfigs } from "@/hooks/use-deployment-configs";
 import { useImportDeploymentConfig } from "@/hooks/use-applications";
+import { useEnvironments } from "@/hooks/use-environments";
 
 interface ImportDeploymentDialogProps {
   open: boolean;
@@ -35,9 +37,21 @@ export function ImportDeploymentDialog({
     limit: 100,
   });
 
+  const { data: envData } = useEnvironments({ enabled: open });
+
   const importMutation = useImportDeploymentConfig();
 
   const configs = configsData?.data ?? [];
+
+  // Build a map from environmentId to environment name
+  const environmentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    const environments = envData?.environments ?? [];
+    for (const env of environments) {
+      map.set(env.id, env.name);
+    }
+    return map;
+  }, [envData]);
 
   const handleImport = async () => {
     if (!selectedConfigId) return;
@@ -113,8 +127,16 @@ export function ImportDeploymentDialog({
                       : "border-transparent",
                   )}
                 >
-                  <div className="font-medium text-sm">
-                    {config.applicationName}
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">
+                      {config.applicationName}
+                    </span>
+                    {config.environmentId &&
+                      environmentNameById.get(config.environmentId) && (
+                        <Badge variant="outline" className="text-xs">
+                          {environmentNameById.get(config.environmentId)}
+                        </Badge>
+                      )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {config.dockerImage}:{config.dockerTag}
