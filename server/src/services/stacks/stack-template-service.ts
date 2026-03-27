@@ -713,7 +713,7 @@ export class StackTemplateService {
       serviceName: config.applicationName,
       serviceType,
       dockerImage,
-      dockerTag: config.dockerTag,
+      dockerTag: config.dockerTag ?? 'latest',
       containerConfig: stackContainerConfig,
       dependsOn: [],
       order: 0,
@@ -735,7 +735,9 @@ export class StackTemplateService {
     );
 
     // Publish the draft immediately
-    await this.publishDraft(template.id);
+    await this.publishDraft(template.id, {
+      notes: `Imported from deployment configuration: ${config.applicationName}`,
+    });
 
     // Return the full template with the published version
     return (await this.getTemplate(template.id))!;
