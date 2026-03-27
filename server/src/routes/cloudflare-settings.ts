@@ -621,51 +621,14 @@ router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (as
 
     res.json(response);
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
     logger.error(
       {
         requestId,
         userId,
-        error: errorMessage,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       "Failed to retrieve Cloudflare tunnels",
     );
-
-    // Return appropriate error response based on error type
-    if (errorMessage.includes("API token not configured")) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare API token not configured",
-        details: "Please configure your Cloudflare API token first",
-      });
-    }
-
-    if (errorMessage.includes("Account ID not configured")) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare account ID not configured",
-        details: "Please configure your Cloudflare account ID first",
-      });
-    }
-
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        details: "The request to Cloudflare API timed out",
-      });
-    }
-
-    if (errorMessage.includes("Rate limit")) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        details: "Too many requests to Cloudflare API. Please try again later.",
-      });
-    }
-
     next(error);
   }
 }) as RequestHandler);
@@ -806,44 +769,15 @@ router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler,
 
     res.json(response);
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
     logger.error(
       {
         requestId,
         userId,
         tunnelId,
-        error: errorMessage,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       "Failed to retrieve Cloudflare tunnel details",
     );
-
-    // Return appropriate error response based on error type
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        details: "The request to Cloudflare API timed out",
-      });
-    }
-
-    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
-      return res.status(404).json({
-        success: false,
-        error: "Tunnel not found",
-        details: `Tunnel with ID ${tunnelId} was not found`,
-      });
-    }
-
-    if (errorMessage.includes("Rate limit")) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        details: "Too many requests to Cloudflare API. Please try again later.",
-      });
-    }
-
     next(error);
   }
 }) as RequestHandler);
@@ -949,44 +883,15 @@ router.get("/tunnels/:id/config", requirePermission('settings:read') as RequestH
 
     res.json(response);
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
     logger.error(
       {
         requestId,
         userId,
         tunnelId,
-        error: errorMessage,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       "Failed to retrieve Cloudflare tunnel configuration",
     );
-
-    // Return appropriate error response based on error type
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        details: "The request to Cloudflare API timed out",
-      });
-    }
-
-    if (errorMessage.includes("404") || errorMessage.includes("not found")) {
-      return res.status(404).json({
-        success: false,
-        error: "Tunnel configuration not found",
-        details: `Configuration for tunnel ${tunnelId} was not found`,
-      });
-    }
-
-    if (errorMessage.includes("Rate limit")) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        details: "Too many requests to Cloudflare API. Please try again later.",
-      });
-    }
-
     next(error);
   }
 }) as RequestHandler);
@@ -1130,45 +1035,16 @@ router.post("/tunnels/:id/hostnames", requirePermission('settings:write') as Req
       },
     });
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
     logger.error(
       {
         requestId,
         userId,
         tunnelId,
         hostname: req.body.hostname,
-        error: errorMessage,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       "Failed to add hostname to tunnel",
     );
-
-    // Return appropriate error response based on error type
-    if (errorMessage.includes("already exists")) {
-      return res.status(409).json({
-        success: false,
-        error: "Hostname already exists",
-        details: errorMessage,
-      });
-    }
-
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        details: "The request to Cloudflare API timed out",
-      });
-    }
-
-    if (errorMessage.includes("Rate limit")) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        details: "Too many requests to Cloudflare API. Please try again later.",
-      });
-    }
-
     next(error);
   }
 }) as RequestHandler);
@@ -1258,46 +1134,16 @@ router.delete(
         },
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
       logger.error(
         {
           requestId,
           userId,
           tunnelId,
           hostname,
-          error: errorMessage,
+          error: error instanceof Error ? error.message : "Unknown error",
         },
         "Failed to remove hostname from tunnel",
       );
-
-      // Return appropriate error response based on error type
-      if (errorMessage.includes("not found")) {
-        return res.status(404).json({
-          success: false,
-          error: "Hostname not found",
-          details: errorMessage,
-        });
-      }
-
-      if (errorMessage.includes("timeout")) {
-        return res.status(504).json({
-          success: false,
-          error: "Request timeout",
-          details: "The request to Cloudflare API timed out",
-        });
-      }
-
-      if (errorMessage.includes("Rate limit")) {
-        return res.status(429).json({
-          success: false,
-          error: "Rate limited",
-          details:
-            "Too many requests to Cloudflare API. Please try again later.",
-        });
-      }
-
       next(error);
     }
   }) as RequestHandler,
@@ -1526,30 +1372,10 @@ router.post(
       };
       res.status(201).json(response);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
       logger.error(
-        { error: errorMessage },
+        { error: error instanceof Error ? error.message : "Unknown error" },
         "Failed to create managed tunnel",
       );
-
-      if (errorMessage.includes("already exists")) {
-        return res.status(409).json({
-          success: false,
-          error: errorMessage,
-        });
-      }
-
-      if (
-        errorMessage.includes("API token") ||
-        errorMessage.includes("account ID")
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: errorMessage,
-        });
-      }
-
       next(error);
     }
   }) as RequestHandler,
