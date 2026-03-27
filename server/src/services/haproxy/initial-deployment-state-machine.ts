@@ -75,6 +75,23 @@ interface InitialDeploymentContext {
 
     // Configuration
     config?: DeploymentConfig;
+
+    // Source-agnostic configuration (used by actions instead of DB lookups)
+    // When set, actions read from these fields directly.
+    // When unset, actions fall back to context.config / DB lookups for backwards compatibility.
+    hostname?: string;
+    enableSsl?: boolean;
+    tlsCertificateId?: string;
+    certificateStatus?: string;
+    networkType?: string;
+    healthCheckEndpoint?: string;
+    healthCheckInterval?: number;
+    healthCheckRetries?: number;
+    containerPorts?: { containerPort: number; hostPort: number; protocol: string }[];
+    containerVolumes?: string[];
+    containerEnvironment?: Record<string, string>;
+    containerLabels?: Record<string, string>;
+    containerNetworks?: string[];
 }
 
 type InitialDeploymentEvent =
@@ -353,6 +370,21 @@ export const initialDeploymentMachine = setup({
 
         // Configuration
         config: deploymentInput?.config,
+
+        // Source-agnostic configuration
+        hostname: deploymentInput?.hostname,
+        enableSsl: deploymentInput?.enableSsl,
+        tlsCertificateId: deploymentInput?.tlsCertificateId,
+        certificateStatus: deploymentInput?.certificateStatus,
+        networkType: deploymentInput?.networkType,
+        healthCheckEndpoint: deploymentInput?.healthCheckEndpoint,
+        healthCheckInterval: deploymentInput?.healthCheckInterval,
+        healthCheckRetries: deploymentInput?.healthCheckRetries,
+        containerPorts: deploymentInput?.containerPorts,
+        containerVolumes: deploymentInput?.containerVolumes,
+        containerEnvironment: deploymentInput?.containerEnvironment,
+        containerLabels: deploymentInput?.containerLabels,
+        containerNetworks: deploymentInput?.containerNetworks,
         };
     },
 
