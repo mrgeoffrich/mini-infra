@@ -48,6 +48,7 @@ export interface StackTemplateVersion {
   notes: string | null;
   parameters: StackParameterDefinition[];
   defaultParameterValues: Record<string, StackParameterValue>;
+  networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   publishedAt: Date | null;
@@ -111,6 +112,7 @@ export interface StackTemplateVersionInfo {
   notes: string | null;
   parameters: StackParameterDefinition[];
   defaultParameterValues: Record<string, StackParameterValue>;
+  networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   publishedAt: string | null;
@@ -157,6 +159,7 @@ export interface CreateStackTemplateRequest {
   category?: string;
   parameters?: StackParameterDefinition[];
   defaultParameterValues?: Record<string, StackParameterValue>;
+  networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -182,6 +185,7 @@ export interface UpdateStackTemplateRequest {
 export interface DraftVersionInput {
   parameters?: StackParameterDefinition[];
   defaultParameterValues?: Record<string, StackParameterValue>;
+  networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
