@@ -71,7 +71,7 @@ export function LogControls({
             updateFilter("services", v === "__all__" ? [] : [v])
           }
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-72">
             <SelectValue placeholder="All Containers" />
           </SelectTrigger>
           <SelectContent>
