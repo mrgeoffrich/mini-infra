@@ -117,9 +117,9 @@ function flattenStreams(
 export function useLokiServices(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["lokiLabelValues", "compose_service"],
+    queryKey: ["lokiLabelValues", "container"],
     queryFn: () =>
-      fetchLabelValues("compose_service", generateCorrelationId()),
+      fetchLabelValues("container", generateCorrelationId()),
     enabled,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000,
@@ -144,11 +144,11 @@ export function useLokiLogs(
   const logqlQuery = useMemo(() => {
     let selector: string;
     if (query.services.length === 0) {
-      selector = '{compose_service=~".+"}';
+      selector = '{container=~".+"}';
     } else if (query.services.length === 1) {
-      selector = `{compose_service="${query.services[0]}"}`;
+      selector = `{container="${query.services[0]}"}`;
     } else {
-      selector = `{compose_service=~"${query.services.join("|")}"}`;
+      selector = `{container=~"${query.services.join("|")}"}`;
     }
 
     if (query.search.trim()) {

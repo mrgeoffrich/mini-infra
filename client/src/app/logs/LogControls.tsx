@@ -72,10 +72,10 @@ export function LogControls({
           }
         >
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="All Services" />
+            <SelectValue placeholder="All Containers" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Services</SelectItem>
+            <SelectItem value="__all__">All Containers</SelectItem>
             {services.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}

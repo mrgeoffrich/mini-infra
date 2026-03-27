@@ -216,9 +216,7 @@ export function LogStream({
                   className="text-cyan-600 shrink-0 w-28 truncate"
                   title={entry.labels.container}
                 >
-                  {entry.labels.compose_service ||
-                    entry.labels.container ||
-                    "unknown"}
+                  {entry.labels.container || "unknown"}
                 </span>
                 <span
                   className={`${textColor} whitespace-pre-wrap break-all flex-1`}
