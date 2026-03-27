@@ -153,11 +153,11 @@ export class StackTemplateService {
     input: CreateStackTemplateRequest,
     createdById?: string
   ): Promise<StackTemplateInfo> {
-    // Check for name collision
+    // Check for name collision (allow re-use of archived templates)
     const existing = await this.prisma.stackTemplate.findUnique({
       where: { name_source: { name: input.name, source: "user" } },
     });
-    if (existing) {
+    if (existing && !existing.isArchived) {
       throw new TemplateError(
         `A user template named "${input.name}" already exists`,
         409
@@ -169,18 +169,34 @@ export class StackTemplateService {
     const configFileInputs = input.configFiles ?? [];
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // Create template
-      const template = await tx.stackTemplate.create({
-        data: {
-          name: input.name,
-          displayName: input.displayName,
-          description: input.description ?? null,
-          source: "user",
-          scope: input.scope,
-          category: input.category ?? null,
-          createdById: createdById ?? null,
-        },
-      });
+      // Re-use archived template if one exists, otherwise create new
+      let template;
+      if (existing?.isArchived) {
+        template = await tx.stackTemplate.update({
+          where: { id: existing.id },
+          data: {
+            displayName: input.displayName,
+            description: input.description ?? null,
+            scope: input.scope,
+            category: input.category ?? null,
+            isArchived: false,
+            currentVersionId: null,
+            draftVersionId: null,
+          },
+        });
+      } else {
+        template = await tx.stackTemplate.create({
+          data: {
+            name: input.name,
+            displayName: input.displayName,
+            description: input.description ?? null,
+            source: "user",
+            scope: input.scope,
+            category: input.category ?? null,
+            createdById: createdById ?? null,
+          },
+        });
+      }
 
       // Create draft version (version 0)
       const version = await tx.stackTemplateVersion.create({
