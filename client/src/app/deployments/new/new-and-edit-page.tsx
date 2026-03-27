@@ -346,9 +346,7 @@ export function NewDeploymentConfigPage() {
                                   />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {environments
-                                    .filter((env) => env.isActive)
-                                    .map((environment) => (
+                                  {environments.map((environment) => (
                                       <SelectItem
                                         key={environment.id}
                                         value={environment.id}

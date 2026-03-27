@@ -35,8 +35,8 @@ export function EnvironmentDeleteDialog({
   const [deleteNetworks, setDeleteNetworks] = useState(false);
   const deleteMutation = useDeleteEnvironment();
 
+  const isRunning = environment.services.some((s) => s.status === "running");
   const isConfirmed = confirmationText === environment.name;
-  const isRunning = environment.status === "running";
 
   const handleDelete = async () => {
     if (!isConfirmed) return;
@@ -86,16 +86,6 @@ export function EnvironmentDeleteDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Warning for running environment */}
-          {isRunning && (
-            <Alert variant="destructive">
-              <IconAlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                This environment is currently running. You must stop it before deletion.
-              </AlertDescription>
-            </Alert>
-          )}
-
           {/* Environment Details */}
           <div className="rounded-md border p-3 space-y-2">
             <div className="font-medium">{environment.name}</div>
@@ -235,7 +225,7 @@ export function EnvironmentDeleteDialog({
           <Button
             variant="destructive"
             onClick={handleDelete}
-            disabled={!isConfirmed || isRunning || deleteMutation.isPending}
+            disabled={!isConfirmed || deleteMutation.isPending}
           >
             {deleteMutation.isPending && (
               <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
