@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { IconLoader2, IconAlertTriangle, IconServer, IconNetwork, IconDatabase } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconNetwork, IconDatabase } from "@tabler/icons-react";
 
 interface EnvironmentDeleteDialogProps {
   open: boolean;
@@ -35,7 +35,6 @@ export function EnvironmentDeleteDialog({
   const [deleteNetworks, setDeleteNetworks] = useState(false);
   const deleteMutation = useDeleteEnvironment();
 
-  const isRunning = environment.services.some((s) => s.status === "running");
   const isConfirmed = confirmationText === environment.name;
 
   const handleDelete = async () => {
@@ -95,11 +94,7 @@ export function EnvironmentDeleteDialog({
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-4 text-sm pt-2">
-              <div className="flex items-center gap-1">
-                <IconServer className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>{environment.services.length} Services</span>
-              </div>
+            <div className="grid grid-cols-2 gap-4 text-sm pt-2">
               <div className="flex items-center gap-1">
                 <IconNetwork className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>{environment.networks.length} Networks</span>
@@ -112,17 +107,12 @@ export function EnvironmentDeleteDialog({
           </div>
 
           {/* Resources that will be deleted */}
-          {(environment.services.length > 0 || environment.networks.length > 0 || environment.volumes.length > 0) && (
+          {(environment.networks.length > 0 || environment.volumes.length > 0) && (
             <Alert>
               <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium mb-2">The following services will be deleted:</div>
-                <ul className="text-sm space-y-1">
-                  {environment.services.length > 0 && (
-                    <li>• {environment.services.length} service(s): {environment.services.map(s => s.serviceName).join(", ")}</li>
-                  )}
-                </ul>
-                <div className="mt-3 text-sm text-muted-foreground">
+                <div className="font-medium mb-2">Associated resources:</div>
+                <div className="mt-1 text-sm text-muted-foreground">
                   Networks and volumes will be preserved by default unless explicitly selected below.
                 </div>
               </AlertDescription>
@@ -130,7 +120,7 @@ export function EnvironmentDeleteDialog({
           )}
 
           {/* Volume and Network deletion options */}
-          {!isRunning && (environment.networks.length > 0 || environment.volumes.length > 0) && (
+          {(environment.networks.length > 0 || environment.volumes.length > 0) && (
             <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
               <div className="font-medium text-sm">Additional Cleanup Options</div>
 
@@ -197,21 +187,19 @@ export function EnvironmentDeleteDialog({
           )}
 
           {/* Confirmation Input */}
-          {!isRunning && (
-            <div className="space-y-2">
-              <Label htmlFor="confirmation">
-                Type <code className="bg-muted px-1 rounded text-sm">{environment.name}</code> to confirm:
-              </Label>
-              <Input
-                id="confirmation"
-                value={confirmationText}
-                onChange={(e) => setConfirmationText(e.target.value)}
-                placeholder={environment.name}
-                disabled={deleteMutation.isPending}
-                autoComplete="off"
-              />
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="confirmation">
+              Type <code className="bg-muted px-1 rounded text-sm">{environment.name}</code> to confirm:
+            </Label>
+            <Input
+              id="confirmation"
+              value={confirmationText}
+              onChange={(e) => setConfirmationText(e.target.value)}
+              placeholder={environment.name}
+              disabled={deleteMutation.isPending}
+              autoComplete="off"
+            />
+          </div>
         </div>
 
         <DialogFooter>

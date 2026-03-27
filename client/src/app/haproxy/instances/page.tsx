@@ -13,7 +13,7 @@ import { useEnvironments } from "@/hooks/use-environments";
 import { useHAProxyStatus, useMigrationPreview } from "@/hooks/use-haproxy-remediation";
 import { RemediateHAProxyDialog } from "@/components/haproxy/remediate-haproxy-dialog";
 import { MigrateHAProxyDialog } from "@/components/haproxy/migrate-haproxy-dialog";
-import { EnvironmentStatus } from "@/components/environments/environment-status";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,13 +99,10 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
   const [migrateOpen, setMigrateOpen] = useState(false);
   const { data, isLoading, isError } = useHAProxyStatus(env.id);
 
-  const isStopped = env.status === "stopped";
   const status = data?.data;
 
   // Check if this environment needs migration to stack-managed
-  const { data: migrationPreview } = useMigrationPreview(env.id, {
-    enabled: !isStopped,
-  });
+  const { data: migrationPreview } = useMigrationPreview(env.id);
   const needsMigration = migrationPreview?.data?.needsMigration ?? false;
 
   return (
@@ -120,12 +117,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
         <EnvironmentTypeBadge type={env.type} />
       </TableCell>
       <TableCell>
-        <EnvironmentStatus status={env.status} />
-      </TableCell>
-      <TableCell>
-        {isStopped ? (
-          <span className="text-muted-foreground">—</span>
-        ) : needsMigration ? (
+        {needsMigration ? (
           <Badge
             variant="outline"
             className="text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:bg-orange-950"
@@ -142,9 +134,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
         )}
       </TableCell>
       <TableCell>
-        {isStopped ? (
-          <span className="text-muted-foreground">—</span>
-        ) : isLoading ? (
+        {isLoading ? (
           <Skeleton className="h-4 w-6" />
         ) : isError ? (
           <span className="text-muted-foreground">—</span>
@@ -153,9 +143,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
         )}
       </TableCell>
       <TableCell>
-        {isStopped ? (
-          <span className="text-muted-foreground">—</span>
-        ) : isLoading ? (
+        {isLoading ? (
           <Skeleton className="h-4 w-6" />
         ) : isError ? (
           <span className="text-muted-foreground">—</span>
@@ -169,7 +157,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
             <Button
               variant="outline"
               size="sm"
-              disabled={isStopped}
+
               onClick={(e) => { e.stopPropagation(); setMigrateOpen(true); }}
               className="text-orange-700 border-orange-200 hover:bg-orange-50 dark:text-orange-300 dark:border-orange-800 dark:hover:bg-orange-950"
             >
@@ -187,7 +175,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
             <Button
               variant="outline"
               size="sm"
-              disabled={isStopped}
+
               onClick={(e) => { e.stopPropagation(); setRemediateOpen(true); }}
             >
               Remediate
@@ -208,10 +196,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
 export default function HAProxyInstancesPage() {
   const { data, isLoading, refetch, isRefetching } = useEnvironments();
 
-  const environments = data?.environments ?? [];
-  const haproxyEnvironments = environments.filter((env) =>
-    env.services.some((s) => s.serviceName === "haproxy")
-  );
+  const haproxyEnvironments = data?.environments ?? [];
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -279,7 +264,6 @@ export default function HAProxyInstancesPage() {
                 <TableRow>
                   <TableHead>Environment</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Env Status</TableHead>
                   <TableHead>HAProxy Health</TableHead>
                   <TableHead>Frontends</TableHead>
                   <TableHead>Routes</TableHead>

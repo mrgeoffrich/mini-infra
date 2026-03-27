@@ -5,13 +5,7 @@ import {
   EnvironmentType,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
-  AddServiceToEnvironmentRequest,
-  EnvironmentStatusResponse,
-  EnvironmentOperationResult,
-  AvailableServicesResponse,
-  ServiceTypeMetadata,
   ListEnvironmentsResponse,
-  ServiceStatus,
   EnvironmentNetwork,
   EnvironmentVolume,
   CreateNetworkRequest,
@@ -34,7 +28,6 @@ function generateCorrelationId(): string {
 async function fetchEnvironments(
   filters: {
     type?: EnvironmentType;
-    status?: ServiceStatus;
     page?: number;
     limit?: number;
   } = {},
@@ -44,7 +37,6 @@ async function fetchEnvironments(
 
   // Add query parameters
   if (filters.type) url.searchParams.set("type", filters.type);
-  if (filters.status) url.searchParams.set("status", filters.status);
   if (filters.page) url.searchParams.set("page", filters.page.toString());
   if (filters.limit) url.searchParams.set("limit", filters.limit.toString());
 
@@ -158,131 +150,7 @@ async function deleteEnvironment(
   }
 }
 
-async function fetchEnvironmentStatus(
-  id: string,
-  correlationId: string,
-): Promise<EnvironmentStatusResponse> {
-  const response = await fetch(`/api/environments/${id}/status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environment status: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function startEnvironment(
-  id: string,
-  correlationId: string,
-): Promise<EnvironmentOperationResult> {
-  const response = await fetch(`/api/environments/${id}/start`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to start environment: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function stopEnvironment(
-  id: string,
-  correlationId: string,
-): Promise<EnvironmentOperationResult> {
-  const response = await fetch(`/api/environments/${id}/stop`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to stop environment: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function addServiceToEnvironment(
-  environmentId: string,
-  request: AddServiceToEnvironmentRequest,
-  correlationId: string,
-): Promise<Environment> {
-  const response = await fetch(`/api/environments/${environmentId}/services`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to add service to environment: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function fetchAvailableServices(
-  correlationId: string,
-): Promise<AvailableServicesResponse> {
-  const response = await fetch(`/api/environments/services/available`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch available services: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function fetchServiceTypeMetadata(
-  serviceType: string,
-  environmentId: string | undefined,
-  correlationId: string,
-): Promise<ServiceTypeMetadata> {
-  const url = new URL(`/api/environments/services/available/${serviceType}`, window.location.origin);
-
-  // Add environmentId as query parameter if provided
-  if (environmentId) {
-    url.searchParams.set("environmentId", environmentId);
-  }
-
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch service type metadata: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
 
 // ====================
 // Network API Functions
@@ -468,7 +336,6 @@ export interface UseEnvironmentsOptions {
   retry?: number | boolean | ((failureCount: number, error: Error) => boolean);
   filters?: {
     type?: EnvironmentType;
-    status?: ServiceStatus;
     page?: number;
     limit?: number;
   };
@@ -551,101 +418,6 @@ export function useEnvironment(
   });
 }
 
-export function useEnvironmentStatus(
-  id: string,
-  options: UseEnvironmentOptions = {},
-) {
-  const { enabled = true, refetchInterval = 5000, retry = 3 } = options;
-
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["environmentStatus", id],
-    queryFn: () => fetchEnvironmentStatus(id, correlationId),
-    enabled: enabled && !!id,
-    refetchInterval,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404") ||
-              error.message.includes("Not found")
-            ) {
-              return false;
-            }
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 2000, // Status data is fresh for 2 seconds
-    gcTime: 2 * 60 * 1000, // Keep in cache for 2 minutes
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  });
-}
-
-export function useAvailableServices(options: UseEnvironmentOptions = {}) {
-  const { enabled = true, retry = 3 } = options;
-
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["availableServices"],
-    queryFn: () => fetchAvailableServices(correlationId),
-    enabled,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
-              return false;
-            }
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 60000, // Service types are stable for 1 minute
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-  });
-}
-
-export function useServiceTypeMetadata(
-  serviceType: string,
-  environmentId: string | undefined,
-  options: UseEnvironmentOptions = {},
-) {
-  const { enabled = true, retry = 3 } = options;
-
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["serviceTypeMetadata", serviceType, environmentId],
-    queryFn: () => fetchServiceTypeMetadata(serviceType, environmentId, correlationId),
-    enabled: enabled && !!serviceType,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404") ||
-              error.message.includes("Not found")
-            ) {
-              return false;
-            }
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 300000, // Service metadata is stable for 5 minutes
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-  });
-}
-
 // Mutation hooks
 export function useCreateEnvironment() {
   const queryClient = useQueryClient();
@@ -691,60 +463,6 @@ export function useDeleteEnvironment() {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
       queryClient.removeQueries({ queryKey: ["environment", options.id] });
       queryClient.removeQueries({ queryKey: ["environmentStatus", options.id] });
-    },
-  });
-}
-
-export function useStartEnvironment() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: (id: string) => startEnvironment(id, correlationId),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", id] });
-    },
-  });
-}
-
-export function useStopEnvironment() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: (id: string) => stopEnvironment(id, correlationId),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", id] });
-    },
-  });
-}
-
-export function useAddServiceToEnvironment() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      request,
-    }: {
-      environmentId: string;
-      request: AddServiceToEnvironmentRequest;
-    }) => addServiceToEnvironment(environmentId, request, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", environmentId] });
     },
   });
 }
@@ -961,7 +679,6 @@ export function useDeleteEnvironmentVolume() {
 
 export interface EnvironmentFiltersState {
   type?: EnvironmentType;
-  status?: ServiceStatus;
   page: number;
   limit: number;
 }
@@ -1014,11 +731,6 @@ export type {
   EnvironmentType,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
-  AddServiceToEnvironmentRequest,
-  EnvironmentStatusResponse,
-  EnvironmentOperationResult,
-  AvailableServicesResponse,
-  ServiceTypeMetadata,
   EnvironmentNetwork,
   EnvironmentVolume,
   CreateNetworkRequest,
