@@ -35,13 +35,16 @@ export class DeployApplicationContainers {
             // Generate unique container name for this deployment
             const containerName = `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
 
-            // Build container configuration from deployment config
-            const containerConfig: ContainerConfig = context.config.containerConfig || {
-                ports: [],
-                volumes: [],
-                environment: [],
-                labels: {},
-                networks: [context.haproxyNetworkName] // Ensure container joins HAProxy network
+            // Build container configuration - prefer source-agnostic context fields,
+            // fall back to config.containerConfig for legacy callers
+            const containerConfig: ContainerConfig = context.config?.containerConfig ?? {
+                ports: context.containerPorts ?? [],
+                volumes: context.containerVolumes ?? [],
+                environment: context.containerEnvironment
+                    ? Object.entries(context.containerEnvironment).map(([k, v]: [string, string]) => `${k}=${v}`)
+                    : [],
+                labels: context.containerLabels ?? {},
+                networks: context.containerNetworks ?? [context.haproxyNetworkName],
             };
 
             // Ensure the container is attached to the HAProxy network
