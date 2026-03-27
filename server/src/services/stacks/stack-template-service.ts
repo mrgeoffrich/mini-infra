@@ -462,6 +462,8 @@ export class StackTemplateService {
       configFiles: externalConfigFiles,
     } = input;
 
+    const networkTypeDefaults = (definition as any).networkTypeDefaults ?? {};
+
     // Check if template exists
     const existing = await this.prisma.stackTemplate.findUnique({
       where: { name_source: { name, source: "system" } },
@@ -543,6 +545,7 @@ export class StackTemplateService {
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
             ) as any,
+            networkTypeDefaults: networkTypeDefaults as any,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -559,6 +562,7 @@ export class StackTemplateService {
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
             ) as any,
+            networkTypeDefaults: networkTypeDefaults as any,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -796,10 +800,23 @@ export class StackTemplateService {
       StackParameterValue
     >;
 
-    // Merge provided parameter values with defaults
+    // Look up environment networkType if environment-scoped
+    let networkDefaults: Record<string, StackParameterValue> = {};
+    if (input.environmentId) {
+      const env = await this.prisma.environment.findUnique({
+        where: { id: input.environmentId },
+        select: { networkType: true },
+      });
+      if (env) {
+        const ntDefaults = version.networkTypeDefaults as unknown as Record<string, Record<string, StackParameterValue>> | null;
+        networkDefaults = ntDefaults?.[env.networkType] ?? {};
+      }
+    }
+
+    // Merge: definition defaults → network-type defaults → user overrides
     const mergedValues = mergeParameterValues(
       paramDefs,
-      { ...defaultValues, ...(input.parameterValues ?? {}) }
+      { ...defaultValues, ...networkDefaults, ...(input.parameterValues ?? {}) }
     );
 
     // Build service definitions from template services + config files
