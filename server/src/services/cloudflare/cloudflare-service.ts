@@ -8,6 +8,7 @@ import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
 import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
+import { toServiceError } from "../../lib/service-error-mapper";
 
 /**
  * Cloudflare-specific error mappers for the circuit breaker.
@@ -802,7 +803,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to update Cloudflare tunnel configuration",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -891,7 +892,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to add hostname to tunnel configuration",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -963,7 +964,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to remove hostname from tunnel configuration",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -1034,7 +1035,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to get Cloudflare zone ID",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -1118,7 +1119,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to create DNS record in Cloudflare",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -1182,7 +1183,7 @@ export class CloudflareService extends ConfigurationService {
         "Failed to delete DNS record from Cloudflare",
       );
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
@@ -1350,7 +1351,7 @@ export class CloudflareService extends ConfigurationService {
         this.circuitBreaker.recordFailure(errorCode);
       }
 
-      throw error;
+      throw toServiceError(error, "cloudflare");
     }
   }
 
