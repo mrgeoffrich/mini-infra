@@ -336,7 +336,7 @@ async function createAgentSidecar(
         `AGENT_THINKING=${config.thinking}`,
         `AGENT_EFFORT=${config.effort}`,
         `AGENT_TIMEOUT_MS=${config.timeoutMs}`,
-        `LOG_LEVEL=${process.env.LOG_LEVEL || "info"}`,
+        `LOG_LEVEL=${process.env.AGENT_LOG_LEVEL || process.env.LOG_LEVEL || "info"}`,
         // Forward OpenTelemetry config if present
         ...["ENABLE_BETA_TRACING_DETAILED", "BETA_TRACING_ENDPOINT"]
           .filter((key) => process.env[key] !== undefined)

@@ -14,6 +14,7 @@ Run `touch .restart-dev` in the project root to trigger a full dev server restar
 
 * Always use http://localhost:3005 for all frontend and backend requests as this is a vite server that will proxy through to the backend. If you need to test the proxy, use http://localhost:5005 for what it connects to.
 * **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
+* **Sidecar folders are NOT in the npm workspace**. `update-sidecar/` and `agent-sidecar/` are standalone packages — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
 * You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
 * Run this command to display your development API key:
