@@ -142,11 +142,37 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
+  "/applications": {
+    path: "/applications",
+    title: "Applications",
+    icon: IconRocket,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "applications",
+    description: "User application management",
+    children: {
+      new: {
+        path: "/applications/new",
+        title: "New Application",
+        breadcrumbLabel: "New",
+        parent: "/applications",
+        showInNav: false,
+      },
+      detail: {
+        path: "/applications/:id",
+        title: "Application Details",
+        breadcrumbLabel: "Details",
+        parent: "/applications",
+        showInNav: false,
+      },
+    },
+  },
+
   "/deployments": {
     path: "/deployments",
     title: "Deployments",
     icon: IconRocket,
-    showInNav: true,
+    showInNav: false,
     navGroup: "main",
     navSection: "applications",
     description: "Zero-downtime deployment management",

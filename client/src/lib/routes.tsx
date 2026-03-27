@@ -26,6 +26,9 @@ import PostgresServerDetailPage from "@/app/postgres-server/[serverId]/page";
 import DatabaseDetailPage from "@/app/postgres-server/[serverId]/databases/[dbId]/page";
 import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
+import ApplicationsPage from "@/app/applications/page";
+import NewApplicationPage from "@/app/applications/new/page";
+import ApplicationDetailPage from "@/app/applications/[id]/page";
 import DeploymentsPage from "@/app/deployments/page";
 import NewDeploymentConfigPage from "@/app/deployments/new/new-and-edit-page";
 import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
@@ -133,6 +136,18 @@ export const router = createBrowserRouter([
       {
         path: "postgres-server/:serverId/databases/:dbId",
         element: <DatabaseDetailPage />,
+      },
+      {
+        path: "applications",
+        element: <ApplicationsPage />,
+      },
+      {
+        path: "applications/new",
+        element: <NewApplicationPage />,
+      },
+      {
+        path: "applications/:id",
+        element: <ApplicationDetailPage />,
       },
       {
         path: "deployments",
