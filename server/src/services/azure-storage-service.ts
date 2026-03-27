@@ -5,6 +5,7 @@ import {
   ConnectivityStatusType,
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
+import { toServiceError } from "../lib/service-error-mapper";
 import { servicesLogger } from "../lib/logger-factory";
 import { azureConfig } from "../lib/config-new";
 import {
@@ -744,7 +745,7 @@ export class AzureStorageService extends ConfigurationService {
         "Failed to list backup files from Azure Storage",
       );
 
-      throw error;
+      throw toServiceError(error, "azure");
     }
   }
 
@@ -812,7 +813,7 @@ export class AzureStorageService extends ConfigurationService {
         "Failed to download backup file from Azure Storage",
       );
 
-      throw error;
+      throw toServiceError(error, "azure");
     }
   }
 
@@ -935,7 +936,7 @@ export class AzureStorageService extends ConfigurationService {
         "Failed to enforce retention policy",
       );
 
-      throw error;
+      throw toServiceError(error, "azure");
     }
   }
 
@@ -1202,7 +1203,7 @@ export class AzureStorageService extends ConfigurationService {
         "Failed to generate SAS URL",
       );
 
-      throw error;
+      throw toServiceError(error, "azure");
     }
   }
 
