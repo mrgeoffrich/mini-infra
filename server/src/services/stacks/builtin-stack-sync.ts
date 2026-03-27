@@ -90,8 +90,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
             definition: template.definition as any,
             configFiles: template.configFiles,
           });
-          const overrides = getEnvironmentParameterOverrides(template.name, env.networkType);
-          await syncStackFromTemplate(prisma, templateId, template, env.id, log, overrides);
+          await syncStackFromTemplate(prisma, templateId, template, env.id, log, env.networkType);
         } catch (error) {
           log.error(
             { error, stackName: template.name, environmentId: env.id },
@@ -144,8 +143,7 @@ export async function syncBuiltinStacksForEnvironment(
         definition: template.definition as any,
         configFiles: template.configFiles,
       });
-      const overrides = getEnvironmentParameterOverrides(template.name, networkType);
-      await syncStackFromTemplate(prisma, templateId, template, environmentId, log, overrides);
+      await syncStackFromTemplate(prisma, templateId, template, environmentId, log, networkType);
     } catch (error) {
       log.error(
         { error, stackName: template.name },
@@ -153,21 +151,6 @@ export async function syncBuiltinStacksForEnvironment(
       );
     }
   }
-}
-
-/**
- * Return parameter overrides for a stack based on the environment's network type.
- * Internet-facing environments should not expose HAProxy ports on the host
- * since traffic arrives via Cloudflare tunnels.
- */
-function getEnvironmentParameterOverrides(
-  stackName: string,
-  networkType: string
-): Record<string, StackParameterValue> {
-  if (stackName === "haproxy" && networkType === "internet") {
-    return { "expose-on-host": false };
-  }
-  return {};
 }
 
 /**
@@ -181,9 +164,11 @@ async function syncStackFromTemplate(
   template: LoadedTemplate,
   environmentId: string | null,
   log: ReturnType<typeof servicesLogger>,
-  parameterOverrides: Record<string, StackParameterValue> = {}
+  networkType: string = "local"
 ): Promise<void> {
   const { definition } = template;
+  const networkTypeDefaults = definition.networkTypeDefaults ?? {};
+  const parameterOverrides = networkTypeDefaults[networkType] ?? {};
 
   const existing = await prisma.stack.findFirst({
     where: { name: template.name, environmentId, status: { not: 'removed' } },
