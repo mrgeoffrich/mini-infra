@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconApps,
@@ -13,7 +13,13 @@ import {
   IconLoader2,
   IconPackage,
 } from "@tabler/icons-react";
-import { useApplications, useDeleteApplication } from "@/hooks/use-applications";
+import {
+  useApplications,
+  useDeleteApplication,
+  useDeployApplication,
+  useStopApplication,
+  useUserStacks,
+} from "@/hooks/use-applications";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,20 +48,62 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ImportDeploymentDialog } from "./import-deployment-dialog";
-import type { StackTemplateInfo } from "@mini-infra/types";
+import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
 export default function ApplicationsPage() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useApplications();
   const deleteApplication = useDeleteApplication();
+  const deployApplication = useDeployApplication();
+  const stopApplication = useStopApplication();
+  const { data: stacksData } = useUserStacks();
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
+  const [deployingId, setDeployingId] = useState<string | null>(null);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
+  const userStacks = stacksData?.data ?? [];
+
+  // Build a map from templateId to stack for quick lookup
+  const stackByTemplateId = useMemo(() => {
+    const map = new Map<string, StackInfo>();
+    for (const stack of userStacks) {
+      if (stack.templateId) {
+        map.set(stack.templateId, stack);
+      }
+    }
+    return map;
+  }, [userStacks]);
 
   const getServiceCount = (app: StackTemplateInfo): number => {
     return app.currentVersion?.services?.length ?? 0;
+  };
+
+  const handleDeploy = async (app: StackTemplateInfo) => {
+    setDeployingId(app.id);
+    try {
+      await deployApplication.mutateAsync({
+        templateId: app.id,
+        name: app.name,
+      });
+    } finally {
+      setDeployingId(null);
+    }
+  };
+
+  const handleStop = async (app: StackTemplateInfo) => {
+    const stack = stackByTemplateId.get(app.id);
+    if (!stack) {
+      return;
+    }
+    setStoppingId(app.id);
+    try {
+      await stopApplication.mutateAsync(stack.id);
+    } finally {
+      setStoppingId(null);
+    }
   };
 
   const handleDelete = async () => {
@@ -236,15 +284,47 @@ export default function ApplicationsPage() {
                       {app.isArchived && (
                         <Badge variant="destructive">Archived</Badge>
                       )}
+                      {stackByTemplateId.has(app.id) && (
+                        <Badge
+                          variant={
+                            stackByTemplateId.get(app.id)?.status === "synced"
+                              ? "default"
+                              : "outline"
+                          }
+                        >
+                          {stackByTemplateId.get(app.id)?.status === "synced"
+                            ? "Running"
+                            : stackByTemplateId.get(app.id)?.status ?? "Deployed"}
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="flex gap-2">
-                      <Button size="sm" className="flex-1">
-                        <IconPlayerPlay className="h-4 w-4 mr-1" />
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={deployingId === app.id}
+                        onClick={() => handleDeploy(app)}
+                      >
+                        {deployingId === app.id ? (
+                          <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <IconPlayerPlay className="h-4 w-4 mr-1" />
+                        )}
                         Deploy
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1">
-                        <IconPlayerStop className="h-4 w-4 mr-1" />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        disabled={stoppingId === app.id || !stackByTemplateId.has(app.id)}
+                        onClick={() => handleStop(app)}
+                      >
+                        {stoppingId === app.id ? (
+                          <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <IconPlayerStop className="h-4 w-4 mr-1" />
+                        )}
                         Stop
                       </Button>
                     </div>
