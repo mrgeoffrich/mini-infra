@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import Docker from 'dockerode';
 import { PrismaClient } from '@prisma/client';
 import {
@@ -1135,7 +1136,8 @@ export class StackReconciler {
     envNetworkMap: Map<string, string>
   ): Promise<Record<string, unknown>> {
     const routing = serviceDef.routing!;
-    const containerName = `${projectName}-${action.serviceName}`;
+    const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
+    const containerName = `${projectName}-${action.serviceName}-${suffix}`;
     const envValidation = new EnvironmentValidationService();
     const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
 

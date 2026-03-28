@@ -32,8 +32,9 @@ export class DeployApplicationContainers {
                 throw new Error('Missing required deployment context: applicationName, dockerImage, or haproxyNetworkName');
             }
 
-            // Generate unique container name for this deployment
-            const containerName = `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
+            // Use context-provided name (stacks), fall back to generated name (deployments)
+            const containerName = context.containerName as string
+                ?? `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
 
             // Build container configuration - prefer source-agnostic context fields,
             // fall back to config.containerConfig for legacy callers
