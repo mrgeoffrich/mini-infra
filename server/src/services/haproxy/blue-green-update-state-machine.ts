@@ -492,8 +492,6 @@ export const blueGreenUpdateMachine = setup({
             retryCount: 0,
             activeConnections: 0,
             newContainerId: undefined,
-            oldContainerId: undefined,
-            containerName: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
         }))
