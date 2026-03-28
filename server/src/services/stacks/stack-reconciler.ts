@@ -17,12 +17,14 @@ import {
   ApplyResult,
   DestroyResult,
   ServiceApplyResult,
+  ResourceResult,
   serializeStack,
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
+import { StackResourceReconciler } from './stack-resource-reconciler';
 import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
 import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
@@ -45,7 +47,8 @@ export class StackReconciler {
   constructor(
     private dockerExecutor: DockerExecutorService,
     private prisma: PrismaClient,
-    private routingManager?: StackRoutingManager
+    private routingManager?: StackRoutingManager,
+    private resourceReconciler?: StackResourceReconciler
   ) {
     this.containerManager = new StackContainerManager(dockerExecutor);
   }
@@ -113,6 +116,11 @@ export class StackReconciler {
     });
 
     log.info({ stackName: stack.name, serviceCount: stack.services.length }, 'Computing plan');
+
+    // 1b. Load current stack resources for resource reconciliation
+    const currentResources = this.resourceReconciler
+      ? await this.prisma.stackResource.findMany({ where: { stackId } })
+      : [];
 
     // 2. Build template context with parameters and resolve service definitions
     const params = mergeParameterValues(
@@ -213,13 +221,26 @@ export class StackReconciler {
       (stack as any).template?.currentVersion?.version != null &&
       (stack as any).template.currentVersion.version > stack.templateVersion;
 
+    // Compute resource actions (TLS, DNS, Tunnel)
+    const resourceActions = this.resourceReconciler
+      ? this.resourceReconciler.planResources(
+          {
+            tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
+            dnsRecords: (stack.dnsRecords as any[]) ?? [],
+            tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+          },
+          currentResources
+        )
+      : [];
+
     const plan: StackPlan = {
       stackId,
       stackName: stack.name,
       stackVersion: stack.version,
       planTime: new Date().toISOString(),
       actions,
-      hasChanges: actions.some((a) => a.action !== 'no-op'),
+      resourceActions,
+      hasChanges: actions.some((a) => a.action !== 'no-op') || resourceActions.some((a) => a.action !== 'no-op'),
       templateUpdateAvailable,
       warnings: planWarnings.length > 0 ? planWarnings : undefined,
     };
@@ -270,6 +291,7 @@ export class StackReconciler {
           success: true,
           duration: 0,
         })),
+        resourceResults: [],
         duration: Date.now() - startTime,
       };
     }
@@ -333,6 +355,63 @@ export class StackReconciler {
         if (!exists) {
           log.info({ volume: volName }, 'Creating volume');
           await this.dockerExecutor.createVolume(volName, projectName, { labels: stackLabels });
+        }
+      }
+
+      // 5c. Reconcile stack-level resources (TLS → DNS → Tunnels)
+      const allResourceResults: ResourceResult[] = [];
+      if (this.resourceReconciler && plan.resourceActions.some((a) => a.action !== 'no-op')) {
+        const definitions = {
+          tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
+          dnsRecords: (stack.dnsRecords as any[]) ?? [],
+          tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+        };
+
+        // Get HAProxy client if environment has one
+        let haproxyClient: HAProxyDataPlaneClient | null = null;
+        if (stack.environmentId) {
+          try {
+            const envValidation = new EnvironmentValidationService();
+            const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
+            if (haproxyCtx) {
+              haproxyClient = new HAProxyDataPlaneClient();
+            }
+          } catch { /* no HAProxy available */ }
+        }
+
+        const progressCallback = (result: ResourceResult) => {
+          log.info({ stackId, result }, 'Resource reconciliation progress');
+        };
+
+        // TLS first
+        const tlsResults = await this.resourceReconciler.reconcileTls(
+          plan.resourceActions, stackId, definitions.tlsCertificates, haproxyClient,
+          options?.triggeredBy ?? 'system', progressCallback
+        );
+        allResourceResults.push(...tlsResults);
+        if (tlsResults.some((r) => !r.success)) {
+          const failed = tlsResults.find((r) => !r.success);
+          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
+        }
+
+        // DNS second
+        const dnsResults = await this.resourceReconciler.reconcileDns(
+          plan.resourceActions, stackId, definitions.dnsRecords, progressCallback
+        );
+        allResourceResults.push(...dnsResults);
+        if (dnsResults.some((r) => !r.success)) {
+          const failed = dnsResults.find((r) => !r.success);
+          throw new Error(`DNS reconciliation failed: ${failed?.error}`);
+        }
+
+        // Tunnel third
+        const tunnelResults = await this.resourceReconciler.reconcileTunnel(
+          plan.resourceActions, stackId, definitions.tunnelIngress, progressCallback
+        );
+        allResourceResults.push(...tunnelResults);
+        if (tunnelResults.some((r) => !r.success)) {
+          const failed = tunnelResults.find((r) => !r.success);
+          throw new Error(`Tunnel reconciliation failed: ${failed?.error}`);
         }
       }
 
@@ -442,6 +521,7 @@ export class StackReconciler {
           status: resultStatus,
           duration: Date.now() - startTime,
           serviceResults: serviceResults as any,
+          resourceResults: allResourceResults as any,
           triggeredBy: options?.triggeredBy ?? null,
         },
       });
@@ -451,6 +531,7 @@ export class StackReconciler {
         stackId,
         appliedVersion: stack.version,
         serviceResults,
+        resourceResults: allResourceResults,
         duration: Date.now() - startTime,
       };
     } catch (err: any) {
@@ -624,6 +705,15 @@ export class StackReconciler {
     const volumes = (stack.volumes as unknown as StackVolume[]) ?? [];
 
     log.info({ stackName: stack.name, projectName }, 'Destroying stack');
+
+    // 0. Destroy stack-level resources (TLS certificates, DNS records, tunnels)
+    if (this.resourceReconciler) {
+      try {
+        await this.resourceReconciler.destroyAllResources(stackId);
+      } catch (err: any) {
+        log.warn({ error: err.message }, 'Resource destruction failed (non-fatal), continuing with container removal');
+      }
+    }
 
     // 1. Stop and remove all containers
     const docker = this.dockerExecutor.getDockerClient();
@@ -871,6 +961,19 @@ export class StackReconciler {
     const dockerImage = `${serviceDef.dockerImage}:${serviceDef.dockerTag}`;
     const envRecord = serviceDef.containerConfig.env ?? {};
 
+    // Resolve TLS from stack-level resource if referenced
+    let enableSsl = false;
+    let tlsCertificateId: string | undefined;
+    if (routing.tlsCertificate) {
+      const tlsResource = await this.prisma.stackResource.findFirst({
+        where: { stackId, resourceType: 'tls', resourceName: routing.tlsCertificate },
+      });
+      if (tlsResource?.externalId) {
+        enableSsl = true;
+        tlsCertificateId = tlsResource.externalId;
+      }
+    }
+
     // Build networks list including environment networks
     const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
     for (const dockerName of envNetworkMap.values()) {
@@ -896,13 +999,13 @@ export class StackReconciler {
 
       // Source-agnostic fields
       hostname: routing.hostname,
-      enableSsl: routing.enableSsl ?? false,
-      tlsCertificateId: routing.tlsCertificateId,
-      certificateStatus: routing.enableSsl && routing.tlsCertificateId ? 'ACTIVE' : undefined,
-      networkType: routing.dns?.provider === 'external' ? 'internet' : 'local',
+      enableSsl,
+      tlsCertificateId,
+      certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
+      networkType: 'local',
       healthCheckEndpoint: '/health',
       healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
-        ? serviceDef.containerConfig.healthcheck.interval * 1000
+        ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
         : 2000,
       healthCheckRetries: serviceDef.containerConfig.healthcheck?.retries ?? 2,
       containerPorts: serviceDef.containerConfig.ports ?? [],

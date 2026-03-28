@@ -135,9 +135,11 @@ export class StackRoutingManager {
   async configureRoute(
     ctx: StackRoutingContext,
     backendName: string,
-    haproxyClient: HAProxyDataPlaneClient
+    haproxyClient: HAProxyDataPlaneClient,
+    sslOptions?: { enableSsl?: boolean; tlsCertificateId?: string }
   ): Promise<void> {
-    const frontendType = ctx.routing.enableSsl ? 'https' : 'http';
+    const enableSsl = sslOptions?.enableSsl ?? false;
+    const frontendType = enableSsl ? 'https' : 'http';
 
     const sharedFrontend = await this.haproxyFrontendManager.getOrCreateSharedFrontend(
       ctx.environmentId,
@@ -155,8 +157,8 @@ export class StackRoutingManager {
       haproxyClient,
       this.prisma,
       {
-        useSSL: ctx.routing.enableSsl ?? false,
-        tlsCertificateId: ctx.routing.tlsCertificateId,
+        useSSL: enableSsl,
+        tlsCertificateId: sslOptions?.tlsCertificateId,
       }
     );
   }
@@ -245,12 +247,7 @@ export class StackRoutingManager {
     }
   }
 
-  async configureDNS(hostname: string, environmentId: string, routing: StackServiceRouting): Promise<void> {
-    // Skip DNS for external providers
-    if (routing.dns?.provider === 'external') {
-      return;
-    }
-
+  async configureDNS(hostname: string, environmentId: string): Promise<void> {
     // Load environment to check networkType
     const environment = await this.prisma.environment.findUnique({
       where: { id: environmentId },
@@ -265,7 +262,7 @@ export class StackRoutingManager {
       hostname,
       ip,
       300,
-      routing.dns?.proxied ?? false
+      false
     );
   }
 

@@ -452,14 +452,14 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           ...parsed.data,
           triggeredBy,
           plan,
-          onProgress: (serviceResult, completedCount, totalActions) => {
+          onProgress: (result, completedCount, totalActions) => {
             try {
               emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
                 stackId,
-                ...serviceResult,
+                ...result,
                 completedCount,
                 totalActions,
-              });
+              } as any);
             } catch { /* never break apply */ }
           },
         });
@@ -512,6 +512,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           stackId,
           appliedVersion: 0,
           serviceResults: [],
+          resourceResults: [],
           duration: 0,
           error: error.message,
         });
