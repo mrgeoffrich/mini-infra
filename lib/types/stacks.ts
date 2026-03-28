@@ -71,6 +71,7 @@ export interface StackInitCommand {
 export interface StackServiceRouting {
   hostname: string;
   listeningPort: number;
+  healthCheckEndpoint?: string;
   tlsCertificate?: string;
   dnsRecord?: string;
   tunnelIngress?: string;

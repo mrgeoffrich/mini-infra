@@ -130,6 +130,7 @@ export const stackInitCommandSchema = z.object({
 export const stackServiceRoutingSchema = z.object({
   hostname: z.string().min(1).max(253),
   listeningPort: numberOrTemplate,
+  healthCheckEndpoint: z.string().max(500).optional(),
   backendOptions: z
     .object({
       balanceAlgorithm: z.enum(["roundrobin", "leastconn", "source"]).optional(),

@@ -1190,7 +1190,7 @@ export class StackReconciler {
       tlsCertificateId,
       certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
       networkType: 'local',
-      healthCheckEndpoint: '/health',
+      healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
       healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
         ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
         : 2000,
