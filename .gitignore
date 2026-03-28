@@ -65,3 +65,4 @@ coverage/
 # Superpowers working files
 .superpowers/
 docs/superpowers/
+.worktrees/
