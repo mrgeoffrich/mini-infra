@@ -3,10 +3,12 @@ import type {
   StackTlsCertificate,
   StackDnsRecord,
   StackTunnelIngress,
+  StackServiceDefinition,
   ResourceAction,
   ResourceResult,
   ResourceType,
   FieldDiff,
+  PlanWarning,
 } from '@mini-infra/types';
 import type { CertificateLifecycleManager } from '../tls/certificate-lifecycle-manager';
 import type { CloudflareDNSService } from '../cloudflare/cloudflare-dns';
@@ -452,6 +454,63 @@ export class StackResourceReconciler {
     }
 
     return results;
+  }
+
+  // ════════════════════════════════════════════════════
+  // validateResourceReferences
+  // ════════════════════════════════════════════════════
+
+  /**
+   * Check that all services with routing that reference tlsCertificate, dnsRecord,
+   * or tunnelIngress by name actually have those names defined in the stack's resource arrays.
+   * Returns PlanWarning[] for any missing references.
+   */
+  validateResourceReferences(
+    services: StackServiceDefinition[],
+    definitions: ResourceDefinitions,
+  ): PlanWarning[] {
+    const warnings: PlanWarning[] = [];
+
+    const tlsNames = new Set(definitions.tlsCertificates.map((t) => t.name));
+    const dnsNames = new Set(definitions.dnsRecords.map((d) => d.name));
+    const tunnelNames = new Set(definitions.tunnelIngress.map((t) => t.name));
+
+    for (const svc of services) {
+      const routing = svc.routing;
+      if (!routing) continue;
+
+      if (routing.tlsCertificate && !tlsNames.has(routing.tlsCertificate)) {
+        warnings.push({
+          type: 'resource-reference',
+          serviceName: svc.serviceName,
+          resourceName: routing.tlsCertificate,
+          resourceType: 'tls',
+          message: `Service "${svc.serviceName}" references TLS certificate "${routing.tlsCertificate}" which is not defined in the stack's tlsCertificates`,
+        });
+      }
+
+      if (routing.dnsRecord && !dnsNames.has(routing.dnsRecord)) {
+        warnings.push({
+          type: 'resource-reference',
+          serviceName: svc.serviceName,
+          resourceName: routing.dnsRecord,
+          resourceType: 'dns',
+          message: `Service "${svc.serviceName}" references DNS record "${routing.dnsRecord}" which is not defined in the stack's dnsRecords`,
+        });
+      }
+
+      if (routing.tunnelIngress && !tunnelNames.has(routing.tunnelIngress)) {
+        warnings.push({
+          type: 'resource-reference',
+          serviceName: svc.serviceName,
+          resourceName: routing.tunnelIngress,
+          resourceType: 'tunnel',
+          message: `Service "${svc.serviceName}" references tunnel ingress "${routing.tunnelIngress}" which is not defined in the stack's tunnelIngress`,
+        });
+      }
+    }
+
+    return warnings;
   }
 
   // ════════════════════════════════════════════════════

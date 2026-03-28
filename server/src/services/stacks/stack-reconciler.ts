@@ -233,6 +233,20 @@ export class StackReconciler {
         )
       : [];
 
+    // Validate resource references (services referencing non-existent resources)
+    if (this.resourceReconciler) {
+      const serviceDefs = [...resolvedDefinitions.values()];
+      const refWarnings = this.resourceReconciler.validateResourceReferences(
+        serviceDefs,
+        {
+          tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
+          dnsRecords: (stack.dnsRecords as any[]) ?? [],
+          tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+        },
+      );
+      planWarnings.push(...refWarnings);
+    }
+
     const plan: StackPlan = {
       stackId,
       stackName: stack.name,

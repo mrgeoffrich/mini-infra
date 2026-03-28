@@ -55,6 +55,9 @@ function makeStackRow(serviceOverrides: Record<string, unknown>[] = [{}]) {
     lastAppliedSnapshot: null as StackDefinition | null,
     networks: [{ name: 'monitoring_network' }],
     volumes: [{ name: 'loki_data' }],
+    tlsCertificates: [],
+    dnsRecords: [],
+    tunnelIngress: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     environment: { id: 'env-1', name: 'prod' },
@@ -173,6 +176,9 @@ const mockPrisma = {
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,
+  },
+  stackResource: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
 } as any;
 

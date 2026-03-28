@@ -312,7 +312,15 @@ export interface NameConflictWarning {
   message: string;
 }
 
-export type PlanWarning = PortConflictWarning | NameConflictWarning;
+export interface ResourceReferenceWarning {
+  type: 'resource-reference';
+  serviceName: string;
+  resourceName: string;
+  resourceType: ResourceType;
+  message: string;
+}
+
+export type PlanWarning = PortConflictWarning | NameConflictWarning | ResourceReferenceWarning;
 
 // Reconciler types
 

@@ -513,6 +513,148 @@ describe('StackResourceReconciler', () => {
   });
 
   // ════════════════════════════════════════════════════
+  // validateResourceReferences
+  // ════════════════════════════════════════════════════
+
+  describe('validateResourceReferences', () => {
+    it('returns warnings for services referencing non-existent resources', () => {
+      const services = [
+        {
+          serviceName: 'web-app',
+          serviceType: 'StatelessWeb' as const,
+          dockerImage: 'myapp/web',
+          dockerTag: '1.0.0',
+          containerConfig: {},
+          dependsOn: [],
+          order: 1,
+          routing: {
+            hostname: 'app.example.com',
+            listeningPort: 3000,
+            tlsCertificate: 'missing-cert',
+            dnsRecord: 'missing-dns',
+            tunnelIngress: 'missing-tunnel',
+          },
+        },
+      ];
+
+      const definitions = {
+        tlsCertificates: [],
+        dnsRecords: [],
+        tunnelIngress: [],
+      };
+
+      const warnings = reconciler.validateResourceReferences(services, definitions);
+
+      expect(warnings).toHaveLength(3);
+      expect(warnings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'resource-reference',
+            serviceName: 'web-app',
+            resourceName: 'missing-cert',
+            resourceType: 'tls',
+          }),
+          expect.objectContaining({
+            type: 'resource-reference',
+            serviceName: 'web-app',
+            resourceName: 'missing-dns',
+            resourceType: 'dns',
+          }),
+          expect.objectContaining({
+            type: 'resource-reference',
+            serviceName: 'web-app',
+            resourceName: 'missing-tunnel',
+            resourceType: 'tunnel',
+          }),
+        ]),
+      );
+    });
+
+    it('returns no warnings for valid references', () => {
+      const services = [
+        {
+          serviceName: 'web-app',
+          serviceType: 'StatelessWeb' as const,
+          dockerImage: 'myapp/web',
+          dockerTag: '1.0.0',
+          containerConfig: {},
+          dependsOn: [],
+          order: 1,
+          routing: {
+            hostname: 'app.example.com',
+            listeningPort: 3000,
+            tlsCertificate: 'app-cert',
+            dnsRecord: 'app-dns',
+            tunnelIngress: 'app-tunnel',
+          },
+        },
+      ];
+
+      const definitions = {
+        tlsCertificates: [{ name: 'app-cert', fqdn: 'app.example.com' }],
+        dnsRecords: [{ name: 'app-dns', fqdn: 'app.example.com', recordType: 'A' as const, target: '1.2.3.4' }],
+        tunnelIngress: [{ name: 'app-tunnel', fqdn: 'app.example.com', service: 'http://localhost:3000' }],
+      };
+
+      const warnings = reconciler.validateResourceReferences(services, definitions);
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('returns no warnings for services without routing', () => {
+      const services = [
+        {
+          serviceName: 'redis',
+          serviceType: 'Stateful' as const,
+          dockerImage: 'redis',
+          dockerTag: '7.0',
+          containerConfig: {},
+          dependsOn: [],
+          order: 1,
+        },
+      ];
+
+      const definitions = {
+        tlsCertificates: [],
+        dnsRecords: [],
+        tunnelIngress: [],
+      };
+
+      const warnings = reconciler.validateResourceReferences(services, definitions);
+
+      expect(warnings).toHaveLength(0);
+    });
+
+    it('returns no warnings when routing has no resource references', () => {
+      const services = [
+        {
+          serviceName: 'web-app',
+          serviceType: 'StatelessWeb' as const,
+          dockerImage: 'myapp/web',
+          dockerTag: '1.0.0',
+          containerConfig: {},
+          dependsOn: [],
+          order: 1,
+          routing: {
+            hostname: 'app.example.com',
+            listeningPort: 3000,
+          },
+        },
+      ];
+
+      const definitions = {
+        tlsCertificates: [],
+        dnsRecords: [],
+        tunnelIngress: [],
+      };
+
+      const warnings = reconciler.validateResourceReferences(services, definitions);
+
+      expect(warnings).toHaveLength(0);
+    });
+  });
+
+  // ════════════════════════════════════════════════════
   // destroyAllResources
   // ════════════════════════════════════════════════════
 

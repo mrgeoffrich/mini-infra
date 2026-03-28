@@ -7,7 +7,6 @@ import {
   StackConfigFile,
   StackContainerConfig,
   StackDefinition,
-  StackServiceRouting,
 } from '@mini-infra/types';
 
 // Mock runStateMachineToCompletion so StatelessWeb services go through state machine
@@ -49,10 +48,8 @@ function makeStatelessWebServiceRow(overrides: Record<string, unknown> = {}) {
     routing: {
       hostname: 'app.example.com',
       listeningPort: 3000,
-      enableSsl: true,
       backendOptions: { balanceAlgorithm: 'roundrobin' },
-      dns: { provider: 'cloudflare', proxied: false },
-    } as StackServiceRouting,
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -102,6 +99,9 @@ function makeStackRow(serviceOverrides: Record<string, unknown>[] = [{}]) {
     lastAppliedSnapshot: null as StackDefinition | null,
     networks: [{ name: 'app_network' }],
     volumes: [],
+    tlsCertificates: [],
+    dnsRecords: [],
+    tunnelIngress: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     environment: { id: 'env-1', name: 'prod' },
@@ -137,7 +137,7 @@ function computeHashForService(
     initCommands: svc.initCommands as StackServiceDefinition['initCommands'],
     dependsOn: svc.dependsOn as string[],
     order: svc.order,
-    routing: svc.routing as StackServiceRouting | undefined,
+    routing: svc.routing as StackServiceDefinition['routing'],
   };
   return computeDefinitionHash(def, resolved);
 }
@@ -218,6 +218,7 @@ const mockLongRunningContainer = {
 const mockCreateLongRunningContainer = vi.fn().mockResolvedValue(mockLongRunningContainer);
 
 const mockStackDeploymentCreate = vi.fn().mockResolvedValue({});
+const mockStackResourceFindFirst = vi.fn().mockResolvedValue(null);
 const mockPrisma = {
   stack: {
     findUniqueOrThrow: mockFindUniqueOrThrow,
@@ -225,6 +226,10 @@ const mockPrisma = {
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,
+  },
+  stackResource: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: mockStackResourceFindFirst,
   },
 } as any;
 
@@ -331,7 +336,7 @@ describe('StackReconciler.apply — StatelessWeb', () => {
       dockerImage: 'myapp/web:1.0.0',
       hostname: 'app.example.com',
       containerPort: 3000,
-      enableSsl: true,
+      enableSsl: false,
     });
   });
 
@@ -445,14 +450,12 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     expect(context.oldContainerId).toBe('container-web-app');
   });
 
-  it('passes external DNS provider as internet networkType to state machine', async () => {
+  it('sets networkType to local for all StatelessWeb services', async () => {
     const stack = makeStackRow([{
       serviceName: 'web-app',
       routing: {
         hostname: 'app.example.com',
         listeningPort: 3000,
-        enableSsl: true,
-        dns: { provider: 'external' },
       },
     }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
@@ -461,9 +464,9 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     const result = await reconciler.apply('stack-1');
 
     expect(result.success).toBe(true);
-    // Verify the state machine context has networkType 'internet' for external DNS
+    // networkType is always 'local' — DNS is now managed as a stack-level resource
     const [, context] = mockRunStateMachine.mock.calls[0];
-    expect(context.networkType).toBe('internet');
+    expect(context.networkType).toBe('local');
   });
 
   it('throws if routingManager not provided for StatelessWeb', async () => {

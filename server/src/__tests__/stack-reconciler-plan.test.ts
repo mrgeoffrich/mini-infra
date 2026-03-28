@@ -1,4 +1,5 @@
 import { StackReconciler } from '../services/stacks/stack-reconciler';
+import { StackResourceReconciler } from '../services/stacks/stack-resource-reconciler';
 import { computeDefinitionHash } from '../services/stacks/definition-hash';
 import { buildTemplateContext, resolveStackConfigFiles } from '../services/stacks/template-engine';
 import {
@@ -50,6 +51,9 @@ function makeStackRow(serviceOverrides: Record<string, unknown>[] = [{}]) {
     lastAppliedSnapshot: null as StackDefinition | null,
     networks: [{ name: 'monitoring_network' }],
     volumes: [{ name: 'loki_data' }],
+    tlsCertificates: [],
+    dnsRecords: [],
+    tunnelIngress: [],
     createdAt: new Date(),
     updatedAt: new Date(),
     environment: { id: 'env-1', name: 'prod' },
@@ -126,6 +130,7 @@ const mockListContainers = vi.fn();
 
 const mockPrisma = {
   stack: { findUniqueOrThrow: mockFindUniqueOrThrow },
+  stackResource: { findMany: vi.fn().mockResolvedValue([]) },
 } as any;
 
 const mockDockerExecutor = {
@@ -362,5 +367,54 @@ describe('StackReconciler.plan', () => {
     expect(plan.stackVersion).toBe(2);
     expect(plan.planTime).toBeDefined();
     expect(() => new Date(plan.planTime)).not.toThrow();
+  });
+
+  it('returns empty resourceActions when no resource reconciler is provided', async () => {
+    const stack = makeStackRow([{ serviceName: 'loki' }]);
+    mockFindUniqueOrThrow.mockResolvedValue(stack);
+    mockListContainers.mockResolvedValue([]);
+
+    const plan = await reconciler.plan('stack-1');
+
+    expect(plan.resourceActions).toEqual([]);
+  });
+
+  it('plans resource actions for TLS and DNS when resource reconciler is provided', async () => {
+    // Create stack with resource definitions
+    const stack = makeStackRow([{ serviceName: 'loki' }]);
+    stack.tlsCertificates = [{ name: 'app-cert', fqdn: 'app.example.com' }] as any;
+    stack.dnsRecords = [{ name: 'app-dns', fqdn: 'app.example.com', recordType: 'A', target: '1.2.3.4' }] as any;
+
+    mockFindUniqueOrThrow.mockResolvedValue(stack);
+    mockListContainers.mockResolvedValue([]);
+    // stackResource.findMany returns empty = no current resources = all creates
+    mockPrisma.stackResource.findMany.mockResolvedValue([]);
+
+    // Create a real resource reconciler (planResources is synchronous, no external calls)
+    const mockResourceReconciler = new StackResourceReconciler(
+      mockPrisma,
+      {} as any, // certLifecycleManager (not used in plan)
+      {} as any, // cloudflareDns (not used in plan)
+      {} as any, // haproxyCertDeployer (not used in plan)
+    );
+
+    const reconcilerWithResources = new StackReconciler(
+      mockDockerExecutor,
+      mockPrisma,
+      undefined,
+      mockResourceReconciler,
+    );
+
+    const plan = await reconcilerWithResources.plan('stack-1');
+
+    // Verify plan includes resource create actions
+    expect(plan.resourceActions).toHaveLength(2);
+    expect(plan.resourceActions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ resourceType: 'tls', resourceName: 'app-cert', action: 'create' }),
+        expect.objectContaining({ resourceType: 'dns', resourceName: 'app-dns', action: 'create' }),
+      ]),
+    );
+    expect(plan.hasChanges).toBe(true);
   });
 });
