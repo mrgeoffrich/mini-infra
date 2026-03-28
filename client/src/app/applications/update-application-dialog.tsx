@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useUpdateApplication } from "@/hooks/use-applications";
+import { useRedeployApplication } from "@/hooks/use-applications";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { Channel } from "@mini-infra/types";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
@@ -26,7 +26,7 @@ export function UpdateApplicationDialog({
   application,
   stack,
 }: UpdateApplicationDialogProps) {
-  const updateApplication = useUpdateApplication();
+  const redeployApplication = useRedeployApplication();
   const { registerTask } = useTaskTracker();
 
   const handleUpdate = async () => {
@@ -39,7 +39,7 @@ export function UpdateApplicationDialog({
         label: `Updating ${application?.displayName ?? application?.name ?? "application"}`,
         channel: Channel.STACKS,
       });
-      await updateApplication.mutateAsync(stack.id);
+      await redeployApplication.mutateAsync(stack.id);
       onOpenChange(false);
     } catch {
       // Error handled by mutation's onError
@@ -66,9 +66,9 @@ export function UpdateApplicationDialog({
           </Button>
           <Button
             onClick={handleUpdate}
-            disabled={updateApplication.isPending}
+            disabled={redeployApplication.isPending}
           >
-            {updateApplication.isPending && (
+            {redeployApplication.isPending && (
               <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
             )}
             Update

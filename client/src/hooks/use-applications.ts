@@ -566,7 +566,7 @@ export function useStopApplication() {
   });
 }
 
-export function useUpdateApplication() {
+export function useRedeployApplication() {
   const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
