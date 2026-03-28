@@ -656,8 +656,15 @@ export class StackReconciler {
 
         let result: ServiceApplyResult;
 
-        if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
+        if (svc?.serviceType === 'StatelessWeb' && serviceDef && action.action === 'recreate') {
           result = await this.updateStatelessWeb(
+            action, svc, serviceDef, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap,
+            containerByService, actionStart, log, envNetworkMap
+          );
+        } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
+          // No existing container (create/remove) — use the standard apply path
+          result = await this.applyStatelessWeb(
             action, svc, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
             containerByService, actionStart, log, envNetworkMap
