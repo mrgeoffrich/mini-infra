@@ -332,6 +332,33 @@ async function destroyStack(
   return await response.json();
 }
 
+async function updateStack(
+  stackId: string,
+  correlationId: string,
+): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
+  const response = await fetch(`/api/stacks/${stackId}/update`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Failed to update application: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // Use default error message
+    }
+    throw new Error(errorMessage);
+  }
+
+  return await response.json();
+}
+
 async function fetchUserStacks(
   correlationId: string,
 ): Promise<StackListResponse> {
@@ -535,6 +562,26 @@ export function useStopApplication() {
     },
     onError: (error: Error) => {
       toast.error(`Failed to stop application: ${error.message}`);
+    },
+  });
+}
+
+export function useUpdateApplication() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: async (stackId: string) => {
+      await updateStack(stackId, correlationId);
+    },
+    onSuccess: () => {
+      toast.success("Application update started");
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to update application: ${error.message}`);
     },
   });
 }
