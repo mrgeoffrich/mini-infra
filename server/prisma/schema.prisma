@@ -1201,6 +1201,9 @@ model Stack {
   parameterValues      Json?       // Record<string, string | number | boolean>
   networks             Json        // Array of { name, driver?, options? }
   volumes              Json        // Array of { name, driver?, options? }
+  tlsCertificates      Json?       // Array of StackTlsCertificate
+  dnsRecords           Json?       // Array of StackDnsRecord
+  tunnelIngress        Json?       // Array of StackTunnelIngress
   removedAt            DateTime?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
@@ -1208,6 +1211,7 @@ model Stack {
   // Relations
   services             StackService[]
   deployments          StackDeployment[]
+  resources            StackResource[]
 
   @@index([environmentId])
   @@index([status])
@@ -1249,6 +1253,7 @@ model StackDeployment {
   status          StackStatus // resulting status after operation
   duration        Int?        // milliseconds
   serviceResults  Json?       // ServiceApplyResult[] for apply, null for stop
+  resourceResults Json?       // ResourceApplyResult[] for resource operations
   error           String?     // error message if operation failed
   triggeredBy     String?     // user ID for audit trail
   createdAt       DateTime    @default(now())
@@ -1256,6 +1261,30 @@ model StackDeployment {
   @@index([stackId])
   @@index([createdAt])
   @@map("stack_deployments")
+}
+
+// StackResource - Tracks state of stack-level resources (TLS certs, DNS records, tunnel ingress)
+model StackResource {
+  id            String   @id @default(cuid())
+  stackId       String
+  stack         Stack    @relation(fields: [stackId], references: [id], onDelete: Cascade)
+
+  resourceType  String   // 'tls' | 'dns' | 'tunnel'
+  resourceName  String   // name from the stack definition
+  fqdn          String   // the domain this resource manages
+
+  externalId    String?  // Cloudflare record ID, tunnel ingress ID, or TlsCertificate ID
+  externalState Json?    // snapshot of what was applied
+
+  status        String   @default("active") // 'active' | 'pending' | 'error'
+  error         String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([stackId, resourceType, resourceName])
+  @@index([stackId])
+  @@map("stack_resources")
 }
 
 // StackTemplate - Reusable blueprint for stack definitions
