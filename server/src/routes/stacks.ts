@@ -79,9 +79,17 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
     );
   }
 
+  // If Azure storage isn't configured, create a proxy that throws a descriptive
+  // error when TLS provisioning is actually attempted.
+  const effectiveCertManager: CertificateLifecycleManager = certLifecycleManager ?? ({
+    issueCertificate: () => { throw new Error('TLS provisioning requires Azure Storage configuration'); },
+    renewCertificate: () => { throw new Error('TLS provisioning requires Azure Storage configuration'); },
+    revokeCertificate: () => { throw new Error('TLS provisioning requires Azure Storage configuration'); },
+  } as unknown as CertificateLifecycleManager);
+
   return new StackResourceReconciler(
     prisma,
-    certLifecycleManager as CertificateLifecycleManager,
+    effectiveCertManager,
     new CloudflareDNSService(),
     new HaproxyCertificateDeployer(),
   );

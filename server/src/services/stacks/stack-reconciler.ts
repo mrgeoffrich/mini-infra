@@ -389,12 +389,18 @@ export class StackReconciler {
             const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
             if (haproxyCtx) {
               haproxyClient = new HAProxyDataPlaneClient();
+              await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
             }
           } catch { /* no HAProxy available */ }
         }
 
         const progressCallback = (result: ResourceResult) => {
           log.info({ stackId, result }, 'Resource reconciliation progress');
+          if (result.action !== 'no-op' && options?.onProgress) {
+            try {
+              options.onProgress(result, 0, 0);
+            } catch { /* never let callback errors break apply */ }
+          }
         };
 
         // TLS first

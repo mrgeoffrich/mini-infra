@@ -422,6 +422,7 @@ export interface StackDeploymentRecord {
   status: StackStatus;
   duration: number | null;
   serviceResults: ServiceApplyResult[] | null;
+  resourceResults: ResourceResult[] | null;
   error: string | null;
   triggeredBy: string | null;
   createdAt: string;
