@@ -1303,7 +1303,7 @@ model StackTemplateVersion {
   notes                  String?
   parameters             Json                        // StackParameterDefinition[]
   defaultParameterValues Json                        // Record<string, StackParameterValue>
-  networkTypeDefaults    Json                        @default("{}")  // Record<EnvironmentNetworkType, Record<string, StackParameterValue>>
+  networkTypeDefaults    Json                        // Record<EnvironmentNetworkType, Record<string, StackParameterValue>>
   networks               Json                        // StackNetwork[]
   volumes                Json                        // StackVolume[]
   publishedAt            DateTime?

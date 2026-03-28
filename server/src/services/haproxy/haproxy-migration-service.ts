@@ -198,7 +198,6 @@ export class HAProxyMigrationService {
    * 3. Apply haproxy stack (creates new container, volumes, config)
    * 4. Redeploy TLS certificates
    * 5. Run frontend remediation (shared frontends + routes)
-   * 6. Clean up EnvironmentService record
    */
   async migrate(
     environmentId: string,

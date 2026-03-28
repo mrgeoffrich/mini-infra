@@ -497,7 +497,6 @@ export class EnvironmentManager {
       description: prismaEnv.description,
       type: prismaEnv.type as EnvironmentType,
       networkType: prismaEnv.networkType as EnvironmentNetworkType,
-      services: [],
       networks: prismaEnv.networks.map((n: any) => ({
         id: n.id,
         environmentId: n.environmentId,
