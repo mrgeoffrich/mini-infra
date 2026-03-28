@@ -383,6 +383,12 @@ export interface ApplyOptions {
   onProgress?: (result: ServiceApplyResult | ResourceResult, completedCount: number, totalActions: number) => void;
 }
 
+export interface UpdateOptions {
+  triggeredBy?: string;
+  /** Called after each service action completes */
+  onProgress?: (result: ServiceApplyResult, completedCount: number, totalActions: number) => void;
+}
+
 export interface ApplyResult {
   success: boolean;
   stackId: string;
