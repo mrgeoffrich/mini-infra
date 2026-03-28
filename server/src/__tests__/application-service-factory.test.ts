@@ -1,26 +1,14 @@
 import { ApplicationServiceFactory } from '../services/application-service-factory';
-import { ServiceRegistry } from '../services/environment';
-import { HAProxyService } from '../services/haproxy/haproxy-service';
 import { IApplicationService } from '../services/interfaces/application-service';
 import { ServiceStatusValues } from '@mini-infra/types';
 
-// Mock HAProxyService to avoid Docker dependencies in tests
-vi.mock('../services/haproxy/haproxy-service');
-const MockHAProxyService = HAProxyService as MockedClass<typeof HAProxyService>;
-
-// Mock ServiceRegistry to control its behavior in tests
-vi.mock('../services/environment/service-registry');
-const MockServiceRegistry = ServiceRegistry as MockedClass<typeof ServiceRegistry>;
-
 describe('ApplicationServiceFactory', () => {
   let serviceFactory: ApplicationServiceFactory;
-  let mockServiceRegistry: Mocked<ServiceRegistry>;
   let mockService: Mocked<IApplicationService>;
 
   beforeEach(() => {
     // Reset singletons
     (ApplicationServiceFactory as any).instance = undefined;
-    (ServiceRegistry as any).instance = undefined;
 
     // Create mock service instance
     mockService = {
@@ -45,29 +33,6 @@ describe('ApplicationServiceFactory', () => {
       isReadyToStart: vi.fn().mockResolvedValue(true)
     };
 
-    // Mock HAProxyService constructor
-    MockHAProxyService.mockImplementation(function() { return mockService; });
-
-    // Create mock service registry
-    mockServiceRegistry = {
-      getServiceDefinition: vi.fn().mockImplementation((serviceType: string) => {
-        if (serviceType === 'haproxy') {
-          return {
-            serviceType: 'haproxy',
-            implementation: MockHAProxyService,
-            metadata: mockService.metadata,
-            description: 'HAProxy load balancer'
-          };
-        }
-        return undefined; // Return undefined for unknown service types
-      }),
-      validateServiceConfiguration: vi.fn().mockReturnValue(true),
-      getAvailableServiceTypes: vi.fn().mockReturnValue(['haproxy'])
-    } as any;
-
-    // Mock singleton getInstance
-    MockServiceRegistry.getInstance.mockReturnValue(mockServiceRegistry);
-
     // Create factory instance
     serviceFactory = ApplicationServiceFactory.getInstance();
   });
@@ -86,7 +51,7 @@ describe('ApplicationServiceFactory', () => {
   });
 
   describe('createService', () => {
-    it('should create a HAProxy service successfully', async () => {
+    it('should return failure because service creation via factory is no longer supported', async () => {
       const result = await serviceFactory.createService({
         serviceName: 'test-haproxy',
         serviceType: 'haproxy',
@@ -94,63 +59,15 @@ describe('ApplicationServiceFactory', () => {
         projectName: 'test-project'
       });
 
-      expect(result.success).toBe(true);
-      expect(result.service).toBe(mockService);
-      expect(result.message).toBe('Service created successfully');
-      expect(MockHAProxyService).toHaveBeenCalledWith('test-project', undefined);
-    });
-
-    it('should fail for unknown service type', async () => {
-      const result = await serviceFactory.createService({
-        serviceName: 'unknown-service',
-        serviceType: 'unknown',
-        config: {}
-      });
-
       expect(result.success).toBe(false);
-      expect(result.message).toBe('Unknown service type: unknown');
-      expect(result.details?.availableTypes).toContain('haproxy');
-    });
-
-    it('should return existing service if already created', async () => {
-      // Create service first time
-      await serviceFactory.createService({
-        serviceName: 'test-haproxy',
-        serviceType: 'haproxy'
-      });
-
-      // Try to create again
-      const result = await serviceFactory.createService({
-        serviceName: 'test-haproxy',
-        serviceType: 'haproxy'
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Service instance already exists');
-      expect(MockHAProxyService).toHaveBeenCalledTimes(1); // Should not create twice
-    });
-
-    it('should handle service creation errors', async () => {
-      MockHAProxyService.mockImplementation(function() {
-        throw new Error('Creation failed');
-      });
-
-      const result = await serviceFactory.createService({
-        serviceName: 'failing-service',
-        serviceType: 'haproxy'
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.message).toBe('Creation failed');
+      expect(result.message).toContain('no longer supported');
     });
   });
 
-  describe('service management', () => {
-    beforeEach(async () => {
-      await serviceFactory.createService({
-        serviceName: 'test-service',
-        serviceType: 'haproxy'
-      });
+  describe('service management (with manually registered services)', () => {
+    beforeEach(() => {
+      // Manually inject a service into the factory's private map for testing
+      (serviceFactory as any).activeServices.set('test-service', mockService);
     });
 
     it('should get existing service', () => {
@@ -196,12 +113,9 @@ describe('ApplicationServiceFactory', () => {
     });
   });
 
-  describe('service operations', () => {
-    beforeEach(async () => {
-      await serviceFactory.createService({
-        serviceName: 'test-service',
-        serviceType: 'haproxy'
-      });
+  describe('service operations (with manually registered services)', () => {
+    beforeEach(() => {
+      (serviceFactory as any).activeServices.set('test-service', mockService);
     });
 
     it('should initialize service', async () => {
@@ -260,12 +174,9 @@ describe('ApplicationServiceFactory', () => {
     });
   });
 
-  describe('service destruction', () => {
-    beforeEach(async () => {
-      await serviceFactory.createService({
-        serviceName: 'test-service',
-        serviceType: 'haproxy'
-      });
+  describe('service destruction (with manually registered services)', () => {
+    beforeEach(() => {
+      (serviceFactory as any).activeServices.set('test-service', mockService);
     });
 
     it('should destroy service successfully', async () => {
@@ -292,10 +203,8 @@ describe('ApplicationServiceFactory', () => {
     });
 
     it('should destroy all services', async () => {
-      await serviceFactory.createService({
-        serviceName: 'test-service-2',
-        serviceType: 'haproxy'
-      });
+      const mockService2 = { ...mockService, stopAndCleanup: vi.fn().mockResolvedValue(undefined) } as any;
+      (serviceFactory as any).activeServices.set('test-service-2', mockService2);
 
       expect(serviceFactory.getServiceCount()).toBe(2);
 
