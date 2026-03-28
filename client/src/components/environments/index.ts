@@ -4,8 +4,6 @@ export { EnvironmentEditDialog } from "./environment-edit-dialog";
 export { EnvironmentDeleteDialog } from "./environment-delete-dialog";
 export { EnvironmentFilters } from "./environment-filters";
 export { EnvironmentList } from "./environment-list";
-export { EnvironmentStatus, ServiceHealth } from "./environment-status";
-export { ServiceAddDialog } from "./service-add-dialog";
 
 // Network management components
 export { NetworkList } from "./network-list";

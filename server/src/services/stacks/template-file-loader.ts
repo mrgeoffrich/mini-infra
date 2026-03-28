@@ -59,6 +59,7 @@ export const templateFileSchema = z.object({
   category: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
+  networkTypeDefaults: z.record(z.string(), z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z.array(templateServiceSchema).min(1, "At least one service is required"),
@@ -82,6 +83,7 @@ export interface LoadedTemplate {
     name: string;
     description?: string;
     parameters?: z.infer<typeof stackParameterDefinitionSchema>[];
+    networkTypeDefaults?: Record<string, Record<string, string | number | boolean>>;
     networks: z.infer<typeof stackNetworkSchema>[];
     volumes: z.infer<typeof stackVolumeSchema>[];
     services: Array<{
@@ -226,6 +228,7 @@ export function loadTemplateFromObject(
       name: data.name,
       description: data.description,
       parameters: data.parameters,
+      networkTypeDefaults: data.networkTypeDefaults,
       networks: data.networks,
       volumes: data.volumes,
       services,

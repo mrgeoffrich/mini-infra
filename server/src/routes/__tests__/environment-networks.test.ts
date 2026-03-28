@@ -7,7 +7,6 @@ import { EnvironmentNetwork } from "@mini-infra/types";
 const {
   mockLogger,
   mockEnvironmentManager,
-  mockServiceRegistry,
   mockPrisma,
 } = vi.hoisted(() => ({
   mockLogger: {
@@ -34,10 +33,6 @@ const {
   mockEnvironmentManager: {
     getInstance: vi.fn(),
     getEnvironmentById: vi.fn(),
-  },
-  mockServiceRegistry: {
-    getInstance: vi.fn(),
-    getServiceMetadata: vi.fn(),
   },
   mockPrisma: {
     environmentNetwork: {
@@ -67,12 +62,6 @@ vi.mock("../../lib/logger-factory", () => ({
 vi.mock("../../services/environment/environment-manager", () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
-  }
-}));
-
-vi.mock("../../services/environment/service-registry", () => ({
-  ServiceRegistry: {
-    getInstance: () => mockServiceRegistry
   }
 }));
 
@@ -378,55 +367,6 @@ describe("Environment Networks Routes", () => {
       expect(mockPrisma.environmentNetwork.delete).toHaveBeenCalledWith({
         where: { id: networkId },
       });
-    });
-
-    it("should prevent deletion of network in use by services", async () => {
-      const environmentId = createId();
-      const networkId = createId();
-
-      const mockExistingNetwork = {
-        id: networkId,
-        environmentId,
-        name: "test-env-test-network",
-        driver: "bridge",
-        options: {},
-        createdAt: new Date(),
-      };
-
-      const mockService = {
-        id: createId(),
-        serviceName: "test-service",
-        serviceType: "web-service",
-      };
-
-      const mockEnvironment = {
-        id: environmentId,
-        name: "test-env",
-        networks: [mockExistingNetwork],
-        services: [mockService],
-        volumes: [],
-      };
-
-      // Mock service metadata that requires this network
-      mockServiceRegistry.getServiceMetadata.mockReturnValue({
-        requiredNetworks: [{ name: "test-network" }],
-      });
-
-      mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
-
-      const response = await request(app)
-        .delete(`/api/environments/${environmentId}/networks/${networkId}`)
-        .expect(400);
-
-      expect(response.body).toMatchObject({
-        error: "Network in use",
-        message: "Cannot delete network that is required by services",
-        details: {
-          servicesUsingNetwork: ["test-service"],
-        },
-      });
-
-      expect(mockPrisma.environmentNetwork.delete).not.toHaveBeenCalled();
     });
 
     it("should return 404 for non-existent network", async () => {

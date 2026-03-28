@@ -89,6 +89,23 @@ interface BlueGreenDeploymentContext {
 
     // Configuration
     config?: any;
+
+    // Source-agnostic configuration (used by actions instead of DB lookups)
+    // When set, actions read from these fields directly.
+    // When unset, actions fall back to context.config / DB lookups for backwards compatibility.
+    hostname?: string;
+    enableSsl?: boolean;
+    tlsCertificateId?: string;
+    certificateStatus?: string;
+    networkType?: string;
+    healthCheckEndpoint?: string;
+    healthCheckInterval?: number;
+    healthCheckRetries?: number;
+    containerPorts?: { containerPort: number; hostPort: number; protocol: string }[];
+    containerVolumes?: string[];
+    containerEnvironment?: Record<string, string>;
+    containerLabels?: Record<string, string>;
+    containerNetworks?: string[];
 }
 
 type BlueGreenDeploymentEvent =
@@ -649,6 +666,21 @@ export const blueGreenDeploymentMachine = setup({
 
         // Configuration
         config: input?.config,
+
+        // Source-agnostic configuration
+        hostname: input?.hostname,
+        enableSsl: input?.enableSsl,
+        tlsCertificateId: input?.tlsCertificateId,
+        certificateStatus: input?.certificateStatus,
+        networkType: input?.networkType,
+        healthCheckEndpoint: input?.healthCheckEndpoint,
+        healthCheckInterval: input?.healthCheckInterval,
+        healthCheckRetries: input?.healthCheckRetries,
+        containerPorts: input?.containerPorts,
+        containerVolumes: input?.containerVolumes,
+        containerEnvironment: input?.containerEnvironment,
+        containerLabels: input?.containerLabels,
+        containerNetworks: input?.containerNetworks,
     }),
 
     states: {

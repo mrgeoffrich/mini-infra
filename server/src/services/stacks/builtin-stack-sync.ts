@@ -90,8 +90,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
             definition: template.definition as any,
             configFiles: template.configFiles,
           });
-          const overrides = getEnvironmentParameterOverrides(template.name, env.networkType);
-          await syncStackFromTemplate(prisma, templateId, template, env.id, log, overrides);
+          await syncStackFromTemplate(prisma, templateId, template, env.id, log, env.networkType);
         } catch (error) {
           log.error(
             { error, stackName: template.name, environmentId: env.id },
@@ -102,8 +101,8 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
     }
   }
 
-  // 3. Clean up orphaned per-environment monitoring stacks from old sync logic
-  await cleanupOrphanedMonitoringStacks(prisma, log);
+  // 3. Clean up orphaned stacks from old sync logic
+  await cleanupOrphanedStacks(prisma, templates, log);
 
   log.info("Built-in stack sync complete");
 }
@@ -144,8 +143,7 @@ export async function syncBuiltinStacksForEnvironment(
         definition: template.definition as any,
         configFiles: template.configFiles,
       });
-      const overrides = getEnvironmentParameterOverrides(template.name, networkType);
-      await syncStackFromTemplate(prisma, templateId, template, environmentId, log, overrides);
+      await syncStackFromTemplate(prisma, templateId, template, environmentId, log, networkType);
     } catch (error) {
       log.error(
         { error, stackName: template.name },
@@ -153,21 +151,6 @@ export async function syncBuiltinStacksForEnvironment(
       );
     }
   }
-}
-
-/**
- * Return parameter overrides for a stack based on the environment's network type.
- * Internet-facing environments should not expose HAProxy ports on the host
- * since traffic arrives via Cloudflare tunnels.
- */
-function getEnvironmentParameterOverrides(
-  stackName: string,
-  networkType: string
-): Record<string, StackParameterValue> {
-  if (stackName === "haproxy" && networkType === "internet") {
-    return { "expose-on-host": false };
-  }
-  return {};
 }
 
 /**
@@ -181,9 +164,11 @@ async function syncStackFromTemplate(
   template: LoadedTemplate,
   environmentId: string | null,
   log: ReturnType<typeof servicesLogger>,
-  parameterOverrides: Record<string, StackParameterValue> = {}
+  networkType: string = "local"
 ): Promise<void> {
   const { definition } = template;
+  const networkTypeDefaults = definition.networkTypeDefaults ?? {};
+  const parameterOverrides = networkTypeDefaults[networkType] ?? {};
 
   const existing = await prisma.stack.findFirst({
     where: { name: template.name, environmentId, status: { not: 'removed' } },
@@ -311,11 +296,13 @@ async function syncStackFromTemplate(
   });
 }
 
-async function cleanupOrphanedMonitoringStacks(
+async function cleanupOrphanedStacks(
   prisma: PrismaClient,
+  templates: LoadedTemplate[],
   log: ReturnType<typeof servicesLogger>
 ): Promise<void> {
-  const orphaned = await prisma.stack.findMany({
+  // Clean up orphaned per-environment monitoring stacks (from old sync logic)
+  const orphanedMonitoring = await prisma.stack.findMany({
     where: {
       name: "monitoring",
       environmentId: { not: null },
@@ -325,13 +312,40 @@ async function cleanupOrphanedMonitoringStacks(
     select: { id: true },
   });
 
-  if (orphaned.length > 0) {
+  if (orphanedMonitoring.length > 0) {
     log.info(
-      { count: orphaned.length },
+      { count: orphanedMonitoring.length },
       "Cleaning up orphaned per-environment monitoring stacks"
     );
-    for (const s of orphaned) {
+    for (const s of orphanedMonitoring) {
       await prisma.stack.delete({ where: { id: s.id } });
+    }
+  }
+
+  // Clean up orphaned host-level stacks for environment-scoped templates
+  const envScopedNames = templates
+    .filter((t) => t.scope === "environment")
+    .map((t) => t.name);
+
+  if (envScopedNames.length > 0) {
+    const orphanedHostLevel = await prisma.stack.findMany({
+      where: {
+        name: { in: envScopedNames },
+        environmentId: null,
+        builtinVersion: { not: null },
+        status: "undeployed",
+      },
+      select: { id: true, name: true },
+    });
+
+    if (orphanedHostLevel.length > 0) {
+      log.info(
+        { count: orphanedHostLevel.length, stacks: orphanedHostLevel.map((s) => s.name) },
+        "Cleaning up orphaned host-level stacks for environment-scoped templates"
+      );
+      for (const s of orphanedHostLevel) {
+        await prisma.stack.delete({ where: { id: s.id } });
+      }
     }
   }
 }

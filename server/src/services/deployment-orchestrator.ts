@@ -334,6 +334,12 @@ export class DeploymentOrchestrator {
       retryCount: 0,
       frontendName: undefined,
       dnsRecordId: undefined,
+      // Source-agnostic fields (populated from DeploymentConfig for legacy path)
+      hostname: baseContext.config.hostname ?? undefined,
+      healthCheckEndpoint: baseContext.config.healthCheck?.endpoint,
+      healthCheckInterval: baseContext.config.healthCheck?.interval,
+      healthCheckRetries: baseContext.config.healthCheck?.retries,
+      containerPort: baseContext.config.listeningPort ?? undefined,
     };
 
     // Create state machine with service implementations
@@ -401,6 +407,11 @@ export class DeploymentOrchestrator {
       frontendName: undefined,
       dnsRecordId: undefined,
       existingContainers: existingContainers, // Store all existing containers for tracking
+      // Source-agnostic fields (populated from DeploymentConfig for legacy path)
+      hostname: baseContext.config.hostname ?? undefined,
+      healthCheckEndpoint: baseContext.config.healthCheck?.endpoint,
+      healthCheckInterval: baseContext.config.healthCheck?.interval,
+      healthCheckRetries: baseContext.config.healthCheck?.retries,
     };
 
     // Create state machine with service implementations

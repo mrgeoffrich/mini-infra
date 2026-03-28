@@ -3,7 +3,6 @@ import {
   NetworkRequirement,
   VolumeRequirement
 } from './interfaces/application-service';
-import { ServiceRegistry } from './environment';
 import { servicesLogger } from '../lib/logger-factory';
 import DockerService from './docker';
 
@@ -25,13 +24,10 @@ export interface ServiceCreationResult {
 export class ApplicationServiceFactory {
   private static instance: ApplicationServiceFactory;
   private readonly logger = servicesLogger();
-  private readonly serviceRegistry: ServiceRegistry;
   private readonly activeServices = new Map<string, IApplicationService>();
   private dockerService?: DockerService;
 
-  private constructor() {
-    this.serviceRegistry = ServiceRegistry.getInstance();
-  }
+  private constructor() {}
 
   public static getInstance(): ApplicationServiceFactory {
     if (!ApplicationServiceFactory.instance) {
@@ -49,95 +45,12 @@ export class ApplicationServiceFactory {
   }
 
   public async createService(options: ServiceCreationOptions): Promise<ServiceCreationResult> {
-    const { serviceName, serviceType, config = {}, projectName, environmentId } = options;
+    const { serviceName, serviceType } = options;
 
-    try {
-      // Check if service type is available
-      const serviceDefinition = this.serviceRegistry.getServiceDefinition(serviceType);
-      if (!serviceDefinition) {
-        return {
-          success: false,
-          message: `Unknown service type: ${serviceType}`,
-          details: { availableTypes: this.serviceRegistry.getAvailableServiceTypes() }
-        };
-      }
-
-      // Validate configuration
-      if (!this.serviceRegistry.validateServiceConfiguration(serviceType, config)) {
-        return {
-          success: false,
-          message: `Invalid configuration for service type: ${serviceType}`,
-          details: { config }
-        };
-      }
-
-      // Check if service instance already exists
-      const existingService = this.getService(serviceName);
-      if (existingService) {
-        this.logger.warn({ serviceName, serviceType }, 'Service instance already exists, returning existing instance');
-        return {
-          success: true,
-          service: existingService,
-          message: 'Service instance already exists'
-        };
-      }
-
-      // Create service instance
-      const service = this.instantiateService(serviceDefinition, serviceName, config, projectName, environmentId);
-
-      // Store service instance
-      this.activeServices.set(serviceName, service);
-
-      this.logger.info({
-        serviceName,
-        serviceType,
-        config: Object.keys(config)
-      }, 'Application service created successfully');
-
-      return {
-        success: true,
-        service,
-        message: 'Service created successfully'
-      };
-
-    } catch (error) {
-      this.logger.error({
-        error,
-        serviceName,
-        serviceType,
-        config
-      }, 'Failed to create application service');
-
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
-      };
-    }
-  }
-
-  private instantiateService(
-    serviceDefinition: any,
-    serviceName: string,
-    config: Record<string, any>,
-    projectName?: string,
-    environmentId?: string
-  ): IApplicationService {
-    const { implementation } = serviceDefinition;
-
-    // Create service instance with appropriate constructor arguments
-    // Different services may require different constructor parameters
-    switch (serviceDefinition.serviceType) {
-      case 'haproxy':
-        return new implementation(projectName || serviceName, environmentId);
-
-      case 'monitoring':
-        return new implementation(projectName || serviceName);
-
-      default:
-        // Generic instantiation - may need to be customized per service
-        return new implementation(serviceName, config);
-    }
+    return {
+      success: false,
+      message: `Service creation via factory is no longer supported (serviceType: ${serviceType}, serviceName: ${serviceName})`,
+    };
   }
 
   public getService(serviceName: string): IApplicationService | undefined {

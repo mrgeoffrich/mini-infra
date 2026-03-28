@@ -7,7 +7,6 @@ import { EnvironmentVolume } from "@mini-infra/types";
 const {
   mockLogger,
   mockEnvironmentManager,
-  mockServiceRegistry,
   mockPrisma,
 } = vi.hoisted(() => ({
   mockLogger: {
@@ -34,10 +33,6 @@ const {
   mockEnvironmentManager: {
     getInstance: vi.fn(),
     getEnvironmentById: vi.fn(),
-  },
-  mockServiceRegistry: {
-    getInstance: vi.fn(),
-    getServiceMetadata: vi.fn(),
   },
   mockPrisma: {
     environmentVolume: {
@@ -67,12 +62,6 @@ vi.mock("../../lib/logger-factory", () => ({
 vi.mock("../../services/environment/environment-manager", () => ({
   EnvironmentManager: {
     getInstance: () => mockEnvironmentManager
-  }
-}));
-
-vi.mock("../../services/environment/service-registry", () => ({
-  ServiceRegistry: {
-    getInstance: () => mockServiceRegistry
   }
 }));
 
@@ -464,55 +453,6 @@ describe("Environment Volumes Routes", () => {
       expect(mockPrisma.environmentVolume.delete).toHaveBeenCalledWith({
         where: { id: volumeId },
       });
-    });
-
-    it("should prevent deletion of volume in use by services", async () => {
-      const environmentId = createId();
-      const volumeId = createId();
-
-      const mockExistingVolume = {
-        id: volumeId,
-        environmentId,
-        name: "test-env-test-volume",
-        driver: "local",
-        options: {},
-        createdAt: new Date(),
-      };
-
-      const mockService = {
-        id: createId(),
-        serviceName: "database-service",
-        serviceType: "postgres",
-      };
-
-      const mockEnvironment = {
-        id: environmentId,
-        name: "test-env",
-        networks: [],
-        services: [mockService],
-        volumes: [mockExistingVolume],
-      };
-
-      // Mock service metadata that requires this volume
-      mockServiceRegistry.getServiceMetadata.mockReturnValue({
-        requiredVolumes: [{ name: "test-volume" }],
-      });
-
-      mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
-
-      const response = await request(app)
-        .delete(`/api/environments/${environmentId}/volumes/${volumeId}`)
-        .expect(400);
-
-      expect(response.body).toMatchObject({
-        error: "Volume in use",
-        message: "Cannot delete volume that is required by services",
-        details: {
-          servicesUsingVolume: ["database-service"],
-        },
-      });
-
-      expect(mockPrisma.environmentVolume.delete).not.toHaveBeenCalled();
     });
 
     it("should return 404 for non-existent volume", async () => {

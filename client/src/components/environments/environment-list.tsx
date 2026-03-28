@@ -5,7 +5,6 @@ import { EnvironmentCard } from "./environment-card";
 import { EnvironmentCreateDialog } from "./environment-create-dialog";
 import { EnvironmentEditDialog } from "./environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "./environment-delete-dialog";
-import { ServiceAddDialog } from "./service-add-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,7 +28,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [serviceAddDialogOpen, setServiceAddDialogOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
 
   const { filters, updateFilter } = useEnvironmentFilters();
@@ -60,12 +58,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
     setSelectedEnvironment(environment);
     setDeleteDialogOpen(true);
   };
-
-  const handleAddService = (environment: Environment) => {
-    setSelectedEnvironment(environment);
-    setServiceAddDialogOpen(true);
-  };
-
 
   const handleRefresh = () => {
     refetch();
@@ -225,7 +217,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
                 environment={environment}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
-                onAddService={handleAddService}
               />
             ))}
           </div>
@@ -255,16 +246,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
           <EnvironmentDeleteDialog
             open={deleteDialogOpen}
             onOpenChange={setDeleteDialogOpen}
-            environment={selectedEnvironment}
-            onSuccess={() => {
-              refetch();
-              setSelectedEnvironment(null);
-            }}
-          />
-
-          <ServiceAddDialog
-            open={serviceAddDialogOpen}
-            onOpenChange={setServiceAddDialogOpen}
             environment={selectedEnvironment}
             onSuccess={() => {
               refetch();

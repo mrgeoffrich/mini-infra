@@ -130,26 +130,17 @@ export const stackInitCommandSchema = z.object({
 export const stackServiceRoutingSchema = z.object({
   hostname: z.string().min(1).max(253),
   listeningPort: numberOrTemplate,
-  enableSsl: z.boolean().optional(),
-  tlsCertificateId: z.string().optional(),
   backendOptions: z
     .object({
-      balanceAlgorithm: z
-        .enum(["roundrobin", "leastconn", "source"])
-        .optional(),
+      balanceAlgorithm: z.enum(["roundrobin", "leastconn", "source"]).optional(),
       checkTimeout: numberOrTemplateMin0.optional(),
       connectTimeout: numberOrTemplateMin0.optional(),
       serverTimeout: numberOrTemplateMin0.optional(),
     })
     .optional(),
-  dns: z
-    .object({
-      provider: z.enum(["cloudflare", "external"]),
-      zoneId: z.string().optional(),
-      recordType: z.enum(["A", "CNAME"]).optional(),
-      proxied: z.boolean().optional(),
-    })
-    .optional(),
+  tlsCertificate: z.string().optional(),
+  dnsRecord: z.string().optional(),
+  tunnelIngress: z.string().optional(),
 });
 
 export const stackNetworkSchema = z.object({
@@ -162,6 +153,26 @@ export const stackVolumeSchema = z.object({
   name: z.string().min(1),
   driver: z.string().optional(),
   options: z.record(z.string(), z.any()).optional(),
+});
+
+export const stackTlsCertificateSchema = z.object({
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  fqdn: z.string().min(1).max(253),
+});
+
+export const stackDnsRecordSchema = z.object({
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  fqdn: z.string().min(1).max(253),
+  recordType: z.literal('A'),
+  target: z.string().min(1),
+  ttl: z.number().int().min(60).max(86400).optional(),
+  proxied: z.boolean().optional(),
+});
+
+export const stackTunnelIngressSchema = z.object({
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  fqdn: z.string().min(1).max(253),
+  service: z.string().min(1),
 });
 
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -197,14 +208,10 @@ export const stackServiceDefinitionSchema = z
       if (data.serviceType === "StatelessWeb" && !data.routing) {
         return false;
       }
-      if (data.serviceType === "Stateful" && data.routing) {
-        return false;
-      }
       return true;
     },
     {
-      message:
-        "StatelessWeb services must have routing; Stateful services must not have routing",
+      message: "StatelessWeb services must have routing",
     }
   );
 
@@ -215,9 +222,10 @@ export const stackDefinitionSchema = z.object({
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
-  services: z
-    .array(stackServiceDefinitionSchema)
-    .min(1, "At least one service is required"),
+  tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
+  dnsRecords: z.array(stackDnsRecordSchema).optional(),
+  tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
+  services: z.array(stackServiceDefinitionSchema).min(1, "At least one service is required"),
 });
 
 // API request schemas
@@ -230,6 +238,9 @@ export const createStackSchema = z.object({
   parameterValues: parameterValuesSchema.optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
+  tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
+  dnsRecords: z.array(stackDnsRecordSchema).optional(),
+  tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z
     .array(stackServiceDefinitionSchema)
     .min(1, "At least one service is required"),
@@ -242,6 +253,9 @@ export const updateStackSchema = z.object({
   parameterValues: parameterValuesSchema.optional(),
   networks: z.array(stackNetworkSchema).optional(),
   volumes: z.array(stackVolumeSchema).optional(),
+  tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
+  dnsRecords: z.array(stackDnsRecordSchema).optional(),
+  tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z.array(stackServiceDefinitionSchema).optional(),
 });
 

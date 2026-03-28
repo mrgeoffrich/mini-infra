@@ -1,16 +1,5 @@
-import type { EnvironmentType, ServiceStatus } from "@mini-infra/types";
+import type { EnvironmentType } from "@mini-infra/types";
 
-const ServiceStatusValues = {
-  UNINITIALIZED: 'uninitialized' as const,
-  INITIALIZING: 'initializing' as const,
-  INITIALIZED: 'initialized' as const,
-  STARTING: 'starting' as const,
-  RUNNING: 'running' as const,
-  STOPPING: 'stopping' as const,
-  STOPPED: 'stopped' as const,
-  FAILED: 'failed' as const,
-  DEGRADED: 'degraded' as const,
-};
 import { EnvironmentFiltersState } from "@/hooks/use-environments";
 import {
   Select,
@@ -41,32 +30,7 @@ export function EnvironmentFilters({
   onResetFilters,
   className,
 }: EnvironmentFiltersProps) {
-  const hasActiveFilters = filters.type || filters.status;
-
-  const getStatusDisplayName = (status: ServiceStatus) => {
-    switch (status) {
-      case ServiceStatusValues.RUNNING:
-        return "Running";
-      case ServiceStatusValues.STOPPED:
-        return "Stopped";
-      case ServiceStatusValues.STARTING:
-        return "Starting";
-      case ServiceStatusValues.STOPPING:
-        return "Stopping";
-      case ServiceStatusValues.FAILED:
-        return "Failed";
-      case ServiceStatusValues.DEGRADED:
-        return "Degraded";
-      case ServiceStatusValues.INITIALIZING:
-        return "Initializing";
-      case ServiceStatusValues.INITIALIZED:
-        return "Initialized";
-      case ServiceStatusValues.UNINITIALIZED:
-        return "Uninitialized";
-      default:
-        return status;
-    }
-  };
+  const hasActiveFilters = !!filters.type;
 
   const getTypeDisplayName = (type: EnvironmentType) => {
     switch (type) {
@@ -108,33 +72,6 @@ export function EnvironmentFilters({
             </Select>
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground">Status:</label>
-            <Select
-              value={filters.status || "all"}
-              onValueChange={(value) =>
-                onFilterChange("status", value === "all" ? undefined : (value as ServiceStatus))
-              }
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value={ServiceStatusValues.RUNNING}>Running</SelectItem>
-                <SelectItem value={ServiceStatusValues.STOPPED}>Stopped</SelectItem>
-                <SelectItem value={ServiceStatusValues.STARTING}>Starting</SelectItem>
-                <SelectItem value={ServiceStatusValues.STOPPING}>Stopping</SelectItem>
-                <SelectItem value={ServiceStatusValues.FAILED}>Failed</SelectItem>
-                <SelectItem value={ServiceStatusValues.DEGRADED}>Degraded</SelectItem>
-                <SelectItem value={ServiceStatusValues.INITIALIZING}>Initializing</SelectItem>
-                <SelectItem value={ServiceStatusValues.INITIALIZED}>Initialized</SelectItem>
-                <SelectItem value={ServiceStatusValues.UNINITIALIZED}>Uninitialized</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Active Filters Display */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2 ml-auto">
@@ -148,20 +85,6 @@ export function EnvironmentFilters({
                     Type: {getTypeDisplayName(filters.type)}
                     <button
                       onClick={() => onFilterChange("type", undefined)}
-                      className="ml-1 hover:bg-muted-foreground/20 rounded"
-                    >
-                      <IconX className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                )}
-                {filters.status && (
-                  <Badge
-                    variant="secondary"
-                    className="flex items-center gap-1 text-xs"
-                  >
-                    Status: {getStatusDisplayName(filters.status)}
-                    <button
-                      onClick={() => onFilterChange("status", undefined)}
                       className="ml-1 hover:bg-muted-foreground/20 rounded"
                     >
                       <IconX className="h-3 w-3" />

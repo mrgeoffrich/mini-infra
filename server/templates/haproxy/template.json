@@ -1,7 +1,7 @@
 {
   "name": "haproxy",
   "displayName": "HAProxy Load Balancer",
-  "builtinVersion": 6,
+  "builtinVersion": 7,
   "scope": "environment",
   "category": "infrastructure",
   "description": "HAProxy load balancer with DataPlane API",
@@ -12,6 +12,15 @@
     { "name": "dataplane-port", "type": "number", "default": 5555, "description": "Host port for DataPlane API (0 to disable)" },
     { "name": "expose-on-host", "type": "boolean", "default": true, "description": "Bind ports to the Docker host (disable for internal-only access)" }
   ],
+  "networkTypeDefaults": {
+    "internet": {
+      "http-port": 8111,
+      "https-port": 8443,
+      "stats-port": 8405,
+      "dataplane-port": 5556,
+      "expose-on-host": false
+    }
+  },
   "networks": [],
   "volumes": [
     { "name": "haproxy_data" },

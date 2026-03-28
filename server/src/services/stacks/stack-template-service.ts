@@ -52,6 +52,7 @@ const versionSummary = {
   publishedAt: true,
   createdAt: true,
   createdById: true,
+  _count: { select: { services: true } },
 };
 
 export class StackTemplateService {
@@ -153,11 +154,11 @@ export class StackTemplateService {
     input: CreateStackTemplateRequest,
     createdById?: string
   ): Promise<StackTemplateInfo> {
-    // Check for name collision
+    // Check for name collision (allow re-use of archived templates)
     const existing = await this.prisma.stackTemplate.findUnique({
       where: { name_source: { name: input.name, source: "user" } },
     });
-    if (existing) {
+    if (existing && !existing.isArchived) {
       throw new TemplateError(
         `A user template named "${input.name}" already exists`,
         409
@@ -169,18 +170,34 @@ export class StackTemplateService {
     const configFileInputs = input.configFiles ?? [];
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // Create template
-      const template = await tx.stackTemplate.create({
-        data: {
-          name: input.name,
-          displayName: input.displayName,
-          description: input.description ?? null,
-          source: "user",
-          scope: input.scope,
-          category: input.category ?? null,
-          createdById: createdById ?? null,
-        },
-      });
+      // Re-use archived template if one exists, otherwise create new
+      let template;
+      if (existing?.isArchived) {
+        template = await tx.stackTemplate.update({
+          where: { id: existing.id },
+          data: {
+            displayName: input.displayName,
+            description: input.description ?? null,
+            scope: input.scope,
+            category: input.category ?? null,
+            isArchived: false,
+            currentVersionId: null,
+            draftVersionId: null,
+          },
+        });
+      } else {
+        template = await tx.stackTemplate.create({
+          data: {
+            name: input.name,
+            displayName: input.displayName,
+            description: input.description ?? null,
+            source: "user",
+            scope: input.scope,
+            category: input.category ?? null,
+            createdById: createdById ?? null,
+          },
+        });
+      }
 
       // Create draft version (version 0)
       const version = await tx.stackTemplateVersion.create({
@@ -190,6 +207,7 @@ export class StackTemplateService {
           status: "draft",
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
+          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -311,6 +329,7 @@ export class StackTemplateService {
           notes: input.notes ?? null,
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
+          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -445,6 +464,8 @@ export class StackTemplateService {
       configFiles: externalConfigFiles,
     } = input;
 
+    const networkTypeDefaults = (definition as any).networkTypeDefaults ?? {};
+
     // Check if template exists
     const existing = await this.prisma.stackTemplate.findUnique({
       where: { name_source: { name, source: "system" } },
@@ -526,6 +547,7 @@ export class StackTemplateService {
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
             ) as any,
+            networkTypeDefaults: networkTypeDefaults as any,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -542,6 +564,7 @@ export class StackTemplateService {
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
             ) as any,
+            networkTypeDefaults: networkTypeDefaults as any,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -580,6 +603,163 @@ export class StackTemplateService {
     });
 
     return { ...result, created: !existing };
+  }
+
+  // =====================
+  // Import from DeploymentConfiguration
+  // =====================
+
+  async importDeploymentConfig(
+    configId: string,
+    createdById?: string
+  ): Promise<StackTemplateInfo> {
+    // Look up the DeploymentConfiguration
+    const config = await this.prisma.deploymentConfiguration.findUnique({
+      where: { id: configId },
+    });
+
+    if (!config) {
+      throw new TemplateError("Deployment configuration not found", 404);
+    }
+
+    const containerConfig = config.containerConfig as any;
+    const healthCheckConfig = config.healthCheckConfig as any;
+    const rollbackConfig = config.rollbackConfig as any;
+
+    // Determine service type: StatelessWeb if hostname + listeningPort, else Stateful
+    const hasRouting = !!(config.hostname && config.listeningPort);
+    const serviceType = hasRouting ? "StatelessWeb" : "Stateful";
+
+    // Map environment array → env object
+    const env: Record<string, string> = {};
+    if (Array.isArray(containerConfig?.environment)) {
+      for (const e of containerConfig.environment) {
+        if (e.name && e.value !== undefined) {
+          env[e.name] = String(e.value);
+        }
+      }
+    }
+
+    // Map ports
+    const ports = Array.isArray(containerConfig?.ports)
+      ? containerConfig.ports.map((p: any) => ({
+          containerPort: p.containerPort,
+          hostPort: p.hostPort ?? p.containerPort,
+          protocol: p.protocol ?? "tcp",
+        }))
+      : [];
+
+    // Map volumes → mounts (bind type)
+    const mounts = Array.isArray(containerConfig?.volumes)
+      ? containerConfig.volumes.map((v: any) => ({
+          source: v.hostPath,
+          target: v.containerPath,
+          type: "bind" as const,
+          readOnly: v.mode === "ro",
+        }))
+      : [];
+
+    // Map labels
+    const labels = containerConfig?.labels ?? {};
+
+    // Map networks → joinNetworks
+    const joinNetworks = Array.isArray(containerConfig?.networks)
+      ? containerConfig.networks
+      : [];
+
+    // Build healthcheck in Docker format
+    let healthcheck: any = undefined;
+    if (healthCheckConfig?.endpoint) {
+      const method = healthCheckConfig.method ?? "GET";
+      const endpoint = healthCheckConfig.endpoint;
+      const port = config.listeningPort ?? 80;
+      healthcheck = {
+        test: [
+          "CMD-SHELL",
+          `curl -f -X ${method} http://localhost:${port}${endpoint} || exit 1`,
+        ],
+        interval: (healthCheckConfig.interval ?? 30000) * 1000000, // ms → ns
+        timeout: (healthCheckConfig.timeout ?? 5000) * 1000000,
+        retries: healthCheckConfig.retries ?? 3,
+        startPeriod: 10000000000, // 10s default in ns
+      };
+    }
+
+    // Build container config
+    const stackContainerConfig: any = {
+      env,
+      ports,
+      mounts,
+      labels,
+      joinNetworks,
+      restartPolicy: "unless-stopped",
+    };
+    if (healthcheck) {
+      stackContainerConfig.healthcheck = healthcheck;
+    }
+
+    // Build routing config for StatelessWeb
+    let routing: any = undefined;
+    if (hasRouting) {
+      routing = {
+        hostname: config.hostname!,
+        listeningPort: config.listeningPort!,
+        enableSsl: config.enableSsl ?? false,
+        tlsCertificateId: config.tlsCertificateId ?? undefined,
+      };
+    }
+
+    // Build docker image with registry prefix
+    const dockerImage = config.dockerRegistry
+      ? `${config.dockerRegistry}/${config.dockerImage}`
+      : config.dockerImage;
+
+    // Build default parameter values from rollback config and environment
+    const defaultParameterValues: Record<string, any> = {};
+    if (rollbackConfig) {
+      if (rollbackConfig.enabled !== undefined) {
+        defaultParameterValues.rollbackEnabled = rollbackConfig.enabled;
+      }
+      if (rollbackConfig.maxWaitTime !== undefined) {
+        defaultParameterValues.rollbackMaxWaitTime = rollbackConfig.maxWaitTime;
+      }
+      if (rollbackConfig.keepOldContainer !== undefined) {
+        defaultParameterValues.rollbackKeepOldContainer = rollbackConfig.keepOldContainer;
+      }
+    }
+    // Build the service definition
+    const service: StackServiceDefinition = {
+      serviceName: config.applicationName,
+      serviceType,
+      dockerImage,
+      dockerTag: config.dockerTag ?? 'latest',
+      containerConfig: stackContainerConfig,
+      dependsOn: [],
+      order: 0,
+      routing,
+    };
+
+    // Create the template via createUserTemplate
+    const template = await this.createUserTemplate(
+      {
+        name: config.applicationName,
+        displayName: config.applicationName,
+        scope: "environment",
+        services: [service],
+        networks: [],
+        volumes: [],
+        defaultParameterValues,
+      },
+      createdById
+    );
+
+    // Publish the draft immediately
+    await this.publishDraft(template.id, {
+      notes: `Imported from deployment configuration: ${config.applicationName}`,
+    });
+
+    // Return the full template with the published version
+    return (await this.getTemplate(template.id))!;
   }
 
   // =====================
@@ -622,10 +802,23 @@ export class StackTemplateService {
       StackParameterValue
     >;
 
-    // Merge provided parameter values with defaults
+    // Look up environment networkType if environment-scoped
+    let networkDefaults: Record<string, StackParameterValue> = {};
+    if (input.environmentId) {
+      const env = await this.prisma.environment.findUnique({
+        where: { id: input.environmentId },
+        select: { networkType: true },
+      });
+      if (env) {
+        const ntDefaults = version.networkTypeDefaults as unknown as Record<string, Record<string, StackParameterValue>> | null;
+        networkDefaults = ntDefaults?.[env.networkType] ?? {};
+      }
+    }
+
+    // Merge: definition defaults → network-type defaults → user overrides
     const mergedValues = mergeParameterValues(
       paramDefs,
-      { ...defaultValues, ...(input.parameterValues ?? {}) }
+      { ...defaultValues, ...networkDefaults, ...(input.parameterValues ?? {}) }
     );
 
     // Build service definitions from template services + config files
@@ -724,6 +917,7 @@ export class StackTemplateService {
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       createdById: version.createdById,
+      serviceCount: version._count?.services ?? version.services?.length,
       services: version.services?.map(serializeTemplateService),
       configFiles: version.configFiles?.map(serializeTemplateConfigFile),
     };

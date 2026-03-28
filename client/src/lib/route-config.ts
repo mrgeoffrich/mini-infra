@@ -16,6 +16,7 @@ import {
   IconServer,
   IconSettings,
   IconShield,
+  IconTemplate,
   IconHistory,
   IconDownload,
   IconWorld,
@@ -142,11 +143,37 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
+  "/applications": {
+    path: "/applications",
+    title: "Applications",
+    icon: IconRocket,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "applications",
+    description: "User application management",
+    children: {
+      new: {
+        path: "/applications/new",
+        title: "New Application",
+        breadcrumbLabel: "New",
+        parent: "/applications",
+        showInNav: false,
+      },
+      detail: {
+        path: "/applications/:id",
+        title: "Application Details",
+        breadcrumbLabel: "Details",
+        parent: "/applications",
+        showInNav: false,
+      },
+    },
+  },
+
   "/deployments": {
     path: "/deployments",
     title: "Deployments",
     icon: IconRocket,
-    showInNav: true,
+    showInNav: false,
     navGroup: "main",
     navSection: "applications",
     description: "Zero-downtime deployment management",
@@ -499,6 +526,25 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Update Mini Infra via sidecar container",
+  },
+
+  "/stack-templates": {
+    path: "/stack-templates",
+    title: "Stack Templates",
+    icon: IconTemplate,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "applications",
+    description: "Create and manage reusable stack blueprints",
+    children: {
+      detail: {
+        path: "/stack-templates/:templateId",
+        title: "Stack Template",
+        breadcrumbLabel: "Details",
+        parent: "/stack-templates",
+        showInNav: false,
+      },
+    },
   },
 
   "/bug-report-settings": {

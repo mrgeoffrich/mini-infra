@@ -126,23 +126,18 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   // Get environment details
   const environment = await prisma.environment.findUnique({
     where: { id: environmentId },
-    include: {
-      services: {
-        where: {
-          serviceName: "haproxy",
-        },
-      },
-    },
   });
 
   if (!environment) {
     throw new Error(`Environment not found: ${environmentId}`);
   }
 
-  const haproxyService = environment.services.find((s) => s.serviceName === "haproxy");
+  const haproxyStack = await prisma.stack.findFirst({
+    where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+  });
 
-  if (!haproxyService) {
-    throw new Error(`HAProxy service not found for environment: ${environmentId}`);
+  if (!haproxyStack) {
+    throw new Error(`HAProxy stack not found for environment: ${environmentId}`);
   }
 
   // Find HAProxy container using Docker

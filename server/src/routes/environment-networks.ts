@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { EnvironmentManager, ServiceRegistry } from '../services/environment';
+import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
@@ -10,7 +10,6 @@ const logger = appLogger();
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);
-const serviceRegistry = ServiceRegistry.getInstance();
 
 // Validation schemas
 const createNetworkSchema = z.object({
@@ -188,23 +187,6 @@ router.delete('/:networkId', requirePermission('environments:write'), async (req
       return res.status(404).json({
         error: 'Network not found',
         message: `Network with ID ${networkId} does not exist in this environment`
-      });
-    }
-
-    // Check if any services are using this network
-    const servicesUsingNetwork = [];
-    for (const service of environment.services) {
-      const serviceMetadata = serviceRegistry.getServiceMetadata(service.serviceType);
-      if (serviceMetadata?.requiredNetworks.some(n => `${environment.name}-${n.name}` === existingNetwork.name)) {
-        servicesUsingNetwork.push(service.serviceName);
-      }
-    }
-
-    if (servicesUsingNetwork.length > 0) {
-      return res.status(400).json({
-        error: 'Network in use',
-        message: 'Cannot delete network that is required by services',
-        details: { servicesUsingNetwork }
       });
     }
 

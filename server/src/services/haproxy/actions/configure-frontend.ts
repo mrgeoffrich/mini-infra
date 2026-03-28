@@ -45,42 +45,47 @@ export class ConfigureFrontend {
           "Environment ID is required for frontend configuration"
         );
       }
-      if (!context.deploymentConfigId) {
-        throw new Error(
-          "Deployment config ID is required for frontend configuration"
-        );
-      }
+      // Resolve configuration - prefer context fields, fall back to DB lookup
+      let hostname: string | undefined;
+      let enableSsl: boolean | undefined;
+      let tlsCertificateId: string | null | undefined;
+      let certificateStatus: string | null | undefined;
+      let sourceType: 'stack' | 'manual' | 'deployment' = 'deployment';
+      let sourceId: string | undefined = context.deploymentConfigId;
 
-      // Get deployment configuration
-      const deploymentConfig = await prisma.deploymentConfiguration.findUnique(
-        {
+      if (context.hostname) {
+        // Source-agnostic path: read from context directly
+        hostname = context.hostname;
+        enableSsl = context.enableSsl ?? false;
+        tlsCertificateId = context.tlsCertificateId;
+        certificateStatus = context.certificateStatus;
+        sourceType = context.deploymentConfigId ? 'deployment' : 'stack';
+        sourceId = context.deploymentConfigId ?? context.deploymentId;
+      } else if (context.deploymentConfigId) {
+        // Legacy path: look up from database
+        const deploymentConfig = await prisma.deploymentConfiguration.findUnique({
           where: { id: context.deploymentConfigId },
           include: { environment: true },
-        }
-      );
-
-      if (!deploymentConfig) {
-        throw new Error(
-          `Deployment configuration not found: ${context.deploymentConfigId}`
-        );
-      }
-
-      // Check if hostname is configured
-      if (!deploymentConfig.hostname) {
-        logger.warn(
-          { deploymentConfigId: context.deploymentConfigId },
-          "No hostname configured for deployment, skipping frontend configuration"
-        );
-
-        // Send skipped event
-        sendEvent({
-          type: "FRONTEND_CONFIG_SKIPPED",
-          message: "No hostname configured",
         });
+
+        if (!deploymentConfig) {
+          throw new Error(`Deployment configuration not found: ${context.deploymentConfigId}`);
+        }
+
+        if (!deploymentConfig.hostname) {
+          sendEvent({ type: "FRONTEND_CONFIG_SKIPPED", message: "No hostname configured" });
+          return;
+        }
+
+        hostname = deploymentConfig.hostname;
+        enableSsl = deploymentConfig.enableSsl;
+        tlsCertificateId = deploymentConfig.tlsCertificateId;
+        certificateStatus = deploymentConfig.certificateStatus;
+      } else {
+        // No config available — skip
+        sendEvent({ type: "FRONTEND_CONFIG_SKIPPED", message: "No hostname configured" });
         return;
       }
-
-      const { hostname } = deploymentConfig;
 
       // Initialize HAProxy DataPlane client
       logger.info(
@@ -116,16 +121,14 @@ export class ConfigureFrontend {
       );
 
       // Check if SSL is enabled and certificate is available
-      const enableSsl = deploymentConfig.enableSsl;
-      const tlsCertificateId = deploymentConfig.tlsCertificateId;
-      const hasSslCertificate = Boolean(enableSsl && tlsCertificateId && deploymentConfig.certificateStatus === "ACTIVE");
+      const hasSslCertificate = Boolean(enableSsl && tlsCertificateId && certificateStatus === "ACTIVE");
 
       logger.info(
         {
           deploymentId: context.deploymentId,
           enableSsl,
           tlsCertificateId,
-          certificateStatus: deploymentConfig.certificateStatus,
+          certificateStatus,
           hasSslCertificate,
         },
         "Checking SSL configuration for frontend"
@@ -156,10 +159,10 @@ export class ConfigureFrontend {
       // Add route to shared frontend
       const route = await haproxyFrontendManager.addRouteToSharedFrontend(
         sharedFrontend.id,
-        hostname,
+        hostname!,
         backendName,
-        "deployment",
-        context.deploymentConfigId,
+        sourceType,
+        sourceId!,
         this.haproxyClient,
         prisma,
         {
@@ -184,27 +187,29 @@ export class ConfigureFrontend {
 
       // Check if a manual frontend record exists for this deployment config
       // If so, mark it as removed since we're now using shared frontends
-      const existingFrontend = await prisma.hAProxyFrontend.findUnique({
-        where: { deploymentConfigId: context.deploymentConfigId },
-      });
-
-      if (existingFrontend && !existingFrontend.isSharedFrontend) {
-        // Mark manual frontend as removed
-        await prisma.hAProxyFrontend.update({
-          where: { id: existingFrontend.id },
-          data: {
-            status: "removed",
-            errorMessage: "Migrated to shared frontend architecture",
-          },
+      // (Only applies to legacy deployments with deploymentConfigId)
+      if (context.deploymentConfigId) {
+        const existingFrontend = await prisma.hAProxyFrontend.findUnique({
+          where: { deploymentConfigId: context.deploymentConfigId },
         });
 
-        logger.info(
-          {
-            deploymentId: context.deploymentId,
-            frontendId: existingFrontend.id,
-          },
-          "Marked manual frontend record as removed"
-        );
+        if (existingFrontend && !existingFrontend.isSharedFrontend) {
+          await prisma.hAProxyFrontend.update({
+            where: { id: existingFrontend.id },
+            data: {
+              status: "removed",
+              errorMessage: "Migrated to shared frontend architecture",
+            },
+          });
+
+          logger.info(
+            {
+              deploymentId: context.deploymentId,
+              frontendId: existingFrontend.id,
+            },
+            "Marked manual frontend record as removed"
+          );
+        }
       }
 
       // Update context with frontend information
@@ -246,26 +251,28 @@ export class ConfigureFrontend {
         "Failed to configure HAProxy frontend"
       );
 
-      // Update database with error status if record exists
-      try {
-        const existingFrontend = await prisma.hAProxyFrontend.findUnique({
-          where: { deploymentConfigId: context.deploymentConfigId },
-        });
-
-        if (existingFrontend) {
-          await prisma.hAProxyFrontend.update({
-            where: { id: existingFrontend.id },
-            data: {
-              status: "failed",
-              errorMessage,
-            },
+      // Update database with error status if record exists (legacy path only)
+      if (context.deploymentConfigId) {
+        try {
+          const existingFrontend = await prisma.hAProxyFrontend.findUnique({
+            where: { deploymentConfigId: context.deploymentConfigId },
           });
+
+          if (existingFrontend) {
+            await prisma.hAProxyFrontend.update({
+              where: { id: existingFrontend.id },
+              data: {
+                status: "failed",
+                errorMessage,
+              },
+            });
+          }
+        } catch (dbError) {
+          logger.error(
+            { dbError },
+            "Failed to update frontend error status in database"
+          );
         }
-      } catch (dbError) {
-        logger.error(
-          { dbError },
-          "Failed to update frontend error status in database"
-        );
       }
 
       // Send error event

@@ -1,12 +1,10 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   CreateEnvironmentRequest,
-  ServiceConfiguration,
 } from "@mini-infra/types";
-import { useCreateEnvironment, useAvailableServices } from "@/hooks/use-environments";
+import { useCreateEnvironment } from "@/hooks/use-environments";
 import {
   Dialog,
   DialogContent,
@@ -34,9 +32,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { IconLoader2, IconPlus, IconX, IconServer, IconInfoCircle } from "@tabler/icons-react";
+import { IconLoader2, IconInfoCircle } from "@tabler/icons-react";
 
 const createEnvironmentSchema = z.object({
   name: z
@@ -50,18 +47,6 @@ const createEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const),
   networkType: z.enum(["local", "internet"] as const).optional(),
-  services: z
-    .array(
-      z.object({
-        serviceName: z
-          .string()
-          .min(1, "Service name is required")
-          .max(100, "Service name must be less than 100 characters"),
-        serviceType: z.string().min(1, "Service type is required"),
-        config: z.record(z.string(), z.any()).optional(),
-      }),
-    )
-    .optional(),
 });
 
 type CreateEnvironmentFormData = z.infer<typeof createEnvironmentSchema>;
@@ -77,12 +62,7 @@ export function EnvironmentCreateDialog({
   onOpenChange,
   onSuccess,
 }: EnvironmentCreateDialogProps) {
-  const [selectedServices, setSelectedServices] = useState<ServiceConfiguration[]>([]);
-
   const createMutation = useCreateEnvironment();
-  const { data: availableServicesData, isLoading: servicesLoading } = useAvailableServices({
-    enabled: open,
-  });
 
   const form = useForm<CreateEnvironmentFormData>({
     resolver: zodResolver(createEnvironmentSchema),
@@ -91,17 +71,13 @@ export function EnvironmentCreateDialog({
       description: "",
       type: "nonproduction",
       networkType: "local",
-      services: [],
     },
   });
-
-  const availableServices = availableServicesData?.services || [];
 
   const onSubmit = async (data: CreateEnvironmentFormData) => {
     try {
       const request: CreateEnvironmentRequest = {
         ...data,
-        services: selectedServices,
       };
 
       await createMutation.mutateAsync(request);
@@ -109,7 +85,6 @@ export function EnvironmentCreateDialog({
       toast.success(`Environment "${data.name}" created successfully`);
       onOpenChange(false);
       form.reset();
-      setSelectedServices([]);
       onSuccess?.();
     } catch (error) {
       toast.error(
@@ -118,30 +93,6 @@ export function EnvironmentCreateDialog({
         }`,
       );
     }
-  };
-
-  const handleAddService = (serviceType: string) => {
-    const serviceTypeName = serviceType.toLowerCase().replace(/[^a-z0-9]/g, "-");
-    const serviceName = `${serviceTypeName}-${selectedServices.length + 1}`;
-
-    setSelectedServices((prev) => [
-      ...prev,
-      {
-        serviceName,
-        serviceType,
-        config: {},
-      },
-    ]);
-  };
-
-  const handleRemoveService = (index: number) => {
-    setSelectedServices((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateServiceName = (index: number, name: string) => {
-    setSelectedServices((prev) =>
-      prev.map((service, i) => (i === index ? { ...service, serviceName: name } : service)),
-    );
   };
 
   return (
@@ -270,95 +221,6 @@ export function EnvironmentCreateDialog({
                     </FormItem>
                   )}
                 />
-              </div>
-
-              {/* Services Section */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-medium">Services (Optional)</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Add services to include in this environment
-                    </p>
-                  </div>
-                </div>
-
-                {/* Available Services */}
-                {!servicesLoading && availableServices.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium">Available Services</h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      {availableServices.map((service) => (
-                        <Button
-                          key={service.serviceType}
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => handleAddService(service.serviceType)}
-                          disabled={createMutation.isPending}
-                          className="flex items-center gap-2 justify-start h-auto p-3"
-                        >
-                          <IconServer className="h-4 w-4" />
-                          <div className="text-left">
-                            <div className="font-medium">{service.serviceType}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {service.description}
-                            </div>
-                          </div>
-                          <IconPlus className="h-3 w-3 ml-auto" />
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Selected Services */}
-                {selectedServices.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium">Selected Services</h4>
-                    <div className="space-y-2">
-                      {selectedServices.map((service, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center gap-2 p-3 border rounded-md"
-                        >
-                          <IconServer className="h-4 w-4 text-muted-foreground" />
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Input
-                                placeholder="Service name"
-                                value={service.serviceName}
-                                onChange={(e) => handleUpdateServiceName(index, e.target.value)}
-                                disabled={createMutation.isPending}
-                                className="h-8"
-                              />
-                              <Badge variant="outline">{service.serviceType}</Badge>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            type="button"
-                            onClick={() => handleRemoveService(index)}
-                            disabled={createMutation.isPending}
-                            className="h-8 w-8 p-0"
-                          >
-                            <IconX className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {servicesLoading && (
-                  <div className="flex items-center justify-center py-4">
-                    <IconLoader2 className="h-4 w-4 animate-spin" />
-                    <span className="ml-2 text-sm text-muted-foreground">
-                      Loading available services...
-                    </span>
-                  </div>
-                )}
               </div>
             </form>
           </Form>

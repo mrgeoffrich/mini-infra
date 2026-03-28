@@ -9,7 +9,6 @@ import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { NetworkRequirement, VolumeRequirement } from "../services/interfaces/application-service";
-import { portUtils } from "../services/port-utils";
 import prisma from "../lib/prisma";
 
 const logger = appLogger();
@@ -74,70 +73,6 @@ router.post("/deploy", requirePermission('deployments:write') as RequestHandler,
       networkDriver,
       environmentId,
     } = bodyValidation.data;
-
-    // Validate port availability before deployment
-    try {
-      const portConfig = await portUtils.getHAProxyPortsForEnvironment(environmentId);
-      const validation = await portUtils.validateHAProxyPorts(
-        portConfig.httpPort,
-        portConfig.httpsPort
-      );
-
-      if (!validation.isValid) {
-        logger.warn(
-          {
-            requestId,
-            userId,
-            environmentId,
-            httpPort: portConfig.httpPort,
-            httpsPort: portConfig.httpsPort,
-            validation,
-          },
-          "Port validation failed for HAProxy deployment"
-        );
-
-        return res.status(400).json({
-          error: "Port Conflict",
-          message: validation.message,
-          details: {
-            httpPort: portConfig.httpPort,
-            httpsPort: portConfig.httpsPort,
-            conflicts: validation.conflicts,
-            suggestedPorts: validation.suggestedPorts,
-          },
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      logger.info(
-        {
-          requestId,
-          userId,
-          environmentId,
-          httpPort: portConfig.httpPort,
-          httpsPort: portConfig.httpsPort,
-        },
-        "Port validation passed for HAProxy deployment"
-      );
-    } catch (error) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          environmentId,
-          error,
-        },
-        "Failed to validate ports for HAProxy deployment"
-      );
-
-      return res.status(500).json({
-        error: "Validation Error",
-        message: `Failed to validate ports: ${error instanceof Error ? error.message : "Unknown error"}`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Deploy HAProxy using the HAProxy service directly
     const haproxyService = new HAProxyService('haproxy', environmentId);

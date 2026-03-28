@@ -65,7 +65,6 @@ export class HAProxyMigrationService {
 
     const environment = await prisma.environment.findUniqueOrThrow({
       where: { id: environmentId },
-      include: { services: true },
     });
 
     const envName = environment.name;
@@ -199,7 +198,6 @@ export class HAProxyMigrationService {
    * 3. Apply haproxy stack (creates new container, volumes, config)
    * 4. Redeploy TLS certificates
    * 5. Run frontend remediation (shared frontends + routes)
-   * 6. Clean up EnvironmentService record
    */
   async migrate(
     environmentId: string,
@@ -222,7 +220,6 @@ export class HAProxyMigrationService {
 
     const environment = await prisma.environment.findUniqueOrThrow({
       where: { id: environmentId },
-      include: { services: true },
     });
     const envName = environment.name;
 
@@ -315,24 +312,6 @@ export class HAProxyMigrationService {
     totalSteps = 1 + preview.legacyVolumes.length + 1 + postApply.steps.length + 1;
     for (const postStep of postApply.steps) {
       emitStep(postStep);
-    }
-
-    // Step 7: Mark legacy EnvironmentService as migrated
-    try {
-      const haproxyEnvService = environment.services.find(
-        (s) => s.serviceName === 'haproxy' || s.serviceType === 'haproxy'
-      );
-      if (haproxyEnvService) {
-        await prisma.environmentService.update({
-          where: { id: haproxyEnvService.id },
-          data: { status: 'migrated-to-stack' },
-        });
-        emitStep({ step: 'Update legacy service record', status: 'completed', detail: 'Marked as migrated-to-stack' });
-      }
-    } catch (error) {
-      const msg = `Failed to update EnvironmentService record: ${error}`;
-      logger.warn({ error }, msg);
-      emitStep({ step: 'Update legacy service record', status: 'failed', detail: msg });
     }
 
     const success = errors.length === 0;
