@@ -4,10 +4,22 @@ import { appLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
+import { StackResourceReconciler } from '../services/stacks/stack-resource-reconciler';
 import { StackRoutingManager } from '../services/stacks/stack-routing-manager';
 import { HAProxyFrontendManager } from '../services/haproxy';
 import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
 import { MonitoringService } from '../services/monitoring';
+import { CertificateLifecycleManager } from '../services/tls/certificate-lifecycle-manager';
+import { AcmeClientManager } from '../services/tls/acme-client-manager';
+import { AzureStorageCertificateStore } from '../services/tls/azure-storage-certificate-store';
+import { DnsChallenge01Provider } from '../services/tls/dns-challenge-provider';
+import { CertificateDistributor } from '../services/tls/certificate-distributor';
+import { CloudflareDNSService } from '../services/cloudflare/cloudflare-dns';
+import { CloudflareService } from '../services/cloudflare';
+import { HaproxyCertificateDeployer } from '../services/haproxy/haproxy-certificate-deployer';
+import { TlsConfigService } from '../services/tls/tls-config';
+import { AzureStorageService } from '../services/azure-storage-service';
+import { HAProxyService } from '../services/haproxy/haproxy-service';
 import {
   createStackSchema,
   updateStackSchema,
@@ -29,6 +41,51 @@ const logger = appLogger();
 
 /** Track in-progress stack applies to prevent concurrent operations */
 const applyingStacks = new Set<string>();
+
+/**
+ * Create a StackResourceReconciler with all required dependencies.
+ * Initializes TLS lifecycle manager (ACME client, Azure storage, DNS challenge provider)
+ * along with Cloudflare DNS and HAProxy certificate deployer services.
+ */
+async function createResourceReconciler(): Promise<StackResourceReconciler> {
+  const tlsConfig = new TlsConfigService(prisma);
+  const azureConfig = new AzureStorageService(prisma);
+
+  const containerName = await tlsConfig.getCertificateContainerName();
+  const connectionString = await azureConfig.getConnectionString();
+
+  let certLifecycleManager: CertificateLifecycleManager | undefined;
+
+  if (connectionString) {
+    const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+    const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
+    const cloudflareConfig = new CloudflareService(prisma);
+    const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
+
+    await acmeClient.initialize();
+
+    const haproxyService = new HAProxyService();
+    const dockerExec = new DockerExecutorService();
+    await dockerExec.initialize();
+    const distributor = new CertificateDistributor(certificateStore, haproxyService, dockerExec);
+
+    certLifecycleManager = new CertificateLifecycleManager(
+      acmeClient,
+      certificateStore,
+      dnsChallenge,
+      prisma,
+      containerName,
+      distributor,
+    );
+  }
+
+  return new StackResourceReconciler(
+    prisma,
+    certLifecycleManager as CertificateLifecycleManager,
+    new CloudflareDNSService(),
+    new HaproxyCertificateDeployer(),
+  );
+}
 
 // GET / — List stacks
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
@@ -103,7 +160,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { name, description, environmentId, parameters, parameterValues, networks, volumes, services } = parsed.data;
+    const { name, description, environmentId, parameters, parameterValues, networks, volumes, services, tlsCertificates, dnsRecords, tunnelIngress } = parsed.data;
 
     if (environmentId) {
       // Check environment exists
@@ -134,6 +191,9 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         parameterValues: parameterValues ? (parameterValues as any) : undefined,
         networks: networks as any,
         volumes: volumes as any,
+        tlsCertificates: tlsCertificates ?? [],
+        dnsRecords: dnsRecords ?? [],
+        tunnelIngress: tunnelIngress ?? [],
         services: {
           create: (services as any[]).map(toServiceCreateInput),
         },
@@ -167,7 +227,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    const { services, parameters, parameterValues, ...fields } = parsed.data;
+    const { services, parameters, parameterValues, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
 
     const updateData: any = {
       ...fields,
@@ -175,6 +235,9 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       volumes: fields.volumes ? (fields.volumes as any) : undefined,
       parameters: parameters ? (parameters as any) : undefined,
       parameterValues: parameterValues ? (parameterValues as any) : undefined,
+      ...(tlsCertificates !== undefined ? { tlsCertificates } : {}),
+      ...(dnsRecords !== undefined ? { dnsRecords } : {}),
+      ...(tunnelIngress !== undefined ? { tunnelIngress } : {}),
       version: existing.version + 1,
       status: 'pending',
     };
@@ -316,7 +379,8 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
   try {
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
-    const reconciler = new StackReconciler(dockerExecutor, prisma);
+    const resourceReconciler = await createResourceReconciler();
+    const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
     const plan = await reconciler.plan(String(req.params.stackId));
 
     res.json({ success: true, data: plan });
@@ -407,7 +471,8 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
-    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager);
+    const resourceReconciler = await createResourceReconciler();
+    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
 
     // Pre-compute plan so we can emit the started event with action details
     const plan = await reconciler.plan(stackId);
@@ -554,7 +619,8 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
       try {
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
-        const reconciler = new StackReconciler(dockerExecutor, prisma);
+        const resourceReconciler = await createResourceReconciler();
+        const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
         const result = await reconciler.destroyStack(stackId, { triggeredBy });
 
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
