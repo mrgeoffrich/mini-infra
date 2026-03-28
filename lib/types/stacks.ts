@@ -71,19 +71,14 @@ export interface StackInitCommand {
 export interface StackServiceRouting {
   hostname: string;
   listeningPort: number;
-  enableSsl?: boolean;
-  tlsCertificateId?: string;
+  tlsCertificate?: string;
+  dnsRecord?: string;
+  tunnelIngress?: string;
   backendOptions?: {
     balanceAlgorithm?: 'roundrobin' | 'leastconn' | 'source';
     checkTimeout?: number;
     connectTimeout?: number;
     serverTimeout?: number;
-  };
-  dns?: {
-    provider: 'cloudflare' | 'external';
-    zoneId?: string;
-    recordType?: 'A' | 'CNAME';
-    proxied?: boolean;
   };
 }
 
@@ -97,6 +92,26 @@ export interface StackVolume {
   name: string;
   driver?: string;
   options?: Record<string, any>;
+}
+
+export interface StackTlsCertificate {
+  name: string;
+  fqdn: string;
+}
+
+export interface StackDnsRecord {
+  name: string;
+  fqdn: string;
+  recordType: 'A';
+  target: string;
+  ttl?: number;
+  proxied?: boolean;
+}
+
+export interface StackTunnelIngress {
+  name: string;
+  fqdn: string;
+  service: string;
 }
 
 // DB model types (Date fields)
@@ -118,6 +133,9 @@ export interface Stack {
   parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
+  tlsCertificates: StackTlsCertificate[];
+  dnsRecords: StackDnsRecord[];
+  tunnelIngress: StackTunnelIngress[];
   createdAt: Date;
   updatedAt: Date;
   services?: StackService[];
@@ -160,6 +178,9 @@ export interface StackInfo {
   parameterValues: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
+  tlsCertificates: StackTlsCertificate[];
+  dnsRecords: StackDnsRecord[];
+  tunnelIngress: StackTunnelIngress[];
   createdAt: string;
   updatedAt: string;
   services?: StackServiceInfo[];
@@ -203,6 +224,9 @@ export interface StackDefinition {
   parameters?: StackParameterDefinition[];
   networks: StackNetwork[];
   volumes: StackVolume[];
+  tlsCertificates?: StackTlsCertificate[];
+  dnsRecords?: StackDnsRecord[];
+  tunnelIngress?: StackTunnelIngress[];
   services: StackServiceDefinition[];
 }
 
@@ -217,6 +241,9 @@ export function serializeStack(
     parameters: stack.parameters?.length > 0 ? stack.parameters : undefined,
     networks: stack.networks,
     volumes: stack.volumes,
+    tlsCertificates: stack.tlsCertificates?.length > 0 ? stack.tlsCertificates : undefined,
+    dnsRecords: stack.dnsRecords?.length > 0 ? stack.dnsRecords : undefined,
+    tunnelIngress: stack.tunnelIngress?.length > 0 ? stack.tunnelIngress : undefined,
     services: stack.services.map((s) => ({
       serviceName: s.serviceName,
       serviceType: s.serviceType,
@@ -240,6 +267,9 @@ export interface CreateStackInput {
   parameterValues?: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
+  tlsCertificates?: StackTlsCertificate[];
+  dnsRecords?: StackDnsRecord[];
+  tunnelIngress?: StackTunnelIngress[];
   services: StackServiceDefinition[];
 }
 
@@ -254,6 +284,9 @@ export function deserializeStack(
     parameters: definition.parameters,
     networks: definition.networks,
     volumes: definition.volumes,
+    tlsCertificates: definition.tlsCertificates,
+    dnsRecords: definition.dnsRecords,
+    tunnelIngress: definition.tunnelIngress,
     services: definition.services,
   };
 }
@@ -289,6 +322,7 @@ export interface StackPlan {
   stackVersion: number;
   planTime: string;
   actions: ServiceAction[];
+  resourceActions: ResourceAction[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
   warnings?: PlanWarning[];
@@ -309,6 +343,24 @@ export interface FieldDiff {
   new: string | null;
 }
 
+export type ResourceType = 'tls' | 'dns' | 'tunnel';
+
+export interface ResourceAction {
+  resourceType: ResourceType;
+  resourceName: string;
+  action: 'create' | 'update' | 'remove' | 'no-op';
+  reason?: string;
+  diff?: FieldDiff[];
+}
+
+export interface ResourceResult {
+  resourceType: ResourceType;
+  resourceName: string;
+  action: string;
+  success: boolean;
+  error?: string;
+}
+
 // Apply types
 
 export interface ApplyOptions {
@@ -319,8 +371,8 @@ export interface ApplyOptions {
   triggeredBy?: string;
   /** Pre-computed plan to avoid re-computing inside apply() */
   plan?: StackPlan;
-  /** Called after each service action completes */
-  onProgress?: (result: ServiceApplyResult, completedCount: number, totalActions: number) => void;
+  /** Called after each service or resource action completes */
+  onProgress?: (result: ServiceApplyResult | ResourceResult, completedCount: number, totalActions: number) => void;
 }
 
 export interface ApplyResult {
@@ -328,6 +380,7 @@ export interface ApplyResult {
   stackId: string;
   appliedVersion: number;
   serviceResults: ServiceApplyResult[];
+  resourceResults: ResourceResult[];
   duration: number;
 }
 
@@ -376,6 +429,9 @@ export interface CreateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   networks: StackNetwork[];
   volumes: StackVolume[];
+  tlsCertificates?: StackTlsCertificate[];
+  dnsRecords?: StackDnsRecord[];
+  tunnelIngress?: StackTunnelIngress[];
   services: StackServiceDefinition[];
 }
 
@@ -386,6 +442,9 @@ export interface UpdateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   networks?: StackNetwork[];
   volumes?: StackVolume[];
+  tlsCertificates?: StackTlsCertificate[];
+  dnsRecords?: StackDnsRecord[];
+  tunnelIngress?: StackTunnelIngress[];
   services?: StackServiceDefinition[];
 }
 
