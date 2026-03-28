@@ -61,3 +61,7 @@ coverage/
 
 # Playwright CLI artifacts
 .playwright-cli/
+
+# Superpowers working files
+.superpowers/
+docs/superpowers/

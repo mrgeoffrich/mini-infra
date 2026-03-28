@@ -49,12 +49,6 @@ export class ConfigCrudOperations {
         );
       }
 
-      if (!environment.isActive) {
-        throw new Error(
-          `Environment '${environment.name}' is not active`,
-        );
-      }
-
       // Check for duplicate application name in this environment
       const existing = await this.prisma.deploymentConfiguration.findFirst({
         where: {

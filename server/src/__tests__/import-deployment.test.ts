@@ -24,8 +24,6 @@ describe("importDeploymentConfig", () => {
         name: "test-env",
         description: "Test environment",
         type: "nonproduction",
-        status: "initialized",
-        isActive: true,
       },
     });
     testEnvironmentId = environment.id;
