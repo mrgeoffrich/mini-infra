@@ -118,6 +118,45 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     ],
   },
 
+  "stack-update": {
+    channel: Channel.STACKS,
+    startedEvent: ServerEvent.STACK_APPLY_STARTED,
+    stepEvent: ServerEvent.STACK_APPLY_SERVICE_RESULT,
+    completedEvent: ServerEvent.STACK_APPLY_COMPLETED,
+    getId: (p) => p.stackId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalActions,
+      plannedStepNames: (p.actions as Array<{ serviceName: string; action: string }>).map(
+        (a) => `update ${a.serviceName}`,
+      ),
+    }),
+    normalizeStep: (p) => ({
+      step: `update ${p.serviceName}`,
+      status: p.success ? "completed" : "failed",
+      detail: p.error ?? undefined,
+    }),
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: (p.serviceResults as Array<{ serviceName: string; action: string; success: boolean; error?: string }>).map(
+        (r) => ({
+          step: `update ${r.serviceName}`,
+          status: (r.success ? "completed" : "failed") as OperationStep["status"],
+          detail: r.error ?? undefined,
+        }),
+      ),
+      errors: p.error ? [p.error] : [],
+    }),
+    invalidateKeys: (taskId) => [
+      ["stacks"],
+      ["stack", taskId],
+      ["stackPlan", taskId],
+      ["stackStatus", taskId],
+      ["stackHistory", taskId],
+      ["applications"],
+      ["userStacks"],
+    ],
+  },
+
   "stack-destroy": {
     channel: Channel.STACKS,
     startedEvent: ServerEvent.STACK_DESTROY_STARTED,
