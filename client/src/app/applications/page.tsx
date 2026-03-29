@@ -17,6 +17,7 @@ import {
 import {
   useApplications,
   useDeleteApplication,
+  useDeployApplication,
   useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
@@ -49,7 +50,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ImportDeploymentDialog } from "./import-deployment-dialog";
-import { DeployApplicationDialog } from "./deploy-application-dialog";
 import { UpdateApplicationDialog } from "./update-application-dialog";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
@@ -57,25 +57,27 @@ export default function ApplicationsPage() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useApplications();
   const deleteApplication = useDeleteApplication();
+  const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
-  const [deployTarget, setDeployTarget] = useState<StackTemplateInfo | null>(null);
   const [updateTarget, setUpdateTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
   const userStacks = stacksData?.data ?? [];
 
-  // Build a map from templateId to stack for quick lookup
-  const stackByTemplateId = useMemo(() => {
-    const map = new Map<string, StackInfo>();
+  // Build a map from templateId to all stacks for that template
+  const stacksByTemplateId = useMemo(() => {
+    const map = new Map<string, StackInfo[]>();
     for (const stack of userStacks) {
       if (stack.templateId) {
-        map.set(stack.templateId, stack);
+        const existing = map.get(stack.templateId) ?? [];
+        existing.push(stack);
+        map.set(stack.templateId, existing);
       }
     }
     return map;
@@ -95,18 +97,27 @@ export default function ApplicationsPage() {
     return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
   };
 
-  const handleDeploy = (app: StackTemplateInfo) => {
-    setDeployTarget(app);
+  const handleDeploy = async (app: StackTemplateInfo) => {
+    if (!app.environmentId) return;
+    try {
+      await deployApplication.mutateAsync({
+        templateId: app.id,
+        name: app.name,
+        environmentId: app.environmentId,
+      });
+    } catch {
+      // Error handled by mutation
+    }
   };
 
   const handleStop = async (app: StackTemplateInfo) => {
-    const stack = stackByTemplateId.get(app.id);
-    if (!stack) {
+    const stacks = stacksByTemplateId.get(app.id);
+    if (!stacks || stacks.length === 0) {
       return;
     }
     setStoppingId(app.id);
     try {
-      await stopApplication.mutateAsync(stack.id);
+      await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
     } finally {
       setStoppingId(null);
     }
@@ -290,30 +301,31 @@ export default function ApplicationsPage() {
                       {app.isArchived && (
                         <Badge variant="destructive">Archived</Badge>
                       )}
-                      {stackByTemplateId.has(app.id) && (
-                        <>
+                      {(() => {
+                        const stacks = stacksByTemplateId.get(app.id);
+                        if (!stacks || stacks.length === 0) return null;
+                        // Pick the best stack for display: prefer synced > pending > error
+                        const displayStack = stacks.find((s) => s.status === "synced")
+                          ?? stacks.find((s) => s.status === "pending")
+                          ?? stacks[0];
+                        return (
                           <Badge
                             variant={
-                              stackByTemplateId.get(app.id)?.status === "synced"
+                              displayStack.status === "synced"
                                 ? "default"
                                 : "outline"
                             }
                           >
-                            {stackByTemplateId.get(app.id)?.status === "synced"
+                            {displayStack.status === "synced"
                               ? "Running"
-                              : stackByTemplateId.get(app.id)?.status ?? "Deployed"}
+                              : displayStack.status ?? "Deployed"}
                           </Badge>
-                          {stackByTemplateId.get(app.id)?.environmentId &&
-                            environmentNameById.get(
-                              stackByTemplateId.get(app.id)!.environmentId!,
-                            ) && (
-                              <Badge variant="outline">
-                                {environmentNameById.get(
-                                  stackByTemplateId.get(app.id)!.environmentId!,
-                                )}
-                              </Badge>
-                            )}
-                        </>
+                        );
+                      })()}
+                      {app.environmentId && environmentNameById.get(app.environmentId) && (
+                        <Badge variant="outline" className="text-xs">
+                          {environmentNameById.get(app.environmentId)}
+                        </Badge>
                       )}
                     </div>
 
@@ -330,7 +342,7 @@ export default function ApplicationsPage() {
                         size="sm"
                         variant="outline"
                         className="flex-1"
-                        disabled={!stackByTemplateId.has(app.id)}
+                        disabled={!stacksByTemplateId.has(app.id)}
                         onClick={() => setUpdateTarget(app)}
                       >
                         <IconRefresh className="h-4 w-4 mr-1" />
@@ -340,7 +352,7 @@ export default function ApplicationsPage() {
                         size="sm"
                         variant="outline"
                         className="flex-1"
-                        disabled={stoppingId === app.id || !stackByTemplateId.has(app.id)}
+                        disabled={stoppingId === app.id || !stacksByTemplateId.has(app.id)}
                         onClick={() => handleStop(app)}
                       >
                         {stoppingId === app.id ? (
@@ -359,15 +371,6 @@ export default function ApplicationsPage() {
         )}
       </div>
 
-      {/* Deploy application dialog */}
-      <DeployApplicationDialog
-        open={!!deployTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeployTarget(null);
-        }}
-        application={deployTarget}
-      />
-
       {/* Update application dialog */}
       <UpdateApplicationDialog
         open={!!updateTarget}
@@ -375,7 +378,7 @@ export default function ApplicationsPage() {
           if (!open) setUpdateTarget(null);
         }}
         application={updateTarget}
-        stack={updateTarget ? stackByTemplateId.get(updateTarget.id) ?? null : null}
+        stack={updateTarget ? (stacksByTemplateId.get(updateTarget.id)?.[0] ?? null) : null}
       />
 
       {/* Import deployment dialog */}
