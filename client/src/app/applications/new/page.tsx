@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,8 @@ import {
 } from "@tabler/icons-react";
 import { useCreateApplication } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useDetectImagePorts } from "@/hooks/use-detect-image-ports";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +60,14 @@ const volumeMountSchema = z.object({
   mountPath: z.string().min(1, "Mount path is required"),
 });
 
+const healthCheckSchema = z.object({
+  test: z.string().min(1, "Health check command is required"),
+  interval: z.number().int().min(1, "Must be at least 1s"),
+  timeout: z.number().int().min(1, "Must be at least 1s"),
+  retries: z.number().int().min(1).max(20),
+  startPeriod: z.number().int().min(0),
+});
+
 const routingSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   listeningPort: z.number().int().min(1).max(65535),
@@ -86,6 +96,8 @@ const applicationFormSchema = z.object({
   enableRouting: z.boolean(),
   routing: routingSchema.optional(),
   restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
+  enableHealthCheck: z.boolean(),
+  healthCheck: healthCheckSchema.optional(),
   deployImmediately: z.boolean(),
 });
 
@@ -105,6 +117,8 @@ const defaultValues: ApplicationFormData = {
   enableRouting: false,
   routing: { hostname: "", listeningPort: 8080, enableSsl: false, enableTunnel: false },
   restartPolicy: "unless-stopped",
+  enableHealthCheck: false,
+  healthCheck: { test: "curl -f http://localhost/ || exit 1", interval: 30, timeout: 10, retries: 3, startPeriod: 15 },
   deployImmediately: true,
 };
 
@@ -138,9 +152,14 @@ export default function NewApplicationPage() {
   const { data: envData } = useEnvironments();
   const environments = envData?.environments ?? [];
 
+  const detectPorts = useDetectImagePorts();
+  const [detectedPorts, setDetectedPorts] = useState<number[]>([]);
+  const [useCustomPort, setUseCustomPort] = useState(false);
+
   const selectedEnvId = form.watch("environmentId");
   const serviceType = form.watch("serviceType");
   const enableRouting = form.watch("enableRouting");
+  const enableHealthCheck = form.watch("enableHealthCheck");
 
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
@@ -163,6 +182,33 @@ export default function NewApplicationPage() {
       setFormValue("enableRouting", false);
     }
   }, [selectedEnvId, serviceType, networkType, setFormValue]);
+
+  const handleDetectPorts = async () => {
+    const image = form.getValues("dockerImage");
+    const tag = form.getValues("dockerTag");
+    if (!image || !tag) return;
+
+    try {
+      const ports = await detectPorts.mutateAsync({ image, tag });
+      setDetectedPorts(ports);
+      setUseCustomPort(false);
+      if (ports.length >= 1) {
+        form.setValue("routing.listeningPort", ports[0]);
+      } else {
+        toast.info("No exposed ports found in this image");
+      }
+    } catch {
+      toast.error("Couldn't detect ports — you can set the port manually");
+    }
+  };
+
+  const dockerImage = form.watch("dockerImage");
+  const dockerTag = form.watch("dockerTag");
+
+  useEffect(() => {
+    setDetectedPorts([]);
+    setUseCustomPort(false);
+  }, [dockerImage, dockerTag]);
 
   const onSubmit = async (data: ApplicationFormData) => {
     // Build the template name from display name
@@ -191,6 +237,18 @@ export default function NewApplicationPage() {
       hostPort: p.hostPort,
       protocol: p.protocol,
     }));
+
+    // Build healthcheck
+    const healthcheck =
+      data.enableHealthCheck && data.healthCheck
+        ? {
+            test: ["CMD-SHELL", data.healthCheck.test],
+            interval: data.healthCheck.interval * 1000,
+            timeout: data.healthCheck.timeout * 1000,
+            retries: data.healthCheck.retries,
+            startPeriod: data.healthCheck.startPeriod * 1000,
+          }
+        : undefined;
 
     // Build routing
     const routing =
@@ -228,6 +286,7 @@ export default function NewApplicationPage() {
               mounts: mounts.length > 0 ? mounts : undefined,
               joinNetworks: [`${templateName}-net`],
               restartPolicy: data.restartPolicy,
+              healthcheck,
             },
             dependsOn: [],
             order: 0,
@@ -433,6 +492,19 @@ export default function NewApplicationPage() {
                       />
                     </div>
 
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!form.watch("dockerImage") || !form.watch("dockerTag") || detectPorts.isPending}
+                      onClick={handleDetectPorts}
+                    >
+                      {detectPorts.isPending ? (
+                        <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : null}
+                      Detect Ports
+                    </Button>
+
                     <FormField
                       control={form.control}
                       name="restartPolicy"
@@ -463,6 +535,161 @@ export default function NewApplicationPage() {
                     />
                   </CardContent>
                 </Card>
+
+            {/* Health Check */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Health Check</CardTitle>
+                <CardDescription>
+                  Configure a Docker health check for the container.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="enableHealthCheck"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-3">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="!mt-0">Enable Health Check</FormLabel>
+                    </FormItem>
+                  )}
+                />
+
+                {enableHealthCheck && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="healthCheck.test"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Command</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="curl -f http://localhost/ || exit 1"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Shell command to test container health. Should exit 0 for healthy.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="healthCheck.interval"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Interval (seconds)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                value={field.value || ""}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value ? Number(e.target.value) : 0,
+                                  )
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Time between health checks.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="healthCheck.timeout"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Timeout (seconds)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                value={field.value || ""}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value ? Number(e.target.value) : 0,
+                                  )
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Max time for a single check.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="healthCheck.retries"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Retries</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                value={field.value || ""}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value ? Number(e.target.value) : 0,
+                                  )
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Consecutive failures before unhealthy.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="healthCheck.startPeriod"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Start Period (seconds)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value ? Number(e.target.value) : 0,
+                                  )
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Grace period before checks count.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Port Mappings */}
             <Card>
@@ -746,18 +973,43 @@ export default function NewApplicationPage() {
                           <FormItem>
                             <FormLabel>Listening Port</FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                placeholder="80"
-                                value={field.value || ""}
-                                onChange={(e) =>
-                                  field.onChange(
-                                    e.target.value
-                                      ? Number(e.target.value)
-                                      : 0,
-                                  )
-                                }
-                              />
+                              {detectedPorts.length >= 2 && !useCustomPort ? (
+                                <Select
+                                  value={String(field.value)}
+                                  onValueChange={(val) => {
+                                    if (val === "custom") {
+                                      setUseCustomPort(true);
+                                    } else {
+                                      field.onChange(Number(val));
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {detectedPorts.map((port) => (
+                                      <SelectItem key={port} value={String(port)}>
+                                        {port}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value="custom">Custom...</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  placeholder="80"
+                                  value={field.value || ""}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value
+                                        ? Number(e.target.value)
+                                        : 0,
+                                    )
+                                  }
+                                />
+                              )}
                             </FormControl>
                             <FormDescription>
                               The port your application listens on inside the
