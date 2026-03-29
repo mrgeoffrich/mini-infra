@@ -431,14 +431,34 @@ export function useCreateApplication() {
 
   return useMutation({
     mutationFn: async (request: CreateStackTemplateRequest) => {
+      // Create template
       const result = await createApplication(request, correlationId);
       // Publish the draft immediately
       await publishApplication(result.data.id, correlationId);
+
+      // If deployImmediately, instantiate and apply
+      if (request.deployImmediately && request.environmentId) {
+        const stackResult = await instantiateApplication(
+          result.data.id,
+          { name: result.data.name, environmentId: request.environmentId },
+          correlationId,
+        );
+        // Apply is fire-and-forget (progress via Socket.IO)
+        await applyStack(stackResult.data.id, correlationId);
+      }
+
       return result;
     },
-    onSuccess: () => {
-      toast.success("Application created successfully");
+    onSuccess: (_data, variables) => {
+      const message = variables.deployImmediately
+        ? "Application created and deployment started"
+        : "Application created successfully";
+      toast.success(message);
       queryClient.invalidateQueries({ queryKey: ["applications"] });
+      if (variables.deployImmediately) {
+        queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+        queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      }
     },
     onError: (error: Error) => {
       toast.error(`Failed to create application: ${error.message}`);
