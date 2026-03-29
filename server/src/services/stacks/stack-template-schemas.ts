@@ -37,6 +37,7 @@ export const createTemplateSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
   scope: z.enum(["host", "environment"]),
+  environmentId: z.string().min(1).optional(),
   category: z.string().max(100).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   defaultParameterValues: parameterValuesSchema.optional(),
