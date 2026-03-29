@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +10,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useCreateApplication } from "@/hooks/use-applications";
+import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +62,7 @@ const routingSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   listeningPort: z.number().int().min(1).max(65535),
   enableSsl: z.boolean().optional(),
+  enableTunnel: z.boolean().optional(),
 });
 
 const applicationFormSchema = z.object({
@@ -74,6 +77,7 @@ const applicationFormSchema = z.object({
       "Must be lowercase, alphanumeric with hyphens, no leading/trailing hyphens",
     ),
   serviceType: z.enum(["Stateful", "StatelessWeb"]),
+  environmentId: z.string().optional(),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Tag is required"),
   ports: z.array(portMappingSchema),
@@ -82,6 +86,7 @@ const applicationFormSchema = z.object({
   enableRouting: z.boolean(),
   routing: routingSchema.optional(),
   restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
+  deployImmediately: z.boolean(),
 });
 
 type ApplicationFormData = z.infer<typeof applicationFormSchema>;
@@ -91,14 +96,16 @@ const defaultValues: ApplicationFormData = {
   description: "",
   serviceName: "",
   serviceType: "Stateful",
+  environmentId: undefined,
   dockerImage: "",
   dockerTag: "latest",
   ports: [],
   envVars: [],
   volumeMounts: [],
   enableRouting: false,
-  routing: undefined,
+  routing: { hostname: "", listeningPort: 8080, enableSsl: false, enableTunnel: false },
   restartPolicy: "unless-stopped",
+  deployImmediately: true,
 };
 
 export default function NewApplicationPage() {
@@ -128,8 +135,32 @@ export default function NewApplicationPage() {
     remove: removeVolume,
   } = useFieldArray({ control: form.control, name: "volumeMounts" });
 
+  const { data: envData } = useEnvironments();
+  const environments = envData?.environments ?? [];
+
+  const selectedEnvId = form.watch("environmentId");
   const serviceType = form.watch("serviceType");
   const enableRouting = form.watch("enableRouting");
+
+  const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
+  const networkType = selectedEnvironment?.networkType;
+
+  useEffect(() => {
+    if (!selectedEnvId || !serviceType) return;
+
+    if (serviceType === "StatelessWeb") {
+      form.setValue("enableRouting", true);
+      if (networkType === "local") {
+        form.setValue("routing.enableSsl", true);
+        form.setValue("routing.enableTunnel", false);
+      } else if (networkType === "internet") {
+        form.setValue("routing.enableSsl", false);
+        form.setValue("routing.enableTunnel", true);
+      }
+    } else {
+      form.setValue("enableRouting", false);
+    }
+  }, [selectedEnvId, serviceType, networkType]);
 
   const onSubmit = async (data: ApplicationFormData) => {
     // Build the template name from display name
@@ -165,7 +196,8 @@ export default function NewApplicationPage() {
         ? {
             hostname: data.routing.hostname,
             listeningPort: data.routing.listeningPort,
-            enableSsl: data.routing.enableSsl,
+            ...(data.routing.enableSsl ? { tlsCertificate: data.routing.hostname } : {}),
+            ...(data.routing.enableTunnel ? { tunnelIngress: data.routing.hostname } : {}),
           }
         : undefined;
 
@@ -177,7 +209,9 @@ export default function NewApplicationPage() {
         name: templateName,
         displayName: data.displayName,
         description: data.description || undefined,
-        scope: "host",
+        scope: "environment",
+        environmentId: data.environmentId,
+        deployImmediately: data.deployImmediately,
         networks,
         volumes,
         services: [
@@ -326,58 +360,27 @@ export default function NewApplicationPage() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="dockerImage"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Docker Image</FormLabel>
-                        <FormControl>
-                          <Input placeholder="nginx" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="dockerTag"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tag</FormLabel>
-                        <FormControl>
-                          <Input placeholder="latest" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
                 <FormField
                   control={form.control}
-                  name="restartPolicy"
+                  name="environmentId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Restart Policy</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
+                      <FormLabel>Environment</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select an environment" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="no">No</SelectItem>
-                          <SelectItem value="always">Always</SelectItem>
-                          <SelectItem value="unless-stopped">
-                            Unless Stopped
-                          </SelectItem>
-                          <SelectItem value="on-failure">On Failure</SelectItem>
+                          {environments.map((env) => (
+                            <SelectItem key={env.id} value={env.id}>
+                              {env.name}
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                ({env.networkType})
+                              </span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -386,6 +389,78 @@ export default function NewApplicationPage() {
                 />
               </CardContent>
             </Card>
+
+            {serviceType && selectedEnvId && (
+              <>
+                {/* Docker Image & Container Config */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Container Configuration</CardTitle>
+                    <CardDescription>
+                      Configure the Docker image and container settings.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="dockerImage"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Docker Image</FormLabel>
+                            <FormControl>
+                              <Input placeholder="nginx" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="dockerTag"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Tag</FormLabel>
+                            <FormControl>
+                              <Input placeholder="latest" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="restartPolicy"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Restart Policy</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="no">No</SelectItem>
+                              <SelectItem value="always">Always</SelectItem>
+                              <SelectItem value="unless-stopped">
+                                Unless Stopped
+                              </SelectItem>
+                              <SelectItem value="on-failure">On Failure</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
 
             {/* Port Mappings */}
             <Card>
@@ -691,26 +766,62 @@ export default function NewApplicationPage() {
                         )}
                       />
 
-                      <FormField
-                        control={form.control}
-                        name="routing.enableSsl"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center gap-3">
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0">Enable SSL</FormLabel>
-                          </FormItem>
-                        )}
-                      />
+                      {networkType === "local" && (
+                        <FormField
+                          control={form.control}
+                          name="routing.enableSsl"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-3">
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="!mt-0">Enable SSL</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
+                      {networkType === "internet" && (
+                        <FormField
+                          control={form.control}
+                          name="routing.enableTunnel"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-3">
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="!mt-0">Enable Cloudflare Tunnel</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      )}
                     </>
                   )}
                 </CardContent>
               </Card>
             )}
+              </>
+            )}
+
+            {/* Deploy Immediately */}
+            <FormField
+              control={form.control}
+              name="deployImmediately"
+              render={({ field }) => (
+                <FormItem className="flex items-center gap-2">
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <FormLabel className="!mt-0">Deploy immediately after creation</FormLabel>
+                </FormItem>
+              )}
+            />
 
             {/* Submit */}
             <div className="flex gap-3">
@@ -728,7 +839,7 @@ export default function NewApplicationPage() {
                 {createApplication.isPending && (
                   <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                 )}
-                Create Application
+                {form.watch("deployImmediately") ? "Create & Deploy" : "Create Application"}
               </Button>
             </div>
           </form>
