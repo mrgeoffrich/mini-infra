@@ -379,6 +379,7 @@ model Environment {
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
   stacks           Stack[]
+  stackTemplates   StackTemplate[]
 
   @@index([type])
   @@index([networkType])
@@ -1296,6 +1297,8 @@ model StackTemplate {
   source           StackTemplateSource  // system | user
   scope            StackTemplateScope   // host | environment
   category         String?
+  environmentId    String?
+  environment      Environment?         @relation(fields: [environmentId], references: [id])
   isArchived       Boolean              @default(false)
 
   // Pointer to the live published version (null until first publish)
@@ -1319,6 +1322,7 @@ model StackTemplate {
   @@index([source])
   @@index([scope])
   @@index([isArchived])
+  @@index([environmentId])
   @@map("stack_templates")
 }
 
