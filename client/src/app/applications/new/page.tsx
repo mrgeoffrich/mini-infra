@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,8 @@ import {
 } from "@tabler/icons-react";
 import { useCreateApplication } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useDetectImagePorts } from "@/hooks/use-detect-image-ports";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -150,6 +152,10 @@ export default function NewApplicationPage() {
   const { data: envData } = useEnvironments();
   const environments = envData?.environments ?? [];
 
+  const detectPorts = useDetectImagePorts();
+  const [detectedPorts, setDetectedPorts] = useState<number[]>([]);
+  const [useCustomPort, setUseCustomPort] = useState(false);
+
   const selectedEnvId = form.watch("environmentId");
   const serviceType = form.watch("serviceType");
   const enableRouting = form.watch("enableRouting");
@@ -176,6 +182,33 @@ export default function NewApplicationPage() {
       setFormValue("enableRouting", false);
     }
   }, [selectedEnvId, serviceType, networkType, setFormValue]);
+
+  const handleDetectPorts = async () => {
+    const image = form.getValues("dockerImage");
+    const tag = form.getValues("dockerTag");
+    if (!image || !tag) return;
+
+    try {
+      const ports = await detectPorts.mutateAsync({ image, tag });
+      setDetectedPorts(ports);
+      setUseCustomPort(false);
+      if (ports.length >= 1) {
+        form.setValue("routing.listeningPort", ports[0]);
+      } else {
+        toast.info("No exposed ports found in this image");
+      }
+    } catch {
+      toast.error("Couldn't detect ports — you can set the port manually");
+    }
+  };
+
+  const dockerImage = form.watch("dockerImage");
+  const dockerTag = form.watch("dockerTag");
+
+  useEffect(() => {
+    setDetectedPorts([]);
+    setUseCustomPort(false);
+  }, [dockerImage, dockerTag]);
 
   const onSubmit = async (data: ApplicationFormData) => {
     // Build the template name from display name
@@ -458,6 +491,19 @@ export default function NewApplicationPage() {
                         )}
                       />
                     </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!form.watch("dockerImage") || !form.watch("dockerTag") || detectPorts.isPending}
+                      onClick={handleDetectPorts}
+                    >
+                      {detectPorts.isPending ? (
+                        <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : null}
+                      Detect Ports
+                    </Button>
 
                     <FormField
                       control={form.control}
@@ -927,18 +973,43 @@ export default function NewApplicationPage() {
                           <FormItem>
                             <FormLabel>Listening Port</FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                placeholder="80"
-                                value={field.value || ""}
-                                onChange={(e) =>
-                                  field.onChange(
-                                    e.target.value
-                                      ? Number(e.target.value)
-                                      : 0,
-                                  )
-                                }
-                              />
+                              {detectedPorts.length >= 2 && !useCustomPort ? (
+                                <Select
+                                  value={String(field.value)}
+                                  onValueChange={(val) => {
+                                    if (val === "custom") {
+                                      setUseCustomPort(true);
+                                    } else {
+                                      field.onChange(Number(val));
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {detectedPorts.map((port) => (
+                                      <SelectItem key={port} value={String(port)}>
+                                        {port}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value="custom">Custom...</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  type="number"
+                                  placeholder="80"
+                                  value={field.value || ""}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value
+                                        ? Number(e.target.value)
+                                        : 0,
+                                    )
+                                  }
+                                />
+                              )}
                             </FormControl>
                             <FormDescription>
                               The port your application listens on inside the
