@@ -100,6 +100,47 @@ describe("ImageInspectService", () => {
       expect(manifestCall[1].headers.Authorization).toMatch(/^Basic /);
     });
 
+    it("resolves manifest list to amd64/linux and returns ports", async () => {
+      // Token exchange
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: "test-token" }),
+      });
+      // Manifest list response (multi-arch)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          mediaType: "application/vnd.oci.image.index.v1+json",
+          manifests: [
+            { digest: "sha256:amd64digest", platform: { architecture: "amd64", os: "linux" } },
+            { digest: "sha256:armdigest", platform: { architecture: "arm64", os: "linux" } },
+          ],
+        }),
+      });
+      // Resolved amd64 manifest
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          config: { digest: "sha256:configdigest" },
+        }),
+      });
+      // Config blob
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          config: {
+            ExposedPorts: { "80/tcp": {} },
+          },
+        }),
+      });
+
+      const ports = await service.getExposedPorts("nginx", "latest");
+
+      expect(ports).toEqual([80]);
+      // Should have made 4 fetch calls: token, manifest list, arch manifest, config blob
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
+
     it("returns empty array when image has no exposed ports", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

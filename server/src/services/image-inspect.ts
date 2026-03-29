@@ -65,11 +65,16 @@ export class ImageInspectService {
       ? `http://${ref.registry}`
       : `https://${ref.registry}`;
 
-    // 1. Fetch manifest
+    // 1. Fetch manifest (may be a manifest list for multi-arch images)
     const manifestUrl = `${registryBase}/v2/${ref.repository}/manifests/${tag}`;
     const manifestRes = await this.fetchWithTimeout(manifestUrl, {
       headers: {
-        Accept: "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json",
+        Accept: [
+          "application/vnd.docker.distribution.manifest.v2+json",
+          "application/vnd.oci.image.manifest.v1+json",
+          "application/vnd.docker.distribution.manifest.list.v2+json",
+          "application/vnd.oci.image.index.v1+json",
+        ].join(", "),
         ...(authHeader ? { Authorization: authHeader } : {}),
       },
     });
@@ -80,7 +85,38 @@ export class ImageInspectService {
       throw new Error(`Registry returned ${manifestRes.status}`);
     }
 
-    const manifest = await manifestRes.json();
+    let manifest = await manifestRes.json();
+
+    // Handle manifest list (multi-arch) — resolve to amd64/linux manifest
+    if (manifest.manifests && !manifest.config) {
+      const amd64 = manifest.manifests.find(
+        (m: any) => m.platform?.architecture === "amd64" && m.platform?.os === "linux",
+      ) ?? manifest.manifests.find(
+        (m: any) => m.platform?.os === "linux",
+      ) ?? manifest.manifests[0];
+
+      if (!amd64?.digest) {
+        logger.warn({ image, tag }, "Manifest list has no resolvable entry");
+        return [];
+      }
+
+      const archManifestRes = await this.fetchWithTimeout(
+        `${registryBase}/v2/${ref.repository}/manifests/${amd64.digest}`,
+        {
+          headers: {
+            Accept: "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json",
+            ...(authHeader ? { Authorization: authHeader } : {}),
+          },
+        },
+      );
+
+      if (!archManifestRes.ok) {
+        throw new Error(`Failed to fetch arch manifest: ${archManifestRes.status}`);
+      }
+
+      manifest = await archManifestRes.json();
+    }
+
     const configDigest = manifest.config?.digest;
     if (!configDigest) {
       logger.warn({ image, tag }, "Manifest has no config digest");
