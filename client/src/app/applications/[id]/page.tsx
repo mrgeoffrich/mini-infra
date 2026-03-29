@@ -11,7 +11,9 @@ import {
   IconAlertCircle,
 } from "@tabler/icons-react";
 import { useApplication, useUpdateApplication } from "@/hooks/use-applications";
+import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -64,6 +66,7 @@ const routingSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   listeningPort: z.number().int().min(1).max(65535),
   enableSsl: z.boolean().optional(),
+  enableTunnel: z.boolean().optional(),
 });
 
 const applicationFormSchema = z.object({
@@ -95,6 +98,13 @@ export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, error } = useApplication(id ?? "");
   const updateApplication = useUpdateApplication();
+  const { data: envData } = useEnvironments();
+  const environments = envData?.environments ?? [];
+
+  const application = data?.data;
+  const boundEnvironmentId = application?.environmentId;
+  const boundEnvironment = environments.find((e) => e.id === boundEnvironmentId);
+  const networkType = boundEnvironment?.networkType;
 
   const form = useForm<ApplicationFormData>({
     resolver: zodResolver(applicationFormSchema),
@@ -182,6 +192,7 @@ export default function ApplicationDetailPage() {
             hostname: service.routing.hostname,
             listeningPort: service.routing.listeningPort,
             enableSsl: !!service.routing.tlsCertificate,
+            enableTunnel: !!service.routing.tunnelIngress,
           }
         : undefined,
       restartPolicy:
@@ -226,7 +237,8 @@ export default function ApplicationDetailPage() {
         ? {
             hostname: formData.routing.hostname,
             listeningPort: formData.routing.listeningPort,
-            enableSsl: formData.routing.enableSsl,
+            ...(formData.routing.enableSsl ? { tlsCertificate: formData.routing.hostname } : {}),
+            ...(formData.routing.enableTunnel ? { tunnelIngress: formData.routing.hostname } : {}),
           }
         : undefined;
 
@@ -375,6 +387,18 @@ export default function ApplicationDetailPage() {
                     </FormItem>
                   )}
                 />
+
+                {boundEnvironment && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Environment</label>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{boundEnvironment.name}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        ({boundEnvironment.networkType})
+                      </span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -786,21 +810,41 @@ export default function ApplicationDetailPage() {
                         )}
                       />
 
-                      <FormField
-                        control={form.control}
-                        name="routing.enableSsl"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center gap-3">
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0">Enable SSL</FormLabel>
-                          </FormItem>
-                        )}
-                      />
+                      {networkType === "local" && (
+                        <FormField
+                          control={form.control}
+                          name="routing.enableSsl"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-3">
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="!mt-0">Enable SSL</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
+                      {networkType === "internet" && (
+                        <FormField
+                          control={form.control}
+                          name="routing.enableTunnel"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-3">
+                              <FormControl>
+                                <Switch
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormLabel className="!mt-0">Enable Cloudflare Tunnel</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      )}
                     </>
                   )}
                 </CardContent>
