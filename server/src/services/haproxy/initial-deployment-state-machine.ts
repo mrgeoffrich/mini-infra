@@ -297,10 +297,9 @@ export const initialDeploymentMachine = setup({
             }
         }),
         resetState: assign(() => ({
-            // Keep deployment identifiers and environment context
+            // Keep deployment identifiers, environment context, and container name from input
             // Only reset deployment state
             containerId: undefined,
-            containerName: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
             applicationReady: false,

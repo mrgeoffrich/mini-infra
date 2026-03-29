@@ -5,43 +5,34 @@ import { DeployApplicationContainers } from './actions/deploy-application-contai
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
-import { ConfigureFrontend } from './actions/configure-frontend';
-import { ConfigureDNS } from './actions/configure-dns';
 import { InitiateDrain } from './actions/initiate-drain';
 import { MonitorDrain } from './actions/monitor-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
-import { DisableTraffic } from './actions/disable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
 import { EnableTraffic } from './actions/enable-traffic';
-import { RemoveFrontend } from './actions/remove-frontend';
-import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
 
 // Create instances of action classes
 const deployApplicationContainers = new DeployApplicationContainers();
 const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
-const configureFrontend = new ConfigureFrontend();
-const configureDNS = new ConfigureDNS();
 const initiateDrain = new InitiateDrain();
 const monitorDrain = new MonitorDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
 const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
-const disableTraffic = new DisableTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
 const enableTraffic = new EnableTraffic();
-const removeFrontend = new RemoveFrontend();
 
 // Types for context and events
-// Note in a blue green deployment Blue is the old container set, Green is the new container set
-interface BlueGreenDeploymentContext {
+// Note in a blue green update Blue is the old container set, Green is the new container set
+interface BlueGreenUpdateContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -62,8 +53,6 @@ interface BlueGreenDeploymentContext {
     blueHealthy: boolean;
     greenHealthy: boolean;
     greenBackendConfigured: boolean;
-    frontendConfigured: boolean;
-    dnsConfigured: boolean;
     trafficOpenedToGreen: boolean;
     trafficValidated: boolean;
     blueDraining: boolean;
@@ -79,8 +68,6 @@ interface BlueGreenDeploymentContext {
     containerName?: string;
     containerIpAddress?: string;
     containerPort?: number;
-    frontendName?: string;
-    dnsRecordId?: string;
 
     // Deployment metadata
     triggerType: string;
@@ -108,7 +95,7 @@ interface BlueGreenDeploymentContext {
     containerNetworks?: string[];
 }
 
-type BlueGreenDeploymentEvent =
+type BlueGreenUpdateEvent =
     // Deployment initiation
     | { type: 'START_DEPLOYMENT' }
 
@@ -125,14 +112,6 @@ type BlueGreenDeploymentEvent =
     // Health check events
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT' }
-
-    // Frontend and DNS configuration events
-    | { type: 'FRONTEND_CONFIGURED'; frontendName?: string; hostname?: string; backendName?: string }
-    | { type: 'FRONTEND_CONFIG_SKIPPED'; message?: string }
-    | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
-    | { type: 'DNS_CONFIGURED'; dnsRecordId?: string; hostname?: string }
-    | { type: 'DNS_CONFIG_SKIPPED'; message?: string; networkType?: string }
-    | { type: 'DNS_CONFIG_ERROR'; error: string }
 
     // Traffic management events
     | { type: 'TRAFFIC_ENABLED' }
@@ -160,7 +139,6 @@ type BlueGreenDeploymentEvent =
 
     // Rollback events
     | { type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' }
-    | { type: 'ROLLBACK_GREEN_TRAFFIC_DISABLED' }
     | { type: 'ROLLBACK_GREEN_CONFIG_REMOVED' }
     | { type: 'ROLLBACK_GREEN_APP_STOPPED' }
     | { type: 'ROLLBACK_GREEN_APP_REMOVED' }
@@ -173,12 +151,12 @@ type BlueGreenDeploymentEvent =
     | { type: 'RESET' }
     | { type: 'MANUAL_INTERVENTION_COMPLETE' };
 
-// The Blue-Green Update Deployment State Machine using setup
-export const blueGreenDeploymentMachine = setup({
+// The Blue-Green Update State Machine using setup
+export const blueGreenUpdateMachine = setup({
     types: {
-        context: {} as BlueGreenDeploymentContext,
-        events: {} as BlueGreenDeploymentEvent,
-        input: {} as BlueGreenDeploymentContext
+        context: {} as BlueGreenUpdateContext,
+        events: {} as BlueGreenUpdateEvent,
+        input: {} as BlueGreenUpdateContext
     },
     actions: {
         // Green deployment actions
@@ -226,29 +204,6 @@ export const blueGreenDeploymentMachine = setup({
                 containerId: context.newContainerId
             };
             performHealthChecks.execute(contextWithContainerId, (event) => self.send(event));
-        },
-
-        // Frontend and DNS configuration actions
-        configureGreenFrontend: ({ context, self }) => {
-            configureFrontend.execute(context, (event) => {
-                self.send(event);
-            }).catch((error) => {
-                self.send({
-                    type: 'FRONTEND_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
-                });
-            });
-        },
-
-        configureGreenDNS: ({ context, self }) => {
-            configureDNS.execute(context, (event) => {
-                self.send(event);
-            }).catch((error) => {
-                self.send({
-                    type: 'DNS_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
-                });
-            });
         },
 
         // Traffic management actions
@@ -347,15 +302,6 @@ export const blueGreenDeploymentMachine = setup({
                     self.send(event);
                 }
             });
-        },
-
-        disableGreenTraffic: ({ context, self }) => {
-            // Map newContainerId to containerId for the action
-            const contextWithContainerId = {
-                ...context,
-                containerId: context.newContainerId
-            };
-            disableTraffic.execute(contextWithContainerId, (event) => self.send(event));
         },
 
         removeGreenHAProxyConfig: ({ context, self }) => {
@@ -481,35 +427,6 @@ export const blueGreenDeploymentMachine = setup({
                         }, 'Failed to remove container from HAProxy during cleanup');
                     }
 
-                    // Check if backend is empty and clean up frontend routes + orphaned backends
-                    try {
-                        if (context.haproxyContainerId && context.applicationName) {
-                            const cleanupClient = new HAProxyDataPlaneClient();
-                            await cleanupClient.initialize(context.haproxyContainerId);
-                            const remainingServers = await cleanupClient.listServers(context.applicationName);
-
-                            if (!remainingServers || remainingServers.length === 0) {
-                                logger.info({
-                                    deploymentId: context.deploymentId,
-                                    backendName: context.applicationName
-                                }, 'Backend has no remaining servers, cleaning up frontend routes and orphaned backend');
-
-                                await removeFrontend.execute(context, () => {});
-
-                                logger.info({
-                                    deploymentId: context.deploymentId,
-                                    backendName: context.applicationName
-                                }, 'Frontend route and orphaned backend cleanup completed');
-                            }
-                        }
-                    } catch (frontendCleanupError) {
-                        logger.warn({
-                            deploymentId: context.deploymentId,
-                            applicationName: context.applicationName,
-                            error: frontendCleanupError instanceof Error ? frontendCleanupError.message : 'Unknown error'
-                        }, 'Failed to clean up frontend routes/orphaned backend during cleanup (non-critical)');
-                    }
-
                     // Try to stop and remove the container
                     try {
                         const contextWithContainerId = {
@@ -564,8 +481,6 @@ export const blueGreenDeploymentMachine = setup({
             blueHealthy: false,
             greenHealthy: false,
             greenBackendConfigured: false,
-            frontendConfigured: false,
-            dnsConfigured: false,
             trafficOpenedToGreen: false,
             trafficValidated: false,
             blueDraining: false,
@@ -579,8 +494,6 @@ export const blueGreenDeploymentMachine = setup({
             newContainerId: undefined,
             containerIpAddress: undefined,
             containerPort: undefined,
-            frontendName: undefined,
-            dnsRecordId: undefined,
         }))
     },
     guards: {
@@ -617,9 +530,9 @@ export const blueGreenDeploymentMachine = setup({
         }
     }
 }).createMachine({
-    id: 'blueGreenDeployment',
+    id: 'blueGreenUpdate',
     initial: 'idle',
-    context: ({ input }: { input: BlueGreenDeploymentContext }) => ({
+    context: ({ input }: { input: BlueGreenUpdateContext }) => ({
         // Use input data if provided, otherwise use defaults
         deploymentId: input?.deploymentId || "",
         configurationId: input?.configurationId || "",
@@ -640,8 +553,6 @@ export const blueGreenDeploymentMachine = setup({
         blueHealthy: false,
         greenHealthy: false,
         greenBackendConfigured: false,
-        frontendConfigured: false,
-        dnsConfigured: false,
         trafficOpenedToGreen: false,
         trafficValidated: false,
         blueDraining: false,
@@ -654,8 +565,6 @@ export const blueGreenDeploymentMachine = setup({
         containerName: input?.containerName,
         containerIpAddress: input?.containerIpAddress,
         containerPort: input?.containerPort,
-        frontendName: undefined,
-        dnsRecordId: undefined,
 
         // Deployment metadata
         triggerType: input?.triggerType || "manual",
@@ -924,7 +833,7 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'performGreenHealthChecks',
             on: {
                 SERVERS_HEALTHY: {
-                    target: 'configuringFrontend',
+                    target: 'openingTraffic',
                     actions: assign({ greenHealthy: true })
                 },
                 HEALTH_CHECK_TIMEOUT: {
@@ -940,60 +849,6 @@ export const blueGreenDeploymentMachine = setup({
             }
         },
 
-        configuringFrontend: {
-            description: 'Configuring HAProxy frontend with hostname routing for green deployment',
-            entry: 'configureGreenFrontend',
-            on: {
-                FRONTEND_CONFIGURED: {
-                    target: 'configuringDNS',
-                    actions: assign({
-                        frontendConfigured: true,
-                        frontendName: ({ event }) => {
-                            if (event.type === 'FRONTEND_CONFIGURED') {
-                                return event.frontendName;
-                            }
-                            return undefined;
-                        }
-                    })
-                },
-                FRONTEND_CONFIG_SKIPPED: {
-                    target: 'configuringDNS',
-                    actions: assign({ frontendConfigured: false })
-                },
-                FRONTEND_CONFIG_ERROR: {
-                    target: 'rollbackRemoveGreenHaproxyConfig',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
-        configuringDNS: {
-            description: 'Configuring DNS records for green deployment',
-            entry: 'configureGreenDNS',
-            on: {
-                DNS_CONFIGURED: {
-                    target: 'openingTraffic',
-                    actions: assign({
-                        dnsConfigured: true,
-                        dnsRecordId: ({ event }) => {
-                            if (event.type === 'DNS_CONFIGURED') {
-                                return event.dnsRecordId;
-                            }
-                            return undefined;
-                        }
-                    })
-                },
-                DNS_CONFIG_SKIPPED: {
-                    target: 'openingTraffic',
-                    actions: assign({ dnsConfigured: false })
-                },
-                DNS_CONFIG_ERROR: {
-                    target: 'rollbackRemoveGreenHaproxyConfig',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
         openingTraffic: {
             description: 'Enabling traffic to green environment alongside blue',
             entry: 'openTrafficToGreen',
@@ -1003,7 +858,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: assign({ trafficOpenedToGreen: true, trafficValidated: true })
                 },
                 TRAFFIC_ENABLE_FAILED: {
-                    target: 'rollbackDisableGreenTraffic',
+                    target: 'rollbackRemoveGreenHaproxyConfig',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -1163,20 +1018,6 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'restoreBlueTraffic',
             on: {
                 ROLLBACK_BLUE_TRAFFIC_RESTORED: {
-                    target: 'rollbackDisableGreenTraffic'
-                },
-                ROLLBACK_ERROR: {
-                    target: 'rollbackDisableGreenTraffic',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
-        rollbackDisableGreenTraffic: {
-            description: 'Disabling traffic to green environment during rollback',
-            entry: 'disableGreenTraffic',
-            on: {
-                ROLLBACK_GREEN_TRAFFIC_DISABLED: {
                     target: 'rollbackRemoveGreenHaproxyConfig'
                 },
                 ROLLBACK_ERROR: {

@@ -603,6 +603,99 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
   }
 });
 
+// POST /:stackId/update — Pull latest images and redeploy changed containers
+router.post('/:stackId/update', requirePermission('stacks:write'), async (req, res) => {
+  const stackId = String(req.params.stackId);
+  try {
+    // Prevent concurrent operations on the same stack
+    if (applyingStacks.has(stackId)) {
+      return res.status(409).json({ success: false, message: 'Stack operation already in progress' });
+    }
+
+    // Validate stack exists and is deployed
+    const stack = await prisma.stack.findUnique({
+      where: { id: stackId },
+      select: { id: true, name: true, status: true },
+    });
+    if (!stack) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+    if (stack.status !== 'synced' && stack.status !== 'drifted') {
+      return res.status(400).json({
+        success: false,
+        message: `Stack must be deployed to update (current status: ${stack.status})`,
+      });
+    }
+
+    const dockerExecutor = new DockerExecutorService();
+    await dockerExecutor.initialize();
+    const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+    const resourceReconciler = await createResourceReconciler();
+    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
+
+    applyingStacks.add(stackId);
+
+    // Emit started event — use same STACK_APPLY events with action context
+    const plan = await reconciler.plan(stackId);
+    const startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'update' }));
+
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+      stackId,
+      stackName: plan.stackName,
+      totalActions: startedActions.length,
+      actions: startedActions,
+      forcePull: true,
+    });
+
+    // Respond immediately
+    res.json({ success: true, data: { started: true, stackId } });
+
+    // Run update in background
+    const triggeredBy = (req as any).user?.id;
+    (async () => {
+      try {
+        const result = await reconciler.update(stackId, {
+          triggeredBy,
+          onProgress: (serviceResult, completedCount, totalActions) => {
+            try {
+              emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
+                stackId,
+                ...serviceResult,
+                completedCount,
+                totalActions,
+              } as any);
+            } catch { /* never break update */ }
+          },
+        });
+
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
+          ...result,
+        });
+      } catch (error: any) {
+        logger.error({ error: error.message, stackId }, 'Background stack update failed');
+        emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
+          success: false,
+          stackId,
+          appliedVersion: 0,
+          serviceResults: [],
+          resourceResults: [],
+          duration: 0,
+          error: error.message,
+        });
+      } finally {
+        applyingStacks.delete(stackId);
+      }
+    })();
+  } catch (error: any) {
+    applyingStacks.delete(stackId);
+    if (isDockerConnectionError(error)) {
+      return res.status(503).json({ success: false, message: 'Docker is unavailable' });
+    }
+    logger.error({ error, stackId }, 'Failed to start stack update');
+    res.status(500).json({ success: false, message: error?.message ?? 'Failed to update stack' });
+  }
+});
+
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, and DB record
 router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, res) => {
   const stackId = String(req.params.stackId);

@@ -71,6 +71,7 @@ export interface StackInitCommand {
 export interface StackServiceRouting {
   hostname: string;
   listeningPort: number;
+  healthCheckEndpoint?: string;
   tlsCertificate?: string;
   dnsRecord?: string;
   tunnelIngress?: string;
@@ -381,6 +382,12 @@ export interface ApplyOptions {
   plan?: StackPlan;
   /** Called after each service or resource action completes */
   onProgress?: (result: ServiceApplyResult | ResourceResult, completedCount: number, totalActions: number) => void;
+}
+
+export interface UpdateOptions {
+  triggeredBy?: string;
+  /** Called after each service action completes */
+  onProgress?: (result: ServiceApplyResult, completedCount: number, totalActions: number) => void;
 }
 
 export interface ApplyResult {

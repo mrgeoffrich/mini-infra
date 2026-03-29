@@ -13,6 +13,7 @@ export type TaskType =
   | "connect-container"
   | "stack-apply"
   | "stack-destroy"
+  | "stack-update"
   | "migration"
   | "sidecar-startup"
   | "self-update-launch";

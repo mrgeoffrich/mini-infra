@@ -6,6 +6,7 @@ import {
   IconFileImport,
   IconPlayerPlay,
   IconPlayerStop,
+  IconRefresh,
   IconDots,
   IconPencil,
   IconTrash,
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ImportDeploymentDialog } from "./import-deployment-dialog";
 import { DeployApplicationDialog } from "./deploy-application-dialog";
+import { UpdateApplicationDialog } from "./update-application-dialog";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
 export default function ApplicationsPage() {
@@ -62,6 +64,7 @@ export default function ApplicationsPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
   const [deployTarget, setDeployTarget] = useState<StackTemplateInfo | null>(null);
+  const [updateTarget, setUpdateTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
@@ -327,6 +330,16 @@ export default function ApplicationsPage() {
                         size="sm"
                         variant="outline"
                         className="flex-1"
+                        disabled={!stackByTemplateId.has(app.id)}
+                        onClick={() => setUpdateTarget(app)}
+                      >
+                        <IconRefresh className="h-4 w-4 mr-1" />
+                        Update
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
                         disabled={stoppingId === app.id || !stackByTemplateId.has(app.id)}
                         onClick={() => handleStop(app)}
                       >
@@ -353,6 +366,16 @@ export default function ApplicationsPage() {
           if (!open) setDeployTarget(null);
         }}
         application={deployTarget}
+      />
+
+      {/* Update application dialog */}
+      <UpdateApplicationDialog
+        open={!!updateTarget}
+        onOpenChange={(open) => {
+          if (!open) setUpdateTarget(null);
+        }}
+        application={updateTarget}
+        stack={updateTarget ? stackByTemplateId.get(updateTarget.id) ?? null : null}
       />
 
       {/* Import deployment dialog */}

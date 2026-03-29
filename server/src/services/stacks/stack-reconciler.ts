@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import Docker from 'dockerode';
 import { PrismaClient } from '@prisma/client';
 import {
@@ -15,6 +16,7 @@ import {
   StackVolume,
   ApplyOptions,
   ApplyResult,
+  UpdateOptions,
   DestroyResult,
   ServiceApplyResult,
   ResourceResult,
@@ -29,6 +31,7 @@ import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
 import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
 import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
+import { blueGreenUpdateMachine } from '../haproxy/blue-green-update-state-machine';
 import { removalDeploymentMachine } from '../haproxy/removal-deployment-state-machine';
 import { runStateMachineToCompletion } from './state-machine-runner';
 import { EnvironmentValidationService } from '../environment';
@@ -582,6 +585,176 @@ export class StackReconciler {
     }
   }
 
+  async update(stackId: string, options?: UpdateOptions): Promise<ApplyResult> {
+    const startTime = Date.now();
+    const log = servicesLogger().child({ operation: 'stack-update', stackId });
+
+    const plan = await this.plan(stackId);
+    await this.promoteStalePullActions(plan, stackId, log);
+
+    const actions = plan.actions.filter((a) => a.action !== 'no-op');
+
+    if (actions.length === 0) {
+      log.info('All images are up to date — nothing to update');
+      await this.prisma.stackDeployment.create({
+        data: {
+          stackId,
+          action: 'update',
+          success: true,
+          version: plan.stackVersion,
+          status: 'synced',
+          duration: Date.now() - startTime,
+          serviceResults: [],
+          triggeredBy: options?.triggeredBy ?? null,
+        },
+      });
+      return {
+        success: true,
+        stackId,
+        appliedVersion: plan.stackVersion,
+        serviceResults: [],
+        resourceResults: [],
+        duration: Date.now() - startTime,
+      };
+    }
+
+    const stack = await this.prisma.stack.findUniqueOrThrow({
+      where: { id: stackId },
+      include: { services: { orderBy: { order: 'asc' } }, environment: true },
+    });
+
+    try {
+      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+      const params = mergeParameterValues(
+        (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+        (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
+      );
+      const templateContext = buildStackTemplateContext(stack, params);
+      const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
+      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
+
+      const envNetworkMap = await this.resolveEnvironmentNetworks(stack.environmentId, resolvedDefinitions);
+
+      const docker = this.dockerExecutor.getDockerClient();
+      const containers = await docker.listContainers({
+        all: true,
+        filters: { label: [`mini-infra.stack-id=${stackId}`] },
+      });
+      const containerByService = buildContainerMap(containers);
+
+      const networkNames = (stack.networks as unknown as StackNetwork[]).map(
+        (n) => `${projectName}_${n.name}`
+      );
+
+      const serviceResults: ServiceApplyResult[] = [];
+      let completedCount = 0;
+
+      for (const action of actions) {
+        const svc = serviceMap.get(action.serviceName);
+        const serviceDef = resolvedDefinitions.get(action.serviceName) ?? null;
+        const actionStart = Date.now();
+
+        let result: ServiceApplyResult;
+
+        if (svc?.serviceType === 'StatelessWeb' && serviceDef && action.action === 'recreate') {
+          result = await this.updateStatelessWeb(
+            action, svc, serviceDef, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap,
+            containerByService, actionStart, log, envNetworkMap
+          );
+        } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
+          // No existing container (create/remove) — use the standard apply path
+          result = await this.applyStatelessWeb(
+            action, svc, serviceDef, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap,
+            containerByService, actionStart, log, envNetworkMap
+          );
+        } else {
+          result = await this.applyStateful(
+            action, svc, serviceDef, projectName, stackId, stack,
+            networkNames, serviceHashes, resolvedConfigsMap,
+            containerByService, actionStart, log, envNetworkMap
+          );
+        }
+
+        result = { ...result, action: 'update' };
+        serviceResults.push(result);
+        completedCount++;
+        options?.onProgress?.(result, completedCount, actions.length);
+      }
+
+      const allSucceeded = serviceResults.every((r) => r.success);
+      const resultStatus = allSucceeded ? 'synced' : 'error';
+
+      await this.prisma.stack.update({
+        where: { id: stackId },
+        data: {
+          status: resultStatus,
+          lastAppliedVersion: stack.version,
+          lastAppliedAt: new Date(),
+          lastAppliedSnapshot: serializeStack({
+            ...stack,
+            services: stack.services.map((s) => ({
+              ...s,
+              serviceType: s.serviceType as StackServiceDefinition['serviceType'],
+              containerConfig: s.containerConfig as unknown as StackContainerConfig,
+              configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
+              initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
+              dependsOn: s.dependsOn as unknown as string[],
+              routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
+            })),
+          } as any) as any,
+        },
+      });
+
+      await this.prisma.stackDeployment.create({
+        data: {
+          stackId,
+          action: 'update',
+          success: allSucceeded,
+          version: stack.version,
+          status: resultStatus,
+          duration: Date.now() - startTime,
+          serviceResults: serviceResults as any,
+          triggeredBy: options?.triggeredBy ?? null,
+        },
+      });
+
+      return {
+        success: allSucceeded,
+        stackId,
+        appliedVersion: stack.version,
+        serviceResults,
+        resourceResults: [],
+        duration: Date.now() - startTime,
+      };
+    } catch (err: any) {
+      const duration = Date.now() - startTime;
+      log.error({ error: err.message }, 'Update failed unexpectedly');
+      try {
+        await this.prisma.stackDeployment.create({
+          data: {
+            stackId,
+            action: 'update',
+            success: false,
+            version: stack.version,
+            status: 'error',
+            duration,
+            error: err.message,
+            triggeredBy: options?.triggeredBy ?? null,
+          },
+        });
+        await this.prisma.stack.update({
+          where: { id: stackId },
+          data: { status: 'error' },
+        });
+      } catch (dbErr) {
+        log.error({ error: dbErr }, 'Failed to record update failure');
+      }
+      throw err;
+    }
+  }
+
   /**
    * Pull all images for the stack's services and promote no-op actions to
    * 'recreate' when the freshly-pulled image ID differs from the running
@@ -970,7 +1143,8 @@ export class StackReconciler {
     envNetworkMap: Map<string, string>
   ): Promise<Record<string, unknown>> {
     const routing = serviceDef.routing!;
-    const containerName = `${projectName}-${action.serviceName}`;
+    const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
+    const containerName = `${projectName}-${action.serviceName}-${suffix}`;
     const envValidation = new EnvironmentValidationService();
     const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
 
@@ -1023,7 +1197,7 @@ export class StackReconciler {
       tlsCertificateId,
       certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
       networkType: 'local',
-      healthCheckEndpoint: '/health',
+      healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
       healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
         ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
         : 2000,
@@ -1205,6 +1379,78 @@ export class StackReconciler {
       default:
         throw new Error(`Unknown action: ${action.action}`);
     }
+  }
+
+  private async updateStatelessWeb(
+    action: ServiceAction,
+    svc: any,
+    serviceDef: StackServiceDefinition,
+    projectName: string,
+    stackId: string,
+    stack: any,
+    networkNames: string[],
+    serviceHashes: Map<string, string>,
+    resolvedConfigsMap: Map<string, StackConfigFile[]>,
+    containerByService: Map<string, Docker.ContainerInfo>,
+    actionStart: number,
+    log: any,
+    envNetworkMap: Map<string, string> = new Map()
+  ): Promise<ServiceApplyResult> {
+    const routing = serviceDef.routing;
+    if (!routing) {
+      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
+    }
+
+    log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
+
+    const baseContext = await this.buildStateMachineContext(
+      action, serviceDef, projectName, stackId, stack, serviceHashes, envNetworkMap
+    );
+
+    const oldContainer = containerByService.get(action.serviceName);
+
+    await prepareServiceContainer(
+      this.containerManager,
+      svc,
+      resolvedConfigsMap.get(action.serviceName) ?? [],
+      projectName
+    );
+
+    const blueGreenContext = {
+      ...baseContext,
+      blueHealthy: false,
+      greenHealthy: false,
+      greenBackendConfigured: false,
+      trafficOpenedToGreen: false,
+      trafficValidated: false,
+      blueDraining: false,
+      blueDrained: false,
+      validationErrors: 0,
+      drainStartTime: undefined,
+      monitoringStartTime: undefined,
+      error: undefined,
+      retryCount: 0,
+      activeConnections: 0,
+      oldContainerId: oldContainer?.Id,
+      newContainerId: undefined,
+      containerIpAddress: undefined,
+    };
+
+    const finalState = await runStateMachineToCompletion(
+      blueGreenUpdateMachine,
+      blueGreenContext,
+      (actor) => actor.send({ type: 'START_DEPLOYMENT' })
+    );
+
+    const success = finalState.value === 'completed';
+    return {
+      serviceName: action.serviceName,
+      action: 'update',
+      success,
+      duration: Date.now() - actionStart,
+      containerId: (finalState.context as any).newContainerId,
+      error: success ? undefined : (finalState.context as any).error ?? 'Blue-green update failed',
+    };
   }
 
   private async removeConflictingContainer(

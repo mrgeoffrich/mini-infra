@@ -32,8 +32,9 @@ export class DeployApplicationContainers {
                 throw new Error('Missing required deployment context: applicationName, dockerImage, or haproxyNetworkName');
             }
 
-            // Generate unique container name for this deployment
-            const containerName = `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
+            // Use context-provided name (stacks), fall back to generated name (deployments)
+            const containerName = context.containerName as string
+                ?? `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
 
             // Build container configuration - prefer source-agnostic context fields,
             // fall back to config.containerConfig for legacy callers
@@ -114,31 +115,6 @@ export class DeployApplicationContainers {
                 containerName,
                 applicationName: context.applicationName
             }, 'Application container deployed and started successfully');
-
-            // Capture container for deployment tracking
-            try {
-                // Determine container role based on deployment type
-                const containerRole = context.oldContainerId ? 'green' : 'new';
-
-                await this.containerManager.captureContainerForDeployment({
-                    deploymentId: context.deploymentId,
-                    containerId: containerId,
-                    containerRole: containerRole
-                });
-
-                logger.info({
-                    deploymentId: context.deploymentId,
-                    containerId: containerId.slice(0, 12),
-                    containerName,
-                    containerRole: containerRole
-                }, 'Container captured for deployment tracking');
-            } catch (captureError) {
-                logger.warn({
-                    deploymentId: context.deploymentId,
-                    containerId: containerId.slice(0, 12),
-                    error: captureError instanceof Error ? captureError.message : 'Unknown capture error'
-                }, 'Failed to capture container for deployment tracking - continuing with deployment');
-            }
 
             // Send success event with container ID and name
             sendEvent({

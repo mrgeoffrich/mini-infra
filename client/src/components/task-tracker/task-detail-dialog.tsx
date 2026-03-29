@@ -105,6 +105,8 @@ function getTaskTitle(type: TaskType): string {
       return "Stack Apply";
     case "stack-destroy":
       return "Stack Destroy";
+    case "stack-update":
+      return "Stack Update";
     case "migration":
       return "HAProxy Migration";
     case "sidecar-startup":
@@ -124,6 +126,8 @@ function getTaskIcon(type: TaskType) {
       return <IconStack2 className="h-5 w-5" />;
     case "stack-destroy":
       return <IconTrash className="h-5 w-5" />;
+    case "stack-update":
+      return <IconRefresh className="h-5 w-5" />;
     case "migration":
       return <IconArrowsShuffle className="h-5 w-5" />;
     case "sidecar-startup":

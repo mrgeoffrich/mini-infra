@@ -181,7 +181,7 @@ export default function ApplicationDetailPage() {
         ? {
             hostname: service.routing.hostname,
             listeningPort: service.routing.listeningPort,
-            enableSsl: service.routing.enableSsl,
+            enableSsl: !!service.routing.tlsCertificate,
           }
         : undefined,
       restartPolicy:
