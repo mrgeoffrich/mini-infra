@@ -77,7 +77,7 @@ const applicationFormSchema = z.object({
       "Must be lowercase, alphanumeric with hyphens, no leading/trailing hyphens",
     ),
   serviceType: z.enum(["Stateful", "StatelessWeb"]),
-  environmentId: z.string().optional(),
+  environmentId: z.string().min(1, "Environment is required"),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Tag is required"),
   ports: z.array(portMappingSchema),
@@ -96,7 +96,7 @@ const defaultValues: ApplicationFormData = {
   description: "",
   serviceName: "",
   serviceType: "Stateful",
-  environmentId: undefined,
+  environmentId: "",
   dockerImage: "",
   dockerTag: "latest",
   ports: [],
@@ -145,22 +145,24 @@ export default function NewApplicationPage() {
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
 
+  const setFormValue = form.setValue;
+
   useEffect(() => {
     if (!selectedEnvId || !serviceType) return;
 
     if (serviceType === "StatelessWeb") {
-      form.setValue("enableRouting", true);
+      setFormValue("enableRouting", true);
       if (networkType === "local") {
-        form.setValue("routing.enableSsl", true);
-        form.setValue("routing.enableTunnel", false);
+        setFormValue("routing.enableSsl", true);
+        setFormValue("routing.enableTunnel", false);
       } else if (networkType === "internet") {
-        form.setValue("routing.enableSsl", false);
-        form.setValue("routing.enableTunnel", true);
+        setFormValue("routing.enableSsl", false);
+        setFormValue("routing.enableTunnel", true);
       }
     } else {
-      form.setValue("enableRouting", false);
+      setFormValue("enableRouting", false);
     }
-  }, [selectedEnvId, serviceType, networkType]);
+  }, [selectedEnvId, serviceType, networkType, setFormValue]);
 
   const onSubmit = async (data: ApplicationFormData) => {
     // Build the template name from display name
@@ -806,42 +808,41 @@ export default function NewApplicationPage() {
                 </CardContent>
               </Card>
             )}
+                {/* Deploy Immediately */}
+                <FormField
+                  control={form.control}
+                  name="deployImmediately"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-2">
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                      <FormLabel className="!mt-0">Deploy immediately after creation</FormLabel>
+                    </FormItem>
+                  )}
+                />
+
+                {/* Submit */}
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate("/applications")}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createApplication.isPending}
+                  >
+                    {createApplication.isPending && (
+                      <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    {form.watch("deployImmediately") ? "Create & Deploy" : "Create Application"}
+                  </Button>
+                </div>
               </>
             )}
-
-            {/* Deploy Immediately */}
-            <FormField
-              control={form.control}
-              name="deployImmediately"
-              render={({ field }) => (
-                <FormItem className="flex items-center gap-2">
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <FormLabel className="!mt-0">Deploy immediately after creation</FormLabel>
-                </FormItem>
-              )}
-            />
-
-            {/* Submit */}
-            <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/applications")}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={createApplication.isPending}
-              >
-                {createApplication.isPending && (
-                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                )}
-                {form.watch("deployImmediately") ? "Create & Deploy" : "Create Application"}
-              </Button>
-            </div>
           </form>
         </Form>
       </div>

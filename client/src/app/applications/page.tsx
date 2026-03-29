@@ -330,14 +330,16 @@ export default function ApplicationsPage() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleDeploy(app)}
-                      >
-                        <IconPlayerPlay className="h-4 w-4 mr-1" />
-                        Deploy
-                      </Button>
+                      {!stacksByTemplateId.has(app.id) && app.environmentId && (
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => handleDeploy(app)}
+                        >
+                          <IconPlayerPlay className="h-4 w-4 mr-1" />
+                          Deploy
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"

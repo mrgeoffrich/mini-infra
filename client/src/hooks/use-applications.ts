@@ -438,13 +438,19 @@ export function useCreateApplication() {
 
       // If deployImmediately, instantiate and apply
       if (request.deployImmediately && request.environmentId) {
-        const stackResult = await instantiateApplication(
-          result.data.id,
-          { name: result.data.name, environmentId: request.environmentId },
-          correlationId,
-        );
-        // Apply is fire-and-forget (progress via Socket.IO)
-        await applyStack(stackResult.data.id, correlationId);
+        try {
+          const stackResult = await instantiateApplication(
+            result.data.id,
+            { name: result.data.name, environmentId: request.environmentId },
+            correlationId,
+          );
+          // Apply is fire-and-forget (progress via Socket.IO)
+          await applyStack(stackResult.data.id, correlationId);
+        } catch {
+          // Template was created successfully, but deploy failed
+          toast.error("Application created but deployment failed. You can retry from the applications list.");
+          return result; // Return success for the create
+        }
       }
 
       return result;
