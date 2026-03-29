@@ -29,6 +29,7 @@ export interface StackTemplate {
   source: StackTemplateSource;
   scope: StackTemplateScope;
   category: string | null;
+  environmentId: string | null;
   isArchived: boolean;
   currentVersionId: string | null;
   draftVersionId: string | null;
@@ -94,6 +95,7 @@ export interface StackTemplateInfo {
   source: StackTemplateSource;
   scope: StackTemplateScope;
   category: string | null;
+  environmentId: string | null;
   isArchived: boolean;
   currentVersionId: string | null;
   draftVersionId: string | null;
@@ -156,6 +158,8 @@ export interface CreateStackTemplateRequest {
   displayName: string;
   description?: string;
   scope: StackTemplateScope;
+  environmentId?: string;
+  deployImmediately?: boolean;
   category?: string;
   parameters?: StackParameterDefinition[];
   defaultParameterValues?: Record<string, StackParameterValue>;
