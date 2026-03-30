@@ -8,6 +8,8 @@ export interface Environment {
   description?: string;
   type: EnvironmentType;
   networkType: EnvironmentNetworkType;
+  tunnelId?: string;
+  tunnelServiceUrl?: string;
   networks: EnvironmentNetwork[];
   volumes: EnvironmentVolume[];
   createdAt: Date;
@@ -48,6 +50,8 @@ export interface UpdateEnvironmentRequest {
   description?: string;
   type?: EnvironmentType;
   networkType?: EnvironmentNetworkType;
+  tunnelId?: string;
+  tunnelServiceUrl?: string;
 }
 
 export interface ServiceConfiguration {
