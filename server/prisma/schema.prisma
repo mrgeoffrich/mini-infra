@@ -368,8 +368,10 @@ model Environment {
   name        String   @unique
   description String?
   type        String   // 'production', 'nonproduction'
-  networkType String   @default("local") // 'local', 'internet'
-  createdAt   DateTime @default(now())
+  networkType      String   @default("local") // 'local', 'internet'
+  tunnelId         String?  // Cloudflare tunnel UUID for internet environments
+  tunnelServiceUrl String?  // HAProxy URL the tunnel routes to
+  createdAt        DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
