@@ -39,6 +39,8 @@ const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
   networkType: z.enum(['local', 'internet']).optional(),
+  tunnelId: z.string().optional().nullable(),
+  tunnelServiceUrl: z.string().optional().nullable(),
 });
 
 const listEnvironmentsSchema = z.object({
