@@ -843,6 +843,28 @@ export class StackTemplateService {
 
     const stackName = input.name ?? template.name;
 
+    // Build tunnelIngress from service routing definitions
+    const tunnelIngressDefs: { name: string; fqdn: string; service: string }[] = [];
+    if (input.environmentId) {
+      const envForTunnel = await this.prisma.environment.findUnique({
+        where: { id: input.environmentId },
+        select: { tunnelServiceUrl: true, tunnelId: true },
+      });
+
+      if (envForTunnel?.tunnelId) {
+        for (const svc of services) {
+          const routing = svc.routing as any;
+          if (routing?.tunnelIngress) {
+            tunnelIngressDefs.push({
+              name: routing.tunnelIngress,
+              fqdn: routing.tunnelIngress,
+              service: envForTunnel.tunnelServiceUrl ?? `http://localhost:80`,
+            });
+          }
+        }
+      }
+    }
+
     const stack = await this.prisma.stack.create({
       data: {
         name: stackName,
@@ -862,6 +884,7 @@ export class StackTemplateService {
             : undefined,
         networks: version.networks as any,
         volumes: version.volumes as any,
+        tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
         services: {
           create: services.map(toServiceCreateInput),
         },
