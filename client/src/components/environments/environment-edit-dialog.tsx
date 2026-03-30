@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
@@ -36,6 +37,8 @@ import { IconLoader2 } from "@tabler/icons-react";
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["production", "nonproduction"] as const).optional(),
+  tunnelId: z.string().optional(),
+  tunnelServiceUrl: z.string().optional(),
 });
 
 type UpdateEnvironmentFormData = z.infer<typeof updateEnvironmentSchema>;
@@ -60,19 +63,33 @@ export function EnvironmentEditDialog({
     defaultValues: {
       description: environment.description || "",
       type: environment.type,
+      tunnelId: environment.tunnelId ?? "",
+      tunnelServiceUrl: environment.tunnelServiceUrl ?? "",
     },
   });
 
   const onSubmit = async (data: UpdateEnvironmentFormData) => {
     try {
+      const payload = {
+        ...data,
+        tunnelId: data.tunnelId || null,
+        tunnelServiceUrl: data.tunnelServiceUrl || null,
+      };
+
       // Only include fields that have changed
       const changes: UpdateEnvironmentRequest = {};
 
-      if (data.description !== environment.description) {
-        changes.description = data.description;
+      if (payload.description !== environment.description) {
+        changes.description = payload.description;
       }
-      if (data.type && data.type !== environment.type) {
-        changes.type = data.type;
+      if (payload.type && payload.type !== environment.type) {
+        changes.type = payload.type;
+      }
+      if (payload.tunnelId !== (environment.tunnelId ?? null)) {
+        changes.tunnelId = payload.tunnelId ?? undefined;
+      }
+      if (payload.tunnelServiceUrl !== (environment.tunnelServiceUrl ?? null)) {
+        changes.tunnelServiceUrl = payload.tunnelServiceUrl ?? undefined;
       }
 
       // If no changes, just close the dialog
@@ -104,6 +121,8 @@ export function EnvironmentEditDialog({
       form.reset({
         description: environment.description || "",
         type: environment.type,
+        tunnelId: environment.tunnelId ?? "",
+        tunnelServiceUrl: environment.tunnelServiceUrl ?? "",
       });
     }
   }, [environment, open, form]);
@@ -187,6 +206,52 @@ export function EnvironmentEditDialog({
                 Network type cannot be changed after creation to maintain infrastructure consistency.
               </p>
             </div>
+
+            {environment.networkType === "internet" && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="tunnelId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cloudflare Tunnel ID</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. 277a978a-8a04-4761-a248-0464ced6a055"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        UUID of the Cloudflare tunnel for this environment.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="tunnelServiceUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tunnel Service URL</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. http://internet-facing-haproxy-haproxy:80"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        HAProxy URL that the tunnel routes traffic to.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
 
           </form>
         </Form>
