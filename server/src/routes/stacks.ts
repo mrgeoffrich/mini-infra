@@ -55,11 +55,11 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
   const connectionString = await azureConfig.getConnectionString();
 
   let certLifecycleManager: CertificateLifecycleManager | undefined;
+  const cloudflareConfig = new CloudflareService(prisma);
 
   if (connectionString) {
     const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
     const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
-    const cloudflareConfig = new CloudflareService(prisma);
     const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
     await acmeClient.initialize();
@@ -92,6 +92,7 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
     effectiveCertManager,
     new CloudflareDNSService(),
     new HaproxyCertificateDeployer(),
+    cloudflareConfig,
   );
 }
 

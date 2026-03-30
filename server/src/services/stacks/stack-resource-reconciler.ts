@@ -14,6 +14,7 @@ import type { CertificateLifecycleManager } from '../tls/certificate-lifecycle-m
 import type { CloudflareDNSService } from '../cloudflare/cloudflare-dns';
 import type { HaproxyCertificateDeployer } from '../haproxy/haproxy-certificate-deployer';
 import type { HAProxyDataPlaneClient } from '../haproxy';
+import type { CloudflareService } from '../cloudflare/cloudflare-service';
 import { servicesLogger } from '../../lib/logger-factory';
 
 const log = servicesLogger().child({ service: 'stack-resource-reconciler' });
@@ -42,6 +43,7 @@ export class StackResourceReconciler {
     private certLifecycleManager: CertificateLifecycleManager,
     private cloudflareDns: CloudflareDNSService,
     private haproxyCertDeployer: HaproxyCertificateDeployer,
+    private cloudflareService?: CloudflareService,
   ) {}
 
   // ════════════════════════════════════════════════════
@@ -389,6 +391,22 @@ export class StackResourceReconciler {
     const results: ResourceResult[] = [];
     const defMap = new Map(definitions.map((d) => [d.name, d]));
 
+    // Look up environment tunnel config
+    const stack = await this.prisma.stack.findUnique({
+      where: { id: stackId },
+      select: { environmentId: true },
+    });
+    let tunnelId: string | null = null;
+    let tunnelServiceUrl: string | null = null;
+    if (stack?.environmentId) {
+      const env = await this.prisma.environment.findUnique({
+        where: { id: stack.environmentId },
+        select: { tunnelId: true, tunnelServiceUrl: true },
+      });
+      tunnelId = env?.tunnelId ?? null;
+      tunnelServiceUrl = env?.tunnelServiceUrl ?? null;
+    }
+
     for (const action of actions) {
       if (action.resourceType !== 'tunnel' || action.action === 'no-op') continue;
 
@@ -408,9 +426,30 @@ export class StackResourceReconciler {
             continue;
           }
 
-          log.info({ fqdn: def.fqdn, service: def.service }, 'Recording tunnel ingress state');
+          // Call Cloudflare API if tunnel is configured
+          if (tunnelId && this.cloudflareService) {
+            const serviceUrl = tunnelServiceUrl ?? def.service;
+            log.info({ fqdn: def.fqdn, service: serviceUrl, tunnelId }, 'Adding hostname to Cloudflare tunnel');
+            try {
+              await this.cloudflareService.addHostname(
+                tunnelId,
+                def.fqdn,
+                serviceUrl,
+                undefined,
+                { httpHostHeader: def.fqdn },
+              );
+            } catch (err: any) {
+              // If hostname already exists, treat as success (idempotent)
+              if (err.message?.includes('already exists')) {
+                log.info({ fqdn: def.fqdn }, 'Hostname already exists in tunnel, continuing');
+              } else {
+                throw err;
+              }
+            }
+          } else {
+            log.warn({ stackId, fqdn: def.fqdn }, 'No tunnel configured on environment, skipping Cloudflare API call');
+          }
 
-          // TODO: Call Cloudflare tunnel API when tunnel service is ready
           await this.prisma.stackResource.upsert({
             where: {
               stackId_resourceType_resourceName: {
@@ -424,13 +463,14 @@ export class StackResourceReconciler {
               resourceType: 'tunnel',
               resourceName: action.resourceName,
               fqdn: def.fqdn,
-              externalId: null,
-              externalState: { fqdn: def.fqdn, service: def.service },
+              externalId: tunnelId,
+              externalState: { fqdn: def.fqdn, service: tunnelServiceUrl ?? def.service },
               status: 'active',
             },
             update: {
               fqdn: def.fqdn,
-              externalState: { fqdn: def.fqdn, service: def.service },
+              externalId: tunnelId,
+              externalState: { fqdn: def.fqdn, service: tunnelServiceUrl ?? def.service },
               status: 'active',
               error: null,
             },
@@ -438,7 +478,27 @@ export class StackResourceReconciler {
 
           result.success = true;
         } else if (action.action === 'remove') {
-          // TODO: Call Cloudflare tunnel API when tunnel service is ready
+          // Read externalId to know which tunnel to remove from
+          const resource = await this.prisma.stackResource.findFirst({
+            where: { stackId, resourceType: 'tunnel', resourceName: action.resourceName },
+          });
+          const removeTunnelId = resource?.externalId ?? tunnelId;
+          const removeFqdn = resource?.fqdn ?? action.resourceName;
+
+          if (removeTunnelId && this.cloudflareService) {
+            log.info({ fqdn: removeFqdn, tunnelId: removeTunnelId }, 'Removing hostname from Cloudflare tunnel');
+            try {
+              await this.cloudflareService.removeHostname(removeTunnelId, removeFqdn);
+            } catch (err: any) {
+              // If hostname not found, treat as success (already removed)
+              if (err.message?.includes('not found')) {
+                log.info({ fqdn: removeFqdn }, 'Hostname not found in tunnel, continuing');
+              } else {
+                throw err;
+              }
+            }
+          }
+
           await this.prisma.stackResource.deleteMany({
             where: { stackId, resourceType: 'tunnel', resourceName: action.resourceName },
           });

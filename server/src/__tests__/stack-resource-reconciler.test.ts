@@ -11,8 +11,15 @@ import type {
 
 function makeMockPrisma() {
   return {
+    stack: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    environment: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     stackResource: {
       findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
@@ -81,6 +88,7 @@ describe('StackResourceReconciler', () => {
       mockCertLifecycleManager,
       mockCloudflareDns,
       mockHaproxyCertDeployer,
+      undefined,
     );
   });
 
