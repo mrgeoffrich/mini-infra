@@ -820,6 +820,7 @@ export class CloudflareService extends ConfigurationService {
     hostname: string,
     service: string,
     path?: string,
+    originRequest?: { httpHostHeader?: string },
   ): Promise<any> {
     try {
       // First get the current configuration
@@ -850,6 +851,10 @@ export class CloudflareService extends ConfigurationService {
 
       if (path) {
         newRule.path = path;
+      }
+
+      if (originRequest) {
+        newRule.originRequest = originRequest;
       }
 
       if (catchAllIndex !== -1) {
