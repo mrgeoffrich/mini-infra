@@ -126,7 +126,11 @@ export default function ApplicationsPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteApplication.mutateAsync(deleteTarget.id);
+      const stacks = stacksByTemplateId.get(deleteTarget.id) ?? [];
+      await deleteApplication.mutateAsync({
+        templateId: deleteTarget.id,
+        stackIds: stacks.map((s) => s.id),
+      });
     } finally {
       setDeleteTarget(null);
     }
