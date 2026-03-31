@@ -107,7 +107,7 @@ const defaultValues: ApplicationFormData = {
   displayName: "",
   description: "",
   serviceName: "",
-  serviceType: "Stateful",
+  serviceType: "StatelessWeb",
   environmentId: "",
   dockerImage: "",
   dockerTag: "latest",
