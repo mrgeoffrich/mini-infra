@@ -272,7 +272,7 @@ export class StackTemplateService {
   async archiveTemplate(templateId: string): Promise<void> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: templateId },
-      include: { stacks: { select: { id: true }, take: 1 } },
+      include: { stacks: { where: { removedAt: null }, select: { id: true }, take: 1 } },
     });
     if (!template) {
       throw new TemplateError("Template not found", 404);
@@ -287,10 +287,14 @@ export class StackTemplateService {
       );
     }
 
-    await this.prisma.stackTemplate.update({
-      where: { id: templateId },
-      data: { isArchived: true },
-    });
+    await this.prisma.$transaction([
+      // Delete all linked stacks (including removed ones)
+      this.prisma.stack.deleteMany({ where: { templateId } }),
+      this.prisma.stackTemplate.update({
+        where: { id: templateId },
+        data: { isArchived: true },
+      }),
+    ]);
   }
 
   // =====================
