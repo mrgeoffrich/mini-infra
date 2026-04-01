@@ -791,7 +791,54 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
 
     // Run update in background
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+
     (async () => {
+      let userEventId: string | undefined;
+      try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_update',
+          eventCategory: 'infrastructure',
+          eventName: `Update ${plan.stackName}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: plan.stackName,
+          status: 'running',
+          progress: 0,
+          description: `Pulling latest images and updating stack ${plan.stackName}`,
+          metadata: {
+            stackName: plan.stackName,
+            actions: startedActions,
+          },
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack update');
+      }
+
+      const totalSteps = 1 + startedActions.length;
+      let currentStep = 1;
+
+      // Append plan step
+      if (userEventId) {
+        try {
+          await userEventService.appendLogs(
+            userEventId,
+            formatPlanStep(currentStep, totalSteps, {
+              creates: 0,
+              recreates: 0,
+              removes: 0,
+              updates: startedActions.length,
+            }),
+          );
+          await userEventService.updateEvent(userEventId, {
+            progress: Math.round((currentStep / totalSteps) * 100),
+          });
+        } catch { /* never break update */ }
+      }
+
       try {
         const result = await reconciler.update(stackId, {
           triggeredBy,
@@ -804,14 +851,62 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
                 totalActions,
               } as any);
             } catch { /* never break update */ }
+
+            if (userEventId) {
+              try {
+                currentStep++;
+                userEventService.appendLogs(
+                  userEventId,
+                  formatServiceStep(currentStep, totalSteps, serviceResult),
+                ).catch(() => {});
+                userEventService.updateEvent(userEventId, {
+                  progress: Math.round((currentStep / totalSteps) * 100),
+                }).catch(() => {});
+              } catch { /* never break update */ }
+            }
           },
         });
+
+        // Finalize user event
+        if (userEventId) {
+          try {
+            const failedServices = result.serviceResults.filter((r) => !r.success);
+            const hasFailures = failedServices.length > 0;
+
+            await userEventService.updateEvent(userEventId, {
+              status: hasFailures ? 'failed' : 'completed',
+              progress: 100,
+              resultSummary: hasFailures
+                ? `${failedServices.length} service(s) failed to update`
+                : result.serviceResults.length === 0
+                  ? 'All images are up to date'
+                  : `${result.serviceResults.length} service(s) updated successfully`,
+              ...(hasFailures
+                ? {
+                    errorMessage: `Failed services: ${failedServices.map((s) => s.serviceName).join(', ')}`,
+                    errorDetails: { failedServices },
+                  }
+                : {}),
+            });
+          } catch { /* never break update */ }
+        }
 
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
         });
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack update failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           success: false,
           stackId,
