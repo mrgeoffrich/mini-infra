@@ -23,6 +23,9 @@ export type UserEventType =
   | 'user_create'
   | 'user_delete'
   | 'system_maintenance'
+  | 'stack_deploy'
+  | 'stack_update'
+  | 'stack_destroy'
   | 'other';
 
 // Event category enumeration
@@ -49,6 +52,7 @@ export type UserEventResourceType =
   | 'environment'
   | 'user'
   | 'backup'
+  | 'stack'
   | 'system';
 
 // ====================
