@@ -38,6 +38,10 @@ import {
   formatPlanStep,
   formatServiceStep,
   formatResourceGroupStep,
+  formatDestroyResourceStep,
+  formatDestroyContainerStep,
+  formatDestroyNetworkStep,
+  formatDestroyVolumeStep,
 } from '../services/stacks/stack-event-log-formatter';
 import { emitToChannel } from '../lib/socket';
 import { mergeParameterValues } from '../services/stacks/utils';
@@ -950,7 +954,29 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
     res.json({ success: true, data: { started: true, stackId } });
 
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+
     (async () => {
+      let userEventId: string | undefined;
+      try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_destroy',
+          eventCategory: 'infrastructure',
+          eventName: `Destroy ${stack.name}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: stack.name,
+          status: 'running',
+          progress: 0,
+          description: `Destroying stack ${stack.name} and all its resources`,
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack destroy');
+      }
+
       try {
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
@@ -958,9 +984,39 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
         const result = await reconciler.destroyStack(stackId, { triggeredBy });
 
+        // Build structured logs for the destroy result
+        const totalSteps = 4;
+        if (userEventId) {
+          try {
+            let logs = '';
+            logs += formatDestroyResourceStep(1, totalSteps, true);
+            logs += formatDestroyContainerStep(2, totalSteps, result.containersRemoved, result.containersRemoved);
+            logs += formatDestroyNetworkStep(3, totalSteps, result.networksRemoved);
+            logs += formatDestroyVolumeStep(4, totalSteps, result.volumesRemoved);
+
+            await userEventService.appendLogs(userEventId, logs);
+            await userEventService.updateEvent(userEventId, {
+              status: 'completed',
+              progress: 100,
+              resultSummary: `Stack destroyed: ${result.containersRemoved} containers, ${result.networksRemoved.length} networks, ${result.volumesRemoved.length} volumes removed`,
+            });
+          } catch { /* never break destroy */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack destroy failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, {
           success: false,
           stackId,
