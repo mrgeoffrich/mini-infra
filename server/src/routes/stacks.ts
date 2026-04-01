@@ -32,7 +32,7 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType } from '@mini-infra/types';
+import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult } from '@mini-infra/types';
 import { UserEventService } from '../services/user-events';
 import {
   formatPlanStep,
@@ -603,21 +603,21 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
               } as any);
             } catch { /* never break apply */ }
 
-            // Append to user event log
+            // Append to user event log (skip resource results — they're batched post-apply)
             if (userEventId) {
               try {
-                currentStep++;
                 const isResource = 'resourceType' in progressResult;
                 if (!isResource) {
-                  const serviceResult = progressResult as import('@mini-infra/types').ServiceApplyResult;
+                  currentStep++;
+                  const serviceResult = progressResult as ServiceApplyResult;
                   userEventService.appendLogs(
                     userEventId,
                     formatServiceStep(currentStep, totalSteps, serviceResult),
                   ).catch(() => {});
+                  userEventService.updateEvent(userEventId, {
+                    progress: Math.round((currentStep / totalSteps) * 100),
+                  }).catch(() => {});
                 }
-                userEventService.updateEvent(userEventId, {
-                  progress: Math.round((currentStep / totalSteps) * 100),
-                }).catch(() => {});
               } catch { /* never break apply */ }
             }
           },
