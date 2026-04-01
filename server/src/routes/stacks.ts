@@ -487,52 +487,51 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
       });
     }
 
-    const dockerExecutor = new DockerExecutorService();
-    await dockerExecutor.initialize();
-    const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
-    const resourceReconciler = await createResourceReconciler();
-    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
-
-    // Pre-compute plan so we can emit the started event with action details
-    const plan = await reconciler.plan(stackId);
-    const activeActions = plan.actions.filter((a) => a.action !== 'no-op');
-
-    // Filter by serviceNames if provided
-    let plannedActions = activeActions;
-    if (parsed.data.serviceNames && parsed.data.serviceNames.length > 0) {
-      const filterSet = new Set(parsed.data.serviceNames);
-      plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
-    }
-
-    // For forcePull, include all services since any could be promoted to recreate
-    // after pulling new images. Mark them as "pull" initially.
-    const isForcePull = !!parsed.data.forcePull;
-    let startedActions: Array<{ serviceName: string; action: string }>;
-    if (isForcePull && plannedActions.length === 0) {
-      startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
-    } else {
-      startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
-    }
-
     applyingStacks.add(stackId);
 
-    // Emit started event
-    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
-      stackId,
-      stackName: plan.stackName,
-      totalActions: startedActions.length,
-      actions: startedActions,
-      forcePull: isForcePull,
-    });
-
-    // Respond immediately — progress comes via Socket.IO
+    // Respond immediately — planning and apply run in background
     res.json({ success: true, data: { started: true, stackId } });
 
-    // Run apply in background
+    // Run planning + apply in background
     const triggeredBy = (req as any).user?.id;
     const userEventService = new UserEventService(prisma);
+    const isForcePull = !!parsed.data.forcePull;
 
     (async () => {
+      // Initialize services
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+      const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+      const resourceReconciler = await createResourceReconciler();
+      const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
+
+      // Compute plan
+      const plan = await reconciler.plan(stackId);
+      const activeActions = plan.actions.filter((a) => a.action !== 'no-op');
+
+      // Filter by serviceNames if provided
+      let plannedActions = activeActions;
+      if (parsed.data.serviceNames && parsed.data.serviceNames.length > 0) {
+        const filterSet = new Set(parsed.data.serviceNames);
+        plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
+      }
+
+      let startedActions: Array<{ serviceName: string; action: string }>;
+      if (isForcePull && plannedActions.length === 0) {
+        startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
+      } else {
+        startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
+      }
+
+      // Emit started event (now that we have the plan)
+      emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+        stackId,
+        stackName: plan.stackName,
+        totalActions: startedActions.length,
+        actions: startedActions,
+        forcePull: isForcePull,
+      });
+
       // Create user event
       let userEventId: string | undefined;
       try {
@@ -770,34 +769,36 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
       });
     }
 
-    const dockerExecutor = new DockerExecutorService();
-    await dockerExecutor.initialize();
-    const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
-    const resourceReconciler = await createResourceReconciler();
-    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
-
     applyingStacks.add(stackId);
 
-    // Emit started event — use same STACK_APPLY events with action context
-    const plan = await reconciler.plan(stackId);
-    const startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'update' }));
-
-    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
-      stackId,
-      stackName: plan.stackName,
-      totalActions: startedActions.length,
-      actions: startedActions,
-      forcePull: true,
-    });
-
-    // Respond immediately
+    // Respond immediately — planning and update run in background
     res.json({ success: true, data: { started: true, stackId } });
 
-    // Run update in background
+    // Run planning + update in background
     const triggeredBy = (req as any).user?.id;
     const userEventService = new UserEventService(prisma);
 
     (async () => {
+      // Initialize services
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+      const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+      const resourceReconciler = await createResourceReconciler();
+      const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
+
+      // Compute plan
+      const plan = await reconciler.plan(stackId);
+      const startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'update' }));
+
+      // Emit started event (now that we have the plan)
+      emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+        stackId,
+        stackName: plan.stackName,
+        totalActions: startedActions.length,
+        actions: startedActions,
+        forcePull: true,
+      });
+
       let userEventId: string | undefined;
       try {
         const userEvent = await userEventService.createEvent({

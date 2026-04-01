@@ -850,19 +850,31 @@ export class StackTemplateService {
     // Build tunnelIngress from service routing definitions
     const tunnelIngressDefs: { name: string; fqdn: string; service: string }[] = [];
     if (input.environmentId) {
-      const envForTunnel = await this.prisma.environment.findUnique({
-        where: { id: input.environmentId },
-        select: { tunnelServiceUrl: true, tunnelId: true },
+      const hasTunnelServices = services.some((svc) => {
+        const routing = svc.routing as any;
+        return !!routing?.tunnelIngress;
       });
 
-      if (envForTunnel?.tunnelId) {
+      if (hasTunnelServices) {
+        const envForTunnel = await this.prisma.environment.findUnique({
+          where: { id: input.environmentId },
+          select: { tunnelServiceUrl: true, tunnelId: true },
+        });
+
+        if (!envForTunnel?.tunnelServiceUrl) {
+          throw new TemplateError(
+            "Environment does not have a tunnel service URL configured. Configure the environment's tunnel settings before deploying tunnel-enabled applications.",
+            400,
+          );
+        }
+
         for (const svc of services) {
           const routing = svc.routing as any;
           if (routing?.tunnelIngress) {
             tunnelIngressDefs.push({
               name: routing.tunnelIngress,
               fqdn: routing.tunnelIngress,
-              service: envForTunnel.tunnelServiceUrl ?? `http://localhost:80`,
+              service: envForTunnel.tunnelServiceUrl,
             });
           }
         }

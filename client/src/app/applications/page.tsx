@@ -21,6 +21,8 @@ import {
   useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { Channel } from "@mini-infra/types";
 import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +61,7 @@ export default function ApplicationsPage() {
   const deleteApplication = useDeleteApplication();
   const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
+  const { registerTask } = useTaskTracker();
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
@@ -104,6 +107,14 @@ export default function ApplicationsPage() {
         templateId: app.id,
         name: app.name,
         environmentId: app.environmentId,
+        onStackCreated: (stackId) => {
+          registerTask({
+            id: stackId,
+            type: "stack-apply",
+            label: `Deploying ${app.displayName ?? app.name}`,
+            channel: Channel.STACKS,
+          });
+        },
       });
     } catch {
       // Error handled by mutation

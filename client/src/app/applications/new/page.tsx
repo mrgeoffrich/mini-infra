@@ -12,6 +12,8 @@ import {
 import { useCreateApplication } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useDetectImagePorts } from "@/hooks/use-detect-image-ports";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { Channel } from "@mini-infra/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,6 +127,7 @@ const defaultValues: ApplicationFormData = {
 export default function NewApplicationPage() {
   const navigate = useNavigate();
   const createApplication = useCreateApplication();
+  const { registerTask } = useTaskTracker();
 
   const form = useForm<ApplicationFormData>({
     resolver: zodResolver(applicationFormSchema),
@@ -193,7 +196,7 @@ export default function NewApplicationPage() {
       setDetectedPorts(ports);
       setUseCustomPort(false);
       if (ports.length >= 1) {
-        form.setValue("routing.listeningPort", ports[0]);
+        form.setValue("routing.listeningPort", ports[0], { shouldDirty: true, shouldValidate: true });
       } else {
         toast.info("No exposed ports found in this image");
       }
@@ -293,6 +296,14 @@ export default function NewApplicationPage() {
             routing,
           },
         ],
+        onStackCreated: (stackId) => {
+          registerTask({
+            id: stackId,
+            type: "stack-apply",
+            label: `Deploying ${data.displayName}`,
+            channel: Channel.STACKS,
+          });
+        },
       });
       navigate("/applications");
     } catch {
