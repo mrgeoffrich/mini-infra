@@ -32,7 +32,13 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue } from '@mini-infra/types';
+import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType } from '@mini-infra/types';
+import { UserEventService } from '../services/user-events';
+import {
+  formatPlanStep,
+  formatServiceStep,
+  formatResourceGroupStep,
+} from '../services/stacks/stack-event-log-formatter';
 import { emitToChannel } from '../lib/socket';
 import { mergeParameterValues } from '../services/stacks/utils';
 
@@ -520,23 +526,119 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
 
     // Run apply in background
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+
     (async () => {
+      // Create user event
+      let userEventId: string | undefined;
+      try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_deploy',
+          eventCategory: 'infrastructure',
+          eventName: `Deploy ${plan.stackName} v${plan.stackVersion}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: plan.stackName,
+          status: 'running',
+          progress: 0,
+          description: `Deploying stack ${plan.stackName}`,
+          metadata: {
+            stackName: plan.stackName,
+            version: plan.stackVersion,
+            serviceActions: startedActions,
+            forcePull: isForcePull,
+          },
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack apply');
+      }
+
+      // Count total steps: 1 (plan) + service actions + resource groups with actions
+      const resourceTypes: ResourceType[] = ['tls', 'dns', 'tunnel'];
+      const resourceGroupCount = resourceTypes.filter((rt) =>
+        plan.resourceActions?.some((ra) => ra.resourceType === rt && ra.action !== 'no-op')
+      ).length;
+      const totalSteps = 1 + startedActions.length + resourceGroupCount;
+      let currentStep = 1;
+
+      // Append plan step
+      const actionCounts = {
+        creates: startedActions.filter((a) => a.action === 'create').length,
+        recreates: startedActions.filter((a) => a.action === 'recreate').length,
+        removes: startedActions.filter((a) => a.action === 'remove').length,
+        updates: startedActions.filter((a) => a.action === 'update' || a.action === 'pull').length,
+      };
+
+      if (userEventId) {
+        try {
+          await userEventService.appendLogs(
+            userEventId,
+            formatPlanStep(currentStep, totalSteps, actionCounts),
+          );
+          await userEventService.updateEvent(userEventId, {
+            progress: Math.round((currentStep / totalSteps) * 100),
+          });
+        } catch { /* never break apply */ }
+      }
+
       try {
         const result = await reconciler.apply(stackId, {
           ...parsed.data,
           triggeredBy,
           plan,
-          onProgress: (result, completedCount, totalActions) => {
+          onProgress: (progressResult, completedCount, totalActions) => {
             try {
               emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
                 stackId,
-                ...result,
+                ...progressResult,
                 completedCount,
                 totalActions,
               } as any);
             } catch { /* never break apply */ }
+
+            // Append to user event log
+            if (userEventId) {
+              try {
+                currentStep++;
+                const isResource = 'resourceType' in progressResult;
+                if (!isResource) {
+                  const serviceResult = progressResult as import('@mini-infra/types').ServiceApplyResult;
+                  userEventService.appendLogs(
+                    userEventId,
+                    formatServiceStep(currentStep, totalSteps, serviceResult),
+                  ).catch(() => {});
+                }
+                userEventService.updateEvent(userEventId, {
+                  progress: Math.round((currentStep / totalSteps) * 100),
+                }).catch(() => {});
+              } catch { /* never break apply */ }
+            }
           },
         });
+
+        // Append resource group logs from the final result
+        if (userEventId && result.resourceResults.length > 0) {
+          try {
+            const grouped = new Map<ResourceType, ResourceResult[]>();
+            for (const rr of result.resourceResults) {
+              const list = grouped.get(rr.resourceType) ?? [];
+              list.push(rr);
+              grouped.set(rr.resourceType, list);
+            }
+            for (const [rt, results] of grouped) {
+              if (results.some((r) => r.action !== 'no-op')) {
+                currentStep++;
+                await userEventService.appendLogs(
+                  userEventId,
+                  formatResourceGroupStep(currentStep, totalSteps, rt, results.filter((r) => r.action !== 'no-op')),
+                );
+              }
+            }
+          } catch { /* never break apply */ }
+        }
 
         // HAProxy post-apply restoration
         let postApply: { success: boolean; errors?: string[] } | undefined;
@@ -557,7 +659,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           }
         }
 
-        // Monitoring post-apply: connect app container to monitoring network
+        // Monitoring post-apply
         if (result.success) {
           const stack = await prisma.stack.findUnique({
             where: { id: stackId },
@@ -574,6 +676,31 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           }
         }
 
+        // Finalize user event
+        if (userEventId) {
+          try {
+            const failedServices = result.serviceResults.filter((r) => !r.success);
+            const failedResources = result.resourceResults.filter((r) => !r.success);
+            const hasFailures = failedServices.length > 0 || failedResources.length > 0;
+
+            await userEventService.updateEvent(userEventId, {
+              status: hasFailures ? 'failed' : 'completed',
+              progress: 100,
+              resultSummary: hasFailures
+                ? `${failedServices.length} service(s) and ${failedResources.length} resource(s) failed`
+                : `${result.serviceResults.length} service(s) deployed successfully`,
+              ...(hasFailures
+                ? {
+                    errorMessage: failedServices.length > 0
+                      ? `Failed services: ${failedServices.map((s) => s.serviceName).join(', ')}`
+                      : `Failed resources: ${failedResources.map((r) => r.resourceName).join(', ')}`,
+                    errorDetails: { failedServices, failedResources },
+                  }
+                : {}),
+            });
+          } catch { /* never break apply */ }
+        }
+
         // Emit completed event
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
@@ -581,6 +708,17 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
         });
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack apply failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           success: false,
           stackId,
