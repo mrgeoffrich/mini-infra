@@ -184,32 +184,7 @@ async function updateTemplateMetadata(
   }
 }
 
-async function deleteStack(
-  stackId: string,
-  correlationId: string,
-): Promise<void> {
-  const response = await fetch(`/api/stacks/${stackId}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to delete stack: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-}
-
-async function archiveTemplate(
+async function deleteTemplate(
   id: string,
   correlationId: string,
 ): Promise<{ success: boolean; message: string }> {
@@ -536,13 +511,8 @@ export function useDeleteApplication() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: async ({ templateId, stackIds }: { templateId: string; stackIds: string[] }) => {
-      // 1. Delete all linked stacks first
-      for (const stackId of stackIds) {
-        await deleteStack(stackId, correlationId);
-      }
-      // 2. Archive the template
-      return archiveTemplate(templateId, correlationId);
+    mutationFn: async ({ templateId }: { templateId: string }) => {
+      return deleteTemplate(templateId, correlationId);
     },
     onSuccess: () => {
       toast.success("Application deleted successfully");

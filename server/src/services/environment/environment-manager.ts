@@ -344,6 +344,31 @@ export class EnvironmentManager {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${environment.networks.length} network(s) (${failedNetworks} failed)`);
       }
 
+      // Clean up archived stack templates that still reference this environment
+      const archivedTemplates = await this.prisma.stackTemplate.findMany({
+        where: { environmentId: id, isArchived: true },
+        select: { id: true, name: true },
+      });
+      if (archivedTemplates.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          templateCount: archivedTemplates.length,
+          templates: archivedTemplates.map(t => t.name),
+        }, 'Cleaning up archived stack templates');
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${archivedTemplates.length} archived stack template(s)...`);
+
+        for (const template of archivedTemplates) {
+          await this.prisma.$transaction([
+            this.prisma.stack.deleteMany({ where: { templateId: template.id } }),
+            this.prisma.stackTemplate.update({
+              where: { id: template.id },
+              data: { currentVersionId: null, draftVersionId: null },
+            }),
+            this.prisma.stackTemplate.delete({ where: { id: template.id } }),
+          ]);
+        }
+      }
+
       // Delete environment (cascade will handle related records)
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting environment record...`);
       await this.prisma.environment.delete({

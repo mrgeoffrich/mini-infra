@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { IconDotsVertical } from "@tabler/icons-react";
 import type { StackTemplateInfo } from "@mini-infra/types";
-import { useArchiveTemplate } from "@/hooks/use-stack-templates";
+import { useDeleteTemplate } from "@/hooks/use-stack-templates";
 import { toast } from "sonner";
 
 interface TemplateTableProps {
@@ -65,7 +65,7 @@ function getVersionDisplay(template: StackTemplateInfo): string {
 
 export function TemplateTable({ templates }: TemplateTableProps) {
   const navigate = useNavigate();
-  const archiveMutation = useArchiveTemplate();
+  const deleteMutation = useDeleteTemplate();
   const [archiveTarget, setArchiveTarget] = useState<StackTemplateInfo | null>(null);
 
   function handleRowClick(template: StackTemplateInfo) {
@@ -85,8 +85,8 @@ export function TemplateTable({ templates }: TemplateTableProps) {
   async function handleArchiveConfirm() {
     if (!archiveTarget) return;
     try {
-      await archiveMutation.mutateAsync(archiveTarget.id);
-      toast.success(`Template "${archiveTarget.displayName}" archived`);
+      await deleteMutation.mutateAsync(archiveTarget.id);
+      toast.success(`Template "${archiveTarget.displayName}" deleted`);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to archive template",

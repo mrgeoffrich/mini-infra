@@ -273,31 +273,28 @@ export class StackTemplateService {
     return this.serializeTemplate(updated);
   }
 
-  async archiveTemplate(templateId: string): Promise<void> {
+  async deleteTemplate(templateId: string): Promise<void> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: templateId },
-      include: { stacks: { where: { removedAt: null }, select: { id: true }, take: 1 } },
+      include: { stacks: { select: { id: true, removedAt: true } } },
     });
     if (!template) {
       throw new TemplateError("Template not found", 404);
     }
     if (template.source === "system") {
-      throw new TemplateError("Cannot archive system templates", 403);
-    }
-    if (template.stacks.length > 0) {
-      throw new TemplateError(
-        "Cannot archive template with linked stacks",
-        409
-      );
+      throw new TemplateError("Cannot delete system templates", 403);
     }
 
     await this.prisma.$transaction([
-      // Delete all linked stacks (including removed ones)
+      // Delete all linked stacks (active and removed)
       this.prisma.stack.deleteMany({ where: { templateId } }),
+      // Null out self-referential version FKs to break circular dependency
       this.prisma.stackTemplate.update({
         where: { id: templateId },
-        data: { isArchived: true },
+        data: { currentVersionId: null, draftVersionId: null },
       }),
+      // Delete the template (cascade handles versions, services, config files)
+      this.prisma.stackTemplate.delete({ where: { id: templateId } }),
     ]);
   }
 

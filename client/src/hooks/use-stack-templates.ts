@@ -179,7 +179,7 @@ async function discardDraft(templateId: string): Promise<void> {
   }
 }
 
-async function archiveTemplate(templateId: string): Promise<void> {
+async function deleteTemplate(templateId: string): Promise<void> {
   const response = await fetch(`/api/stack-templates/${templateId}`, {
     method: "DELETE",
     credentials: "include",
@@ -189,7 +189,7 @@ async function archiveTemplate(templateId: string): Promise<void> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
     throw new Error(
-      errorData?.message || `Failed to archive stack template: ${response.statusText}`,
+      errorData?.message || `Failed to delete stack template: ${response.statusText}`,
     );
   }
 }
@@ -298,11 +298,11 @@ export function useDiscardDraft() {
   });
 }
 
-export function useArchiveTemplate() {
+export function useDeleteTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: archiveTemplate,
+    mutationFn: deleteTemplate,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
     },

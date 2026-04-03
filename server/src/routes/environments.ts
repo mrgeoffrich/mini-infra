@@ -213,7 +213,7 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
         select: { id: true, name: true },
       }),
       prisma.stackTemplate.findMany({
-        where: { environmentId: id },
+        where: { environmentId: id, isArchived: false },
         select: { id: true, name: true },
       }),
     ]);
