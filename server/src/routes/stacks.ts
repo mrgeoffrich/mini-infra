@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createActor } from 'xstate';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
@@ -20,6 +21,9 @@ import { HaproxyCertificateDeployer } from '../services/haproxy/haproxy-certific
 import { TlsConfigService } from '../services/tls/tls-config';
 import { AzureStorageService } from '../services/azure-storage-service';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
+import DockerService from '../services/docker';
+import { EnvironmentValidationService } from '../services/environment';
+import { removalDeploymentMachine } from '../services/haproxy/removal-deployment-state-machine';
 import {
   createStackSchema,
   updateStackSchema,
@@ -32,7 +36,7 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult } from '@mini-infra/types';
+import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult } from '@mini-infra/types';
 import { UserEventService } from '../services/user-events';
 import {
   formatPlanStep,
@@ -973,6 +977,7 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
     const userEventService = new UserEventService(prisma);
 
     (async () => {
+      const startTime = Date.now();
       let userEventId: string | undefined;
       try {
         const userEvent = await userEventService.createEvent({
@@ -994,11 +999,148 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
       }
 
       try {
+        // Fetch full stack with environment for network/volume cleanup
+        const fullStack = await prisma.stack.findUniqueOrThrow({
+          where: { id: stackId },
+          include: { services: true, environment: true },
+        });
+        const projectName = fullStack.environment ? `${fullStack.environment.name}-${fullStack.name}` : fullStack.name;
+        const networks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+        const volumes = (fullStack.volumes as unknown as StackVolume[]) ?? [];
+
+        // Step 1: Destroy stack-level resources (DNS, tunnels) before container removal
+        const resourceReconciler = await createResourceReconciler();
+        try {
+          await resourceReconciler.destroyAllResources(stackId);
+          logger.info({ stackId }, 'Stack resources destroyed');
+        } catch (err: any) {
+          logger.warn({ error: err.message, stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
+        }
+
+        // Step 2: Get HAProxy context from stack's environment (optional)
+        let haproxyContainerId = '';
+        let haproxyNetworkName = '';
+        let environmentId = fullStack.environmentId ?? '';
+        let environmentName = fullStack.environment?.name ?? '';
+        if (fullStack.environmentId) {
+          try {
+            const envValidation = new EnvironmentValidationService();
+            const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(fullStack.environmentId);
+            if (haproxyCtx) {
+              haproxyContainerId = haproxyCtx.haproxyContainerId;
+              haproxyNetworkName = haproxyCtx.haproxyNetworkName;
+            }
+          } catch { /* no HAProxy available — LB steps will fail non-fatally */ }
+        }
+
+        // Step 3: Find containers by stack-id label
+        const dockerService = DockerService.getInstance();
+        await dockerService.initialize();
+        const allContainers = await dockerService.listContainers(true);
+        const stackContainers = allContainers.filter((c: any) =>
+          c.labels?.['mini-infra.stack-id'] === stackId
+        );
+        const containerIds = stackContainers.map((c: any) => c.id);
+
+        logger.info({ stackId, containerCount: containerIds.length }, 'Found stack containers for removal state machine');
+
+        // Step 4: Run the removal state machine for container cleanup
+        const removalContext = {
+          deploymentId: stackId,
+          configurationId: stackId,
+          deploymentConfigId: stackId,
+          applicationName: fullStack.name,
+          environmentId,
+          environmentName,
+          haproxyContainerId,
+          haproxyNetworkName,
+          containersToRemove: containerIds,
+          lbRemovalComplete: false,
+          frontendRemoved: false,
+          applicationStopped: false,
+          applicationRemoved: false,
+          retryCount: 0,
+          triggerType: 'manual',
+          triggeredBy,
+          startTime,
+        };
+
+        const containersRemoved = await new Promise<number>((resolve, reject) => {
+          const machine = removalDeploymentMachine.provide({});
+          const actor = createActor(machine, { input: removalContext });
+
+          actor.subscribe((state) => {
+            // Emit progress via user event
+            const progressMap: Record<string, number> = {
+              idle: 0, removingFromLB: 10, removingFrontend: 20,
+              stoppingApplication: 40, removingApplication: 60,
+              cleanup: 80, completed: 100, failed: 0,
+            };
+            const progress = progressMap[state.value as string] ?? 0;
+            if (userEventId && progress > 0) {
+              userEventService.updateEvent(userEventId, { progress }).catch(() => {});
+            }
+
+            if (state.status === 'done') {
+              if (state.value === 'completed') {
+                resolve(containerIds.length);
+              } else {
+                reject(new Error(state.context.error || 'Removal state machine failed'));
+              }
+            }
+          });
+
+          actor.start();
+          actor.send({ type: 'START_REMOVAL' });
+        });
+
+        // Step 5: Remove networks and volumes (post state machine)
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
-        const resourceReconciler = await createResourceReconciler();
-        const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
-        const result = await reconciler.destroyStack(stackId, { triggeredBy });
+
+        const networksRemoved: string[] = [];
+        for (const net of networks) {
+          const netName = `${projectName}_${net.name}`;
+          try {
+            if (await dockerExecutor.networkExists(netName)) {
+              await dockerExecutor.removeNetwork(netName);
+              networksRemoved.push(netName);
+            }
+          } catch (err) {
+            logger.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
+          }
+        }
+
+        const volumesRemoved: string[] = [];
+        for (const vol of volumes) {
+          const volName = `${projectName}_${vol.name}`;
+          try {
+            if (await dockerExecutor.volumeExists(volName)) {
+              await dockerExecutor.removeVolume(volName);
+              volumesRemoved.push(volName);
+            }
+          } catch (err) {
+            logger.warn({ volume: volName, error: err }, 'Failed to remove volume, continuing');
+          }
+        }
+
+        // Step 6: Update stack DB records
+        const duration = Date.now() - startTime;
+        await prisma.stackDeployment.create({
+          data: {
+            stackId,
+            action: 'destroy',
+            success: true,
+            status: 'removed',
+            duration,
+            triggeredBy: triggeredBy ?? null,
+          },
+        });
+
+        await prisma.stack.update({
+          where: { id: stackId },
+          data: { status: 'removed', removedAt: new Date() },
+        });
 
         // Build structured logs for the destroy result
         const totalSteps = 4;
@@ -1006,19 +1148,21 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           try {
             let logs = '';
             logs += formatDestroyResourceStep(1, totalSteps, true);
-            logs += formatDestroyContainerStep(2, totalSteps, result.containersRemoved, result.containersRemoved);
-            logs += formatDestroyNetworkStep(3, totalSteps, result.networksRemoved);
-            logs += formatDestroyVolumeStep(4, totalSteps, result.volumesRemoved);
+            logs += formatDestroyContainerStep(2, totalSteps, containersRemoved, containersRemoved);
+            logs += formatDestroyNetworkStep(3, totalSteps, networksRemoved);
+            logs += formatDestroyVolumeStep(4, totalSteps, volumesRemoved);
 
             await userEventService.appendLogs(userEventId, logs);
             await userEventService.updateEvent(userEventId, {
               status: 'completed',
               progress: 100,
-              resultSummary: `Stack destroyed: ${result.containersRemoved} containers, ${result.networksRemoved.length} networks, ${result.volumesRemoved.length} volumes removed`,
+              resultSummary: `Stack destroyed: ${containersRemoved} containers, ${networksRemoved.length} networks, ${volumesRemoved.length} volumes removed`,
             });
           } catch { /* never break destroy */ }
         }
 
+        const result = { success: true, stackId, containersRemoved, networksRemoved, volumesRemoved, duration };
+        logger.info(result, 'Stack destroyed via removal state machine');
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack destroy failed');
@@ -1039,7 +1183,7 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           containersRemoved: 0,
           networksRemoved: [],
           volumesRemoved: [],
-          duration: 0,
+          duration: Date.now() - startTime,
           error: error.message,
         });
       } finally {
