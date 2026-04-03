@@ -295,6 +295,8 @@ export class EnvironmentManager {
           description: request.description,
           type: request.type,
           networkType: request.networkType,
+          tunnelId: request.tunnelId,
+          tunnelServiceUrl: request.tunnelServiceUrl,
         },
         include: {
           networks: true,
@@ -515,6 +517,8 @@ export class EnvironmentManager {
         dockerId: v.dockerId,
         createdAt: v.createdAt
       })),
+      tunnelId: prismaEnv.tunnelId ?? undefined,
+      tunnelServiceUrl: prismaEnv.tunnelServiceUrl ?? undefined,
       createdAt: prismaEnv.createdAt,
       updatedAt: prismaEnv.updatedAt
     };

@@ -73,8 +73,6 @@ const healthCheckSchema = z.object({
 const routingSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   listeningPort: z.number().int().min(1).max(65535),
-  enableSsl: z.boolean().optional(),
-  enableTunnel: z.boolean().optional(),
 });
 
 const applicationFormSchema = z.object({
@@ -117,7 +115,7 @@ const defaultValues: ApplicationFormData = {
   envVars: [],
   volumeMounts: [],
   enableRouting: false,
-  routing: { hostname: "", listeningPort: 8080, enableSsl: false, enableTunnel: false },
+  routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
   enableHealthCheck: false,
   healthCheck: { test: "curl -f http://localhost/ || exit 1", interval: 30, timeout: 10, retries: 3, startPeriod: 15 },
@@ -171,20 +169,8 @@ export default function NewApplicationPage() {
 
   useEffect(() => {
     if (!selectedEnvId || !serviceType) return;
-
-    if (serviceType === "StatelessWeb") {
-      setFormValue("enableRouting", true);
-      if (networkType === "local") {
-        setFormValue("routing.enableSsl", true);
-        setFormValue("routing.enableTunnel", false);
-      } else if (networkType === "internet") {
-        setFormValue("routing.enableSsl", false);
-        setFormValue("routing.enableTunnel", true);
-      }
-    } else {
-      setFormValue("enableRouting", false);
-    }
-  }, [selectedEnvId, serviceType, networkType, setFormValue]);
+    setFormValue("enableRouting", serviceType === "StatelessWeb");
+  }, [selectedEnvId, serviceType, setFormValue]);
 
   const handleDetectPorts = async () => {
     const image = form.getValues("dockerImage");
@@ -253,14 +239,18 @@ export default function NewApplicationPage() {
           }
         : undefined;
 
-    // Build routing
+    // Build routing — auto-derive resources from environment network type
     const routing =
       data.enableRouting && data.routing
         ? {
             hostname: data.routing.hostname,
             listeningPort: data.routing.listeningPort,
-            ...(data.routing.enableSsl ? { tlsCertificate: data.routing.hostname } : {}),
-            ...(data.routing.enableTunnel ? { tunnelIngress: data.routing.hostname } : {}),
+            ...(networkType === "local"
+              ? { tlsCertificate: data.routing.hostname, dnsRecord: data.routing.hostname }
+              : {}),
+            ...(networkType === "internet"
+              ? { tunnelIngress: data.routing.hostname }
+              : {}),
           }
         : undefined;
 
@@ -1031,40 +1021,13 @@ export default function NewApplicationPage() {
                         )}
                       />
 
-                      {networkType === "local" && (
-                        <FormField
-                          control={form.control}
-                          name="routing.enableSsl"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-3">
-                              <FormControl>
-                                <Switch
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="!mt-0">Enable SSL</FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      {networkType === "internet" && (
-                        <FormField
-                          control={form.control}
-                          name="routing.enableTunnel"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-3">
-                              <FormControl>
-                                <Switch
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="!mt-0">Enable Cloudflare Tunnel</FormLabel>
-                            </FormItem>
-                          )}
-                        />
+                      {networkType && (
+                        <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md">
+                          {networkType === "local" &&
+                            "A TLS certificate and DNS record will be automatically created for this hostname."}
+                          {networkType === "internet" &&
+                            "A Cloudflare tunnel ingress will be automatically created for this hostname."}
+                        </div>
                       )}
                     </>
                   )}

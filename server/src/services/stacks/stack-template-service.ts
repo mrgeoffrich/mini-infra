@@ -21,6 +21,8 @@ import type {
   StackDefinition,
 } from "@mini-infra/types";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
+import { CloudflareService } from "../cloudflare/cloudflare-service";
+import { networkUtils } from "../network-utils";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -847,34 +849,112 @@ export class StackTemplateService {
 
     const stackName = input.name ?? template.name;
 
-    // Build tunnelIngress from service routing definitions
+    // Build stack-level resource arrays from service routing definitions
     const tunnelIngressDefs: { name: string; fqdn: string; service: string }[] = [];
+    const tlsCertDefs: { name: string; fqdn: string }[] = [];
+    const dnsRecordDefs: { name: string; fqdn: string; recordType: "A"; target: string }[] = [];
+
     if (input.environmentId) {
+      // --- Tunnel Ingress (internet-facing environments) ---
       const hasTunnelServices = services.some((svc) => {
         const routing = svc.routing as any;
         return !!routing?.tunnelIngress;
       });
 
       if (hasTunnelServices) {
+        // Try to resolve tunnel config, auto-resolving if not set on environment
+        let tunnelServiceUrl: string | null = null;
+
         const envForTunnel = await this.prisma.environment.findUnique({
           where: { id: input.environmentId },
-          select: { tunnelServiceUrl: true, tunnelId: true },
+          select: { tunnelServiceUrl: true, tunnelId: true, name: true },
         });
 
-        if (!envForTunnel?.tunnelServiceUrl) {
+        tunnelServiceUrl = envForTunnel?.tunnelServiceUrl ?? null;
+
+        // Auto-resolve tunnelServiceUrl from HAProxy stack if not configured
+        if (!tunnelServiceUrl) {
+          const haproxyStack = await this.prisma.stack.findFirst({
+            where: {
+              name: "haproxy",
+              environmentId: input.environmentId,
+              status: { not: "removed" },
+            },
+            include: {
+              services: { where: { serviceName: "haproxy" }, take: 1 },
+              environment: { select: { name: true } },
+            },
+          });
+
+          if (haproxyStack?.environment) {
+            tunnelServiceUrl = `http://${haproxyStack.environment.name}-haproxy-haproxy:80`;
+
+            // Persist for future use and for the reconciler
+            await this.prisma.environment.update({
+              where: { id: input.environmentId },
+              data: { tunnelServiceUrl },
+            });
+          }
+        }
+
+        // Auto-resolve tunnelId from managed tunnel info if not configured
+        if (!envForTunnel?.tunnelId) {
+          const cloudflareConfig = new CloudflareService(this.prisma);
+          const managedTunnel = await cloudflareConfig.getManagedTunnelInfo(input.environmentId);
+          if (managedTunnel?.tunnelId) {
+            await this.prisma.environment.update({
+              where: { id: input.environmentId },
+              data: { tunnelId: managedTunnel.tunnelId },
+            });
+          }
+        }
+
+        if (!tunnelServiceUrl) {
           throw new TemplateError(
-            "Environment does not have a tunnel service URL configured. Configure the environment's tunnel settings before deploying tunnel-enabled applications.",
+            "Could not resolve tunnel service URL. Ensure the environment has an HAProxy stack deployed or configure the tunnel service URL in the environment settings.",
             400,
           );
         }
 
         for (const svc of services) {
           const routing = svc.routing as any;
-          if (routing?.tunnelIngress) {
+          if (routing?.tunnelIngress && !tunnelIngressDefs.some((d) => d.name === routing.tunnelIngress)) {
             tunnelIngressDefs.push({
               name: routing.tunnelIngress,
               fqdn: routing.tunnelIngress,
-              service: envForTunnel.tunnelServiceUrl,
+              service: tunnelServiceUrl,
+            });
+          }
+        }
+      }
+
+      // --- TLS Certificates (local environments) ---
+      for (const svc of services) {
+        const routing = svc.routing as any;
+        if (routing?.tlsCertificate && !tlsCertDefs.some((d) => d.name === routing.tlsCertificate)) {
+          tlsCertDefs.push({
+            name: routing.tlsCertificate,
+            fqdn: routing.tlsCertificate,
+          });
+        }
+      }
+
+      // --- DNS Records (local environments) ---
+      const hasDnsServices = services.some((svc) => {
+        const routing = svc.routing as any;
+        return !!routing?.dnsRecord;
+      });
+
+      if (hasDnsServices) {
+        const targetIp = await networkUtils.getAppropriateIPForEnvironment(input.environmentId);
+        for (const svc of services) {
+          const routing = svc.routing as any;
+          if (routing?.dnsRecord && !dnsRecordDefs.some((d) => d.name === routing.dnsRecord)) {
+            dnsRecordDefs.push({
+              name: routing.dnsRecord,
+              fqdn: routing.dnsRecord,
+              recordType: "A",
+              target: targetIp,
             });
           }
         }
@@ -901,6 +981,8 @@ export class StackTemplateService {
         networks: version.networks as any,
         volumes: version.volumes as any,
         tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
+        tlsCertificates: tlsCertDefs.length > 0 ? tlsCertDefs : undefined,
+        dnsRecords: dnsRecordDefs.length > 0 ? dnsRecordDefs : undefined,
         services: {
           create: services.map(toServiceCreateInput),
         },
