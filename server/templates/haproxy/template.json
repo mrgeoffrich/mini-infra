@@ -1,10 +1,17 @@
 {
   "name": "haproxy",
   "displayName": "HAProxy Load Balancer",
-  "builtinVersion": 7,
+  "builtinVersion": 9,
   "scope": "environment",
   "category": "infrastructure",
   "description": "HAProxy load balancer with DataPlane API",
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "applications" }
+  ],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "dataplane" },
+    { "type": "docker-network", "purpose": "tunnel", "optional": true }
+  ],
   "parameters": [
     { "name": "http-port", "type": "number", "default": 80, "description": "Host port for HTTP traffic (0 to disable)" },
     { "name": "https-port", "type": "number", "default": 443, "description": "Host port for HTTPS traffic (0 to disable)" },
@@ -58,7 +65,7 @@
           "retries": 3,
           "startPeriod": 10
         },
-        "joinEnvironmentNetworks": ["applications", "tunnel"],
+        "joinResourceNetworks": ["applications", "dataplane", "tunnel"],
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
       "dependsOn": [],

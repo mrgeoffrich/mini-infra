@@ -179,7 +179,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { name, description, environmentId, parameters, parameterValues, networks, volumes, services, tlsCertificates, dnsRecords, tunnelIngress } = parsed.data;
+    const { name, description, environmentId, parameters, parameterValues, resourceOutputs, resourceInputs, networks, volumes, services, tlsCertificates, dnsRecords, tunnelIngress } = parsed.data;
 
     if (environmentId) {
       // Check environment exists
@@ -208,6 +208,8 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         environmentId: environmentId ?? undefined,
         parameters: parameters ? (parameters as any) : undefined,
         parameterValues: parameterValues ? (parameterValues as any) : undefined,
+        resourceOutputs: resourceOutputs ? (resourceOutputs as any) : undefined,
+        resourceInputs: resourceInputs ? (resourceInputs as any) : undefined,
         networks: networks as any,
         volumes: volumes as any,
         tlsCertificates: tlsCertificates ?? [],
@@ -246,7 +248,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    const { services, parameters, parameterValues, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
+    const { services, parameters, parameterValues, resourceOutputs, resourceInputs, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
 
     const updateData: any = {
       ...fields,
@@ -254,6 +256,8 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       volumes: fields.volumes ? (fields.volumes as any) : undefined,
       parameters: parameters ? (parameters as any) : undefined,
       parameterValues: parameterValues ? (parameterValues as any) : undefined,
+      ...(resourceOutputs !== undefined ? { resourceOutputs: resourceOutputs as any } : {}),
+      ...(resourceInputs !== undefined ? { resourceInputs: resourceInputs as any } : {}),
       ...(tlsCertificates !== undefined ? { tlsCertificates } : {}),
       ...(dnsRecords !== undefined ? { dnsRecords } : {}),
       ...(tunnelIngress !== undefined ? { tunnelIngress } : {}),

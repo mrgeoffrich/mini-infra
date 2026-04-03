@@ -1,10 +1,13 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 2,
+  "builtinVersion": 4,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Cloudflare tunnel connector for exposing services to the internet via HAProxy",
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "tunnel" }
+  ],
   "parameters": [
     {
       "name": "tunnel-token",
@@ -23,7 +26,7 @@
       "dockerTag": "latest",
       "containerConfig": {
         "command": ["tunnel", "--no-autoupdate", "run", "--token", "{{params.tunnel-token}}"],
-        "joinEnvironmentNetworks": ["tunnel"],
+        "joinResourceNetworks": ["tunnel"],
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD-SHELL", "wget --spider -q http://localhost:2000/ready || exit 1"],

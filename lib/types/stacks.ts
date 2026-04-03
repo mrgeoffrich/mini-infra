@@ -37,7 +37,7 @@ export interface StackContainerConfig {
   mounts?: { source: string; target: string; type: 'volume' | 'bind'; readOnly?: boolean }[];
   labels?: Record<string, string>;
   joinNetworks?: string[];
-  joinEnvironmentNetworks?: string[];
+  joinResourceNetworks?: string[];
   restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
   healthcheck?: {
     test: string[];
@@ -89,6 +89,18 @@ export interface StackNetwork {
   options?: Record<string, any>;
 }
 
+export interface StackResourceOutput {
+  type: string;
+  purpose: string;
+  joinSelf?: boolean;
+}
+
+export interface StackResourceInput {
+  type: string;
+  purpose: string;
+  optional?: boolean;
+}
+
 export interface StackVolume {
   name: string;
   driver?: string;
@@ -132,6 +144,8 @@ export interface Stack {
   templateVersion: number | null;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;
+  resourceOutputs: StackResourceOutput[];
+  resourceInputs: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   tlsCertificates: StackTlsCertificate[];
@@ -177,6 +191,8 @@ export interface StackInfo {
   templateUpdateAvailable?: boolean;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;
+  resourceOutputs: StackResourceOutput[];
+  resourceInputs: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   tlsCertificates: StackTlsCertificate[];
@@ -223,6 +239,8 @@ export interface StackDefinition {
   name: string;
   description?: string;
   parameters?: StackParameterDefinition[];
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
@@ -240,6 +258,8 @@ export function serializeStack(
     name: stack.name,
     description: stack.description ?? undefined,
     parameters: stack.parameters?.length > 0 ? stack.parameters : undefined,
+    resourceOutputs: stack.resourceOutputs?.length > 0 ? stack.resourceOutputs : undefined,
+    resourceInputs: stack.resourceInputs?.length > 0 ? stack.resourceInputs : undefined,
     networks: stack.networks,
     volumes: stack.volumes,
     tlsCertificates: stack.tlsCertificates?.length > 0 ? stack.tlsCertificates : undefined,
@@ -266,6 +286,8 @@ export interface CreateStackInput {
   environmentId?: string;
   parameters?: StackParameterDefinition[];
   parameterValues?: Record<string, StackParameterValue>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
@@ -283,6 +305,8 @@ export function deserializeStack(
     description: definition.description,
     environmentId,
     parameters: definition.parameters,
+    resourceOutputs: definition.resourceOutputs,
+    resourceInputs: definition.resourceInputs,
     networks: definition.networks,
     volumes: definition.volumes,
     tlsCertificates: definition.tlsCertificates,
@@ -443,6 +467,8 @@ export interface CreateStackRequest {
   environmentId?: string;
   parameters?: StackParameterDefinition[];
   parameterValues?: Record<string, StackParameterValue>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
@@ -456,6 +482,8 @@ export interface UpdateStackRequest {
   description?: string;
   parameters?: StackParameterDefinition[];
   parameterValues?: Record<string, StackParameterValue>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks?: StackNetwork[];
   volumes?: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];

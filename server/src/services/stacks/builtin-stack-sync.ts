@@ -104,6 +104,9 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   // 3. Clean up orphaned stacks from old sync logic
   await cleanupOrphanedStacks(prisma, templates, log);
 
+  // 4. Backfill InfraResource records from existing EnvironmentNetwork data
+  await migrateEnvironmentNetworksToInfraResources(prisma, log);
+
   log.info("Built-in stack sync complete");
 }
 
@@ -192,6 +195,8 @@ async function syncStackFromTemplate(
         templateVersion: template.builtinVersion,
         parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
         parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as any) : undefined,
+        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
@@ -286,6 +291,8 @@ async function syncStackFromTemplate(
         templateVersion: template.builtinVersion,
         parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
         parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as any) : undefined,
+        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
@@ -347,5 +354,64 @@ async function cleanupOrphanedStacks(
         await prisma.stack.delete({ where: { id: s.id } });
       }
     }
+  }
+}
+
+/**
+ * Backfill InfraResource records from existing EnvironmentNetwork data.
+ * Maps 'applications' networks to the haproxy stack and 'tunnel' networks to the cloudflare-tunnel stack.
+ * Idempotent — upserts so it can run on every startup safely.
+ */
+async function migrateEnvironmentNetworksToInfraResources(
+  prisma: PrismaClient,
+  log: ReturnType<typeof servicesLogger>
+): Promise<void> {
+  const envNetworks = await prisma.environmentNetwork.findMany({
+    where: { purpose: { in: ['applications', 'tunnel'] } },
+  });
+
+  if (envNetworks.length === 0) return;
+
+  let migrated = 0;
+
+  for (const en of envNetworks) {
+    // Find the owning stack: haproxy for 'applications', cloudflare-tunnel for 'tunnel'
+    const stackName = en.purpose === 'applications' ? 'haproxy' : 'cloudflare-tunnel';
+    const owningStack = await prisma.stack.findFirst({
+      where: { name: stackName, environmentId: en.environmentId, status: { not: 'removed' } },
+      select: { id: true },
+    });
+
+    try {
+      await prisma.infraResource.upsert({
+        where: {
+          type_purpose_scope_environmentId: {
+            type: 'docker-network',
+            purpose: en.purpose,
+            scope: 'environment',
+            environmentId: en.environmentId,
+          },
+        },
+        create: {
+          type: 'docker-network',
+          purpose: en.purpose,
+          scope: 'environment',
+          environmentId: en.environmentId,
+          stackId: owningStack?.id ?? null,
+          name: en.name,
+        },
+        update: {}, // Don't overwrite if already exists
+      });
+      migrated++;
+    } catch (err: any) {
+      log.warn(
+        { purpose: en.purpose, environmentId: en.environmentId, error: err.message },
+        'Failed to migrate EnvironmentNetwork to InfraResource'
+      );
+    }
+  }
+
+  if (migrated > 0) {
+    log.info({ migrated, total: envNetworks.length }, 'Backfilled InfraResource records from EnvironmentNetwork');
   }
 }

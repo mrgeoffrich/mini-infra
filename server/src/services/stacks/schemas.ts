@@ -90,7 +90,7 @@ export const stackContainerConfigSchema = z.object({
     .optional(),
   labels: z.record(z.string(), z.string()).optional(),
   joinNetworks: z.array(z.string().min(1)).optional(),
-  joinEnvironmentNetworks: z.array(z.enum(["applications", "tunnel"])).optional(),
+  joinResourceNetworks: z.array(z.string().min(1)).optional(),
   restartPolicy: z
     .enum(["no", "always", "unless-stopped", "on-failure"])
     .optional(),
@@ -142,6 +142,18 @@ export const stackServiceRoutingSchema = z.object({
   tlsCertificate: z.string().optional(),
   dnsRecord: z.string().optional(),
   tunnelIngress: z.string().optional(),
+});
+
+export const stackResourceOutputSchema = z.object({
+  type: z.string().min(1),
+  purpose: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  joinSelf: z.boolean().optional(),
+});
+
+export const stackResourceInputSchema = z.object({
+  type: z.string().min(1),
+  purpose: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  optional: z.boolean().optional(),
 });
 
 export const stackNetworkSchema = z.object({
@@ -221,12 +233,14 @@ export const stackDefinitionSchema = z.object({
   name: stackNameSchema,
   description: z.string().max(500).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
+  resourceOutputs: z.array(stackResourceOutputSchema).optional(),
+  resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
-  services: z.array(stackServiceDefinitionSchema).min(1, "At least one service is required"),
+  services: z.array(stackServiceDefinitionSchema),
 });
 
 // API request schemas
@@ -237,14 +251,14 @@ export const createStackSchema = z.object({
   environmentId: z.string().min(1).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   parameterValues: parameterValuesSchema.optional(),
+  resourceOutputs: z.array(stackResourceOutputSchema).optional(),
+  resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
-  services: z
-    .array(stackServiceDefinitionSchema)
-    .min(1, "At least one service is required"),
+  services: z.array(stackServiceDefinitionSchema),
 });
 
 export const updateStackSchema = z.object({
@@ -252,6 +266,8 @@ export const updateStackSchema = z.object({
   description: z.string().max(500).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   parameterValues: parameterValuesSchema.optional(),
+  resourceOutputs: z.array(stackResourceOutputSchema).optional(),
+  resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema).optional(),
   volumes: z.array(stackVolumeSchema).optional(),
   tlsCertificates: z.array(stackTlsCertificateSchema).optional(),

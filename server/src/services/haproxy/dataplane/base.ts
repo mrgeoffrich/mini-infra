@@ -130,7 +130,7 @@ export class HAProxyDataPlaneClientBase {
 
   /**
    * Discover the DataPlane API endpoint via Docker container networking.
-   * If mini-infra doesn't share a network with the HAProxy container, it auto-joins one.
+   * Requires mini-infra and HAProxy to share a network (e.g., the dataplane network).
    */
   private async discoverViaContainerNetwork(
     docker: import('dockerode'),
@@ -158,7 +158,7 @@ export class HAProxyDataPlaneClientBase {
     const myInfo = await myContainer.inspect();
     const myNetworks = Object.keys(myInfo.NetworkSettings?.Networks || {});
 
-    // Check for an existing shared network
+    // Find a shared network between mini-infra and HAProxy
     for (const [netName, netInfo] of networkEntries) {
       if (myNetworks.includes(netName) && netInfo.IPAddress) {
         logger.info(
@@ -173,49 +173,10 @@ export class HAProxyDataPlaneClientBase {
       }
     }
 
-    // No shared network — join the HAProxy container's network
-    const [targetNetworkName, targetNetInfo] = networkEntries[0];
-    const network = docker.getNetwork(targetNetworkName);
-
-    try {
-      await network.connect({ Container: selfId });
-      logger.info(
-        { network: targetNetworkName },
-        'Auto-joined HAProxy network for DataPlane API access'
-      );
-    } catch (connectError: any) {
-      // Ignore "already connected" errors (Docker returns 403) for idempotency
-      const msg = connectError?.message || connectError?.statusMessage || '';
-      if (!msg.includes('already exists') && connectError?.statusCode !== 403) {
-        throw connectError;
-      }
-      logger.debug(
-        { network: targetNetworkName },
-        'Already connected to HAProxy network'
-      );
-    }
-
-    // Use the HAProxy container's IP on that network
-    if (targetNetInfo.IPAddress) {
-      return {
-        baseUrl: `http://${targetNetInfo.IPAddress}:5555/v3`,
-        containerName,
-        containerId,
-      };
-    }
-
-    // Re-inspect in case IP wasn't populated yet
-    const updatedInfo = await docker.getContainer(containerId).inspect();
-    const updatedNet = updatedInfo.NetworkSettings?.Networks?.[targetNetworkName];
-    if (updatedNet?.IPAddress) {
-      return {
-        baseUrl: `http://${updatedNet.IPAddress}:5555/v3`,
-        containerName,
-        containerId,
-      };
-    }
-
-    throw new Error('Could not determine HAProxy container IP after joining network');
+    throw new Error(
+      'No shared network between mini-infra and HAProxy. ' +
+      'Apply the dataplane-network stack and re-apply the HAProxy stack to establish connectivity.'
+    );
   }
 
   /**

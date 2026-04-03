@@ -65,24 +65,25 @@ export class EnvironmentValidationService {
         };
       }
 
-      // Get HAProxy network information
-      const networkInfo = await this.getHAProxyNetwork(haproxyValidation.haproxyContainerId!, environment.name);
-      if (!networkInfo.isValid) {
+      // Look up the applications network from InfraResource table
+      const infraNetwork = await this.getApplicationsNetworkFromResource(environmentId);
+      if (!infraNetwork.networkName) {
         return {
           isValid: false,
           environmentId,
           environmentName: environment.name,
-          errorMessage: networkInfo.errorMessage,
-          errorCode: networkInfo.errorCode
+          errorMessage: 'Applications network not found. Ensure the HAProxy stack has been applied for this environment.',
+          errorCode: 'NETWORK_RESOURCE_NOT_FOUND'
         };
       }
+      const networkName = infraNetwork.networkName;
 
       logger.info(
         {
           environmentId,
           environmentName: environment.name,
           haproxyContainerId: haproxyValidation.haproxyContainerId,
-          haproxyNetworkName: networkInfo.networkName
+          haproxyNetworkName: networkName
         },
         "Environment validation successful"
       );
@@ -92,7 +93,7 @@ export class EnvironmentValidationService {
         environmentId,
         environmentName: environment.name,
         haproxyContainerId: haproxyValidation.haproxyContainerId,
-        haproxyNetworkName: networkInfo.networkName
+        haproxyNetworkName: networkName
       };
 
     } catch (error) {
@@ -181,90 +182,6 @@ export class EnvironmentValidationService {
   }
 
   /**
-   * Get the Docker network that HAProxy is connected to
-   */
-  private async getHAProxyNetwork(haproxyContainerId: string, environmentName: string): Promise<{
-    isValid: boolean;
-    networkName?: string;
-    errorMessage?: string;
-    errorCode?: string;
-  }> {
-    try {
-      const docker = await this.dockerService.getDockerInstance();
-      const container = docker.getContainer(haproxyContainerId);
-      const containerInfo = await container.inspect();
-
-      if (!containerInfo || !containerInfo.NetworkSettings || !containerInfo.NetworkSettings.Networks) {
-        return {
-          isValid: false,
-          errorMessage: `HAProxy container network information not available`,
-          errorCode: "HAPROXY_NETWORK_INFO_MISSING"
-        };
-      }
-
-      const networks = Object.keys(containerInfo.NetworkSettings.Networks);
-
-      // Filter out the default bridge network - we want custom networks
-      const customNetworks = networks.filter(network => network !== "bridge");
-
-      if (customNetworks.length === 0) {
-        return {
-          isValid: false,
-          errorMessage: `HAProxy container is not connected to any custom Docker networks`,
-          errorCode: "HAPROXY_NO_CUSTOM_NETWORK"
-        };
-      }
-
-      // Use the first custom network (HAProxy should typically be on one custom network)
-      const networkName = customNetworks[0];
-
-      if (customNetworks.length > 1) {
-        logger.warn(
-          {
-            haproxyContainerId: haproxyContainerId.slice(0, 12),
-            environmentName,
-            networks: customNetworks
-          },
-          "HAProxy container connected to multiple custom networks, using first one"
-        );
-      }
-
-      logger.debug(
-        {
-          haproxyContainerId: haproxyContainerId.slice(0, 12),
-          environmentName,
-          selectedNetwork: networkName,
-          allNetworks: networks
-        },
-        "Found HAProxy network information"
-      );
-
-      return {
-        isValid: true,
-        networkName
-      };
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-      logger.error(
-        {
-          haproxyContainerId: haproxyContainerId.slice(0, 12),
-          environmentName,
-          error: errorMessage
-        },
-        "Failed to get HAProxy network information"
-      );
-
-      return {
-        isValid: false,
-        errorMessage: `Failed to get HAProxy network information: ${errorMessage}`,
-        errorCode: "HAPROXY_NETWORK_LOOKUP_FAILED"
-      };
-    }
-  }
-
-  /**
    * Get HAProxy environment context for deployment
    */
   async getHAProxyEnvironmentContext(environmentId: string): Promise<HAProxyEnvironmentContext | null> {
@@ -280,5 +197,42 @@ export class EnvironmentValidationService {
       haproxyContainerId: validation.haproxyContainerId,
       haproxyNetworkName: validation.haproxyNetworkName
     };
+  }
+
+  /**
+   * Look up the applications network from the InfraResource table.
+   * Returns the network name if found, undefined otherwise.
+   */
+  private async getApplicationsNetworkFromResource(environmentId: string): Promise<{
+    networkName?: string;
+  }> {
+    try {
+      const resource = await prisma.infraResource.findUnique({
+        where: {
+          type_purpose_scope_environmentId: {
+            type: 'docker-network',
+            purpose: 'applications',
+            scope: 'environment',
+            environmentId,
+          },
+        },
+      });
+
+      if (resource) {
+        logger.debug(
+          { environmentId, networkName: resource.name },
+          'Found applications network from InfraResource'
+        );
+        return { networkName: resource.name };
+      }
+
+      return {};
+    } catch (error) {
+      logger.debug(
+        { environmentId, error: error instanceof Error ? error.message : 'Unknown' },
+        'InfraResource lookup failed, will fall back to container inspection'
+      );
+      return {};
+    }
   }
 }

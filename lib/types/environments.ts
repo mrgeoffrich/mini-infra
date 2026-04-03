@@ -1,6 +1,6 @@
 export type EnvironmentType = 'production' | 'nonproduction';
 export type EnvironmentNetworkType = 'local' | 'internet';
-export type EnvironmentNetworkPurpose = 'applications' | 'tunnel' | 'custom';
+export type EnvironmentNetworkPurpose = 'custom';
 
 export interface Environment {
   id: string;

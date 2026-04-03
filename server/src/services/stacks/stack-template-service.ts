@@ -212,6 +212,8 @@ export class StackTemplateService {
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
           networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -338,6 +340,8 @@ export class StackTemplateService {
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
           networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -556,6 +560,8 @@ export class StackTemplateService {
               definition.parameters ?? []
             ) as any,
             networkTypeDefaults: networkTypeDefaults as any,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -573,6 +579,8 @@ export class StackTemplateService {
               definition.parameters ?? []
             ) as any,
             networkTypeDefaults: networkTypeDefaults as any,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -978,6 +986,8 @@ export class StackTemplateService {
           Object.keys(mergedValues).length > 0
             ? (mergedValues as any)
             : undefined,
+        resourceOutputs: version.resourceOutputs ? (version.resourceOutputs as any) : undefined,
+        resourceInputs: version.resourceInputs ? (version.resourceInputs as any) : undefined,
         networks: version.networks as any,
         volumes: version.volumes as any,
         tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
@@ -1037,6 +1047,8 @@ export class StackTemplateService {
       notes: version.notes,
       parameters: version.parameters ?? [],
       defaultParameterValues: version.defaultParameterValues ?? {},
+      resourceOutputs: version.resourceOutputs ?? undefined,
+      resourceInputs: version.resourceInputs ?? undefined,
       networks: version.networks ?? [],
       volumes: version.volumes ?? [],
       publishedAt: version.publishedAt?.toISOString() ?? null,
