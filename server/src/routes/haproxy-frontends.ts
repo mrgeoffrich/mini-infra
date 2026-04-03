@@ -8,6 +8,7 @@ import {
   HAProxyFrontendListResponse,
   HAProxyFrontendResponse,
   SyncFrontendResponse,
+  ForceDeleteFrontendResponse,
 } from "@mini-infra/types";
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
 import { haproxyCertificateDeployer } from "../services/haproxy/haproxy-certificate-deployer";
@@ -1127,6 +1128,112 @@ router.delete(
       res.status(500).json({
         success: false,
         error: "Failed to remove route",
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/haproxy/frontends/:frontendName
+ * Force-delete a frontend and all its routes. Emergency cleanup endpoint — not for UI use.
+ */
+router.delete(
+  "/:frontendName",
+  requirePermission('haproxy:write') as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const frontendName = String(req.params.frontendName);
+
+      // Fetch frontend with routes
+      const frontend = await prisma.hAProxyFrontend.findUnique({
+        where: { frontendName },
+        include: { routes: true },
+      });
+
+      if (!frontend) {
+        return res.status(404).json({
+          success: false,
+          error: "Frontend not found",
+        });
+      }
+
+      // Try to clean up HAProxy config — but don't fail if HAProxy is unavailable
+      let haproxyCleanedUp = false;
+      try {
+        const haproxyClient = await getHAProxyClientForFrontend(frontendName);
+
+        // Remove all routes from HAProxy (ACLs and switching rules)
+        for (const route of frontend.routes) {
+          try {
+            await haproxyFrontendManager.removeRouteFromSharedFrontend(
+              frontend.id,
+              route.hostname,
+              haproxyClient,
+              prisma
+            );
+          } catch (routeError: any) {
+            logger.warn(
+              { error: routeError.message, hostname: route.hostname, frontendName },
+              "Failed to remove route from HAProxy during force-delete, continuing"
+            );
+          }
+        }
+
+        // Remove the frontend itself from HAProxy
+        try {
+          await haproxyFrontendManager.removeFrontend(frontendName, haproxyClient);
+        } catch (frontendError: any) {
+          logger.warn(
+            { error: frontendError.message, frontendName },
+            "Failed to remove frontend from HAProxy during force-delete, continuing"
+          );
+        }
+
+        haproxyCleanedUp = true;
+      } catch (haproxyError: any) {
+        logger.warn(
+          { error: haproxyError.message, frontendName },
+          "HAProxy unavailable during force-delete, cleaning up database only"
+        );
+      }
+
+      // Delete remaining routes from database (some may have been deleted by removeRouteFromSharedFrontend)
+      const remainingRoutes = await prisma.hAProxyRoute.deleteMany({
+        where: { sharedFrontendId: frontend.id },
+      });
+
+      // Delete the frontend record
+      await prisma.hAProxyFrontend.delete({
+        where: { id: frontend.id },
+      });
+
+      const totalDeletedRoutes = frontend.routes.length;
+
+      logger.info(
+        { frontendName, deletedRoutes: totalDeletedRoutes, haproxyCleanedUp },
+        "Force-deleted frontend and all routes"
+      );
+
+      emitHAProxyUpdate();
+
+      const response: ForceDeleteFrontendResponse = {
+        success: true,
+        message: haproxyCleanedUp
+          ? `Frontend and ${totalDeletedRoutes} route(s) removed from HAProxy and database`
+          : `Frontend and ${totalDeletedRoutes} route(s) removed from database only (HAProxy was unavailable)`,
+        deletedRoutes: totalDeletedRoutes,
+        frontendName,
+      };
+      res.json(response);
+    } catch (error: any) {
+      logger.error(
+        { error: error.message, frontendName: req.params.frontendName },
+        "Failed to force-delete frontend"
+      );
+      res.status(500).json({
+        success: false,
+        error: "Failed to force-delete frontend",
         message: error.message,
       });
     }
