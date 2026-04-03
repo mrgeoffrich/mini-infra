@@ -142,8 +142,14 @@ Do not change anything without the user's go-ahead.
 Once the user approves and you've made the code changes:
 
 ```bash
-# Rebuild and restart the container with the new code
-docker compose -f deployment/development/docker-compose.yaml up --build -d
+# Rebuild and restart the container with the new code (uses server/.env for OAuth and other secrets)
+docker compose --env-file server/.env -f deployment/development/docker-compose.yaml up --build -d
+```
+
+Note: The `server/.env` file contains Google OAuth credentials and other secrets needed by the container. Always pass `--env-file server/.env` when running docker compose commands. Alternatively, use the startup script which handles this automatically:
+
+```bash
+./deployment/development/start.sh
 ```
 
 Wait for the container to become healthy (takes ~40 seconds):

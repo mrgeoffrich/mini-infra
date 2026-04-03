@@ -523,12 +523,18 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
         startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
       }
 
+      // Build resource actions for the started event so the task tracker knows about them
+      const activeResourceActions = (plan.resourceActions ?? [])
+        .filter((ra) => ra.action !== 'no-op')
+        .map((ra) => ({ serviceName: `${ra.resourceType}:${ra.resourceName}`, action: ra.action }));
+      const allStartedActions = [...startedActions, ...activeResourceActions];
+
       // Emit started event (now that we have the plan)
       emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
         stackId,
         stackName: plan.stackName,
-        totalActions: startedActions.length,
-        actions: startedActions,
+        totalActions: allStartedActions.length,
+        actions: allStartedActions,
         forcePull: isForcePull,
       });
 
@@ -587,18 +593,23 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
         } catch { /* never break apply */ }
       }
 
+      // Unified progress counter for socket emissions (covers both services and resources)
+      let emittedStepCount = 0;
+      const totalEmitActions = allStartedActions.length;
+
       try {
         const result = await reconciler.apply(stackId, {
           ...parsed.data,
           triggeredBy,
           plan,
-          onProgress: (progressResult, completedCount, totalActions) => {
+          onProgress: (progressResult) => {
+            emittedStepCount++;
             try {
               emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
                 stackId,
                 ...progressResult,
-                completedCount,
-                totalActions,
+                completedCount: emittedStepCount,
+                totalActions: totalEmitActions,
               } as any);
             } catch { /* never break apply */ }
 
