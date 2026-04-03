@@ -116,3 +116,20 @@ export interface UpdateVolumeRequest {
 export interface VolumesResponse {
   volumes: EnvironmentVolume[];
 }
+
+// Delete check types
+export interface EnvironmentDependencyItem {
+  id: string;
+  name: string;
+}
+
+export interface EnvironmentDeleteCheck {
+  canDelete: boolean;
+  dependencies: {
+    stacks: EnvironmentDependencyItem[];
+    deploymentConfigurations: EnvironmentDependencyItem[];
+    haproxyFrontends: EnvironmentDependencyItem[];
+    haproxyBackends: EnvironmentDependencyItem[];
+    stackTemplates: EnvironmentDependencyItem[];
+  };
+}

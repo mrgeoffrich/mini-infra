@@ -190,6 +190,54 @@ router.put('/:id', requirePermission('environments:write'), async (req, res) => 
 });
 
 
+// Check if environment can be deleted (pre-flight validation)
+router.get('/:id/delete-check', requirePermission('environments:read'), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+
+    const [stacks, deploymentConfigs, haproxyFrontends, haproxyBackends, stackTemplates] = await Promise.all([
+      prisma.stack.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      }),
+      prisma.deploymentConfiguration.findMany({
+        where: { environmentId: id },
+        select: { id: true, applicationName: true },
+      }),
+      prisma.hAProxyFrontend.findMany({
+        where: { environmentId: id },
+        select: { id: true, frontendName: true, hostname: true },
+      }),
+      prisma.hAProxyBackend.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      }),
+      prisma.stackTemplate.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const dependencies = {
+      stacks: stacks.map(s => ({ id: s.id, name: s.name })),
+      deploymentConfigurations: deploymentConfigs.map(d => ({ id: d.id, name: d.applicationName })),
+      haproxyFrontends: haproxyFrontends.map(f => ({ id: f.id, name: f.hostname || f.frontendName })),
+      haproxyBackends: haproxyBackends.map(b => ({ id: b.id, name: b.name })),
+      stackTemplates: stackTemplates.map(t => ({ id: t.id, name: t.name })),
+    };
+
+    const canDelete = Object.values(dependencies).every(arr => arr.length === 0);
+
+    res.json({ canDelete, dependencies });
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to check environment delete eligibility');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to check delete eligibility',
+    });
+  }
+});
+
 router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
     const id = String(req.params.id);

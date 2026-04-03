@@ -3,6 +3,7 @@ import { useState, useCallback } from "react";
 import {
   Environment,
   EnvironmentType,
+  EnvironmentDeleteCheck,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
   ListEnvironmentsResponse,
@@ -151,6 +152,25 @@ async function deleteEnvironment(
 }
 
 
+
+async function fetchEnvironmentDeleteCheck(
+  id: string,
+  correlationId: string,
+): Promise<EnvironmentDeleteCheck> {
+  const response = await fetch(`/api/environments/${id}/delete-check`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to check delete eligibility: ${response.statusText}`);
+  }
+
+  return await response.json();
+}
 
 // ====================
 // Network API Functions
@@ -467,6 +487,22 @@ export function useDeleteEnvironment() {
   });
 }
 
+export function useEnvironmentDeleteCheck(
+  id: string,
+  options: { enabled?: boolean } = {},
+) {
+  const { enabled = true } = options;
+  const correlationId = generateCorrelationId();
+
+  return useQuery({
+    queryKey: ["environmentDeleteCheck", id],
+    queryFn: () => fetchEnvironmentDeleteCheck(id, correlationId),
+    enabled: enabled && !!id,
+    staleTime: 0, // Always refetch when dialog opens
+    gcTime: 60 * 1000,
+  });
+}
+
 // ====================
 // Network Hooks
 // ====================
@@ -729,6 +765,7 @@ export function useEnvironmentFilters(
 export type {
   Environment,
   EnvironmentType,
+  EnvironmentDeleteCheck,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
   EnvironmentNetwork,
