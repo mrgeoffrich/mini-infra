@@ -1196,7 +1196,6 @@ export class StackReconciler {
       enableSsl,
       tlsCertificateId,
       certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
-      networkType: 'local',
       healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
       healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
         ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
@@ -1263,13 +1262,11 @@ export class StackReconciler {
           haproxyConfigured: false,
           healthChecksPassed: false,
           frontendConfigured: false,
-          dnsConfigured: false,
           trafficEnabled: false,
           validationErrors: 0,
           error: undefined,
           retryCount: 0,
           frontendName: undefined,
-          dnsRecordId: undefined,
         };
 
         const finalState = await runStateMachineToCompletion(
@@ -1307,7 +1304,6 @@ export class StackReconciler {
           greenHealthy: false,
           greenBackendConfigured: false,
           frontendConfigured: false,
-          dnsConfigured: false,
           trafficOpenedToGreen: false,
           trafficValidated: false,
           blueDraining: false,
@@ -1322,7 +1318,6 @@ export class StackReconciler {
           newContainerId: undefined,
           containerIpAddress: undefined,
           frontendName: undefined,
-          dnsRecordId: undefined,
         };
 
         const finalState = await runStateMachineToCompletion(

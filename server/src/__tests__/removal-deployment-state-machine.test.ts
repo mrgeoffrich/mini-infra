@@ -197,10 +197,6 @@ describe('RemovalDeploymentStateMachine', () => {
             actor.send({ type: 'FRONTEND_REMOVED' });
             expect(actor.getSnapshot().context.frontendRemoved).toBe(true);
 
-            // DNS removal succeeds
-            actor.send({ type: 'DNS_REMOVED' });
-            expect(actor.getSnapshot().context.dnsRemoved).toBe(true);
-
             // Application stop succeeds
             actor.send({ type: 'STOP_SUCCESS', stoppedContainers: ['container1'] });
             expect(actor.getSnapshot().context.applicationStopped).toBe(true);
@@ -220,7 +216,6 @@ describe('RemovalDeploymentStateMachine', () => {
             actor.send({ type: 'START_REMOVAL' });
             actor.send({ type: 'LB_REMOVAL_SUCCESS' });
             actor.send({ type: 'FRONTEND_REMOVED' });
-            actor.send({ type: 'DNS_REMOVED' });
             actor.send({ type: 'STOP_SUCCESS' });
             actor.send({ type: 'REMOVAL_SUCCESS' });
 
@@ -237,12 +232,8 @@ describe('RemovalDeploymentStateMachine', () => {
             expect(actor.getSnapshot().value).toBe('removingFrontend');
             expect(actor.getSnapshot().context.lbRemovalComplete).toBe(false);
 
-            // Frontend removal errors - should continue to removingDNS
+            // Frontend removal errors - should continue to stoppingApplication
             actor.send({ type: 'FRONTEND_REMOVAL_ERROR', error: 'Frontend error' });
-            expect(actor.getSnapshot().value).toBe('removingDNS');
-
-            // DNS removal errors - should continue to stoppingApplication
-            actor.send({ type: 'DNS_REMOVAL_ERROR', error: 'DNS error' });
             expect(actor.getSnapshot().value).toBe('stoppingApplication');
 
             // Stop fails - should continue to removingApplication

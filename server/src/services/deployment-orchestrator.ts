@@ -326,14 +326,12 @@ export class DeploymentOrchestrator {
       haproxyConfigured: false,
       healthChecksPassed: false,
       frontendConfigured: false,
-      dnsConfigured: false,
       trafficEnabled: false,
       validationErrors: 0,
       monitoringStartTime: undefined,
       error: undefined,
       retryCount: 0,
       frontendName: undefined,
-      dnsRecordId: undefined,
       // Source-agnostic fields (populated from DeploymentConfig for legacy path)
       hostname: baseContext.config.hostname ?? undefined,
       healthCheckEndpoint: baseContext.config.healthCheck?.endpoint,
@@ -389,7 +387,6 @@ export class DeploymentOrchestrator {
       greenHealthy: false,
       greenBackendConfigured: false,
       frontendConfigured: false,
-      dnsConfigured: false,
       trafficOpenedToGreen: false,
       trafficValidated: false,
       blueDraining: false,
@@ -405,7 +402,6 @@ export class DeploymentOrchestrator {
       containerIpAddress: undefined,
       containerPort: undefined,
       frontendName: undefined,
-      dnsRecordId: undefined,
       existingContainers: existingContainers, // Store all existing containers for tracking
       // Source-agnostic fields (populated from DeploymentConfig for legacy path)
       hostname: baseContext.config.hostname ?? undefined,
