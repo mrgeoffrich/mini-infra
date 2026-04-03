@@ -344,20 +344,38 @@ export class EnvironmentManager {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${environment.networks.length} network(s) (${failedNetworks} failed)`);
       }
 
-      // Clean up archived stack templates that still reference this environment
-      const archivedTemplates = await this.prisma.stackTemplate.findMany({
-        where: { environmentId: id, isArchived: true },
-        select: { id: true, name: true },
+      // Clean up undeployed/removed stacks that reference this environment
+      const orphanedStacks = await this.prisma.stack.findMany({
+        where: { environmentId: id, status: { in: ['removed', 'undeployed'] } },
+        select: { id: true, name: true, status: true },
       });
-      if (archivedTemplates.length > 0) {
+      if (orphanedStacks.length > 0) {
         this.logger.info({
           environmentId: id,
-          templateCount: archivedTemplates.length,
-          templates: archivedTemplates.map(t => t.name),
-        }, 'Cleaning up archived stack templates');
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${archivedTemplates.length} archived stack template(s)...`);
+          stackCount: orphanedStacks.length,
+          stacks: orphanedStacks.map(s => `${s.name} (${s.status})`),
+        }, 'Cleaning up orphaned stacks');
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${orphanedStacks.length} orphaned stack(s)...`);
 
-        for (const template of archivedTemplates) {
+        await this.prisma.stack.deleteMany({
+          where: { id: { in: orphanedStacks.map(s => s.id) } },
+        });
+      }
+
+      // Clean up stack templates that reference this environment
+      const templates = await this.prisma.stackTemplate.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      });
+      if (templates.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          templateCount: templates.length,
+          templates: templates.map(t => t.name),
+        }, 'Cleaning up stack templates');
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${templates.length} stack template(s)...`);
+
+        for (const template of templates) {
           await this.prisma.$transaction([
             this.prisma.stack.deleteMany({ where: { templateId: template.id } }),
             this.prisma.stackTemplate.update({

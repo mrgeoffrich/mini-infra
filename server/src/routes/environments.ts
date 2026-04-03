@@ -197,7 +197,7 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
 
     const [stacks, deploymentConfigs, haproxyFrontends, haproxyBackends, stackTemplates] = await Promise.all([
       prisma.stack.findMany({
-        where: { environmentId: id },
+        where: { environmentId: id, status: { notIn: ['removed', 'undeployed'] } },
         select: { id: true, name: true },
       }),
       prisma.deploymentConfiguration.findMany({
@@ -212,10 +212,8 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
         where: { environmentId: id },
         select: { id: true, name: true },
       }),
-      prisma.stackTemplate.findMany({
-        where: { environmentId: id, isArchived: false },
-        select: { id: true, name: true },
-      }),
+      // Stack templates are just config — don't block deletion
+      Promise.resolve([] as { id: string; name: string }[]),
     ]);
 
     const dependencies = {
