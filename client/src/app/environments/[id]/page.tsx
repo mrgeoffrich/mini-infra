@@ -3,10 +3,9 @@ import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment } from "@/hooks/use-environments";
 import { StacksList } from "@/components/environments";
-import { useStacks } from "@/hooks/use-stacks";
+import { useUserStacks } from "@/hooks/use-applications";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
-import { HAProxyStatusCard } from "@/components/environments/haproxy-status-card";
 import { RemediateHAProxyDialog } from "@/components/haproxy/remediate-haproxy-dialog";
 import {
   Card,
@@ -32,7 +31,7 @@ import {
   IconTrash,
   IconDots,
   IconAlertCircle,
-  IconStack2,
+  IconApps,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -54,8 +53,11 @@ export function EnvironmentDetailPage() {
     enabled: !!environmentId, // Only fetch if environmentId exists
   });
 
-  // Fetch stacks for overview card
-  const { data: stacksData } = useStacks(environmentId);
+  // Fetch user-deployed application stacks
+  const { data: userStacksData } = useUserStacks();
+  const userStacks = (userStacksData?.data ?? []).filter(
+    (s) => s.environmentId === environmentId,
+  );
 
   if (!environmentId) {
     return <Navigate to="/environments" replace />;
@@ -216,23 +218,36 @@ export function EnvironmentDetailPage() {
         <div className="grid gap-6 md:grid-cols-2 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Stacks</CardTitle>
-              <IconStack2 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Applications</CardTitle>
+              <IconApps className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stacksData?.data?.length ?? 0}</div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>
-                  {stacksData?.data?.filter((s) => s.status === "synced").length ?? 0} synced
-                </span>
-              </div>
+              {userStacks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No applications deployed</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {userStacks.map((stack) => (
+                    <div key={stack.id} className="flex items-center justify-between text-sm">
+                      <span className="truncate font-medium">{stack.name}</span>
+                      <Badge
+                        variant={stack.status === "synced" ? "default" : "secondary"}
+                        className="text-xs ml-2 shrink-0"
+                      >
+                        {stack.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <HAProxyStatusCard
-            environmentId={environment.id}
-            onRemediateClick={() => setRemediateDialogOpen(true)}
-          />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">&nbsp;</CardTitle>
+            </CardHeader>
+            <CardContent />
+          </Card>
         </div>
       </div>
 
