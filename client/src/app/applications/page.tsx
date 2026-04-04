@@ -128,6 +128,14 @@ export default function ApplicationsPage() {
     }
     setStoppingId(app.id);
     try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-destroy",
+          label: `Stopping ${app.displayName ?? app.name}`,
+          channel: Channel.STACKS,
+        });
+      }
       await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
     } finally {
       setStoppingId(null);

@@ -583,18 +583,11 @@ export function useDeployApplication() {
 }
 
 export function useStopApplication() {
-  const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async (stackId: string) => {
       await destroyStack(stackId, correlationId);
-    },
-    onSuccess: () => {
-      toast.success("Application stop initiated");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
     onError: (error: Error) => {
       toast.error(`Failed to stop application: ${error.message}`);
