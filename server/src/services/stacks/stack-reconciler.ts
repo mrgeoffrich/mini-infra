@@ -96,30 +96,34 @@ export class StackReconciler {
       }
 
       // Upsert InfraResource record
-      // Use "__host__" sentinel for host-scoped resources since SQLite treats NULL as distinct in unique constraints
-      const envIdForDb = stack.environmentId ?? '__host__';
-      await this.prisma.infraResource.upsert({
+      // Use findFirst + create/update instead of upsert because host-scoped resources
+      // have environmentId=null, and SQLite treats NULLs as distinct in unique constraints.
+      // The upsert approach used a '__host__' sentinel which violates the FK to Environment.
+      const existing = await this.prisma.infraResource.findFirst({
         where: {
-          type_purpose_scope_environmentId: {
-            type: output.type,
-            purpose: output.purpose,
-            scope,
-            environmentId: envIdForDb,
-          },
-        },
-        create: {
           type: output.type,
           purpose: output.purpose,
           scope,
-          environmentId: envIdForDb,
-          stackId: stack.id,
-          name,
-        },
-        update: {
-          stackId: stack.id,
-          name,
+          environmentId: stack.environmentId ?? null,
         },
       });
+      if (existing) {
+        await this.prisma.infraResource.update({
+          where: { id: existing.id },
+          data: { stackId: stack.id, name },
+        });
+      } else {
+        await this.prisma.infraResource.create({
+          data: {
+            type: output.type,
+            purpose: output.purpose,
+            scope,
+            environmentId: stack.environmentId ?? null,
+            stackId: stack.id,
+            name,
+          },
+        });
+      }
 
       result.set(output.purpose, name);
     }
@@ -159,14 +163,12 @@ export class StackReconciler {
 
       // Fall back to host-scoped
       if (!resource) {
-        resource = await this.prisma.infraResource.findUnique({
+        resource = await this.prisma.infraResource.findFirst({
           where: {
-            type_purpose_scope_environmentId: {
-              type: input.type,
-              purpose: input.purpose,
-              scope: 'host',
-              environmentId: '__host__',
-            },
+            type: input.type,
+            purpose: input.purpose,
+            scope: 'host',
+            environmentId: null,
           },
         });
       }
