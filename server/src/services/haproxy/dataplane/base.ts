@@ -1,7 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
-import { networkUtils } from '../../network-utils';
 import { getOwnContainerId } from '../../self-update';
 import { HAProxyEndpointInfo } from './types';
 
@@ -80,7 +79,7 @@ export class HAProxyDataPlaneClientBase {
 
   /**
    * Discover HAProxy DataPlane API endpoint from container.
-   * Tries host port binding first, falls back to container network IP.
+   * Uses a shared Docker network (e.g., the dataplane network) to reach the DataPlane API.
    */
   private async discoverHAProxyEndpoint(containerId: string): Promise<HAProxyEndpointInfo> {
     try {
@@ -97,24 +96,6 @@ export class HAProxyDataPlaneClientBase {
       // Get container name (remove leading slash)
       const containerName = containerInfo.Name?.replace(/^\//, '') || containerId.slice(0, 12);
 
-      // Try host port binding first
-      const ports = containerInfo.NetworkSettings?.Ports || {};
-      const dataplanePort = ports['5555/tcp'];
-
-      if (dataplanePort && dataplanePort.length > 0) {
-        const hostBinding = dataplanePort[0];
-        if (hostBinding && hostBinding.HostPort) {
-          const hostIp = await networkUtils.getDockerHostIP();
-          const baseUrl = `http://${hostIp}:${hostBinding.HostPort}/v3`;
-          return { baseUrl, containerName, containerId };
-        }
-      }
-
-      // Fallback: connect via container's internal IP on a shared Docker network
-      logger.info(
-        { containerId: containerId.slice(0, 12) },
-        'DataPlane API port 5555 not bound to host, falling back to container network'
-      );
       return this.discoverViaContainerNetwork(docker, containerInfo, containerName, containerId);
     } catch (error) {
       logger.error(
