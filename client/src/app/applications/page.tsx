@@ -13,6 +13,7 @@ import {
   IconAlertCircle,
   IconLoader2,
   IconPackage,
+  IconExternalLink,
 } from "@tabler/icons-react";
 import {
   useApplications,
@@ -98,6 +99,16 @@ export default function ApplicationsPage() {
 
   const getServiceCount = (app: StackTemplateInfo): number => {
     return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
+  };
+
+  const getAppUrl = (app: StackTemplateInfo): string | null => {
+    const stacks = stacksByTemplateId.get(app.id);
+    if (!stacks || stacks.length === 0) return null;
+    const stack = stacks.find((s) => s.status === "synced") ?? stacks[0];
+    if (stack.status !== "synced") return null;
+    const fqdn =
+      stack.tunnelIngress?.[0]?.fqdn ?? stack.dnsRecords?.[0]?.fqdn;
+    return fqdn ? `https://${fqdn}` : null;
   };
 
   const handleDeploy = async (app: StackTemplateInfo) => {
@@ -275,6 +286,24 @@ export default function ApplicationsPage() {
                         <CardTitle className="text-base truncate">
                           {app.displayName}
                         </CardTitle>
+                        {(() => {
+                          const url = getAppUrl(app);
+                          if (url) {
+                            return (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span className="truncate">{url.replace("https://", "")}</span>
+                                <IconExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            );
+                          }
+                          return null;
+                        })()}
                         {app.description && (
                           <CardDescription className="mt-1 line-clamp-2">
                             {app.description}
