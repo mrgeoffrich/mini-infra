@@ -23,6 +23,8 @@ export function serializeStack(stack: any): StackInfo {
     ...stack,
     parameters: stack.parameters ?? [],
     parameterValues: stack.parameterValues ?? {},
+    resourceOutputs: stack.resourceOutputs ?? [],
+    resourceInputs: stack.resourceInputs ?? [],
     templateId: stack.templateId ?? null,
     templateVersion: stack.templateVersion ?? null,
     templateUpdateAvailable: computeTemplateUpdateAvailable(stack),

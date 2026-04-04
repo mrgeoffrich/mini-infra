@@ -5,13 +5,24 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import type { ApplyResult, ServiceApplyResult } from "@mini-infra/types";
+import type { ApplyResult, ServiceApplyResult, ResourceResult } from "@mini-infra/types";
+
+/** Unified result from either a service or resource action */
+type AnyResult = ServiceApplyResult | ResourceResult;
+
+/** Get a stable matching key for a result (service or resource) */
+function getResultKey(r: AnyResult): string {
+  if ('resourceType' in r) {
+    return `${r.resourceType}:${r.resourceName}`;
+  }
+  return r.serviceName;
+}
 
 interface StackApplyProgressProps {
   /** Live mode: the list of planned actions */
   actions?: Array<{ serviceName: string; action: string }>;
   /** Live mode: results received so far */
-  completedResults?: ServiceApplyResult[];
+  completedResults?: AnyResult[];
   /** Live mode: total number of actions */
   totalActions?: number;
   /** Live mode: whether the apply is still running */
@@ -75,7 +86,7 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
           </p>
         </CardHeader>
 
-        {result.serviceResults.length > 0 && (
+        {(result.serviceResults.length > 0 || (result.resourceResults?.length ?? 0) > 0) && (
           <CardContent className="space-y-0">
             {result.serviceResults.map((sr, index) => (
               <div key={sr.serviceName}>
@@ -102,7 +113,32 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
                   </Alert>
                 )}
 
-                {index < result.serviceResults.length - 1 && <Separator />}
+                {(index < result.serviceResults.length - 1 || (result.resourceResults?.length ?? 0) > 0) && <Separator />}
+              </div>
+            ))}
+            {result.resourceResults?.filter((rr) => rr.action !== 'no-op').map((rr, index, arr) => (
+              <div key={`${rr.resourceType}:${rr.resourceName}`}>
+                <div className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-2">
+                    {rr.success ? (
+                      <IconCheck className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <IconX className="h-4 w-4 text-red-500" />
+                    )}
+                    <span className="font-medium">{rr.resourceName}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {rr.action} {rr.resourceType}
+                    </Badge>
+                  </div>
+                </div>
+
+                {rr.error && (
+                  <Alert variant="destructive" className="mb-3">
+                    <AlertDescription>{rr.error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {index < arr.length - 1 && <Separator />}
               </div>
             ))}
           </CardContent>
@@ -114,8 +150,10 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
   // Live progress mode
   if (!actions || totalActions == null) return null;
 
-  // Pulling phase: forcePull with all "pull" actions and no completed results yet
-  const isPulling = isApplying && actions.length > 0 && actions.every(a => a.action === 'pull') && !(completedResults?.length);
+  // Pulling phase: forcePull with all service actions being "pull" and no completed results yet
+  // Resource actions (serviceName contains ':') are excluded from this check since they aren't pulls
+  const serviceActions = actions.filter(a => !a.serviceName.includes(':'));
+  const isPulling = isApplying && serviceActions.length > 0 && serviceActions.every(a => a.action === 'pull') && !(completedResults?.length);
 
   if (isPulling) {
     return (
@@ -149,7 +187,7 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
   }
 
   const completedSet = new Map(
-    (completedResults ?? []).map((r) => [r.serviceName, r]),
+    (completedResults ?? []).map((r) => [getResultKey(r), r]),
   );
   const completedCount = completedSet.size;
   const progressPercent = totalActions > 0 ? (completedCount / totalActions) * 100 : 0;
@@ -210,9 +248,9 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
                     {action.action}
                   </Badge>
                 </div>
-                {completed && (
+                {'duration' in (completed ?? {}) && (
                   <span className="text-sm text-muted-foreground">
-                    {formatDuration(completed.duration)}
+                    {formatDuration((completed as ServiceApplyResult).duration)}
                   </span>
                 )}
               </div>

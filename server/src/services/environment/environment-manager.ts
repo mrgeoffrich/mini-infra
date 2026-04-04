@@ -65,12 +65,7 @@ export class EnvironmentManager {
       });
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment record created (ID: ${environmentData.id})`);
 
-      // Create environment networks based on network type
-      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Creating environment networks...`);
-      await this.createEnvironmentNetworks(environmentData.id, environmentData.name, environmentData.networkType);
-      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment networks created`);
-
-      // Seed stacks for the new environment
+      // Seed stacks for the new environment (stacks create their own infra resources on apply)
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Seeding stacks for environment...`);
       await seedStacksForEnvironment(this.prisma, environmentData.id);
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stack seeding complete`);
@@ -124,98 +119,12 @@ export class EnvironmentManager {
     }
   }
 
-  /**
-   * Get the expected network definitions for an environment based on its network type.
-   */
-  private getExpectedNetworks(envName: string, networkType: string): Array<{ name: string; purpose: string }> {
-    const networks: Array<{ name: string; purpose: string }> = [
-      { name: `${envName}-applications`, purpose: 'applications' },
-    ];
-    if (networkType === 'internet') {
-      networks.push({ name: `${envName}-tunnel`, purpose: 'tunnel' });
-    }
-    return networks;
-  }
-
-  /**
-   * Create environment network records based on network type.
-   * All environments get an 'applications' network.
-   * Internet-facing environments also get a 'tunnel' network.
-   */
-  private async createEnvironmentNetworks(environmentId: string, envName: string, networkType: string): Promise<void> {
-    const expected = this.getExpectedNetworks(envName, networkType);
-    for (const net of expected) {
-      await this.prisma.environmentNetwork.upsert({
-        where: { environmentId_purpose: { environmentId, purpose: net.purpose } },
-        create: {
-          environmentId,
-          name: net.name,
-          purpose: net.purpose,
-          driver: 'bridge',
-        },
-        update: {},
-      });
-    }
-  }
-
-  /**
-   * Remediate environment networks — create any missing network records
-   * and fix names that don't match the expected convention.
-   * Returns the list of networks that were created or renamed.
-   */
-  public async remediateNetworks(environmentId: string): Promise<{ created: string[]; renamed: string[]; existing: string[] }> {
-    const environment = await this.prisma.environment.findUnique({
-      where: { id: environmentId },
-      include: { networks: true },
-    });
-    if (!environment) {
-      throw new Error('Environment not found');
-    }
-
-    const expected = this.getExpectedNetworks(environment.name, environment.networkType);
-    const existingByPurpose = new Map(environment.networks.map((n) => [n.purpose, n]));
-
-    const created: string[] = [];
-    const renamed: string[] = [];
-    const existing: string[] = [];
-
-    for (const net of expected) {
-      const existingNet = existingByPurpose.get(net.purpose);
-      if (existingNet) {
-        if (existingNet.name !== net.name) {
-          // Name doesn't match convention — update it
-          await this.prisma.environmentNetwork.update({
-            where: { id: existingNet.id },
-            data: { name: net.name },
-          });
-          renamed.push(`${existingNet.name} -> ${net.name}`);
-        } else {
-          existing.push(net.name);
-        }
-      } else {
-        await this.prisma.environmentNetwork.create({
-          data: {
-            environmentId,
-            name: net.name,
-            purpose: net.purpose,
-            driver: 'bridge',
-          },
-        });
-        created.push(net.name);
-      }
-    }
-
-    this.logger.info({ environmentId, created, renamed, existing }, 'Remediated environment networks');
-    return { created, renamed, existing };
-  }
-
   public async getEnvironmentById(id: string): Promise<Environment | null> {
     try {
       const environment = await this.prisma.environment.findUnique({
         where: { id },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -237,7 +146,6 @@ export class EnvironmentManager {
         where: { name },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -267,7 +175,6 @@ export class EnvironmentManager {
           where,
           include: {
             networks: true,
-            volumes: true
           },
           skip: (page - 1) * limit,
           take: limit,
@@ -295,10 +202,11 @@ export class EnvironmentManager {
           description: request.description,
           type: request.type,
           networkType: request.networkType,
+          tunnelId: request.tunnelId,
+          tunnelServiceUrl: request.tunnelServiceUrl,
         },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -313,9 +221,9 @@ export class EnvironmentManager {
 
   public async deleteEnvironment(
     id: string,
-    options: { deleteVolumes?: boolean; deleteNetworks?: boolean; userId?: string } = {}
+    options: { deleteNetworks?: boolean; userId?: string } = {}
   ): Promise<boolean> {
-    const { deleteVolumes = false, deleteNetworks = false, userId } = options;
+    const { deleteNetworks = false, userId } = options;
     const startTime = Date.now();
     let userEvent: any = null;
 
@@ -336,65 +244,25 @@ export class EnvironmentManager {
         resourceId: environment.id,
         resourceType: 'environment',
         resourceName: environment.name,
-        description: `Deleting ${environment.type} environment (volumes: ${deleteVolumes ? 'yes' : 'no'}, networks: ${deleteNetworks ? 'yes' : 'no'})`,
+        description: `Deleting ${environment.type} environment (networks: ${deleteNetworks ? 'yes' : 'no'})`,
         metadata: {
           environmentId: environment.id,
           environmentName: environment.name,
           environmentType: environment.type,
-          deleteVolumes,
           deleteNetworks,
           networkCount: environment.networks.length,
-          volumeCount: environment.volumes.length,
         }
       });
 
       this.logger.info({
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         networkCount: environment.networks.length,
-        volumeCount: environment.volumes.length,
         userEventId: userEvent.id
       }, 'Starting environment deletion');
 
-      // Initialize Docker executor for volume/network operations
+      // Initialize Docker executor for network operations
       await this.dockerExecutor.initialize();
-
-      // Delete Docker volumes if requested
-      if (deleteVolumes && environment.volumes.length > 0) {
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${environment.volumes.length} Docker volume(s)...`);
-        this.logger.info({
-          environmentId: id,
-          volumes: environment.volumes.map(v => v.name)
-        }, 'Deleting Docker volumes');
-
-        let deletedVolumes = 0;
-        let failedVolumes = 0;
-
-        for (const volume of environment.volumes) {
-          try {
-            await this.dockerExecutor.removeVolume(volume.name);
-            deletedVolumes++;
-            this.logger.debug({
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Docker volume deleted successfully');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Volume '${volume.name}' deleted successfully`);
-          } catch (error) {
-            failedVolumes++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            this.logger.warn({
-              error,
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Failed to delete Docker volume (volume may not exist in Docker)');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete volume '${volume.name}': ${errorMessage}`);
-            // Continue with deletion even if Docker volume removal fails
-          }
-        }
-
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedVolumes}/${environment.volumes.length} volume(s) (${failedVolumes} failed)`);
-      }
 
       // Delete Docker networks if requested
       if (deleteNetworks && environment.networks.length > 0) {
@@ -432,6 +300,49 @@ export class EnvironmentManager {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${environment.networks.length} network(s) (${failedNetworks} failed)`);
       }
 
+      // Clean up undeployed/removed stacks that reference this environment
+      const orphanedStacks = await this.prisma.stack.findMany({
+        where: { environmentId: id, status: { in: ['removed', 'undeployed'] } },
+        select: { id: true, name: true, status: true },
+      });
+      if (orphanedStacks.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          stackCount: orphanedStacks.length,
+          stacks: orphanedStacks.map(s => `${s.name} (${s.status})`),
+        }, 'Cleaning up orphaned stacks');
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${orphanedStacks.length} orphaned stack(s)...`);
+
+        await this.prisma.stack.deleteMany({
+          where: { id: { in: orphanedStacks.map(s => s.id) } },
+        });
+      }
+
+      // Clean up stack templates that reference this environment
+      const templates = await this.prisma.stackTemplate.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      });
+      if (templates.length > 0) {
+        this.logger.info({
+          environmentId: id,
+          templateCount: templates.length,
+          templates: templates.map(t => t.name),
+        }, 'Cleaning up stack templates');
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Cleaning up ${templates.length} stack template(s)...`);
+
+        for (const template of templates) {
+          await this.prisma.$transaction([
+            this.prisma.stack.deleteMany({ where: { templateId: template.id } }),
+            this.prisma.stackTemplate.update({
+              where: { id: template.id },
+              data: { currentVersionId: null, draftVersionId: null },
+            }),
+            this.prisma.stackTemplate.delete({ where: { id: template.id } }),
+          ]);
+        }
+      }
+
       // Delete environment (cascade will handle related records)
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting environment record...`);
       await this.prisma.environment.delete({
@@ -442,7 +353,6 @@ export class EnvironmentManager {
 
       this.logger.info({
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         userEventId: userEvent.id
       }, 'Environment deleted successfully');
@@ -463,7 +373,6 @@ export class EnvironmentManager {
       this.logger.error({
         error,
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         userEventId: userEvent?.id
       }, 'Failed to delete environment');
@@ -478,7 +387,6 @@ export class EnvironmentManager {
             message: errorMessage,
             stack: error instanceof Error ? error.stack : undefined,
             environmentId: id,
-            deleteVolumes,
             deleteNetworks,
             duration
           },
@@ -506,15 +414,8 @@ export class EnvironmentManager {
         dockerId: n.dockerId,
         createdAt: n.createdAt
       })),
-      volumes: prismaEnv.volumes.map((v: any) => ({
-        id: v.id,
-        environmentId: v.environmentId,
-        name: v.name,
-        driver: v.driver,
-        options: v.options,
-        dockerId: v.dockerId,
-        createdAt: v.createdAt
-      })),
+      tunnelId: prismaEnv.tunnelId ?? undefined,
+      tunnelServiceUrl: prismaEnv.tunnelServiceUrl ?? undefined,
       createdAt: prismaEnv.createdAt,
       updatedAt: prismaEnv.updatedAt
     };

@@ -11,8 +11,15 @@ import type {
 
 function makeMockPrisma() {
   return {
+    stack: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    environment: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     stackResource: {
       findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
@@ -33,12 +40,6 @@ function makeMockCloudflareDns() {
     upsertARecord: vi.fn().mockResolvedValue({ id: 'dns-rec-1', zone_id: 'zone-1' }),
     deleteDNSRecord: vi.fn().mockResolvedValue(undefined),
     findZoneForHostname: vi.fn().mockResolvedValue({ id: 'zone-1', name: 'example.com' }),
-  } as any;
-}
-
-function makeMockHaproxyCertDeployer() {
-  return {
-    fetchAndDeployCertificate: vi.fn().mockResolvedValue('app.example.com.pem'),
   } as any;
 }
 
@@ -67,7 +68,6 @@ describe('StackResourceReconciler', () => {
   let mockPrisma: ReturnType<typeof makeMockPrisma>;
   let mockCertLifecycleManager: ReturnType<typeof makeMockCertLifecycleManager>;
   let mockCloudflareDns: ReturnType<typeof makeMockCloudflareDns>;
-  let mockHaproxyCertDeployer: ReturnType<typeof makeMockHaproxyCertDeployer>;
   let reconciler: StackResourceReconciler;
 
   beforeEach(() => {
@@ -75,12 +75,11 @@ describe('StackResourceReconciler', () => {
     mockPrisma = makeMockPrisma();
     mockCertLifecycleManager = makeMockCertLifecycleManager();
     mockCloudflareDns = makeMockCloudflareDns();
-    mockHaproxyCertDeployer = makeMockHaproxyCertDeployer();
     reconciler = new StackResourceReconciler(
       mockPrisma,
       mockCertLifecycleManager,
       mockCloudflareDns,
-      mockHaproxyCertDeployer,
+      undefined,
     );
   });
 
@@ -299,24 +298,23 @@ describe('StackResourceReconciler', () => {
     const stackId = 'stack-1';
     const userId = 'user-1';
     const defs: StackTlsCertificate[] = [{ name: 'app-cert', fqdn: 'app.example.com' }];
-    const haproxyClient = { fake: true } as any;
 
     it('provisions a new cert when none exists', async () => {
       const actions: ResourceAction[] = [
         { resourceType: 'tls', resourceName: 'app-cert', action: 'create' },
       ];
 
-      const results = await reconciler.reconcileTls(actions, stackId, defs, haproxyClient, userId);
+      const results = await reconciler.reconcileTls(actions, stackId, defs, userId);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ resourceType: 'tls', resourceName: 'app-cert', action: 'create', success: true });
       expect(mockCertLifecycleManager.issueCertificate).toHaveBeenCalledWith(
-        expect.objectContaining({ primaryDomain: 'app.example.com', domains: ['app.example.com'], userId, deployToHaproxy: true }),
+        expect.objectContaining({ primaryDomain: 'app.example.com', domains: ['app.example.com'], userId, deployToHaproxy: false }),
       );
       expect(mockPrisma.stackResource.upsert).toHaveBeenCalled();
     });
 
-    it('reuses an existing ACTIVE cert and deploys to HAProxy', async () => {
+    it('reuses an existing ACTIVE cert without deploying to HAProxy', async () => {
       mockPrisma.tlsCertificate.findFirst.mockResolvedValue({
         id: 'cert-existing',
         primaryDomain: 'app.example.com',
@@ -327,16 +325,11 @@ describe('StackResourceReconciler', () => {
         { resourceType: 'tls', resourceName: 'app-cert', action: 'create' },
       ];
 
-      const results = await reconciler.reconcileTls(actions, stackId, defs, haproxyClient, userId);
+      const results = await reconciler.reconcileTls(actions, stackId, defs, userId);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ success: true });
       expect(mockCertLifecycleManager.issueCertificate).not.toHaveBeenCalled();
-      expect(mockHaproxyCertDeployer.fetchAndDeployCertificate).toHaveBeenCalledWith(
-        'cert-existing',
-        mockPrisma,
-        haproxyClient,
-      );
       expect(mockPrisma.stackResource.upsert).toHaveBeenCalled();
     });
 
@@ -345,7 +338,7 @@ describe('StackResourceReconciler', () => {
         { resourceType: 'tls', resourceName: 'app-cert', action: 'no-op' },
       ];
 
-      const results = await reconciler.reconcileTls(actions, stackId, defs, haproxyClient, userId);
+      const results = await reconciler.reconcileTls(actions, stackId, defs, userId);
 
       expect(results).toHaveLength(0);
       expect(mockCertLifecycleManager.issueCertificate).not.toHaveBeenCalled();
@@ -357,7 +350,7 @@ describe('StackResourceReconciler', () => {
         { resourceType: 'tls', resourceName: 'app-cert', action: 'remove' },
       ];
 
-      const results = await reconciler.reconcileTls(actions, stackId, defs, null, userId);
+      const results = await reconciler.reconcileTls(actions, stackId, defs, userId);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ action: 'remove', success: true });
@@ -373,7 +366,7 @@ describe('StackResourceReconciler', () => {
         { resourceType: 'tls', resourceName: 'app-cert', action: 'create' },
       ];
 
-      const results = await reconciler.reconcileTls(actions, stackId, defs, null, userId);
+      const results = await reconciler.reconcileTls(actions, stackId, defs, userId);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({ success: false, error: 'ACME rate limit' });

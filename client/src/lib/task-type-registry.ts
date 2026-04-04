@@ -91,19 +91,30 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ),
     }),
     normalizeStep: (p) => ({
-      step: `${p.action} ${p.serviceName}`,
+      step: p.resourceType
+        ? `${p.action} ${p.resourceType}:${p.resourceName}`
+        : `${p.action} ${p.serviceName}`,
       status: p.success ? "completed" : "failed",
       detail: p.error ?? undefined,
     }),
     normalizeCompleted: (p) => ({
       success: p.success,
-      steps: (p.serviceResults as Array<{ serviceName: string; action: string; success: boolean; error?: string }>).map(
-        (r) => ({
-          step: `${r.action} ${r.serviceName}`,
-          status: (r.success ? "completed" : "failed") as OperationStep["status"],
-          detail: r.error ?? undefined,
-        }),
-      ),
+      steps: [
+        ...((p.serviceResults ?? []) as Array<{ serviceName: string; action: string; success: boolean; error?: string }>).map(
+          (r) => ({
+            step: `${r.action} ${r.serviceName}`,
+            status: (r.success ? "completed" : "failed") as OperationStep["status"],
+            detail: r.error ?? undefined,
+          }),
+        ),
+        ...((p.resourceResults ?? []) as Array<{ resourceType: string; resourceName: string; action: string; success: boolean; error?: string }>)
+          .filter((r) => r.action !== "no-op")
+          .map((r) => ({
+            step: `${r.action} ${r.resourceType}:${r.resourceName}`,
+            status: (r.success ? "completed" : "failed") as OperationStep["status"],
+            detail: r.error ?? undefined,
+          })),
+      ],
       errors: [
         ...(p.error ? [p.error] : []),
         ...(p.postApply?.errors ?? []),
@@ -115,6 +126,8 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["stackPlan", taskId],
       ["stackStatus", taskId],
       ["stackHistory", taskId],
+      ["applications"],
+      ["userStacks"],
     ],
   },
 
@@ -144,7 +157,10 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
           detail: r.error ?? undefined,
         }),
       ),
-      errors: p.error ? [p.error] : [],
+      errors: [
+        ...(p.error ? [p.error] : []),
+        ...(p.postApply?.errors ?? []),
+      ],
     }),
     invalidateKeys: (taskId) => [
       ["stacks"],
@@ -187,6 +203,8 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["stackPlan", taskId],
       ["stackStatus", taskId],
       ["stackHistory", taskId],
+      ["applications"],
+      ["userStacks"],
     ],
   },
 

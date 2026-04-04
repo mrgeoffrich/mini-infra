@@ -12,6 +12,8 @@ import type {
   StackServiceRouting,
   StackServiceType,
   StackServiceDefinition,
+  StackResourceOutput,
+  StackResourceInput,
 } from './stacks';
 
 // Enum mirrors
@@ -50,6 +52,8 @@ export interface StackTemplateVersion {
   parameters: StackParameterDefinition[];
   defaultParameterValues: Record<string, StackParameterValue>;
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   publishedAt: Date | null;
@@ -115,6 +119,8 @@ export interface StackTemplateVersionInfo {
   parameters: StackParameterDefinition[];
   defaultParameterValues: Record<string, StackParameterValue>;
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   publishedAt: string | null;
@@ -164,6 +170,8 @@ export interface CreateStackTemplateRequest {
   parameters?: StackParameterDefinition[];
   defaultParameterValues?: Record<string, StackParameterValue>;
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
@@ -190,6 +198,8 @@ export interface DraftVersionInput {
   parameters?: StackParameterDefinition[];
   defaultParameterValues?: Record<string, StackParameterValue>;
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
+  resourceOutputs?: StackResourceOutput[];
+  resourceInputs?: StackResourceInput[];
   networks: StackNetwork[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];

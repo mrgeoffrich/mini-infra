@@ -184,7 +184,7 @@ async function updateTemplateMetadata(
   }
 }
 
-async function deleteApplication(
+async function deleteTemplate(
   id: string,
   correlationId: string,
 ): Promise<{ success: boolean; message: string }> {
@@ -430,7 +430,7 @@ export function useCreateApplication() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: async (request: CreateStackTemplateRequest) => {
+    mutationFn: async (request: CreateStackTemplateRequest & { onStackCreated?: (stackId: string) => void }) => {
       // Create template
       const result = await createApplication(request, correlationId);
       // Publish the draft immediately
@@ -444,6 +444,8 @@ export function useCreateApplication() {
             { name: result.data.name, environmentId: request.environmentId },
             correlationId,
           );
+          // Register task tracking before apply starts
+          request.onStackCreated?.(stackResult.data.id);
           // Apply is fire-and-forget (progress via Socket.IO)
           await applyStack(stackResult.data.id, correlationId);
         } catch {
@@ -509,10 +511,14 @@ export function useDeleteApplication() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteApplication(id, correlationId),
+    mutationFn: async ({ templateId }: { templateId: string }) => {
+      return deleteTemplate(templateId, correlationId);
+    },
     onSuccess: () => {
       toast.success("Application deleted successfully");
       queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete application: ${error.message}`);
@@ -545,10 +551,12 @@ export function useDeployApplication() {
       templateId,
       name,
       environmentId,
+      onStackCreated,
     }: {
       templateId: string;
       name: string;
       environmentId: string;
+      onStackCreated?: (stackId: string) => void;
     }) => {
       // Instantiate a stack from the template
       const stackResult = await instantiateApplication(
@@ -556,6 +564,8 @@ export function useDeployApplication() {
         { name, environmentId },
         correlationId,
       );
+      // Register task tracking before apply starts
+      onStackCreated?.(stackResult.data.id);
       // Apply/deploy the stack
       await applyStack(stackResult.data.id, correlationId);
       return stackResult.data;
@@ -573,18 +583,11 @@ export function useDeployApplication() {
 }
 
 export function useStopApplication() {
-  const queryClient = useQueryClient();
   const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async (stackId: string) => {
       await destroyStack(stackId, correlationId);
-    },
-    onSuccess: () => {
-      toast.success("Application stop initiated");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
     onError: (error: Error) => {
       toast.error(`Failed to stop application: ${error.message}`);

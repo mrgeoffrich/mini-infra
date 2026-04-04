@@ -464,9 +464,9 @@ describe('StackReconciler.apply — StatelessWeb', () => {
     const result = await reconciler.apply('stack-1');
 
     expect(result.success).toBe(true);
-    // networkType is always 'local' — DNS is now managed as a stack-level resource
+    // networkType should not be set — DNS is managed as a stack-level resource, not by state machines
     const [, context] = mockRunStateMachine.mock.calls[0];
-    expect(context.networkType).toBe('local');
+    expect(context.networkType).toBeUndefined();
   });
 
   it('throws if routingManager not provided for StatelessWeb', async () => {

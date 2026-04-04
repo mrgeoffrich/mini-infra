@@ -13,6 +13,7 @@ import {
   IconAlertCircle,
   IconLoader2,
   IconPackage,
+  IconExternalLink,
 } from "@tabler/icons-react";
 import {
   useApplications,
@@ -21,6 +22,8 @@ import {
   useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { Channel } from "@mini-infra/types";
 import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +62,7 @@ export default function ApplicationsPage() {
   const deleteApplication = useDeleteApplication();
   const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
+  const { registerTask } = useTaskTracker();
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
@@ -97,6 +101,16 @@ export default function ApplicationsPage() {
     return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
   };
 
+  const getAppUrl = (app: StackTemplateInfo): string | null => {
+    const stacks = stacksByTemplateId.get(app.id);
+    if (!stacks || stacks.length === 0) return null;
+    const stack = stacks.find((s) => s.status === "synced") ?? stacks[0];
+    if (stack.status !== "synced") return null;
+    const fqdn =
+      stack.tunnelIngress?.[0]?.fqdn ?? stack.dnsRecords?.[0]?.fqdn;
+    return fqdn ? `https://${fqdn}` : null;
+  };
+
   const handleDeploy = async (app: StackTemplateInfo) => {
     if (!app.environmentId) return;
     try {
@@ -104,6 +118,14 @@ export default function ApplicationsPage() {
         templateId: app.id,
         name: app.name,
         environmentId: app.environmentId,
+        onStackCreated: (stackId) => {
+          registerTask({
+            id: stackId,
+            type: "stack-apply",
+            label: `Deploying ${app.displayName ?? app.name}`,
+            channel: Channel.STACKS,
+          });
+        },
       });
     } catch {
       // Error handled by mutation
@@ -117,6 +139,14 @@ export default function ApplicationsPage() {
     }
     setStoppingId(app.id);
     try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-destroy",
+          label: `Stopping ${app.displayName ?? app.name}`,
+          channel: Channel.STACKS,
+        });
+      }
       await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
     } finally {
       setStoppingId(null);
@@ -126,7 +156,9 @@ export default function ApplicationsPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteApplication.mutateAsync(deleteTarget.id);
+      await deleteApplication.mutateAsync({
+        templateId: deleteTarget.id,
+      });
     } finally {
       setDeleteTarget(null);
     }
@@ -254,6 +286,24 @@ export default function ApplicationsPage() {
                         <CardTitle className="text-base truncate">
                           {app.displayName}
                         </CardTitle>
+                        {(() => {
+                          const url = getAppUrl(app);
+                          if (url) {
+                            return (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span className="truncate">{url.replace("https://", "")}</span>
+                                <IconExternalLink className="h-3 w-3 shrink-0" />
+                              </a>
+                            );
+                          }
+                          return null;
+                        })()}
                         {app.description && (
                           <CardDescription className="mt-1 line-clamp-2">
                             {app.description}

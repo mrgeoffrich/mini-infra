@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Environment } from "@mini-infra/types";
-import { useDeleteEnvironment } from "@/hooks/use-environments";
+import { Environment, EnvironmentDependencyItem } from "@mini-infra/types";
+import { useDeleteEnvironment, useEnvironmentDeleteCheck } from "@/hooks/use-environments";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { IconLoader2, IconAlertTriangle, IconNetwork, IconDatabase } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconNetwork, IconStack2, IconLayoutNavbar, IconServer, IconTemplate } from "@tabler/icons-react";
 
 interface EnvironmentDeleteDialogProps {
   open: boolean;
@@ -31,11 +31,12 @@ export function EnvironmentDeleteDialog({
   onSuccess,
 }: EnvironmentDeleteDialogProps) {
   const [confirmationText, setConfirmationText] = useState("");
-  const [deleteVolumes, setDeleteVolumes] = useState(false);
   const [deleteNetworks, setDeleteNetworks] = useState(false);
   const deleteMutation = useDeleteEnvironment();
+  const deleteCheck = useEnvironmentDeleteCheck(environment.id, { enabled: open });
 
-  const isConfirmed = confirmationText === environment.name;
+  const hasBlockers = deleteCheck.data && !deleteCheck.data.canDelete;
+  const isConfirmed = confirmationText === environment.name && !hasBlockers;
 
   const handleDelete = async () => {
     if (!isConfirmed) return;
@@ -43,13 +44,11 @@ export function EnvironmentDeleteDialog({
     try {
       await deleteMutation.mutateAsync({
         id: environment.id,
-        deleteVolumes,
         deleteNetworks,
       });
       toast.success(`Environment "${environment.name}" deleted successfully`);
       onOpenChange(false);
       setConfirmationText("");
-      setDeleteVolumes(false);
       setDeleteNetworks(false);
       onSuccess?.();
     } catch (error) {
@@ -64,7 +63,6 @@ export function EnvironmentDeleteDialog({
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       setConfirmationText("");
-      setDeleteVolumes(false);
       setDeleteNetworks(false);
     }
     onOpenChange(open);
@@ -94,112 +92,92 @@ export function EnvironmentDeleteDialog({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 text-sm pt-2">
-              <div className="flex items-center gap-1">
-                <IconNetwork className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>{environment.networks.length} Networks</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <IconDatabase className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>{environment.volumes.length} Volumes</span>
-              </div>
+            <div className="flex items-center gap-1 text-sm pt-2">
+              <IconNetwork className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{environment.networks.length} Networks</span>
             </div>
           </div>
 
-          {/* Resources that will be deleted */}
-          {(environment.networks.length > 0 || environment.volumes.length > 0) && (
-            <Alert>
+          {/* Blocking dependencies */}
+          {deleteCheck.isLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+              <IconLoader2 className="h-4 w-4 animate-spin" />
+              Checking dependencies...
+            </div>
+          )}
+
+          {hasBlockers && (
+            <Alert variant="destructive">
               <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium mb-2">Associated resources:</div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Networks and volumes will be preserved by default unless explicitly selected below.
+                <div className="font-medium mb-2">Cannot delete — remove these resources first:</div>
+                <div className="space-y-1.5 text-sm">
+                  <DependencyList icon={IconStack2} label="Stacks" items={deleteCheck.data!.dependencies.stacks} />
+                  <DependencyList icon={IconServer} label="Deployment Configs" items={deleteCheck.data!.dependencies.deploymentConfigurations} />
+                  <DependencyList icon={IconLayoutNavbar} label="HAProxy Frontends" items={deleteCheck.data!.dependencies.haproxyFrontends} />
+                  <DependencyList icon={IconServer} label="HAProxy Backends" items={deleteCheck.data!.dependencies.haproxyBackends} />
+                  <DependencyList icon={IconTemplate} label="Stack Templates" items={deleteCheck.data!.dependencies.stackTemplates} />
                 </div>
               </AlertDescription>
             </Alert>
           )}
 
-          {/* Volume and Network deletion options */}
-          {(environment.networks.length > 0 || environment.volumes.length > 0) && (
+          {/* Resources that will be deleted */}
+          {!hasBlockers && environment.networks.length > 0 && (
+            <Alert>
+              <IconAlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="font-medium mb-2">Associated resources:</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  Networks will be preserved by default unless explicitly selected below.
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Network deletion options */}
+          {!hasBlockers && environment.networks.length > 0 && (
             <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
               <div className="font-medium text-sm">Additional Cleanup Options</div>
 
               {/* Network deletion option */}
-              {environment.networks.length > 0 && (
-                <div className="flex items-start space-x-3">
-                  <Checkbox
-                    id="delete-networks"
-                    checked={deleteNetworks}
-                    onCheckedChange={(checked) => setDeleteNetworks(checked === true)}
-                  />
-                  <div className="grid gap-1.5 leading-none">
-                    <Label
-                      htmlFor="delete-networks"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                    >
-                      Also delete networks ({environment.networks.length})
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Networks: {environment.networks.map(n => n.name).join(", ")}
-                    </p>
-                  </div>
+              <div className="flex items-start space-x-3">
+                <Checkbox
+                  id="delete-networks"
+                  checked={deleteNetworks}
+                  onCheckedChange={(checked) => setDeleteNetworks(checked === true)}
+                />
+                <div className="grid gap-1.5 leading-none">
+                  <Label
+                    htmlFor="delete-networks"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Also delete networks ({environment.networks.length})
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Networks: {environment.networks.map(n => n.name).join(", ")}
+                  </p>
                 </div>
-              )}
-
-              {/* Volume deletion option */}
-              {environment.volumes.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-start space-x-3">
-                    <Checkbox
-                      id="delete-volumes"
-                      checked={deleteVolumes}
-                      onCheckedChange={(checked) => setDeleteVolumes(checked === true)}
-                    />
-                    <div className="grid gap-1.5 leading-none">
-                      <Label
-                        htmlFor="delete-volumes"
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        Also delete volumes ({environment.volumes.length})
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Volumes: {environment.volumes.map(v => v.name).join(", ")}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Data loss warning for volumes */}
-                  {deleteVolumes && (
-                    <Alert variant="destructive">
-                      <IconAlertTriangle className="h-4 w-4" />
-                      <AlertDescription>
-                        <div className="font-medium">⚠️ DATA LOSS WARNING</div>
-                        <div className="text-sm mt-1">
-                          Deleting volumes will permanently destroy all data stored in them.
-                          This action cannot be undone and may result in irreversible data loss.
-                        </div>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              )}
+              </div>
             </div>
           )}
 
           {/* Confirmation Input */}
-          <div className="space-y-2">
-            <Label htmlFor="confirmation">
-              Type <code className="bg-muted px-1 rounded text-sm">{environment.name}</code> to confirm:
-            </Label>
-            <Input
-              id="confirmation"
-              value={confirmationText}
-              onChange={(e) => setConfirmationText(e.target.value)}
-              placeholder={environment.name}
-              disabled={deleteMutation.isPending}
-              autoComplete="off"
-            />
-          </div>
+          {!hasBlockers && (
+            <div className="space-y-2">
+              <Label htmlFor="confirmation">
+                Type <code className="bg-muted px-1 rounded text-sm">{environment.name}</code> to confirm:
+              </Label>
+              <Input
+                id="confirmation"
+                value={confirmationText}
+                onChange={(e) => setConfirmationText(e.target.value)}
+                placeholder={environment.name}
+                disabled={deleteMutation.isPending}
+                autoComplete="off"
+              />
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -223,5 +201,26 @@ export function EnvironmentDeleteDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DependencyList({
+  icon: Icon,
+  label,
+  items,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  items: EnvironmentDependencyItem[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="flex items-start gap-1.5">
+      <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+      <span>
+        <span className="font-medium">{label}:</span>{" "}
+        {items.map(i => i.name).join(", ")}
+      </span>
+    </div>
   );
 }

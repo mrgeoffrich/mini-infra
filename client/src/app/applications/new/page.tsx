@@ -4,6 +4,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
+  IconAlertTriangle,
   IconArrowLeft,
   IconLoader2,
   IconPlus,
@@ -11,7 +12,11 @@ import {
 } from "@tabler/icons-react";
 import { useCreateApplication } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useStacks } from "@/hooks/use-stacks";
 import { useDetectImagePorts } from "@/hooks/use-detect-image-ports";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { Channel } from "@mini-infra/types";
+import type { StackResourceOutput } from "@mini-infra/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,8 +76,6 @@ const healthCheckSchema = z.object({
 const routingSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   listeningPort: z.number().int().min(1).max(65535),
-  enableSsl: z.boolean().optional(),
-  enableTunnel: z.boolean().optional(),
 });
 
 const applicationFormSchema = z.object({
@@ -107,7 +110,7 @@ const defaultValues: ApplicationFormData = {
   displayName: "",
   description: "",
   serviceName: "",
-  serviceType: "Stateful",
+  serviceType: "StatelessWeb",
   environmentId: "",
   dockerImage: "",
   dockerTag: "latest",
@@ -115,7 +118,7 @@ const defaultValues: ApplicationFormData = {
   envVars: [],
   volumeMounts: [],
   enableRouting: false,
-  routing: { hostname: "", listeningPort: 8080, enableSsl: false, enableTunnel: false },
+  routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
   enableHealthCheck: false,
   healthCheck: { test: "curl -f http://localhost/ || exit 1", interval: 30, timeout: 10, retries: 3, startPeriod: 15 },
@@ -125,6 +128,7 @@ const defaultValues: ApplicationFormData = {
 export default function NewApplicationPage() {
   const navigate = useNavigate();
   const createApplication = useCreateApplication();
+  const { registerTask } = useTaskTracker();
 
   const form = useForm<ApplicationFormData>({
     resolver: zodResolver(applicationFormSchema),
@@ -164,24 +168,24 @@ export default function NewApplicationPage() {
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
 
+  // Check if HAProxy stack with applications network exists in the selected environment
+  const { data: stacksData } = useStacks(selectedEnvId);
+  const hasHaproxyApplicationsNetwork = (stacksData?.data ?? []).some(
+    (stack) =>
+      stack.status === "synced" &&
+      (stack.resourceOutputs as StackResourceOutput[] | undefined)?.some(
+        (o) => o.type === "docker-network" && o.purpose === "applications",
+      ),
+  );
+  const showHaproxyWarning =
+    serviceType === "StatelessWeb" && selectedEnvId && !hasHaproxyApplicationsNetwork;
+
   const setFormValue = form.setValue;
 
   useEffect(() => {
     if (!selectedEnvId || !serviceType) return;
-
-    if (serviceType === "StatelessWeb") {
-      setFormValue("enableRouting", true);
-      if (networkType === "local") {
-        setFormValue("routing.enableSsl", true);
-        setFormValue("routing.enableTunnel", false);
-      } else if (networkType === "internet") {
-        setFormValue("routing.enableSsl", false);
-        setFormValue("routing.enableTunnel", true);
-      }
-    } else {
-      setFormValue("enableRouting", false);
-    }
-  }, [selectedEnvId, serviceType, networkType, setFormValue]);
+    setFormValue("enableRouting", serviceType === "StatelessWeb");
+  }, [selectedEnvId, serviceType, setFormValue]);
 
   const handleDetectPorts = async () => {
     const image = form.getValues("dockerImage");
@@ -193,7 +197,7 @@ export default function NewApplicationPage() {
       setDetectedPorts(ports);
       setUseCustomPort(false);
       if (ports.length >= 1) {
-        form.setValue("routing.listeningPort", ports[0]);
+        form.setValue("routing.listeningPort", ports[0], { shouldDirty: true, shouldValidate: true });
       } else {
         toast.info("No exposed ports found in this image");
       }
@@ -211,6 +215,14 @@ export default function NewApplicationPage() {
   }, [dockerImage, dockerTag]);
 
   const onSubmit = async (data: ApplicationFormData) => {
+    // Prevent creation of StatelessWeb apps without HAProxy
+    if (data.serviceType === "StatelessWeb" && !hasHaproxyApplicationsNetwork) {
+      toast.error(
+        "This environment does not have a deployed HAProxy stack with an applications network. Deploy an HAProxy stack first before creating a stateless web application.",
+      );
+      return;
+    }
+
     // Build the template name from display name
     const templateName = data.displayName
       .toLowerCase()
@@ -250,19 +262,26 @@ export default function NewApplicationPage() {
           }
         : undefined;
 
-    // Build routing
+    // Build routing — auto-derive resources from environment network type
     const routing =
       data.enableRouting && data.routing
         ? {
             hostname: data.routing.hostname,
             listeningPort: data.routing.listeningPort,
-            ...(data.routing.enableSsl ? { tlsCertificate: data.routing.hostname } : {}),
-            ...(data.routing.enableTunnel ? { tunnelIngress: data.routing.hostname } : {}),
+            ...(networkType === "local"
+              ? { tlsCertificate: data.routing.hostname, dnsRecord: data.routing.hostname }
+              : {}),
+            ...(networkType === "internet"
+              ? { tunnelIngress: data.routing.hostname }
+              : {}),
           }
         : undefined;
 
-    // Build networks - add a default network for the service
-    const networks = [{ name: `${templateName}-net` }];
+    // StatelessWeb apps depend on the HAProxy applications network
+    const resourceInputs =
+      data.serviceType === "StatelessWeb"
+        ? [{ type: "docker-network", purpose: "applications" }]
+        : undefined;
 
     try {
       await createApplication.mutateAsync({
@@ -272,7 +291,8 @@ export default function NewApplicationPage() {
         scope: "environment",
         environmentId: data.environmentId,
         deployImmediately: data.deployImmediately,
-        networks,
+        resourceInputs,
+        networks: [],
         volumes,
         services: [
           {
@@ -284,7 +304,6 @@ export default function NewApplicationPage() {
               env: Object.keys(env).length > 0 ? env : undefined,
               ports: ports.length > 0 ? ports : undefined,
               mounts: mounts.length > 0 ? mounts : undefined,
-              joinNetworks: [`${templateName}-net`],
               restartPolicy: data.restartPolicy,
               healthcheck,
             },
@@ -293,6 +312,14 @@ export default function NewApplicationPage() {
             routing,
           },
         ],
+        onStackCreated: (stackId) => {
+          registerTask({
+            id: stackId,
+            type: "stack-apply",
+            label: `Deploying ${data.displayName}`,
+            channel: Channel.STACKS,
+          });
+        },
       });
       navigate("/applications");
     } catch {
@@ -448,6 +475,20 @@ export default function NewApplicationPage() {
                     </FormItem>
                   )}
                 />
+
+                {showHaproxyWarning && (
+                  <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                    <IconAlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium">HAProxy stack required</p>
+                      <p className="mt-1 text-destructive/80">
+                        Stateless web applications require a deployed HAProxy stack with an
+                        applications network in this environment. Go to the environment&apos;s
+                        infrastructure stacks and deploy an HAProxy load balancer first.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1020,40 +1061,13 @@ export default function NewApplicationPage() {
                         )}
                       />
 
-                      {networkType === "local" && (
-                        <FormField
-                          control={form.control}
-                          name="routing.enableSsl"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-3">
-                              <FormControl>
-                                <Switch
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="!mt-0">Enable SSL</FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      {networkType === "internet" && (
-                        <FormField
-                          control={form.control}
-                          name="routing.enableTunnel"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-3">
-                              <FormControl>
-                                <Switch
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="!mt-0">Enable Cloudflare Tunnel</FormLabel>
-                            </FormItem>
-                          )}
-                        />
+                      {networkType && (
+                        <div className="text-sm text-muted-foreground p-3 bg-muted rounded-md">
+                          {networkType === "local" &&
+                            "A TLS certificate and DNS record will be automatically created for this hostname."}
+                          {networkType === "internet" &&
+                            "A Cloudflare tunnel ingress will be automatically created for this hostname."}
+                        </div>
                       )}
                     </>
                   )}
@@ -1085,7 +1099,7 @@ export default function NewApplicationPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={createApplication.isPending}
+                    disabled={createApplication.isPending || !!showHaproxyWarning}
                   >
                     {createApplication.isPending && (
                       <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />

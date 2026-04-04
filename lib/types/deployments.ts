@@ -660,6 +660,20 @@ export interface DeleteManualFrontendResponse {
   message: string;
 }
 
+export interface ForceDeleteFrontendResponse {
+  success: boolean;
+  message: string;
+  deletedRoutes: number;
+  frontendName: string;
+}
+
+export interface ForceDeleteBackendResponse {
+  success: boolean;
+  message: string;
+  deletedServers: number;
+  backendName: string;
+}
+
 // ====================
 // Async Manual Frontend Setup Types
 // ====================

@@ -14,6 +14,7 @@ import type {
   ApplyResult,
   DestroyResult,
   ServiceApplyResult,
+  ResourceResult,
   ApplyStackRequest,
   StackListResponse,
   StackResponse,
@@ -366,7 +367,7 @@ export function useStackApply() {
 export interface StackApplyProgressState {
   isApplying: boolean;
   totalActions: number;
-  completedResults: ServiceApplyResult[];
+  completedResults: Array<ServiceApplyResult | ResourceResult>;
   actions: Array<{ serviceName: string; action: string }>;
   forcePull: boolean;
   finalResult: (ApplyResult & { error?: string; postApply?: { success: boolean; errors?: string[] } }) | null;
@@ -436,12 +437,14 @@ export function useStackApplyProgress(stackId: string) {
         isApplying: false,
         finalResult: data,
       }));
-      // Invalidate all stack queries so data refreshes
+      // Invalidate all stack and application queries so data refreshes
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
       queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
       queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
       queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
       queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
 
       // Toast notification
       if (data.error) {
@@ -559,6 +562,8 @@ export function useStackDestroyProgress(stackId: string | null) {
         queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
         queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
       }
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
 
       if (data.error) {
         toast.error(`Stack destroy failed: ${data.error}`);

@@ -59,9 +59,6 @@ describe('EnvironmentManager', () => {
         update: vi.fn(),
         create: vi.fn(),
       },
-      environmentVolume: {
-        upsert: vi.fn(),
-      },
       stack: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
@@ -121,7 +118,6 @@ describe('EnvironmentManager', () => {
       const fetchedEnvData = {
         ...createdEnvData,
         networks: [],
-        volumes: []
       };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
@@ -161,7 +157,6 @@ describe('EnvironmentManager', () => {
       const fetchedEnvData = {
         ...createdEnvData,
         networks: [],
-        volumes: []
       };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
@@ -199,7 +194,6 @@ describe('EnvironmentManager', () => {
       const fetchedEnvData = {
         ...createdEnvData,
         networks: [],
-        volumes: []
       };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
@@ -233,7 +227,6 @@ describe('EnvironmentManager', () => {
         type: 'nonproduction',
         networkType: 'local',
         networks: [],
-        volumes: [],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -249,7 +242,6 @@ describe('EnvironmentManager', () => {
         where: { id: 'env-1' },
         include: {
           networks: true,
-          volumes: true
         }
       });
     });
@@ -272,7 +264,6 @@ describe('EnvironmentManager', () => {
           type: 'production',
           networkType: 'local',
           networks: [],
-          volumes: [],
           createdAt: new Date(),
           updatedAt: new Date()
         }
@@ -289,7 +280,6 @@ describe('EnvironmentManager', () => {
         where: { type: 'production' },
         include: {
           networks: true,
-          volumes: true
         },
         skip: 0,
         take: 10,
@@ -307,7 +297,6 @@ describe('EnvironmentManager', () => {
         type: 'production',
         networkType: 'local',
         networks: [],
-        volumes: [],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -333,7 +322,6 @@ describe('EnvironmentManager', () => {
         },
         include: {
           networks: true,
-          volumes: true
         }
       });
     });
@@ -347,7 +335,6 @@ describe('EnvironmentManager', () => {
         type: 'nonproduction',
         networkType: 'local',
         networks: [],
-        volumes: []
       };
 
       mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);

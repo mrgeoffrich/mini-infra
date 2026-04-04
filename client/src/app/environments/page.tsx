@@ -13,7 +13,7 @@ export function EnvironmentsPage() {
           <div>
             <h1 className="text-3xl font-bold">Environments</h1>
             <p className="text-muted-foreground">
-              Manage your service environments, networks, and volumes
+              Manage your service environments and networks
             </p>
           </div>
         </div>

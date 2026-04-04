@@ -5,6 +5,8 @@ import {
   stackNetworkSchema,
   stackVolumeSchema,
   stackServiceDefinitionSchema,
+  stackResourceOutputSchema,
+  stackResourceInputSchema,
 } from "./schemas";
 
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -41,6 +43,8 @@ export const createTemplateSchema = z.object({
   category: z.string().max(100).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   defaultParameterValues: parameterValuesSchema.optional(),
+  resourceOutputs: z.array(stackResourceOutputSchema).optional(),
+  resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z
@@ -58,6 +62,8 @@ export const updateTemplateMetaSchema = z.object({
 export const draftVersionSchema = z.object({
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   defaultParameterValues: parameterValuesSchema.optional(),
+  resourceOutputs: z.array(stackResourceOutputSchema).optional(),
+  resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
   services: z

@@ -14,6 +14,8 @@ import {
   StackParameterDefinition,
   StackParameterValue,
   StackVolume,
+  StackResourceOutput,
+  StackResourceInput,
   ApplyOptions,
   ApplyResult,
   UpdateOptions,
@@ -27,7 +29,6 @@ import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
-import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
 import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
 import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
@@ -57,50 +58,189 @@ export class StackReconciler {
   }
 
   /**
-   * Resolve environment network purposes to Docker network names.
-   * Collects all unique purposes from joinEnvironmentNetworks across services,
-   * looks them up in the EnvironmentNetwork table, and returns a map of purpose → Docker name.
+   * Create Docker networks and InfraResource records for resource outputs.
+   * Returns a map of purpose → Docker network name for outputs.
    */
-  private async resolveEnvironmentNetworks(
-    environmentId: string | null,
-    resolvedDefinitions: Map<string, StackServiceDefinition>
+  private async reconcileInfraOutputs(
+    stack: { id: string; environmentId: string | null; environment?: { name: string } | null },
+    resourceOutputs: StackResourceOutput[],
+    log: any
   ): Promise<Map<string, string>> {
-    if (!environmentId) return new Map();
+    const result = new Map<string, string>();
 
-    const purposes = new Set<string>();
-    for (const def of resolvedDefinitions.values()) {
-      for (const purpose of def.containerConfig.joinEnvironmentNetworks ?? []) {
-        purposes.add(purpose);
+    for (const output of resourceOutputs) {
+      if (output.type !== 'docker-network') {
+        log.warn({ type: output.type }, 'Unsupported infra resource type, skipping');
+        continue;
       }
+
+      const scope = stack.environmentId ? 'environment' : 'host';
+      const name = stack.environmentId
+        ? `${stack.environment!.name}-${output.purpose}`
+        : `mini-infra-${output.purpose}`;
+
+      // Ensure Docker network exists
+      const exists = await this.dockerExecutor.networkExists(name);
+      if (!exists) {
+        log.info({ network: name, purpose: output.purpose, scope }, 'Creating infra resource network');
+        const labels: Record<string, string> = {
+          'mini-infra.infra-resource': 'true',
+          'mini-infra.resource-purpose': output.purpose,
+          'mini-infra.stack-id': stack.id,
+        };
+        if (stack.environmentId) {
+          labels['mini-infra.environment'] = stack.environmentId;
+        }
+        await this.dockerExecutor.createNetwork(name, '', { driver: 'bridge', labels });
+      }
+
+      // Upsert InfraResource record
+      // Use findFirst + create/update instead of upsert because host-scoped resources
+      // have environmentId=null, and SQLite treats NULLs as distinct in unique constraints.
+      // The upsert approach used a '__host__' sentinel which violates the FK to Environment.
+      const existing = await this.prisma.infraResource.findFirst({
+        where: {
+          type: output.type,
+          purpose: output.purpose,
+          scope,
+          environmentId: stack.environmentId ?? null,
+        },
+      });
+      if (existing) {
+        await this.prisma.infraResource.update({
+          where: { id: existing.id },
+          data: { stackId: stack.id, name },
+        });
+      } else {
+        await this.prisma.infraResource.create({
+          data: {
+            type: output.type,
+            purpose: output.purpose,
+            scope,
+            environmentId: stack.environmentId ?? null,
+            stackId: stack.id,
+            name,
+          },
+        });
+      }
+
+      result.set(output.purpose, name);
     }
 
-    if (purposes.size === 0) return new Map();
-
-    const envNetworks = await this.prisma.environmentNetwork.findMany({
-      where: { environmentId, purpose: { in: [...purposes] } },
-    });
-
-    return new Map(envNetworks.map((n) => [n.purpose, n.name]));
+    return result;
   }
 
   /**
-   * Connect a container to all environment networks declared in joinEnvironmentNetworks.
-   * Silently skips purposes that don't exist for this environment.
+   * Resolve resource inputs to Docker network names by querying InfraResource.
+   * Tries environment-scoped first, then falls back to host-scoped.
    */
-  private async joinEnvironmentNetworks(
+  private async resolveInfraInputs(
+    environmentId: string | null,
+    resourceInputs: StackResourceInput[],
+    log: any
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+
+    for (const input of resourceInputs) {
+      if (input.type !== 'docker-network') continue;
+
+      let resource = null;
+
+      // Try environment-scoped first
+      if (environmentId) {
+        resource = await this.prisma.infraResource.findUnique({
+          where: {
+            type_purpose_scope_environmentId: {
+              type: input.type,
+              purpose: input.purpose,
+              scope: 'environment',
+              environmentId,
+            },
+          },
+        });
+      }
+
+      // Fall back to host-scoped
+      if (!resource) {
+        resource = await this.prisma.infraResource.findFirst({
+          where: {
+            type: input.type,
+            purpose: input.purpose,
+            scope: 'host',
+            environmentId: null,
+          },
+        });
+      }
+
+      if (resource) {
+        result.set(input.purpose, resource.name);
+      } else if (!input.optional) {
+        log.warn({ type: input.type, purpose: input.purpose }, 'Required infra resource input not found');
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Connect a container to infra resource networks declared in joinResourceNetworks.
+   */
+  private async joinResourceNetworks(
     containerId: string,
     serviceDef: StackServiceDefinition,
-    envNetworkMap: Map<string, string>,
+    infraNetworkMap: Map<string, string>,
     log: any
   ): Promise<void> {
-    for (const purpose of serviceDef.containerConfig.joinEnvironmentNetworks ?? []) {
-      const netName = envNetworkMap.get(purpose);
+    for (const purpose of serviceDef.containerConfig.joinResourceNetworks ?? []) {
+      const netName = infraNetworkMap.get(purpose);
       if (!netName) continue;
       try {
         await this.containerManager.connectToNetwork(containerId, netName);
-        log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined environment network');
+        log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined infra resource network');
       } catch (err: any) {
-        log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: err.message }, 'Failed to join environment network');
+        // Ignore "already connected" errors
+        const msg = err?.message || '';
+        if (!msg.includes('already exists') && err?.statusCode !== 403) {
+          log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: msg }, 'Failed to join infra resource network');
+        }
+      }
+    }
+  }
+
+  /**
+   * Connect the mini-infra container itself to resource output networks with joinSelf: true.
+   */
+  private async joinSelfToOutputNetworks(
+    resourceOutputs: StackResourceOutput[],
+    outputNetworkMap: Map<string, string>,
+    log: any
+  ): Promise<void> {
+    const { getOwnContainerId } = await import('../self-update');
+    const selfId = getOwnContainerId();
+    if (!selfId) {
+      log.debug('Not running in Docker, skipping joinSelf');
+      return;
+    }
+
+    const docker = this.dockerExecutor.getDockerClient();
+
+    for (const output of resourceOutputs) {
+      if (!output.joinSelf || output.type !== 'docker-network') continue;
+
+      const netName = outputNetworkMap.get(output.purpose);
+      if (!netName) continue;
+
+      try {
+        const network = docker.getNetwork(netName);
+        await network.connect({ Container: selfId });
+        log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
+      } catch (err: any) {
+        const msg = err?.message || err?.statusMessage || '';
+        if (!msg.includes('already exists') && err?.statusCode !== 403) {
+          log.warn({ network: netName, purpose: output.purpose, error: msg }, 'Failed to join self to infra resource network');
+        } else {
+          log.debug({ network: netName }, 'Already connected to infra resource network');
+        }
       }
     }
   }
@@ -333,21 +473,16 @@ export class StackReconciler {
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
       const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
-      // 5a. Ensure environment networks exist in Docker
-      const envNetworkMap = await this.resolveEnvironmentNetworks(stack.environmentId, resolvedDefinitions);
-      for (const [purpose, netName] of envNetworkMap) {
-        const exists = await this.dockerExecutor.networkExists(netName);
-        if (!exists) {
-          log.info({ network: netName, purpose }, 'Creating environment network');
-          await this.dockerExecutor.createNetwork(netName, stack.environment?.name ?? '', {
-            driver: 'bridge',
-            labels: {
-              'mini-infra.environment': stack.environmentId!,
-              'mini-infra.network-purpose': purpose,
-            },
-          });
-        }
-      }
+      // 5a-i. Reconcile infra resource outputs (creates Docker networks + InfraResource records)
+      const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
+      const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
+      const outputNetworkMap = await this.reconcileInfraOutputs(stack, resourceOutputs, log);
+
+      // 5a-ii. Resolve infra resource inputs from other stacks
+      const inputNetworkMap = await this.resolveInfraInputs(stack.environmentId, resourceInputs, log);
+
+      // 5a-iii. Merge output + input into a combined infra network map
+      const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
 
       // 5b. Ensure stack-owned networks and volumes
       const networks = stack.networks as unknown as StackNetwork[];
@@ -375,7 +510,7 @@ export class StackReconciler {
         }
       }
 
-      // 5c. Reconcile stack-level resources (TLS → DNS → Tunnels)
+      // 5c. Reconcile stack-level resources (DNS → TLS → Tunnels)
       const allResourceResults: ResourceResult[] = [];
       if (this.resourceReconciler && plan.resourceActions.some((a) => a.action !== 'no-op')) {
         const definitions = {
@@ -383,19 +518,6 @@ export class StackReconciler {
           dnsRecords: (stack.dnsRecords as any[]) ?? [],
           tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
         };
-
-        // Get HAProxy client if environment has one
-        let haproxyClient: HAProxyDataPlaneClient | null = null;
-        if (stack.environmentId) {
-          try {
-            const envValidation = new EnvironmentValidationService();
-            const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
-            if (haproxyCtx) {
-              haproxyClient = new HAProxyDataPlaneClient();
-              await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-            }
-          } catch { /* no HAProxy available */ }
-        }
 
         const progressCallback = (result: ResourceResult) => {
           log.info({ stackId, result }, 'Resource reconciliation progress');
@@ -406,18 +528,7 @@ export class StackReconciler {
           }
         };
 
-        // TLS first
-        const tlsResults = await this.resourceReconciler.reconcileTls(
-          plan.resourceActions, stackId, definitions.tlsCertificates, haproxyClient,
-          options?.triggeredBy ?? 'system', progressCallback
-        );
-        allResourceResults.push(...tlsResults);
-        if (tlsResults.some((r) => !r.success)) {
-          const failed = tlsResults.find((r) => !r.success);
-          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
-        }
-
-        // DNS second
+        // DNS first
         const dnsResults = await this.resourceReconciler.reconcileDns(
           plan.resourceActions, stackId, definitions.dnsRecords, progressCallback
         );
@@ -425,6 +536,17 @@ export class StackReconciler {
         if (dnsResults.some((r) => !r.success)) {
           const failed = dnsResults.find((r) => !r.success);
           throw new Error(`DNS reconciliation failed: ${failed?.error}`);
+        }
+
+        // TLS second
+        const tlsResults = await this.resourceReconciler.reconcileTls(
+          plan.resourceActions, stackId, definitions.tlsCertificates,
+          options?.triggeredBy ?? 'system', progressCallback
+        );
+        allResourceResults.push(...tlsResults);
+        if (tlsResults.some((r) => !r.success)) {
+          const failed = tlsResults.find((r) => !r.success);
+          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
         }
 
         // Tunnel third
@@ -478,14 +600,14 @@ export class StackReconciler {
             const result = await this.applyStatelessWeb(
               action, svc!, serviceDef!, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log, envNetworkMap
+              actionStart, log, infraNetworkMap
             );
             serviceResults.push(result);
           } else {
             const result = await this.applyStateful(
               action, svc, serviceDef, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log, envNetworkMap
+              actionStart, log, infraNetworkMap
             );
             serviceResults.push(result);
           }
@@ -507,6 +629,9 @@ export class StackReconciler {
           } catch { /* never let callback errors break apply */ }
         }
       }
+
+      // 7b. Connect mini-infra container to resource output networks with joinSelf: true
+      await this.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
 
       // 8. Update stack in DB
       const allSucceeded = serviceResults.every((r) => r.success);
@@ -633,7 +758,12 @@ export class StackReconciler {
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
       const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
-      const envNetworkMap = await this.resolveEnvironmentNetworks(stack.environmentId, resolvedDefinitions);
+      // Reconcile infra resource outputs and inputs
+      const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
+      const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
+      const outputNetworkMap = await this.reconcileInfraOutputs(stack, resourceOutputs, log);
+      const inputNetworkMap = await this.resolveInfraInputs(stack.environmentId, resourceInputs, log);
+      const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
 
       const docker = this.dockerExecutor.getDockerClient();
       const containers = await docker.listContainers({
@@ -660,20 +790,20 @@ export class StackReconciler {
           result = await this.updateStatelessWeb(
             action, svc, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, envNetworkMap
+            containerByService, actionStart, log, infraNetworkMap
           );
         } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
           // No existing container (create/remove) — use the standard apply path
           result = await this.applyStatelessWeb(
             action, svc, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, envNetworkMap
+            containerByService, actionStart, log, infraNetworkMap
           );
         } else {
           result = await this.applyStateful(
             action, svc, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, envNetworkMap
+            containerByService, actionStart, log, infraNetworkMap
           );
         }
 
@@ -995,7 +1125,7 @@ export class StackReconciler {
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
     log: any,
-    envNetworkMap: Map<string, string> = new Map()
+    infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     switch (action.action) {
       case 'create': {
@@ -1034,8 +1164,8 @@ export class StackReconciler {
           }
         }
 
-        // Join environment networks by purpose
-        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
+        // Join infra resource networks by purpose
+        await this.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -1090,8 +1220,8 @@ export class StackReconciler {
           }
         }
 
-        // Join environment networks by purpose
-        await this.joinEnvironmentNetworks(containerId, serviceDef, envNetworkMap, log);
+        // Join infra resource networks by purpose
+        await this.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -1140,7 +1270,8 @@ export class StackReconciler {
     stackId: string,
     stack: any,
     serviceHashes: Map<string, string>,
-    envNetworkMap: Map<string, string>
+    infraNetworkMap: Map<string, string>,
+    networkNames: string[] = []
   ): Promise<Record<string, unknown>> {
     const routing = serviceDef.routing!;
     const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
@@ -1168,11 +1299,23 @@ export class StackReconciler {
       }
     }
 
-    // Build networks list including environment networks
+    // Build networks list including environment networks, stack networks, and joinNetworks
     const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
-    for (const dockerName of envNetworkMap.values()) {
+    for (const dockerName of infraNetworkMap.values()) {
       if (!containerNetworks.includes(dockerName)) {
         containerNetworks.push(dockerName);
+      }
+    }
+    for (const netName of networkNames) {
+      if (!containerNetworks.includes(netName)) {
+        containerNetworks.push(netName);
+      }
+    }
+    if (serviceDef.containerConfig.joinNetworks?.length) {
+      for (const netName of serviceDef.containerConfig.joinNetworks) {
+        if (netName && !containerNetworks.includes(netName)) {
+          containerNetworks.push(netName);
+        }
       }
     }
 
@@ -1196,7 +1339,6 @@ export class StackReconciler {
       enableSsl,
       tlsCertificateId,
       certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
-      networkType: 'local',
       healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
       healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
         ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
@@ -1233,7 +1375,7 @@ export class StackReconciler {
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
     log: any,
-    envNetworkMap: Map<string, string> = new Map()
+    infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
     if (!routing) {
@@ -1241,7 +1383,7 @@ export class StackReconciler {
     }
 
     const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, envNetworkMap
+      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     switch (action.action) {
@@ -1263,13 +1405,11 @@ export class StackReconciler {
           haproxyConfigured: false,
           healthChecksPassed: false,
           frontendConfigured: false,
-          dnsConfigured: false,
           trafficEnabled: false,
           validationErrors: 0,
           error: undefined,
           retryCount: 0,
           frontendName: undefined,
-          dnsRecordId: undefined,
         };
 
         const finalState = await runStateMachineToCompletion(
@@ -1307,7 +1447,6 @@ export class StackReconciler {
           greenHealthy: false,
           greenBackendConfigured: false,
           frontendConfigured: false,
-          dnsConfigured: false,
           trafficOpenedToGreen: false,
           trafficValidated: false,
           blueDraining: false,
@@ -1322,7 +1461,6 @@ export class StackReconciler {
           newContainerId: undefined,
           containerIpAddress: undefined,
           frontendName: undefined,
-          dnsRecordId: undefined,
         };
 
         const finalState = await runStateMachineToCompletion(
@@ -1394,7 +1532,7 @@ export class StackReconciler {
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
     log: any,
-    envNetworkMap: Map<string, string> = new Map()
+    infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
     if (!routing) {
@@ -1404,7 +1542,7 @@ export class StackReconciler {
     log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
 
     const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, envNetworkMap
+      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     const oldContainer = containerByService.get(action.serviceName);

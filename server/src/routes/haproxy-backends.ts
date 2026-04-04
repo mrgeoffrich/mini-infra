@@ -10,6 +10,7 @@ import {
   HAProxyServerInfo,
   HAProxyServerListResponse,
   HAProxyServerResponse,
+  ForceDeleteBackendResponse,
 } from "@mini-infra/types";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
@@ -669,6 +670,121 @@ router.patch(
       res.status(500).json({
         success: false,
         error: "Failed to update server",
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/haproxy/backends/:backendName
+ * Force-delete a backend and all its servers. Emergency cleanup endpoint — not for UI use.
+ * Requires ?environmentId= query parameter.
+ */
+router.delete(
+  "/:backendName",
+  requirePermission('haproxy:write') as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const backendName = String(req.params.backendName);
+      const { environmentId } = req.query;
+
+      if (!environmentId || typeof environmentId !== "string") {
+        return res.status(400).json({
+          success: false,
+          error: "environmentId query parameter is required",
+        });
+      }
+
+      // Fetch backend with servers
+      const backend = await prisma.hAProxyBackend.findUnique({
+        where: {
+          name_environmentId: {
+            name: backendName,
+            environmentId,
+          },
+        },
+        include: { servers: true },
+      });
+
+      if (!backend) {
+        return res.status(404).json({
+          success: false,
+          error: "Backend not found",
+        });
+      }
+
+      // Try to clean up HAProxy config — but don't fail if HAProxy is unavailable
+      let haproxyCleanedUp = false;
+      try {
+        const haproxyClient = await getHAProxyClient(environmentId);
+
+        // Remove all servers from the backend in HAProxy
+        for (const server of backend.servers) {
+          try {
+            await haproxyClient.deleteServer(backendName, server.name);
+          } catch (serverError: any) {
+            logger.warn(
+              { error: serverError.message, serverName: server.name, backendName },
+              "Failed to remove server from HAProxy during force-delete, continuing"
+            );
+          }
+        }
+
+        // Remove the backend itself from HAProxy
+        try {
+          await haproxyClient.deleteBackend(backendName);
+        } catch (backendError: any) {
+          logger.warn(
+            { error: backendError.message, backendName },
+            "Failed to remove backend from HAProxy during force-delete, continuing"
+          );
+        }
+
+        haproxyCleanedUp = true;
+      } catch (haproxyError: any) {
+        logger.warn(
+          { error: haproxyError.message, backendName },
+          "HAProxy unavailable during force-delete, cleaning up database only"
+        );
+      }
+
+      const totalDeletedServers = backend.servers.length;
+
+      // Delete servers from database (cascade should handle this, but be explicit)
+      await prisma.hAProxyServer.deleteMany({
+        where: { backendId: backend.id },
+      });
+
+      // Delete the backend record
+      await prisma.hAProxyBackend.delete({
+        where: { id: backend.id },
+      });
+
+      logger.info(
+        { backendName, deletedServers: totalDeletedServers, haproxyCleanedUp },
+        "Force-deleted backend and all servers"
+      );
+
+      emitHAProxyUpdate();
+
+      const response: ForceDeleteBackendResponse = {
+        success: true,
+        message: haproxyCleanedUp
+          ? `Backend and ${totalDeletedServers} server(s) removed from HAProxy and database`
+          : `Backend and ${totalDeletedServers} server(s) removed from database only (HAProxy was unavailable)`,
+        deletedServers: totalDeletedServers,
+        backendName,
+      };
+      res.json(response);
+    } catch (error: any) {
+      logger.error(
+        { error: error.message, backendName: req.params.backendName },
+        "Failed to force-delete backend"
+      );
+      res.status(500).json({
+        success: false,
+        error: "Failed to force-delete backend",
         message: error.message,
       });
     }

@@ -5,14 +5,12 @@ import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
 import { ConfigureFrontend } from './actions/configure-frontend';
-import { ConfigureDNS } from './actions/configure-dns';
 import { EnableTraffic } from './actions/enable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
 import { CleanupTempResources } from './actions/cleanup-temp-resources';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { RemoveFrontend } from './actions/remove-frontend';
-import { RemoveDNS } from './actions/remove-dns';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
 
@@ -22,14 +20,12 @@ const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
 const configureFrontend = new ConfigureFrontend();
-const configureDNS = new ConfigureDNS();
 const enableTraffic = new EnableTraffic();
 const logDeploymentSuccess = new LogDeploymentSuccess();
 const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
 const removeContainerFromLB = new RemoveContainerFromLB();
 const removeFrontend = new RemoveFrontend();
-const removeDNS = new RemoveDNS();
 const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
 
@@ -60,13 +56,11 @@ interface InitialDeploymentContext {
     haproxyConfigured: boolean;
     healthChecksPassed: boolean;
     frontendConfigured: boolean;
-    dnsConfigured: boolean;
     trafficEnabled: boolean;
     validationErrors: number;
     error?: string;
     retryCount: number;
     frontendName?: string;
-    dnsRecordId?: string;
 
     // Deployment metadata
     triggerType: string;
@@ -107,9 +101,6 @@ type InitialDeploymentEvent =
     | { type: 'FRONTEND_CONFIGURED'; frontendName?: string; hostname?: string; backendName?: string }
     | { type: 'FRONTEND_CONFIG_SKIPPED'; message?: string }
     | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
-    | { type: 'DNS_CONFIGURED'; dnsRecordId?: string; hostname?: string }
-    | { type: 'DNS_CONFIG_SKIPPED'; message?: string; networkType?: string }
-    | { type: 'DNS_CONFIG_ERROR'; error: string }
     | { type: 'TRAFFIC_ENABLED' }
     | { type: 'TRAFFIC_ENABLE_FAILED'; error: string }
     | { type: 'TRAFFIC_STABLE' }
@@ -117,8 +108,6 @@ type InitialDeploymentEvent =
     | { type: 'RESET' }
     | { type: 'MANUAL_INTERVENTION_COMPLETE' }
     // Rollback events
-    | { type: 'ROLLBACK_DNS_REMOVED' }
-    | { type: 'ROLLBACK_DNS_REMOVAL_SKIPPED' }
     | { type: 'ROLLBACK_FRONTEND_REMOVED' }
     | { type: 'ROLLBACK_FRONTEND_REMOVAL_SKIPPED' }
     | { type: 'ROLLBACK_CONFIG_REMOVED' }
@@ -188,17 +177,6 @@ export const initialDeploymentMachine = setup({
                 });
             });
         },
-        configureDNS: ({ context, self }) => {
-            // Execute async action with event callback
-            configureDNS.execute(context, (event) => {
-                self.send(event);
-            }).catch((error) => {
-                self.send({
-                    type: 'DNS_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
-                });
-            });
-        },
         enableTraffic: ({ context, self }) => {
             // Execute async action with event callback
             enableTraffic.execute(context, (event) => {
@@ -218,21 +196,6 @@ export const initialDeploymentMachine = setup({
         },
         cleanupTempResources: ({ context }) => {
             cleanupTempResources.execute(context);
-        },
-        rollbackRemoveDNS: ({ context, self }) => {
-            removeDNS.execute(context, (event) => {
-                if (event.type === 'DNS_REMOVED') {
-                    self.send({ type: 'ROLLBACK_DNS_REMOVED' });
-                } else if (event.type === 'DNS_REMOVAL_SKIPPED') {
-                    self.send({ type: 'ROLLBACK_DNS_REMOVAL_SKIPPED' });
-                } else if (event.type === 'DNS_REMOVAL_ERROR') {
-                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
-                } else {
-                    self.send(event);
-                }
-            }).catch((error) => {
-                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
-            });
         },
         rollbackRemoveFrontend: ({ context, self }) => {
             removeFrontend.execute(context, (event) => {
@@ -306,13 +269,11 @@ export const initialDeploymentMachine = setup({
             haproxyConfigured: false,
             healthChecksPassed: false,
             frontendConfigured: false,
-            dnsConfigured: false,
             trafficEnabled: false,
             validationErrors: 0,
             error: undefined,
             retryCount: 0,
-            frontendName: undefined,
-            dnsRecordId: undefined
+            frontendName: undefined
         }))
     },
     guards: {
@@ -354,13 +315,11 @@ export const initialDeploymentMachine = setup({
         haproxyConfigured: deploymentInput?.haproxyConfigured || false,
         healthChecksPassed: deploymentInput?.healthChecksPassed || false,
         frontendConfigured: deploymentInput?.frontendConfigured || false,
-        dnsConfigured: deploymentInput?.dnsConfigured || false,
         trafficEnabled: deploymentInput?.trafficEnabled || false,
         validationErrors: deploymentInput?.validationErrors || 0,
         error: deploymentInput?.error,
         retryCount: deploymentInput?.retryCount || 0,
         frontendName: deploymentInput?.frontendName,
-        dnsRecordId: deploymentInput?.dnsRecordId,
 
         // Deployment metadata
         triggerType: deploymentInput?.triggerType || "manual",
@@ -508,7 +467,7 @@ export const initialDeploymentMachine = setup({
             entry: 'configureFrontend',
             on: {
                 FRONTEND_CONFIGURED: {
-                    target: 'configuringDNS',
+                    target: 'enablingTraffic',
                     actions: assign({
                         frontendConfigured: true,
                         frontendName: ({ event }) => {
@@ -520,38 +479,11 @@ export const initialDeploymentMachine = setup({
                     })
                 },
                 FRONTEND_CONFIG_SKIPPED: {
-                    target: 'configuringDNS',
+                    target: 'enablingTraffic',
                     actions: assign({ frontendConfigured: false })
                 },
                 FRONTEND_CONFIG_ERROR: {
                     target: 'rollbackRemoveFrontend',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
-        configuringDNS: {
-            description: 'Configuring DNS records for deployment',
-            entry: 'configureDNS',
-            on: {
-                DNS_CONFIGURED: {
-                    target: 'enablingTraffic',
-                    actions: assign({
-                        dnsConfigured: true,
-                        dnsRecordId: ({ event }) => {
-                            if (event.type === 'DNS_CONFIGURED') {
-                                return event.dnsRecordId;
-                            }
-                            return undefined;
-                        }
-                    })
-                },
-                DNS_CONFIG_SKIPPED: {
-                    target: 'enablingTraffic',
-                    actions: assign({ dnsConfigured: false })
-                },
-                DNS_CONFIG_ERROR: {
-                    target: 'rollbackRemoveDNS',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -566,7 +498,7 @@ export const initialDeploymentMachine = setup({
                     actions: assign({ trafficEnabled: true })
                 },
                 TRAFFIC_ENABLE_FAILED: {
-                    target: 'rollbackRemoveDNS',
+                    target: 'rollbackRemoveFrontend',
                     actions: 'preserveErrorContext'
                 }
             }
@@ -585,23 +517,6 @@ export const initialDeploymentMachine = setup({
         },
 
         // Rollback states - clean up in reverse order of deployment progress
-        rollbackRemoveDNS: {
-            description: 'Removing DNS records during rollback',
-            entry: 'rollbackRemoveDNS',
-            on: {
-                ROLLBACK_DNS_REMOVED: {
-                    target: 'rollbackRemoveFrontend'
-                },
-                ROLLBACK_DNS_REMOVAL_SKIPPED: {
-                    target: 'rollbackRemoveFrontend'
-                },
-                ROLLBACK_ERROR: {
-                    target: 'rollbackRemoveFrontend',
-                    actions: assign({ error: 'DNS removal had errors - continuing rollback' })
-                }
-            }
-        },
-
         rollbackRemoveFrontend: {
             description: 'Removing HAProxy frontend configuration during rollback',
             entry: 'rollbackRemoveFrontend',

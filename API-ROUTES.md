@@ -21,6 +21,7 @@
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/keys/permissions` | Available permission scopes and presets |
 | GET | `/api/keys/` | List API keys |
 | POST | `/api/keys/` | Create API key |
 | PATCH | `/api/keys/:keyId/revoke` | Revoke key |
@@ -62,22 +63,43 @@
 |--------|------|-------------|
 | GET | `/api/settings/` | List settings |
 | POST | `/api/settings/` | Create setting |
-| GET | `/api/settings/docker-host` | Get Docker host IP |
-| GET | `/api/settings/connectivity` | Connectivity status logs |
-| POST | `/api/settings/validate/:service` | Validate service connectivity |
-| GET | `/api/settings/security` | Get security secrets (masked) |
-| POST | `/api/settings/security/regenerate` | Regenerate secret |
 | GET | `/api/settings/:id` | Get setting by ID |
 | PUT | `/api/settings/:id` | Update setting |
 | DELETE | `/api/settings/:id` | Delete setting |
 
-## System Settings (`/api/settings/system`)
+### Docker Host (`/api/settings/docker-host`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/docker-host/` | Get Docker host IP |
+
+### Connectivity (`/api/settings/connectivity`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/connectivity/` | Connectivity status logs |
+| GET | `/api/settings/connectivity/summary` | Latest status per service |
+
+### Validation (`/api/settings/validate`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/settings/validate/:service` | Validate service connectivity |
+
+### Security (`/api/settings/security`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/security/` | Get security secrets (masked) |
+| POST | `/api/settings/security/regenerate` | Regenerate secret |
+
+### System Settings (`/api/settings/system`)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/settings/system/test-docker-registry` | Test Docker registry |
 
-## Azure Settings (`/api/settings/azure`)
+### Azure Settings (`/api/settings/azure`)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -88,7 +110,7 @@
 | GET | `/api/settings/azure/containers` | List Azure containers |
 | POST | `/api/settings/azure/test-container` | Test Azure container |
 
-## Cloudflare Settings (`/api/settings/cloudflare`)
+### Cloudflare Settings (`/api/settings/cloudflare`)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -102,8 +124,12 @@
 | GET | `/api/settings/cloudflare/tunnels/:id/config` | Tunnel configuration |
 | POST | `/api/settings/cloudflare/tunnels/:id/hostnames` | Add hostname |
 | DELETE | `/api/settings/cloudflare/tunnels/:id/hostnames/:hostname` | Remove hostname |
+| GET | `/api/settings/cloudflare/managed-tunnels` | List managed tunnels across environments |
+| GET | `/api/settings/cloudflare/managed-tunnels/:environmentId` | Get managed tunnel for environment |
+| POST | `/api/settings/cloudflare/managed-tunnels/:environmentId` | Create managed tunnel for environment |
+| DELETE | `/api/settings/cloudflare/managed-tunnels/:environmentId` | Delete managed tunnel for environment |
 
-## GitHub Settings (`/api/settings/github`)
+### GitHub Settings (`/api/settings/github`)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -113,13 +139,25 @@
 | DELETE | `/api/settings/github/` | Delete config |
 | POST | `/api/settings/github/test` | Test API connectivity |
 
-## GitHub Bug Report (`/api/github/bug-report`)
+### GitHub App Settings (`/api/settings/github-app`)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/github/bug-report/` | Create bug report as GitHub issue |
+| GET | `/api/settings/github-app/` | Get GitHub App config |
+| POST | `/api/settings/github-app/manifest` | Create GitHub App from manifest |
+| POST | `/api/settings/github-app/setup/complete` | Complete GitHub App setup |
+| POST | `/api/settings/github-app/refresh-installation` | Refresh installation token |
+| POST | `/api/settings/github-app/test` | Test GitHub App connectivity |
+| DELETE | `/api/settings/github-app/` | Delete GitHub App config |
+| GET | `/api/settings/github-app/oauth/authorize` | Get OAuth authorization URL |
+| POST | `/api/settings/github-app/oauth/callback` | Complete OAuth callback |
+| POST | `/api/settings/github-app/oauth/pat` | Submit personal access token |
+| POST | `/api/settings/github-app/oauth/sync-registry` | Sync registry credentials from OAuth |
+| POST | `/api/settings/github-app/oauth/revoke` | Revoke OAuth token |
+| POST | `/api/settings/github-app/agent/token` | Generate agent token via GitHub App |
+| POST | `/api/settings/github-app/agent/revoke` | Revoke agent token |
 
-## Self-Backup Settings (`/api/settings/self-backup`)
+### Self-Backup Settings (`/api/settings/self-backup`)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -129,6 +167,21 @@
 | POST | `/api/settings/self-backup/disable` | Disable self-backup |
 | POST | `/api/settings/self-backup/trigger` | Trigger manual backup |
 | GET | `/api/settings/self-backup/schedule-info` | Get schedule info |
+
+## GitHub App Resources (`/api/github-app`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/github-app/packages` | List GitHub packages |
+| GET | `/api/github-app/packages/:packageName/versions` | List package versions |
+| GET | `/api/github-app/repos` | List GitHub repositories |
+| GET | `/api/github-app/repos/:owner/:repo/actions/runs` | List GitHub Actions runs |
+
+## GitHub Bug Report (`/api/github/bug-report`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/github/bug-report/` | Create bug report as GitHub issue |
 
 ## Self-Backups (`/api/self-backups`)
 
@@ -342,15 +395,6 @@
 | GET | `/api/environments/:id` | Get environment |
 | PUT | `/api/environments/:id` | Update environment |
 | DELETE | `/api/environments/:id` | Delete environment |
-| GET | `/api/environments/:id/status` | Environment status |
-| GET | `/api/environments/:id/validate-ports` | Validate ports |
-| POST | `/api/environments/:id/start` | Start environment |
-| POST | `/api/environments/:id/stop` | Stop environment |
-| GET | `/api/environments/:id/services` | List services |
-| POST | `/api/environments/:id/services` | Add service |
-| GET | `/api/environments/services/available` | Available service types |
-| GET | `/api/environments/services/available/:serviceType` | Service type details |
-| GET | `/api/environments/:id/networks` | List networks |
 | GET | `/api/environments/:id/volumes` | List volumes |
 | POST | `/api/environments/:id/remediate-haproxy` | Remediate HAProxy |
 | GET | `/api/environments/:id/haproxy-status` | HAProxy status |
@@ -362,14 +406,17 @@
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/stacks/` | List stacks (filter by `scope`, `environmentId`) |
+| GET | `/api/stacks/` | List stacks (filter by `scope`, `environmentId`, `source`) |
 | GET | `/api/stacks/:stackId` | Get stack details |
 | POST | `/api/stacks/` | Create stack |
 | PUT | `/api/stacks/:stackId` | Update stack |
 | DELETE | `/api/stacks/:stackId` | Delete stack |
 | PUT | `/api/stacks/:stackId/services/:serviceName` | Update service |
 | GET | `/api/stacks/:stackId/plan` | Compute plan (diff desired vs running state) |
+| GET | `/api/stacks/:stackId/validate` | Validate stack configuration |
 | POST | `/api/stacks/:stackId/apply` | Apply planned changes |
+| POST | `/api/stacks/:stackId/update` | Update a running stack |
+| POST | `/api/stacks/:stackId/destroy` | Destroy a running stack |
 | GET | `/api/stacks/:stackId/status` | Get status with container state |
 | GET | `/api/stacks/:stackId/history` | Deployment history |
 | GET | `/api/stacks/:stackId/history/:deploymentId` | Deployment detail |
@@ -379,6 +426,7 @@
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/stack-templates/` | List templates |
+| POST | `/api/stack-templates/import-deployment/:configId` | Import deployment config as template |
 | GET | `/api/stack-templates/:templateId` | Get template |
 | GET | `/api/stack-templates/:templateId/versions` | List versions |
 | GET | `/api/stack-templates/:templateId/versions/:versionId` | Get version |
@@ -463,3 +511,66 @@
 | GET | `/api/user/preferences` | Get preferences |
 | PUT | `/api/user/preferences` | Update preferences |
 | GET | `/api/user/timezones` | List timezones |
+
+## DNS (`/api/dns`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/dns/zones` | List DNS zones with record counts |
+| GET | `/api/dns/zones/:zoneId/records` | Get DNS records for a zone |
+| POST | `/api/dns/refresh` | Trigger DNS cache refresh |
+| GET | `/api/dns/validate/:hostname` | Validate hostname against DNS data |
+
+## Images (`/api/images`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/images/inspect-ports` | Inspect exposed ports for a Docker image |
+
+## Self-Update (`/api/self-update`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/self-update/status` | Get self-update status |
+| POST | `/api/self-update/check` | Check if update available |
+| POST | `/api/self-update/trigger` | Trigger self-update |
+
+## Agent (`/api/agent`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/agent/status` | Agent availability status (unauthenticated) |
+| POST | `/api/agent/sessions` | Create agent session |
+| GET | `/api/agent/sessions/:sessionId/stream` | SSE stream for agent session |
+| PUT | `/api/agent/sessions/:sessionId/context` | Update session context |
+| DELETE | `/api/agent/sessions/:sessionId` | Delete agent session |
+| GET | `/api/agent/conversations` | List conversations |
+| GET | `/api/agent/conversations/:id` | Get conversation messages |
+| DELETE | `/api/agent/conversations/:id` | Delete conversation |
+
+### Agent Settings (`/api/agent/settings`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/agent/settings/` | Get agent settings |
+| POST | `/api/agent/settings/` | Update agent settings |
+| POST | `/api/agent/settings/validate` | Validate API key |
+| DELETE | `/api/agent/settings/api-key` | Remove stored API key |
+
+## Agent Sidecar (`/api/agent-sidecar`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/agent-sidecar/status` | Sidecar health and container status |
+| POST | `/api/agent-sidecar/restart` | Restart sidecar container |
+| GET | `/api/agent-sidecar/config` | Get sidecar configuration |
+| PUT | `/api/agent-sidecar/config` | Update sidecar configuration |
+
+## Permission Presets (`/api/permission-presets`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/permission-presets/` | List permission presets |
+| POST | `/api/permission-presets/` | Create permission preset |
+| PATCH | `/api/permission-presets/:id` | Update permission preset |
+| DELETE | `/api/permission-presets/:id` | Delete permission preset |

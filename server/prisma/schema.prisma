@@ -368,18 +368,20 @@ model Environment {
   name        String   @unique
   description String?
   type        String   // 'production', 'nonproduction'
-  networkType String   @default("local") // 'local', 'internet'
-  createdAt   DateTime @default(now())
+  networkType      String   @default("local") // 'local', 'internet'
+  tunnelId         String?  // Cloudflare tunnel UUID for internet environments
+  tunnelServiceUrl String?  // HAProxy URL the tunnel routes to
+  createdAt        DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
   networks    EnvironmentNetwork[]
-  volumes     EnvironmentVolume[]
   deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
   stacks           Stack[]
   stackTemplates   StackTemplate[]
+  infraResources   InfraResource[]
 
   @@index([type])
   @@index([networkType])
@@ -402,22 +404,6 @@ model EnvironmentNetwork {
   @@unique([environmentId, purpose])
   @@index([environmentId])
   @@map("environment_networks")
-}
-
-// EnvironmentVolume - Tracks Docker volumes for environments
-model EnvironmentVolume {
-  id            String   @id @default(cuid())
-  environmentId String
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  name          String
-  driver        String   @default("local")
-  options       Json?    // Volume options
-  dockerId      String?  // Docker volume ID when created
-  createdAt     DateTime @default(now())
-
-  @@unique([environmentId, name])
-  @@index([environmentId])
-  @@map("environment_volumes")
 }
 
 // HostService model - Tracks host-level services (not scoped to an environment)
@@ -1205,6 +1191,8 @@ model Stack {
   tlsCertificates      Json?       // Array of StackTlsCertificate
   dnsRecords           Json?       // Array of StackDnsRecord
   tunnelIngress        Json?       // Array of StackTunnelIngress
+  resourceOutputs      Json?       // Array of StackResourceOutput
+  resourceInputs       Json?       // Array of StackResourceInput
   removedAt            DateTime?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
@@ -1213,6 +1201,7 @@ model Stack {
   services             StackService[]
   deployments          StackDeployment[]
   resources            StackResource[]
+  infraResources       InfraResource[]
 
   @@index([environmentId])
   @@index([status])
@@ -1288,6 +1277,28 @@ model StackResource {
   @@map("stack_resources")
 }
 
+// InfraResource - Shared infrastructure resources produced/consumed by stacks
+model InfraResource {
+  id            String       @id @default(cuid())
+  type          String       // "docker-network" initially, extensible
+  purpose       String       // "applications", "tunnel", "dataplane", "monitoring"
+  scope         String       // "host" or "environment"
+  environmentId String?
+  environment   Environment? @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  stackId       String?
+  stack         Stack?       @relation(fields: [stackId], references: [id], onDelete: SetNull)
+  name          String       // actual Docker resource name (e.g., "staging-applications")
+  dockerId      String?      // Docker resource ID when created
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([type, purpose, scope, environmentId])
+  @@index([stackId])
+  @@index([environmentId])
+  @@map("infra_resources")
+}
+
 // StackTemplate - Reusable blueprint for stack definitions
 model StackTemplate {
   id               String               @id @default(cuid())
@@ -1337,6 +1348,8 @@ model StackTemplateVersion {
   parameters             Json                        // StackParameterDefinition[]
   defaultParameterValues Json                        // Record<string, StackParameterValue>
   networkTypeDefaults    Json                        // Record<EnvironmentNetworkType, Record<string, StackParameterValue>>
+  resourceOutputs        Json?                       // Array of StackResourceOutput
+  resourceInputs         Json?                       // Array of StackResourceInput
   networks               Json                        // StackNetwork[]
   volumes                Json                        // StackVolume[]
   publishedAt            DateTime?

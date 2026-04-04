@@ -6,7 +6,6 @@ import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
 import { ConfigureFrontend } from './actions/configure-frontend';
-import { ConfigureDNS } from './actions/configure-dns';
 import { InitiateDrain } from './actions/initiate-drain';
 import { MonitorDrain } from './actions/monitor-drain';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
@@ -26,7 +25,6 @@ const monitorContainerStartup = new MonitorContainerStartup();
 const addContainerToLB = new AddContainerToLB();
 const performHealthChecks = new PerformHealthChecks();
 const configureFrontend = new ConfigureFrontend();
-const configureDNS = new ConfigureDNS();
 const initiateDrain = new InitiateDrain();
 const monitorDrain = new MonitorDrain();
 const removeContainerFromLB = new RemoveContainerFromLB();
@@ -63,7 +61,6 @@ interface BlueGreenDeploymentContext {
     greenHealthy: boolean;
     greenBackendConfigured: boolean;
     frontendConfigured: boolean;
-    dnsConfigured: boolean;
     trafficOpenedToGreen: boolean;
     trafficValidated: boolean;
     blueDraining: boolean;
@@ -80,7 +77,6 @@ interface BlueGreenDeploymentContext {
     containerIpAddress?: string;
     containerPort?: number;
     frontendName?: string;
-    dnsRecordId?: string;
 
     // Deployment metadata
     triggerType: string;
@@ -126,13 +122,10 @@ type BlueGreenDeploymentEvent =
     | { type: 'SERVERS_HEALTHY' }
     | { type: 'HEALTH_CHECK_TIMEOUT' }
 
-    // Frontend and DNS configuration events
+    // Frontend configuration events
     | { type: 'FRONTEND_CONFIGURED'; frontendName?: string; hostname?: string; backendName?: string }
     | { type: 'FRONTEND_CONFIG_SKIPPED'; message?: string }
     | { type: 'FRONTEND_CONFIG_ERROR'; error: string }
-    | { type: 'DNS_CONFIGURED'; dnsRecordId?: string; hostname?: string }
-    | { type: 'DNS_CONFIG_SKIPPED'; message?: string; networkType?: string }
-    | { type: 'DNS_CONFIG_ERROR'; error: string }
 
     // Traffic management events
     | { type: 'TRAFFIC_ENABLED' }
@@ -235,17 +228,6 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'FRONTEND_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
-                });
-            });
-        },
-
-        configureGreenDNS: ({ context, self }) => {
-            configureDNS.execute(context, (event) => {
-                self.send(event);
-            }).catch((error) => {
-                self.send({
-                    type: 'DNS_CONFIG_ERROR',
                     error: error.message || 'Unknown error'
                 });
             });
@@ -565,7 +547,7 @@ export const blueGreenDeploymentMachine = setup({
             greenHealthy: false,
             greenBackendConfigured: false,
             frontendConfigured: false,
-            dnsConfigured: false,
+
             trafficOpenedToGreen: false,
             trafficValidated: false,
             blueDraining: false,
@@ -580,7 +562,7 @@ export const blueGreenDeploymentMachine = setup({
             containerIpAddress: undefined,
             containerPort: undefined,
             frontendName: undefined,
-            dnsRecordId: undefined,
+
         }))
     },
     guards: {
@@ -641,7 +623,6 @@ export const blueGreenDeploymentMachine = setup({
         greenHealthy: false,
         greenBackendConfigured: false,
         frontendConfigured: false,
-        dnsConfigured: false,
         trafficOpenedToGreen: false,
         trafficValidated: false,
         blueDraining: false,
@@ -655,7 +636,6 @@ export const blueGreenDeploymentMachine = setup({
         containerIpAddress: input?.containerIpAddress,
         containerPort: input?.containerPort,
         frontendName: undefined,
-        dnsRecordId: undefined,
 
         // Deployment metadata
         triggerType: input?.triggerType || "manual",
@@ -945,7 +925,7 @@ export const blueGreenDeploymentMachine = setup({
             entry: 'configureGreenFrontend',
             on: {
                 FRONTEND_CONFIGURED: {
-                    target: 'configuringDNS',
+                    target: 'openingTraffic',
                     actions: assign({
                         frontendConfigured: true,
                         frontendName: ({ event }) => {
@@ -957,37 +937,10 @@ export const blueGreenDeploymentMachine = setup({
                     })
                 },
                 FRONTEND_CONFIG_SKIPPED: {
-                    target: 'configuringDNS',
+                    target: 'openingTraffic',
                     actions: assign({ frontendConfigured: false })
                 },
                 FRONTEND_CONFIG_ERROR: {
-                    target: 'rollbackRemoveGreenHaproxyConfig',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
-        configuringDNS: {
-            description: 'Configuring DNS records for green deployment',
-            entry: 'configureGreenDNS',
-            on: {
-                DNS_CONFIGURED: {
-                    target: 'openingTraffic',
-                    actions: assign({
-                        dnsConfigured: true,
-                        dnsRecordId: ({ event }) => {
-                            if (event.type === 'DNS_CONFIGURED') {
-                                return event.dnsRecordId;
-                            }
-                            return undefined;
-                        }
-                    })
-                },
-                DNS_CONFIG_SKIPPED: {
-                    target: 'openingTraffic',
-                    actions: assign({ dnsConfigured: false })
-                },
-                DNS_CONFIG_ERROR: {
                     target: 'rollbackRemoveGreenHaproxyConfig',
                     actions: 'preserveErrorContext'
                 }

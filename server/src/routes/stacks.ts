@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createActor } from 'xstate';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
@@ -16,10 +17,12 @@ import { DnsChallenge01Provider } from '../services/tls/dns-challenge-provider';
 import { CertificateDistributor } from '../services/tls/certificate-distributor';
 import { CloudflareDNSService } from '../services/cloudflare/cloudflare-dns';
 import { CloudflareService } from '../services/cloudflare';
-import { HaproxyCertificateDeployer } from '../services/haproxy/haproxy-certificate-deployer';
 import { TlsConfigService } from '../services/tls/tls-config';
 import { AzureStorageService } from '../services/azure-storage-service';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
+import DockerService from '../services/docker';
+import { EnvironmentValidationService } from '../services/environment';
+import { removalDeploymentMachine } from '../services/haproxy/removal-deployment-state-machine';
 import {
   createStackSchema,
   updateStackSchema,
@@ -32,7 +35,17 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackParameterDefinition, StackParameterValue } from '@mini-infra/types';
+import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult } from '@mini-infra/types';
+import { UserEventService } from '../services/user-events';
+import {
+  formatPlanStep,
+  formatServiceStep,
+  formatResourceGroupStep,
+  formatDestroyResourceStep,
+  formatDestroyContainerStep,
+  formatDestroyNetworkStep,
+  formatDestroyVolumeStep,
+} from '../services/stacks/stack-event-log-formatter';
 import { emitToChannel } from '../lib/socket';
 import { mergeParameterValues } from '../services/stacks/utils';
 
@@ -55,11 +68,11 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
   const connectionString = await azureConfig.getConnectionString();
 
   let certLifecycleManager: CertificateLifecycleManager | undefined;
+  const cloudflareConfig = new CloudflareService(prisma);
 
   if (connectionString) {
     const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
     const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
-    const cloudflareConfig = new CloudflareService(prisma);
     const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);
 
     await acmeClient.initialize();
@@ -91,7 +104,7 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
     prisma,
     effectiveCertManager,
     new CloudflareDNSService(),
-    new HaproxyCertificateDeployer(),
+    cloudflareConfig,
   );
 }
 
@@ -168,7 +181,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const { name, description, environmentId, parameters, parameterValues, networks, volumes, services, tlsCertificates, dnsRecords, tunnelIngress } = parsed.data;
+    const { name, description, environmentId, parameters, parameterValues, resourceOutputs, resourceInputs, networks, volumes, services, tlsCertificates, dnsRecords, tunnelIngress } = parsed.data;
 
     if (environmentId) {
       // Check environment exists
@@ -197,6 +210,8 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         environmentId: environmentId ?? undefined,
         parameters: parameters ? (parameters as any) : undefined,
         parameterValues: parameterValues ? (parameterValues as any) : undefined,
+        resourceOutputs: resourceOutputs ? (resourceOutputs as any) : undefined,
+        resourceInputs: resourceInputs ? (resourceInputs as any) : undefined,
         networks: networks as any,
         volumes: volumes as any,
         tlsCertificates: tlsCertificates ?? [],
@@ -235,7 +250,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    const { services, parameters, parameterValues, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
+    const { services, parameters, parameterValues, resourceOutputs, resourceInputs, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
 
     const updateData: any = {
       ...fields,
@@ -243,6 +258,8 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
       volumes: fields.volumes ? (fields.volumes as any) : undefined,
       parameters: parameters ? (parameters as any) : undefined,
       parameterValues: parameterValues ? (parameterValues as any) : undefined,
+      ...(resourceOutputs !== undefined ? { resourceOutputs: resourceOutputs as any } : {}),
+      ...(resourceInputs !== undefined ? { resourceInputs: resourceInputs as any } : {}),
       ...(tlsCertificates !== undefined ? { tlsCertificates } : {}),
       ...(dnsRecords !== undefined ? { dnsRecords } : {}),
       ...(tunnelIngress !== undefined ? { tunnelIngress } : {}),
@@ -476,66 +493,172 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
       });
     }
 
-    const dockerExecutor = new DockerExecutorService();
-    await dockerExecutor.initialize();
-    const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
-    const resourceReconciler = await createResourceReconciler();
-    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
-
-    // Pre-compute plan so we can emit the started event with action details
-    const plan = await reconciler.plan(stackId);
-    const activeActions = plan.actions.filter((a) => a.action !== 'no-op');
-
-    // Filter by serviceNames if provided
-    let plannedActions = activeActions;
-    if (parsed.data.serviceNames && parsed.data.serviceNames.length > 0) {
-      const filterSet = new Set(parsed.data.serviceNames);
-      plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
-    }
-
-    // For forcePull, include all services since any could be promoted to recreate
-    // after pulling new images. Mark them as "pull" initially.
-    const isForcePull = !!parsed.data.forcePull;
-    let startedActions: Array<{ serviceName: string; action: string }>;
-    if (isForcePull && plannedActions.length === 0) {
-      startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
-    } else {
-      startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
-    }
-
     applyingStacks.add(stackId);
 
-    // Emit started event
-    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
-      stackId,
-      stackName: plan.stackName,
-      totalActions: startedActions.length,
-      actions: startedActions,
-      forcePull: isForcePull,
-    });
-
-    // Respond immediately — progress comes via Socket.IO
+    // Respond immediately — planning and apply run in background
     res.json({ success: true, data: { started: true, stackId } });
 
-    // Run apply in background
+    // Run planning + apply in background
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+    const isForcePull = !!parsed.data.forcePull;
+
     (async () => {
+      // Initialize services
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+      const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+      const resourceReconciler = await createResourceReconciler();
+      const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
+
+      // Compute plan
+      const plan = await reconciler.plan(stackId);
+      const activeActions = plan.actions.filter((a) => a.action !== 'no-op');
+
+      // Filter by serviceNames if provided
+      let plannedActions = activeActions;
+      if (parsed.data.serviceNames && parsed.data.serviceNames.length > 0) {
+        const filterSet = new Set(parsed.data.serviceNames);
+        plannedActions = activeActions.filter((a) => filterSet.has(a.serviceName));
+      }
+
+      let startedActions: Array<{ serviceName: string; action: string }>;
+      if (isForcePull && plannedActions.length === 0) {
+        startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'pull' }));
+      } else {
+        startedActions = plannedActions.map((a) => ({ serviceName: a.serviceName, action: a.action }));
+      }
+
+      // Build resource actions for the started event so the task tracker knows about them
+      const activeResourceActions = (plan.resourceActions ?? [])
+        .filter((ra) => ra.action !== 'no-op')
+        .map((ra) => ({ serviceName: `${ra.resourceType}:${ra.resourceName}`, action: ra.action }));
+      const allStartedActions = [...startedActions, ...activeResourceActions];
+
+      // Emit started event (now that we have the plan)
+      emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+        stackId,
+        stackName: plan.stackName,
+        totalActions: allStartedActions.length,
+        actions: allStartedActions,
+        forcePull: isForcePull,
+      });
+
+      // Create user event
+      let userEventId: string | undefined;
+      try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_deploy',
+          eventCategory: 'infrastructure',
+          eventName: `Deploy ${plan.stackName} v${plan.stackVersion}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: plan.stackName,
+          status: 'running',
+          progress: 0,
+          description: `Deploying stack ${plan.stackName}`,
+          metadata: {
+            stackName: plan.stackName,
+            version: plan.stackVersion,
+            serviceActions: startedActions,
+            forcePull: isForcePull,
+          },
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack apply');
+      }
+
+      // Count total steps: 1 (plan) + service actions + resource groups with actions
+      const resourceTypes: ResourceType[] = ['tls', 'dns', 'tunnel'];
+      const resourceGroupCount = resourceTypes.filter((rt) =>
+        plan.resourceActions?.some((ra) => ra.resourceType === rt && ra.action !== 'no-op')
+      ).length;
+      const totalSteps = 1 + startedActions.length + resourceGroupCount;
+      let currentStep = 1;
+
+      // Append plan step
+      const actionCounts = {
+        creates: startedActions.filter((a) => a.action === 'create').length,
+        recreates: startedActions.filter((a) => a.action === 'recreate').length,
+        removes: startedActions.filter((a) => a.action === 'remove').length,
+        updates: startedActions.filter((a) => a.action === 'update' || a.action === 'pull').length,
+      };
+
+      if (userEventId) {
+        try {
+          await userEventService.appendLogs(
+            userEventId,
+            formatPlanStep(currentStep, totalSteps, actionCounts),
+          );
+          await userEventService.updateEvent(userEventId, {
+            progress: Math.round((currentStep / totalSteps) * 100),
+          });
+        } catch { /* never break apply */ }
+      }
+
+      // Unified progress counter for socket emissions (covers both services and resources)
+      let emittedStepCount = 0;
+      const totalEmitActions = allStartedActions.length;
+
       try {
         const result = await reconciler.apply(stackId, {
           ...parsed.data,
           triggeredBy,
           plan,
-          onProgress: (result, completedCount, totalActions) => {
+          onProgress: (progressResult) => {
+            emittedStepCount++;
             try {
               emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
                 stackId,
-                ...result,
-                completedCount,
-                totalActions,
+                ...progressResult,
+                completedCount: emittedStepCount,
+                totalActions: totalEmitActions,
               } as any);
             } catch { /* never break apply */ }
+
+            // Append to user event log (skip resource results — they're batched post-apply)
+            if (userEventId) {
+              try {
+                const isResource = 'resourceType' in progressResult;
+                if (!isResource) {
+                  currentStep++;
+                  const serviceResult = progressResult as ServiceApplyResult;
+                  userEventService.appendLogs(
+                    userEventId,
+                    formatServiceStep(currentStep, totalSteps, serviceResult),
+                  ).catch(() => {});
+                  userEventService.updateEvent(userEventId, {
+                    progress: Math.round((currentStep / totalSteps) * 100),
+                  }).catch(() => {});
+                }
+              } catch { /* never break apply */ }
+            }
           },
         });
+
+        // Append resource group logs from the final result
+        if (userEventId && result.resourceResults.length > 0) {
+          try {
+            const grouped = new Map<ResourceType, ResourceResult[]>();
+            for (const rr of result.resourceResults) {
+              const list = grouped.get(rr.resourceType) ?? [];
+              list.push(rr);
+              grouped.set(rr.resourceType, list);
+            }
+            for (const [rt, results] of grouped) {
+              if (results.some((r) => r.action !== 'no-op')) {
+                currentStep++;
+                await userEventService.appendLogs(
+                  userEventId,
+                  formatResourceGroupStep(currentStep, totalSteps, rt, results.filter((r) => r.action !== 'no-op')),
+                );
+              }
+            }
+          } catch { /* never break apply */ }
+        }
 
         // HAProxy post-apply restoration
         let postApply: { success: boolean; errors?: string[] } | undefined;
@@ -556,7 +679,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           }
         }
 
-        // Monitoring post-apply: connect app container to monitoring network
+        // Monitoring post-apply
         if (result.success) {
           const stack = await prisma.stack.findUnique({
             where: { id: stackId },
@@ -573,6 +696,31 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           }
         }
 
+        // Finalize user event
+        if (userEventId) {
+          try {
+            const failedServices = result.serviceResults.filter((r) => !r.success);
+            const failedResources = result.resourceResults.filter((r) => !r.success);
+            const hasFailures = failedServices.length > 0 || failedResources.length > 0;
+
+            await userEventService.updateEvent(userEventId, {
+              status: hasFailures ? 'failed' : 'completed',
+              progress: 100,
+              resultSummary: hasFailures
+                ? `${failedServices.length} service(s) and ${failedResources.length} resource(s) failed`
+                : `${result.serviceResults.length} service(s) deployed successfully`,
+              ...(hasFailures
+                ? {
+                    errorMessage: failedServices.length > 0
+                      ? `Failed services: ${failedServices.map((s) => s.serviceName).join(', ')}`
+                      : `Failed resources: ${failedResources.map((r) => r.resourceName).join(', ')}`,
+                    errorDetails: { failedServices, failedResources },
+                  }
+                : {}),
+            });
+          } catch { /* never break apply */ }
+        }
+
         // Emit completed event
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
@@ -580,6 +728,17 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
         });
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack apply failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           success: false,
           stackId,
@@ -627,32 +786,81 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
       });
     }
 
-    const dockerExecutor = new DockerExecutorService();
-    await dockerExecutor.initialize();
-    const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
-    const resourceReconciler = await createResourceReconciler();
-    const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
-
     applyingStacks.add(stackId);
 
-    // Emit started event — use same STACK_APPLY events with action context
-    const plan = await reconciler.plan(stackId);
-    const startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'update' }));
-
-    emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
-      stackId,
-      stackName: plan.stackName,
-      totalActions: startedActions.length,
-      actions: startedActions,
-      forcePull: true,
-    });
-
-    // Respond immediately
+    // Respond immediately — planning and update run in background
     res.json({ success: true, data: { started: true, stackId } });
 
-    // Run update in background
+    // Run planning + update in background
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+
     (async () => {
+      // Initialize services
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+      const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+      const resourceReconciler = await createResourceReconciler();
+      const reconciler = new StackReconciler(dockerExecutor, prisma, routingManager, resourceReconciler);
+
+      // Compute plan
+      const plan = await reconciler.plan(stackId);
+      const startedActions = plan.actions.map((a) => ({ serviceName: a.serviceName, action: 'update' }));
+
+      // Emit started event (now that we have the plan)
+      emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_STARTED, {
+        stackId,
+        stackName: plan.stackName,
+        totalActions: startedActions.length,
+        actions: startedActions,
+        forcePull: true,
+      });
+
+      let userEventId: string | undefined;
+      try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_update',
+          eventCategory: 'infrastructure',
+          eventName: `Update ${plan.stackName}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: plan.stackName,
+          status: 'running',
+          progress: 0,
+          description: `Pulling latest images and updating stack ${plan.stackName}`,
+          metadata: {
+            stackName: plan.stackName,
+            actions: startedActions,
+          },
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack update');
+      }
+
+      const totalSteps = 1 + startedActions.length;
+      let currentStep = 1;
+
+      // Append plan step
+      if (userEventId) {
+        try {
+          await userEventService.appendLogs(
+            userEventId,
+            formatPlanStep(currentStep, totalSteps, {
+              creates: 0,
+              recreates: 0,
+              removes: 0,
+              updates: startedActions.length,
+            }),
+          );
+          await userEventService.updateEvent(userEventId, {
+            progress: Math.round((currentStep / totalSteps) * 100),
+          });
+        } catch { /* never break update */ }
+      }
+
       try {
         const result = await reconciler.update(stackId, {
           triggeredBy,
@@ -665,14 +873,62 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
                 totalActions,
               } as any);
             } catch { /* never break update */ }
+
+            if (userEventId) {
+              try {
+                currentStep++;
+                userEventService.appendLogs(
+                  userEventId,
+                  formatServiceStep(currentStep, totalSteps, serviceResult),
+                ).catch(() => {});
+                userEventService.updateEvent(userEventId, {
+                  progress: Math.round((currentStep / totalSteps) * 100),
+                }).catch(() => {});
+              } catch { /* never break update */ }
+            }
           },
         });
+
+        // Finalize user event
+        if (userEventId) {
+          try {
+            const failedServices = result.serviceResults.filter((r) => !r.success);
+            const hasFailures = failedServices.length > 0;
+
+            await userEventService.updateEvent(userEventId, {
+              status: hasFailures ? 'failed' : 'completed',
+              progress: 100,
+              resultSummary: hasFailures
+                ? `${failedServices.length} service(s) failed to update`
+                : result.serviceResults.length === 0
+                  ? 'All images are up to date'
+                  : `${result.serviceResults.length} service(s) updated successfully`,
+              ...(hasFailures
+                ? {
+                    errorMessage: `Failed services: ${failedServices.map((s) => s.serviceName).join(', ')}`,
+                    errorDetails: { failedServices },
+                  }
+                : {}),
+            });
+          } catch { /* never break update */ }
+        }
 
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
         });
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack update failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           success: false,
           stackId,
@@ -716,24 +972,216 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
     res.json({ success: true, data: { started: true, stackId } });
 
     const triggeredBy = (req as any).user?.id;
+    const userEventService = new UserEventService(prisma);
+
     (async () => {
+      const startTime = Date.now();
+      let userEventId: string | undefined;
       try {
+        const userEvent = await userEventService.createEvent({
+          eventType: 'stack_destroy',
+          eventCategory: 'infrastructure',
+          eventName: `Destroy ${stack.name}`,
+          userId: triggeredBy,
+          triggeredBy: triggeredBy ? 'manual' : 'api',
+          resourceId: stackId,
+          resourceType: 'stack',
+          resourceName: stack.name,
+          status: 'running',
+          progress: 0,
+          description: `Destroying stack ${stack.name} and all its resources`,
+        });
+        userEventId = userEvent.id;
+      } catch (err) {
+        logger.warn({ error: err, stackId }, 'Failed to create user event for stack destroy');
+      }
+
+      try {
+        // Fetch full stack with environment for network/volume cleanup
+        const fullStack = await prisma.stack.findUniqueOrThrow({
+          where: { id: stackId },
+          include: { services: true, environment: true },
+        });
+        const projectName = fullStack.environment ? `${fullStack.environment.name}-${fullStack.name}` : fullStack.name;
+        const networks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+        const volumes = (fullStack.volumes as unknown as StackVolume[]) ?? [];
+
+        // Step 1: Destroy stack-level resources (DNS, tunnels) before container removal
+        const resourceReconciler = await createResourceReconciler();
+        try {
+          await resourceReconciler.destroyAllResources(stackId);
+          logger.info({ stackId }, 'Stack resources destroyed');
+        } catch (err: any) {
+          logger.warn({ error: err.message, stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
+        }
+
+        // Step 2: Get HAProxy context from stack's environment (optional)
+        let haproxyContainerId = '';
+        let haproxyNetworkName = '';
+        let environmentId = fullStack.environmentId ?? '';
+        let environmentName = fullStack.environment?.name ?? '';
+        if (fullStack.environmentId) {
+          try {
+            const envValidation = new EnvironmentValidationService();
+            const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(fullStack.environmentId);
+            if (haproxyCtx) {
+              haproxyContainerId = haproxyCtx.haproxyContainerId;
+              haproxyNetworkName = haproxyCtx.haproxyNetworkName;
+            }
+          } catch { /* no HAProxy available — LB steps will fail non-fatally */ }
+        }
+
+        // Step 3: Find containers by stack-id label
+        const dockerService = DockerService.getInstance();
+        await dockerService.initialize();
+        const allContainers = await dockerService.listContainers(true);
+        const stackContainers = allContainers.filter((c: any) =>
+          c.labels?.['mini-infra.stack-id'] === stackId
+        );
+        const containerIds = stackContainers.map((c: any) => c.id);
+
+        logger.info({ stackId, containerCount: containerIds.length }, 'Found stack containers for removal state machine');
+
+        // Step 4: Run the removal state machine for container cleanup
+        const removalContext = {
+          deploymentId: stackId,
+          configurationId: stackId,
+          deploymentConfigId: stackId,
+          applicationName: fullStack.name,
+          environmentId,
+          environmentName,
+          haproxyContainerId,
+          haproxyNetworkName,
+          containersToRemove: containerIds,
+          lbRemovalComplete: false,
+          frontendRemoved: false,
+          applicationStopped: false,
+          applicationRemoved: false,
+          retryCount: 0,
+          triggerType: 'manual',
+          triggeredBy,
+          startTime,
+        };
+
+        const containersRemoved = await new Promise<number>((resolve, reject) => {
+          const machine = removalDeploymentMachine.provide({});
+          const actor = createActor(machine, { input: removalContext });
+
+          actor.subscribe((state) => {
+            // Emit progress via user event
+            const progressMap: Record<string, number> = {
+              idle: 0, removingFromLB: 10, removingFrontend: 20,
+              stoppingApplication: 40, removingApplication: 60,
+              cleanup: 80, completed: 100, failed: 0,
+            };
+            const progress = progressMap[state.value as string] ?? 0;
+            if (userEventId && progress > 0) {
+              userEventService.updateEvent(userEventId, { progress }).catch(() => {});
+            }
+
+            if (state.status === 'done') {
+              if (state.value === 'completed') {
+                resolve(containerIds.length);
+              } else {
+                reject(new Error(state.context.error || 'Removal state machine failed'));
+              }
+            }
+          });
+
+          actor.start();
+          actor.send({ type: 'START_REMOVAL' });
+        });
+
+        // Step 5: Remove networks and volumes (post state machine)
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
-        const resourceReconciler = await createResourceReconciler();
-        const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
-        const result = await reconciler.destroyStack(stackId, { triggeredBy });
 
+        const networksRemoved: string[] = [];
+        for (const net of networks) {
+          const netName = `${projectName}_${net.name}`;
+          try {
+            if (await dockerExecutor.networkExists(netName)) {
+              await dockerExecutor.removeNetwork(netName);
+              networksRemoved.push(netName);
+            }
+          } catch (err) {
+            logger.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
+          }
+        }
+
+        const volumesRemoved: string[] = [];
+        for (const vol of volumes) {
+          const volName = `${projectName}_${vol.name}`;
+          try {
+            if (await dockerExecutor.volumeExists(volName)) {
+              await dockerExecutor.removeVolume(volName);
+              volumesRemoved.push(volName);
+            }
+          } catch (err) {
+            logger.warn({ volume: volName, error: err }, 'Failed to remove volume, continuing');
+          }
+        }
+
+        // Step 6: Update stack DB records
+        const duration = Date.now() - startTime;
+        await prisma.stackDeployment.create({
+          data: {
+            stackId,
+            action: 'destroy',
+            success: true,
+            status: 'removed',
+            duration,
+            triggeredBy: triggeredBy ?? null,
+          },
+        });
+
+        await prisma.stack.update({
+          where: { id: stackId },
+          data: { status: 'removed', removedAt: new Date() },
+        });
+
+        // Build structured logs for the destroy result
+        const totalSteps = 4;
+        if (userEventId) {
+          try {
+            let logs = '';
+            logs += formatDestroyResourceStep(1, totalSteps, true);
+            logs += formatDestroyContainerStep(2, totalSteps, containersRemoved, containersRemoved);
+            logs += formatDestroyNetworkStep(3, totalSteps, networksRemoved);
+            logs += formatDestroyVolumeStep(4, totalSteps, volumesRemoved);
+
+            await userEventService.appendLogs(userEventId, logs);
+            await userEventService.updateEvent(userEventId, {
+              status: 'completed',
+              progress: 100,
+              resultSummary: `Stack destroyed: ${containersRemoved} containers, ${networksRemoved.length} networks, ${volumesRemoved.length} volumes removed`,
+            });
+          } catch { /* never break destroy */ }
+        }
+
+        const result = { success: true, stackId, containersRemoved, networksRemoved, volumesRemoved, duration };
+        logger.info(result, 'Stack destroyed via removal state machine');
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
       } catch (error: any) {
         logger.error({ error: error.message, stackId }, 'Background stack destroy failed');
+
+        if (userEventId) {
+          try {
+            await userEventService.updateEvent(userEventId, {
+              status: 'failed',
+              errorMessage: error.message,
+              errorDetails: { type: error.constructor?.name, message: error.message },
+            });
+          } catch { /* never break error handling */ }
+        }
+
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, {
           success: false,
           stackId,
           containersRemoved: 0,
           networksRemoved: [],
           volumesRemoved: [],
-          duration: 0,
+          duration: Date.now() - startTime,
           error: error.message,
         });
       } finally {

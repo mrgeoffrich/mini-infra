@@ -208,15 +208,15 @@ router.delete('/:templateId/draft', requirePermission('stacks:write'), async (re
   }
 });
 
-// DELETE /:templateId — Archive template
+// DELETE /:templateId — Delete template and all linked stacks
 router.delete('/:templateId', requirePermission('stacks:write'), async (req, res) => {
   try {
     const service = getTemplateService();
-    await service.archiveTemplate(String(req.params.templateId));
+    await service.deleteTemplate(String(req.params.templateId));
 
-    res.json({ success: true, message: 'Template archived' });
+    res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
-    handleTemplateError(error, res, 'Failed to archive template');
+    handleTemplateError(error, res, 'Failed to delete template');
   }
 });
 

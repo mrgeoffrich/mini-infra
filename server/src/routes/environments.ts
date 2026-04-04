@@ -39,6 +39,8 @@ const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
   type: z.enum(['production', 'nonproduction']).optional(),
   networkType: z.enum(['local', 'internet']).optional(),
+  tunnelId: z.string().optional().nullable(),
+  tunnelServiceUrl: z.string().optional().nullable(),
 });
 
 const listEnvironmentsSchema = z.object({
@@ -188,14 +190,59 @@ router.put('/:id', requirePermission('environments:write'), async (req, res) => 
 });
 
 
+// Check if environment can be deleted (pre-flight validation)
+router.get('/:id/delete-check', requirePermission('environments:read'), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+
+    const [stacks, deploymentConfigs, haproxyFrontends, haproxyBackends, stackTemplates] = await Promise.all([
+      prisma.stack.findMany({
+        where: { environmentId: id, status: { notIn: ['removed', 'undeployed'] } },
+        select: { id: true, name: true },
+      }),
+      prisma.deploymentConfiguration.findMany({
+        where: { environmentId: id },
+        select: { id: true, applicationName: true },
+      }),
+      prisma.hAProxyFrontend.findMany({
+        where: { environmentId: id },
+        select: { id: true, frontendName: true, hostname: true },
+      }),
+      prisma.hAProxyBackend.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      }),
+      // Stack templates are just config — don't block deletion
+      Promise.resolve([] as { id: string; name: string }[]),
+    ]);
+
+    const dependencies = {
+      stacks: stacks.map(s => ({ id: s.id, name: s.name })),
+      deploymentConfigurations: deploymentConfigs.map(d => ({ id: d.id, name: d.applicationName })),
+      haproxyFrontends: haproxyFrontends.map(f => ({ id: f.id, name: f.hostname || f.frontendName })),
+      haproxyBackends: haproxyBackends.map(b => ({ id: b.id, name: b.name })),
+      stackTemplates: stackTemplates.map(t => ({ id: t.id, name: t.name })),
+    };
+
+    const canDelete = Object.values(dependencies).every(arr => arr.length === 0);
+
+    res.json({ canDelete, dependencies });
+  } catch (error) {
+    logger.error({ error, environmentId: req.params.id }, 'Failed to check environment delete eligibility');
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Failed to check delete eligibility',
+    });
+  }
+});
+
 router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
+    const { deleteNetworks = 'false' } = req.query;
     const userId = (req.user as any)?.id;
 
     // Parse boolean query parameters
-    const shouldDeleteVolumes = deleteVolumes === 'true';
     const shouldDeleteNetworks = deleteNetworks === 'true';
 
     // Check if environment has associated deployment configurations
@@ -214,7 +261,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
     }
 
     const success = await environmentManager.deleteEnvironment(id, {
-      deleteVolumes: shouldDeleteVolumes,
       deleteNetworks: shouldDeleteNetworks,
       userId
     });
@@ -228,7 +274,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
 
     logger.debug({
       environmentId: id,
-      deleteVolumes: shouldDeleteVolumes,
       deleteNetworks: shouldDeleteNetworks,
       userId
     }, 'Environment deleted via API');
@@ -252,54 +297,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
   }
 });
 
-
-// Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/networks', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const environment = await environmentManager.getEnvironmentById(id);
-    if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json({ networks: environment.networks });
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment networks');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment networks'
-    });
-  }
-});
-
-// Volumes routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/volumes', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const environment = await environmentManager.getEnvironmentById(id);
-    if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json({ volumes: environment.volumes });
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment volumes');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment volumes'
-    });
-  }
-});
 
 // ====================
 // HAProxy Remediation Routes
@@ -355,23 +352,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
   return client;
 }
 
-/**
- * POST /api/environments/:id/remediate-networks
- * Create any missing environment networks based on network type
- */
-router.post('/:id/remediate-networks', requirePermission('environments:write'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const result = await environmentManager.remediateNetworks(id);
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to remediate networks');
-    if (error.message === 'Environment not found') {
-      return res.status(404).json({ error: 'Environment not found' });
-    }
-    res.status(500).json({ error: 'Internal server error', message: error.message });
-  }
-});
+// Network remediation is now handled by the InfraResource system during stack apply
 
 /**
  * POST /api/environments/:id/remediate-haproxy

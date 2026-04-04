@@ -2,7 +2,6 @@ import { assign, setup } from 'xstate';
 import { DeploymentConfig } from '@mini-infra/types';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { RemoveFrontend } from './actions/remove-frontend';
-import { RemoveDNS } from './actions/remove-dns';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
@@ -12,7 +11,6 @@ import { CleanupTempResources } from './actions/cleanup-temp-resources';
 // Create instances of action classes
 const removeContainerFromLB = new RemoveContainerFromLB();
 const removeFrontend = new RemoveFrontend();
-const removeDNS = new RemoveDNS();
 const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
 const logDeploymentSuccess = new LogDeploymentSuccess();
@@ -38,7 +36,6 @@ interface RemovalDeploymentContext {
     containersToRemove: string[];
     lbRemovalComplete: boolean;
     frontendRemoved: boolean;
-    dnsRemoved: boolean;
     applicationStopped: boolean;
     applicationRemoved: boolean;
     error?: string;
@@ -60,9 +57,6 @@ type RemovalDeploymentEvent =
     | { type: 'FRONTEND_REMOVED'; frontendName?: string }
     | { type: 'FRONTEND_REMOVAL_SKIPPED'; message?: string }
     | { type: 'FRONTEND_REMOVAL_ERROR'; error: string }
-    | { type: 'DNS_REMOVED'; dnsRecordId?: string; hostname?: string }
-    | { type: 'DNS_REMOVAL_SKIPPED'; message?: string }
-    | { type: 'DNS_REMOVAL_ERROR'; error: string }
     | { type: 'STOP_SUCCESS'; stoppedContainers?: string[] }
     | { type: 'STOP_FAILED'; error: string }
     | { type: 'REMOVAL_SUCCESS'; removedContainers?: string[] }
@@ -106,22 +100,6 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'FRONTEND_REMOVAL_ERROR',
-                        error: error.message || 'Unknown error'
-                    });
-                });
-            }
-        },
-        removeDNS: ({ context, self }) => {
-            // Execute async action with event callback
-            const result = removeDNS.execute(context, (event) => {
-                self.send(event);
-            });
-
-            // Handle promise rejection if execute returns a promise
-            if (result && typeof result.catch === 'function') {
-                result.catch((error) => {
-                    self.send({
-                        type: 'DNS_REMOVAL_ERROR',
                         error: error.message || 'Unknown error'
                     });
                 });
@@ -193,7 +171,6 @@ export const removalDeploymentMachine = setup({
             containersToRemove: () => [],
             lbRemovalComplete: () => false,
             frontendRemoved: () => false,
-            dnsRemoved: () => false,
             applicationStopped: () => false,
             applicationRemoved: () => false,
             error: () => undefined,
@@ -234,7 +211,6 @@ export const removalDeploymentMachine = setup({
             containersToRemove: removalInput?.containersToRemove || [],
             lbRemovalComplete: removalInput?.lbRemovalComplete || false,
             frontendRemoved: removalInput?.frontendRemoved || false,
-            dnsRemoved: removalInput?.dnsRemoved || false,
             applicationStopped: removalInput?.applicationStopped || false,
             applicationRemoved: removalInput?.applicationRemoved || false,
             error: removalInput?.error,
@@ -299,16 +275,16 @@ export const removalDeploymentMachine = setup({
             entry: 'removeFrontend',
             on: {
                 FRONTEND_REMOVED: {
-                    target: 'removingDNS',
+                    target: 'stoppingApplication',
                     actions: assign({ frontendRemoved: true })
                 },
                 FRONTEND_REMOVAL_SKIPPED: {
-                    target: 'removingDNS',
+                    target: 'stoppingApplication',
                     actions: assign({ frontendRemoved: false })
                 },
                 FRONTEND_REMOVAL_ERROR: {
                     // Don't fail entire removal for frontend errors
-                    target: 'removingDNS',
+                    target: 'stoppingApplication',
                     actions: assign({
                         frontendRemoved: false,
                         error: ({ event }) => {
@@ -322,47 +298,10 @@ export const removalDeploymentMachine = setup({
             },
             after: {
                 60000: { // 1 minute timeout for frontend removal
-                    target: 'removingDNS',
+                    target: 'stoppingApplication',
                     actions: assign({
                         frontendRemoved: false,
                         error: 'Frontend removal timeout (non-critical)'
-                    })
-                }
-            }
-        },
-
-        removingDNS: {
-            description: 'Removing DNS records for deployment',
-            entry: 'removeDNS',
-            on: {
-                DNS_REMOVED: {
-                    target: 'stoppingApplication',
-                    actions: assign({ dnsRemoved: true })
-                },
-                DNS_REMOVAL_SKIPPED: {
-                    target: 'stoppingApplication',
-                    actions: assign({ dnsRemoved: false })
-                },
-                DNS_REMOVAL_ERROR: {
-                    // Don't fail entire removal for DNS errors
-                    target: 'stoppingApplication',
-                    actions: assign({
-                        dnsRemoved: false,
-                        error: ({ event }) => {
-                            if ('error' in event) {
-                                return `DNS removal warning: ${event.error}`;
-                            }
-                            return 'DNS removal failed (non-critical)';
-                        }
-                    })
-                }
-            },
-            after: {
-                60000: { // 1 minute timeout for DNS removal
-                    target: 'stoppingApplication',
-                    actions: assign({
-                        dnsRemoved: false,
-                        error: 'DNS removal timeout (non-critical)'
                     })
                 }
             }

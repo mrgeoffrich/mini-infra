@@ -21,6 +21,8 @@ import type {
   StackDefinition,
 } from "@mini-infra/types";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
+import { CloudflareService } from "../cloudflare/cloudflare-service";
+import { networkUtils } from "../network-utils";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -210,6 +212,8 @@ export class StackTemplateService {
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
           networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -269,28 +273,29 @@ export class StackTemplateService {
     return this.serializeTemplate(updated);
   }
 
-  async archiveTemplate(templateId: string): Promise<void> {
+  async deleteTemplate(templateId: string): Promise<void> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: templateId },
-      include: { stacks: { select: { id: true }, take: 1 } },
+      include: { stacks: { select: { id: true, removedAt: true } } },
     });
     if (!template) {
       throw new TemplateError("Template not found", 404);
     }
     if (template.source === "system") {
-      throw new TemplateError("Cannot archive system templates", 403);
-    }
-    if (template.stacks.length > 0) {
-      throw new TemplateError(
-        "Cannot archive template with linked stacks",
-        409
-      );
+      throw new TemplateError("Cannot delete system templates", 403);
     }
 
-    await this.prisma.stackTemplate.update({
-      where: { id: templateId },
-      data: { isArchived: true },
-    });
+    await this.prisma.$transaction([
+      // Delete all linked stacks (active and removed)
+      this.prisma.stack.deleteMany({ where: { templateId } }),
+      // Null out self-referential version FKs to break circular dependency
+      this.prisma.stackTemplate.update({
+        where: { id: templateId },
+        data: { currentVersionId: null, draftVersionId: null },
+      }),
+      // Delete the template (cascade handles versions, services, config files)
+      this.prisma.stackTemplate.delete({ where: { id: templateId } }),
+    ]);
   }
 
   // =====================
@@ -332,6 +337,8 @@ export class StackTemplateService {
           parameters: (input.parameters ?? []) as any,
           defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
           networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
           networks: input.networks as any,
           volumes: input.volumes as any,
           createdById: createdById ?? null,
@@ -550,6 +557,8 @@ export class StackTemplateService {
               definition.parameters ?? []
             ) as any,
             networkTypeDefaults: networkTypeDefaults as any,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -567,6 +576,8 @@ export class StackTemplateService {
               definition.parameters ?? []
             ) as any,
             networkTypeDefaults: networkTypeDefaults as any,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
             networks: definition.networks as any,
             volumes: definition.volumes as any,
             publishedAt: new Date(),
@@ -843,6 +854,118 @@ export class StackTemplateService {
 
     const stackName = input.name ?? template.name;
 
+    // Build stack-level resource arrays from service routing definitions
+    const tunnelIngressDefs: { name: string; fqdn: string; service: string }[] = [];
+    const tlsCertDefs: { name: string; fqdn: string }[] = [];
+    const dnsRecordDefs: { name: string; fqdn: string; recordType: "A"; target: string }[] = [];
+
+    if (input.environmentId) {
+      // --- Tunnel Ingress (internet-facing environments) ---
+      const hasTunnelServices = services.some((svc) => {
+        const routing = svc.routing as any;
+        return !!routing?.tunnelIngress;
+      });
+
+      if (hasTunnelServices) {
+        // Try to resolve tunnel config, auto-resolving if not set on environment
+        let tunnelServiceUrl: string | null = null;
+
+        const envForTunnel = await this.prisma.environment.findUnique({
+          where: { id: input.environmentId },
+          select: { tunnelServiceUrl: true, tunnelId: true, name: true },
+        });
+
+        tunnelServiceUrl = envForTunnel?.tunnelServiceUrl ?? null;
+
+        // Auto-resolve tunnelServiceUrl from HAProxy stack if not configured
+        if (!tunnelServiceUrl) {
+          const haproxyStack = await this.prisma.stack.findFirst({
+            where: {
+              name: "haproxy",
+              environmentId: input.environmentId,
+              status: { not: "removed" },
+            },
+            include: {
+              services: { where: { serviceName: "haproxy" }, take: 1 },
+              environment: { select: { name: true } },
+            },
+          });
+
+          if (haproxyStack?.environment) {
+            tunnelServiceUrl = `http://${haproxyStack.environment.name}-haproxy-haproxy:80`;
+
+            // Persist for future use and for the reconciler
+            await this.prisma.environment.update({
+              where: { id: input.environmentId },
+              data: { tunnelServiceUrl },
+            });
+          }
+        }
+
+        // Auto-resolve tunnelId from managed tunnel info if not configured
+        if (!envForTunnel?.tunnelId) {
+          const cloudflareConfig = new CloudflareService(this.prisma);
+          const managedTunnel = await cloudflareConfig.getManagedTunnelInfo(input.environmentId);
+          if (managedTunnel?.tunnelId) {
+            await this.prisma.environment.update({
+              where: { id: input.environmentId },
+              data: { tunnelId: managedTunnel.tunnelId },
+            });
+          }
+        }
+
+        if (!tunnelServiceUrl) {
+          throw new TemplateError(
+            "Could not resolve tunnel service URL. Ensure the environment has an HAProxy stack deployed or configure the tunnel service URL in the environment settings.",
+            400,
+          );
+        }
+
+        for (const svc of services) {
+          const routing = svc.routing as any;
+          if (routing?.tunnelIngress && !tunnelIngressDefs.some((d) => d.name === routing.tunnelIngress)) {
+            tunnelIngressDefs.push({
+              name: routing.tunnelIngress,
+              fqdn: routing.tunnelIngress,
+              service: tunnelServiceUrl,
+            });
+          }
+        }
+      }
+
+      // --- TLS Certificates (local environments) ---
+      for (const svc of services) {
+        const routing = svc.routing as any;
+        if (routing?.tlsCertificate && !tlsCertDefs.some((d) => d.name === routing.tlsCertificate)) {
+          tlsCertDefs.push({
+            name: routing.tlsCertificate,
+            fqdn: routing.tlsCertificate,
+          });
+        }
+      }
+
+      // --- DNS Records (local environments) ---
+      const hasDnsServices = services.some((svc) => {
+        const routing = svc.routing as any;
+        return !!routing?.dnsRecord;
+      });
+
+      if (hasDnsServices) {
+        const targetIp = await networkUtils.getAppropriateIPForEnvironment(input.environmentId);
+        for (const svc of services) {
+          const routing = svc.routing as any;
+          if (routing?.dnsRecord && !dnsRecordDefs.some((d) => d.name === routing.dnsRecord)) {
+            dnsRecordDefs.push({
+              name: routing.dnsRecord,
+              fqdn: routing.dnsRecord,
+              recordType: "A",
+              target: targetIp,
+            });
+          }
+        }
+      }
+    }
+
     const stack = await this.prisma.stack.create({
       data: {
         name: stackName,
@@ -860,8 +983,13 @@ export class StackTemplateService {
           Object.keys(mergedValues).length > 0
             ? (mergedValues as any)
             : undefined,
+        resourceOutputs: version.resourceOutputs ? (version.resourceOutputs as any) : undefined,
+        resourceInputs: version.resourceInputs ? (version.resourceInputs as any) : undefined,
         networks: version.networks as any,
         volumes: version.volumes as any,
+        tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
+        tlsCertificates: tlsCertDefs.length > 0 ? tlsCertDefs : undefined,
+        dnsRecords: dnsRecordDefs.length > 0 ? dnsRecordDefs : undefined,
         services: {
           create: services.map(toServiceCreateInput),
         },
@@ -916,6 +1044,8 @@ export class StackTemplateService {
       notes: version.notes,
       parameters: version.parameters ?? [],
       defaultParameterValues: version.defaultParameterValues ?? {},
+      resourceOutputs: version.resourceOutputs ?? undefined,
+      resourceInputs: version.resourceInputs ?? undefined,
       networks: version.networks ?? [],
       volumes: version.volumes ?? [],
       publishedAt: version.publishedAt?.toISOString() ?? null,

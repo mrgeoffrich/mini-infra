@@ -1,0 +1,14 @@
+{
+  "name": "dataplane-network",
+  "displayName": "DataPlane Network",
+  "builtinVersion": 1,
+  "scope": "host",
+  "category": "infrastructure",
+  "description": "Management network for mini-infra to reach infrastructure service APIs across environments",
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "dataplane", "joinSelf": true }
+  ],
+  "networks": [],
+  "volumes": [],
+  "services": []
+}

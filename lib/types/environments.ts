@@ -1,6 +1,6 @@
 export type EnvironmentType = 'production' | 'nonproduction';
 export type EnvironmentNetworkType = 'local' | 'internet';
-export type EnvironmentNetworkPurpose = 'applications' | 'tunnel' | 'custom';
+export type EnvironmentNetworkPurpose = 'custom';
 
 export interface Environment {
   id: string;
@@ -8,8 +8,9 @@ export interface Environment {
   description?: string;
   type: EnvironmentType;
   networkType: EnvironmentNetworkType;
+  tunnelId?: string;
+  tunnelServiceUrl?: string;
   networks: EnvironmentNetwork[];
-  volumes: EnvironmentVolume[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,35 +26,20 @@ export interface EnvironmentNetwork {
   createdAt: Date;
 }
 
-export interface EnvironmentVolume {
-  id: string;
-  environmentId: string;
-  name: string;
-  driver: string;
-  options?: Record<string, any>;
-  dockerId?: string;
-  createdAt: Date;
-}
-
 // Request/Response types
 export interface CreateEnvironmentRequest {
   name: string;
   description?: string;
   type: EnvironmentType;
   networkType?: EnvironmentNetworkType;
-  services?: ServiceConfiguration[];
 }
 
 export interface UpdateEnvironmentRequest {
   description?: string;
   type?: EnvironmentType;
   networkType?: EnvironmentNetworkType;
-}
-
-export interface ServiceConfiguration {
-  serviceName: string;
-  serviceType: string;
-  config?: Record<string, any>;
+  tunnelId?: string;
+  tunnelServiceUrl?: string;
 }
 
 // Operation result types
@@ -97,18 +83,19 @@ export interface NetworksResponse {
   networks: EnvironmentNetwork[];
 }
 
-// Volume management types
-export interface CreateVolumeRequest {
+// Delete check types
+export interface EnvironmentDependencyItem {
+  id: string;
   name: string;
-  driver?: string;
-  options?: Record<string, any>;
 }
 
-export interface UpdateVolumeRequest {
-  driver?: string;
-  options?: Record<string, any>;
-}
-
-export interface VolumesResponse {
-  volumes: EnvironmentVolume[];
+export interface EnvironmentDeleteCheck {
+  canDelete: boolean;
+  dependencies: {
+    stacks: EnvironmentDependencyItem[];
+    deploymentConfigurations: EnvironmentDependencyItem[];
+    haproxyFrontends: EnvironmentDependencyItem[];
+    haproxyBackends: EnvironmentDependencyItem[];
+    stackTemplates: EnvironmentDependencyItem[];
+  };
 }

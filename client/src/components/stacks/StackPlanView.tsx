@@ -103,17 +103,25 @@ export const StackPlanView = React.memo(function StackPlanView({
 
   const stackName = plan?.stackName ?? stackId;
 
+  const activeResourceActions = useMemo(() => {
+    return (plan?.resourceActions ?? [])
+      .filter((ra) => ra.action !== "no-op")
+      .map((ra) => ({ serviceName: `${ra.resourceType}:${ra.resourceName}`, action: ra.action }));
+  }, [plan?.resourceActions]);
+
   const handleApplyAll = useCallback(() => {
     applyMutation.mutate({ stackId, options: {} });
+    const serviceSteps = plan?.actions.filter((a) => a.action !== "no-op").map((a) => `${a.action} ${a.serviceName}`) ?? [];
+    const resourceSteps = activeResourceActions.map((a) => `${a.action} ${a.serviceName}`);
     registerTask({
       id: stackId,
       type: "stack-apply",
       label: `Applying ${stackName}`,
       channel: Channel.STACKS,
-      totalSteps: plan?.actions.length ?? 0,
-      plannedStepNames: plan?.actions.map((a) => `${a.action} ${a.serviceName}`) ?? [],
+      totalSteps: serviceSteps.length + resourceSteps.length,
+      plannedStepNames: [...serviceSteps, ...resourceSteps],
     });
-  }, [stackId, applyMutation, registerTask, stackName, plan]);
+  }, [stackId, applyMutation, registerTask, stackName, plan, activeResourceActions]);
 
   const handleRedeploy = useCallback(() => {
     applyMutation.mutate({ stackId, options: { forcePull: true } });
@@ -122,9 +130,9 @@ export const StackPlanView = React.memo(function StackPlanView({
       type: "stack-apply",
       label: `Redeploying ${stackName}`,
       channel: Channel.STACKS,
-      totalSteps: plan?.actions.length ?? 0,
+      totalSteps: (plan?.actions.length ?? 0) + activeResourceActions.length,
     });
-  }, [stackId, applyMutation, registerTask, stackName, plan]);
+  }, [stackId, applyMutation, registerTask, stackName, plan, activeResourceActions]);
 
   const handleApplySelected = useCallback(() => {
     applyMutation.mutate({
@@ -136,9 +144,9 @@ export const StackPlanView = React.memo(function StackPlanView({
       type: "stack-apply",
       label: `Applying ${selectedServices.size} service(s) in ${stackName}`,
       channel: Channel.STACKS,
-      totalSteps: selectedServices.size,
+      totalSteps: selectedServices.size + activeResourceActions.length,
     });
-  }, [stackId, selectedServices, applyMutation, registerTask, stackName]);
+  }, [stackId, selectedServices, applyMutation, registerTask, stackName, activeResourceActions]);
 
   const handleDestroy = useCallback(() => {
     destroyMutation.mutate(stackId);

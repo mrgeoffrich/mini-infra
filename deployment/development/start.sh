@@ -118,12 +118,83 @@ docker push "$AGENT_SIDECAR_IMAGE"
 echo -e "\033[0;32mAgent sidecar image pushed to $AGENT_SIDECAR_IMAGE\033[0m"
 
 # ---------------------------------------------------------------------------
-# Step 3: Build and start Mini Infra (with the registry-prefixed sidecar tag)
+# Step 3: Remember extra networks attached to mini-infra-dev
+# (Networks joined dynamically at runtime, e.g. the dataplane network via
+# joinSelf, are not in docker-compose.yaml and get lost on container recreate.)
+# ---------------------------------------------------------------------------
+EXTRA_NETWORKS=""
+if docker inspect mini-infra-dev >/dev/null 2>&1; then
+    # Get the networks defined in the compose file
+    COMPOSE_NETWORKS=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json \
+        | python3 -c "
+import sys, json
+cfg = json.load(sys.stdin)
+project = cfg.get('name', '')
+nets = set()
+# Collect networks from each service
+for svc in cfg.get('services', {}).values():
+    for net_name in svc.get('networks', {}).keys():
+        nets.add(net_name)
+# Also add the default network
+nets.add('default')
+# Print compose-managed network names (project_netname format)
+for n in nets:
+    print(f'{project}_{n}')
+" 2>/dev/null)
+
+    # Get all networks currently attached to the container
+    CURRENT_NETWORKS=$(docker inspect mini-infra-dev --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' 2>/dev/null)
+
+    # Find networks that are attached but not managed by compose
+    for net in $CURRENT_NETWORKS; do
+        is_compose=false
+        for cn in $COMPOSE_NETWORKS; do
+            if [ "$net" = "$cn" ]; then
+                is_compose=true
+                break
+            fi
+        done
+        if [ "$is_compose" = false ]; then
+            EXTRA_NETWORKS="$EXTRA_NETWORKS $net"
+        fi
+    done
+
+    if [ -n "$EXTRA_NETWORKS" ]; then
+        echo -e "\033[0;36mWill restore extra networks after rebuild:$EXTRA_NETWORKS\033[0m"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 4: Build and start Mini Infra (with the registry-prefixed sidecar tag)
 # ---------------------------------------------------------------------------
 AGENT_SIDECAR_IMAGE_TAG="$AGENT_SIDECAR_IMAGE" \
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 
 if [ $? -eq 0 ]; then
+    # -----------------------------------------------------------------------
+    # Step 5: Rejoin extra networks that were stripped by the rebuild
+    # -----------------------------------------------------------------------
+    if [ -n "$EXTRA_NETWORKS" ]; then
+        echo -e "\033[0;36mWaiting for mini-infra-dev to start before restoring networks...\033[0m"
+        for i in $(seq 1 30); do
+            STATUS=$(docker inspect mini-infra-dev --format '{{.State.Status}}' 2>/dev/null)
+            if [ "$STATUS" = "running" ]; then
+                break
+            fi
+            sleep 1
+        done
+
+        for net in $EXTRA_NETWORKS; do
+            if docker network inspect "$net" >/dev/null 2>&1; then
+                docker network connect "$net" mini-infra-dev 2>/dev/null \
+                    && echo -e "\033[0;32mRejoined network: $net\033[0m" \
+                    || echo -e "\033[0;33mFailed to rejoin network: $net (may already be connected)\033[0m"
+            else
+                echo -e "\033[0;33mSkipping network $net (no longer exists)\033[0m"
+            fi
+        done
+    fi
+
     echo ""
     echo -e "\033[0;32mMini Infra development deployment started successfully!\033[0m"
     echo ""
