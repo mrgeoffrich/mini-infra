@@ -637,8 +637,8 @@ export interface NavSection {
 export type NavPanel = "operations" | "admin";
 
 const panelSections: Record<NavPanel, string[]> = {
-  operations: ["applications", "databases", "networking", "monitoring"],
-  admin: ["connectivity", "administration"],
+  operations: ["applications", "databases", "monitoring"],
+  admin: ["connectivity", "networking", "administration"],
 };
 
 // Get navigation items grouped by section
