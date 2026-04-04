@@ -395,7 +395,6 @@ describe('StackReconciler.plan', () => {
       mockPrisma,
       {} as any, // certLifecycleManager (not used in plan)
       {} as any, // cloudflareDns (not used in plan)
-      {} as any, // haproxyCertDeployer (not used in plan)
       undefined, // cloudflareService (not used in plan)
     );
 

@@ -17,7 +17,6 @@ import { DnsChallenge01Provider } from '../services/tls/dns-challenge-provider';
 import { CertificateDistributor } from '../services/tls/certificate-distributor';
 import { CloudflareDNSService } from '../services/cloudflare/cloudflare-dns';
 import { CloudflareService } from '../services/cloudflare';
-import { HaproxyCertificateDeployer } from '../services/haproxy/haproxy-certificate-deployer';
 import { TlsConfigService } from '../services/tls/tls-config';
 import { AzureStorageService } from '../services/azure-storage-service';
 import { HAProxyService } from '../services/haproxy/haproxy-service';
@@ -105,7 +104,6 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
     prisma,
     effectiveCertManager,
     new CloudflareDNSService(),
-    new HaproxyCertificateDeployer(),
     cloudflareConfig,
   );
 }

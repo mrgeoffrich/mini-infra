@@ -29,7 +29,6 @@ import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
-import { HAProxyDataPlaneClient } from '../haproxy';
 import { servicesLogger } from '../../lib/logger-factory';
 import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
 import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
@@ -511,7 +510,7 @@ export class StackReconciler {
         }
       }
 
-      // 5c. Reconcile stack-level resources (TLS → DNS → Tunnels)
+      // 5c. Reconcile stack-level resources (DNS → TLS → Tunnels)
       const allResourceResults: ResourceResult[] = [];
       if (this.resourceReconciler && plan.resourceActions.some((a) => a.action !== 'no-op')) {
         const definitions = {
@@ -519,19 +518,6 @@ export class StackReconciler {
           dnsRecords: (stack.dnsRecords as any[]) ?? [],
           tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
         };
-
-        // Get HAProxy client if environment has one
-        let haproxyClient: HAProxyDataPlaneClient | null = null;
-        if (stack.environmentId) {
-          try {
-            const envValidation = new EnvironmentValidationService();
-            const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
-            if (haproxyCtx) {
-              haproxyClient = new HAProxyDataPlaneClient();
-              await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-            }
-          } catch { /* no HAProxy available */ }
-        }
 
         const progressCallback = (result: ResourceResult) => {
           log.info({ stackId, result }, 'Resource reconciliation progress');
@@ -542,18 +528,7 @@ export class StackReconciler {
           }
         };
 
-        // TLS first
-        const tlsResults = await this.resourceReconciler.reconcileTls(
-          plan.resourceActions, stackId, definitions.tlsCertificates, haproxyClient,
-          options?.triggeredBy ?? 'system', progressCallback
-        );
-        allResourceResults.push(...tlsResults);
-        if (tlsResults.some((r) => !r.success)) {
-          const failed = tlsResults.find((r) => !r.success);
-          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
-        }
-
-        // DNS second
+        // DNS first
         const dnsResults = await this.resourceReconciler.reconcileDns(
           plan.resourceActions, stackId, definitions.dnsRecords, progressCallback
         );
@@ -561,6 +536,17 @@ export class StackReconciler {
         if (dnsResults.some((r) => !r.success)) {
           const failed = dnsResults.find((r) => !r.success);
           throw new Error(`DNS reconciliation failed: ${failed?.error}`);
+        }
+
+        // TLS second
+        const tlsResults = await this.resourceReconciler.reconcileTls(
+          plan.resourceActions, stackId, definitions.tlsCertificates,
+          options?.triggeredBy ?? 'system', progressCallback
+        );
+        allResourceResults.push(...tlsResults);
+        if (tlsResults.some((r) => !r.success)) {
+          const failed = tlsResults.find((r) => !r.success);
+          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
         }
 
         // Tunnel third
@@ -1284,7 +1270,8 @@ export class StackReconciler {
     stackId: string,
     stack: any,
     serviceHashes: Map<string, string>,
-    infraNetworkMap: Map<string, string>
+    infraNetworkMap: Map<string, string>,
+    networkNames: string[] = []
   ): Promise<Record<string, unknown>> {
     const routing = serviceDef.routing!;
     const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
@@ -1312,11 +1299,23 @@ export class StackReconciler {
       }
     }
 
-    // Build networks list including environment networks
+    // Build networks list including environment networks, stack networks, and joinNetworks
     const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
     for (const dockerName of infraNetworkMap.values()) {
       if (!containerNetworks.includes(dockerName)) {
         containerNetworks.push(dockerName);
+      }
+    }
+    for (const netName of networkNames) {
+      if (!containerNetworks.includes(netName)) {
+        containerNetworks.push(netName);
+      }
+    }
+    if (serviceDef.containerConfig.joinNetworks?.length) {
+      for (const netName of serviceDef.containerConfig.joinNetworks) {
+        if (netName && !containerNetworks.includes(netName)) {
+          containerNetworks.push(netName);
+        }
       }
     }
 
@@ -1384,7 +1383,7 @@ export class StackReconciler {
     }
 
     const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap
+      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     switch (action.action) {
@@ -1543,7 +1542,7 @@ export class StackReconciler {
     log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
 
     const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap
+      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     const oldContainer = containerByService.get(action.serviceName);

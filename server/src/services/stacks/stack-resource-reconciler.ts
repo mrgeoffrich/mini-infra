@@ -12,8 +12,6 @@ import type {
 } from '@mini-infra/types';
 import type { CertificateLifecycleManager } from '../tls/certificate-lifecycle-manager';
 import type { CloudflareDNSService } from '../cloudflare/cloudflare-dns';
-import type { HaproxyCertificateDeployer } from '../haproxy/haproxy-certificate-deployer';
-import type { HAProxyDataPlaneClient } from '../haproxy';
 import type { CloudflareService } from '../cloudflare/cloudflare-service';
 import { servicesLogger } from '../../lib/logger-factory';
 
@@ -42,7 +40,6 @@ export class StackResourceReconciler {
     private prisma: PrismaClient,
     private certLifecycleManager: CertificateLifecycleManager,
     private cloudflareDns: CloudflareDNSService,
-    private haproxyCertDeployer: HaproxyCertificateDeployer,
     private cloudflareService?: CloudflareService,
   ) {}
 
@@ -174,7 +171,6 @@ export class StackResourceReconciler {
     actions: ResourceAction[],
     stackId: string,
     definitions: StackTlsCertificate[],
-    haproxyClient: HAProxyDataPlaneClient | null,
     userId: string,
     onProgress?: (result: ResourceResult) => void,
   ): Promise<ResourceResult[]> {
@@ -213,22 +209,15 @@ export class StackResourceReconciler {
           if (existingCert) {
             certId = existingCert.id;
             log.info({ fqdn: def.fqdn, certId }, 'Reusing existing TLS certificate');
-
-            // Deploy to HAProxy if client available
-            if (haproxyClient) {
-              await this.haproxyCertDeployer.fetchAndDeployCertificate(
-                certId,
-                this.prisma,
-                haproxyClient,
-              );
-            }
           } else {
             log.info({ fqdn: def.fqdn }, 'Provisioning new TLS certificate');
+            // Don't deploy to HAProxy here — the deployment state machine's
+            // configureFrontend step handles that once HAProxy is ready
             const cert = await this.certLifecycleManager.issueCertificate({
               primaryDomain: def.fqdn,
               domains: [def.fqdn],
               userId,
-              deployToHaproxy: !!haproxyClient,
+              deployToHaproxy: false,
             });
             certId = cert.id;
           }

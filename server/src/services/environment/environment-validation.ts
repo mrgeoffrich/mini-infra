@@ -1,6 +1,7 @@
 import { servicesLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
 import prisma from "../../lib/prisma";
+import { getOwnContainerId } from "../self-update";
 
 const logger = servicesLogger();
 
@@ -77,6 +78,18 @@ export class EnvironmentValidationService {
         };
       }
       const networkName = infraNetwork.networkName;
+
+      // Check that mini-infra is connected to the dataplane network (container-to-container only)
+      const dataplaneCheck = await this.validateDataplaneConnectivity();
+      if (!dataplaneCheck.isConnected) {
+        return {
+          isValid: false,
+          environmentId,
+          environmentName: environment.name,
+          errorMessage: dataplaneCheck.errorMessage,
+          errorCode: dataplaneCheck.errorCode
+        };
+      }
 
       logger.info(
         {
@@ -197,6 +210,69 @@ export class EnvironmentValidationService {
       haproxyContainerId: validation.haproxyContainerId,
       haproxyNetworkName: validation.haproxyNetworkName
     };
+  }
+
+  /**
+   * Check that the mini-infra container is connected to the dataplane network.
+   * Skipped when not running in Docker (host-port fallback handles that case).
+   */
+  private async validateDataplaneConnectivity(): Promise<{
+    isConnected: boolean;
+    errorMessage?: string;
+    errorCode?: string;
+  }> {
+    const selfId = getOwnContainerId();
+    if (!selfId) {
+      // Not running in Docker — HAProxy discovery will use host-port fallback
+      return { isConnected: true };
+    }
+
+    try {
+      // Look up the dataplane network from InfraResource (host-scoped)
+      const resource = await prisma.infraResource.findFirst({
+        where: {
+          type: 'docker-network',
+          purpose: 'dataplane',
+          scope: 'host',
+          environmentId: null,
+        },
+      });
+
+      if (!resource) {
+        return {
+          isConnected: false,
+          errorMessage: 'The dataplane-network stack has not been deployed. Deploy it from the host infrastructure stacks before deploying applications.',
+          errorCode: 'DATAPLANE_STACK_NOT_DEPLOYED',
+        };
+      }
+
+      // Check if mini-infra is actually connected to this network
+      const docker = (this.dockerService as any).docker;
+      const container = docker.getContainer(selfId);
+      const info = await container.inspect();
+      const myNetworks = Object.keys(info.NetworkSettings?.Networks || {});
+
+      if (!myNetworks.includes(resource.name)) {
+        logger.warn(
+          { dataplaneNetwork: resource.name, connectedNetworks: myNetworks },
+          'Mini-infra is not connected to the dataplane network'
+        );
+        return {
+          isConnected: false,
+          errorMessage: `Mini-infra is not connected to the dataplane network '${resource.name}'. Re-apply the dataplane-network stack or restart with start.sh to restore network connections.`,
+          errorCode: 'DATAPLANE_NOT_CONNECTED',
+        };
+      }
+
+      return { isConnected: true };
+    } catch (error) {
+      logger.debug(
+        { error: error instanceof Error ? error.message : 'Unknown' },
+        'Dataplane connectivity check failed, skipping'
+      );
+      // Don't block deployments if the check itself fails
+      return { isConnected: true };
+    }
   }
 
   /**

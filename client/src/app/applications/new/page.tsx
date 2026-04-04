@@ -4,6 +4,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
+  IconAlertTriangle,
   IconArrowLeft,
   IconLoader2,
   IconPlus,
@@ -11,9 +12,11 @@ import {
 } from "@tabler/icons-react";
 import { useCreateApplication } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useStacks } from "@/hooks/use-stacks";
 import { useDetectImagePorts } from "@/hooks/use-detect-image-ports";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { Channel } from "@mini-infra/types";
+import type { StackResourceOutput } from "@mini-infra/types";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -165,6 +168,18 @@ export default function NewApplicationPage() {
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
 
+  // Check if HAProxy stack with applications network exists in the selected environment
+  const { data: stacksData } = useStacks(selectedEnvId);
+  const hasHaproxyApplicationsNetwork = (stacksData?.data ?? []).some(
+    (stack) =>
+      stack.status === "synced" &&
+      (stack.resourceOutputs as StackResourceOutput[] | undefined)?.some(
+        (o) => o.type === "docker-network" && o.purpose === "applications",
+      ),
+  );
+  const showHaproxyWarning =
+    serviceType === "StatelessWeb" && selectedEnvId && !hasHaproxyApplicationsNetwork;
+
   const setFormValue = form.setValue;
 
   useEffect(() => {
@@ -200,6 +215,14 @@ export default function NewApplicationPage() {
   }, [dockerImage, dockerTag]);
 
   const onSubmit = async (data: ApplicationFormData) => {
+    // Prevent creation of StatelessWeb apps without HAProxy
+    if (data.serviceType === "StatelessWeb" && !hasHaproxyApplicationsNetwork) {
+      toast.error(
+        "This environment does not have a deployed HAProxy stack with an applications network. Deploy an HAProxy stack first before creating a stateless web application.",
+      );
+      return;
+    }
+
     // Build the template name from display name
     const templateName = data.displayName
       .toLowerCase()
@@ -254,8 +277,11 @@ export default function NewApplicationPage() {
           }
         : undefined;
 
-    // Build networks - add a default network for the service
-    const networks = [{ name: `${templateName}-net` }];
+    // StatelessWeb apps depend on the HAProxy applications network
+    const resourceInputs =
+      data.serviceType === "StatelessWeb"
+        ? [{ type: "docker-network", purpose: "applications" }]
+        : undefined;
 
     try {
       await createApplication.mutateAsync({
@@ -265,7 +291,8 @@ export default function NewApplicationPage() {
         scope: "environment",
         environmentId: data.environmentId,
         deployImmediately: data.deployImmediately,
-        networks,
+        resourceInputs,
+        networks: [],
         volumes,
         services: [
           {
@@ -277,7 +304,6 @@ export default function NewApplicationPage() {
               env: Object.keys(env).length > 0 ? env : undefined,
               ports: ports.length > 0 ? ports : undefined,
               mounts: mounts.length > 0 ? mounts : undefined,
-              joinNetworks: [`${templateName}-net`],
               restartPolicy: data.restartPolicy,
               healthcheck,
             },
@@ -449,6 +475,20 @@ export default function NewApplicationPage() {
                     </FormItem>
                   )}
                 />
+
+                {showHaproxyWarning && (
+                  <div className="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                    <IconAlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium">HAProxy stack required</p>
+                      <p className="mt-1 text-destructive/80">
+                        Stateless web applications require a deployed HAProxy stack with an
+                        applications network in this environment. Go to the environment&apos;s
+                        infrastructure stacks and deploy an HAProxy load balancer first.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1059,7 +1099,7 @@ export default function NewApplicationPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={createApplication.isPending}
+                    disabled={createApplication.isPending || !!showHaproxyWarning}
                   >
                     {createApplication.isPending && (
                       <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />

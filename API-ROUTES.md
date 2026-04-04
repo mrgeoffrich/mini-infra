@@ -395,9 +395,7 @@
 | GET | `/api/environments/:id` | Get environment |
 | PUT | `/api/environments/:id` | Update environment |
 | DELETE | `/api/environments/:id` | Delete environment |
-| GET | `/api/environments/:id/networks` | List networks |
 | GET | `/api/environments/:id/volumes` | List volumes |
-| POST | `/api/environments/:id/remediate-networks` | Remediate missing Docker networks |
 | POST | `/api/environments/:id/remediate-haproxy` | Remediate HAProxy |
 | GET | `/api/environments/:id/haproxy-status` | HAProxy status |
 | GET | `/api/environments/:id/remediation-preview` | Remediation preview |

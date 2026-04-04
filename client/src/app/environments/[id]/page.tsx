@@ -228,14 +228,12 @@ export function EnvironmentDetailPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* HAProxy Status Card */}
-        <HAProxyStatusCard
-          environmentId={environment.id}
-          onRemediateClick={() => setRemediateDialogOpen(true)}
-          className="mb-6"
-        />
+          <HAProxyStatusCard
+            environmentId={environment.id}
+            onRemediateClick={() => setRemediateDialogOpen(true)}
+          />
+        </div>
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
