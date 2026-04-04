@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment } from "@/hooks/use-environments";
-import { NetworkList, VolumeList, StacksList } from "@/components/environments";
+import { StacksList } from "@/components/environments";
 import { useStacks } from "@/hooks/use-stacks";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -29,8 +28,6 @@ import {
 import {
   IconArrowLeft,
   IconServer,
-  IconNetwork,
-  IconDatabase,
   IconSettings,
   IconTrash,
   IconDots,
@@ -216,33 +213,7 @@ export function EnvironmentDetailPage() {
         </div>
 
         {/* Environment Overview */}
-        <div className="grid gap-6 md:grid-cols-3 mb-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Networks</CardTitle>
-              <IconNetwork className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{environment.networks.length}</div>
-              <p className="text-xs text-muted-foreground">
-                Docker networks
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Volumes</CardTitle>
-              <IconDatabase className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{environment.volumes.length}</div>
-              <p className="text-xs text-muted-foreground">
-                Docker volumes
-              </p>
-            </CardContent>
-          </Card>
-
+        <div className="grid gap-6 md:grid-cols-2 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Stacks</CardTitle>
@@ -268,34 +239,7 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
-        <Tabs defaultValue="stacks" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="stacks" className="flex items-center gap-2">
-              <IconStack2 className="h-4 w-4" />
-              Stacks
-            </TabsTrigger>
-            <TabsTrigger value="networks" className="flex items-center gap-2">
-              <IconNetwork className="h-4 w-4" />
-              Networks
-            </TabsTrigger>
-            <TabsTrigger value="volumes" className="flex items-center gap-2">
-              <IconDatabase className="h-4 w-4" />
-              Volumes
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="stacks" forceMount >
-            <StacksList environmentId={environment.id} />
-          </TabsContent>
-
-          <TabsContent value="networks" forceMount >
-            <NetworkList environmentId={environment.id} />
-          </TabsContent>
-
-          <TabsContent value="volumes" forceMount >
-            <VolumeList environmentId={environment.id} />
-          </TabsContent>
-        </Tabs>
+        <StacksList environmentId={environment.id} />
       </div>
 
       {/* Dialogs */}

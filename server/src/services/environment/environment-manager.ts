@@ -125,7 +125,6 @@ export class EnvironmentManager {
         where: { id },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -147,7 +146,6 @@ export class EnvironmentManager {
         where: { name },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -177,7 +175,6 @@ export class EnvironmentManager {
           where,
           include: {
             networks: true,
-            volumes: true
           },
           skip: (page - 1) * limit,
           take: limit,
@@ -210,7 +207,6 @@ export class EnvironmentManager {
         },
         include: {
           networks: true,
-          volumes: true
         }
       });
 
@@ -225,9 +221,9 @@ export class EnvironmentManager {
 
   public async deleteEnvironment(
     id: string,
-    options: { deleteVolumes?: boolean; deleteNetworks?: boolean; userId?: string } = {}
+    options: { deleteNetworks?: boolean; userId?: string } = {}
   ): Promise<boolean> {
-    const { deleteVolumes = false, deleteNetworks = false, userId } = options;
+    const { deleteNetworks = false, userId } = options;
     const startTime = Date.now();
     let userEvent: any = null;
 
@@ -248,65 +244,25 @@ export class EnvironmentManager {
         resourceId: environment.id,
         resourceType: 'environment',
         resourceName: environment.name,
-        description: `Deleting ${environment.type} environment (volumes: ${deleteVolumes ? 'yes' : 'no'}, networks: ${deleteNetworks ? 'yes' : 'no'})`,
+        description: `Deleting ${environment.type} environment (networks: ${deleteNetworks ? 'yes' : 'no'})`,
         metadata: {
           environmentId: environment.id,
           environmentName: environment.name,
           environmentType: environment.type,
-          deleteVolumes,
           deleteNetworks,
           networkCount: environment.networks.length,
-          volumeCount: environment.volumes.length,
         }
       });
 
       this.logger.info({
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         networkCount: environment.networks.length,
-        volumeCount: environment.volumes.length,
         userEventId: userEvent.id
       }, 'Starting environment deletion');
 
-      // Initialize Docker executor for volume/network operations
+      // Initialize Docker executor for network operations
       await this.dockerExecutor.initialize();
-
-      // Delete Docker volumes if requested
-      if (deleteVolumes && environment.volumes.length > 0) {
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${environment.volumes.length} Docker volume(s)...`);
-        this.logger.info({
-          environmentId: id,
-          volumes: environment.volumes.map(v => v.name)
-        }, 'Deleting Docker volumes');
-
-        let deletedVolumes = 0;
-        let failedVolumes = 0;
-
-        for (const volume of environment.volumes) {
-          try {
-            await this.dockerExecutor.removeVolume(volume.name);
-            deletedVolumes++;
-            this.logger.debug({
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Docker volume deleted successfully');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Volume '${volume.name}' deleted successfully`);
-          } catch (error) {
-            failedVolumes++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            this.logger.warn({
-              error,
-              environmentId: id,
-              volumeName: volume.name
-            }, 'Failed to delete Docker volume (volume may not exist in Docker)');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete volume '${volume.name}': ${errorMessage}`);
-            // Continue with deletion even if Docker volume removal fails
-          }
-        }
-
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedVolumes}/${environment.volumes.length} volume(s) (${failedVolumes} failed)`);
-      }
 
       // Delete Docker networks if requested
       if (deleteNetworks && environment.networks.length > 0) {
@@ -397,7 +353,6 @@ export class EnvironmentManager {
 
       this.logger.info({
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         userEventId: userEvent.id
       }, 'Environment deleted successfully');
@@ -418,7 +373,6 @@ export class EnvironmentManager {
       this.logger.error({
         error,
         environmentId: id,
-        deleteVolumes,
         deleteNetworks,
         userEventId: userEvent?.id
       }, 'Failed to delete environment');
@@ -433,7 +387,6 @@ export class EnvironmentManager {
             message: errorMessage,
             stack: error instanceof Error ? error.stack : undefined,
             environmentId: id,
-            deleteVolumes,
             deleteNetworks,
             duration
           },
@@ -460,15 +413,6 @@ export class EnvironmentManager {
         options: n.options,
         dockerId: n.dockerId,
         createdAt: n.createdAt
-      })),
-      volumes: prismaEnv.volumes.map((v: any) => ({
-        id: v.id,
-        environmentId: v.environmentId,
-        name: v.name,
-        driver: v.driver,
-        options: v.options,
-        dockerId: v.dockerId,
-        createdAt: v.createdAt
       })),
       tunnelId: prismaEnv.tunnelId ?? undefined,
       tunnelServiceUrl: prismaEnv.tunnelServiceUrl ?? undefined,

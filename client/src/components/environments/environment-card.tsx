@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   IconNetwork,
-  IconDatabase,
 } from "@tabler/icons-react";
 
 interface EnvironmentCardProps {
@@ -76,15 +75,11 @@ export function EnvironmentCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Networks and Volumes */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        {/* Networks */}
+        <div className="text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <IconNetwork className="h-4 w-4" />
             <span>{environment.networks.length} Networks</span>
-          </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <IconDatabase className="h-4 w-4" />
-            <span>{environment.volumes.length} Volumes</span>
           </div>
         </div>
 

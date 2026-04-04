@@ -376,7 +376,6 @@ model Environment {
 
   // Relations
   networks    EnvironmentNetwork[]
-  volumes     EnvironmentVolume[]
   deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
@@ -405,22 +404,6 @@ model EnvironmentNetwork {
   @@unique([environmentId, purpose])
   @@index([environmentId])
   @@map("environment_networks")
-}
-
-// EnvironmentVolume - Tracks Docker volumes for environments
-model EnvironmentVolume {
-  id            String   @id @default(cuid())
-  environmentId String
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  name          String
-  driver        String   @default("local")
-  options       Json?    // Volume options
-  dockerId      String?  // Docker volume ID when created
-  createdAt     DateTime @default(now())
-
-  @@unique([environmentId, name])
-  @@index([environmentId])
-  @@map("environment_volumes")
 }
 
 // HostService model - Tracks host-level services (not scoped to an environment)

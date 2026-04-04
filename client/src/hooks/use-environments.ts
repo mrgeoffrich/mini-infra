@@ -7,14 +7,6 @@ import {
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
   ListEnvironmentsResponse,
-  EnvironmentNetwork,
-  EnvironmentVolume,
-  CreateNetworkRequest,
-  UpdateNetworkRequest,
-  NetworksResponse,
-  CreateVolumeRequest,
-  UpdateVolumeRequest,
-  VolumesResponse,
 } from "@mini-infra/types";
 
 // Generate correlation ID for debugging
@@ -119,14 +111,13 @@ async function updateEnvironment(
 }
 
 async function deleteEnvironment(
-  options: { id: string; deleteVolumes?: boolean; deleteNetworks?: boolean },
+  options: { id: string; deleteNetworks?: boolean },
   correlationId: string,
 ): Promise<void> {
-  const { id, deleteVolumes = false, deleteNetworks = false } = options;
+  const { id, deleteNetworks = false } = options;
   const url = new URL(`/api/environments/${id}`, window.location.origin);
 
   // Add query parameters for deletion options
-  if (deleteVolumes) url.searchParams.set("deleteVolumes", "true");
   if (deleteNetworks) url.searchParams.set("deleteNetworks", "true");
 
   const response = await fetch(url.toString(), {
@@ -170,180 +161,6 @@ async function fetchEnvironmentDeleteCheck(
   }
 
   return await response.json();
-}
-
-// ====================
-// Network API Functions
-// ====================
-
-async function fetchEnvironmentNetworks(
-  environmentId: string,
-  correlationId: string,
-): Promise<NetworksResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/networks`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environment networks: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function createEnvironmentNetwork(
-  environmentId: string,
-  request: CreateNetworkRequest,
-  correlationId: string,
-): Promise<EnvironmentNetwork> {
-  const response = await fetch(`/api/environments/${environmentId}/networks`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create network: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function updateEnvironmentNetwork(
-  environmentId: string,
-  networkId: string,
-  request: UpdateNetworkRequest,
-  correlationId: string,
-): Promise<EnvironmentNetwork> {
-  const response = await fetch(`/api/environments/${environmentId}/networks/${networkId}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update network: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function deleteEnvironmentNetwork(
-  environmentId: string,
-  networkId: string,
-  correlationId: string,
-): Promise<void> {
-  const response = await fetch(`/api/environments/${environmentId}/networks/${networkId}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete network: ${response.statusText}`);
-  }
-}
-
-// ====================
-// Volume API Functions
-// ====================
-
-async function fetchEnvironmentVolumes(
-  environmentId: string,
-  correlationId: string,
-): Promise<VolumesResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/volumes`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environment volumes: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function createEnvironmentVolume(
-  environmentId: string,
-  request: CreateVolumeRequest,
-  correlationId: string,
-): Promise<EnvironmentVolume> {
-  const response = await fetch(`/api/environments/${environmentId}/volumes`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create volume: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function updateEnvironmentVolume(
-  environmentId: string,
-  volumeId: string,
-  request: UpdateVolumeRequest,
-  correlationId: string,
-): Promise<EnvironmentVolume> {
-  const response = await fetch(`/api/environments/${environmentId}/volumes/${volumeId}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update volume: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-async function deleteEnvironmentVolume(
-  environmentId: string,
-  volumeId: string,
-  correlationId: string,
-): Promise<void> {
-  const response = await fetch(`/api/environments/${environmentId}/volumes/${volumeId}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete volume: ${response.statusText}`);
-  }
 }
 
 // ====================
@@ -477,7 +294,7 @@ export function useDeleteEnvironment() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (options: { id: string; deleteVolumes?: boolean; deleteNetworks?: boolean }) =>
+    mutationFn: (options: { id: string; deleteNetworks?: boolean }) =>
       deleteEnvironment(options, correlationId),
     onSuccess: (_, options) => {
       queryClient.invalidateQueries({ queryKey: ["environments"] });
@@ -500,212 +317,6 @@ export function useEnvironmentDeleteCheck(
     enabled: enabled && !!id,
     staleTime: 0, // Always refetch when dialog opens
     gcTime: 60 * 1000,
-  });
-}
-
-// ====================
-// Network Hooks
-// ====================
-
-export function useEnvironmentNetworks(
-  environmentId: string,
-  options: UseEnvironmentOptions = {},
-) {
-  const { enabled = true, refetchInterval, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["environmentNetworks", environmentId],
-    queryFn: () => fetchEnvironmentNetworks(environmentId, correlationId),
-    enabled: enabled && !!environmentId,
-    refetchInterval,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404") ||
-              error.message.includes("Not found")
-            ) {
-              return false;
-            }
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 10000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  });
-}
-
-export function useCreateEnvironmentNetwork() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      request,
-    }: {
-      environmentId: string;
-      request: CreateNetworkRequest;
-    }) => createEnvironmentNetwork(environmentId, request, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
-  });
-}
-
-export function useUpdateEnvironmentNetwork() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      networkId,
-      request,
-    }: {
-      environmentId: string;
-      networkId: string;
-      request: UpdateNetworkRequest;
-    }) => updateEnvironmentNetwork(environmentId, networkId, request, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
-  });
-}
-
-export function useDeleteEnvironmentNetwork() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      networkId,
-    }: {
-      environmentId: string;
-      networkId: string;
-    }) => deleteEnvironmentNetwork(environmentId, networkId, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentNetworks", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
-  });
-}
-
-// ====================
-// Volume Hooks
-// ====================
-
-export function useEnvironmentVolumes(
-  environmentId: string,
-  options: UseEnvironmentOptions = {},
-) {
-  const { enabled = true, refetchInterval, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
-
-  return useQuery({
-    queryKey: ["environmentVolumes", environmentId],
-    queryFn: () => fetchEnvironmentVolumes(environmentId, correlationId),
-    enabled: enabled && !!environmentId,
-    refetchInterval,
-    retry:
-      typeof retry === "function"
-        ? retry
-        : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404") ||
-              error.message.includes("Not found")
-            ) {
-              return false;
-            }
-            return typeof retry === "boolean" ? retry : failureCount < retry;
-          },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    staleTime: 10000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-  });
-}
-
-export function useCreateEnvironmentVolume() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      request,
-    }: {
-      environmentId: string;
-      request: CreateVolumeRequest;
-    }) => createEnvironmentVolume(environmentId, request, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
-  });
-}
-
-export function useUpdateEnvironmentVolume() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      volumeId,
-      request,
-    }: {
-      environmentId: string;
-      volumeId: string;
-      request: UpdateVolumeRequest;
-    }) => updateEnvironmentVolume(environmentId, volumeId, request, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
-  });
-}
-
-export function useDeleteEnvironmentVolume() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: ({
-      environmentId,
-      volumeId,
-    }: {
-      environmentId: string;
-      volumeId: string;
-    }) => deleteEnvironmentVolume(environmentId, volumeId, correlationId),
-    onSuccess: (_, { environmentId }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentVolumes", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", environmentId] });
-    },
   });
 }
 
@@ -768,12 +379,4 @@ export type {
   EnvironmentDeleteCheck,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
-  EnvironmentNetwork,
-  EnvironmentVolume,
-  CreateNetworkRequest,
-  UpdateNetworkRequest,
-  NetworksResponse,
-  CreateVolumeRequest,
-  UpdateVolumeRequest,
-  VolumesResponse,
 };

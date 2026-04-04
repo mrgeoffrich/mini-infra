@@ -108,8 +108,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: mockNetworks,
-        services: [],
-        volumes: [],
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
@@ -166,8 +164,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: [],
-        services: [],
-        volumes: [],
       };
 
       const mockCreatedNetwork = {
@@ -219,8 +215,6 @@ describe("Environment Networks Routes", () => {
             createdAt: new Date(),
           },
         ],
-        services: [],
-        volumes: [],
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
@@ -276,8 +270,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: [mockExistingNetwork],
-        services: [],
-        volumes: [],
       };
 
       const mockUpdatedNetwork = {
@@ -317,8 +309,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: [], // No networks
-        services: [],
-        volumes: [],
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
@@ -353,8 +343,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: [mockExistingNetwork],
-        services: [], // No services using the network
-        volumes: [],
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);
@@ -377,8 +365,6 @@ describe("Environment Networks Routes", () => {
         id: environmentId,
         name: "test-env",
         networks: [], // No networks
-        services: [],
-        volumes: [],
       };
 
       mockEnvironmentManager.getEnvironmentById.mockResolvedValue(mockEnvironment);

@@ -239,11 +239,10 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
 router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { deleteVolumes = 'false', deleteNetworks = 'false' } = req.query;
+    const { deleteNetworks = 'false' } = req.query;
     const userId = (req.user as any)?.id;
 
     // Parse boolean query parameters
-    const shouldDeleteVolumes = deleteVolumes === 'true';
     const shouldDeleteNetworks = deleteNetworks === 'true';
 
     // Check if environment has associated deployment configurations
@@ -262,7 +261,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
     }
 
     const success = await environmentManager.deleteEnvironment(id, {
-      deleteVolumes: shouldDeleteVolumes,
       deleteNetworks: shouldDeleteNetworks,
       userId
     });
@@ -276,7 +274,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
 
     logger.debug({
       environmentId: id,
-      deleteVolumes: shouldDeleteVolumes,
       deleteNetworks: shouldDeleteNetworks,
       userId
     }, 'Environment deleted via API');
@@ -300,54 +297,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
   }
 });
 
-
-// Networks routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/networks', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const environment = await environmentManager.getEnvironmentById(id);
-    if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json({ networks: environment.networks });
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment networks');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment networks'
-    });
-  }
-});
-
-// Volumes routes - inline instead of sub-router to avoid Express 5 mounting complexity
-router.get('/:id/volumes', requirePermission('environments:read'), async (req, res) => {
-  try {
-    const id = String(req.params.id);
-
-    const environment = await environmentManager.getEnvironmentById(id);
-    if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
-    }
-
-    res.json({ volumes: environment.volumes });
-
-  } catch (error) {
-    logger.error({ error, environmentId: req.params.id }, 'Failed to list environment volumes');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment volumes'
-    });
-  }
-});
 
 // ====================
 // HAProxy Remediation Routes

@@ -11,7 +11,6 @@ export interface Environment {
   tunnelId?: string;
   tunnelServiceUrl?: string;
   networks: EnvironmentNetwork[];
-  volumes: EnvironmentVolume[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,23 +26,12 @@ export interface EnvironmentNetwork {
   createdAt: Date;
 }
 
-export interface EnvironmentVolume {
-  id: string;
-  environmentId: string;
-  name: string;
-  driver: string;
-  options?: Record<string, any>;
-  dockerId?: string;
-  createdAt: Date;
-}
-
 // Request/Response types
 export interface CreateEnvironmentRequest {
   name: string;
   description?: string;
   type: EnvironmentType;
   networkType?: EnvironmentNetworkType;
-  services?: ServiceConfiguration[];
 }
 
 export interface UpdateEnvironmentRequest {
@@ -52,12 +40,6 @@ export interface UpdateEnvironmentRequest {
   networkType?: EnvironmentNetworkType;
   tunnelId?: string;
   tunnelServiceUrl?: string;
-}
-
-export interface ServiceConfiguration {
-  serviceName: string;
-  serviceType: string;
-  config?: Record<string, any>;
 }
 
 // Operation result types
@@ -99,22 +81,6 @@ export interface UpdateNetworkRequest {
 
 export interface NetworksResponse {
   networks: EnvironmentNetwork[];
-}
-
-// Volume management types
-export interface CreateVolumeRequest {
-  name: string;
-  driver?: string;
-  options?: Record<string, any>;
-}
-
-export interface UpdateVolumeRequest {
-  driver?: string;
-  options?: Record<string, any>;
-}
-
-export interface VolumesResponse {
-  volumes: EnvironmentVolume[];
 }
 
 // Delete check types

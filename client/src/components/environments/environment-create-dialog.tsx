@@ -101,7 +101,7 @@ export function EnvironmentCreateDialog({
         <DialogHeader>
           <DialogTitle>Create Environment</DialogTitle>
           <DialogDescription>
-            Create a new environment to manage services, networks, and volumes.
+            Create a new environment to manage services and networks.
           </DialogDescription>
         </DialogHeader>
 
@@ -116,7 +116,7 @@ export function EnvironmentCreateDialog({
                     Important: Environment names are permanent
                   </p>
                   <p className="text-xs text-blue-700 mt-1">
-                    Once created, environment names cannot be changed to ensure consistency of Docker resources (containers, networks, volumes).
+                    Once created, environment names cannot be changed to ensure consistency of Docker resources (containers, networks).
                   </p>
                 </div>
               </div>
