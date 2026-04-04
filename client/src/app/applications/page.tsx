@@ -97,10 +97,6 @@ export default function ApplicationsPage() {
     return map;
   }, [envData]);
 
-  const getServiceCount = (app: StackTemplateInfo): number => {
-    return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
-  };
-
   const getAppUrl = (app: StackTemplateInfo): string | null => {
     const stacks = stacksByTemplateId.get(app.id);
     if (!stacks || stacks.length === 0) return null;
@@ -273,14 +269,12 @@ export default function ApplicationsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {applications.map((app) => {
-              const serviceCount = getServiceCount(app);
-
               return (
                 <Card
                   key={app.id}
                   className="group hover:shadow-md transition-shadow"
                 >
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-base truncate">
@@ -341,10 +335,7 @@ export default function ApplicationsPage() {
                   </CardHeader>
 
                   <CardContent className="pt-0">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Badge variant="secondary">
-                        {serviceCount} {serviceCount === 1 ? "service" : "services"}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-3">
                       {app.category && (
                         <Badge variant="outline">{app.category}</Badge>
                       )}
