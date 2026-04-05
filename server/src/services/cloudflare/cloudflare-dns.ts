@@ -555,6 +555,127 @@ export class CloudflareDNSService {
       throw error;
     }
   }
+  /**
+   * Create or update a DNS CNAME record pointing a hostname to a Cloudflare tunnel.
+   * If the record already exists as a CNAME, it will be updated.
+   * If it doesn't exist, it will be created.
+   * Records are proxied (orange-clouded) by default, which is standard for tunnel CNAMEs.
+   *
+   * @param hostname The public hostname (e.g., app.example.com)
+   * @param tunnelId The Cloudflare tunnel ID
+   * @returns The created or updated DNS record
+   */
+  async upsertCNAMERecord(
+    hostname: string,
+    tunnelId: string,
+  ): Promise<CloudflareDNSRecord> {
+    const cnameTarget = `${tunnelId}.cfargotunnel.com`;
+    logger.info(
+      { hostname, tunnelId, cnameTarget },
+      "Upserting DNS CNAME record for tunnel"
+    );
+
+    try {
+      const zone = await this.findZoneForHostname(hostname);
+      if (!zone) {
+        throw new Error(
+          `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`
+        );
+      }
+
+      const existingRecord = await this.findDNSRecord(zone.id, hostname);
+
+      if (existingRecord) {
+        if (existingRecord.type === "CNAME" && existingRecord.content === cnameTarget && existingRecord.proxied) {
+          logger.info(
+            { hostname, recordId: existingRecord.id },
+            "CNAME record already correct, no update needed"
+          );
+          return existingRecord;
+        }
+
+        logger.info(
+          { hostname, recordId: existingRecord.id, existingType: existingRecord.type },
+          "Updating existing record to CNAME for tunnel"
+        );
+
+        return await this.updateDNSRecord(zone.id, existingRecord.id, {
+          type: "CNAME",
+          name: hostname,
+          content: cnameTarget,
+          ttl: 1, // Auto TTL when proxied
+          proxied: true,
+        });
+      } else {
+        logger.info({ hostname, zoneId: zone.id }, "Creating new CNAME record for tunnel");
+
+        return await this.createDNSRecord(zone.id, {
+          type: "CNAME",
+          name: hostname,
+          content: cnameTarget,
+          ttl: 1, // Auto TTL when proxied
+          proxied: true,
+        });
+      }
+    } catch (error) {
+      logger.error(
+        { error, hostname, tunnelId },
+        "Failed to upsert DNS CNAME record for tunnel"
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a DNS CNAME record for a hostname, if it exists and is a CNAME.
+   * Skips deletion if the record doesn't exist or is not a CNAME (e.g., an A record
+   * that was manually created), to avoid accidentally removing unrelated records.
+   *
+   * @param hostname The public hostname to remove the CNAME for
+   * @returns true if a record was deleted, false if skipped
+   */
+  async deleteCNAMEByHostname(hostname: string): Promise<boolean> {
+    logger.info({ hostname }, "Deleting DNS CNAME record for tunnel hostname");
+
+    try {
+      const zone = await this.findZoneForHostname(hostname);
+      if (!zone) {
+        logger.warn(
+          { hostname },
+          "No Cloudflare zone found for hostname, skipping CNAME deletion"
+        );
+        return false;
+      }
+
+      const existingRecord = await this.findDNSRecord(zone.id, hostname);
+
+      if (!existingRecord) {
+        logger.info({ hostname }, "No DNS record found for hostname, nothing to delete");
+        return false;
+      }
+
+      if (existingRecord.type !== "CNAME") {
+        logger.warn(
+          { hostname, recordType: existingRecord.type, recordId: existingRecord.id },
+          "DNS record is not a CNAME, skipping deletion to avoid removing unrelated record"
+        );
+        return false;
+      }
+
+      await this.deleteDNSRecord(zone.id, existingRecord.id);
+      logger.info(
+        { hostname, recordId: existingRecord.id },
+        "Successfully deleted DNS CNAME record for tunnel hostname"
+      );
+      return true;
+    } catch (error) {
+      logger.error(
+        { error, hostname },
+        "Failed to delete DNS CNAME record for tunnel hostname"
+      );
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

@@ -10,7 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { CloudflareService } from "../services/cloudflare";
+import { CloudflareService, cloudflareDNSService } from "../services/cloudflare";
 import { DnsCacheService } from "../services/dns";
 import {
   CreateCloudflareSettingRequest,
@@ -1011,6 +1011,25 @@ router.post("/tunnels/:id/hostnames", requirePermission('settings:write') as Req
       });
     }
 
+    // Create DNS CNAME record pointing hostname to tunnel (best-effort)
+    try {
+      await cloudflareDNSService.upsertCNAMERecord(hostname, String(tunnelId));
+      logger.debug(
+        { requestId, hostname, tunnelId },
+        "DNS CNAME record created for tunnel hostname",
+      );
+    } catch (dnsError) {
+      logger.warn(
+        {
+          requestId,
+          hostname,
+          tunnelId,
+          error: dnsError instanceof Error ? dnsError.message : "Unknown error",
+        },
+        "Failed to create DNS CNAME record for tunnel hostname — ingress rule was added successfully",
+      );
+    }
+
     logger.debug(
       {
         requestId,
@@ -1110,6 +1129,25 @@ router.delete(
           error: "Failed to update tunnel configuration",
           details: "Unable to remove hostname from tunnel",
         });
+      }
+
+      // Delete DNS CNAME record for the removed hostname (best-effort)
+      try {
+        await cloudflareDNSService.deleteCNAMEByHostname(decodedHostname);
+        logger.debug(
+          { requestId, hostname: decodedHostname, tunnelId },
+          "DNS CNAME record deleted for tunnel hostname",
+        );
+      } catch (dnsError) {
+        logger.warn(
+          {
+            requestId,
+            hostname: decodedHostname,
+            tunnelId,
+            error: dnsError instanceof Error ? dnsError.message : "Unknown error",
+          },
+          "Failed to delete DNS CNAME record for tunnel hostname — ingress rule was removed successfully",
+        );
       }
 
       logger.debug(
