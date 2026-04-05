@@ -11,6 +11,7 @@ export interface Environment {
   tunnelId?: string;
   tunnelServiceUrl?: string;
   networks: EnvironmentNetwork[];
+  stackCount: number;
   createdAt: Date;
   updatedAt: Date;
 }

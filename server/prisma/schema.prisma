@@ -555,7 +555,7 @@ model HAProxyBackend {
   manualFrontendId      String?  // For manually-created backends
 
   // Status tracking
-  status                String   @default("active") // "active" | "removed" | "failed"
+  status                String   @default("active") // "active" | "failed"
   errorMessage          String?
 
   // Relations
@@ -597,7 +597,7 @@ model HAProxyServer {
   deploymentId          String?  // Deployment that created this server
 
   // Status tracking
-  status                String   @default("active") // "active" | "removed" | "draining"
+  status                String   @default("active") // "active" | "draining"
   errorMessage          String?
 
   createdAt             DateTime @default(now())

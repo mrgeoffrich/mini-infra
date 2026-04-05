@@ -40,7 +40,6 @@ The backends list at `/haproxy/backends` shows:
 |--------|-------|---------|
 | `active` | Green | Backend is configured and healthy |
 | `failed` | Red | Backend encountered a configuration error |
-| `removed` | Gray | Backend has been removed |
 
 ### Source types
 

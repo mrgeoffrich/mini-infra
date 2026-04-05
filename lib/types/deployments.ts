@@ -778,8 +778,8 @@ export interface DeleteRouteResponse {
 // ====================
 
 export type BackendSourceType = 'deployment' | 'manual';
-export type BackendStatus = 'active' | 'removed' | 'failed';
-export type ServerStatus = 'active' | 'removed' | 'draining';
+export type BackendStatus = 'active' | 'failed';
+export type ServerStatus = 'active' | 'draining';
 
 export interface HAProxyBackendInfo {
   id: string;

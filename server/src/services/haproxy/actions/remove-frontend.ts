@@ -399,16 +399,13 @@ export class RemoveFrontend {
           });
 
           if (deploymentConfig?.environmentId) {
-            await prisma.hAProxyBackend.updateMany({
+            await prisma.hAProxyBackend.deleteMany({
               where: {
                 name: backendName,
                 environmentId: deploymentConfig.environmentId,
               },
-              data: {
-                status: 'removed',
-              },
             });
-            logger.info({ backendName }, 'Backend marked as removed in database');
+            logger.info({ backendName }, 'Backend deleted from database');
           }
         } catch (dbError) {
           logger.warn(

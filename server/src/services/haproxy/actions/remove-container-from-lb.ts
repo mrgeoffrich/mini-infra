@@ -113,8 +113,8 @@ export class RemoveContainerFromLB {
                     }, 'Server not found in HAProxy runtime, skipping server removal');
                 }
 
-                // Mark server as removed in database
-                await this.markServerRemoved(backendName, serverName, context.environmentId);
+                // Delete server from database
+                await this.deleteServerRecord(backendName, serverName, context.environmentId);
             }
 
             // Clean up any stale servers (servers whose containers no longer exist)
@@ -153,8 +153,8 @@ export class RemoveContainerFromLB {
                                     serverName
                                 }, 'Stale server successfully removed from HAProxy backend');
                             }
-                            // Mark stale server as removed in database
-                            await this.markServerRemoved(backendName, serverName, context.environmentId);
+                            // Delete stale server from database
+                            await this.deleteServerRecord(backendName, serverName, context.environmentId);
                         } catch (error) {
                             logger.warn({
                                 deploymentId: context.deploymentId,
@@ -181,8 +181,8 @@ export class RemoveContainerFromLB {
                     backendName
                 }, 'Backend has no remaining servers - backend will be removed after frontend cleanup');
 
-                // Mark backend as removed in database
-                await this.markBackendRemoved(backendName, context.environmentId);
+                // Delete backend from database
+                await this.deleteBackendRecord(backendName, context.environmentId);
             } else {
                 logger.info({
                     deploymentId: context.deploymentId,
@@ -223,9 +223,9 @@ export class RemoveContainerFromLB {
     }
 
     /**
-     * Mark a server as removed in the database
+     * Delete a server record from the database
      */
-    private async markServerRemoved(backendName: string, serverName: string, environmentId?: string): Promise<void> {
+    private async deleteServerRecord(backendName: string, serverName: string, environmentId?: string): Promise<void> {
         try {
             if (!environmentId) return;
 
@@ -240,49 +240,43 @@ export class RemoveContainerFromLB {
 
             if (!backend) return;
 
-            await prisma.hAProxyServer.updateMany({
+            await prisma.hAProxyServer.deleteMany({
                 where: {
                     name: serverName,
                     backendId: backend.id,
                 },
-                data: {
-                    status: 'removed',
-                },
             });
 
-            logger.info({ backendName, serverName }, 'Server marked as removed in database');
+            logger.info({ backendName, serverName }, 'Server deleted from database');
         } catch (dbError) {
             logger.warn({
                 backendName,
                 serverName,
                 error: dbError instanceof Error ? dbError.message : 'Unknown error',
-            }, 'Failed to mark server as removed in database (non-critical)');
+            }, 'Failed to delete server from database (non-critical)');
         }
     }
 
     /**
-     * Mark a backend as removed in the database
+     * Delete a backend record from the database
      */
-    private async markBackendRemoved(backendName: string, environmentId?: string): Promise<void> {
+    private async deleteBackendRecord(backendName: string, environmentId?: string): Promise<void> {
         try {
             if (!environmentId) return;
 
-            await prisma.hAProxyBackend.updateMany({
+            await prisma.hAProxyBackend.deleteMany({
                 where: {
                     name: backendName,
                     environmentId,
                 },
-                data: {
-                    status: 'removed',
-                },
             });
 
-            logger.info({ backendName }, 'Backend marked as removed in database');
+            logger.info({ backendName }, 'Backend deleted from database');
         } catch (dbError) {
             logger.warn({
                 backendName,
                 error: dbError instanceof Error ? dbError.message : 'Unknown error',
-            }, 'Failed to mark backend as removed in database (non-critical)');
+            }, 'Failed to delete backend from database (non-critical)');
         }
     }
 }

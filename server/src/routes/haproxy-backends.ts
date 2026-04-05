@@ -37,7 +37,7 @@ function serializeBackend(backend: any): HAProxyBackendInfo {
     sourceType: backend.sourceType as "deployment" | "manual",
     deploymentConfigId: backend.deploymentConfigId,
     manualFrontendId: backend.manualFrontendId,
-    status: backend.status as "active" | "removed" | "failed",
+    status: backend.status as "active" | "failed",
     errorMessage: backend.errorMessage,
     serversCount: backend._count?.servers ?? backend.servers?.length ?? 0,
     servers: backend.servers?.map(serializeServer),
@@ -65,7 +65,7 @@ function serializeServer(server: any): HAProxyServerInfo {
     containerId: server.containerId,
     containerName: server.containerName,
     deploymentId: server.deploymentId,
-    status: server.status as "active" | "removed" | "draining",
+    status: server.status as "active" | "draining",
     errorMessage: server.errorMessage,
     createdAt: server.createdAt.toISOString(),
     updatedAt: server.updatedAt.toISOString(),
@@ -305,12 +305,7 @@ router.patch(
         });
       }
 
-      if (backend.status === "removed") {
-        return res.status(400).json({
-          success: false,
-          error: "Cannot update a removed backend",
-        });
-      }
+
 
       const updates = validationResult.data;
 
@@ -592,12 +587,8 @@ router.patch(
         });
       }
 
-      if (server.status === "removed") {
-        return res.status(400).json({
-          success: false,
-          error: "Cannot update a removed server",
-        });
-      }
+
+
 
       const updates = validationResult.data;
 
