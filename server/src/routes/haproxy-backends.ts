@@ -11,6 +11,7 @@ import {
   HAProxyServerListResponse,
   HAProxyServerResponse,
   ForceDeleteBackendResponse,
+  ForceDeleteServerResponse,
 } from "@mini-infra/types";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
@@ -670,6 +671,109 @@ router.patch(
       res.status(500).json({
         success: false,
         error: "Failed to update server",
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/haproxy/backends/:backendName/servers/:serverName
+ * Force-delete a server from a backend. Removes from both HAProxy and the database.
+ * Requires ?environmentId= query parameter.
+ */
+router.delete(
+  "/:backendName/servers/:serverName",
+  requirePermission('haproxy:write') as RequestHandler,
+  async (req: Request, res: Response) => {
+    try {
+      const backendName = String(req.params.backendName);
+      const serverName = String(req.params.serverName);
+      const { environmentId } = req.query;
+
+      if (!environmentId || typeof environmentId !== "string") {
+        return res.status(400).json({
+          success: false,
+          error: "environmentId query parameter is required",
+        });
+      }
+
+      // Find the backend
+      const backend = await prisma.hAProxyBackend.findUnique({
+        where: {
+          name_environmentId: {
+            name: backendName,
+            environmentId,
+          },
+        },
+      });
+
+      if (!backend) {
+        return res.status(404).json({
+          success: false,
+          error: "Backend not found",
+        });
+      }
+
+      // Find the server
+      const server = await prisma.hAProxyServer.findUnique({
+        where: {
+          name_backendId: {
+            name: serverName,
+            backendId: backend.id,
+          },
+        },
+      });
+
+      if (!server) {
+        return res.status(404).json({
+          success: false,
+          error: "Server not found",
+        });
+      }
+
+      // Try to remove from HAProxy — don't fail if HAProxy is unavailable
+      let haproxyCleanedUp = false;
+      try {
+        const haproxyClient = await getHAProxyClient(environmentId);
+        await haproxyClient.deleteServer(backendName, serverName);
+        haproxyCleanedUp = true;
+      } catch (haproxyError: any) {
+        logger.warn(
+          { error: haproxyError.message, backendName, serverName },
+          "Failed to remove server from HAProxy during force-delete, cleaning up database only"
+        );
+      }
+
+      // Delete from database
+      await prisma.hAProxyServer.delete({
+        where: { id: server.id },
+      });
+
+      logger.info(
+        { backendName, serverName, haproxyCleanedUp },
+        "Force-deleted server from backend"
+      );
+
+      emitHAProxyUpdate();
+
+      const response: ForceDeleteServerResponse = {
+        success: true,
+        message: haproxyCleanedUp
+          ? `Server '${serverName}' removed from HAProxy and database`
+          : `Server '${serverName}' removed from database only (HAProxy was unavailable)`,
+        backendName,
+        serverName,
+      };
+      res.json(response);
+    } catch (error: any) {
+      logger.error(
+        { error: error.message, backendName: req.params.backendName, serverName: req.params.serverName },
+        "Failed to force-delete server"
+      );
+      res.status(500).json({
+        success: false,
+        error: "Failed to force-delete server",
         message: error.message,
       });
     }

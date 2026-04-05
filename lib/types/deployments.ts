@@ -674,6 +674,13 @@ export interface ForceDeleteBackendResponse {
   backendName: string;
 }
 
+export interface ForceDeleteServerResponse {
+  success: boolean;
+  message: string;
+  backendName: string;
+  serverName: string;
+}
+
 // ====================
 // Async Manual Frontend Setup Types
 // ====================
