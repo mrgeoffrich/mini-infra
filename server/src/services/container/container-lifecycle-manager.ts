@@ -175,7 +175,7 @@ export class ContainerLifecycleManager {
         deploymentId: options.deploymentId,
         deploymentColor: this.extractDeploymentColor(options.name),
         projectName: options.config.labels?.["com.docker.compose.project"],
-        serviceName: options.config.labels?.["com.docker.compose.service"] || options.name,
+        serviceName: options.config.labels?.["com.docker.compose.service"] || options.config.labels?.["mini-infra.service"] || options.name,
         containerPurpose: "deployment",
         isActive: true,
         containerConfig: options.config,

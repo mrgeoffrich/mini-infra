@@ -717,6 +717,17 @@ export class StackReconciler {
     const plan = await this.plan(stackId);
     await this.promoteStalePullActions(plan, stackId, log);
 
+    // Force-recreate: promote remaining no-op actions to recreate
+    if (options?.forceRecreate) {
+      for (const action of plan.actions) {
+        if (action.action === 'no-op') {
+          log.info({ service: action.serviceName }, 'Force-recreate: promoting no-op to recreate');
+          action.action = 'recreate';
+          action.reason = 'force recreate';
+        }
+      }
+    }
+
     const actions = plan.actions.filter((a) => a.action !== 'no-op');
 
     if (actions.length === 0) {
