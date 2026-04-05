@@ -13,7 +13,6 @@ import {
   IconShield,
   IconBan,
   IconBrandDocker,
-  IconRocket,
   IconCopy,
   IconEye,
   IconActivity,
@@ -32,10 +31,9 @@ import { Badge } from "@/components/ui/badge";
 import { DeleteFrontendDialog } from "@/components/haproxy/delete-frontend-dialog";
 import { useFrontendByName } from "@/hooks/use-haproxy-frontend";
 import { useDeleteManualFrontend } from "@/hooks/use-manual-haproxy-frontend";
-import { useSyncDeploymentFrontend } from "@/hooks/use-haproxy-frontend";
 import { useEnvironments } from "@/hooks/use-environments";
 import { FrontendTypeBadge } from "@/components/haproxy/frontend-type-badge";
-import { FrontendStatusBadge } from "@/components/deployments/dns-status-badge";
+import { FrontendStatusBadge } from "@/components/haproxy/frontend-status-badge";
 import { RoutesTable } from "@/components/haproxy/routes-table";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
@@ -61,7 +59,6 @@ export function FrontendDetailsPage() {
 
   const { mutate: deleteFrontend, isPending: isDeleting } =
     useDeleteManualFrontend();
-  const syncFrontendMutation = useSyncDeploymentFrontend();
 
   const frontend = frontendResponse?.data;
   const environment = environmentsResponse?.environments?.find(
@@ -75,20 +72,6 @@ export function FrontendDetailsPage() {
   const handleEdit = () => {
     if (frontend) {
       navigate(`/haproxy/frontends/${frontend.frontendName}/edit`);
-    }
-  };
-
-  const handleSync = async () => {
-    if (frontend?.deploymentConfigId) {
-      try {
-        await syncFrontendMutation.mutateAsync(frontend.deploymentConfigId);
-        toast.success("Frontend synced successfully");
-        refetch();
-      } catch (error) {
-        toast.error(
-          `Failed to sync frontend: ${error instanceof Error ? error.message : "Unknown error"}`
-        );
-      }
     }
   };
 
@@ -212,18 +195,6 @@ export function FrontendDetailsPage() {
                   Delete
                 </Button>
               </>
-            )}
-            {!isManual && (
-              <Button
-                variant="outline"
-                onClick={handleSync}
-                disabled={syncFrontendMutation.isPending}
-              >
-                <IconRefresh
-                  className={`h-4 w-4 mr-2 ${syncFrontendMutation.isPending ? "animate-spin" : ""}`}
-                />
-                Sync
-              </Button>
             )}
           </div>
         </div>
@@ -435,44 +406,6 @@ export function FrontendDetailsPage() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Container Port</p>
                   <p className="font-medium">{frontend.containerPort || "N/A"}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Deployment Details Card (Deployment Frontends) */}
-      {!isManual && frontend.deploymentConfigId && (
-        <div className="px-4 lg:px-6 max-w-7xl">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <IconRocket className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Deployment Configuration</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">
-                    Deployment Config ID
-                  </p>
-                  <p className="font-medium font-mono text-sm">
-                    {frontend.deploymentConfigId}
-                  </p>
-                </div>
-
-                <div>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      navigate(`/deployments/${frontend.deploymentConfigId}`)
-                    }
-                  >
-                    <IconEye className="h-4 w-4 mr-2" />
-                    View Deployment
-                  </Button>
                 </div>
               </div>
             </CardContent>

@@ -13,7 +13,6 @@ import { useHAProxyStatus } from "@/hooks/use-haproxy-remediation";
 import {
   IconRouter,
   IconRoute,
-  IconAlertTriangle,
   IconCheck,
   IconRefresh,
 } from "@tabler/icons-react";
@@ -102,7 +101,7 @@ export function HAProxyStatusCard({
     );
   }
 
-  const isHealthy = !status.needsRemediation && status.sharedFrontendsCount && status.sharedFrontendsCount > 0;
+  const isHealthy = status.sharedFrontendsCount != null && status.sharedFrontendsCount > 0;
 
   return (
     <Card className={className}>
@@ -114,12 +113,7 @@ export function HAProxyStatusCard({
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          {status.needsRemediation ? (
-            <Badge variant="outline" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
-              <IconAlertTriangle className="h-3 w-3 mr-1" />
-              Needs Remediation
-            </Badge>
-          ) : isHealthy ? (
+          {isHealthy ? (
             <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
               <IconCheck className="h-3 w-3 mr-1" />
               Healthy
@@ -149,7 +143,7 @@ export function HAProxyStatusCard({
             </div>
             <div className="text-2xl font-bold">{status.totalRoutesCount || 0}</div>
             <div className="text-xs text-muted-foreground">
-              {status.deploymentConfigsWithHostnames || 0} deployments with hostnames
+              Active routes
             </div>
           </div>
         </div>
@@ -195,17 +189,15 @@ export function HAProxyStatusCard({
         )}
 
         {/* Remediate button */}
-        {status.needsRemediation && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={onRemediateClick}
-          >
-            <IconRefresh className="h-4 w-4 mr-2" />
-            Remediate HAProxy
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onRemediateClick}
+        >
+          <IconRefresh className="h-4 w-4 mr-2" />
+          Remediate HAProxy
+        </Button>
       </CardContent>
     </Card>
   );

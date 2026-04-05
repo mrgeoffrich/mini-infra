@@ -124,10 +124,7 @@ import postgresRestoreRoutes from "./routes/postgres-restore";
 import postgresProgressRoutes from "./routes/postgres-progress";
 import userPreferencesRoutes from "./routes/user-preferences";
 import systemSettingsRoutes from "./routes/system-settings";
-import deploymentInfrastructureRoutes from "./routes/deployment-infrastructure";
-import deploymentsRoutes from "./routes/deployments";
 import environmentsRoutes from "./routes/environments";
-import deploymentDnsRoutes from "./routes/deployment-dns";
 import haproxyFrontendsRoutes from "./routes/haproxy-frontends";
 import manualHaproxyFrontendsRoutes from "./routes/manual-haproxy-frontends";
 import selfBackupSettingsRoutes from "./routes/settings-self-backup";
@@ -184,11 +181,7 @@ const routes = [
   { path: "/api/postgres", router: postgresRestoreRoutes, name: "postgresRestoreRoutes" },
   { path: "/api/postgres/progress", router: postgresProgressRoutes, name: "postgresProgressRoutes" },
   { path: "/api/user", router: userPreferencesRoutes, name: "userPreferencesRoutes" },
-  { path: "/api/deployment-infrastructure", router: deploymentInfrastructureRoutes, name: "deploymentInfrastructureRoutes" },
-  { path: "/api/deployments", router: deploymentsRoutes, name: "deploymentsRoutes" },
-  { path: "/api/deployments", router: deploymentDnsRoutes, name: "deploymentDnsRoutes" },
-  { path: "/api/deployments", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (deployment)" },
-  { path: "/api/haproxy/frontends", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes (generic)" },
+  { path: "/api/haproxy/frontends", router: haproxyFrontendsRoutes, name: "haproxyFrontendsRoutes" },
   { path: "/api/haproxy/manual-frontends", router: manualHaproxyFrontendsRoutes, name: "manualHaproxyFrontendsRoutes" },
   { path: "/api/haproxy/backends", router: haproxyBackendsRoutes, name: "haproxyBackendsRoutes" },
   { path: "/api/environments", router: environmentsRoutes, name: "environmentsRoutes" },

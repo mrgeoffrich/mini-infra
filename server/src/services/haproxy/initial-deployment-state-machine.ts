@@ -1,6 +1,5 @@
 import { assign, setup } from 'xstate';
-import { DeploymentConfig } from '@mini-infra/types';
-import { DeployApplicationContainers } from './actions/deploy-application-containers';
+import { DeployApplicationContainers} from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
 import { PerformHealthChecks } from './actions/perform-health-checks';
@@ -34,7 +33,6 @@ interface InitialDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
-    deploymentConfigId: string;
     applicationName: string;
     dockerImage: string;
 
@@ -68,7 +66,7 @@ interface InitialDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: DeploymentConfig;
+    config?: Record<string, any>;
 
     // Source-agnostic configuration (used by actions instead of DB lookups)
     // When set, actions read from these fields directly.
@@ -293,7 +291,6 @@ export const initialDeploymentMachine = setup({
         // Use input values if provided, otherwise use defaults
         deploymentId: deploymentInput?.deploymentId || "",
         configurationId: deploymentInput?.configurationId || "",
-        deploymentConfigId: deploymentInput?.deploymentConfigId || deploymentInput?.configurationId || "",
         applicationName: deploymentInput?.applicationName || "",
         dockerImage: deploymentInput?.dockerImage || "",
 

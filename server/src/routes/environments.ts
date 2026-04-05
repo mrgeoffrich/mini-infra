@@ -195,14 +195,10 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
   try {
     const id = String(req.params.id);
 
-    const [stacks, deploymentConfigs, haproxyFrontends, haproxyBackends, stackTemplates] = await Promise.all([
+    const [stacks, haproxyFrontends, haproxyBackends] = await Promise.all([
       prisma.stack.findMany({
         where: { environmentId: id, status: { notIn: ['removed', 'undeployed'] } },
         select: { id: true, name: true },
-      }),
-      prisma.deploymentConfiguration.findMany({
-        where: { environmentId: id },
-        select: { id: true, applicationName: true },
       }),
       prisma.hAProxyFrontend.findMany({
         where: { environmentId: id },
@@ -212,16 +208,12 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
         where: { environmentId: id },
         select: { id: true, name: true },
       }),
-      // Stack templates are just config — don't block deletion
-      Promise.resolve([] as { id: string; name: string }[]),
     ]);
 
     const dependencies = {
       stacks: stacks.map(s => ({ id: s.id, name: s.name })),
-      deploymentConfigurations: deploymentConfigs.map(d => ({ id: d.id, name: d.applicationName })),
       haproxyFrontends: haproxyFrontends.map(f => ({ id: f.id, name: f.hostname || f.frontendName })),
       haproxyBackends: haproxyBackends.map(b => ({ id: b.id, name: b.name })),
-      stackTemplates: stackTemplates.map(t => ({ id: t.id, name: t.name })),
     };
 
     const canDelete = Object.values(dependencies).every(arr => arr.length === 0);
@@ -244,21 +236,6 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
 
     // Parse boolean query parameters
     const shouldDeleteNetworks = deleteNetworks === 'true';
-
-    // Check if environment has associated deployment configurations
-    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
-      where: { environmentId: id },
-      select: { id: true, applicationName: true }
-    });
-
-    if (deploymentConfigs.length > 0) {
-      const appNames = deploymentConfigs.map(config => config.applicationName).join(', ');
-      return res.status(400).json({
-        error: 'Environment has associated deployments',
-        message: `Cannot delete environment with existing deployment configurations. Please delete the following deployment configurations first: ${appNames}`,
-        deploymentConfigurations: deploymentConfigs
-      });
-    }
 
     const success = await environmentManager.deleteEnvironment(id, {
       deleteNetworks: shouldDeleteNetworks,
@@ -457,25 +434,6 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
     const sharedFrontends = frontends.filter(f => f.isSharedFrontend);
     const manualFrontends = frontends.filter(f => !f.isSharedFrontend);
 
-    // Get deployment configs with hostnames
-    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
-      where: {
-        environmentId: id,
-        isActive: true,
-        hostname: { not: null }
-      },
-      select: {
-        id: true,
-        applicationName: true,
-        hostname: true,
-        enableSsl: true
-      }
-    });
-
-    // Determine if remediation is recommended
-    const needsRemediation =
-      deploymentConfigs.length > 0 && sharedFrontends.length === 0;
-
     res.json({
       success: true,
       data: {
@@ -483,8 +441,6 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
         sharedFrontendsCount: sharedFrontends.length,
         manualFrontendsCount: manualFrontends.length,
         totalRoutesCount: sharedFrontends.reduce((acc, f) => acc + (f.routes?.length || 0), 0),
-        deploymentConfigsWithHostnames: deploymentConfigs.length,
-        needsRemediation,
         frontends: frontends.map(f => ({
           id: f.id,
           frontendName: f.frontendName,

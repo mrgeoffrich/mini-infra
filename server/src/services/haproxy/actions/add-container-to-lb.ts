@@ -1,6 +1,5 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
-import { HealthCheckConfig } from '@mini-infra/types';
 import prisma from '../../../lib/prisma';
 
 const logger = loadbalancerLogger();
@@ -40,9 +39,7 @@ export class AddContainerToLB {
             if (!context.containerPort) {
                 throw new Error('Container port is required for server configuration');
             }
-            // Health check configuration - prefer source-agnostic context fields,
-            // fall back to config.healthCheck for legacy callers
-            if (!context.healthCheckEndpoint && !context.config?.healthCheck) {
+            if (!context.healthCheckEndpoint) {
                 logger.info({
                     deploymentId: context.deploymentId,
                 }, 'No explicit health check config, using defaults');
@@ -90,16 +87,10 @@ export class AddContainerToLB {
                 }, 'HAProxy backend already exists, skipping creation');
             }
 
-            // Resolve health check configuration - prefer source-agnostic context fields
-            const healthCheckEndpoint = context.healthCheckEndpoint
-                ?? context.config?.healthCheck?.endpoint
-                ?? '/health';
-            const healthCheckInterval = context.healthCheckInterval
-                ?? context.config?.healthCheck?.interval
-                ?? 2000;
-            const healthCheckRetries = context.healthCheckRetries
-                ?? context.config?.healthCheck?.retries
-                ?? 2;
+            // Resolve health check configuration from context fields
+            const healthCheckEndpoint = context.healthCheckEndpoint ?? '/health';
+            const healthCheckInterval = context.healthCheckInterval ?? 2000;
+            const healthCheckRetries = context.healthCheckRetries ?? 2;
 
             // Configure server with health check settings
             // Use container name for DNS resolution (preferred) or fall back to IP address
@@ -177,8 +168,7 @@ export class AddContainerToLB {
                             checkTimeout: backendConfig.check_timeout ?? null,
                             connectTimeout: backendConfig.connect_timeout ?? null,
                             serverTimeout: backendConfig.server_timeout ?? null,
-                            sourceType: 'deployment',
-                            deploymentConfigId: context.deploymentConfigId ?? null,
+                            sourceType: context.sourceType ?? 'stack',
                             status: 'active',
                         },
                     });
@@ -203,7 +193,6 @@ export class AddContainerToLB {
                             maintenance: serverConfig.maintenance === 'enabled',
                             containerId: context.containerId ?? null,
                             containerName: context.containerName ?? null,
-                            deploymentId: context.deploymentId ?? null,
                             status: 'active',
                             errorMessage: null,
                         },
@@ -222,7 +211,6 @@ export class AddContainerToLB {
                             maintenance: serverConfig.maintenance === 'enabled',
                             containerId: context.containerId ?? null,
                             containerName: context.containerName ?? null,
-                            deploymentId: context.deploymentId ?? null,
                             status: 'active',
                         },
                     });

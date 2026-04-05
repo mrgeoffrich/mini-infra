@@ -236,129 +236,6 @@ model SelfBackup {
   @@map("self_backups")
 }
 
-// Zero-Downtime Deployment System Models
-
-// DeploymentConfiguration model for managing per-application deployment settings
-model DeploymentConfiguration {
-  id                String   @id @default(cuid())
-  applicationName   String   @unique
-  dockerImage       String
-  dockerTag         String   @default("latest")
-  dockerRegistry    String?
-  containerConfig   Json     // Ports, volumes, env vars
-  healthCheckConfig Json     // Endpoint, validation rules
-  rollbackConfig    Json     // Rollback settings
-  listeningPort     Int?     // Port used for health checks
-  hostname          String?  // Public hostname for Cloudflare routing
-  isActive          Boolean  @default(true)
-  environmentId     String   // Required environment assignment (immutable)
-  environment       Environment @relation(fields: [environmentId], references: [id])
-
-  // TLS/SSL configuration
-  enableSsl         Boolean  @default(false) // Enable SSL/TLS for this deployment
-  tlsCertificateId  String?  // Associated TLS certificate
-  tlsCertificate    TlsCertificate? @relation(fields: [tlsCertificateId], references: [id])
-  certificateStatus String?  // Certificate provisioning status: 'PENDING', 'ACTIVE', 'ERROR'
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  deployments       Deployment[]
-  dnsRecords        DeploymentDNSRecord[]
-  haproxyFrontend   HAProxyFrontend?
-
-  @@index([environmentId])
-  @@index([hostname])
-  @@index([tlsCertificateId])
-  @@map("deployment_configurations")
-}
-
-// Deployment model for tracking individual deployments
-model Deployment {
-  id                String   @id @default(cuid())
-  configurationId   String
-  configuration     DeploymentConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
-  triggerType       String   // 'manual', 'webhook', 'scheduled'
-  triggeredBy       String?  // User ID or API key ID
-  dockerImage       String   // Full image with tag
-  status            String   // 'pending', 'deploying', 'health_checking', etc.
-  currentState      String   // State machine state
-  startedAt         DateTime @default(now())
-  completedAt       DateTime?
-  
-  // Container tracking
-  oldContainerId    String?
-  newContainerId    String?
-  
-  // Health check results
-  healthCheckPassed Boolean  @default(false)
-  healthCheckLogs   Json?
-  
-  // Error tracking
-  errorMessage      String?
-  errorDetails      Json?
-  
-  // Metrics
-  deploymentTime    Int?     // Seconds
-  downtime          Int      @default(0) // Milliseconds
-
-  deploymentSteps   DeploymentStep[]
-  containers        DeploymentContainer[]
-  
-  @@index([configurationId, status])
-  @@index([startedAt])
-  @@map("deployments")
-}
-
-// DeploymentStep model for granular progress tracking
-model DeploymentStep {
-  id              String   @id @default(cuid())
-  deploymentId    String
-  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
-  stepName        String   // 'pull_image', 'create_container', etc.
-  status          String   // 'pending', 'running', 'completed', 'failed'
-  startedAt       DateTime @default(now())
-  completedAt     DateTime?
-  duration        Int?     // Milliseconds
-  output          String?  // Step output/logs
-  errorMessage    String?
-
-  @@index([deploymentId])
-  @@map("deployment_steps")
-}
-
-// DeploymentContainer model for tracking detailed container information per deployment
-model DeploymentContainer {
-  id              String   @id @default(cuid())
-  deploymentId    String
-  deployment      Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
-
-  // Container identification
-  containerId     String   // Docker container ID
-  containerName   String   // Container name
-  containerRole   String   // 'old', 'new', 'blue', 'green'
-
-  // Image information
-  dockerImage     String   // Full image:tag
-  imageId         String?  // Docker image ID (sha256:...)
-
-  // Container configuration at deployment time (sanitized)
-  containerConfig Json     // Container config excluding environment variables (ports, volumes, labels, etc.)
-
-  // Runtime information
-  status          String   // Container status when captured
-  ipAddress       String?  // Container IP address
-  createdAt       DateTime // When container was created
-  startedAt       DateTime? // When container started
-
-  // Deployment metadata
-  capturedAt      DateTime @default(now()) // When this record was created
-
-  @@index([deploymentId])
-  @@index([containerId])
-  @@index([deploymentId, containerRole])
-  @@map("deployment_containers")
-}
 
 // Environment Management Models
 
@@ -376,7 +253,6 @@ model Environment {
 
   // Relations
   networks    EnvironmentNetwork[]
-  deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
   stacks           Stack[]
@@ -424,38 +300,12 @@ model HostService {
   @@map("host_services")
 }
 
-// DeploymentDNSRecord model for tracking DNS records created for deployments
-model DeploymentDNSRecord {
-  id                    String   @id @default(cuid())
-  deploymentConfigId    String
-  deploymentConfig      DeploymentConfiguration @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
-  hostname              String
-  dnsProvider           String   // 'cloudflare', 'external'
-  dnsRecordId           String?  // Provider's record ID (e.g., CloudFlare record ID)
-  ipAddress             String?  // IP address set in DNS
-  zoneId                String?  // CloudFlare zone ID
-  zoneName              String?  // CloudFlare zone name
-  status                String   @default("pending") // 'active', 'pending', 'failed', 'removed'
-  errorMessage          String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([deploymentConfigId])
-  @@index([hostname])
-  @@index([status])
-  @@map("deployment_dns_records")
-}
-
-// HAProxyFrontend model for tracking HAProxy frontends created for deployments or manually
+// HAProxyFrontend model for tracking HAProxy frontends
 model HAProxyFrontend {
   id                    String   @id @default(cuid())
 
-  // Deployment association (optional for manual frontends)
-  deploymentConfigId    String?  @unique
-  deploymentConfig      DeploymentConfiguration? @relation(fields: [deploymentConfigId], references: [id], onDelete: Cascade)
-
   // Frontend type discriminator
-  frontendType          String   @default("deployment") // "deployment" | "manual" | "shared"
+  frontendType          String   @default("shared") // "manual" | "shared"
 
   // Manual frontend fields
   containerName         String?  // Docker container name (for manual frontends)
@@ -491,7 +341,6 @@ model HAProxyFrontend {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  @@index([deploymentConfigId])
   @@index([frontendName])
   @@index([hostname])
   @@index([status])
@@ -515,8 +364,7 @@ model HAProxyRoute {
   priority              Int      @default(0)  // For rule ordering
 
   // Source tracking
-  sourceType            String   // "deployment" | "manual"
-  deploymentConfigId    String?  // For deployment routes
+  sourceType            String   // "manual" | "stack"
   manualFrontendId      String?  // For manual routes (legacy migration)
 
   // SSL per-route (for SNI)
@@ -550,8 +398,7 @@ model HAProxyBackend {
   serverTimeout         Int?     // Server timeout in ms
 
   // Source tracking
-  sourceType            String   // "deployment" | "manual"
-  deploymentConfigId    String?  // For deployment-created backends
+  sourceType            String   // "manual" | "stack"
   manualFrontendId      String?  // For manually-created backends
 
   // Status tracking
@@ -568,7 +415,6 @@ model HAProxyBackend {
   @@index([environmentId])
   @@index([status])
   @@index([sourceType])
-  @@index([deploymentConfigId])
   @@map("haproxy_backends")
 }
 
@@ -594,8 +440,6 @@ model HAProxyServer {
   // Container tracking
   containerId           String?  // Docker container ID
   containerName         String?  // Docker container name
-  deploymentId          String?  // Deployment that created this server
-
   // Status tracking
   status                String   @default("active") // "active" | "draining"
   errorMessage          String?
@@ -821,7 +665,6 @@ model TlsCertificate {
 
   // Relations
   renewalHistory        TlsCertificateRenewal[]
-  deploymentConfigurations DeploymentConfiguration[]
   haproxyFrontends      HAProxyFrontend[]
 
   @@index([primaryDomain])

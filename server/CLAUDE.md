@@ -67,22 +67,6 @@ Key behaviors:
 - **Token refresh** — registered refreshers auto-renew tokens 5 minutes before expiry
 - **Default credential fallback** — if no exact registry match, uses the configured default
 
-## DeploymentOrchestrator (`services/deployment-orchestrator.ts`)
-
-Manages deployment lifecycle via xstate state machines.
-
-| Do this | Not this | Why |
-|---------|----------|-----|
-| Pass `dockerRegistry`, `dockerImage`, `dockerTag` separately | Building full image string yourself | Orchestrator constructs `registry/image:tag` correctly |
-| Call `startDeployment()` once per deployment | Calling it multiple times | Throws if deployment ID is already active |
-| Let orchestrator pick strategy | Hardcoding blue-green or initial | Strategy is determined by existing container state |
-
-Key behaviors:
-- **Strategy auto-detection** — if matching containers already running → blue-green, otherwise → initial
-- **State machines** — `initialDeploymentMachine`, `blueGreenDeploymentMachine`, `removalDeploymentMachine` manage all transitions
-- **Socket.IO progress** — emits step-by-step events for the frontend task tracker
-- **Must call `initialize()` before use**
-
 ## ConfigurationService (`services/configuration-base.ts`)
 
 Abstract base class for all settings services. All settings are stored in the database with audit tracking.
@@ -234,10 +218,6 @@ Database-backed progress tracking for **backup and restore operations only**. Do
 - Auto-cleans old records: 7 days for completed, 30 days for failed
 - Repairs stale "running" operations stuck > 1 hour
 
-### DeploymentOrchestrator State Machines
-
-Deployments use xstate state machines that emit `DEPLOYMENT_STATUS` / `DEPLOYMENT_STEP` / `DEPLOYMENT_COMPLETED`. Don't emit these events manually — let the orchestrator's state transitions handle it.
-
 ### Adding a New Tracked Operation
 
 1. Add event constants to `lib/types/socket-events.ts` (channel + started/step/completed events)
@@ -249,7 +229,7 @@ Deployments use xstate state machines that emit `DEPLOYMENT_STATUS` / `DEPLOYMEN
 ## General Rules
 
 1. **Always use service wrappers over raw SDK calls** — they add caching, auth, retries, circuit breakers, error mapping, and audit logging
-2. **Initialize before use** — `DockerService`, `DeploymentOrchestrator`, and `DockerExecutorService` all require `initialize()`
+2. **Initialize before use** — `DockerService` and `DockerExecutorService` require `initialize()`
 3. **Check connection status** — call `isConnected()` before Docker operations
 4. **Pass `userId` for all mutations** — configuration changes, credential changes, service operations
 5. **Use constants for Socket.IO** — `Channel.*` and `ServerEvent.*` from `lib/types/socket-events.ts`, never raw strings

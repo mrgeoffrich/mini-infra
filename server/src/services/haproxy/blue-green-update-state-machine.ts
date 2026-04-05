@@ -1,6 +1,5 @@
 import { assign, setup } from 'xstate';
 import { deploymentLogger } from '../../lib/logger-factory';
-import { ContainerLifecycleManager } from '../container';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -36,7 +35,6 @@ interface BlueGreenUpdateContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
-    deploymentConfigId: string;
     applicationName: string;
     dockerImage: string;
 
@@ -536,7 +534,6 @@ export const blueGreenUpdateMachine = setup({
         // Use input data if provided, otherwise use defaults
         deploymentId: input?.deploymentId || "",
         configurationId: input?.configurationId || "",
-        deploymentConfigId: input?.deploymentConfigId || input?.configurationId || "",
         applicationName: input?.applicationName || "",
         dockerImage: input?.dockerImage || "",
 
@@ -615,38 +612,6 @@ export const blueGreenUpdateMachine = setup({
                         oldContainerId: context.oldContainerId?.slice(0, 12)
                     }, 'State machine: Entering deployingGreenApp state');
 
-                    // Capture existing container (blue/old) for deployment tracking
-                    if (context.oldContainerId) {
-                        // Handle container capture asynchronously without blocking state machine progression
-                        Promise.resolve().then(async () => {
-                            try {
-                                const containerManager = new ContainerLifecycleManager();
-                                await containerManager.captureContainerForDeployment({
-                                    deploymentId: context.deploymentId,
-                                    containerId: context.oldContainerId!,
-                                    containerRole: 'blue'
-                                });
-
-                                logger.info({
-                                    deploymentId: context.deploymentId,
-                                    containerId: context.oldContainerId?.slice(0, 12)
-                                }, 'Existing container (blue) captured for deployment tracking');
-                            } catch (error: any) {
-                                logger.warn({
-                                    deploymentId: context.deploymentId,
-                                    containerId: context.oldContainerId?.slice(0, 12),
-                                    error: error.message
-                                }, 'Failed to capture existing container (blue) for deployment tracking');
-                            }
-                        }).catch((error: any) => {
-                            // Additional catch for any Promise.resolve().then() errors
-                            logger.error({
-                                deploymentId: context.deploymentId,
-                                containerId: context.oldContainerId?.slice(0, 12),
-                                error: error.message
-                            }, 'Unexpected error in container capture promise handling');
-                        });
-                    }
                 },
                 'deployGreenApplicationContainers'
             ],

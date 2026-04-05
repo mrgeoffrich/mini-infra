@@ -1,6 +1,5 @@
 import { assign, setup } from 'xstate';
-import { DeploymentConfig } from '@mini-infra/types';
-import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
+import { RemoveContainerFromLB} from './actions/remove-container-from-lb';
 import { RemoveFrontend } from './actions/remove-frontend';
 import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
@@ -22,7 +21,6 @@ interface RemovalDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
-    deploymentConfigId: string;
     applicationName: string;
 
     // Environment context
@@ -47,7 +45,7 @@ interface RemovalDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: DeploymentConfig;
+    config?: Record<string, any>;
 }
 
 type RemovalDeploymentEvent =
@@ -197,7 +195,6 @@ export const removalDeploymentMachine = setup({
             // Use input values if provided, otherwise use defaults
             deploymentId: removalInput?.deploymentId || "",
             configurationId: removalInput?.configurationId || "",
-            deploymentConfigId: removalInput?.deploymentConfigId || removalInput?.configurationId || "",
             applicationName: removalInput?.applicationName || "",
 
             // Environment context

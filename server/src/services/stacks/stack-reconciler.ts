@@ -1333,7 +1333,7 @@ export class StackReconciler {
     return {
       deploymentId: `stack-${stackId}-${action.serviceName}-${Date.now()}`,
       configurationId: stackId,
-      deploymentConfigId: '',
+      sourceType: 'stack',
       applicationName: `stk-${stack.name}-${action.serviceName}`,
       dockerImage,
 

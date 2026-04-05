@@ -36,12 +36,11 @@ function serializeFrontend(
 
   return {
     id: frontend.id,
-    deploymentConfigId: frontend.deploymentConfigId,
-    frontendType: frontend.frontendType || 'deployment',
+    frontendType: frontend.frontendType || 'shared',
     containerName: frontend.containerName,
     containerId: frontend.containerId,
     containerPort: frontend.containerPort,
-    environmentId: frontend.environmentId ?? frontend.deploymentConfig?.environmentId ?? null,
+    environmentId: frontend.environmentId ?? null,
     frontendName: frontend.frontendName,
     backendName: frontend.backendName,
     hostname: frontend.hostname,
@@ -95,12 +94,6 @@ router.get(
       const frontends = await prisma.hAProxyFrontend.findMany({
         where,
         include: {
-          deploymentConfig: {
-            select: {
-              applicationName: true,
-              environmentId: true,
-            },
-          },
           routes: {
             select: {
               hostname: true,
@@ -439,12 +432,6 @@ router.get(
       const frontend = await prisma.hAProxyFrontend.findUnique({
         where: { frontendName },
         include: {
-          deploymentConfig: {
-            select: {
-              applicationName: true,
-              environmentId: true,
-            },
-          },
           _count: {
             select: {
               routes: true,
@@ -486,142 +473,6 @@ router.get(
       res.status(500).json({
         success: false,
         error: "Failed to fetch HAProxy frontend",
-        message: error.message,
-      });
-    }
-  }
-);
-
-/**
- * GET /api/deployments/configs/:configId/frontend
- * Get HAProxy frontend for a specific deployment configuration
- */
-router.get(
-  "/configs/:configId/frontend",
-  requirePermission('haproxy:read') as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const configId = String(req.params.configId);
-
-      // Validate CUID format
-      if (!z.string().cuid().safeParse(configId).success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid deployment configuration ID format",
-        });
-      }
-
-      // Check if deployment config exists
-      const config = await prisma.deploymentConfiguration.findUnique({
-        where: { id: configId },
-      });
-
-      if (!config) {
-        return res.status(404).json({
-          success: false,
-          error: "Deployment configuration not found",
-        });
-      }
-
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { deploymentConfigId: configId },
-      });
-
-      // Return empty data if no frontend exists (not an error, just not configured yet)
-      const response = {
-        success: true,
-        data: frontend ? serializeFrontend(frontend) : null,
-      };
-
-      res.json(response);
-    } catch (error: any) {
-      logger.error(
-        { error: error.message, configId: req.params.configId },
-        "Failed to fetch HAProxy frontend for deployment"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch HAProxy frontend",
-        message: error.message,
-      });
-    }
-  }
-);
-
-/**
- * POST /api/deployments/configs/:configId/frontend/sync
- * Manually sync HAProxy frontend for a deployment configuration
- */
-router.post(
-  "/configs/:configId/frontend/sync",
-  requirePermission('haproxy:write') as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const configId = String(req.params.configId);
-
-      // Validate CUID format
-      if (!z.string().cuid().safeParse(configId).success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid deployment configuration ID format",
-        });
-      }
-
-      // Check if deployment config exists
-      const config = await prisma.deploymentConfiguration.findUnique({
-        where: { id: configId },
-        include: {
-          environment: true,
-        },
-      });
-
-      if (!config) {
-        return res.status(404).json({
-          success: false,
-          error: "Deployment configuration not found",
-        });
-      }
-
-      // Check if hostname is configured
-      if (!config.hostname) {
-        return res.status(400).json({
-          success: false,
-          error: "Deployment configuration does not have a hostname configured",
-        });
-      }
-
-      // Get existing frontend
-      const existingFrontend = await prisma.hAProxyFrontend.findUnique({
-        where: { deploymentConfigId: configId },
-      });
-
-      // For now, we'll just return a message indicating the sync would happen
-      // The actual frontend sync logic will be implemented in the haproxy-frontend-manager service
-      const response: SyncFrontendResponse = {
-        success: true,
-        message: `Frontend sync initiated for ${config.hostname}. Actual sync implementation is handled by deployment state machines.`,
-        data: existingFrontend ? serializeFrontend(existingFrontend) : undefined,
-      };
-
-      logger.info(
-        {
-          configId,
-          hostname: config.hostname,
-          frontendName: existingFrontend?.frontendName,
-        },
-        "Frontend sync requested for deployment configuration"
-      );
-
-      res.json(response);
-    } catch (error: any) {
-      logger.error(
-        { error: error.message, configId: req.params.configId },
-        "Failed to sync frontend for deployment"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to sync frontend",
         message: error.message,
       });
     }
@@ -739,7 +590,6 @@ router.get(
             aclName: route.aclName,
             backendName: route.backendName,
             sourceType: route.sourceType,
-            deploymentConfigId: route.deploymentConfigId,
             manualFrontendId: route.manualFrontendId,
             useSSL: route.useSSL,
             tlsCertificateId: route.tlsCertificateId,
@@ -1001,7 +851,6 @@ router.patch(
           aclName: updatedRoute.aclName,
           backendName: updatedRoute.backendName,
           sourceType: updatedRoute.sourceType,
-          deploymentConfigId: updatedRoute.deploymentConfigId,
           manualFrontendId: updatedRoute.manualFrontendId,
           useSSL: updatedRoute.useSSL,
           tlsCertificateId: updatedRoute.tlsCertificateId,

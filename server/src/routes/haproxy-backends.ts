@@ -12,6 +12,7 @@ import {
   HAProxyServerResponse,
   ForceDeleteBackendResponse,
   ForceDeleteServerResponse,
+  BackendSourceType,
 } from "@mini-infra/types";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
@@ -34,8 +35,7 @@ function serializeBackend(backend: any): HAProxyBackendInfo {
     checkTimeout: backend.checkTimeout,
     connectTimeout: backend.connectTimeout,
     serverTimeout: backend.serverTimeout,
-    sourceType: backend.sourceType as "deployment" | "manual",
-    deploymentConfigId: backend.deploymentConfigId,
+    sourceType: backend.sourceType as BackendSourceType,
     manualFrontendId: backend.manualFrontendId,
     status: backend.status as "active" | "failed",
     errorMessage: backend.errorMessage,
@@ -64,7 +64,6 @@ function serializeServer(server: any): HAProxyServerInfo {
     maintenance: server.maintenance,
     containerId: server.containerId,
     containerName: server.containerName,
-    deploymentId: server.deploymentId,
     status: server.status as "active" | "draining",
     errorMessage: server.errorMessage,
     createdAt: server.createdAt.toISOString(),

@@ -1047,7 +1047,6 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const removalContext = {
           deploymentId: stackId,
           configurationId: stackId,
-          deploymentConfigId: stackId,
           applicationName: fullStack.name,
           environmentId,
           environmentName,

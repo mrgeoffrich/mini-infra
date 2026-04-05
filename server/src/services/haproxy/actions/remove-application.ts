@@ -1,5 +1,4 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
-import prisma from '../../../lib/prisma';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
 
@@ -165,14 +164,6 @@ export class RemoveApplication {
                 }, 'Failed to clean up some application resources, but containers were removed successfully');
             }
 
-            // Mark containers as removed in the deployment_containers table
-            const successfulContainerIds = successfulRemovals
-                .filter((r): r is { containerId: string; success: true } => 'containerId' in r)
-                .map(r => r.containerId);
-            if (successfulContainerIds.length > 0) {
-                await this.markContainersRemoved(context.deploymentId, successfulContainerIds);
-            }
-
             logger.info({
                 deploymentId: context.deploymentId,
                 applicationName: context.applicationName,
@@ -230,32 +221,4 @@ export class RemoveApplication {
         }
     }
 
-    /**
-     * Mark containers as removed in the deployment_containers table
-     */
-    private async markContainersRemoved(deploymentId: string | undefined, containerIds: string[]): Promise<void> {
-        try {
-            if (!deploymentId || containerIds.length === 0) return;
-
-            await prisma.deploymentContainer.updateMany({
-                where: {
-                    containerId: { in: containerIds },
-                },
-                data: {
-                    status: 'removed',
-                },
-            });
-
-            logger.info({
-                deploymentId,
-                containerIds: containerIds.map(id => id.slice(0, 12)),
-            }, 'Deployment containers marked as removed in database');
-        } catch (dbError) {
-            logger.warn({
-                deploymentId,
-                containerIds: containerIds.map(id => id.slice(0, 12)),
-                error: dbError instanceof Error ? dbError.message : 'Unknown error',
-            }, 'Failed to mark deployment containers as removed in database (non-critical)');
-        }
-    }
 }

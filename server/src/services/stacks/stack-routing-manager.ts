@@ -96,7 +96,6 @@ export class StackRoutingManager {
         connectTimeout: ctx.routing.backendOptions?.connectTimeout ?? null,
         serverTimeout: ctx.routing.backendOptions?.serverTimeout ?? null,
         sourceType: 'stack',
-        deploymentConfigId: null,
         status: 'active',
       },
     });

@@ -272,11 +272,7 @@ export async function getEnvironmentCertificateIds(
   environmentId: string,
   prisma: PrismaClient
 ): Promise<string[]> {
-  const [deploymentCerts, frontendCerts, routeCerts] = await Promise.all([
-    prisma.deploymentConfiguration.findMany({
-      where: { environmentId, isActive: true, tlsCertificateId: { not: null } },
-      select: { tlsCertificateId: true },
-    }),
+  const [frontendCerts, routeCerts] = await Promise.all([
     prisma.hAProxyFrontend.findMany({
       where: { environmentId, status: { not: 'removed' }, tlsCertificateId: { not: null } },
       select: { tlsCertificateId: true },
@@ -292,7 +288,7 @@ export async function getEnvironmentCertificateIds(
   ]);
 
   const allCertIds = new Set<string>();
-  for (const r of [...deploymentCerts, ...frontendCerts, ...routeCerts]) {
+  for (const r of [...frontendCerts, ...routeCerts]) {
     if (r.tlsCertificateId) allCertIds.add(r.tlsCertificateId);
   }
   return [...allCertIds];

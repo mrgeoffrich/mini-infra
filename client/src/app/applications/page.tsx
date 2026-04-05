@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   IconApps,
   IconPlus,
-  IconFileImport,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
@@ -52,7 +51,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ImportDeploymentDialog } from "./import-deployment-dialog";
 import { UpdateApplicationDialog } from "./update-application-dialog";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
@@ -66,7 +64,6 @@ export default function ApplicationsPage() {
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
   const [updateTarget, setUpdateTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
@@ -231,10 +228,6 @@ export default function ApplicationsPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-              <IconFileImport className="h-4 w-4 mr-2" />
-              Import Deployment
-            </Button>
             <Button onClick={() => navigate("/applications/new")}>
               <IconPlus className="h-4 w-4 mr-2" />
               Add Application
@@ -251,14 +244,9 @@ export default function ApplicationsPage() {
               <IconPackage className="h-12 w-12 text-muted-foreground/50 mb-4" />
               <h3 className="text-lg font-medium mb-1">No applications yet</h3>
               <p className="text-sm text-muted-foreground mb-6 text-center max-w-md">
-                Create a new application template or import an existing deployment
-                configuration to get started.
+                Create a new application template to get started.
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                  <IconFileImport className="h-4 w-4 mr-2" />
-                  Import Deployment
-                </Button>
                 <Button onClick={() => navigate("/applications/new")}>
                   <IconPlus className="h-4 w-4 mr-2" />
                   Add Application
@@ -422,12 +410,6 @@ export default function ApplicationsPage() {
         }}
         application={updateTarget}
         stack={updateTarget ? (stacksByTemplateId.get(updateTarget.id)?.[0] ?? null) : null}
-      />
-
-      {/* Import deployment dialog */}
-      <ImportDeploymentDialog
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
       />
 
       {/* Delete confirmation dialog */}

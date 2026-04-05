@@ -9,7 +9,6 @@ export type PermissionScope = string;
 export type PermissionDomain =
   | "containers"
   | "docker"
-  | "deployments"
   | "environments"
   | "haproxy"
   | "postgres"
@@ -120,29 +119,6 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         action: "write",
         label: "Manage Docker Resources",
         description: "Remove networks and volumes",
-      },
-    ],
-  },
-  {
-    domain: "deployments",
-    label: "Deployments",
-    description: "Zero-downtime deployment management",
-    permissions: [
-      {
-        scope: "deployments:read",
-        domain: "deployments",
-        action: "read",
-        label: "View Deployments",
-        description:
-          "View deployment configs, history, DNS, infrastructure status",
-      },
-      {
-        scope: "deployments:write",
-        domain: "deployments",
-        action: "write",
-        label: "Manage Deployments",
-        description:
-          "Create, update, delete configs, trigger deployments, manage DNS and infrastructure",
       },
     ],
   },
@@ -475,7 +451,6 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "containers:read",
       "containers:write",
       "docker:read",
-      "deployments:read",
       "environments:read",
       "haproxy:read",
       "postgres:read",
@@ -491,15 +466,13 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
     ],
   },
   {
-    id: "deployment-manager",
-    name: "Deployment Manager",
-    description: "Deploy and manage applications with full deployment access",
+    id: "stack-manager",
+    name: "Stack Manager",
+    description: "Deploy and manage stacks with full access",
     permissions: [
       "containers:read",
       "containers:write",
       "docker:read",
-      "deployments:read",
-      "deployments:write",
       "environments:read",
       "environments:write",
       "haproxy:read",
