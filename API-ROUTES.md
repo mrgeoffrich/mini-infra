@@ -40,7 +40,6 @@
 | GET | `/api/containers/:id/env` | Get container env vars |
 | GET | `/api/containers/stats/cache` | Cache statistics |
 | POST | `/api/containers/cache/flush` | Flush cache |
-| GET | `/api/containers/by-deployment/:deploymentId` | Containers for deployment |
 | GET | `/api/containers/:id/logs/stream` | Stream logs (SSE) |
 | POST | `/api/containers/:id/:action` | Container action (start/stop/restart/remove) |
 
@@ -315,56 +314,19 @@
 |--------|------|-------------|
 | POST | `/api/postgres-server/workflows/create-app-database` | Create app database workflow |
 
-## Deployments (`/api/deployments`)
+## HAProxy Frontends (`/api/haproxy/frontends`)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/deployments/configs` | List deployment configs |
-| POST | `/api/deployments/configs` | Create deployment config |
-| GET | `/api/deployments/configs/:id` | Get deployment config |
-| PUT | `/api/deployments/configs/:id` | Update deployment config |
-| DELETE | `/api/deployments/configs/:id` | Delete deployment config |
-| POST | `/api/deployments/trigger` | Trigger deployment |
-| GET | `/api/deployments/:id/status` | Deployment status |
-| POST | `/api/deployments/:id/rollback` | Rollback deployment |
-| GET | `/api/deployments/history` | Deployment history |
-| POST | `/api/deployments/configs/validate-hostname` | Validate hostname |
-| GET | `/api/deployments/:id/containers` | Deployment containers |
-| GET | `/api/deployments/removal/:removalId/status` | Removal status |
-| DELETE | `/api/deployments/configs/:id/remove-containers` | Remove deployment containers |
-
-## Deployment DNS (`/api/deployments`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/deployments/configs/:configId/dns` | Get DNS config |
-| POST | `/api/deployments/configs/:configId/dns/sync` | Sync DNS |
-| DELETE | `/api/deployments/configs/:configId/dns` | Delete DNS config |
-| GET | `/api/deployments/dns` | List all DNS configs |
-
-## Deployment Infrastructure (`/api/deployment-infrastructure`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/deployment-infrastructure/deploy` | Deploy infrastructure |
-| GET | `/api/deployment-infrastructure/status` | Infrastructure status |
-| DELETE | `/api/deployment-infrastructure/cleanup` | Cleanup resources |
-
-## HAProxy Frontends (`/api/deployments` and `/api/haproxy/frontends`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `.../` | List frontends |
-| POST | `.../shared` | Create shared frontend |
-| POST | `.../:frontendName/ssl` | Configure SSL |
-| GET | `.../:frontendName` | Get frontend |
-| GET | `.../configs/:configId/frontend` | Get frontend for config |
-| POST | `.../configs/:configId/frontend/sync` | Sync frontend for config |
-| GET | `.../:frontendName/routes` | List routes |
-| POST | `.../:frontendName/routes` | Add route |
-| PATCH | `.../:frontendName/routes/:routeId` | Update route |
-| DELETE | `.../:frontendName/routes/:routeId` | Delete route |
-| DELETE | `.../:frontendName` | Delete frontend |
+| GET | `/api/haproxy/frontends/` | List frontends |
+| POST | `/api/haproxy/frontends/shared` | Create shared frontend |
+| POST | `/api/haproxy/frontends/:frontendName/ssl` | Configure SSL |
+| GET | `/api/haproxy/frontends/:frontendName` | Get frontend |
+| GET | `/api/haproxy/frontends/:frontendName/routes` | List routes |
+| POST | `/api/haproxy/frontends/:frontendName/routes` | Add route |
+| PATCH | `/api/haproxy/frontends/:frontendName/routes/:routeId` | Update route |
+| DELETE | `/api/haproxy/frontends/:frontendName/routes/:routeId` | Delete route |
+| DELETE | `/api/haproxy/frontends/:frontendName` | Delete frontend |
 
 ## HAProxy Backends (`/api/haproxy/backends`)
 
@@ -397,8 +359,8 @@
 | POST | `/api/environments/` | Create environment |
 | GET | `/api/environments/:id` | Get environment |
 | PUT | `/api/environments/:id` | Update environment |
+| GET | `/api/environments/:id/delete-check` | Pre-flight check if environment can be deleted |
 | DELETE | `/api/environments/:id` | Delete environment |
-| GET | `/api/environments/:id/volumes` | List volumes |
 | POST | `/api/environments/:id/remediate-haproxy` | Remediate HAProxy |
 | GET | `/api/environments/:id/haproxy-status` | HAProxy status |
 | GET | `/api/environments/:id/remediation-preview` | Remediation preview |
@@ -429,7 +391,6 @@
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/stack-templates/` | List templates |
-| POST | `/api/stack-templates/import-deployment/:configId` | Import deployment config as template |
 | GET | `/api/stack-templates/:templateId` | Get template |
 | GET | `/api/stack-templates/:templateId/versions` | List versions |
 | GET | `/api/stack-templates/:templateId/versions/:versionId` | Get version |
@@ -577,3 +538,9 @@
 | POST | `/api/permission-presets/` | Create permission preset |
 | PATCH | `/api/permission-presets/:id` | Update permission preset |
 | DELETE | `/api/permission-presets/:id` | Delete permission preset |
+
+## API Routes (`/api/routes`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/routes` | List all registered API routes |
