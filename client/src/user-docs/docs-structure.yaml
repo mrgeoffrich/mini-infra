@@ -1,120 +1,430 @@
 # Documentation Structure
 #
 # Single source of truth for the docs menu, sidebar ordering,
-# and category metadata. Loaded at runtime by the frontend and
-# available to the agent for documentation searches.
+# category metadata, and per-article topic annotations.
+#
+# Loaded at runtime by the frontend and available to the agent
+# for documentation searches.
 #
 # - Category order matches array order below.
 # - Article order within a category matches its array position.
 # - Slugs correspond to the folder/file path under user-docs/
 #   e.g. "overview" in "getting-started" → user-docs/getting-started/overview.md
+# - Topics list the specific concepts, features, and intents each
+#   article covers — used for search ranking and agent lookups.
 
 sections:
   - slug: getting-started
     label: Getting Started
     description: Introduction and setup guides
     articles:
-      - overview
-      - navigating-the-dashboard
-      - running-with-docker
+      - slug: overview
+        topics:
+          - What Mini Infra does and its core features
+          - Dashboard overview — container and deployment summaries
+          - Prerequisites — Docker, Azure, Cloudflare, GitHub connections
+          - Recently died containers alert
+          - Single Docker host management scope
+      - slug: navigating-the-dashboard
+        topics:
+          - Sidebar navigation sections and page layout
+          - Dashboard cards — container counts, deployment counts, recent deployments
+          - Contextual help buttons on pages
+          - Status badge color meanings — green, yellow, blue, red, gray, orange
+          - Breadcrumbs and back navigation
+      - slug: running-with-docker
+        topics:
+          - Docker Compose setup for Mini Infra
+          - Required environment variables — SESSION_SECRET, API_KEY_SECRET, Google OAuth
+          - Volume mounts — docker socket, data, logs
+          - Health check endpoint /health
+          - Graceful shutdown behavior
+          - First-time setup steps after installation
 
   - slug: applications
     label: Applications
     description: Application and stack management
     articles:
-      - application-management
-      - host-stacks
-      - stack-templates
+      - slug: application-management
+        topics:
+          - Creating application templates — name, image, ports, env vars, volumes
+          - Service types — Stateful vs StatelessWeb
+          - Deploying, updating, and stopping applications
+          - Zero-downtime updates for StatelessWeb services
+          - Routing configuration — hostname, listening port, SSL, Cloudflare tunnel
+          - Application cards with status indicators
+          - Health check configuration
+          - Port auto-detection from Docker images
+      - slug: host-stacks
+        topics:
+          - Host-level infrastructure stacks outside environments
+          - Plan and apply workflow — review changes before deploying
+          - Stack status values — Synced, Drifted, Pending, Error, Undeployed
+          - Service diff view — image changes, environment variable changes
+          - Apply all vs apply selected services
+          - Monitoring stack — Telegraf, Prometheus, Loki, Alloy
+          - Config files and init commands for services
+          - Service dependencies and deployment order
+      - slug: stack-templates
+        topics:
+          - Reusable stack blueprints for multi-service deployments
+          - Template editor — services, parameters, networks, volumes
+          - Draft and publish versioning workflow
+          - Template scopes — Host vs Environment
+          - System vs User template sources
 
   - slug: containers
     label: Containers
     description: Docker container management and inspection
     articles:
-      - viewing-containers
-      - managing-containers
-      - volume-management
-      - container-logs
-      - container-actions
-      - troubleshooting
+      - slug: viewing-containers
+        topics:
+          - Container list with real-time refresh every 5 seconds
+          - Container status values — Running, Stopped, Exited, Paused, Restarting
+          - Filtering by name, image, status, deployment
+          - Sorting containers
+          - Container groups — managed Postgres, environments, unmanaged
+          - Networks tab — drivers, scopes, subnets, connected containers
+          - Volumes tab — mount points, size inspection, usage status
+          - Deleting networks and volumes
+      - slug: managing-containers
+        topics:
+          - Container detail page at /containers/:id
+          - Container info fields — image, IP, ports, created, started
+          - Start, stop, restart, delete action buttons
+          - Container volumes with source, destination, read/write mode
+          - Embedded log viewer on detail page
+          - Deployment-managed container warnings
+      - slug: volume-management
+        topics:
+          - Docker volume listing and inspection
+          - Volume disk size inspection
+          - Browsing volume files and directories
+          - Viewing file contents inside volumes
+          - Deleting volumes — in-use restrictions
+      - slug: container-logs
+        topics:
+          - Embedded log viewer on container detail page
+          - Combined stdout and stderr streams
+          - Real-time log streaming
+          - Log viewer limitations — read-only, no search
+      - slug: container-actions
+        topics:
+          - Container lifecycle actions — start, stop, restart, delete
+          - Container state transitions after each action
+          - PostgreSQL container actions — Add and Manage
+          - Linking unmanaged Postgres containers to Mini Infra
+          - Action conflicts with deployment-managed containers
+      - slug: troubleshooting
+        topics:
+          - Configure Docker prompt instead of container list
+          - Container stuck in Restarting state
+          - Delete button disabled — container still running
+          - Exited container with non-zero exit code — recently died
+          - Volume delete disabled — volume in use
+          - Truncated container names — hover tooltip
 
   - slug: environments
     label: Environments
     description: Service and infrastructure grouping
     articles:
-      - environments
+      - slug: environments
+        topics:
+          - Creating and editing environments
+          - Environment types — Production vs Staging
+          - Environment detail page — deployed applications and stacks
+          - Deleting an environment — does not stop running containers
+          - Color-coded environment badges
 
   - slug: postgres-backups
     label: PostgreSQL Backups
     description: Database backup, restore, and scheduling
     articles:
-      - backup-overview
-      - configuring-backups
-      - restoring-backups
-      - database-management
-      - troubleshooting
+      - slug: backup-overview
+        topics:
+          - PostgreSQL backup architecture — pg_dump in Docker containers to Azure
+          - Prerequisites — Azure, Docker images, Docker connection
+          - PostgreSQL Servers and Backups pages
+          - Database health status — Healthy, Unhealthy, Unknown
+          - Backup status — Scheduled, Disabled, Not Configured
+          - Action buttons — manual backup, schedule, restore, edit, delete
+          - Active operations and backup history
+      - slug: configuring-backups
+        topics:
+          - Backup schedule with cron expressions and timezone
+          - Azure Storage container and path prefix for backups
+          - Retention period — automatic deletion of old backups
+          - Backup format — Custom, Plain, TAR
+          - Compression level 0-9
+          - Common cron schedule examples
+          - Self-backup settings for Mini Infra's own SQLite database
+          - Running a manual backup
+      - slug: restoring-backups
+        topics:
+          - Browsing available backups in Azure
+          - Restore options — overwrite existing or create new database
+          - Restore confirmation dialog with warnings
+          - Monitoring restore progress and history
+          - Restore status values — running, completed, failed, pending
+      - slug: database-management
+        topics:
+          - Adding a database with the three-step wizard
+          - Connection details — host, port, username, SSL mode, password
+          - Connect and Discover to list databases on a server
+          - Editing and deleting database connections
+          - PostgreSQL server detail page
+          - Linking PostgreSQL containers from the container list
+          - SSL mode options — Require, Prefer, Disable
+          - Encrypted credential storage
+      - slug: troubleshooting
+        topics:
+          - Backup fails — PostgreSQL containers not configured in system settings
+          - Database Unhealthy status — wrong credentials or connectivity
+          - Azure authentication error during backup
+          - No backups found — wrong path prefix or container
+          - Restore fails — database accessed by other users
+          - Backup stuck in progress — container exited unexpectedly
 
   - slug: haproxy
     label: Load Balancing
     description: HAProxy load balancer configuration and monitoring
     articles:
-      - haproxy-overview
-      - haproxy-frontends
-      - haproxy-backends
-      - haproxy-instances
+      - slug: haproxy-overview
+        topics:
+          - How HAProxy load balancing works in Mini Infra
+          - Frontend and backend architecture
+          - Traffic routing to Docker containers
+      - slug: haproxy-frontends
+        topics:
+          - Viewing and filtering frontends — type, environment, status
+          - Frontend types — Shared, Manual, Deployment
+          - Connect Container wizard — environment, container, port, hostname, SSL
+          - Automatic network joining for containers
+          - Automatic TLS certificate issuance during connection
+          - Frontend detail page — routing config, container info, routes table
+          - Editing manual frontend — hostname and SSL changes
+          - Deleting a manual frontend — what gets removed
+      - slug: haproxy-backends
+        topics:
+          - Backend server groups and traffic distribution
+          - Balance algorithms — Round Robin, Least Connections, Source
+          - Backend timeouts — check, connect, server
+          - Server weight, enabled state, and maintenance mode
+          - Health check configuration — path, interval, rise, fall
+          - Server status values — Active, Draining, Removed
+          - Filtering backends by environment, status, source type
+      - slug: haproxy-instances
+        topics:
+          - HAProxy instance health across environments
+          - Instance states — Healthy, Needs Remediation, Needs Migration, Unavailable
+          - Remediation — rebuilding HAProxy configuration from database
+          - Migration from legacy to stack-managed HAProxy
+          - Remediation preview and progress tracking
+          - Traffic disruption warnings during remediation and migration
 
   - slug: networking
     label: Networking
     description: DNS, TLS certificates, and network configuration
     articles:
-      - tls-certificates
-      - dns-zones
+      - slug: tls-certificates
+        topics:
+          - Issuing SSL/TLS certificates via Let's Encrypt
+          - Prerequisites — Azure, TLS settings, Cloudflare for DNS-01 challenge
+          - Certificate status values — active, pending, failed, expired, revoked
+          - Certificate expiry warnings — 14 day threshold
+          - Certificate detail page — status, Azure storage, covered domains
+          - Manual renewal and revocation
+          - Automatic renewal scheduler
+          - Using certificates in HAProxy frontends
+          - Let's Encrypt rate limits — use staging for testing
+      - slug: dns-zones
+        topics:
+          - Viewing Cloudflare DNS zones and records
+          - Refreshing DNS data — local cache vs Cloudflare API
+          - DNS zones are read-only in Mini Infra
+          - Automatic DNS record creation for SSL routing
 
   - slug: tunnels
     label: Tunnels
     description: Cloudflare tunnel monitoring and management
     articles:
-      - tunnel-monitoring
-      - troubleshooting
+      - slug: tunnel-monitoring
+        topics:
+          - Cloudflare tunnel health status — healthy, degraded, inactive, down
+          - Tunnel details — ID, connections, public hostnames
+          - Adding and deleting public hostname routing rules
+          - Catch-all rule and configuration version
+          - Wildcard hostname support
+          - Refreshing tunnel data from Cloudflare
+      - slug: troubleshooting
+        topics:
+          - No tunnels appearing — API token permissions or account ID mismatch
+          - Tunnel status down or inactive — cloudflared daemon not running
+          - Hostname added but traffic not reaching backend
+          - Cloudflare validation fails — invalid token or missing permissions
 
   - slug: monitoring
     label: Monitoring
     description: Events, logs, and container metrics
     articles:
-      - events
-      - container-logs
-      - container-metrics
+      - slug: events
+        topics:
+          - Event log for long-running operations — deployments, backups, renewals
+          - Event status — running, pending, completed, failed
+          - Event detail page — progress bar, error card, logs viewer
+          - Event retention period and automatic cleanup
+          - Deleting event records
+      - slug: container-logs
+        topics:
+          - Centralized log search across all containers via Loki
+          - Filtering logs by service, time range, and text search (regex)
+          - Log level indicators — error (red), warn (yellow), debug (gray)
+          - Live tailing with auto-refresh every 2 seconds
+          - Copy and download logs
+          - Fullscreen log viewer mode
+          - Expanding log entries to see metadata labels
+          - Monitoring stack prerequisite
+      - slug: container-metrics
+        topics:
+          - CPU, memory, and network usage charts for containers
+          - Metrics collected by Telegraf, stored in Prometheus
+          - Time range selection — 15m, 1h, 6h, 24h
+          - Interactive area charts with per-container breakdown
+          - Container metrics summary table sorted by CPU
+          - Auto-refresh — charts every 30s, table every 15s
+          - Monitoring stack prerequisite
 
   - slug: connectivity
     label: Connectivity
     description: External service health and connectivity checks
     articles:
-      - health-monitoring
-      - troubleshooting
+      - slug: health-monitoring
+        topics:
+          - Configuring Docker connection — host URL, API version, host IP
+          - Docker host URL examples — unix socket, remote TCP, Windows named pipe
+          - Azure Storage connection — connection string from Azure portal
+          - Cloudflare API token and account ID setup
+          - GitHub App OAuth flow — permissions and installation
+          - Package Access Token for GHCR — read:packages scope
+          - Assistant Access Token — read only vs full access
+          - Validate and Save workflow for all services
+          - Encrypted credential storage
+      - slug: troubleshooting
+        topics:
+          - Docker validation fails — connection refused, socket not mounted
+          - Docker Host IP Address validation error
+          - Azure authentication error — connection string issues
+          - Cloudflare validates but no tunnels — wrong account ID
+          - GitHub App setup fails — OAuth callback error
+          - Package Access Token shows Not Configured
 
   - slug: github
     label: GitHub
     description: GitHub App, repositories, and container registries
     articles:
-      - github-app-setup
-      - packages-and-registries
-      - repository-integration
-      - troubleshooting
+      - slug: github-app-setup
+        topics:
+          - Connecting Mini Infra to GitHub via GitHub App
+          - GitHub App permissions — packages, actions, contents, metadata
+          - Installing the app on account or organization
+          - Package Access Token for GHCR browsing
+          - Assistant Access Token for AI agent GitHub access
+          - Testing connection and refreshing GHCR token
+          - Disconnecting the GitHub App
+          - Bug Report Settings integration
+      - slug: packages-and-registries
+        topics:
+          - Browsing GitHub Container Registry (GHCR) packages
+          - Package visibility — private and public
+          - Using GHCR images in deployments
+          - Registry credentials for private GHCR pulls — ghcr.io authentication
+      - slug: repository-integration
+        topics:
+          - Browsing GitHub repositories
+          - Monitoring GitHub Actions workflow runs
+          - Workflow run status values — success, failure, cancelled, in progress
+          - Bug Report Settings — PAT with repo scope
+          - Creating GitHub Issues for bug reports
+      - slug: troubleshooting
+        topics:
+          - GitHub App redirect error — OAuth code expired
+          - Packages tab empty — Package Access Token not configured
+          - Repositories tab empty — app not installed on organization
+          - Actions tab empty — no workflow runs or Actions not enabled
+          - Bug report test connection fails — invalid PAT or wrong repo
+          - Bug reports not created — missing repo write scope
 
   - slug: api
     label: API
     description: REST API access and authentication
     articles:
-      - api-overview
+      - slug: api-overview
+        topics:
+          - REST API authentication — Authorization Bearer and x-api-key headers
+          - Creating API keys for programmatic access
+          - Permission scopes — containers, deployments, postgres, settings
+          - Common API endpoints — containers, deployments, backups, settings
+          - JSON response format — success/error envelope
+          - HTTP status codes — 200, 201, 400, 401, 403, 404, 409, 500
+          - Development API key for testing
 
   - slug: settings
     label: Settings
     description: System configuration, security, and preferences
     articles:
-      - api-keys
-      - permission-presets
-      - system-settings
-      - security-settings
-      - tls-settings
-      - user-preferences
-      - ai-assistant
-      - self-update
+      - slug: api-keys
+        topics:
+          - Creating API keys with fine-grained permissions
+          - Permission domains — containers, deployments, environments, postgres, TLS, etc.
+          - Using presets vs custom permission selection
+          - API key shown only once at creation
+          - Revoking and deleting API keys
+          - Read and write scopes per domain
+      - slug: permission-presets
+        topics:
+          - Built-in presets — Full Access, Read Only, AI Agent, Deployment Manager, Database Admin
+          - Creating custom permission presets
+          - Applying presets when creating API keys
+          - Editing presets does not update existing keys
+      - slug: system-settings
+        topics:
+          - Backup and restore Docker image configuration
+          - HAProxy port configuration — HTTP and HTTPS, local vs internet
+          - Docker host IP address for DNS A records
+          - Event retention period — automatic cleanup
+          - Default Postgres backup container selection
+          - Registry credentials — Docker registry authentication for pulls
+          - Production mode toggle
+      - slug: security-settings
+        topics:
+          - Session Secret — signing JWT tokens, regeneration logs out all users
+          - API Key Secret — hashing keys and encrypting config, regeneration breaks all keys
+          - When to regenerate secrets — compromise, audit, force re-auth
+          - Regeneration is immediate and irreversible
+      - slug: tls-settings
+        topics:
+          - Certificate storage in Azure Blob Storage
+          - ACME provider — Let's Encrypt Production vs Staging
+          - ACME email address for registration and notifications
+          - Renewal scheduler — cron schedule and days before expiry
+          - Staging for testing to avoid rate limits
+      - slug: user-preferences
+        topics:
+          - Timezone setting — per-user display preference
+          - Searchable timezone dropdown with preview
+          - Timezone does not affect scheduled operations
+      - slug: ai-assistant
+        topics:
+          - Anthropic API key configuration — database or environment variable
+          - API key validation against Anthropic API
+          - Model selection — Claude Opus, Sonnet, Haiku
+          - AI capabilities — API Access, Docker, GitHub
+          - Advanced settings — thinking mode, effort level, max turns
+          - Environment variable overrides — ANTHROPIC_API_KEY, AGENT_MODEL
+      - slug: self-update
+        topics:
+          - Self-update via sidecar container mechanism
+          - Update channels — Latest vs Production
+          - Update process — pull, stop, recreate, health check, rollback on failure
+          - Update progress monitoring with step-by-step status
+          - Automatic rollback on failed health checks

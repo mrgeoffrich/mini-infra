@@ -1,5 +1,6 @@
 import fm from "front-matter";
 import docsStructure from "../user-docs/docs-structure.yaml";
+import docsQuestions from "../user-docs/docs-questions.yaml";
 
 export interface DocFrontmatter {
   title: string;
@@ -13,20 +14,46 @@ export interface DocEntry {
   frontmatter: DocFrontmatter;
   content: string;
   href: string;
+  /** Topics this article covers — from docs-structure.yaml */
+  topics: string[];
+}
+
+export interface ArticleDef {
+  slug: string;
+  topics: string[];
 }
 
 export interface SectionDef {
   slug: string;
   label: string;
   description: string;
-  articles: string[];
+  articles: ArticleDef[];
 }
 
 export interface DocsStructure {
   sections: SectionDef[];
 }
 
+export interface QuestionMapping {
+  q: string;
+  ref: string;
+}
+
 const structure = docsStructure as DocsStructure;
+const questions = docsQuestions as QuestionMapping[];
+
+/** Build a lookup from "category/slug" → topics[] */
+function buildTopicsMap(): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const section of structure.sections) {
+    for (const article of section.articles) {
+      map.set(`${section.slug}/${article.slug}`, article.topics ?? []);
+    }
+  }
+  return map;
+}
+
+const topicsMap = buildTopicsMap();
 
 const rawFiles = import.meta.glob("../user-docs/**/*.md", {
   eager: true,
@@ -44,15 +71,17 @@ function buildRawMap(): Map<string, DocEntry> {
       .split("/");
     const category = parts[0];
     const slug = parts[parts.length - 1];
+    const key = `${category}/${slug}`;
 
     const { attributes, body } = fm<DocFrontmatter>(raw);
 
-    map.set(`${category}/${slug}`, {
+    map.set(key, {
       slug,
       category,
       frontmatter: attributes,
       content: body.trim(),
       href: `/help/${category}/${slug}`,
+      topics: topicsMap.get(key) ?? [],
     });
   }
   return map;
@@ -64,8 +93,8 @@ function buildRegistry(): DocEntry[] {
   const entries: DocEntry[] = [];
 
   for (const section of structure.sections) {
-    for (const articleSlug of section.articles) {
-      const key = `${section.slug}/${articleSlug}`;
+    for (const article of section.articles) {
+      const key = `${section.slug}/${article.slug}`;
       const doc = rawMap.get(key);
       if (doc) {
         entries.push(doc);
@@ -108,7 +137,7 @@ export function getDocsByCategory(): DocCategory[] {
   // Build categories in YAML-defined order
   for (const section of structure.sections) {
     const docs = section.articles
-      .map((articleSlug) => rawMap.get(`${section.slug}/${articleSlug}`))
+      .map((article) => rawMap.get(`${section.slug}/${article.slug}`))
       .filter((d): d is DocEntry => d !== undefined);
 
     if (docs.length > 0) {
@@ -150,4 +179,4 @@ export function getCategoryLabel(categorySlug: string): string {
 }
 
 /** Exported for use by other consumers (e.g. agent, search) */
-export { structure as docsStructure };
+export { structure as docsStructure, questions as docsQuestions };
