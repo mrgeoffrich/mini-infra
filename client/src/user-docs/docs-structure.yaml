@@ -29,8 +29,10 @@ sections:
         topics:
           - Glossary of Mini Infra concepts and terminology
           - Containers — lifecycle, status, sensitive label redaction
-          - Stacks — declarative service bundles, status, drift, parameters
-          - Stack templates — reusable blueprints for stack creation
+          - Applications — configuration templates, deploy, update, stop lifecycle
+          - Stacks — declarative plan/apply model, host-level vs environment-scoped
+          - Stack definitions — versioned snapshots, drift detection, lastAppliedSnapshot
+          - Stack templates — reusable blueprints, draft-and-publish versioning, scopes
           - Deployments — blue-green strategy, drain, rollback
           - Environments — named groupings, production vs nonproduction, network types
           - HAProxy — instances, frontends, backends, servers, Data Plane API

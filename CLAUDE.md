@@ -39,7 +39,30 @@ curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/stacks
 
 Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using HAProxy, and Cloudflare tunnel monitoring.
 
-For a complete glossary of project-specific concepts and terminology, see [`client/src/user-docs/getting-started/concepts.md`](client/src/user-docs/getting-started/concepts.md). This file is the single source of truth — it is also embedded in the agent sidecar system prompt and displayed in the user-facing help docs.
+### Key Concepts
+
+For the full glossary with detailed explanations, see `client/src/user-docs/getting-started/concepts.md`.
+
+- **Container** — a Docker container on the managed host. Status: Running, Stopped, Paused, Exited, Restarting.
+- **Application** — a logical concept that provides a simplified UX for managing services. Under the hood, an application is just a stack. The application layer handles creating the stack definition from user inputs (image, ports, env vars, volumes, routing) and exposes deploy/update/stop actions. All actual container orchestration happens at the stack level.
+- **Stack** — a collection of containers and supporting infrastructure (networks, volumes, config files) managed as a single unit with plan/apply semantics. Can be host-level or environment-scoped. Status: Synced, Drifted, Pending, Undeployed, Error, Removed.
+- **Stack Definition** — a versioned snapshot of a stack's desired state. Compared against running containers to detect drift and generate plans. Tracks latest version, running version, and lastAppliedSnapshot.
+- **Stack Template** — a reusable blueprint for stacks with draft-and-publish versioning. Scoped to Host or Environment. Source: System (built-in) or User (custom).
+- **Service** — an individual container definition within a stack. Type: Stateful (stop/start replacement) or StatelessWeb (zero-downtime blue-green via HAProxy).
+- **Deployment (Blue-Green)** — zero-downtime release strategy. Blue = current containers, Green = new release. Phases: deploy green → health check → switch traffic → drain blue → remove blue. Auto-rollback on failure.
+- **Environment** — a named grouping (e.g., production, staging) with a type (production/nonproduction) and network type: Local (Docker host only) or Internet (publicly routable via Cloudflare tunnel).
+- **HAProxy** — load balancer configured via Data Plane API (no reload needed). Key objects: Instance (running process), Frontend (listener — Manual or Shared with routes), Backend (server group with balance algorithm), Server (container endpoint).
+- **PostgreSQL Backup** — scheduled or manual encrypted database backups stored in Azure Blob Storage. Configurable cron, retention, format (custom/sql), and compression.
+- **TLS Certificate** — automated SSL/TLS via ACME (Let's Encrypt). DNS-01 challenge via Cloudflare. Stored in Azure Blob Storage. Auto-renewed 30 days before expiry. Status: Pending, Active, Renewing, Expired, Error.
+- **Cloudflare Tunnel** — Argo Tunnel providing public internet access without open firewall ports. Linked to internet-type environments via UUID and service URL.
+- **Connected Service** — external integration (Docker, Azure Storage, Cloudflare, GitHub) with connectivity status tracking (connected/failed/timeout/unreachable) and response time.
+- **DNS Zone** — Cloudflare-managed domain. Records can be proxied or DNS-only. Auto-created for ACME challenges and tunnel config.
+- **Volume** — Docker volume with optional inspection (Alpine container scans filesystem, catalogs files, supports content retrieval up to 1 MB).
+- **Docker Network** — bridge-driver network for container communication. Environment-scoped networks use `{environment}-{purpose}` naming.
+- **API Key** — programmatic access token with permission scopes (`resource:action`). Presets: Reader, Editor, Admin. Supports rotation and last-used tracking.
+- **Event** — audit log entry for long-running operations. Tracks type, category, status progression, trigger source, progress, user, and duration. Streams via Socket.IO.
+- **Self-Update** — in-place upgrade via sidecar health-check pattern. Pulls new image, validates, swaps containers. Auto-rollback on failure. Data preserved on mounted volumes.
+- **Agent Sidecar** — optional AI operations assistant in a separate container. Natural language interface to Docker, Mini Infra API, and docs. Per-user conversations with SSE streaming.
 
 ## Technology Stack
 

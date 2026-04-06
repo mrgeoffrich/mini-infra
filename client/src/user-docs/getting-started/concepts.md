@@ -20,33 +20,72 @@ Containers have a **status** that mirrors the Docker daemon: Running, Stopped, P
 
 Labels that contain sensitive keywords (password, token, secret, key, credential) are automatically redacted in API responses.
 
+## Applications
+
+An **application** is a configuration template that defines how a Docker service should run — including image, ports, environment variables, volumes, and optional routing. Applications are the primary way users create and manage services in Mini Infra.
+
+When you **deploy** an application, Mini Infra instantiates the template as a running stack in the target environment. You can **update** a running application (pull the latest image and redeploy) or **stop** it (tear down the stack while preserving the template for redeployment).
+
+Each application targets an **environment** and has a **service type**:
+
+- **Stateful** — for databases, caches, and services that do not need external HTTP routing.
+- **StatelessWeb** — for web applications and APIs that need HAProxy routing. Updates to StatelessWeb services use zero-downtime deployment.
+
+StatelessWeb applications also configure **routing** — a hostname, listening port, and optional TLS certificate and Cloudflare tunnel ingress.
+
+The relationship between the layers is: **Application** (template) → **Stack** (running instance) → **Containers** (Docker processes).
+
 ## Stacks
 
-A **stack** is a declarative, versioned bundle that describes one or more containerized services together with their supporting infrastructure — Docker networks, volumes, HAProxy routing rules, TLS certificates, and DNS records.
+A **stack** is a collection of Docker containers and their supporting infrastructure (networks, volumes, configuration files) managed as a single unit. Stacks use a declarative model with **plan/apply semantics** — you define your desired state, review a plan of changes, and apply it.
+
+Stacks can be **host-level** (infrastructure that runs outside any environment, like HAProxy or monitoring) or **environment-scoped** (application stacks deployed within an environment).
 
 Each stack has a **status** that tracks whether its running state matches its declaration:
 
 | Status | Meaning |
 |--------|---------|
-| **Synced** | Running state matches the declared configuration |
-| **Drifted** | Running state differs from the declaration |
-| **Pending** | An apply operation is in progress |
-| **Undeployed** | Declared but never applied |
+| **Synced** | Running containers match the stack definition |
+| **Drifted** | Running containers differ from the desired state |
+| **Pending** | Definition updated but changes not yet applied |
+| **Undeployed** | Declared but never deployed |
 | **Error** | Last apply failed |
 | **Removed** | Stack resources have been torn down |
 
 Stacks contain **services**, which come in two types:
 
-- **Stateful** — persistent-data services (databases, caches) that are not horizontally scaled.
-- **StatelessWeb** — stateless HTTP services that can be scaled and load-balanced.
+- **Stateful** — standard stop/start replacement, suited for databases and infrastructure services. There is brief downtime during recreate.
+- **StatelessWeb** — zero-downtime blue-green deployment via HAProxy, suited for web applications.
 
-Stacks support **parameters** — template variables with types, defaults, and validation rules that let you reuse the same stack definition with different values.
+When you review a **plan**, each service shows a planned action: **Create** (new container), **Recreate** (stop, remove, rebuild), **Remove** (delete), or **No-op** (unchanged). You can **Apply All** changes or **Apply Selected** services individually.
 
-You can **plan** a stack apply (dry-run) before executing it, and Mini Infra tracks **drift** between the declared state and what is actually running.
+## Stack Definitions
+
+A **stack definition** is the versioned snapshot of a stack's desired state. It contains everything needed to reconcile the stack: service configurations, networks, volumes, TLS certificates, DNS records, tunnel ingress rules, and parameter values.
+
+Mini Infra compares the current stack definition against the running containers to detect **drift** and generate a **plan**. Each stack tracks both its **latest version** (most recent definition) and its **running version** (what was last applied). When these differ, the stack shows as Drifted or Pending.
+
+The stack definition also records a **lastAppliedSnapshot** — a frozen copy of the definition at the time of the last successful apply — so drift detection always compares against what was actually deployed, not just what was declared.
 
 ## Stack Templates
 
-A **stack template** is a reusable blueprint for creating stacks. Templates define service configurations, networking, and routing that can be instantiated with different parameter values.
+A **stack template** is a reusable blueprint for deploying stacks. Templates define services, parameters, networks, and volumes in a structured format.
+
+Templates have two **scopes**:
+
+- **Host** — for host-level infrastructure stacks (HAProxy, monitoring, etc.).
+- **Environment** — for application stacks deployed within a specific environment.
+
+Templates can be **System** (built-in, shipped with Mini Infra) or **User** (custom-created).
+
+Templates use a **draft-and-publish** versioning workflow:
+
+1. **Create Draft** — start editing from the current published version.
+2. **Edit** — changes are saved automatically.
+3. **Publish Draft** — finalize as a new version with optional release notes.
+4. **Discard Draft** — abandon changes and return to the last published version.
+
+Templates support **parameters** — named input variables with types, defaults, and validation rules that let you instantiate the same template with different configurations.
 
 ## Deployments (Blue-Green)
 
