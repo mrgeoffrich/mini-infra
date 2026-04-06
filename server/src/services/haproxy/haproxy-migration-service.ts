@@ -149,10 +149,6 @@ export class HAProxyMigrationService {
     const serverCount = activeBackends.reduce((sum, b) => sum + b.servers.length, 0);
 
     // 6. Check if remediation will be needed after migration
-    const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
-      where: { environmentId, isActive: true, hostname: { not: null } },
-      select: { id: true },
-    });
     const legacyFrontends = await prisma.hAProxyFrontend.findMany({
       where: { environmentId, status: { not: 'removed' }, isSharedFrontend: false },
       select: { id: true },
@@ -184,7 +180,7 @@ export class HAProxyMigrationService {
         newContainerName: `${envName}-haproxy-haproxy`,
         newVolumes,
         networkReused: `${envName}-haproxy_network`,
-        remediationNeeded: legacyFrontends.length > 0 || deploymentConfigs.length > 0,
+        remediationNeeded: legacyFrontends.length > 0,
       },
     };
   }

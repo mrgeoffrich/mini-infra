@@ -43,7 +43,7 @@ export class RemoveContainerFromLB {
 
     async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
         logger.info({
-            deploymentId: context?.deploymentId,
+            operationId: context?.deploymentId,
             applicationName: context?.applicationName,
             containerId: context?.containerId?.slice(0, 12),
             environmentId: context?.environmentId,
@@ -63,7 +63,7 @@ export class RemoveContainerFromLB {
 
             // Initialize HAProxy DataPlane client
             logger.info({
-                deploymentId: context.deploymentId,
+                operationId: context.deploymentId,
                 haproxyContainerId: context.haproxyContainerId.slice(0, 12),
                 applicationName: context.applicationName
             }, 'Initializing HAProxy DataPlane client for removal');
@@ -76,7 +76,7 @@ export class RemoveContainerFromLB {
             const existingBackend = await this.haproxyClient.getBackend(backendName);
             if (!existingBackend) {
                 logger.info({
-                    deploymentId: context.deploymentId,
+                    operationId: context.deploymentId,
                     backendName
                 }, 'HAProxy backend does not exist, skipping removal');
 
@@ -91,7 +91,7 @@ export class RemoveContainerFromLB {
                 const serverName = `${context.applicationName}-${context.containerId.slice(0, 8)}`;
 
                 logger.info({
-                    deploymentId: context.deploymentId,
+                    operationId: context.deploymentId,
                     backendName,
                     serverName
                 }, 'Removing specific server from HAProxy backend');
@@ -101,25 +101,25 @@ export class RemoveContainerFromLB {
                 if (serverInRuntime) {
                     await this.haproxyClient.deleteServer(backendName, serverName);
                     logger.info({
-                        deploymentId: context.deploymentId,
+                        operationId: context.deploymentId,
                         backendName,
                         serverName
                     }, 'Server successfully removed from HAProxy backend');
                 } else {
                     logger.info({
-                        deploymentId: context.deploymentId,
+                        operationId: context.deploymentId,
                         backendName,
                         serverName
                     }, 'Server not found in HAProxy runtime, skipping server removal');
                 }
 
-                // Mark server as removed in database
-                await this.markServerRemoved(backendName, serverName, context.environmentId);
+                // Delete server from database
+                await this.deleteServerRecord(backendName, serverName, context.environmentId);
             }
 
             // Clean up any stale servers (servers whose containers no longer exist)
             logger.info({
-                deploymentId: context.deploymentId,
+                operationId: context.deploymentId,
                 backendName
             }, 'Checking for stale servers in HAProxy backend');
 
@@ -136,7 +136,7 @@ export class RemoveContainerFromLB {
 
                 if (staleServers.length > 0) {
                     logger.info({
-                        deploymentId: context.deploymentId,
+                        operationId: context.deploymentId,
                         backendName,
                         staleServers,
                         count: staleServers.length
@@ -148,16 +148,16 @@ export class RemoveContainerFromLB {
                             if (serverInRuntime) {
                                 await this.haproxyClient.deleteServer(backendName, serverName);
                                 logger.info({
-                                    deploymentId: context.deploymentId,
+                                    operationId: context.deploymentId,
                                     backendName,
                                     serverName
                                 }, 'Stale server successfully removed from HAProxy backend');
                             }
-                            // Mark stale server as removed in database
-                            await this.markServerRemoved(backendName, serverName, context.environmentId);
+                            // Delete stale server from database
+                            await this.deleteServerRecord(backendName, serverName, context.environmentId);
                         } catch (error) {
                             logger.warn({
-                                deploymentId: context.deploymentId,
+                                operationId: context.deploymentId,
                                 backendName,
                                 serverName,
                                 error: error instanceof Error ? error.message : 'Unknown error'
@@ -166,7 +166,7 @@ export class RemoveContainerFromLB {
                     }
                 } else {
                     logger.info({
-                        deploymentId: context.deploymentId,
+                        operationId: context.deploymentId,
                         backendName,
                         totalServers: servers.length
                     }, 'No stale servers found in HAProxy backend');
@@ -177,22 +177,22 @@ export class RemoveContainerFromLB {
             const remainingServers = await this.haproxyClient.listServers(backendName);
             if (!remainingServers || remainingServers.length === 0) {
                 logger.info({
-                    deploymentId: context.deploymentId,
+                    operationId: context.deploymentId,
                     backendName
                 }, 'Backend has no remaining servers - backend will be removed after frontend cleanup');
 
-                // Mark backend as removed in database
-                await this.markBackendRemoved(backendName, context.environmentId);
+                // Delete backend from database
+                await this.deleteBackendRecord(backendName, context.environmentId);
             } else {
                 logger.info({
-                    deploymentId: context.deploymentId,
+                    operationId: context.deploymentId,
                     backendName,
                     remainingServers: remainingServers.length
                 }, 'Backend still has servers, keeping backend configuration');
             }
 
             logger.info({
-                deploymentId: context.deploymentId,
+                operationId: context.deploymentId,
                 applicationName: context.applicationName,
                 backendName
             }, 'Container successfully removed from HAProxy load balancer');
@@ -206,7 +206,7 @@ export class RemoveContainerFromLB {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error during HAProxy removal';
 
             logger.error({
-                deploymentId: context.deploymentId,
+                operationId: context.deploymentId,
                 applicationName: context.applicationName,
                 containerId: context.containerId?.slice(0, 12),
                 haproxyContainerId: context.haproxyContainerId?.slice(0, 12),
@@ -223,9 +223,9 @@ export class RemoveContainerFromLB {
     }
 
     /**
-     * Mark a server as removed in the database
+     * Delete a server record from the database
      */
-    private async markServerRemoved(backendName: string, serverName: string, environmentId?: string): Promise<void> {
+    private async deleteServerRecord(backendName: string, serverName: string, environmentId?: string): Promise<void> {
         try {
             if (!environmentId) return;
 
@@ -240,49 +240,43 @@ export class RemoveContainerFromLB {
 
             if (!backend) return;
 
-            await prisma.hAProxyServer.updateMany({
+            await prisma.hAProxyServer.deleteMany({
                 where: {
                     name: serverName,
                     backendId: backend.id,
                 },
-                data: {
-                    status: 'removed',
-                },
             });
 
-            logger.info({ backendName, serverName }, 'Server marked as removed in database');
+            logger.info({ backendName, serverName }, 'Server deleted from database');
         } catch (dbError) {
             logger.warn({
                 backendName,
                 serverName,
                 error: dbError instanceof Error ? dbError.message : 'Unknown error',
-            }, 'Failed to mark server as removed in database (non-critical)');
+            }, 'Failed to delete server from database (non-critical)');
         }
     }
 
     /**
-     * Mark a backend as removed in the database
+     * Delete a backend record from the database
      */
-    private async markBackendRemoved(backendName: string, environmentId?: string): Promise<void> {
+    private async deleteBackendRecord(backendName: string, environmentId?: string): Promise<void> {
         try {
             if (!environmentId) return;
 
-            await prisma.hAProxyBackend.updateMany({
+            await prisma.hAProxyBackend.deleteMany({
                 where: {
                     name: backendName,
                     environmentId,
                 },
-                data: {
-                    status: 'removed',
-                },
             });
 
-            logger.info({ backendName }, 'Backend marked as removed in database');
+            logger.info({ backendName }, 'Backend deleted from database');
         } catch (dbError) {
             logger.warn({
                 backendName,
                 error: dbError instanceof Error ? dbError.message : 'Unknown error',
-            }, 'Failed to mark backend as removed in database (non-critical)');
+            }, 'Failed to delete backend from database (non-critical)');
         }
     }
 }

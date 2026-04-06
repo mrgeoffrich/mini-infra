@@ -54,15 +54,6 @@ export class HAProxyRemediationService {
         },
       });
 
-      // Get deployment configurations
-      const deploymentConfigs = await prisma.deploymentConfiguration.findMany({
-        where: {
-          environmentId,
-          isActive: true,
-          hostname: { not: null },
-        },
-      });
-
       // Build current state
       const currentFrontends = existingFrontends.map((f) => f.frontendName);
 
@@ -105,20 +96,13 @@ export class HAProxyRemediationService {
 
       const sharedHttpFrontend = generateSharedFrontendName(environmentId, "http");
       const hasSSL =
-        deploymentConfigs.some((dc) => dc.enableSsl) ||
         manualFrontends.some((mf) => mf.useSSL) ||
         existingRoutes.some((r) => r.useSSL);
       const sharedHttpsFrontend = hasSSL
         ? generateSharedFrontendName(environmentId, "https")
         : null;
 
-      const expectedRoutes = deploymentConfigs
-        .filter((dc) => dc.hostname)
-        .map((dc) => ({
-          hostname: dc.hostname!,
-          backend: dc.applicationName,
-          ssl: dc.enableSsl,
-        }));
+      const expectedRoutes: Array<{ hostname: string; backend: string; ssl: boolean }> = [];
 
       // Add manual frontends as expected routes
       for (const manual of manualFrontends) {

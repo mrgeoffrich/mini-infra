@@ -1,8 +1,6 @@
 // ====================
-// Deployment Configuration Types
+// Container Primitive Types (shared by stacks)
 // ====================
-
-import { DeploymentDNSRecordInfo, DnsHostnameCheckResult } from './dns';
 
 // Port configuration for containers
 export interface DeploymentPort {
@@ -53,7 +51,7 @@ export interface HAProxyConfig {
   ssl: boolean;
 }
 
-// HAProxy Frontend configuration for deployments
+// HAProxy Frontend configuration
 export interface HAProxyFrontendConfig {
   frontendName: string;
   backendName: string;
@@ -63,407 +61,14 @@ export interface HAProxyFrontendConfig {
   useSSL: boolean;
 }
 
-// Rollback configuration
-export interface RollbackConfig {
-  enabled: boolean;
-  maxWaitTime: number; // milliseconds
-  keepOldContainer: boolean;
-}
-
-// Complete deployment configuration
-export interface DeploymentConfig {
-  applicationName: string;
-  dockerImage: string;
-  dockerRegistry?: string | null;
-  dockerTag: string;
-  containerConfig: ContainerConfig;
-  healthCheck: HealthCheckConfig;
-  rollbackConfig: RollbackConfig;
-  listeningPort?: number | null;
-  hostname?: string | null;
-}
-
-// Database deployment configuration (matches Prisma model)
-export interface DeploymentConfiguration {
-  id: string;
-  applicationName: string;
-  dockerImage: string;
-  dockerTag: string;
-  dockerRegistry: string | null;
-  containerConfig: ContainerConfig; // JSON field
-  healthCheckConfig: HealthCheckConfig; // JSON field
-  rollbackConfig: RollbackConfig; // JSON field
-  listeningPort: number | null;
-  hostname: string | null;
-  isActive: boolean;
-  environmentId: string; // Required environment assignment (immutable)
-  enableSsl: boolean; // Enable SSL/TLS for this deployment
-  tlsCertificateId: string | null; // Associated TLS certificate
-  certificateStatus: string | null; // Certificate provisioning status
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-// Deployment configuration for API responses (frontend-friendly with date strings)
-export interface DeploymentConfigurationInfo {
-  id: string;
-  applicationName: string;
-  dockerImage: string;
-  dockerTag: string;
-  dockerRegistry: string | null;
-  containerConfig: ContainerConfig;
-  healthCheckConfig: HealthCheckConfig;
-  rollbackConfig: RollbackConfig;
-  listeningPort: number | null;
-  hostname: string | null;
-  isActive: boolean;
-  environmentId: string; // Required environment assignment (immutable)
-  enableSsl: boolean; // Enable SSL/TLS for this deployment
-  tlsCertificateId: string | null; // Associated TLS certificate
-  certificateStatus: string | null; // Certificate provisioning status
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ====================
-// Deployment Types
-// ====================
-
-export type DeploymentTriggerType = 'manual' | 'webhook' | 'scheduled' | 'uninstall';
-export type DeploymentStatus =
-  | 'pending'
-  | 'preparing'
-  | 'deploying'
-  | 'health_checking'
-  | 'switching_traffic'
-  | 'cleanup'
-  | 'completed'
-  | 'failed'
-  | 'rolling_back'
-  | 'rolledback'
-  | 'uninstalling'
-  | 'removing_from_lb'
-  | 'stopping_application'
-  | 'removing_application'
-  | 'uninstalled';
-
-export type RemovalStatus =
-  | 'in_progress'
-  | 'removing_from_lb'
-  | 'stopping_application'
-  | 'removing_application'
-  | 'cleanup'
-  | 'completed'
-  | 'failed';
-
-// Database deployment (matches Prisma model)
-export interface Deployment {
-  id: string;
-  configurationId: string;
-  triggerType: DeploymentTriggerType;
-  triggeredBy: string | null;
-  dockerImage: string;
-  status: DeploymentStatus;
-  currentState: string; // State machine state
-  startedAt: Date;
-  completedAt: Date | null;
-  oldContainerId: string | null;
-  newContainerId: string | null;
-  healthCheckPassed: boolean;
-  healthCheckLogs: any; // JSON field
-  errorMessage: string | null;
-  errorDetails: any; // JSON field
-  deploymentTime: number | null; // seconds
-  downtime: number; // milliseconds
-  containers?: DeploymentContainer[]; // Optional relation
-}
-
-// Deployment for API responses
-export interface DeploymentInfo {
-  id: string;
-  configurationId: string;
-  triggerType: DeploymentTriggerType;
-  triggeredBy: string | null;
-  dockerImage: string;
-  status: DeploymentStatus;
-  currentState: string;
-  startedAt: string;
-  completedAt: string | null;
-  oldContainerId: string | null;
-  newContainerId: string | null;
-  healthCheckPassed: boolean;
-  healthCheckLogs: any;
-  errorMessage: string | null;
-  errorDetails: any;
-  deploymentTime: number | null;
-  downtime: number;
-  containers?: DeploymentContainerInfo[]; // Optional relation
-}
-
-// ====================
-// Deployment Step Types
-// ====================
-
-export type DeploymentStepStatus = 'pending' | 'running' | 'completed' | 'failed';
-
-export interface DeploymentStep {
-  id: string;
-  deploymentId: string;
-  stepName: string; // 'pull_image', 'create_container', etc.
-  status: DeploymentStepStatus;
-  startedAt: Date;
-  completedAt: Date | null;
-  duration: number | null; // milliseconds
-  output: string | null;
-  errorMessage: string | null;
-}
-
-export interface DeploymentStepInfo {
-  id: string;
-  deploymentId: string;
-  stepName: string;
-  status: DeploymentStepStatus;
-  startedAt: string;
-  completedAt: string | null;
-  duration: number | null;
-  output: string | null;
-  errorMessage: string | null;
-}
-
-// ====================
-// API Request Types
-// ====================
-
-export interface CreateDeploymentConfigRequest {
-  applicationName: string;
-  dockerImage: string;
-  dockerTag?: string;
-  dockerRegistry?: string;
-  containerConfig: ContainerConfig;
-  healthCheckConfig: HealthCheckConfig;
-  rollbackConfig: RollbackConfig;
-  listeningPort?: number;
-  hostname?: string;
-  environmentId: string; // Required environment assignment
-  enableSsl?: boolean; // Enable SSL/TLS for this deployment
-}
-
-export interface UpdateDeploymentConfigRequest {
-  applicationName?: string;
-  dockerImage?: string;
-  dockerTag?: string;
-  dockerRegistry?: string;
-  containerConfig?: ContainerConfig;
-  healthCheckConfig?: HealthCheckConfig;
-  rollbackConfig?: RollbackConfig;
-  listeningPort?: number;
-  hostname?: string;
-  isActive?: boolean;
-  enableSsl?: boolean; // Enable SSL/TLS for this deployment
-}
-
-export interface TriggerDeploymentRequest {
-  applicationName: string;
-  tag?: string; // Optional, uses configured default
-  force?: boolean; // Skip health checks
-}
-
-// ====================
-// API Response Types
-// ====================
-
-export interface DeploymentConfigResponse {
-  success: boolean;
-  data: DeploymentConfigurationInfo;
-  message?: string;
-}
-
-export interface DeploymentConfigListResponse {
-  success: boolean;
-  data: DeploymentConfigurationInfo[];
-  message?: string;
-  pagination?: {
-    page: number;
-    limit: number;
-    totalCount: number;
-    hasMore: boolean;
-  };
-}
-
-export interface DeploymentResponse {
-  success: boolean;
-  data: DeploymentInfo;
-  message?: string;
-}
-
-export interface DeploymentListResponse {
-  success: boolean;
-  data: DeploymentInfo[];
-  message?: string;
-  pagination?: {
-    page: number;
-    limit: number;
-    totalCount: number;
-    hasMore: boolean;
-  };
-}
-
-// ====================
-// Validation Types
-// ====================
-
-export interface DeploymentConfigValidationResult {
-  isValid: boolean;
-  message: string;
-  errors?: {
-    field: string;
-    message: string;
-  }[];
-}
-
-// Hostname validation types
-export interface HostnameValidationRequest {
-  hostname: string;
-  excludeConfigId?: string;
-}
-
-export interface HostnameValidationResult {
-  isValid: boolean;
-  isAvailable: boolean;
-  message: string;
-  conflictDetails?: {
-    existsInCloudflare: boolean;
-    existsInDeploymentConfigs: boolean;
-    cloudflareZone?: string;
-    conflictingConfigId?: string;
-    conflictingConfigName?: string;
-    dnsInfo?: DnsHostnameCheckResult;
-  };
-  suggestions?: string[];
-}
-
-export interface HostnameValidationResponse {
-  success: boolean;
-  data: HostnameValidationResult;
-  message?: string;
-}
-
-// ====================
-// Filter and Sort Types
-// ====================
-
-export interface DeploymentConfigFilter {
-  applicationName?: string;
-  dockerImage?: string;
-  isActive?: boolean;
-  environmentId?: string;
-}
-
-export interface DeploymentFilter {
-  configurationId?: string;
-  status?: DeploymentStatus;
-  triggerType?: DeploymentTriggerType;
-  startDate?: Date;
-  endDate?: Date;
-}
-
-export interface DeploymentConfigSortOptions {
-  field: keyof DeploymentConfigurationInfo;
-  order: 'asc' | 'desc';
-}
-
-export interface DeploymentSortOptions {
-  field: keyof DeploymentInfo;
-  order: 'asc' | 'desc';
-}
-
-// ====================
-// Deployment Container Types
-// ====================
-
-export interface DeploymentContainer {
-  id: string;
-  deploymentId: string;
-  containerId: string; // Docker container ID
-  containerName: string; // Container name
-  containerRole: string; // 'old', 'new', 'blue', 'green'
-  dockerImage: string; // Full image:tag
-  imageId: string | null; // Docker image ID (sha256:...)
-  containerConfig: any; // Container config excluding environment variables (JSON)
-  status: string; // Container status when captured
-  ipAddress: string | null; // Container IP address
-  createdAt: Date; // When container was created
-  startedAt: Date | null; // When container started
-  capturedAt: Date; // When this record was created
-}
-
-export interface DeploymentContainerInfo {
-  id: string;
-  deploymentId: string;
-  containerId: string;
-  containerName: string;
-  containerRole: string;
-  dockerImage: string;
-  imageId: string | null;
-  containerConfig: any;
-  status: string;
-  ipAddress: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  capturedAt: string;
-}
-
-// ====================
-// Deployment Removal Types
-// ====================
-
-export interface RemovalOperationStep {
-  id: string;
-  stepName: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  startedAt: string | null;
-  completedAt: string | null;
-  duration: number | null;
-  errorMessage: string | null;
-}
-
-export interface RemovalOperationInfo {
-  id: string;
-  configurationId: string;
-  applicationName: string;
-  status: RemovalStatus;
-  currentState: string;
-  progress: number;
-  steps: RemovalOperationStep[];
-  startedAt: string;
-  completedAt: string | null;
-  errorMessage: string | null;
-}
-
-export interface RemovalOperationResponse {
-  success: boolean;
-  data: RemovalOperationInfo;
-  message?: string;
-}
-
-export interface UninstallDeploymentConfigResponse {
-  success: boolean;
-  message: string;
-  data: {
-    removalId: string;
-    status: string;
-  };
-}
-
 // ====================
 // HAProxy Frontend Types
 // ====================
 
-export type FrontendType = 'deployment' | 'manual';
+export type FrontendType = 'manual' | 'shared';
 
 export interface HAProxyFrontend {
   id: string;
-  deploymentConfigId: string | null;
   frontendType: FrontendType;
   containerName: string | null;
   containerId: string | null;
@@ -484,7 +89,6 @@ export interface HAProxyFrontend {
 
 export interface HAProxyFrontendInfo {
   id: string;
-  deploymentConfigId: string | null;
   frontendType: FrontendType;
   containerName: string | null;
   containerId: string | null;
@@ -522,40 +126,10 @@ export interface HAProxyFrontendListResponse {
   message?: string;
 }
 
-export interface SyncFrontendRequest {
-  deploymentConfigId: string;
-}
-
 export interface SyncFrontendResponse {
   success: boolean;
   message: string;
   data?: HAProxyFrontendInfo;
-}
-
-// ====================
-// DNS Sync Types
-// ====================
-
-export interface SyncDNSRequest {
-  deploymentConfigId: string;
-}
-
-export interface SyncDNSResponse {
-  success: boolean;
-  message: string;
-  data?: DeploymentDNSRecordInfo;
-}
-
-export interface DeploymentDNSRecordListResponse {
-  success: boolean;
-  data: DeploymentDNSRecordInfo[];
-  message?: string;
-}
-
-export interface DeploymentDNSRecordResponse {
-  success: boolean;
-  data: DeploymentDNSRecordInfo;
-  message?: string;
 }
 
 // ====================
@@ -674,6 +248,13 @@ export interface ForceDeleteBackendResponse {
   backendName: string;
 }
 
+export interface ForceDeleteServerResponse {
+  success: boolean;
+  message: string;
+  backendName: string;
+  serverName: string;
+}
+
 // ====================
 // Async Manual Frontend Setup Types
 // ====================
@@ -696,7 +277,7 @@ export interface ManualFrontendSetupResult {
 // HAProxy Route Types (Shared Frontend)
 // ====================
 
-export type RouteSourceType = 'deployment' | 'manual';
+export type RouteSourceType = 'manual' | 'stack';
 
 export interface HAProxyRoute {
   id: string;
@@ -705,7 +286,6 @@ export interface HAProxyRoute {
   aclName: string;
   backendName: string;
   sourceType: RouteSourceType;
-  deploymentConfigId: string | null;
   manualFrontendId: string | null;
   useSSL: boolean;
   tlsCertificateId: string | null;
@@ -721,7 +301,6 @@ export interface HAProxyRouteInfo {
   aclName: string;
   backendName: string;
   sourceType: RouteSourceType;
-  deploymentConfigId: string | null;
   manualFrontendId: string | null;
   useSSL: boolean;
   tlsCertificateId: string | null;
@@ -770,9 +349,9 @@ export interface DeleteRouteResponse {
 // HAProxy Backend & Server Types
 // ====================
 
-export type BackendSourceType = 'deployment' | 'manual';
-export type BackendStatus = 'active' | 'removed' | 'failed';
-export type ServerStatus = 'active' | 'removed' | 'draining';
+export type BackendSourceType = 'manual' | 'stack';
+export type BackendStatus = 'active' | 'failed';
+export type ServerStatus = 'active' | 'draining';
 
 export interface HAProxyBackendInfo {
   id: string;
@@ -784,7 +363,6 @@ export interface HAProxyBackendInfo {
   connectTimeout: number | null;
   serverTimeout: number | null;
   sourceType: BackendSourceType;
-  deploymentConfigId: string | null;
   manualFrontendId: string | null;
   status: BackendStatus;
   errorMessage: string | null;
@@ -811,7 +389,6 @@ export interface HAProxyServerInfo {
   maintenance: boolean;
   containerId: string | null;
   containerName: string | null;
-  deploymentId: string | null;
   status: ServerStatus;
   errorMessage: string | null;
   createdAt: string;
@@ -915,8 +492,6 @@ export interface HAProxyStatusResponse {
     sharedFrontendsCount?: number;
     manualFrontendsCount?: number;
     totalRoutesCount?: number;
-    deploymentConfigsWithHostnames?: number;
-    needsRemediation?: boolean;
     frontends?: Array<{
       id: string;
       frontendName: string;

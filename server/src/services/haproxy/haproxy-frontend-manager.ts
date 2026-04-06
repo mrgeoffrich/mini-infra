@@ -832,7 +832,7 @@ export class HAProxyFrontendManager {
     sharedFrontendId: string,
     hostname: string,
     backendName: string,
-    sourceType: "deployment" | "manual" | "stack",
+    sourceType: "manual" | "stack",
     sourceId: string,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient,
@@ -918,9 +918,7 @@ export class HAProxyFrontendManager {
           aclName,
           backendName,
           sourceType,
-          deploymentConfigId: sourceType === "deployment" ? sourceId : null,
           manualFrontendId: sourceType === "manual" ? sourceId : null,
-          // stack sourceType: no FK — sourceId tracked via route record only
           useSSL: sslOptions?.useSSL ?? false,
           tlsCertificateId: sslOptions?.tlsCertificateId ?? null,
           status: "active",

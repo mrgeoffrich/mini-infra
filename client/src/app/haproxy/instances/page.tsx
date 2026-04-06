@@ -127,7 +127,7 @@ function HAProxyInstanceRow({ env }: { env: Environment }) {
           </Badge>
         ) : (
           <HAProxyHealthBadge
-            needsRemediation={status?.needsRemediation}
+            needsRemediation={false}
             isLoading={isLoading}
             isError={isError}
           />

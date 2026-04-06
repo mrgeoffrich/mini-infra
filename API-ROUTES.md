@@ -364,6 +364,7 @@
 | POST | `.../:frontendName/routes` | Add route |
 | PATCH | `.../:frontendName/routes/:routeId` | Update route |
 | DELETE | `.../:frontendName/routes/:routeId` | Delete route |
+| DELETE | `.../:frontendName` | Delete frontend |
 
 ## HAProxy Backends (`/api/haproxy/backends`)
 
@@ -375,6 +376,8 @@
 | GET | `/api/haproxy/backends/:backendName/servers?environmentId=` | List servers in backend |
 | GET | `/api/haproxy/backends/:backendName/servers/:serverName?environmentId=` | Get server details |
 | PATCH | `/api/haproxy/backends/:backendName/servers/:serverName?environmentId=` | Update server (propagates to HAProxy) |
+| DELETE | `/api/haproxy/backends/:backendName/servers/:serverName?environmentId=` | Force-delete server from backend |
+| DELETE | `/api/haproxy/backends/:backendName?environmentId=` | Force-delete backend and all servers |
 
 ## Manual HAProxy Frontends (`/api/haproxy/manual-frontends`)
 

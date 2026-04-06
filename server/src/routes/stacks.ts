@@ -864,6 +864,7 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
       try {
         const result = await reconciler.update(stackId, {
           triggeredBy,
+          forceRecreate: true,
           onProgress: (serviceResult, completedCount, totalActions) => {
             try {
               emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_SERVICE_RESULT, {
@@ -1046,7 +1047,6 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const removalContext = {
           deploymentId: stackId,
           configurationId: stackId,
-          deploymentConfigId: stackId,
           applicationName: fullStack.name,
           environmentId,
           environmentName,

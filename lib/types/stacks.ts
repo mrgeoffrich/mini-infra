@@ -410,6 +410,8 @@ export interface ApplyOptions {
 
 export interface UpdateOptions {
   triggeredBy?: string;
+  /** Force-recreate all services even when definitions haven't changed */
+  forceRecreate?: boolean;
   /** Called after each service action completes */
   onProgress?: (result: ServiceApplyResult, completedCount: number, totalActions: number) => void;
 }

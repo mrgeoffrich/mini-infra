@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  IconNetwork,
+  IconStack2,
 } from "@tabler/icons-react";
 
 interface EnvironmentCardProps {
@@ -75,11 +75,11 @@ export function EnvironmentCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Networks */}
+        {/* Applications */}
         <div className="text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
-            <IconNetwork className="h-4 w-4" />
-            <span>{environment.networks.length} Networks</span>
+            <IconStack2 className="h-4 w-4" />
+            <span>{environment.stackCount} {environment.stackCount === 1 ? 'Application' : 'Applications'}</span>
           </div>
         </div>
 

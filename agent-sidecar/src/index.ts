@@ -4,7 +4,7 @@ import { SessionStore } from "./session-store";
 import { createHealthRouter } from "./routes/health";
 import { createSessionsRouter } from "./routes/sessions";
 import { requireAuth } from "./middleware/auth";
-import { buildSystemPrompt } from "./agent/system-prompt";
+import { buildSystemPrompt, initApiReference, resetPromptCache } from "./agent/system-prompt";
 
 const PORT = parseInt(process.env.PORT ?? "3100", 10);
 
@@ -34,19 +34,23 @@ if (!process.env.ANTHROPIC_API_KEY) {
   );
 }
 
-// Build and cache the system prompt at startup
-try {
-  const prompt = buildSystemPrompt();
-  logger.info(
-    { promptLength: prompt.length },
-    "System prompt cached at startup",
-  );
-} catch (err) {
-  logger.error(
-    { err },
-    "Failed to build system prompt — agent may not function correctly",
-  );
-}
+// Fetch API routes from the server, then build and cache the system prompt
+(async () => {
+  try {
+    await initApiReference();
+    resetPromptCache();
+    const prompt = buildSystemPrompt();
+    logger.info(
+      { promptLength: prompt.length },
+      "System prompt cached at startup (with dynamic API routes)",
+    );
+  } catch (err) {
+    logger.error(
+      { err },
+      "Failed to build system prompt — agent may not function correctly",
+    );
+  }
+})();
 
 app.listen(PORT, () => {
   logger.info({ port: PORT }, "Agent sidecar server started");

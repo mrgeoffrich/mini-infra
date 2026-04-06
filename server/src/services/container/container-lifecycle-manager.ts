@@ -20,15 +20,8 @@ export interface ContainerCreateOptions {
   image: string;
   tag?: string;
   config: ContainerConfig;
-  deploymentId?: string;
   labels?: Record<string, string>;
   environmentName?: string; // Used to prefix volume names
-}
-
-export interface CaptureContainerOptions {
-  deploymentId: string;
-  containerId: string;
-  containerRole?: "old" | "new" | "blue" | "green";
 }
 
 export interface ContainerStatusInfo {
@@ -146,7 +139,6 @@ export class ContainerLifecycleManager {
           containerName: options.name,
           image: options.image,
           tag: options.tag || "latest",
-          deploymentId: options.deploymentId,
         },
         "Creating container",
       );
@@ -172,10 +164,9 @@ export class ContainerLifecycleManager {
       // Generate deployment labels using the centralized label manager
       const labels = this.labelManager.generateDeploymentLabels({
         applicationName: options.config.labels?.["mini-infra.application"] || options.name.split("-")[0],
-        deploymentId: options.deploymentId,
         deploymentColor: this.extractDeploymentColor(options.name),
         projectName: options.config.labels?.["com.docker.compose.project"],
-        serviceName: options.config.labels?.["com.docker.compose.service"] || options.name,
+        serviceName: options.config.labels?.["com.docker.compose.service"] || options.config.labels?.["mini-infra.service"] || options.name,
         containerPurpose: "deployment",
         isActive: true,
         containerConfig: options.config,
@@ -232,7 +223,6 @@ export class ContainerLifecycleManager {
           containerId: container.id,
           containerName: options.name,
           image: fullImage,
-          deploymentId: options.deploymentId,
         },
         "Container created successfully",
       );
@@ -243,99 +233,10 @@ export class ContainerLifecycleManager {
         {
           containerName: options.name,
           image: options.image,
-          deploymentId: options.deploymentId,
           error: error instanceof Error ? error.message : "Unknown error",
           errorStack: error instanceof Error ? error.stack : undefined,
         },
         "Failed to create container",
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Capture container details for deployment tracking
-   */
-  async captureContainerForDeployment(options: CaptureContainerOptions): Promise<void> {
-    try {
-      if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
-      }
-
-      servicesLogger().info(
-        {
-          deploymentId: options.deploymentId,
-          containerId: options.containerId,
-          containerRole: options.containerRole,
-        },
-        "Capturing container for deployment tracking",
-      );
-
-      // Get container details from Docker
-      const docker = (this.dockerService as any).docker as Docker;
-      const container = docker.getContainer(options.containerId);
-      const containerInfo = await container.inspect();
-
-      // Extract container configuration without sensitive environment variables
-      const sanitizedConfig = {
-        ports: Object.keys(containerInfo.Config.ExposedPorts || {}).map(port => ({
-          containerPort: parseInt(port.split('/')[0]),
-          protocol: port.split('/')[1] || 'tcp'
-        })),
-        volumes: containerInfo.Mounts?.map((mount: any) => ({
-          hostPath: mount.Source,
-          containerPath: mount.Destination,
-          mode: mount.RW ? 'rw' : 'ro'
-        })) || [],
-        labels: containerInfo.Config.Labels || {},
-        networks: Object.keys(containerInfo.NetworkSettings?.Networks || {}),
-        restartPolicy: containerInfo.HostConfig?.RestartPolicy?.Name || 'no'
-      };
-
-      // Parse container labels for role if not provided
-      const parsed = this.labelManager.parseContainerLabels(containerInfo.Config.Labels || {});
-      const containerRole = options.containerRole ||
-        parsed.deploymentColor ||
-        (containerInfo.Name.includes('-blue') ? 'blue' :
-         containerInfo.Name.includes('-green') ? 'green' : 'new');
-
-      // Store container details in database
-      await prisma.deploymentContainer.create({
-        data: {
-          deploymentId: options.deploymentId,
-          containerId: options.containerId,
-          containerName: containerInfo.Name.replace(/^\//, ''),
-          containerRole,
-          dockerImage: containerInfo.Config.Image,
-          imageId: containerInfo.Image,
-          containerConfig: sanitizedConfig,
-          status: containerInfo.State.Status,
-          ipAddress: containerInfo.NetworkSettings?.IPAddress || null,
-          createdAt: new Date(containerInfo.Created),
-          startedAt: containerInfo.State.StartedAt ? new Date(containerInfo.State.StartedAt) : null,
-        },
-      });
-
-      servicesLogger().info(
-        {
-          deploymentId: options.deploymentId,
-          containerId: options.containerId,
-          containerName: containerInfo.Name.replace(/^\//, ''),
-          containerRole,
-        },
-        "Container captured for deployment tracking successfully",
-      );
-
-    } catch (error) {
-      servicesLogger().error(
-        {
-          deploymentId: options.deploymentId,
-          containerId: options.containerId,
-          containerRole: options.containerRole,
-          error: error instanceof Error ? error.message : "Unknown error",
-          errorStack: error instanceof Error ? error.stack : undefined,
-        },
-        "Failed to capture container for deployment tracking",
       );
       throw error;
     }

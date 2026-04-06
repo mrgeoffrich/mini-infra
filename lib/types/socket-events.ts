@@ -4,10 +4,6 @@ import type {
   ContainerLogLine,
 } from "./containers";
 import type {
-  DeploymentInfo,
-  DeploymentStatus,
-  DeploymentStepInfo,
-  RemovalOperationInfo,
   MigrationStep,
   MigrationResult,
   ManualFrontendSetupStep,
@@ -26,7 +22,6 @@ import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 /** All static (non-parameterized) channel names as a runtime array */
 export const STATIC_SOCKET_CHANNELS = [
   "containers",
-  "deployments",
   "postgres",
   "monitoring",
   "events",
@@ -48,15 +43,11 @@ export type StaticSocketChannel = (typeof STATIC_SOCKET_CHANNELS)[number];
 /** Prefixes for parameterized channels */
 export const PARAMETERIZED_CHANNEL_PREFIXES = [
   "container:",
-  "deployment:",
-  "removal:",
 ] as const;
 
 /** Parameterized channels with entity IDs */
 export type ParameterizedSocketChannel =
-  | `container:${string}`
-  | `deployment:${string}`
-  | `removal:${string}`;
+  | `container:${string}`;
 
 /** All valid channel names that clients can subscribe to */
 export type SocketChannel = StaticSocketChannel | ParameterizedSocketChannel;
@@ -64,7 +55,6 @@ export type SocketChannel = StaticSocketChannel | ParameterizedSocketChannel;
 /** Named constants for static channels */
 export const Channel = {
   CONTAINERS: "containers",
-  DEPLOYMENTS: "deployments",
   POSTGRES: "postgres",
   MONITORING: "monitoring",
   EVENTS: "events",
@@ -83,8 +73,6 @@ export const Channel = {
 /** Helpers to build parameterized channel names */
 export const ParameterizedChannel = {
   container: (id: string): SocketChannel => `container:${id}`,
-  deployment: (id: string): SocketChannel => `deployment:${id}`,
-  removal: (id: string): SocketChannel => `removal:${id}`,
 } as const;
 
 /**
@@ -141,13 +129,6 @@ export const ServerEvent = {
   CONTAINER_LOG: "container:log",
   CONTAINER_LOG_END: "container:log:end",
   CONTAINER_LOG_ERROR: "container:log:error",
-  // Deployments
-  DEPLOYMENT_STATUS: "deployment:status",
-  DEPLOYMENT_STEP: "deployment:step",
-  DEPLOYMENT_COMPLETED: "deployment:completed",
-  DEPLOYMENTS_ACTIVE: "deployments:active",
-  // Removal
-  REMOVAL_STATUS: "removal:status",
   // Postgres
   POSTGRES_OPERATION: "postgres:operation",
   POSTGRES_OPERATION_COMPLETED: "postgres:operation:completed",
@@ -226,25 +207,6 @@ export interface ServerToClientEvents {
   "container:log:end": (data: { containerId: string }) => void;
   /** Container log stream error */
   "container:log:error": (data: { containerId: string; error: string }) => void;
-
-  // ── Deployments ─────────────────────────────────────
-  /** Deployment status changed */
-  "deployment:status": (data: {
-    id: string;
-    configurationId: string;
-    status: DeploymentStatus;
-    currentState: string;
-  }) => void;
-  /** Deployment step progress */
-  "deployment:step": (data: DeploymentStepInfo) => void;
-  /** Deployment completed (success or failure) */
-  "deployment:completed": (data: DeploymentInfo) => void;
-  /** Active deployments list update */
-  "deployments:active": (data: DeploymentInfo[]) => void;
-
-  // ── Removal Operations ──────────────────────────────
-  /** Removal operation progress */
-  "removal:status": (data: RemovalOperationInfo) => void;
 
   // ── Postgres Operations ─────────────────────────────
   /** Backup/restore operation progress */

@@ -30,7 +30,7 @@ Add one of these headers to your HTTP requests:
 ### Example Usage
 ```bash
 curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/containers
-curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/deployments/configs
+curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/stacks
 ```
 
 ⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
@@ -231,6 +231,5 @@ Logs are found in `server/logs/` directory with the following files:
  - `app-services.log.*` - log from services that run from `server/src/service/*.ts`
  - `app-dockerexecutor.log.*` - logs from container execution
  - `app-prisma.log.*` - log from prisma
- - `app-deployments.log.*` - logs from deployment orchestrator and deployment operations
  - `app-loadbalancer.log.*` - logs from the haproxy service
  - `app-tls.log.*` - logs from the certificate management service

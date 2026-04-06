@@ -29,9 +29,6 @@ import { UserSettingsPage } from "@/app/user/settings/page";
 import ApplicationsPage from "@/app/applications/page";
 import NewApplicationPage from "@/app/applications/new/page";
 import ApplicationDetailPage from "@/app/applications/[id]/page";
-import DeploymentsPage from "@/app/deployments/page";
-import NewDeploymentConfigPage from "@/app/deployments/new/new-and-edit-page";
-import DeploymentConfigDetailsPage from "@/app/deployments/[id]/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { CreateApiKeyPage } from "@/app/api-keys/new/page";
 import { PermissionPresetsPage } from "@/app/api-keys/presets/page";
@@ -150,18 +147,6 @@ export const router = createBrowserRouter([
       {
         path: "applications/:id",
         element: <ApplicationDetailPage />,
-      },
-      {
-        path: "deployments",
-        element: <DeploymentsPage />,
-      },
-      {
-        path: "deployments/new",
-        element: <NewDeploymentConfigPage />,
-      },
-      {
-        path: "deployments/:id",
-        element: <DeploymentConfigDetailsPage />,
       },
       {
         path: "tunnels",

@@ -211,37 +211,6 @@ async function deleteTemplate(
   return await response.json();
 }
 
-async function importDeploymentConfig(
-  configId: string,
-  correlationId: string,
-): Promise<StackTemplateResponse> {
-  const response = await fetch(`/api/stack-templates/import-deployment/${configId}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to import deployment: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  if (!data.success) {
-    throw new Error(data.message || "Failed to import deployment");
-  }
-
-  return data;
-}
 
 async function instantiateApplication(
   templateId: string,
@@ -522,22 +491,6 @@ export function useDeleteApplication() {
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete application: ${error.message}`);
-    },
-  });
-}
-
-export function useImportDeploymentConfig() {
-  const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
-
-  return useMutation({
-    mutationFn: (configId: string) => importDeploymentConfig(configId, correlationId),
-    onSuccess: () => {
-      toast.success("Deployment imported as application successfully");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to import deployment: ${error.message}`);
     },
   });
 }

@@ -159,63 +159,56 @@ Examples:
 ### User Documentation
 User-facing documentation is stored in \`/app/docs/\`. These markdown files describe how the Mini Infra UI works, including page layouts, features, workflows, and configuration options. When the user asks how something works in the UI, search the docs first using \`Glob\` (e.g. \`/app/docs/**/*.md\`) and \`Grep\` to find relevant articles before answering. You can also use the \`list_docs\` and \`read_doc\` MCP tools to browse and read documentation files.`;
 
-const API_REFERENCE = `## Mini Infra API Endpoints
+// ---------------------------------------------------------------------------
+// Dynamic API reference — fetched from the server at startup
+// ---------------------------------------------------------------------------
+
+const MINI_INFRA_API_URL = process.env.MINI_INFRA_API_URL || "http://localhost:5005";
+const MINI_INFRA_API_KEY = process.env.MINI_INFRA_API_KEY || "";
+
+let cachedApiReference: string | null = null;
+
+const API_REFERENCE_HEADER = `## Mini Infra API Endpoints
 
 Use the \`api_request\` MCP tool to call these endpoints. Authentication is handled automatically.
+You can discover all available endpoints by calling GET /api/routes.`;
 
-### Health
-- GET /health — Server health check
+/**
+ * Fetch the route list from the server. Retries a few times in case the
+ * sidecar starts before the main server is ready.
+ */
+export async function initApiReference(maxRetries = 5, delayMs = 3000): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${MINI_INFRA_API_URL}/api/routes`, {
+        headers: { "x-api-key": MINI_INFRA_API_KEY },
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      const body = await res.json() as { success: boolean; data?: { markdown?: string } };
+      if (body.success && body.data?.markdown) {
+        cachedApiReference = `${API_REFERENCE_HEADER}\n\n${body.data.markdown}`;
+        logger.info("API reference fetched from server successfully");
+        return;
+      }
+      throw new Error("Unexpected response shape from /api/routes");
+    } catch (err: any) {
+      logger.warn(
+        { attempt, maxRetries, error: err.message },
+        "Failed to fetch API reference from server, will retry",
+      );
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  logger.warn("Exhausted retries fetching API reference — agent will rely on GET /api/routes tool calls");
+}
 
-### Containers
-- GET /api/containers — List all Docker containers (supports ?all=true for stopped)
-- GET /api/containers/:id — Get container details
-- POST /api/containers/:id/start — Start a container
-- POST /api/containers/:id/stop — Stop a container
-- POST /api/containers/:id/restart — Restart a container
-
-### Docker
-- GET /api/docker/info — Docker host information
-- GET /api/docker/version — Docker version details
-
-### Deployments
-- GET /api/deployments — List all deployment configurations
-- GET /api/deployments/:id — Get deployment details
-- POST /api/deployments/:id/deploy — Trigger a deployment
-- GET /api/deployments/:id/status — Get deployment status
-- GET /api/deployments/:id/history — Get deployment history
-
-### Environments
-- GET /api/environments — List all environments
-- GET /api/environments/:id — Get environment details
-
-### HAProxy Load Balancer
-- GET /api/haproxy/frontends — List HAProxy frontends
-- GET /api/haproxy/backends — List HAProxy backends
-
-### PostgreSQL
-- GET /api/postgres/databases — List tracked databases
-- GET /api/postgres/backup-configs — List backup configurations
-- GET /api/postgres/backups — List backups
-- GET /api/postgres-server/servers — List PostgreSQL servers
-
-### Connectivity
-- GET /api/connectivity/azure — Azure connectivity status
-- GET /api/connectivity/cloudflare — Cloudflare connectivity status
-- GET /api/settings/connectivity/summary — Latest status per service
-
-### Settings
-- GET /api/settings — General settings
-- GET /api/settings/system — System settings
-
-### TLS Certificates
-- GET /api/tls/certificates — List TLS certificates
-- GET /api/tls/renewals — List certificate renewals
-
-### Events
-- GET /api/events — List system events (supports filtering)
-
-### Self Backups
-- GET /api/self-backups — List self-backup records`;
+function getApiReference(): string {
+  return cachedApiReference ?? API_REFERENCE_HEADER;
+}
 
 // ---------------------------------------------------------------------------
 // Exported builder
@@ -233,7 +226,7 @@ export function buildSystemPrompt(): string {
     docsIndex,
     TOOL_USAGE_GUIDELINES,
     SAFETY_RULES,
-    API_REFERENCE,
+    getApiReference(),
   ].join("\n\n");
 
   logger.info({ promptLength: cachedPrompt.length }, "System prompt assembled");

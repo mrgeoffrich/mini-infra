@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   IconApps,
   IconPlus,
-  IconFileImport,
   IconPlayerPlay,
   IconPlayerStop,
   IconRefresh,
@@ -52,7 +51,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ImportDeploymentDialog } from "./import-deployment-dialog";
 import { UpdateApplicationDialog } from "./update-application-dialog";
 import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
 
@@ -66,7 +64,6 @@ export default function ApplicationsPage() {
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
   const [updateTarget, setUpdateTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
@@ -96,10 +93,6 @@ export default function ApplicationsPage() {
     }
     return map;
   }, [envData]);
-
-  const getServiceCount = (app: StackTemplateInfo): number => {
-    return app.currentVersion?.serviceCount ?? app.currentVersion?.services?.length ?? 0;
-  };
 
   const getAppUrl = (app: StackTemplateInfo): string | null => {
     const stacks = stacksByTemplateId.get(app.id);
@@ -235,10 +228,6 @@ export default function ApplicationsPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-              <IconFileImport className="h-4 w-4 mr-2" />
-              Import Deployment
-            </Button>
             <Button onClick={() => navigate("/applications/new")}>
               <IconPlus className="h-4 w-4 mr-2" />
               Add Application
@@ -255,14 +244,9 @@ export default function ApplicationsPage() {
               <IconPackage className="h-12 w-12 text-muted-foreground/50 mb-4" />
               <h3 className="text-lg font-medium mb-1">No applications yet</h3>
               <p className="text-sm text-muted-foreground mb-6 text-center max-w-md">
-                Create a new application template or import an existing deployment
-                configuration to get started.
+                Create a new application template to get started.
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                  <IconFileImport className="h-4 w-4 mr-2" />
-                  Import Deployment
-                </Button>
                 <Button onClick={() => navigate("/applications/new")}>
                   <IconPlus className="h-4 w-4 mr-2" />
                   Add Application
@@ -273,14 +257,12 @@ export default function ApplicationsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {applications.map((app) => {
-              const serviceCount = getServiceCount(app);
-
               return (
                 <Card
                   key={app.id}
                   className="group hover:shadow-md transition-shadow"
                 >
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-base truncate">
@@ -341,10 +323,7 @@ export default function ApplicationsPage() {
                   </CardHeader>
 
                   <CardContent className="pt-0">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Badge variant="secondary">
-                        {serviceCount} {serviceCount === 1 ? "service" : "services"}
-                      </Badge>
+                    <div className="flex items-center gap-2 mb-3">
                       {app.category && (
                         <Badge variant="outline">{app.category}</Badge>
                       )}
@@ -431,12 +410,6 @@ export default function ApplicationsPage() {
         }}
         application={updateTarget}
         stack={updateTarget ? (stacksByTemplateId.get(updateTarget.id)?.[0] ?? null) : null}
-      />
-
-      {/* Import deployment dialog */}
-      <ImportDeploymentDialog
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
       />
 
       {/* Delete confirmation dialog */}

@@ -1,6 +1,6 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
-import { DeploymentConfig, ContainerConfig } from '@mini-infra/types';
+import { ContainerConfig } from '@mini-infra/types';
 import { UserEventService } from '../../user-events';
 import prisma from '../../../lib/prisma';
 
@@ -72,7 +72,6 @@ export class DeployApplicationContainers {
                     labels: deploymentLabels,
                     networks: containerConfig.networks
                 },
-                deploymentId: context.deploymentId,
                 labels: deploymentLabels,
                 environmentName: context.environmentName // Used to prefix volume names
             };

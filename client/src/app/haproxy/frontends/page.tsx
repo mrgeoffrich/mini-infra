@@ -24,7 +24,7 @@ import {
 import { useAllFrontends } from "@/hooks/use-haproxy-frontend";
 import { useDeleteManualFrontend } from "@/hooks/use-manual-haproxy-frontend";
 import { useEnvironments } from "@/hooks/use-environments";
-import { FrontendStatusBadge } from "@/components/deployments/dns-status-badge";
+import { FrontendStatusBadge } from "@/components/haproxy/frontend-status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

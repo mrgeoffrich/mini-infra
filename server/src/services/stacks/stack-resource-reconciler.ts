@@ -435,6 +435,16 @@ export class StackResourceReconciler {
                 throw err;
               }
             }
+
+            // Create DNS CNAME record pointing hostname to tunnel (best-effort)
+            try {
+              await this.cloudflareDns.upsertCNAMERecord(def.fqdn, tunnelId);
+            } catch (dnsErr) {
+              log.warn(
+                { fqdn: def.fqdn, tunnelId, error: dnsErr instanceof Error ? dnsErr.message : String(dnsErr) },
+                'Failed to create DNS CNAME record for tunnel hostname — ingress rule was added successfully',
+              );
+            }
           } else {
             log.warn({ stackId, fqdn: def.fqdn }, 'No tunnel configured on environment, skipping Cloudflare API call');
           }
@@ -485,6 +495,16 @@ export class StackResourceReconciler {
               } else {
                 throw err;
               }
+            }
+
+            // Delete DNS CNAME record for the removed hostname (best-effort)
+            try {
+              await this.cloudflareDns.deleteCNAMEByHostname(removeFqdn);
+            } catch (dnsErr) {
+              log.warn(
+                { fqdn: removeFqdn, tunnelId: removeTunnelId, error: dnsErr instanceof Error ? dnsErr.message : String(dnsErr) },
+                'Failed to delete DNS CNAME record for tunnel hostname — ingress rule was removed successfully',
+              );
             }
           }
 

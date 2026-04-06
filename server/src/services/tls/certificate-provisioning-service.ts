@@ -1,9 +1,8 @@
 /**
  * Certificate Provisioning Service
  *
- * Handles async certificate provisioning for deployment configurations.
- * This service checks for existing certificates, provisions new ones if needed,
- * and updates deployment configurations with certificate references.
+ * Handles certificate lookup and provisioning for hostnames.
+ * This service checks for existing certificates and provisions new ones if needed.
  */
 
 import { Logger } from "pino";
@@ -12,7 +11,6 @@ import { tlsLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
 export interface ProvisionRequest {
-  deploymentConfigId: string;
   hostname: string;
   userId: string;
 }
@@ -26,7 +24,7 @@ export interface ProvisionResult {
 }
 
 /**
- * Service for provisioning certificates for deployment configurations
+ * Service for provisioning certificates
  */
 export class CertificateProvisioningService {
   private lifecycleManager: CertificateLifecycleManager;
@@ -40,25 +38,24 @@ export class CertificateProvisioningService {
   }
 
   /**
-   * Provision certificate for deployment configuration
+   * Provision certificate for a hostname
    *
    * This method:
    * 1. Checks if a certificate already exists for the hostname
-   * 2. If yes, associates existing certificate with deployment config
+   * 2. If yes, returns the existing certificate
    * 3. If no, provisions a new certificate asynchronously
-   * 4. Updates deployment config with certificate reference
    *
    * @param request - Provisioning request
    * @returns Provisioning result
    */
-  async provisionCertificateForDeployment(
+  async provisionCertificate(
     request: ProvisionRequest
   ): Promise<ProvisionResult> {
-    const { deploymentConfigId, hostname, userId } = request;
+    const { hostname, userId } = request;
 
     this.logger.info(
-      { deploymentConfigId, hostname },
-      "Starting certificate provisioning for deployment"
+      { hostname },
+      "Starting certificate provisioning"
     );
 
     try {
@@ -69,21 +66,11 @@ export class CertificateProvisioningService {
         // Use existing certificate
         this.logger.info(
           {
-            deploymentConfigId,
             hostname,
             certificateId: existingCert.id,
           },
           "Found existing certificate for hostname"
         );
-
-        // Update deployment config with existing certificate
-        await this.prisma.deploymentConfiguration.update({
-          where: { id: deploymentConfigId },
-          data: {
-            tlsCertificateId: existingCert.id,
-            certificateStatus: existingCert.status === "ACTIVE" ? "ACTIVE" : "PENDING",
-          },
-        });
 
         return {
           success: true,
@@ -95,19 +82,10 @@ export class CertificateProvisioningService {
 
       // Step 2: No existing certificate - provision new one
       this.logger.info(
-        { deploymentConfigId, hostname },
+        { hostname },
         "No existing certificate found, provisioning new certificate"
       );
 
-      // Set deployment config status to PENDING first
-      await this.prisma.deploymentConfiguration.update({
-        where: { id: deploymentConfigId },
-        data: {
-          certificateStatus: "PENDING",
-        },
-      });
-
-      // Provision certificate asynchronously
       try {
         const newCert = await this.lifecycleManager.issueCertificate({
           domains: [hostname],
@@ -116,18 +94,8 @@ export class CertificateProvisioningService {
           deployToHaproxy: false, // Don't deploy yet, will be done during first deployment
         });
 
-        // Update deployment config with new certificate
-        await this.prisma.deploymentConfiguration.update({
-          where: { id: deploymentConfigId },
-          data: {
-            tlsCertificateId: newCert.id,
-            certificateStatus: "ACTIVE",
-          },
-        });
-
         this.logger.info(
           {
-            deploymentConfigId,
             hostname,
             certificateId: newCert.id,
           },
@@ -144,20 +112,11 @@ export class CertificateProvisioningService {
         // Certificate provisioning failed
         this.logger.error(
           {
-            deploymentConfigId,
             hostname,
             error: provisionError,
           },
           "Certificate provisioning failed"
         );
-
-        // Update deployment config with error status
-        await this.prisma.deploymentConfiguration.update({
-          where: { id: deploymentConfigId },
-          data: {
-            certificateStatus: "ERROR",
-          },
-        });
 
         return {
           success: false,
@@ -172,7 +131,6 @@ export class CertificateProvisioningService {
     } catch (error) {
       this.logger.error(
         {
-          deploymentConfigId,
           hostname,
           error,
         },
@@ -243,42 +201,5 @@ export class CertificateProvisioningService {
     }
 
     return null;
-  }
-
-  /**
-   * Check certificate status for deployment config
-   *
-   * @param deploymentConfigId - Deployment config ID
-   * @returns Certificate status info
-   */
-  async checkCertificateStatus(
-    deploymentConfigId: string
-  ): Promise<{
-    hasCertificate: boolean;
-    certificateStatus?: "PENDING" | "ACTIVE" | "ERROR";
-    certificate?: any;
-  }> {
-    const deploymentConfig = await this.prisma.deploymentConfiguration.findUnique({
-      where: { id: deploymentConfigId },
-      include: {
-        tlsCertificate: true,
-      },
-    });
-
-    if (!deploymentConfig) {
-      throw new Error(`Deployment config not found: ${deploymentConfigId}`);
-    }
-
-    if (!deploymentConfig.tlsCertificate) {
-      return {
-        hasCertificate: false,
-      };
-    }
-
-    return {
-      hasCertificate: true,
-      certificateStatus: deploymentConfig.certificateStatus as any,
-      certificate: deploymentConfig.tlsCertificate,
-    };
   }
 }

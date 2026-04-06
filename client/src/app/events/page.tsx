@@ -2,7 +2,6 @@ import { useState } from "react";
 import { IconHistory, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { useEvents, useEventFilters, useDeleteEvent } from "@/hooks/use-events";
 import { EventsTable } from "@/components/events/EventsTable";
-import { EventsFilters } from "@/components/events/EventsFilters";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -17,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export function EventsPage() {
-  const { filters, updateFilter, resetFilters } = useEventFilters();
+  const { filters, updateFilter } = useEventFilters();
   const [eventToDelete, setEventToDelete] = useState<string | null>(null);
 
   // Fetch events with current filters
@@ -97,18 +96,7 @@ export function EventsPage() {
 
       {/* Content */}
       <div className="px-4 lg:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Filters Sidebar */}
-          <div className="lg:col-span-1">
-            <EventsFilters
-              filters={filters}
-              onFilterChange={updateFilter}
-              onResetFilters={resetFilters}
-            />
-          </div>
-
-          {/* Events Table */}
-          <div className="lg:col-span-3 space-y-4">
+        <div className="space-y-4">
             {/* Stats summary */}
             {pagination && (
               <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -168,7 +156,6 @@ export function EventsPage() {
                 </Button>
               </div>
             )}
-          </div>
         </div>
       </div>
 

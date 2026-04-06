@@ -98,7 +98,6 @@ const updateManualFrontendSchema = z.object({
 function serializeFrontend(frontend: any): HAProxyFrontendInfo {
   return {
     id: frontend.id,
-    deploymentConfigId: frontend.deploymentConfigId,
     frontendType: frontend.frontendType,
     containerName: frontend.containerName,
     containerId: frontend.containerId,

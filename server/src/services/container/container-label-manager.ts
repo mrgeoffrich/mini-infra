@@ -207,6 +207,12 @@ export class ContainerLabelManager {
       );
       Object.assign(labels, composeLabels);
 
+      // Re-apply custom labels so caller-provided values (e.g. mini-infra.service
+      // from stack reconciler) take precedence over compose-generated labels
+      if (options.customLabels) {
+        Object.assign(labels, options.customLabels);
+      }
+
       // Add deployment tracking specific labels
       if (options.deploymentId) {
         labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.deployment.trackable`] = "true";

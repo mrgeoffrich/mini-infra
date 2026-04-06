@@ -169,35 +169,6 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
-  "/deployments": {
-    path: "/deployments",
-    title: "Deployments",
-    icon: IconRocket,
-    showInNav: false,
-    navGroup: "main",
-    navSection: "applications",
-    description: "Zero-downtime deployment management",
-    helpDoc: "deployments/deployment-overview",
-    children: {
-      new: {
-        path: "/deployments/new",
-        title: "New Deployment Configuration",
-        breadcrumbLabel: "New Configuration",
-        parent: "/deployments",
-        showInNav: false,
-        helpDoc: "deployments/creating-deployments",
-      },
-      detail: {
-        path: "/deployments/:id",
-        title: "Deployment Details",
-        breadcrumbLabel: "Details",
-        parent: "/deployments",
-        showInNav: false,
-        helpDoc: "deployments/deployment-lifecycle",
-      },
-    },
-  },
-
   "/environments": {
     path: "/environments",
     title: "Environments",
@@ -206,7 +177,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Environment configuration management",
-    helpDoc: "deployments/environments",
+    helpDoc: "environments/environments",
     children: {
       detail: {
         path: "/environments/:id",
@@ -318,19 +289,19 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "networking",
     description: "HAProxy frontend management",
-    helpDoc: "deployments/deployment-overview",
+    helpDoc: "haproxy/haproxy-overview",
     children: {
       frontends: {
         path: "/haproxy/frontends",
         title: "Frontends",
         showInNav: true,
-        helpDoc: "deployments/haproxy-frontends",
+        helpDoc: "haproxy/haproxy-frontends",
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
         title: "Connect Container",
         showInNav: false,
-        helpDoc: "deployments/haproxy-frontends",
+        helpDoc: "haproxy/haproxy-frontends",
       },
       "frontends/detail": {
         path: "/haproxy/frontends/:frontendName",
@@ -338,7 +309,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/haproxy/frontends",
         showInNav: false,
-        helpDoc: "deployments/haproxy-frontends",
+        helpDoc: "haproxy/haproxy-frontends",
       },
       "frontends/edit": {
         path: "/haproxy/frontends/:frontendName/edit",
@@ -346,13 +317,13 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Edit",
         parent: "/haproxy/frontends",
         showInNav: false,
-        helpDoc: "deployments/haproxy-frontends",
+        helpDoc: "haproxy/haproxy-frontends",
       },
       backends: {
         path: "/haproxy/backends",
         title: "Backends",
         showInNav: true,
-        helpDoc: "deployments/haproxy-backends",
+        helpDoc: "haproxy/haproxy-backends",
       },
       "backends/detail": {
         path: "/haproxy/backends/:backendName",
@@ -360,13 +331,13 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/haproxy/backends",
         showInNav: false,
-        helpDoc: "deployments/haproxy-backends",
+        helpDoc: "haproxy/haproxy-backends",
       },
       instances: {
         path: "/haproxy/instances",
         title: "Instances",
         showInNav: true,
-        helpDoc: "deployments/haproxy-instances",
+        helpDoc: "haproxy/haproxy-instances",
       },
     },
   },
@@ -637,8 +608,8 @@ export interface NavSection {
 export type NavPanel = "operations" | "admin";
 
 const panelSections: Record<NavPanel, string[]> = {
-  operations: ["applications", "databases", "networking", "monitoring"],
-  admin: ["connectivity", "administration"],
+  operations: ["applications", "databases", "monitoring"],
+  admin: ["connectivity", "networking", "administration"],
 };
 
 // Get navigation items grouped by section
@@ -720,13 +691,36 @@ export function getNavigationSectionsForPanel(panel: NavPanel): NavSection[] {
 // Determine which panel a route belongs to based on its navSection
 export function getPanelForPath(pathname: string): NavPanel {
   const metadata = getRouteMetadata(pathname);
-  if (metadata?.navSection) {
-    for (const [panel, sections] of Object.entries(panelSections)) {
-      if (sections.includes(metadata.navSection)) {
-        return panel as NavPanel;
+  // Check the route's own navSection, then walk up via parent
+  let current: RouteMetadata | null = metadata;
+  while (current) {
+    if (current.navSection) {
+      for (const [panel, sections] of Object.entries(panelSections)) {
+        if (sections.includes(current.navSection)) {
+          return panel as NavPanel;
+        }
+      }
+    }
+    current = current.parent ? getRouteMetadata(current.parent) : null;
+  }
+
+  // Fall back: check if this path is a child of a top-level route with navSection
+  if (metadata) {
+    for (const [, config] of Object.entries(routeConfig)) {
+      if (config.children && config.navSection) {
+        for (const child of Object.values(config.children)) {
+          if (matchPath(child.path, pathname)) {
+            for (const [panel, sections] of Object.entries(panelSections)) {
+              if (sections.includes(config.navSection)) {
+                return panel as NavPanel;
+              }
+            }
+          }
+        }
       }
     }
   }
+
   return "operations";
 }
 

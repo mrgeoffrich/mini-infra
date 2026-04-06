@@ -7,8 +7,6 @@ import {
   IconSettings,
   IconCalendar,
   IconAlertCircle,
-  IconRocket,
-  IconEye,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,13 +59,6 @@ function BackendStatusBadge({ status }: { status: string }) {
 
 function BackendSourceBadge({ sourceType }: { sourceType: string }) {
   switch (sourceType) {
-    case "deployment":
-      return (
-        <Badge variant="secondary" className="gap-1">
-          <IconRocket className="h-3 w-3" />
-          Deployment
-        </Badge>
-      );
     case "manual":
       return (
         <Badge variant="outline" className="gap-1">
@@ -267,24 +258,6 @@ export function BackendDetailsPage() {
                   <BackendStatusBadge status={backend.status} />
                 </div>
               </div>
-
-              {backend.deploymentConfigId && (
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">
-                    Deployment Config
-                  </p>
-                  <Button
-                    variant="link"
-                    className="h-auto p-0 font-medium text-sm font-mono"
-                    onClick={() =>
-                      navigate(`/deployments/${backend.deploymentConfigId}`)
-                    }
-                  >
-                    <IconEye className="h-3 w-3 mr-1" />
-                    {backend.deploymentConfigId}
-                  </Button>
-                </div>
-              )}
 
               {backend.manualFrontendId && (
                 <div className="space-y-1">

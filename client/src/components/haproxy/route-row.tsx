@@ -4,7 +4,6 @@ import {
   IconTrash,
   IconEdit,
   IconShield,
-  IconRocket,
   IconSettings,
 } from "@tabler/icons-react";
 import { useNavigate } from "react-router-dom";
@@ -70,13 +69,6 @@ function RouteStatusBadge({ status }: { status: string }) {
 
 function RouteSourceBadge({ sourceType }: { sourceType: string }) {
   switch (sourceType) {
-    case "deployment":
-      return (
-        <Badge variant="secondary" className="gap-1">
-          <IconRocket className="h-3 w-3" />
-          Deployment
-        </Badge>
-      );
     case "manual":
       return (
         <Badge variant="outline" className="gap-1">
@@ -115,8 +107,7 @@ export function RouteRow({ route, frontendName, environmentId }: RouteRowProps) 
     }
   };
 
-  // Determine if this route can be deleted
-  // Deployment routes should be managed through the deployment config
+  // Only manual routes can be deleted directly
   const canDelete = route.sourceType === "manual";
 
   return (
@@ -142,11 +133,6 @@ export function RouteRow({ route, frontendName, environmentId }: RouteRowProps) 
         </TableCell>
         <TableCell>
           <RouteSourceBadge sourceType={route.sourceType} />
-          {route.sourceType === "deployment" && route.deploymentConfigId && (
-            <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[140px]" title={route.deploymentConfigId}>
-              {route.deploymentConfigId}
-            </div>
-          )}
           {route.sourceType === "manual" && route.manualFrontendId && (
             <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[140px]" title={route.manualFrontendId}>
               {route.manualFrontendId}
@@ -197,18 +183,13 @@ export function RouteRow({ route, frontendName, environmentId }: RouteRowProps) 
                   Edit
                 </DropdownMenuItem>
               )}
-              {canDelete ? (
+              {canDelete && (
                 <DropdownMenuItem
                   onClick={() => setDeleteDialogOpen(true)}
                   className="text-destructive focus:text-destructive"
                 >
                   <IconTrash className="h-4 w-4 mr-2" />
                   Delete
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem disabled>
-                  <IconRocket className="h-4 w-4 mr-2" />
-                  Managed by Deployment
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

@@ -1,5 +1,4 @@
 import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
 
 const { mockEnvironmentManager } = vi.hoisted(() => ({
   mockEnvironmentManager: {
@@ -58,11 +57,7 @@ vi.mock('../services/environment/environment-manager', () => ({
   },
 }));
 vi.mock('../lib/prisma', () => ({
-  default: {
-    deploymentConfiguration: {
-      findMany: vi.fn()
-    }
-  },
+  default: {},
 }));
 vi.mock('../middleware/auth', () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
@@ -80,7 +75,6 @@ vi.mock('../middleware/auth', () => ({
 }));
 
 import app from '../app';
-import prisma from '../lib/prisma';
 
 describe('Environment API', () => {
   const mockEnvironment = {
@@ -109,8 +103,6 @@ describe('Environment API', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset Prisma mock
-    (prisma.deploymentConfiguration.findMany as Mock).mockReset();
   });
 
   describe('GET /api/environments', () => {
@@ -343,8 +335,6 @@ describe('Environment API', () => {
 
   describe('DELETE /api/environments/:id', () => {
     it('should delete environment successfully', async () => {
-      // Mock no deployment configurations to allow deletion
-      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
 
       await request(app)
@@ -352,15 +342,12 @@ describe('Environment API', () => {
         .expect(204);
 
       expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-1', {
-        deleteVolumes: false,
         deleteNetworks: false,
         userId: 'test-user'
       });
     });
 
     it('should return 404 for non-existent environment', async () => {
-      // Mock no deployment configurations
-      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
       mockEnvironmentManager.deleteEnvironment.mockResolvedValue(false);
 
       await request(app)
@@ -368,52 +355,6 @@ describe('Environment API', () => {
         .expect(404);
     });
 
-    it('should prevent deletion when environment has deployment configurations', async () => {
-      // Mock deploymentConfigurations that exist for this environment
-      const mockDeploymentConfigs = [
-        { id: 'deploy-1', applicationName: 'my-app' },
-        { id: 'deploy-2', applicationName: 'other-app' }
-      ];
-
-      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue(mockDeploymentConfigs);
-
-      const response = await request(app)
-        .delete('/api/environments/env-with-deployments')
-        .expect(400);
-
-      expect(response.body.error).toBe('Environment has associated deployments');
-      expect(response.body.message).toContain('my-app, other-app');
-      expect(response.body.deploymentConfigurations).toEqual(mockDeploymentConfigs);
-
-      // Verify that the Prisma query was called with the correct environment ID
-      expect(prisma.deploymentConfiguration.findMany).toHaveBeenCalledWith({
-        where: { environmentId: 'env-with-deployments' },
-        select: { id: true, applicationName: true }
-      });
-    });
-
-    it('should allow deletion when environment has no deployment configurations', async () => {
-      // Mock no deployment configurations
-      (prisma.deploymentConfiguration.findMany as Mock).mockResolvedValue([]);
-      mockEnvironmentManager.deleteEnvironment.mockResolvedValue(true);
-
-      await request(app)
-        .delete('/api/environments/env-no-deployments')
-        .expect(204);
-
-      // Verify that the deployment check was performed
-      expect(prisma.deploymentConfiguration.findMany).toHaveBeenCalledWith({
-        where: { environmentId: 'env-no-deployments' },
-        select: { id: true, applicationName: true }
-      });
-
-      // Verify that deletion proceeded normally
-      expect(mockEnvironmentManager.deleteEnvironment).toHaveBeenCalledWith('env-no-deployments', {
-        deleteVolumes: false,
-        deleteNetworks: false,
-        userId: 'test-user'
-      });
-    });
   });
 
 });

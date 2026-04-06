@@ -96,7 +96,6 @@ export class StackRoutingManager {
         connectTimeout: ctx.routing.backendOptions?.connectTimeout ?? null,
         serverTimeout: ctx.routing.backendOptions?.serverTimeout ?? null,
         sourceType: 'stack',
-        deploymentConfigId: null,
         status: 'active',
       },
     });
@@ -197,14 +196,13 @@ export class StackRoutingManager {
 
     await haproxyClient.deleteServer(backendName, serverName);
 
-    // Update DB record
+    // Delete server record from DB
     const backendRecord = await this.prisma.hAProxyBackend.findFirst({
       where: { name: backendName },
     });
     if (backendRecord) {
-      await this.prisma.hAProxyServer.updateMany({
+      await this.prisma.hAProxyServer.deleteMany({
         where: { backendId: backendRecord.id, name: serverName },
-        data: { status: 'removed' },
       });
     }
   }
@@ -231,18 +229,17 @@ export class StackRoutingManager {
     const backendName = `stk-${ctx.stackName}-${ctx.serviceName}`;
     const backendRecord = await this.prisma.hAProxyBackend.findFirst({
       where: { name: backendName, environmentId: ctx.environmentId },
-      include: { servers: { where: { status: 'active' } } },
+      include: { _count: { select: { servers: true } } },
     });
 
-    if (backendRecord && backendRecord.servers.length === 0) {
+    if (backendRecord && backendRecord._count.servers === 0) {
       try {
         await haproxyClient.deleteBackend(backendName);
       } catch (err: any) {
         logger.warn({ backendName, error: err.message }, 'Failed to delete empty backend');
       }
-      await this.prisma.hAProxyBackend.update({
+      await this.prisma.hAProxyBackend.delete({
         where: { id: backendRecord.id },
-        data: { status: 'removed' },
       });
     }
   }

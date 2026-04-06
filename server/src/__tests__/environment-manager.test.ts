@@ -68,6 +68,10 @@ describe('EnvironmentManager', () => {
       stackService: {
         create: vi.fn().mockResolvedValue({}),
       },
+      stackTemplate: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({}),
+      },
     } as any;
 
     mockDockerExecutor = {
