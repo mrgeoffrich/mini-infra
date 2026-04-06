@@ -48,6 +48,7 @@ export default defineConfig({
   },
   build: {
     outDir: "../server/public", // Build directly to server's static folder
+    emptyOutDir: true, // Clean stale assets from previous builds
     chunkSizeWarningLimit: 1500, // Suppress warning for chunks up to 1.5 MB
   },
 });
