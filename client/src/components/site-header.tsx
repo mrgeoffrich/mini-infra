@@ -20,6 +20,7 @@ import { useBackupHealth } from "@/hooks/use-self-backup";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { TaskTrackerPopover } from "@/components/task-tracker/task-tracker-popover";
+import { HelpSearchBar } from "@/components/help/HelpSearchBar";
 import { useCurrentPageTitle, usePageTitle } from "@/hooks/use-page-title";
 import { getHelpDocForRoute } from "@/lib/route-config";
 
@@ -268,6 +269,7 @@ function AssistedSetupButton() {
 export function SiteHeader() {
   const location = useLocation();
   const pageTitle = useCurrentPageTitle();
+  const isHelpRoute = location.pathname.startsWith("/help");
 
   // Automatically manage document title
   usePageTitle();
@@ -281,14 +283,25 @@ export function SiteHeader() {
             className="mx-2 data-[orientation=vertical]:h-4"
           />
 
-          {location.pathname === '/dashboard' ? (
-            <h1 className="text-base font-medium">{pageTitle}</h1>
+          {isHelpRoute ? (
+            <HelpSearchBar />
           ) : (
-            <Breadcrumbs />
+            <>
+              {location.pathname === '/dashboard' ? (
+                <h1 className="text-base font-medium">{pageTitle}</h1>
+              ) : (
+                <Breadcrumbs />
+              )}
+            </>
           )}
 
           {/* Connectivity Status Indicators */}
           <div className="ml-auto flex items-center gap-3">
+            {!isHelpRoute && (
+              <div className="w-64">
+                <HelpSearchBar />
+              </div>
+            )}
             <div className="flex items-center gap-3" data-tour="header-connectivity">
               <ConnectivityIndicator
                 service="docker"

@@ -1,8 +1,6 @@
 ---
 title: Connected Services Health Monitoring
 description: How to configure and monitor external service connections in Mini Infra.
-category: Connectivity
-order: 1
 tags:
   - connectivity
   - health-checks

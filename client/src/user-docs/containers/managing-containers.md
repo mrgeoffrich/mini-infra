@@ -1,8 +1,6 @@
 ---
 title: Managing a Container
 description: How to view details, run actions, and inspect a specific container.
-category: Containers
-order: 2
 tags:
   - containers
   - docker

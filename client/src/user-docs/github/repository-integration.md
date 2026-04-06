@@ -1,8 +1,6 @@
 ---
 title: GitHub Repository Integration
 description: How to view repositories, monitor GitHub Actions, and configure bug reporting with GitHub.
-category: GitHub
-order: 3
 tags:
   - github
   - configuration

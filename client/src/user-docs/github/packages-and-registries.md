@@ -1,8 +1,6 @@
 ---
 title: GitHub Packages and Container Registries
 description: How to browse GitHub Container Registry packages connected through the GitHub App.
-category: GitHub
-order: 2
 tags:
   - github
   - docker

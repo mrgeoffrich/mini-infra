@@ -1,8 +1,6 @@
 ---
 title: Running Mini Infra with Docker
 description: How to run Mini Infra using Docker or Docker Compose.
-category: Getting Started
-order: 3
 tags:
   - getting-started
   - docker

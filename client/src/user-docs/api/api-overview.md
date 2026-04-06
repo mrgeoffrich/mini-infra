@@ -1,8 +1,6 @@
 ---
 title: API Overview
 description: An overview of how to use the Mini Infra REST API with API keys.
-category: API
-order: 1
 tags:
   - api
   - authentication

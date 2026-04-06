@@ -1,8 +1,6 @@
 ---
 title: System Settings
 description: How to configure system-wide settings including Docker images, HAProxy ports, and event retention.
-category: Settings
-order: 3
 tags:
   - settings
   - configuration

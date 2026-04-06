@@ -88,39 +88,6 @@ Each entry is consumed by the `write-user-docs` skill to generate the actual art
 
 ---
 
-## deployments/deployment-lifecycle.md
-
-**Title**: Deployment Lifecycle
-**Category**: deployments
-**Order**: 3
-
-**Content to cover**:
-- The stages a deployment goes through: Pending → Running → Healthy → Stopped / Failed
-- How HAProxy is used to route traffic during a zero-downtime deployment (blue/green swap)
-- What "zero-downtime" means in practice — old container stays live until new one is healthy
-- Health check polling: how Mini Infra determines when the new container is ready
-- Rollback: what happens when a deployment fails health checks
-- Viewing deployment history and logs for a specific deployment run on the deployment detail page
-- Manual intervention: how to stop a running deployment or force a rollback
-
----
-
-## deployments/troubleshooting.md
-
-**Title**: Deployment Troubleshooting
-**Category**: deployments
-**Order**: 4
-
-**Content to cover**:
-- Deployment stuck in "Running" — health check never passing (check health check URL, timeout settings)
-- HAProxy config not updating — verifying HAProxy service connectivity on the System Settings page
-- Image not found during deployment — checking registry credentials and image name/tag
-- Old container not being removed after successful swap
-- Port conflicts — two deployments targeting the same port
-- "No healthy backends" error in HAProxy logs
-
----
-
 ## postgres-backups/database-management.md
 
 **Title**: Managing PostgreSQL Databases

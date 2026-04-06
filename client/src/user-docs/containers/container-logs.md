@@ -1,8 +1,6 @@
 ---
 title: Viewing Container Logs
 description: How to view and use the container log viewer in Mini Infra.
-category: Containers
-order: 4
 tags:
   - containers
   - docker

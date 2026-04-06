@@ -1,8 +1,6 @@
 ---
 title: Managing API Keys
 description: How to create, manage, and revoke API keys for programmatic access to Mini Infra.
-category: Settings
-order: 1
 tags:
   - api-keys
   - authentication

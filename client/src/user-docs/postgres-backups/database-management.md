@@ -1,8 +1,6 @@
 ---
 title: Managing PostgreSQL Databases
 description: How to add, edit, and manage PostgreSQL database connections in Mini Infra.
-category: PostgreSQL Backups
-order: 4
 tags:
   - postgres
   - configuration

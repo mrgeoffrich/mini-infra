@@ -1,8 +1,6 @@
 ---
 title: Setting Up the GitHub App
 description: How to connect Mini Infra to GitHub using the GitHub App integration.
-category: GitHub
-order: 1
 tags:
   - github
   - authentication

@@ -1,8 +1,6 @@
 ---
 title: PostgreSQL Backup Troubleshooting
 description: Common PostgreSQL backup and restore issues and how to resolve them.
-category: PostgreSQL Backups
-order: 5
 tags:
   - postgres
   - backup

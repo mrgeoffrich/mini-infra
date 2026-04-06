@@ -1,8 +1,6 @@
 ---
 title: Volume Management
 description: How to inspect, browse, and manage Docker volumes in Mini Infra.
-category: Containers
-order: 3
 tags:
   - containers
   - docker

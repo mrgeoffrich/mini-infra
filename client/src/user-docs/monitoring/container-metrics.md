@@ -1,8 +1,6 @@
 ---
 title: Container Metrics
 description: How to monitor CPU, memory, and network usage across Docker containers in Mini Infra.
-category: Monitoring
-order: 3
 tags:
   - monitoring
   - metrics

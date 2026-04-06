@@ -1,8 +1,6 @@
 ---
 title: Monitoring Cloudflare Tunnels
 description: How to monitor Cloudflare tunnel health and manage hostnames in Mini Infra.
-category: Tunnels
-order: 1
 tags:
   - tunnels
   - cloudflare

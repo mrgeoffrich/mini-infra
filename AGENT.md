@@ -1,13 +1,13 @@
 # Mini Infra - Codex Agent Guide
 
 ## Quick Orientation
-- Mini Infra manages Docker-hosted infrastructure: container lifecycle, PostgreSQL backups, blue/green deployments via HAProxy, and Cloudflare tunnel monitoring.
+- Mini Infra manages Docker-hosted infrastructure: container lifecycle, PostgreSQL backups, declarative stacks with blue-green deployment via HAProxy, and Cloudflare tunnel monitoring.
 - The repository uses npm workspaces with three packages (`client/`, `server/`, `lib/`). TypeScript is everywhere; double-check type safety before shipping changes.
 - Logs, generated assets, and Prisma clients live under `server/`. Avoid checking build output into git.
 - Default assumption: development runs on Windows, commands executed through Git Bash or PowerShell. Convert paths when necessary (`C:\repo` -> `/c/repo` for Bash tools).
 
 ## Command & Tooling Expectations
-- Prefer `npm` scripts defined in each workspace; they wrap tsx, Jest, ESLint, and Prisma so you do not have to remember raw invocations.
+- Prefer `npm` scripts defined in each workspace; they wrap tsx, Vitest, ESLint, and Prisma so you do not have to remember raw invocations.
 - Testing uses Vitest 4 with Supertest. Keep unit/integration tests colocated under `server/src/__tests__/` and `client/src/__tests__/`.
 - Linting and formatting rely on ESLint 9.x and Prettier 3. Run `npm run lint` or `npm run format:check` before handing work back.
 - Prisma controls the SQLite schema. Update `server/prisma/schema.prisma` first, then run `npx prisma migrate dev` or `npx prisma db push` as appropriate.
@@ -30,9 +30,9 @@ Pass the key to requests with either header:
 - `x-api-key: <key>`
 
 Example endpoints worth probing during debugging:
-- `GET /api/deployments/configs`
-- `POST /api/deployments/trigger`
+- `GET /api/stacks`
 - `GET /api/containers`
+- `GET /api/environments`
 
 The dev key appears when `npm run dev` is running.
 
@@ -69,9 +69,9 @@ The dev key appears when `npm run dev` is running.
 - **Stack templates** provide versioned blueprints for creating stacks. Built-in templates (monitoring, haproxy) are defined as JSON files in `server/templates/`.
 - The **monitoring stack** (Telegraf, Prometheus, Loki, Alloy) is deployed as a host-level stack and powers the Container Metrics and Container Logs pages.
 
-## Deployment & Infrastructure Hooks
-- Deployment configs and progress tracking live under `server/src/services/deployments/` and `server/src/services/progress-tracker.ts`.
-- HAProxy integration code sits in `server/src/services/haproxy/`. This handles all load-balancing behavior for zero-downtime deployments. HAProxy can be deployed as a stack-managed service or via the legacy deployment infrastructure.
+## Stacks & HAProxy
+- Stack orchestration lives under `server/src/services/stacks/` with plan/apply semantics (similar to Terraform).
+- HAProxy integration code sits in `server/src/services/haproxy/`. This handles all load-balancing behavior for zero-downtime deployments. HAProxy is deployed as a stack-managed service.
 - Cron-based jobs use `node-cron`; scheduling definitions live in `server/src/services/scheduler/`.
 
 ## Logging & Diagnostics
@@ -86,10 +86,10 @@ The dev key appears when `npm run dev` is running.
 - When touching infrastructure or data scripts, document breaking changes in `docs/` or relevant README files.
 
 ## Quick Reference
-- Root dev server port: backend on 5000, frontend on 3005.
+- Root dev server port: backend on 5005, frontend on 3005.
 - Default credentials rely on Google OAuth in production; dev mode uses API key auth.
 - `.env` loading handled through `dotenv-flow`; keep secrets out of committed files.
-- Backup/restore executors: `server/src/services/backup-executor.ts` and `server/src/services/restore-executor.ts`.
+- Backup executors: `server/src/services/backup/backup-executor.ts` and `server/src/services/backup/self-backup-executor.ts`.
 - Progress tracking utilities: `server/src/services/progress-tracker.ts`.
 
 Happy shipping! Keep diffs tight, explain behavior changes in PR summaries, and lean on existing scripts for repeatable workflows.

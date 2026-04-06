@@ -211,6 +211,27 @@ function getApiReference(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Load concepts glossary — embedded directly so the agent always has it
+// ---------------------------------------------------------------------------
+
+function loadConcepts(): string {
+  const conceptsPath = path.join(DOCS_DIR, "getting-started", "concepts.md");
+  try {
+    if (!fs.existsSync(conceptsPath)) {
+      logger.warn({ path: conceptsPath }, "Concepts file not found, skipping");
+      return "";
+    }
+    const raw = fs.readFileSync(conceptsPath, "utf-8");
+    // Strip YAML frontmatter
+    const stripped = raw.replace(/^---\n[\s\S]*?\n---\n*/, "");
+    return stripped.trim();
+  } catch (err) {
+    logger.warn({ err, path: conceptsPath }, "Failed to load concepts file");
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exported builder
 // ---------------------------------------------------------------------------
 
@@ -220,9 +241,11 @@ export function buildSystemPrompt(): string {
   if (cachedPrompt) return cachedPrompt;
 
   const docsIndex = buildDocsIndex();
+  const concepts = loadConcepts();
 
   cachedPrompt = [
     CORE_IDENTITY,
+    ...(concepts ? [concepts] : []),
     docsIndex,
     TOOL_USAGE_GUIDELINES,
     SAFETY_RULES,

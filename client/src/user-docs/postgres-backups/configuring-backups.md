@@ -1,8 +1,6 @@
 ---
 title: Configuring Backup Schedules
 description: How to configure automated PostgreSQL backup schedules in Mini Infra.
-category: PostgreSQL Backups
-order: 2
 tags:
   - postgres
   - backup

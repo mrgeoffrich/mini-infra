@@ -1,8 +1,6 @@
 ---
 title: AI Assistant Settings
 description: How to configure the AI assistant's API key, model, and view its capabilities in Mini Infra.
-category: Settings
-order: 7
 tags:
   - ai
   - configuration

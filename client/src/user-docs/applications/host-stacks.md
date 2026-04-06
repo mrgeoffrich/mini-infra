@@ -1,8 +1,6 @@
 ---
 title: Host Infrastructure Stacks
 description: How to manage host-level infrastructure stacks with plan and apply semantics in Mini Infra.
-category: Applications
-order: 1
 tags:
   - stacks
   - docker

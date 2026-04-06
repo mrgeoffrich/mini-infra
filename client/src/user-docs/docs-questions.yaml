@@ -1,0 +1,363 @@
+# Question-to-Doc Index
+#
+# Maps natural language questions to specific documentation articles
+# and sections. Used by agents for intent-based lookup and by human
+# search for "did you mean" suggestions.
+#
+# Format:
+#   q: Natural language question or intent
+#   ref: category/slug (optionally #section-anchor)
+
+# Getting Started
+- q: What is Mini Infra?
+  ref: getting-started/overview
+- q: What can Mini Infra do?
+  ref: getting-started/overview
+- q: How do I install Mini Infra?
+  ref: getting-started/running-with-docker
+- q: How do I run Mini Infra with Docker Compose?
+  ref: getting-started/running-with-docker
+- q: What environment variables does Mini Infra need?
+  ref: getting-started/running-with-docker
+- q: How do I set up Mini Infra for the first time?
+  ref: getting-started/running-with-docker#after-startup
+- q: Where is the sidebar navigation?
+  ref: getting-started/navigating-the-dashboard
+- q: What do the status badge colors mean?
+  ref: getting-started/navigating-the-dashboard#status-badges
+- q: How do I find the help button?
+  ref: getting-started/navigating-the-dashboard#contextual-help
+- q: What does the dashboard show?
+  ref: getting-started/navigating-the-dashboard#the-dashboard-page
+
+# Applications
+- q: How do I create an application?
+  ref: applications/application-management#creating-an-application
+- q: How do I deploy an application?
+  ref: applications/application-management#deploying-an-application
+- q: How do I update a running application?
+  ref: applications/application-management#updating-an-application
+- q: How do I stop an application?
+  ref: applications/application-management#stopping-an-application
+- q: What is the difference between Stateful and StatelessWeb?
+  ref: applications/application-management#service-configuration
+- q: How do I configure routing for an application?
+  ref: applications/application-management#routing-statelessweb-only
+- q: How do I set up SSL for an application?
+  ref: applications/application-management#routing-statelessweb-only
+- q: What is a host stack?
+  ref: applications/host-stacks
+- q: How does plan and apply work?
+  ref: applications/host-stacks#reviewing-a-plan
+- q: How do I apply stack changes?
+  ref: applications/host-stacks#applying-changes
+- q: What do the stack status values mean?
+  ref: applications/host-stacks#stack-status-values
+- q: How do I deploy the monitoring stack?
+  ref: applications/host-stacks
+- q: What is a stack template?
+  ref: applications/stack-templates
+- q: How do I create a stack template?
+  ref: applications/stack-templates#creating-a-template
+- q: How does template versioning work?
+  ref: applications/stack-templates#versioning
+
+# Containers
+- q: How do I view my containers?
+  ref: containers/viewing-containers
+- q: How do I filter containers?
+  ref: containers/viewing-containers#filtering-and-searching
+- q: What do container status values mean?
+  ref: containers/viewing-containers#status-values
+- q: How do I view Docker networks?
+  ref: containers/viewing-containers#networks-tab
+- q: How do I delete a Docker network?
+  ref: containers/viewing-containers#networks-tab
+- q: How do I start a container?
+  ref: containers/container-actions
+- q: How do I stop a container?
+  ref: containers/container-actions
+- q: How do I restart a container?
+  ref: containers/container-actions
+- q: How do I delete a container?
+  ref: containers/container-actions
+- q: How do I view container details?
+  ref: containers/managing-containers
+- q: How do I see a container's ports?
+  ref: containers/managing-containers#container-information
+- q: How do I see a container's IP address?
+  ref: containers/managing-containers#container-information
+- q: How do I inspect a Docker volume?
+  ref: containers/volume-management#inspecting-a-volume
+- q: How do I browse files inside a volume?
+  ref: containers/volume-management#browsing-volume-files
+- q: How do I delete a Docker volume?
+  ref: containers/volume-management#deleting-a-volume
+- q: Why can't I delete a volume?
+  ref: containers/troubleshooting#volume-delete-button-is-disabled
+- q: How do I view container logs?
+  ref: containers/container-logs
+- q: Why can't I delete a container?
+  ref: containers/troubleshooting#cannot-delete-a-container--delete-button-is-disabled
+- q: Why is my container stuck restarting?
+  ref: containers/troubleshooting#a-container-is-stuck-in-the-restarting-state
+- q: Why does the containers page show Configure Docker?
+  ref: containers/troubleshooting#containers-page-shows-configure-docker-instead-of-containers
+- q: My container exited with a non-zero exit code
+  ref: containers/troubleshooting#a-container-shows-status-exited-with-a-non-zero-exit-code
+- q: How do I add a PostgreSQL container to Mini Infra?
+  ref: containers/container-actions#postgresql-container-actions
+
+# Environments
+- q: How do I create an environment?
+  ref: environments/environments
+- q: What is the difference between Production and Staging environments?
+  ref: environments/environments#environment-types
+- q: How do I delete an environment?
+  ref: environments/environments#deleting-an-environment
+- q: How do I view applications in an environment?
+  ref: environments/environments#environment-details
+
+# PostgreSQL Backups
+- q: How do backups work?
+  ref: postgres-backups/backup-overview
+- q: What do I need to set up before using backups?
+  ref: postgres-backups/backup-overview#prerequisites
+- q: How do I schedule a database backup?
+  ref: postgres-backups/configuring-backups
+- q: How do I set up a cron schedule for backups?
+  ref: postgres-backups/configuring-backups#schedule
+- q: What cron expression should I use for daily backups?
+  ref: postgres-backups/configuring-backups#common-cron-schedules
+- q: How do I set backup retention?
+  ref: postgres-backups/configuring-backups#backup-settings
+- q: How do I run a manual backup?
+  ref: postgres-backups/configuring-backups#running-a-manual-backup
+- q: How do I configure self-backup for Mini Infra?
+  ref: postgres-backups/configuring-backups#self-backup-settings
+- q: How do I restore a database backup?
+  ref: postgres-backups/restoring-backups
+- q: Can I restore to a new database?
+  ref: postgres-backups/restoring-backups#option-2--restore-to-a-new-database
+- q: How do I add a database to Mini Infra?
+  ref: postgres-backups/database-management#adding-a-database
+- q: How do I edit database connection details?
+  ref: postgres-backups/database-management#editing-a-database-connection
+- q: What SSL modes are available for PostgreSQL?
+  ref: postgres-backups/database-management#ssl-mode-options
+- q: Why is my backup failing?
+  ref: postgres-backups/troubleshooting
+- q: Why does my database show Unhealthy?
+  ref: postgres-backups/troubleshooting#database-shows-unhealthy-status
+- q: Why are no backups showing in the restore page?
+  ref: postgres-backups/troubleshooting#no-backups-appear-in-the-browse-backups-tab
+- q: Restore fails with database is being accessed by other users
+  ref: postgres-backups/troubleshooting#restore-fails-with-database-is-being-accessed-by-other-users
+- q: Backup stuck in progress
+  ref: postgres-backups/troubleshooting#backup-history-shows-in_progress-but-backup-appears-stuck
+- q: Backup fails with PostgreSQL containers not configured
+  ref: postgres-backups/troubleshooting#backup-fails-with-postgresql-containers-not-configured
+
+# Load Balancing / HAProxy
+- q: How does load balancing work?
+  ref: haproxy/haproxy-overview
+- q: How do I connect a container to HAProxy?
+  ref: haproxy/haproxy-frontends#connecting-a-container
+- q: How do I create a manual frontend?
+  ref: haproxy/haproxy-frontends#connecting-a-container
+- q: How do I edit an HAProxy frontend?
+  ref: haproxy/haproxy-frontends#editing-a-manual-frontend
+- q: How do I delete an HAProxy frontend?
+  ref: haproxy/haproxy-frontends#deleting-a-manual-frontend
+- q: What are the frontend types?
+  ref: haproxy/haproxy-frontends#frontend-types
+- q: What load balancing algorithms are available?
+  ref: haproxy/haproxy-backends#configuration
+- q: How do I change the load balancing algorithm?
+  ref: haproxy/haproxy-backends#configuration
+- q: How do I put a server in maintenance mode?
+  ref: haproxy/haproxy-backends#servers
+- q: How do I change server weight?
+  ref: haproxy/haproxy-backends#servers
+- q: How do I configure health checks for a backend server?
+  ref: haproxy/haproxy-backends#servers
+- q: What is HAProxy remediation?
+  ref: haproxy/haproxy-instances#remediation
+- q: How do I fix HAProxy configuration drift?
+  ref: haproxy/haproxy-instances#remediation
+- q: How do I migrate a legacy HAProxy instance?
+  ref: haproxy/haproxy-instances#migration
+
+# Networking
+- q: How do I issue a TLS certificate?
+  ref: networking/tls-certificates#issuing-a-certificate
+- q: How do I renew a TLS certificate?
+  ref: networking/tls-certificates#manual-renewal
+- q: How does automatic certificate renewal work?
+  ref: networking/tls-certificates#automatic-renewal
+- q: How do I revoke a certificate?
+  ref: networking/tls-certificates#revoking-a-certificate
+- q: What do certificate status values mean?
+  ref: networking/tls-certificates#certificate-status-values
+- q: How do I use a certificate in HAProxy?
+  ref: networking/tls-certificates#using-certificates-in-haproxy
+- q: What are Let's Encrypt rate limits?
+  ref: networking/tls-certificates#what-to-watch-out-for
+- q: How do I view DNS zones?
+  ref: networking/dns-zones
+- q: How do I refresh DNS records from Cloudflare?
+  ref: networking/dns-zones#refreshing-data
+
+# Tunnels
+- q: How do I monitor Cloudflare tunnels?
+  ref: tunnels/tunnel-monitoring
+- q: What do tunnel status values mean?
+  ref: tunnels/tunnel-monitoring#tunnel-status-values
+- q: How do I add a public hostname to a tunnel?
+  ref: tunnels/tunnel-monitoring#managing-public-hostnames
+- q: How do I delete a tunnel hostname?
+  ref: tunnels/tunnel-monitoring#managing-public-hostnames
+- q: Why are no tunnels showing?
+  ref: tunnels/troubleshooting#no-tunnels-appear-on-the-tunnels-page
+- q: Why is my tunnel showing down or inactive?
+  ref: tunnels/troubleshooting#a-tunnel-shows-status-down-or-inactive
+- q: Traffic not reaching backend through tunnel
+  ref: tunnels/troubleshooting#a-hostname-routing-rule-was-added-but-traffic-is-not-reaching-the-backend
+- q: Cloudflare validation fails
+  ref: tunnels/troubleshooting#validate--save-on-the-cloudflare-settings-page-returns-an-error
+
+# Monitoring
+- q: How do I view system events?
+  ref: monitoring/events
+- q: How do I delete an event?
+  ref: monitoring/events#deleting-events
+- q: How long are events kept?
+  ref: monitoring/events#deleting-events
+- q: How do I search container logs?
+  ref: monitoring/container-logs
+- q: How do I filter logs by service?
+  ref: monitoring/container-logs#service-filter
+- q: How do I search for text in logs?
+  ref: monitoring/container-logs#text-search
+- q: How do I stream logs in real time?
+  ref: monitoring/container-logs#live-tailing
+- q: How do I download logs?
+  ref: monitoring/container-logs#toolbar-actions
+- q: How do I open fullscreen log viewer?
+  ref: monitoring/container-logs#fullscreen-mode
+- q: How do I view container metrics?
+  ref: monitoring/container-metrics
+- q: How do I see CPU usage for containers?
+  ref: monitoring/container-metrics#cpu-usage
+- q: How do I see memory usage for containers?
+  ref: monitoring/container-metrics#memory-usage
+- q: How do I see network traffic for containers?
+  ref: monitoring/container-metrics#network-receive
+
+# Connectivity
+- q: How do I connect Docker?
+  ref: connectivity/health-monitoring#docker
+- q: What Docker host URL should I use?
+  ref: connectivity/health-monitoring#docker-host-url-examples
+- q: How do I connect Azure Storage?
+  ref: connectivity/health-monitoring#azure-storage
+- q: Where do I find my Azure connection string?
+  ref: connectivity/health-monitoring#azure-storage
+- q: How do I connect Cloudflare?
+  ref: connectivity/health-monitoring#cloudflare
+- q: How do I connect GitHub?
+  ref: connectivity/health-monitoring#github
+- q: How do I set up the Package Access Token?
+  ref: connectivity/health-monitoring#additional-tokens
+- q: Docker connection refused
+  ref: connectivity/troubleshooting#docker-validation-fails-with-connection-refused
+- q: Azure authentication error
+  ref: connectivity/troubleshooting#azure-validation-fails-with-authentication-error
+- q: GitHub App setup fails
+  ref: connectivity/troubleshooting#github-app-setup-fails-or-returns-to-a-broken-state
+
+# GitHub
+- q: How do I connect Mini Infra to GitHub?
+  ref: github/github-app-setup
+- q: What permissions does the GitHub App need?
+  ref: github/github-app-setup#permissions-requested
+- q: How do I set up GHCR package browsing?
+  ref: github/github-app-setup#package-access-token
+- q: How do I set up the AI assistant GitHub token?
+  ref: github/github-app-setup#assistant-access-token
+- q: How do I view GitHub packages?
+  ref: github/packages-and-registries
+- q: How do I pull private images from GHCR?
+  ref: github/packages-and-registries#using-ghcr-images-in-deployments
+- q: How do I view GitHub repositories?
+  ref: github/repository-integration#viewing-repositories
+- q: How do I monitor GitHub Actions?
+  ref: github/repository-integration#monitoring-github-actions
+- q: How do I set up bug reporting to GitHub?
+  ref: github/repository-integration#bug-report-settings
+- q: GitHub packages tab is empty
+  ref: github/troubleshooting#packages-tab-is-empty-or-shows-an-error
+- q: GitHub repositories tab is empty
+  ref: github/troubleshooting#repositories-tab-shows-no-repositories-found
+- q: Bug report creation fails
+  ref: github/troubleshooting#test-connection-passes-but-creating-a-bug-report-fails
+
+# API
+- q: How do I use the Mini Infra API?
+  ref: api/api-overview
+- q: How do I authenticate API requests?
+  ref: api/api-overview#authentication
+- q: What API endpoints are available?
+  ref: api/api-overview#common-api-endpoints
+- q: What permissions does my API key need?
+  ref: api/api-overview#permissions
+- q: How do I get the development API key?
+  ref: api/api-overview#development-api-key
+
+# Settings
+- q: How do I create an API key?
+  ref: settings/api-keys#creating-an-api-key
+- q: How do I revoke an API key?
+  ref: settings/api-keys#revoking-and-deleting-keys
+- q: What permission scopes are available?
+  ref: settings/api-keys#permission-domains
+- q: How do I create a permission preset?
+  ref: settings/permission-presets#creating-a-custom-preset
+- q: What built-in presets are available?
+  ref: settings/permission-presets#built-in-presets
+- q: How do I configure the backup Docker image?
+  ref: settings/system-settings#backup-container-settings
+- q: How do I configure the restore Docker image?
+  ref: settings/system-settings#restore-container-settings
+- q: How do I change HAProxy ports?
+  ref: settings/system-settings#haproxy-port-configuration
+- q: How do I set event retention period?
+  ref: settings/system-settings#user-events-configuration
+- q: How do I add Docker registry credentials?
+  ref: settings/system-settings#registry-credentials
+- q: How do I regenerate the session secret?
+  ref: settings/security-settings#regenerating-a-secret
+- q: How do I regenerate the API key secret?
+  ref: settings/security-settings#regenerating-a-secret
+- q: What happens if I regenerate secrets?
+  ref: settings/security-settings#security-secrets
+- q: How do I configure TLS certificate storage?
+  ref: settings/tls-settings#certificate-storage
+- q: What is the difference between Let's Encrypt Production and Staging?
+  ref: settings/tls-settings#production-vs-staging
+- q: How do I configure certificate renewal schedule?
+  ref: settings/tls-settings#renewal-scheduler
+- q: How do I change my timezone?
+  ref: settings/user-preferences#timezone
+- q: How do I configure the AI assistant?
+  ref: settings/ai-assistant
+- q: How do I set the Anthropic API key?
+  ref: settings/ai-assistant#api-key-configuration
+- q: How do I change the AI model?
+  ref: settings/ai-assistant#model-selection
+- q: How do I update Mini Infra?
+  ref: settings/self-update
+- q: What happens if an update fails?
+  ref: settings/self-update#update-results
+- q: What are the update channels?
+  ref: settings/self-update#update-channels
