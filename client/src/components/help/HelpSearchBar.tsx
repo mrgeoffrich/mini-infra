@@ -103,6 +103,9 @@ export function HelpSearchBar() {
           }}
           onKeyDown={handleKeyDown}
           placeholder="Search documentation..."
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore="true"
           className="h-8 w-full rounded-md border border-input bg-muted/50 pl-9 pr-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:bg-background transition-colors"
         />
         {isSearching && (
