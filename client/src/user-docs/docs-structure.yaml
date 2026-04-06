@@ -25,6 +25,26 @@ sections:
           - Prerequisites — Docker, Azure, Cloudflare, GitHub connections
           - Recently died containers alert
           - Single Docker host management scope
+      - slug: concepts
+        topics:
+          - Glossary of Mini Infra concepts and terminology
+          - Containers — lifecycle, status, sensitive label redaction
+          - Stacks — declarative service bundles, status, drift, parameters
+          - Stack templates — reusable blueprints for stack creation
+          - Deployments — blue-green strategy, drain, rollback
+          - Environments — named groupings, production vs nonproduction, network types
+          - HAProxy — instances, frontends, backends, servers, Data Plane API
+          - PostgreSQL backups — scheduling, encryption, Azure storage, restore
+          - TLS certificates — ACME issuance, DNS-01 challenge, auto-renewal
+          - Cloudflare tunnels — health monitoring, public hostname routing
+          - Connected services — Docker, Azure, Cloudflare, GitHub connectivity
+          - DNS zones — Cloudflare DNS management, proxied vs DNS-only
+          - Volumes — inspection, file browsing
+          - Docker networks — bridge driver, environment-scoped naming
+          - API keys — permission scopes, presets, rotation
+          - Events — audit log, progress tracking, Socket.IO streaming
+          - Self-update — in-place upgrade with rollback
+          - Agent sidecar — AI operations assistant
       - slug: navigating-the-dashboard
         topics:
           - Sidebar navigation sections and page layout

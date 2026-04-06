@@ -39,6 +39,8 @@ curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/stacks
 
 Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using HAProxy, and Cloudflare tunnel monitoring.
 
+For a complete glossary of project-specific concepts and terminology, see [`client/src/user-docs/getting-started/concepts.md`](client/src/user-docs/getting-started/concepts.md). This file is the single source of truth — it is also embedded in the agent sidecar system prompt and displayed in the user-facing help docs.
+
 ## Technology Stack
 
 ### Frontend
