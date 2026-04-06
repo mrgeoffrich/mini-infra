@@ -1,8 +1,6 @@
 ---
 title: Container Actions Reference
 description: Reference for all actions you can perform on Docker containers in Mini Infra.
-category: Containers
-order: 5
 tags:
   - containers
   - docker

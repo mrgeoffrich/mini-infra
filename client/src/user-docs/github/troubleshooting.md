@@ -1,8 +1,6 @@
 ---
 title: GitHub Integration Troubleshooting
 description: Common GitHub integration issues and how to resolve them.
-category: GitHub
-order: 4
 tags:
   - github
   - troubleshooting

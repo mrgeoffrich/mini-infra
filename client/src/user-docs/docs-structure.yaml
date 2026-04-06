@@ -1,0 +1,120 @@
+# Documentation Structure
+#
+# Single source of truth for the docs menu, sidebar ordering,
+# and category metadata. Loaded at runtime by the frontend and
+# available to the agent for documentation searches.
+#
+# - Category order matches array order below.
+# - Article order within a category matches its array position.
+# - Slugs correspond to the folder/file path under user-docs/
+#   e.g. "overview" in "getting-started" → user-docs/getting-started/overview.md
+
+sections:
+  - slug: getting-started
+    label: Getting Started
+    description: Introduction and setup guides
+    articles:
+      - overview
+      - navigating-the-dashboard
+      - running-with-docker
+
+  - slug: applications
+    label: Applications
+    description: Application and stack management
+    articles:
+      - application-management
+      - host-stacks
+      - stack-templates
+
+  - slug: containers
+    label: Containers
+    description: Docker container management and inspection
+    articles:
+      - viewing-containers
+      - managing-containers
+      - volume-management
+      - container-logs
+      - container-actions
+      - troubleshooting
+
+  - slug: environments
+    label: Environments
+    description: Service and infrastructure grouping
+    articles:
+      - environments
+
+  - slug: postgres-backups
+    label: PostgreSQL Backups
+    description: Database backup, restore, and scheduling
+    articles:
+      - backup-overview
+      - configuring-backups
+      - restoring-backups
+      - database-management
+      - troubleshooting
+
+  - slug: haproxy
+    label: Load Balancing
+    description: HAProxy load balancer configuration and monitoring
+    articles:
+      - haproxy-overview
+      - haproxy-frontends
+      - haproxy-backends
+      - haproxy-instances
+
+  - slug: networking
+    label: Networking
+    description: DNS, TLS certificates, and network configuration
+    articles:
+      - tls-certificates
+      - dns-zones
+
+  - slug: tunnels
+    label: Tunnels
+    description: Cloudflare tunnel monitoring and management
+    articles:
+      - tunnel-monitoring
+      - troubleshooting
+
+  - slug: monitoring
+    label: Monitoring
+    description: Events, logs, and container metrics
+    articles:
+      - events
+      - container-logs
+      - container-metrics
+
+  - slug: connectivity
+    label: Connectivity
+    description: External service health and connectivity checks
+    articles:
+      - health-monitoring
+      - troubleshooting
+
+  - slug: github
+    label: GitHub
+    description: GitHub App, repositories, and container registries
+    articles:
+      - github-app-setup
+      - packages-and-registries
+      - repository-integration
+      - troubleshooting
+
+  - slug: api
+    label: API
+    description: REST API access and authentication
+    articles:
+      - api-overview
+
+  - slug: settings
+    label: Settings
+    description: System configuration, security, and preferences
+    articles:
+      - api-keys
+      - permission-presets
+      - system-settings
+      - security-settings
+      - tls-settings
+      - user-preferences
+      - ai-assistant
+      - self-update

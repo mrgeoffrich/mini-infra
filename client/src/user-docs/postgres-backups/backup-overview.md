@@ -1,8 +1,6 @@
 ---
 title: PostgreSQL Backup Overview
 description: An overview of how PostgreSQL backup management works in Mini Infra.
-category: PostgreSQL Backups
-order: 1
 tags:
   - postgres
   - backup

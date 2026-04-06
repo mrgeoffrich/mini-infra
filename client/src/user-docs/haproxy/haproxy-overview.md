@@ -1,7 +1,5 @@
 ---
 title: Load Balancer Overview
-category: haproxy
-order: 1
 description: An overview of how HAProxy load balancing works in Mini Infra
 tags:
   - haproxy

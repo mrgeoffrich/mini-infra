@@ -1,8 +1,6 @@
 ---
 title: Event Log
 description: How to view and manage the system event log in Mini Infra.
-category: Monitoring
-order: 1
 tags:
   - monitoring
   - events

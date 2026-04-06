@@ -10,7 +10,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getDocsByCategory } from "@/lib/doc-loader";
+import { getDocsByCategory, getCategoryLabel } from "@/lib/doc-loader";
 import { useDocSearch } from "@/lib/doc-search";
 
 const categories = getDocsByCategory();
@@ -74,7 +74,7 @@ export function HelpPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <Badge variant="outline" className="text-xs">
-                          {doc.frontmatter.category}
+                          {getCategoryLabel(doc.category)}
                         </Badge>
                         <IconChevronRight className="size-4 text-muted-foreground" />
                       </div>

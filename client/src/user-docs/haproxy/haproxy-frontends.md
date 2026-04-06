@@ -1,7 +1,5 @@
 ---
 title: Managing HAProxy Frontends
-category: haproxy
-order: 2
 description: How to view, create, and configure HAProxy frontends in Mini Infra
 tags:
   - haproxy

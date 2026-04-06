@@ -1,7 +1,5 @@
 ---
 title: Managing Environments
-category: environments
-order: 1
 description: How to create and manage environments that group services and infrastructure in Mini Infra
 tags:
   - environments

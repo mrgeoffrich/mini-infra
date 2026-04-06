@@ -1,8 +1,6 @@
 ---
 title: Restoring a PostgreSQL Backup
 description: How to browse backups and restore a PostgreSQL database in Mini Infra.
-category: PostgreSQL Backups
-order: 3
 tags:
   - postgres
   - backup

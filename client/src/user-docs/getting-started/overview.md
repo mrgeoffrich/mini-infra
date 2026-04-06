@@ -1,8 +1,6 @@
 ---
 title: Getting Started with Mini Infra
 description: An introduction to Mini Infra and what you can do with it.
-category: Getting Started
-order: 1
 tags:
   - getting-started
   - dashboard

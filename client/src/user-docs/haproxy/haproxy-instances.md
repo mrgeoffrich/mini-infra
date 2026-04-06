@@ -1,7 +1,5 @@
 ---
 title: HAProxy Instances
-category: haproxy
-order: 4
 description: How to monitor HAProxy health across environments and remediate or migrate instances in Mini Infra
 tags:
   - haproxy

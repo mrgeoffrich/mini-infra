@@ -1,7 +1,5 @@
 ---
 title: System Update
-category: settings
-order: 8
 description: How to update Mini Infra to a new version using the sidecar update mechanism
 tags:
   - settings

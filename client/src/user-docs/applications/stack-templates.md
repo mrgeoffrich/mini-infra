@@ -1,7 +1,5 @@
 ---
 title: Stack Templates
-category: applications
-order: 3
 description: How to create and manage reusable stack templates for deploying infrastructure in Mini Infra
 tags:
   - stack-templates

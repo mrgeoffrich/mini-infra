@@ -1,8 +1,6 @@
 ---
 title: Security Settings
 description: How to manage and regenerate security secrets in Mini Infra.
-category: Settings
-order: 4
 tags:
   - settings
   - security

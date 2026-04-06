@@ -1,8 +1,6 @@
 ---
 title: Viewing and Filtering Containers
 description: How to view, search, and filter Docker containers in Mini Infra.
-category: Containers
-order: 1
 tags:
   - containers
   - docker

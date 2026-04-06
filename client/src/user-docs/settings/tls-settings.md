@@ -1,8 +1,6 @@
 ---
 title: TLS Settings
 description: How to configure certificate storage, ACME provider, and renewal scheduling for TLS certificates.
-category: Settings
-order: 5
 tags:
   - settings
   - tls

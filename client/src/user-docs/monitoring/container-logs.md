@@ -1,8 +1,6 @@
 ---
 title: Searching Container Logs
 description: How to search, filter, and stream centralized container logs in Mini Infra.
-category: Monitoring
-order: 2
 tags:
   - monitoring
   - logs

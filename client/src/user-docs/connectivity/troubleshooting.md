@@ -1,8 +1,6 @@
 ---
 title: Connected Services Troubleshooting
 description: Common issues with external service connections and how to resolve them.
-category: Connectivity
-order: 2
 tags:
   - connectivity
   - troubleshooting

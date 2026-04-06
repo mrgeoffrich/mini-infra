@@ -1,8 +1,6 @@
 ---
 title: Navigating the Dashboard
 description: A guide to finding your way around the Mini Infra interface.
-category: Getting Started
-order: 2
 tags:
   - getting-started
   - navigation

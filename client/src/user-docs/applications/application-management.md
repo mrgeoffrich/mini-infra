@@ -1,7 +1,5 @@
 ---
 title: Managing Applications
-category: applications
-order: 1
 description: How to create, deploy, update, and manage applications in Mini Infra
 tags:
   - applications

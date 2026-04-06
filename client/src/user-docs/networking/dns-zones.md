@@ -1,7 +1,5 @@
 ---
 title: DNS Zones
-category: networking
-order: 2
 description: How to view DNS zones and records from Cloudflare in Mini Infra
 tags:
   - dns

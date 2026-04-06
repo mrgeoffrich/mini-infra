@@ -1,8 +1,6 @@
 ---
 title: Cloudflare Tunnel Troubleshooting
 description: Common issues with Cloudflare tunnel monitoring and how to resolve them.
-category: Tunnels
-order: 2
 tags:
   - tunnels
   - cloudflare

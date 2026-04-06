@@ -1,8 +1,6 @@
 ---
 title: API Key Permission Presets
 description: How to create and manage reusable permission templates for API keys.
-category: Settings
-order: 2
 tags:
   - api-keys
   - authentication

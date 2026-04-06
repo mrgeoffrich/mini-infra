@@ -1,8 +1,6 @@
 ---
 title: Container Troubleshooting
 description: Common container issues and how to resolve them in Mini Infra.
-category: Containers
-order: 6
 tags:
   - containers
   - docker

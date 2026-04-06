@@ -1,8 +1,6 @@
 ---
 title: TLS Certificate Management
 description: How to issue, renew, and manage SSL/TLS certificates in Mini Infra.
-category: Networking
-order: 1
 tags:
   - ssl
   - tls

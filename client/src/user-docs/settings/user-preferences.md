@@ -1,8 +1,6 @@
 ---
 title: User Preferences
 description: How to configure personal settings like timezone in Mini Infra.
-category: Settings
-order: 6
 tags:
   - settings
   - user

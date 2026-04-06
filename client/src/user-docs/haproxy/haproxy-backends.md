@@ -1,7 +1,5 @@
 ---
 title: Managing HAProxy Backends
-category: haproxy
-order: 3
 description: How to view and configure HAProxy backends and servers in Mini Infra
 tags:
   - haproxy
