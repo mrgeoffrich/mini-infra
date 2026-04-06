@@ -87,7 +87,7 @@ class AgentProxyService {
     }
 
     // 2. Proxy to sidecar
-    const response = await proxyToSidecar("/sessions", {
+    const response = await proxyToSidecar("/turns", {
       method: "POST",
       body: { message, currentPath, sdkSessionId },
     });
@@ -95,7 +95,7 @@ class AgentProxyService {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(
-        `Sidecar session creation failed: ${response.status} ${text}`,
+        `Sidecar turn creation failed: ${response.status} ${text}`,
       );
     }
 
@@ -131,7 +131,7 @@ class AgentProxyService {
   ): Promise<boolean> {
     try {
       const response = await proxyToSidecar(
-        `/sessions/${sessionId}/context`,
+        `/turns/${sessionId}/context`,
         {
           method: "PUT",
           body: { currentPath },
@@ -145,7 +145,7 @@ class AgentProxyService {
 
   async deleteSession(sessionId: string): Promise<boolean> {
     try {
-      await proxyToSidecar(`/sessions/${sessionId}`, {
+      await proxyToSidecar(`/turns/${sessionId}`, {
         method: "DELETE",
       });
     } catch {
@@ -176,7 +176,7 @@ class AgentProxyService {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${url}/sessions/${sessionId}/stream`, {
+    const response = await fetch(`${url}/turns/${sessionId}/stream`, {
       headers,
       signal: AbortSignal.timeout(600_000),
     });

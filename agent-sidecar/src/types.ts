@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Session state machine
+// Turn state machine
 // ---------------------------------------------------------------------------
 //
 //   (created) --> running --> completed
@@ -14,14 +14,14 @@
 // Terminal states: completed, failed, cancelled, timeout
 // ---------------------------------------------------------------------------
 
-export type SessionStatus =
+export type TurnStatus =
   | "running"
   | "completed"
   | "failed"
   | "cancelled"
   | "timeout";
 
-export const TERMINAL_STATUSES: ReadonlySet<SessionStatus> = new Set([
+export const TERMINAL_STATUSES: ReadonlySet<TurnStatus> = new Set([
   "completed",
   "failed",
   "cancelled",
@@ -67,12 +67,12 @@ export interface TokenUsage {
 }
 
 // ---------------------------------------------------------------------------
-// Session — the core domain object (stored in memory)
+// Turn — a single agent query/response cycle (stored in memory)
 // ---------------------------------------------------------------------------
 
-export interface Session {
+export interface Turn {
   id: string;
-  status: SessionStatus;
+  status: TurnStatus;
   currentPath: string;
   /** The session ID returned by the Claude Agent SDK after the first turn. */
   claudeSessionId: string | null;
@@ -88,21 +88,23 @@ export interface Session {
 // API request/response shapes
 // ---------------------------------------------------------------------------
 
-/** POST /sessions request body */
-export interface CreateSessionRequest {
+/** POST /turns request body */
+export interface CreateTurnRequest {
   message: string;
   currentPath?: string;
   context?: Record<string, unknown>;
+  /** Claude Agent SDK session ID to resume (continues prior conversation context). */
+  sdkSessionId?: string;
 }
 
-/** POST /sessions response (201) */
-export interface CreateSessionResponse {
+/** POST /turns response (201) */
+export interface CreateTurnResponse {
   id: string;
-  status: SessionStatus;
+  status: TurnStatus;
   createdAt: string;
 }
 
-/** PUT /sessions/:id/context request body */
+/** PUT /turns/:id/context request body */
 export interface UpdateContextRequest {
   currentPath: string;
 }
@@ -111,6 +113,6 @@ export interface UpdateContextRequest {
 export interface HealthResponse {
   status: "ok";
   uptime: number; // seconds
-  activeSessions: number;
-  totalSessionsProcessed: number;
+  activeTurns: number;
+  totalTurnsProcessed: number;
 }
