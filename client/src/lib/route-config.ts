@@ -151,6 +151,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "User application management",
+    helpDoc: "applications/application-management",
     children: {
       new: {
         path: "/applications/new",
@@ -158,6 +159,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "New",
         parent: "/applications",
         showInNav: false,
+        helpDoc: "applications/application-management",
       },
       detail: {
         path: "/applications/:id",
@@ -165,6 +167,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/applications",
         showInNav: false,
+        helpDoc: "applications/application-management",
       },
     },
   },
@@ -370,6 +373,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "networking",
     description: "View cached DNS zones and records from Cloudflare",
+    helpDoc: "networking/dns-zones",
   },
 
   "/connectivity-docker": {
@@ -497,6 +501,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Update Mini Infra via sidecar container",
+    helpDoc: "settings/self-update",
   },
 
   "/stack-templates": {
@@ -507,6 +512,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "applications",
     description: "Create and manage reusable stack blueprints",
+    helpDoc: "applications/stack-templates",
     children: {
       detail: {
         path: "/stack-templates/:templateId",
@@ -514,6 +520,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/stack-templates",
         showInNav: false,
+        helpDoc: "applications/stack-templates",
       },
     },
   },
