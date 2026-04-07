@@ -279,21 +279,6 @@ export default function AiAssistantSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {settings.apiKey.source === "environment" && (
-              <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-900/30 dark:text-blue-100">
-                <div className="flex items-start gap-2">
-                  <IconInfoCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium">Set via environment variable</p>
-                    <p className="mt-1 text-blue-700 dark:text-blue-200">
-                      The API key is configured through the <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">ANTHROPIC_API_KEY</code> environment variable.
-                      To change it, update the environment variable and restart the server.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {settings.apiKey.configured && settings.apiKey.maskedKey && (
               <div className="space-y-2">
                 <Label>Current API Key</Label>
@@ -301,20 +286,18 @@ export default function AiAssistantSettingsPage() {
                   <code className="flex-1 rounded-md border bg-muted px-3 py-2 text-sm font-mono">
                     {settings.apiKey.maskedKey}
                   </code>
-                  {settings.apiKey.source === "database" && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleDeleteApiKey}
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? (
-                        <IconLoader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <IconTrash className="h-4 w-4" />
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteApiKey}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <IconLoader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <IconTrash className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Source: {settings.apiKey.source}
@@ -322,11 +305,10 @@ export default function AiAssistantSettingsPage() {
               </div>
             )}
 
-            {settings.apiKey.source !== "environment" && (
-              <div className="space-y-2">
-                <Label htmlFor="api-key">
-                  {settings.apiKey.source === "database" ? "Change API Key" : "Anthropic API Key"}
-                </Label>
+            <div className="space-y-2">
+              <Label htmlFor="api-key">
+                {settings.apiKey.source === "database" ? "Change API Key" : "Anthropic API Key"}
+              </Label>
                 <Input
                   id="api-key"
                   type="password"
@@ -367,7 +349,6 @@ export default function AiAssistantSettingsPage() {
                   </Button>
                 </div>
               </div>
-            )}
           </CardContent>
         </Card>
 

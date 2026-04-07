@@ -29,7 +29,7 @@ Read `server/src/app.ts` lines ~154-203. This contains the `routes` array with e
 { path: "/api/keys", router: apiKeyRoutes, name: "apiKeyRoutes" },
 ```
 
-The `path` value is the mount prefix. Note: some routes (e.g. agent routes) are conditionally registered — include them with a note like `(requires ANTHROPIC_API_KEY)`.
+The `path` value is the mount prefix. Note: some routes (e.g. agent routes) are conditionally registered — include them with a note like `(requires API key configured in Settings)`.
 
 Also note the nested postgres-server routes — their actual full paths look like `/api/postgres-server/servers/:serverId/databases/:dbId/...`.
 

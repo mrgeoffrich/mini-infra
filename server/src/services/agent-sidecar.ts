@@ -4,7 +4,7 @@ import DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
 import appConfig, { agentConfig } from "../lib/config-new";
-import { getEffectiveModel } from "./agent-settings-service";
+import { getEffectiveModel, getEffectiveApiKey } from "./agent-settings-service";
 import { getAgentApiKey } from "./agent-api-key";
 
 const logger = servicesLogger();
@@ -184,9 +184,10 @@ export async function ensureAgentSidecar(options?: {
     return null;
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const anthropicApiKey = await getEffectiveApiKey();
+  if (!anthropicApiKey) {
     logger.warn(
-      "ANTHROPIC_API_KEY not set, agent sidecar will not function",
+      "Anthropic API key not configured in database, agent sidecar will not function",
     );
   }
 
@@ -319,6 +320,7 @@ async function createAgentSidecar(
     }
 
     // Step 2: Create container
+    const apiKey = await getEffectiveApiKey();
     const createOptions: Record<string, unknown> = {
       Image: config.image,
       name: AGENT_SIDECAR_CONTAINER_NAME,
@@ -327,7 +329,7 @@ async function createAgentSidecar(
         "mini-infra.managed": "true",
       },
       Env: [
-        `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ""}`,
+        `ANTHROPIC_API_KEY=${apiKey || ""}`,
         `MINI_INFRA_API_URL=http://${containerName}:${appConfig.server.port}`,
         `MINI_INFRA_API_KEY=${getAgentApiKey() || ""}`,
         `SIDECAR_AUTH_TOKEN=${internalToken}`,

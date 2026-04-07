@@ -56,7 +56,6 @@ services:
       - CONNECTIVITY_CHECK_INTERVAL=${CONNECTIVITY_CHECK_INTERVAL:-300000}
 
       # AI Agent (Optional)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-debug}
 
       # Tracing (Optional)

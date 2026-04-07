@@ -87,7 +87,6 @@ See [`server/.env.example`](server/.env.example) for the full list of environmen
 | `PORT` | `5005` | Backend server port |
 | `PUBLIC_URL` | `http://localhost:3000` | Public-facing URL (used for CORS and OAuth callbacks) |
 | `LOG_LEVEL` | `debug` | Logging level (`debug`, `info`, `warn`, `error`) |
-| `ANTHROPIC_API_KEY` | _(none)_ | Enables the AI assistant chat feature |
 | `ALLOW_INSECURE` | `false` | Disable HTTPS-enforcing headers (auto-set when `PUBLIC_URL` uses `http://`) |
 
 ## Running with Docker
@@ -100,7 +99,7 @@ Pre-built Docker images and deployment configurations are available in the [`dep
 
 ## Agent Tracing
 
-If the AI assistant is enabled (`ANTHROPIC_API_KEY`), you can trace agent interactions using the Claude Agent SDK's built-in beta tracing. Set these environment variables on the Mini Infra server — they are automatically forwarded to the agent sidecar container:
+If the AI assistant is enabled (API key configured via Settings UI), you can trace agent interactions using the Claude Agent SDK's built-in beta tracing. Set these environment variables on the Mini Infra server — they are automatically forwarded to the agent sidecar container:
 
 | Variable | Description |
 |---|---|

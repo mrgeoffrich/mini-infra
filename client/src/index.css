@@ -118,10 +118,3 @@
     @apply bg-background text-foreground;
   }
 }
-
-/* Hide LastPass and 1Password icons injected into input fields */
-div[id^="__lpform"],
-[data-lastpass-icon-root],
-[data-lastpass-root] {
-  display: none !important;
-}

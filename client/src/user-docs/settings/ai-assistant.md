@@ -15,26 +15,17 @@ Mini Infra includes an AI assistant powered by Anthropic's Claude models. The **
 
 ## API Key Configuration
 
-The assistant requires an Anthropic API key to function. You can provide a key in two ways:
-
-| Method | How to set | Can modify in UI? |
-|--------|-----------|-------------------|
-| **Database** | Enter directly on this page | Yes — can update or delete |
-| **Environment variable** | Set `ANTHROPIC_API_KEY` before starting the server | No — read-only in UI |
-
-To add a key through the UI:
+The assistant requires an Anthropic API key to function. Configure it through this settings page:
 
 1. Enter your Anthropic API key in the input field (keys start with `sk-ant-...`)
 2. Optionally click **Validate** to test the key against the Anthropic API without saving
 3. Click **Save** to store the key and enable the assistant
 
-If a key is already configured, it appears masked (e.g. `sk-ant-...abcd`). A **source** label shows whether the key comes from the database or an environment variable.
-
-When the key is set via the `ANTHROPIC_API_KEY` environment variable, the input field is informational only. To change it, update the environment variable and restart the server.
+If a key is already configured, it appears masked (e.g. `sk-ant-...abcd`).
 
 ### Deleting an API Key
 
-Click the **Delete** button (trash icon) next to the masked key to remove it. This immediately disables the AI assistant. The delete option is only available for keys stored in the database — environment-variable keys must be removed by unsetting the variable and restarting.
+Click the **Delete** button (trash icon) next to the masked key to remove it. This immediately disables the AI assistant.
 
 ### Validation Results
 
@@ -94,6 +85,5 @@ To change these values, set the corresponding environment variable and restart t
 ## What to Watch Out For
 
 - **Removing the API key disables the assistant immediately** — any in-progress AI features will stop working.
-- **Environment-variable settings take priority** over database values. If both are set, the environment variable wins and the UI field becomes read-only.
 - **API key validation uses a small test request** to Anthropic. This consumes a minimal amount of your API quota.
 - **The assistant requires `settings:read` permission** to view this page and `settings:write` to make changes. If buttons are disabled, check your API key permissions.

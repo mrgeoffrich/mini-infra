@@ -9,6 +9,14 @@ import {
 
 const logger = agentLogger();
 
+// Cached flag for whether a DB-stored API key is configured.
+// Updated at startup and whenever the key is saved/deleted.
+let apiKeyConfigured = false;
+
+export function setApiKeyConfigured(value: boolean): void {
+  apiKeyConfigured = value;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -384,14 +392,14 @@ export function setAgentService(service: AgentProxyService | null): void {
  * Check if the agent system is available (API key configured + sidecar healthy).
  */
 export function isAgentAvailable(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY && isAgentSidecarHealthy();
+  return apiKeyConfigured && isAgentSidecarHealthy();
 }
 
 /**
  * Get the reason the agent is unavailable, if any.
  */
 export function getAgentUnavailableReason(): string | null {
-  if (!process.env.ANTHROPIC_API_KEY) return "api_key_not_configured";
+  if (!apiKeyConfigured) return "api_key_not_configured";
   if (!getAgentSidecarUrl()) return "sidecar_unavailable";
   if (!isAgentSidecarHealthy()) return "sidecar_unhealthy";
   return null;
