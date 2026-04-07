@@ -34,6 +34,7 @@ COPY --from=builder /app/dist/ ./dist/
 # Documentation and .claude context baked in at build time
 COPY client/src/user-docs/ /app/docs/
 COPY .claude/ /app/.claude/
+COPY agent-sidecar/.claude/skills/ /app/.claude/skills/
 
 # Create agent working directory and SDK session persistence directory
 RUN mkdir -p /tmp/agent-work /home/node/.claude && chown -R node:node /app /tmp/agent-work /home/node/.claude
