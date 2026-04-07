@@ -185,6 +185,9 @@ export async function runTurn(
                 text?: string;
                 thinking?: string;
                 signature?: string;
+                id?: string;
+                name?: string;
+                input?: Record<string, unknown>;
               }>;
             };
           };
@@ -366,12 +369,12 @@ export async function runTurn(
 // Stream event processor (reused from raw SDK streaming events)
 // ---------------------------------------------------------------------------
 
-interface StreamState {
+export interface StreamState {
   currentBlockTypes: Map<number, string>;
   pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }>;
 }
 
-function processStreamEvent(
+export function processStreamEvent(
   store: TurnStore,
   turnId: string,
   state: StreamState,
@@ -491,7 +494,7 @@ function processStreamEvent(
 // Emit final content blocks from a complete assistant message
 // ---------------------------------------------------------------------------
 
-function emitFinalContentBlocks(
+export function emitFinalContentBlocks(
   store: TurnStore,
   turnId: string,
   message: {
@@ -500,6 +503,9 @@ function emitFinalContentBlocks(
       text?: string;
       thinking?: string;
       signature?: string;
+      id?: string;
+      name?: string;
+      input?: Record<string, unknown>;
     }>;
   },
   assistantUuid: string,
@@ -509,6 +515,18 @@ function emitFinalContentBlocks(
       emitSSE(store, turnId, {
         type: "text",
         data: { content: block.text ?? "", uuid: assistantUuid },
+      });
+    } else if (block.type === "tool_use") {
+      // Emit tool_use with full input from the authoritative assistant message.
+      // This ensures the client always receives tool input even if the
+      // streaming content_block_stop event was missed or had empty input.
+      emitSSE(store, turnId, {
+        type: "tool_use",
+        data: {
+          toolName: block.name ?? "",
+          toolId: block.id ?? "",
+          input: block.input ?? {},
+        },
       });
     } else if (block.type === "thinking") {
       emitSSE(store, turnId, {
