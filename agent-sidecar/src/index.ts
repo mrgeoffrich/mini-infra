@@ -1,23 +1,23 @@
 import express from "express";
 import { logger } from "./logger";
-import { SessionStore } from "./session-store";
+import { TurnStore } from "./turn-store";
 import { createHealthRouter } from "./routes/health";
-import { createSessionsRouter } from "./routes/sessions";
+import { createTurnsRouter } from "./routes/turns";
 import { requireAuth } from "./middleware/auth";
 import { buildSystemPrompt, initApiReference, resetPromptCache } from "./agent/system-prompt";
 
 const PORT = parseInt(process.env.PORT ?? "3100", 10);
 
 const app = express();
-const store = new SessionStore();
+const store = new TurnStore();
 
 app.use(express.json());
 
 // Health endpoint — no auth (used by Docker health checks)
 app.use("/health", createHealthRouter(store));
 
-// Session routes — auth required
-app.use("/sessions", requireAuth, createSessionsRouter(store));
+// Turn routes — auth required
+app.use("/turns", requireAuth, createTurnsRouter(store));
 
 function shutdown(signal: string): void {
   logger.info({ signal }, "Received shutdown signal, shutting down gracefully");
@@ -30,7 +30,7 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // Validate required env vars
 if (!process.env.ANTHROPIC_API_KEY) {
   logger.warn(
-    "ANTHROPIC_API_KEY is not set — agent will fail on session creation",
+    "ANTHROPIC_API_KEY is not set — agent will fail on turn creation",
   );
 }
 

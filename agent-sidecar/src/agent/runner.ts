@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { tappedQuery, type TapMessage } from "@mrgeoffrich/claude-agent-sdk-tap";
 import { createHttpSink } from "@mrgeoffrich/claude-agent-sdk-tap/transport";
-import { SessionStore } from "../session-store";
+import { createFileSink } from "./file-sink";
+import { TurnStore } from "../turn-store";
 import { SSEEvent } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
 import { checkBashSafety } from "./tools";
@@ -32,37 +33,37 @@ const AGENT_EFFORT = (process.env.AGENT_EFFORT ?? "medium") as
 // Agent runner — Agent SDK query()
 // ---------------------------------------------------------------------------
 
-export async function runSession(
-  sessionId: string,
-  store: SessionStore,
+export async function runTurn(
+  turnId: string,
+  store: TurnStore,
 ): Promise<void> {
-  const session = store.getSession(sessionId);
-  if (!session) {
-    logger.error({ sessionId }, "Session not found when starting agent");
+  const turn = store.getTurn(turnId);
+  if (!turn) {
+    logger.error({ turnId }, "Turn not found when starting agent");
     return;
   }
 
   const systemPrompt = buildSystemPrompt();
 
   const timeoutHandle = setTimeout(() => {
-    logger.warn({ sessionId }, "Session timed out");
-    session.abortController.abort();
+    logger.warn({ turnId }, "Turn timed out");
+    turn.abortController.abort();
   }, AGENT_TIMEOUT_MS);
 
-  // Create MCP servers per-session (UI tools need the session's broadcast/path)
+  // Create MCP servers per-turn (UI tools need the turn's broadcast/path)
   const infraMcpServer = createInfraToolsMcpServer();
   const uiMcpServer = createUiToolsMcpServer(
-    (event: SSEEvent) => emitSSE(store, sessionId, event),
-    () => session.currentPath,
+    (event: SSEEvent) => emitSSE(store, turnId, event),
+    () => turn.currentPath,
   );
 
   // Emit init event
-  emitSSE(store, sessionId, {
+  emitSSE(store, turnId, {
     type: "init",
-    data: { sessionId, model: AGENT_MODEL },
+    data: { turnId, model: AGENT_MODEL },
   });
 
-  let capturedClaudeSessionId: string | null = session.claudeSessionId;
+  let capturedClaudeSessionId: string | null = turn.claudeSessionId;
   let capturedCostUsd: number | null = null;
   let assistantUuid = uuidv4();
 
@@ -73,9 +74,9 @@ export async function runSession(
     { id: string; name: string; inputJson: string }
   >();
 
-  // Set up tap HTTP sink outside try so it's accessible in finally
+  // Set up tap sinks outside try so they're accessible in finally
   const TAP_COLLECTOR_URL = process.env.TAP_COLLECTOR_URL;
-  const tapSink = TAP_COLLECTOR_URL
+  const tapHttpSink = TAP_COLLECTOR_URL
     ? createHttpSink(TAP_COLLECTOR_URL, {
         headers: process.env.TAP_COLLECTOR_AUTH
           ? { Authorization: process.env.TAP_COLLECTOR_AUTH }
@@ -86,14 +87,21 @@ export async function runSession(
       })
     : null;
 
+  // Always log SDK messages to disk as NDJSON (one file per turn)
+  const tapFileSink = createFileSink(turnId);
+
   try {
     const queryOptions: Record<string, unknown> = {
       model: AGENT_MODEL,
       systemPrompt,
       cwd: "/tmp/agent-work",
-      abortController: session.abortController,
+      abortController: turn.abortController,
+      // Resume prior SDK session so follow-up messages retain conversation context
+      ...(capturedClaudeSessionId ? { resume: capturedClaudeSessionId } : {}),
+      // Load project skills from /app/.claude/skills/
+      settingSources: ["project"],
       // Use the SDK's built-in tools instead of custom MCP tools
-      tools: ["Bash", "Read", "Glob", "Grep"],
+      tools: ["Bash", "Read", "Glob", "Grep", "Skill"],
       additionalDirectories: ["/app/docs"],
       // Domain-specific MCP servers (API calls, docs, UI guidance)
       mcpServers: {
@@ -106,6 +114,7 @@ export async function runSession(
         "Read",
         "Glob",
         "Grep",
+        "Skill",
         "mcp__mini-infra-infra__*",
         "mcp__mini-infra-ui__*",
       ],
@@ -135,23 +144,23 @@ export async function runSession(
 
     const stream = tappedQuery(
       {
-        prompt: session.messageQueue,
+        prompt: turn.messageQueue,
         options: queryOptions as Parameters<typeof tappedQuery>[0]["options"],
       },
       {},
-      tapSink
-        ? {
-            onMessage: (msg: TapMessage) => {
-              logger.debug({ tapMessage: msg }, "Tap message");
-              tapSink.send(msg);
-            },
+      {
+        onMessage: (msg: TapMessage) => {
+          tapFileSink.send(msg);
+          if (tapHttpSink) {
+            tapHttpSink.send(msg);
           }
-        : undefined,
+        },
+      },
     );
 
     for await (const message of stream) {
-      if (session.abortController.signal.aborted) {
-        handleAbort(store, sessionId);
+      if (turn.abortController.signal.aborted) {
+        handleAbort(store, turnId);
         return;
       }
 
@@ -163,7 +172,7 @@ export async function runSession(
           const event = (message as unknown as { event: Record<string, unknown> }).event;
           processStreamEvent(
             store,
-            sessionId,
+            turnId,
             { currentBlockTypes, pendingToolInputs },
             event,
             assistantUuid,
@@ -180,6 +189,9 @@ export async function runSession(
                 text?: string;
                 thinking?: string;
                 signature?: string;
+                id?: string;
+                name?: string;
+                input?: Record<string, unknown>;
               }>;
             };
           };
@@ -189,14 +201,14 @@ export async function runSession(
           if (assistantMessage.message) {
             emitFinalContentBlocks(
               store,
-              sessionId,
+              turnId,
               assistantMessage.message,
               assistantUuid,
             );
           }
 
           // Emit assistant_message_stop
-          emitSSE(store, sessionId, {
+          emitSSE(store, turnId, {
             type: "assistant_message_stop",
             data: { assistantUuid },
           });
@@ -205,7 +217,7 @@ export async function runSession(
           currentBlockTypes.clear();
           pendingToolInputs.clear();
 
-          store.incrementTurns(sessionId);
+          store.incrementTurns(turnId);
           break;
         }
 
@@ -233,7 +245,7 @@ export async function runSession(
                     .filter(Boolean)
                     .join("\n");
                 }
-                emitSSE(store, sessionId, {
+                emitSSE(store, turnId, {
                   type: "tool_result",
                   data: {
                     toolId: block.tool_use_id as string,
@@ -248,8 +260,8 @@ export async function runSession(
 
         case "result": {
           // Per-turn result from the SDK. With AsyncIterable prompt, "success"
-          // means the agent finished the current message — not that the session
-          // is over. The session ends when the queue closes (generator exits).
+          // means the agent finished the current message — not that the turn
+          // is over. The turn ends when the queue closes (generator exits).
           const resultMsg = message as {
             type: "result";
             subtype: string;
@@ -263,10 +275,10 @@ export async function runSession(
           // Capture the real Claude session ID so follow-up messages use it
           if (resultMsg.session_id) {
             capturedClaudeSessionId = resultMsg.session_id;
-            session.claudeSessionId = capturedClaudeSessionId;
-            emitSSE(store, sessionId, {
+            turn.claudeSessionId = capturedClaudeSessionId;
+            emitSSE(store, turnId, {
               type: "init",
-              data: { sessionId, model: AGENT_MODEL, claudeSessionId: capturedClaudeSessionId },
+              data: { turnId, model: AGENT_MODEL, sdkSessionId: capturedClaudeSessionId },
             });
           }
           if (resultMsg.total_cost_usd != null) {
@@ -275,8 +287,8 @@ export async function runSession(
 
           if (resultMsg.subtype !== "success") {
             const errorMsg = resultMsg.errors?.[0] ?? "Agent query failed";
-            store.failSession(sessionId, errorMsg);
-            emitSSE(store, sessionId, {
+            store.failTurn(turnId, errorMsg);
+            emitSSE(store, turnId, {
               type: "error",
               data: { message: errorMsg },
             });
@@ -284,18 +296,22 @@ export async function runSession(
           // On success: emit a turn-complete marker so the frontend knows the
           // agent is idle and ready for the next message
           else {
-            emitSSE(store, sessionId, {
+            emitSSE(store, turnId, {
               type: "result",
               data: {
-                sessionId,
+                turnId,
                 success: true,
                 cost: capturedCostUsd ?? 0,
-                turns: session.turns,
-                claudeSessionId: capturedClaudeSessionId,
+                turns: turn.turns,
+                sdkSessionId: capturedClaudeSessionId,
                 isTurnResult: true,
               },
             });
           }
+          // Close the message queue so the SDK finishes and the for-await
+          // loop exits cleanly. Follow-up messages create new sessions
+          // with sdkSessionId for conversation resumption.
+          turn.messageQueue.close();
           break;
         }
 
@@ -310,21 +326,21 @@ export async function runSession(
     }
 
     // If we didn't already transition to completed
-    const currentSession = store.getSession(sessionId);
-    if (currentSession?.status === "running") {
-      store.completeSession(sessionId);
+    const currentTurn = store.getTurn(turnId);
+    if (currentTurn?.status === "running") {
+      store.completeTurn(turnId);
     }
   } catch (err: unknown) {
-    if (session.abortController.signal.aborted) {
-      handleAbort(store, sessionId);
+    if (turn.abortController.signal.aborted) {
+      handleAbort(store, turnId);
       return;
     }
 
     const message =
       err instanceof Error ? err.message : "Unknown agent error";
-    logger.error({ err, sessionId }, "Agent runner error");
-    store.failSession(sessionId, message);
-    emitSSE(store, sessionId, {
+    logger.error({ err, turnId }, "Agent runner error");
+    store.failTurn(turnId, message);
+    emitSSE(store, turnId, {
       type: "error",
       data: { message },
     });
@@ -332,28 +348,34 @@ export async function runSession(
     clearTimeout(timeoutHandle);
 
     // Flush any buffered tap messages
-    if (tapSink) {
-      try {
-        await tapSink.flush();
-      } catch (err) {
-        logger.warn({ err }, "Failed to flush tap sink");
-      }
+    const flushPromises: Promise<void>[] = [
+      tapFileSink.flush().catch((err) => {
+        logger.warn({ err }, "Failed to flush tap file sink");
+      }),
+    ];
+    if (tapHttpSink) {
+      flushPromises.push(
+        tapHttpSink.flush().catch((err) => {
+          logger.warn({ err }, "Failed to flush tap HTTP sink");
+        }),
+      );
     }
+    await Promise.all(flushPromises);
 
     // Emit result and done
-    const finalSession = store.getSession(sessionId);
-    emitSSE(store, sessionId, {
+    const finalTurn = store.getTurn(turnId);
+    emitSSE(store, turnId, {
       type: "result",
       data: {
-        sessionId,
-        success: finalSession?.status === "completed",
+        turnId,
+        success: finalTurn?.status === "completed",
         cost: capturedCostUsd ?? 0,
-        duration: finalSession?.durationMs ?? 0,
-        turns: finalSession?.turns ?? 0,
-        claudeSessionId: capturedClaudeSessionId,
+        duration: finalTurn?.durationMs ?? 0,
+        turns: finalTurn?.turns ?? 0,
+        sdkSessionId: capturedClaudeSessionId,
       },
     });
-    emitSSE(store, sessionId, { type: "done", data: {} });
+    emitSSE(store, turnId, { type: "done", data: {} });
   }
 }
 
@@ -361,14 +383,14 @@ export async function runSession(
 // Stream event processor (reused from raw SDK streaming events)
 // ---------------------------------------------------------------------------
 
-interface StreamState {
+export interface StreamState {
   currentBlockTypes: Map<number, string>;
   pendingToolInputs: Map<number, { id: string; name: string; inputJson: string }>;
 }
 
-function processStreamEvent(
-  store: SessionStore,
-  sessionId: string,
+export function processStreamEvent(
+  store: TurnStore,
+  turnId: string,
   state: StreamState,
   event: Record<string, unknown>,
   assistantUuid: string,
@@ -393,7 +415,7 @@ function processStreamEvent(
           name: toolName,
           inputJson: "",
         });
-        emitSSE(store, sessionId, {
+        emitSSE(store, turnId, {
           type: "tool_start",
           data: {
             toolName,
@@ -401,7 +423,7 @@ function processStreamEvent(
           },
         });
       } else if (block.type === "thinking") {
-        emitSSE(store, sessionId, {
+        emitSSE(store, turnId, {
           type: "thinking_start",
           data: { assistantUuid, blockIndex: index },
         });
@@ -420,12 +442,12 @@ function processStreamEvent(
       const index = event.index as number;
 
       if (delta.type === "text_delta") {
-        emitSSE(store, sessionId, {
+        emitSSE(store, turnId, {
           type: "text_delta",
           data: { content: delta.text ?? "" },
         });
       } else if (delta.type === "thinking_delta") {
-        emitSSE(store, sessionId, {
+        emitSSE(store, turnId, {
           type: "thinking_delta",
           data: {
             assistantUuid,
@@ -434,7 +456,7 @@ function processStreamEvent(
           },
         });
       } else if (delta.type === "signature_delta") {
-        emitSSE(store, sessionId, {
+        emitSSE(store, turnId, {
           type: "thinking_signature",
           data: {
             assistantUuid,
@@ -464,7 +486,7 @@ function processStreamEvent(
           } catch {
             // empty
           }
-          emitSSE(store, sessionId, {
+          emitSSE(store, turnId, {
             type: "tool_use",
             data: {
               toolName: pending.name,
@@ -486,27 +508,42 @@ function processStreamEvent(
 // Emit final content blocks from a complete assistant message
 // ---------------------------------------------------------------------------
 
-function emitFinalContentBlocks(
-  store: SessionStore,
-  sessionId: string,
+export function emitFinalContentBlocks(
+  store: TurnStore,
+  turnId: string,
   message: {
     content: Array<{
       type: string;
       text?: string;
       thinking?: string;
       signature?: string;
+      id?: string;
+      name?: string;
+      input?: Record<string, unknown>;
     }>;
   },
   assistantUuid: string,
 ): void {
   for (const [blockIndex, block] of message.content.entries()) {
     if (block.type === "text") {
-      emitSSE(store, sessionId, {
+      emitSSE(store, turnId, {
         type: "text",
         data: { content: block.text ?? "", uuid: assistantUuid },
       });
+    } else if (block.type === "tool_use") {
+      // Emit tool_use with full input from the authoritative assistant message.
+      // This ensures the client always receives tool input even if the
+      // streaming content_block_stop event was missed or had empty input.
+      emitSSE(store, turnId, {
+        type: "tool_use",
+        data: {
+          toolName: block.name ?? "",
+          toolId: block.id ?? "",
+          input: block.input ?? {},
+        },
+      });
     } else if (block.type === "thinking") {
-      emitSSE(store, sessionId, {
+      emitSSE(store, turnId, {
         type: "thinking_complete",
         data: {
           assistantUuid,
@@ -516,7 +553,7 @@ function emitFinalContentBlocks(
         },
       });
     } else if (block.type === "redacted_thinking") {
-      emitSSE(store, sessionId, {
+      emitSSE(store, turnId, {
         type: "thinking_redacted",
         data: {
           assistantUuid,
@@ -533,22 +570,22 @@ function emitFinalContentBlocks(
 // ---------------------------------------------------------------------------
 
 function emitSSE(
-  store: SessionStore,
-  sessionId: string,
+  store: TurnStore,
+  turnId: string,
   event: SSEEvent,
 ): void {
-  store.emitSSE(sessionId, event);
+  store.emitSSE(turnId, event);
 }
 
-function handleAbort(store: SessionStore, sessionId: string): void {
-  const currentSession = store.getSession(sessionId);
-  if (currentSession?.status === "running") {
-    store.cancelSession(sessionId);
+function handleAbort(store: TurnStore, turnId: string): void {
+  const currentTurn = store.getTurn(turnId);
+  if (currentTurn?.status === "running") {
+    store.cancelTurn(turnId);
+    emitSSE(store, turnId, {
+      type: "error",
+      data: { message: "Turn was cancelled" },
+    });
   }
-  emitSSE(store, sessionId, {
-    type: "error",
-    data: { message: "Session was cancelled" },
-  });
 }
 
 function summarizeOutputText(text: string): string {

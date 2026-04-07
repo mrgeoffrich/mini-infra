@@ -6,7 +6,7 @@ export function EnvironmentsPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-6" data-tour="environments-page-header">
           <div className="p-3 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
             <IconServer className="h-6 w-6" />
           </div>

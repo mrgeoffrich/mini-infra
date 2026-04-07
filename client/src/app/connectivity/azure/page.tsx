@@ -308,7 +308,7 @@ export default function AzureSettingsPage() {
                     control={form.control}
                     name="connectionString"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem data-tour="azure-connection-string-input">
                         <FormLabel className="flex items-center gap-2">
                           <IconShield className="h-4 w-4" />
                           Connection String
@@ -395,6 +395,7 @@ export default function AzureSettingsPage() {
                       type="submit"
                       disabled={!form.formState.isValid || isSaving}
                       className="bg-green-600 hover:bg-green-700"
+                      data-tour="azure-validate-button"
                     >
                       {isSaving ? (
                         <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -432,7 +433,7 @@ export default function AzureSettingsPage() {
 
         {/* Container List - Show when Azure is connected */}
         {isAzureConnected && (
-          <div className="mt-8">
+          <div className="mt-8" data-tour="azure-container-list">
             <AzureContainerList />
           </div>
         )}
@@ -451,12 +452,14 @@ export default function AzureSettingsPage() {
             {systemSettingsLoading ? (
               <Skeleton className="h-9 w-full" />
             ) : (
-              <AzureContainerSelector
-                value={defaultContainer}
-                onChange={handleDefaultContainerChange}
-                disabled={!isAzureConnected || isSavingDefaultContainer}
-                placeholder="Select default backup container..."
-              />
+              <div data-tour="azure-default-container-selector">
+                <AzureContainerSelector
+                  value={defaultContainer}
+                  onChange={handleDefaultContainerChange}
+                  disabled={!isAzureConnected || isSavingDefaultContainer}
+                  placeholder="Select default backup container..."
+                />
+              </div>
             )}
           </CardContent>
         </Card>

@@ -50,37 +50,21 @@ export function createUiToolsMcpServer(
   const navigateTool = tool(
     "navigate_to",
     "Navigate the user's browser to a specific page in Mini Infra. " +
-      "Optionally highlight an element after navigation completes. " +
       "Read the manifest file at docs/ui-elements/index.md for available routes.",
     {
       path: z
         .string()
         .describe("The route path to navigate to (e.g. '/containers', '/deployments')"),
-      highlightElementId: z
-        .string()
-        .optional()
-        .describe("Optional data-tour ID of an element to highlight after navigation"),
-      highlightTooltip: z
-        .string()
-        .optional()
-        .describe("Optional tooltip for the post-navigation highlight"),
     },
     async (args) => {
       broadcast({
         type: "ui_navigate",
         data: {
           path: args.path,
-          highlightElementId: args.highlightElementId ?? null,
-          highlightTooltip: args.highlightTooltip ?? null,
         },
       });
-      const parts = [`Navigation request sent to "${args.path}"`];
-      if (args.highlightElementId) {
-        parts.push(`will attempt to highlight "${args.highlightElementId}" after navigation`);
-      }
-      const text = parts.join(". ") + ".";
       return {
-        content: [{ type: "text" as const, text }],
+        content: [{ type: "text" as const, text: `Navigation request sent to "${args.path}".` }],
       };
     },
     { annotations: { readOnlyHint: true } },

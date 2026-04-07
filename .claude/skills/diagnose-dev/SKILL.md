@@ -62,6 +62,47 @@ Pick the right log domain based on the issue:
 | Backup operations | `app-self-backup.log.*` |
 | AI agent | `app-agent.log.*` |
 
+#### Agent sidecar logs
+
+The agent sidecar runs as a separate container (`mini-infra-agent-sidecar`) managed by Mini Infra — it is not a docker-compose service.
+
+**Container stdout (Pino structured logs):**
+
+```bash
+# Recent sidecar logs
+docker logs mini-infra-agent-sidecar --tail 50
+
+# Follow logs live
+docker logs mini-infra-agent-sidecar -f
+```
+
+**Per-turn NDJSON message logs** — every SDK message (streaming events, assistant messages, tool calls, tool results) is logged to `/tmp/agent-logs/<turnId>.ndjson` inside the sidecar container:
+
+```bash
+# List turn log files
+docker exec mini-infra-agent-sidecar ls -lt /tmp/agent-logs/
+
+# Read a specific turn's full message log
+docker exec mini-infra-agent-sidecar cat /tmp/agent-logs/turn_<id>.ndjson
+
+# Show message types in a turn
+docker exec mini-infra-agent-sidecar cat /tmp/agent-logs/turn_<id>.ndjson | jq -r .type
+
+# Count messages by type
+docker exec mini-infra-agent-sidecar cat /tmp/agent-logs/turn_<id>.ndjson | jq -r .type | sort | uniq -c | sort -rn
+
+# Show only assistant text and tool use events
+docker exec mini-infra-agent-sidecar cat /tmp/agent-logs/turn_<id>.ndjson | jq 'select(.type == "assistant" or .type == "stream_event")'
+```
+
+**Sidecar health check:**
+
+```bash
+docker exec mini-infra-agent-sidecar wget -qO- http://localhost:3100/health
+```
+
+Note: If the sidecar container doesn't exist, the agent feature may not be enabled or the sidecar failed to start. Check the main Mini Infra container's `app-agent.log.*` for sidecar launch errors.
+
 #### Hitting the API
 
 Read `API-ROUTES.md` in the project root for the complete list of every API endpoint, organized by domain. Use it to find the right endpoint for whatever you're investigating.

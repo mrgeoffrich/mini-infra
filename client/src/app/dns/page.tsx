@@ -121,6 +121,7 @@ export default function DnsPage() {
               size="sm"
               onClick={() => refetch()}
               disabled={isLoading}
+              data-tour="dns-reload-button"
             >
               <IconRefresh className="w-4 h-4 mr-1" />
               Reload
@@ -130,6 +131,7 @@ export default function DnsPage() {
                 size="sm"
                 onClick={handleRefresh}
                 disabled={refreshMutation.isPending}
+                data-tour="dns-refresh-button"
               >
                 {refreshMutation.isPending ? (
                   <IconLoader2 className="w-4 h-4 mr-1 animate-spin" />

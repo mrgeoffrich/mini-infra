@@ -323,7 +323,7 @@ export default function DockerSettingsPage() {
                     control={form.control}
                     name="dockerHostIp"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem data-tour="docker-host-ip-input">
                         <div className="flex items-center gap-2">
                           <FormLabel>Docker Host IP Address</FormLabel>
                           <Popover>
@@ -418,7 +418,7 @@ export default function DockerSettingsPage() {
                         control={form.control}
                         name="host"
                         render={({ field }) => (
-                          <FormItem>
+                          <FormItem data-tour="docker-host-url-input">
                             <div className="flex items-center gap-2">
                               <FormLabel>Docker Host URL</FormLabel>
                               <Popover>
@@ -485,7 +485,7 @@ export default function DockerSettingsPage() {
                         control={form.control}
                         name="version"
                         render={({ field }) => (
-                          <FormItem>
+                          <FormItem data-tour="docker-api-version-input">
                             <div className="flex items-center gap-2">
                               <FormLabel>Docker API Version</FormLabel>
                               <Popover>
@@ -546,6 +546,7 @@ export default function DockerSettingsPage() {
                           type="submit"
                           disabled={!form.formState.isValid || isSaving}
                           className="bg-green-600 hover:bg-green-700"
+                          data-tour="docker-validate-button"
                         >
                           {isSaving ? (
                             <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />

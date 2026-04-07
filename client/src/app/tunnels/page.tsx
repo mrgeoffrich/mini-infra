@@ -57,7 +57,7 @@ export function TunnelsPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild data-tour="tunnels-configure-button">
             <Link
               to="/connectivity-cloudflare"
               className="flex items-center gap-2"
@@ -72,7 +72,7 @@ export function TunnelsPage() {
       <div className="px-4 lg:px-6 max-w-6xl">
         <div className="grid gap-6">
           {/* Managed Tunnels Section */}
-          <Card>
+          <Card data-tour="tunnels-managed-card">
             <CardHeader>
               <CardTitle>Managed Tunnels</CardTitle>
               <CardDescription>

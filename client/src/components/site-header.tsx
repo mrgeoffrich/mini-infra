@@ -252,7 +252,7 @@ function AssistedSetupButton() {
           title="Open AI assistant to help configure disconnected services"
         >
           <IconRobot className="size-4" />
-          <span className="hidden sm:inline">Assisted Setup</span>
+          <span className="hidden sm:inline">Guided Setup</span>
         </button>
         <button
           onClick={handleDismiss}

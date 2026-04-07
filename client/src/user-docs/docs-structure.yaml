@@ -437,12 +437,12 @@ sections:
           - Timezone does not affect scheduled operations
       - slug: ai-assistant
         topics:
-          - Anthropic API key configuration — database or environment variable
+          - Anthropic API key configuration via Settings UI
           - API key validation against Anthropic API
           - Model selection — Claude Opus, Sonnet, Haiku
           - AI capabilities — API Access, Docker, GitHub
           - Advanced settings — thinking mode, effort level, max turns
-          - Environment variable overrides — ANTHROPIC_API_KEY, AGENT_MODEL
+          - Environment variable overrides — AGENT_MODEL
       - slug: self-update
         topics:
           - Self-update via sidecar container mechanism

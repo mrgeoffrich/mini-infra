@@ -98,7 +98,7 @@ export default function CertificatesPage() {
               <IconRefresh className="h-4 w-4 mr-2" />
               Refresh
             </Button>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button onClick={() => setCreateDialogOpen(true)} data-tour="certificates-issue-button">
               <IconPlus className="h-4 w-4 mr-2" />
               Issue Certificate
             </Button>
@@ -118,7 +118,7 @@ export default function CertificatesPage() {
 
       {/* Certificate list */}
       <div className="px-4 lg:px-6 max-w-7xl">
-        <Card>
+        <Card data-tour="certificates-list-card">
           <CardHeader>
             <CardTitle>Certificates</CardTitle>
             <CardDescription>

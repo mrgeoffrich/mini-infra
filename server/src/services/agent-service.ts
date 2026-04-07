@@ -9,6 +9,14 @@ import {
 
 const logger = agentLogger();
 
+// Cached flag for whether a DB-stored API key is configured.
+// Updated at startup and whenever the key is saved/deleted.
+let apiKeyConfigured = false;
+
+export function setApiKeyConfigured(value: boolean): void {
+  apiKeyConfigured = value;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -87,7 +95,7 @@ class AgentProxyService {
     }
 
     // 2. Proxy to sidecar
-    const response = await proxyToSidecar("/sessions", {
+    const response = await proxyToSidecar("/turns", {
       method: "POST",
       body: { message, currentPath, sdkSessionId },
     });
@@ -95,7 +103,7 @@ class AgentProxyService {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(
-        `Sidecar session creation failed: ${response.status} ${text}`,
+        `Sidecar turn creation failed: ${response.status} ${text}`,
       );
     }
 
@@ -131,7 +139,7 @@ class AgentProxyService {
   ): Promise<boolean> {
     try {
       const response = await proxyToSidecar(
-        `/sessions/${sessionId}/context`,
+        `/turns/${sessionId}/context`,
         {
           method: "PUT",
           body: { currentPath },
@@ -145,7 +153,7 @@ class AgentProxyService {
 
   async deleteSession(sessionId: string): Promise<boolean> {
     try {
-      await proxyToSidecar(`/sessions/${sessionId}`, {
+      await proxyToSidecar(`/turns/${sessionId}`, {
         method: "DELETE",
       });
     } catch {
@@ -176,7 +184,7 @@ class AgentProxyService {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${url}/sessions/${sessionId}/stream`, {
+    const response = await fetch(`${url}/turns/${sessionId}/stream`, {
       headers,
       signal: AbortSignal.timeout(600_000),
     });
@@ -244,12 +252,17 @@ class AgentProxyService {
         break;
 
       case "result":
-        this.persistMessage(sessionId, "result", null, {
-          success: event.data.success as boolean,
-          cost: event.data.cost as number | undefined,
-          duration: event.data.duration as number | undefined,
-          turns: event.data.turns as number | undefined,
-        });
+        // The sidecar emits two result events: a per-turn marker
+        // (isTurnResult: true) and a final result with duration.
+        // Only persist the final one to avoid duplicate result rows.
+        if (!event.data.isTurnResult) {
+          this.persistMessage(sessionId, "result", null, {
+            success: event.data.success as boolean,
+            cost: event.data.cost as number | undefined,
+            duration: event.data.duration as number | undefined,
+            turns: event.data.turns as number | undefined,
+          });
+        }
         break;
 
       case "error":
@@ -384,14 +397,14 @@ export function setAgentService(service: AgentProxyService | null): void {
  * Check if the agent system is available (API key configured + sidecar healthy).
  */
 export function isAgentAvailable(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY && isAgentSidecarHealthy();
+  return apiKeyConfigured && isAgentSidecarHealthy();
 }
 
 /**
  * Get the reason the agent is unavailable, if any.
  */
 export function getAgentUnavailableReason(): string | null {
-  if (!process.env.ANTHROPIC_API_KEY) return "api_key_not_configured";
+  if (!apiKeyConfigured) return "api_key_not_configured";
   if (!getAgentSidecarUrl()) return "sidecar_unavailable";
   if (!isAgentSidecarHealthy()) return "sidecar_unhealthy";
   return null;

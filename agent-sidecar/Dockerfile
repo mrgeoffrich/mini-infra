@@ -14,10 +14,9 @@ RUN npm run build
 FROM node:24-alpine AS production
 
 # dumb-init for proper PID 1 signal handling
-# docker-cli, github-cli, curl, git, bash for agent tool execution
+# github-cli, curl, git, bash for agent tool execution
 RUN apk add --no-cache \
     dumb-init \
-    docker-cli \
     github-cli \
     curl \
     git \
@@ -34,9 +33,12 @@ COPY --from=builder /app/dist/ ./dist/
 # Documentation and .claude context baked in at build time
 COPY client/src/user-docs/ /app/docs/
 COPY .claude/ /app/.claude/
+COPY agent-sidecar/.claude/skills/ /app/.claude/skills/
 
-# Create agent working directory and SDK session persistence directory
-RUN mkdir -p /tmp/agent-work /home/node/.claude && chown -R node:node /app /tmp/agent-work /home/node/.claude
+# Create agent working directory and copy .claude context into it for SDK skill discovery
+RUN mkdir -p /tmp/agent-work /home/node/.claude && \
+    cp -r /app/.claude /tmp/agent-work/.claude && \
+    chown -R node:node /app /tmp/agent-work /home/node/.claude
 
 USER node
 

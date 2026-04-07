@@ -70,7 +70,7 @@ router.post(
           message:
             reason === "sidecar_unavailable" || reason === "sidecar_unhealthy"
               ? "The AI assistant requires the sidecar container to be running"
-              : "ANTHROPIC_API_KEY is not configured",
+              : "Anthropic API key is not configured — set it in Settings",
           reason,
         });
         return;

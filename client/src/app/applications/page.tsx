@@ -228,7 +228,7 @@ export default function ApplicationsPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={() => navigate("/applications/new")}>
+            <Button onClick={() => navigate("/applications/new")} data-tour="applications-add-button">
               <IconPlus className="h-4 w-4 mr-2" />
               Add Application
             </Button>
@@ -237,7 +237,7 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Applications grid */}
-      <div className="px-4 lg:px-6">
+      <div className="px-4 lg:px-6" data-tour="applications-grid">
         {applications.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">

@@ -118,3 +118,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Agent spotlight rainbow border animation */
+@property --spotlight-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes spotlight-rotate {
+  to {
+    --spotlight-angle: 360deg;
+  }
+}
+
+.spotlight-rainbow {
+  background: conic-gradient(
+    from var(--spotlight-angle),
+    #ff0000,
+    #ff8800,
+    #ffff00,
+    #00ff00,
+    #0088ff,
+    #8800ff,
+    #ff0000
+  );
+  animation: spotlight-rotate 2.5s linear infinite;
+  mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+}

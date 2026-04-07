@@ -28,7 +28,7 @@ const ROUTES_FILE = join(ROOT, "client/src/lib/routes.tsx");
 const ROUTE_CONFIG_FILE = join(ROOT, "client/src/lib/route-config.ts");
 
 // Files that reference data-tour as a query string (not as markers to catalogue)
-const SKIP_PATTERNS = ["agent-spotlight-overlay"];
+const SKIP_PATTERNS = ["agent-spotlight-overlay", "WelcomeArrowOverlay"];
 
 // ── File walker ──────────────────────────────────────────────────────────────
 

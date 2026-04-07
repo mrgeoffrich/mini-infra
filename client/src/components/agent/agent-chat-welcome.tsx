@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconRobot, IconHelpCircle, IconAlertTriangle } from "@tabler/icons-react";
+import { IconRobot, IconHelpCircle, IconAlertTriangle, IconSettings } from "@tabler/icons-react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +8,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useAgentStatus } from "@/hooks/use-agent-status";
+import { useAgentChat } from "@/hooks/use-agent-chat";
+import { useConnectivityStatus } from "@/hooks/use-settings";
 
 const capabilities = [
   "Access all product documentation for accurate, context-aware answers",
@@ -26,9 +28,22 @@ const examplePrompts = [
   "Create a GitHub issue for...",
 ];
 
+function useHasDisconnectedServices() {
+  const { data: dockerData } = useConnectivityStatus({ filters: { service: "docker" }, limit: 1 });
+  const { data: cloudflareData } = useConnectivityStatus({ filters: { service: "cloudflare" }, limit: 1 });
+  const { data: azureData } = useConnectivityStatus({ filters: { service: "azure" }, limit: 1 });
+  const { data: githubData } = useConnectivityStatus({ filters: { service: "github-app" }, limit: 1 });
+
+  return [dockerData, cloudflareData, azureData, githubData].some(
+    (data) => data?.data?.[0] && data.data[0].status !== "connected",
+  );
+}
+
 export function AgentChatWelcome() {
   const [open, setOpen] = useState(false);
   const { data: status } = useAgentStatus();
+  const { sendMessage } = useAgentChat();
+  const hasDisconnected = useHasDisconnectedServices();
 
   // Show unavailable message when sidecar is not running
   if (status && !status.enabled) {
@@ -59,6 +74,21 @@ export function AgentChatWelcome() {
     <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-3">
       <IconRobot className="size-10 text-muted-foreground/50" />
       <span>Ask me anything about your infrastructure.</span>
+      {hasDisconnected && (
+        <button
+          type="button"
+          onClick={() => sendMessage("Help me set up my disconnected services")}
+          className="mt-1 flex flex-col items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-5 py-3 text-center transition-colors hover:border-amber-500/50 hover:bg-amber-500/10 cursor-pointer"
+        >
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-400">
+            <IconSettings className="size-4" />
+            Guided service setup
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Some services are disconnected — let me help you configure them
+          </span>
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setOpen(true)}

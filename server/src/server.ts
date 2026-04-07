@@ -225,22 +225,16 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ Self-update sidecar cleanup failed (non-fatal)");
     }
 
-    // Load ANTHROPIC_API_KEY from database before provisioning the sidecar,
-    // so the key is available in process.env when the container is created.
-    let anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      const dbKey = await getEffectiveApiKey();
-      if (dbKey) {
-        process.env.ANTHROPIC_API_KEY = dbKey;
-        anthropicKey = dbKey;
-        logger.info("Loaded ANTHROPIC_API_KEY from database settings");
-        console.log("[STARTUP] Loaded ANTHROPIC_API_KEY from database settings");
-      }
-    }
-
-    // Initialize agent API key before provisioning the sidecar,
-    // so MINI_INFRA_API_KEY is available when the container is created.
+    // Load Anthropic API key from database before provisioning the sidecar.
+    const anthropicKey = await getEffectiveApiKey();
     if (anthropicKey) {
+      const { setApiKeyConfigured } = await import("./services/agent-service");
+      setApiKeyConfigured(true);
+      logger.info("Loaded Anthropic API key from database settings");
+      console.log("[STARTUP] Loaded Anthropic API key from database settings");
+
+      // Initialize agent API key before provisioning the sidecar,
+      // so MINI_INFRA_API_KEY is available when the container is created.
       await initializeAgentApiKey();
     }
 
@@ -474,8 +468,8 @@ const initializeServices = async () => {
         console.log("[STARTUP] ⚠ Agent API key initialization failed");
       }
     } else {
-      logger.info("ANTHROPIC_API_KEY not set, agent features disabled");
-      console.log("[STARTUP] Agent features disabled (no ANTHROPIC_API_KEY — configure via Settings)");
+      logger.info("Anthropic API key not configured, agent features disabled");
+      console.log("[STARTUP] Agent features disabled (no API key — configure via Settings)");
     }
 
     logger.info("All services initialized successfully");

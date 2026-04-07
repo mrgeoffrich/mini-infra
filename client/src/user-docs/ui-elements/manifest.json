@@ -1,7 +1,162 @@
 {
-  "generated": "2026-03-01",
+  "generated": "2026-04-07",
   "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
   "routes": {
+    "/applications/new": {
+      "title": "/applications/new",
+      "elements": [
+        {
+          "id": "new-app-display-name-input",
+          "label": "New App Display Name Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/page.tsx"
+        },
+        {
+          "id": "new-app-environment-select",
+          "label": "New App Environment Select",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/page.tsx"
+        },
+        {
+          "id": "new-app-docker-image-input",
+          "label": "New App Docker Image Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/page.tsx"
+        },
+        {
+          "id": "new-app-create-button",
+          "label": "New App Create Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/new/page.tsx"
+        }
+      ]
+    },
+    "/applications": {
+      "title": "Applications",
+      "elements": [
+        {
+          "id": "applications-add-button",
+          "label": "Applications Add Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/page.tsx"
+        },
+        {
+          "id": "applications-grid",
+          "label": "Applications Grid",
+          "elementType": "div",
+          "file": "client/src/app/applications/page.tsx"
+        }
+      ]
+    },
+    "/certificates": {
+      "title": "TLS Certificates",
+      "elements": [
+        {
+          "id": "certificates-issue-button",
+          "label": "Certificates Issue Button",
+          "elementType": "Button",
+          "file": "client/src/app/certificates/page.tsx"
+        },
+        {
+          "id": "certificates-list-card",
+          "label": "Certificates List Card",
+          "elementType": "Card",
+          "file": "client/src/app/certificates/page.tsx"
+        }
+      ]
+    },
+    "/connectivity-azure": {
+      "title": "Azure Storage",
+      "elements": [
+        {
+          "id": "azure-connection-string-input",
+          "label": "Azure Connection String Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        },
+        {
+          "id": "azure-validate-button",
+          "label": "Azure Validate Button",
+          "elementType": "Button",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        },
+        {
+          "id": "azure-container-list",
+          "label": "Azure Container List",
+          "elementType": "div",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        },
+        {
+          "id": "azure-default-container-selector",
+          "label": "Azure Default Container Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        }
+      ]
+    },
+    "/connectivity-cloudflare": {
+      "title": "Cloudflare",
+      "elements": [
+        {
+          "id": "cloudflare-api-token-input",
+          "label": "Cloudflare Api Token Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/cloudflare/page.tsx"
+        },
+        {
+          "id": "cloudflare-account-id-input",
+          "label": "Cloudflare Account Id Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/cloudflare/page.tsx"
+        },
+        {
+          "id": "cloudflare-validate-button",
+          "label": "Cloudflare Validate Button",
+          "elementType": "Button",
+          "file": "client/src/app/connectivity/cloudflare/page.tsx"
+        }
+      ]
+    },
+    "/connectivity-docker": {
+      "title": "Docker",
+      "elements": [
+        {
+          "id": "docker-host-ip-input",
+          "label": "Docker Host Ip Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/docker/page.tsx"
+        },
+        {
+          "id": "docker-host-url-input",
+          "label": "Docker Host Url Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/docker/page.tsx"
+        },
+        {
+          "id": "docker-api-version-input",
+          "label": "Docker Api Version Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/docker/page.tsx"
+        },
+        {
+          "id": "docker-validate-button",
+          "label": "Docker Validate Button",
+          "elementType": "Button",
+          "file": "client/src/app/connectivity/docker/page.tsx"
+        }
+      ]
+    },
+    "/connectivity-github": {
+      "title": "GitHub",
+      "elements": [
+        {
+          "id": "github-setup-card",
+          "label": "Github Setup Card",
+          "elementType": "div",
+          "file": "client/src/app/connectivity/github/page.tsx"
+        }
+      ]
+    },
     "/containers": {
       "title": "Containers",
       "elements": [
@@ -30,20 +185,141 @@
         }
       ]
     },
-    "/deployments": {
-      "title": "Deployments",
+    "/dns": {
+      "title": "DNS Zones",
       "elements": [
         {
-          "id": "deployments-new-button",
-          "label": "Deployments New Button",
+          "id": "dns-reload-button",
+          "label": "Dns Reload Button",
           "elementType": "Button",
-          "file": "client/src/app/deployments/page.tsx"
+          "file": "client/src/app/dns/page.tsx"
         },
         {
-          "id": "deployments-list",
-          "label": "Deployments List",
+          "id": "dns-refresh-button",
+          "label": "Dns Refresh Button",
+          "elementType": "Button",
+          "file": "client/src/app/dns/page.tsx"
+        }
+      ]
+    },
+    "/environments": {
+      "title": "Environments",
+      "elements": [
+        {
+          "id": "environments-page-header",
+          "label": "Environments Page Header",
           "elementType": "div",
-          "file": "client/src/app/deployments/page.tsx"
+          "file": "client/src/app/environments/page.tsx"
+        }
+      ]
+    },
+    "/settings-ai-assistant": {
+      "title": "AI Assistant",
+      "elements": [
+        {
+          "id": "ai-sidecar-status",
+          "label": "Ai Sidecar Status",
+          "elementType": "div",
+          "file": "client/src/app/settings/ai-assistant/page.tsx"
+        },
+        {
+          "id": "ai-api-key-input",
+          "label": "Ai Api Key Input",
+          "elementType": "Input",
+          "file": "client/src/app/settings/ai-assistant/page.tsx"
+        },
+        {
+          "id": "ai-model-selector",
+          "label": "Ai Model Selector",
+          "elementType": "div",
+          "file": "client/src/app/settings/ai-assistant/page.tsx"
+        }
+      ]
+    },
+    "/settings-self-backup": {
+      "title": "Self-Backup Settings",
+      "elements": [
+        {
+          "id": "backup-container-selector",
+          "label": "Backup Container Selector",
+          "elementType": "FormItem",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        },
+        {
+          "id": "backup-schedule-input",
+          "label": "Backup Schedule Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        },
+        {
+          "id": "backup-cron-presets",
+          "label": "Backup Cron Presets",
+          "elementType": "div",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        },
+        {
+          "id": "backup-enable-toggle",
+          "label": "Backup Enable Toggle",
+          "elementType": "Switch",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        },
+        {
+          "id": "backup-save-config",
+          "label": "Backup Save Config",
+          "elementType": "Button",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        },
+        {
+          "id": "backup-trigger-manual",
+          "label": "Backup Trigger Manual",
+          "elementType": "Button",
+          "file": "client/src/app/settings/self-backup/page.tsx"
+        }
+      ]
+    },
+    "/settings-tls": {
+      "title": "TLS Settings",
+      "elements": [
+        {
+          "id": "tls-container-selector",
+          "label": "Tls Container Selector",
+          "elementType": "div",
+          "file": "client/src/app/settings/tls/page.tsx"
+        },
+        {
+          "id": "tls-test-connection",
+          "label": "Tls Test Connection",
+          "elementType": "Button",
+          "file": "client/src/app/settings/tls/page.tsx"
+        },
+        {
+          "id": "tls-acme-provider",
+          "label": "Tls Acme Provider",
+          "elementType": "div",
+          "file": "client/src/app/settings/tls/page.tsx"
+        },
+        {
+          "id": "tls-acme-email",
+          "label": "Tls Acme Email",
+          "elementType": "div",
+          "file": "client/src/app/settings/tls/page.tsx"
+        }
+      ]
+    },
+    "/tunnels": {
+      "title": "Cloudflare Tunnels",
+      "elements": [
+        {
+          "id": "tunnels-configure-button",
+          "label": "Tunnels Configure Button",
+          "elementType": "Button",
+          "file": "client/src/app/tunnels/page.tsx"
+        },
+        {
+          "id": "tunnels-managed-card",
+          "label": "Tunnels Managed Card",
+          "elementType": "Card",
+          "file": "client/src/app/tunnels/page.tsx"
         }
       ]
     }
@@ -60,6 +336,36 @@
       "label": "Sidebar Nav",
       "elementType": "SidebarContent",
       "file": "client/src/components/app-sidebar.tsx"
+    },
+    {
+      "id": "header-backup-health",
+      "label": "Header Backup Health",
+      "elementType": "Link",
+      "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "header-help",
+      "label": "Header Help",
+      "elementType": "Link",
+      "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "header-assisted-setup",
+      "label": "Header Guided Setup",
+      "elementType": "div",
+      "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "header-connectivity",
+      "label": "Header Connectivity",
+      "elementType": "div",
+      "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "header-task-tracker",
+      "label": "Header Task Tracker",
+      "elementType": "button",
+      "file": "client/src/components/task-tracker/task-tracker-popover.tsx"
     }
   ]
 }

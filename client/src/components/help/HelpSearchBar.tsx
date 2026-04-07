@@ -92,6 +92,7 @@ export function HelpSearchBar() {
         <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <input
           ref={inputRef}
+          id="help-search"
           type="text"
           value={query}
           onChange={(e) => {

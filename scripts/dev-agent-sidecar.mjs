@@ -78,10 +78,13 @@ if (existsSync(DB_PATH)) {
 // 3. Spawn tsx watch with the right environment
 // ---------------------------------------------------------------------------
 
+// In dev mode, the sidecar still needs ANTHROPIC_API_KEY as an env var.
+// The main server reads from the database, but the sidecar process reads from env.
+// Pass it through if set in the shell or server/.env for local development.
 const anthropicKey = process.env.ANTHROPIC_API_KEY || serverEnv.ANTHROPIC_API_KEY || "";
 
 if (!anthropicKey) {
-  console.log("\x1b[33m[agent-sidecar]\x1b[0m ANTHROPIC_API_KEY not set — agent will start but AI features won't work");
+  console.log("\x1b[33m[agent-sidecar]\x1b[0m ANTHROPIC_API_KEY not set in env — the sidecar will use the key configured in the database via the main server");
 }
 
 const child = spawn("npx", ["tsx", "watch", "src/index.ts"], {

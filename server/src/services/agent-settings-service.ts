@@ -7,6 +7,7 @@ import {
   AgentProxyService,
   setAgentService,
   getAgentService,
+  setApiKeyConfigured,
 } from "./agent-service";
 import { initializeAgentApiKey } from "./agent-api-key";
 import type {
@@ -21,9 +22,6 @@ const SETTINGS_CATEGORY = "agent";
 const API_KEY_KEY = "anthropic_api_key";
 const MODEL_KEY = "agent_model";
 
-// Snapshot whether the env vars were genuinely set at startup,
-// before we potentially copy DB values into process.env for subprocesses.
-const ENV_HAD_API_KEY = !!process.env.ANTHROPIC_API_KEY;
 const ENV_HAD_MODEL = !!process.env.AGENT_MODEL;
 
 const AVAILABLE_MODELS = [
@@ -83,7 +81,6 @@ function maskApiKey(key: string): string {
 // ---------------------------------------------------------------------------
 
 export async function getEffectiveApiKey(): Promise<string | null> {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
   return getDbSetting(API_KEY_KEY);
 }
 
@@ -94,23 +91,15 @@ export async function getEffectiveModel(): Promise<string> {
 }
 
 export async function getSettings(): Promise<AgentSettingsResponse> {
-  // Resolve API key source — use startup snapshot to distinguish "originally
-  // from env" vs "copied into env from DB at runtime".
   let apiKeySource: AgentConfigSource = "none";
   let maskedKey: string | null = null;
   let configured = false;
 
-  if (ENV_HAD_API_KEY) {
-    apiKeySource = "environment";
-    maskedKey = maskApiKey(process.env.ANTHROPIC_API_KEY!);
+  const dbKey = await getDbSetting(API_KEY_KEY);
+  if (dbKey) {
+    apiKeySource = "database";
+    maskedKey = maskApiKey(dbKey);
     configured = true;
-  } else {
-    const dbKey = await getDbSetting(API_KEY_KEY);
-    if (dbKey) {
-      apiKeySource = "database";
-      maskedKey = maskApiKey(dbKey);
-      configured = true;
-    }
   }
 
   // Resolve model source
@@ -220,14 +209,8 @@ export async function updateSettings(data: {
 }): Promise<AgentSettingsResponse> {
   if (data.apiKey !== undefined) {
     await setDbSetting(API_KEY_KEY, data.apiKey);
+    setApiKeyConfigured(true);
     logger.info("Agent API key saved to database");
-
-    // Update process.env so new agent subprocesses use the latest key.
-    // Skip only if the key was originally provided via environment variable
-    // (those should only be changed by restarting with a new env value).
-    if (!ENV_HAD_API_KEY) {
-      process.env.ANTHROPIC_API_KEY = data.apiKey;
-    }
 
     // Initialize agent proxy service if it wasn't running
     if (!getAgentService()) {
@@ -260,12 +243,7 @@ export async function updateSettings(data: {
 
 export async function deleteApiKey(): Promise<void> {
   await deleteDbSetting(API_KEY_KEY);
-
-  // If the key was not originally from the environment, clear it from process.env
-  // so new subprocesses won't inherit it.
-  if (!ENV_HAD_API_KEY) {
-    delete process.env.ANTHROPIC_API_KEY;
-  }
+  setApiKeyConfigured(false);
 
   // Shut down and clear the agent service so /status returns { enabled: false }
   const service = getAgentService();
