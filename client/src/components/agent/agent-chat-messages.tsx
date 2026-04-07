@@ -38,7 +38,7 @@ const chatMarkdownClasses = cn(
   "[&_code]:text-[12px]",
   "[&_blockquote]:mt-1.5 [&_blockquote]:mb-1.5 [&_blockquote]:text-[13px]",
   "[&_li_strong]:font-medium",
-  "[&_table]:text-[12px]",
+  "[&_table]:text-[12px] [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1",
 );
 
 interface ToolDisplay {
