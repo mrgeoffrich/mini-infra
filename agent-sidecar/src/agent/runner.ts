@@ -308,6 +308,10 @@ export async function runTurn(
               },
             });
           }
+          // Close the message queue so the SDK finishes and the for-await
+          // loop exits cleanly. Follow-up messages create new sessions
+          // with sdkSessionId for conversation resumption.
+          turn.messageQueue.close();
           break;
         }
 
