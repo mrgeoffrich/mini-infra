@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
@@ -241,7 +241,13 @@ function ToolUseBlock({ msg }: { msg: ChatMessageToolUse }) {
   );
 }
 
-function ThinkingBlock({ msg }: { msg: ChatMessageThinking }) {
+function ThinkingBlock({
+  msg,
+  tools,
+}: {
+  msg: ChatMessageThinking;
+  tools?: ChatMessageToolUse[];
+}) {
   const content = msg.redacted
     ? msg.content || "Thinking content is redacted."
     : msg.content;
@@ -296,6 +302,13 @@ function ThinkingBlock({ msg }: { msg: ChatMessageThinking }) {
           </pre>
         </div>
       )}
+      {tools && tools.length > 0 && (
+        <div className="ml-4 pl-2 border-l border-border/50 mt-0.5 space-y-0.5">
+          {tools.map((tool) => (
+            <MessageBubble key={tool.id} msg={tool} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -313,13 +326,11 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
     case "assistant":
       return (
-        <div className="flex justify-start">
-          <div className="max-w-[85%] text-[13px]">
-            <DocContent
-              content={msg.content}
-              className={chatMarkdownClasses}
-            />
-          </div>
+        <div className="text-[13px]">
+          <DocContent
+            content={msg.content}
+            className={chatMarkdownClasses}
+          />
         </div>
       );
 
@@ -354,12 +365,12 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       }
       if (msg.toolName === "mcp__mini-infra-infra__api_request") {
         const input = msg.input as Record<string, unknown> | undefined;
-        const method = ((input?.method as string) ?? "").toUpperCase();
+        const method = ((input?.method as string) ?? "GET").toUpperCase();
         const apiPath = (input?.path as string) ?? "";
         return (
           <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground italic">
             <IconApi className="size-3 shrink-0" />
-            {method && apiPath ? (
+            {apiPath ? (
               <>
                 <span>{method}</span>
                 <span className="font-mono not-italic opacity-70 truncate">
@@ -401,10 +412,46 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   }
 }
 
+/**
+ * Group consecutive thinking → tool_use messages so tool calls can be
+ * rendered nested under the thinking block that preceded them.
+ */
+type MessageGroup =
+  | { type: "thinking-group"; thinking: ChatMessageThinking; tools: ChatMessageToolUse[] }
+  | { type: "single"; msg: ChatMessage };
+
+function groupMessages(messages: ChatMessage[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    if (msg.role === "thinking") {
+      const tools: ChatMessageToolUse[] = [];
+      let j = i + 1;
+      while (j < messages.length && messages[j].role === "tool_use") {
+        tools.push(messages[j] as ChatMessageToolUse);
+        j++;
+      }
+      groups.push({
+        type: "thinking-group",
+        thinking: msg as ChatMessageThinking,
+        tools,
+      });
+      i = j;
+    } else {
+      groups.push({ type: "single", msg });
+      i++;
+    }
+  }
+  return groups;
+}
+
 export function AgentChatMessages() {
   const { messages, streamingText } = useAgentChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
+
+  const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   const checkNearBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -428,19 +475,25 @@ export function AgentChatMessages() {
     >
       {messages.length === 0 && !streamingText && <AgentChatWelcome />}
 
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} msg={msg} />
-      ))}
+      {grouped.map((group) =>
+        group.type === "thinking-group" ? (
+          <ThinkingBlock
+            key={group.thinking.id}
+            msg={group.thinking}
+            tools={group.tools.length > 0 ? group.tools : undefined}
+          />
+        ) : (
+          <MessageBubble key={group.msg.id} msg={group.msg} />
+        ),
+      )}
 
       {streamingText && (
-        <div className="flex justify-start">
-          <div className="max-w-[85%] text-[13px]">
-            <DocContent
-              content={streamingText}
-              className={chatMarkdownClasses}
-            />
-            <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-text-bottom" />
-          </div>
+        <div className="text-[13px]">
+          <DocContent
+            content={streamingText}
+            className={chatMarkdownClasses}
+          />
+          <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-text-bottom" />
         </div>
       )}
     </div>

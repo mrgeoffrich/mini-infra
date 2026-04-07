@@ -252,12 +252,17 @@ class AgentProxyService {
         break;
 
       case "result":
-        this.persistMessage(sessionId, "result", null, {
-          success: event.data.success as boolean,
-          cost: event.data.cost as number | undefined,
-          duration: event.data.duration as number | undefined,
-          turns: event.data.turns as number | undefined,
-        });
+        // The sidecar emits two result events: a per-turn marker
+        // (isTurnResult: true) and a final result with duration.
+        // Only persist the final one to avoid duplicate result rows.
+        if (!event.data.isTurnResult) {
+          this.persistMessage(sessionId, "result", null, {
+            success: event.data.success as boolean,
+            cost: event.data.cost as number | undefined,
+            duration: event.data.duration as number | undefined,
+            turns: event.data.turns as number | undefined,
+          });
+        }
         break;
 
       case "error":
