@@ -94,8 +94,10 @@ export async function runTurn(
       abortController: turn.abortController,
       // Resume prior SDK session so follow-up messages retain conversation context
       ...(capturedClaudeSessionId ? { resume: capturedClaudeSessionId } : {}),
+      // Load project skills from /app/.claude/skills/
+      settingSources: ["project"],
       // Use the SDK's built-in tools instead of custom MCP tools
-      tools: ["Bash", "Read", "Glob", "Grep"],
+      tools: ["Bash", "Read", "Glob", "Grep", "Skill"],
       additionalDirectories: ["/app/docs"],
       // Domain-specific MCP servers (API calls, docs, UI guidance)
       mcpServers: {
@@ -108,6 +110,7 @@ export async function runTurn(
         "Read",
         "Glob",
         "Grep",
+        "Skill",
         "mcp__mini-infra-infra__*",
         "mcp__mini-infra-ui__*",
       ],
@@ -546,11 +549,11 @@ function handleAbort(store: TurnStore, turnId: string): void {
   const currentTurn = store.getTurn(turnId);
   if (currentTurn?.status === "running") {
     store.cancelTurn(turnId);
+    emitSSE(store, turnId, {
+      type: "error",
+      data: { message: "Turn was cancelled" },
+    });
   }
-  emitSSE(store, turnId, {
-    type: "error",
-    data: { message: "Turn was cancelled" },
-  });
 }
 
 function summarizeOutputText(text: string): string {

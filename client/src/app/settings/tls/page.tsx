@@ -159,7 +159,7 @@ export default function TlsSettingsPage() {
               <Label htmlFor="certificate_blob_container">
                 Certificate Container
               </Label>
-              <div className="flex gap-2">
+              <div className="flex gap-2" data-tour="tls-container-selector">
                 <Select
                   value={form.watch("certificate_blob_container") || ""}
                   onValueChange={(value) =>
@@ -222,6 +222,7 @@ export default function TlsSettingsPage() {
               disabled={
                 isTesting || !form.watch("certificate_blob_container")
               }
+              data-tour="tls-test-connection"
             >
               {isTesting ? (
                 <>
@@ -278,7 +279,7 @@ export default function TlsSettingsPage() {
           </CardHeader>
           <CardContent>
             <form className="space-y-4">
-              <div>
+              <div data-tour="tls-acme-provider">
                 <Label>Provider</Label>
                 <Select
                   value={form.watch("default_acme_provider") || "letsencrypt"}
@@ -303,7 +304,7 @@ export default function TlsSettingsPage() {
                 </p>
               </div>
 
-              <div>
+              <div data-tour="tls-acme-email">
                 <Label>Email Address</Label>
                 <Input
                   type="email"

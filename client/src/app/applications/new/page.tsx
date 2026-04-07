@@ -363,7 +363,7 @@ export default function NewApplicationPage() {
                   control={form.control}
                   name="displayName"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem data-tour="new-app-display-name-input">
                       <FormLabel>Application Name</FormLabel>
                       <FormControl>
                         <Input placeholder="My Application" {...field} />
@@ -452,7 +452,7 @@ export default function NewApplicationPage() {
                   control={form.control}
                   name="environmentId"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem data-tour="new-app-environment-select">
                       <FormLabel>Environment</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? ""}>
                         <FormControl>
@@ -508,7 +508,7 @@ export default function NewApplicationPage() {
                         control={form.control}
                         name="dockerImage"
                         render={({ field }) => (
-                          <FormItem>
+                          <FormItem data-tour="new-app-docker-image-input">
                             <FormLabel>Docker Image</FormLabel>
                             <FormControl>
                               <Input placeholder="nginx" {...field} />
@@ -1100,6 +1100,7 @@ export default function NewApplicationPage() {
                   <Button
                     type="submit"
                     disabled={createApplication.isPending || !!showHaproxyWarning}
+                    data-tour="new-app-create-button"
                   >
                     {createApplication.isPending && (
                       <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />

@@ -124,7 +124,7 @@ export default function GitHubConnectivityPage() {
         )}
 
         {/* Setup Flow (when not configured and no code) */}
-        {!settingsLoading && !isConnected && !needsInstallation && !code && <SetupCard />}
+        {!settingsLoading && !isConnected && !needsInstallation && !code && <div data-tour="github-setup-card"><SetupCard /></div>}
 
         {/* Connected State */}
         {!settingsLoading && isConnected && (

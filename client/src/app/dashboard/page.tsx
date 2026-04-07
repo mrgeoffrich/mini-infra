@@ -1,11 +1,11 @@
 import { IconDashboard } from "@tabler/icons-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAllServicesStatus } from "@/hooks/use-all-services-status";
+import { useOnboardingStatus } from "@/hooks/use-onboarding";
 import { ContainerSummary } from "./ContainerSummary";
 import { WelcomeDashboard } from "./WelcomeDashboard";
 
 export function DashboardPage() {
-  const { isLoading, allDisconnected } = useAllServicesStatus();
+  const { onboardingComplete, isLoading } = useOnboardingStatus();
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -18,7 +18,7 @@ export function DashboardPage() {
           <div>
             <h1 className="text-3xl font-bold">Dashboard</h1>
             <p className="text-muted-foreground">
-              {allDisconnected && !isLoading
+              {!onboardingComplete && !isLoading
                 ? "Get started by connecting your services"
                 : "Overview of your Docker infrastructure"}
             </p>
@@ -35,7 +35,7 @@ export function DashboardPage() {
             ))}
           </div>
         </div>
-      ) : allDisconnected ? (
+      ) : !onboardingComplete ? (
         <WelcomeDashboard />
       ) : (
         <ContainerSummary />

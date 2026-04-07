@@ -36,8 +36,10 @@ COPY client/src/user-docs/ /app/docs/
 COPY .claude/ /app/.claude/
 COPY agent-sidecar/.claude/skills/ /app/.claude/skills/
 
-# Create agent working directory and SDK session persistence directory
-RUN mkdir -p /tmp/agent-work /home/node/.claude && chown -R node:node /app /tmp/agent-work /home/node/.claude
+# Create agent working directory and copy .claude context into it for SDK skill discovery
+RUN mkdir -p /tmp/agent-work /home/node/.claude && \
+    cp -r /app/.claude /tmp/agent-work/.claude && \
+    chown -R node:node /app /tmp/agent-work /home/node/.claude
 
 USER node
 

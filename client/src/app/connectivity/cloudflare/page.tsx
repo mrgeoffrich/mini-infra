@@ -273,7 +273,7 @@ export default function CloudflareSettingsPage() {
                         control={form.control}
                         name="apiToken"
                         render={({ field }) => (
-                          <FormItem>
+                          <FormItem data-tour="cloudflare-api-token-input">
                             <FormLabel>
                               <IconShield className="inline mr-2 h-4 w-4" />
                               API Token
@@ -323,7 +323,7 @@ export default function CloudflareSettingsPage() {
                         control={form.control}
                         name="accountId"
                         render={({ field }) => (
-                          <FormItem>
+                          <FormItem data-tour="cloudflare-account-id-input">
                             <FormLabel>Account ID</FormLabel>
                             <FormControl>
                               <Input
@@ -347,6 +347,7 @@ export default function CloudflareSettingsPage() {
                         <Button
                           type="submit"
                           disabled={!form.formState.isValid || isSaving}
+                          data-tour="cloudflare-validate-button"
                         >
                           {isSaving ? (
                             <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />

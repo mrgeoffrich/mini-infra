@@ -375,7 +375,7 @@ export default function SelfBackupSettingsPage() {
                 control={form.control}
                 name="azureContainerName"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem data-tour="backup-container-selector">
                     <FormLabel>Azure Storage Container</FormLabel>
                     <Select
                       onValueChange={field.onChange}
@@ -408,7 +408,7 @@ export default function SelfBackupSettingsPage() {
                 control={form.control}
                 name="cronSchedule"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem data-tour="backup-schedule-input">
                     <FormLabel>Backup Schedule</FormLabel>
                     <FormControl>
                       <Input
@@ -423,7 +423,7 @@ export default function SelfBackupSettingsPage() {
                     </FormDescription>
                     <FormMessage />
                     {/* Quick presets */}
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="flex flex-wrap gap-2 mt-2" data-tour="backup-cron-presets">
                       {cronPresets.map((preset) => (
                         <Button
                           key={preset.value}
@@ -536,6 +536,7 @@ export default function SelfBackupSettingsPage() {
                       </div>
                     </div>
                     <Switch
+                      data-tour="backup-enable-toggle"
                       checked={config?.enabled || false}
                       onCheckedChange={handleToggleEnabled}
                       disabled={
@@ -567,6 +568,7 @@ export default function SelfBackupSettingsPage() {
                     !form.formState.isDirty ||
                     updateConfig.isPending
                   }
+                  data-tour="backup-save-config"
                 >
                   <IconDeviceFloppy className="mr-2 h-4 w-4" />
                   {updateConfig.isPending
@@ -582,6 +584,7 @@ export default function SelfBackupSettingsPage() {
                     !config?.azureContainerName ||
                     triggerBackup.isPending
                   }
+                  data-tour="backup-trigger-manual"
                 >
                   {triggerBackup.isPending ? (
                     <>

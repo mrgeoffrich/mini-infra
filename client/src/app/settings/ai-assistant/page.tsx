@@ -207,7 +207,7 @@ export default function AiAssistantSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between" data-tour="ai-sidecar-status">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Container Status</p>
                 <p className="text-xs text-muted-foreground">
@@ -313,6 +313,7 @@ export default function AiAssistantSettingsPage() {
                   id="api-key"
                   type="password"
                   placeholder="sk-ant-..."
+                  data-tour="ai-api-key-input"
                   value={apiKeyInput}
                   onChange={(e) => {
                     setApiKeyInput(e.target.value);
@@ -378,7 +379,7 @@ export default function AiAssistantSettingsPage() {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-2" data-tour="ai-model-selector">
               <Label htmlFor="model-select">Model</Label>
               <Select
                 value={modelValue}
