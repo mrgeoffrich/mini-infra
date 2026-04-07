@@ -21,6 +21,53 @@ const logger = appLogger();
 const router = express.Router();
 
 /**
+ * GET /api/docker/info
+ * Returns Docker daemon information (version, OS, container counts, etc.)
+ */
+router.get(
+  "/info",
+  requirePermission('docker:read'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const dockerService = DockerService.getInstance();
+
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const docker = await dockerService.getDockerInstance();
+      const info = await docker.info();
+
+      res.json({
+        success: true,
+        data: {
+          serverVersion: info.ServerVersion,
+          os: info.OperatingSystem,
+          architecture: info.Architecture,
+          kernelVersion: info.KernelVersion,
+          totalMemory: info.MemTotal,
+          cpus: info.NCPU,
+          containers: info.Containers,
+          containersRunning: info.ContainersRunning,
+          containersPaused: info.ContainersPaused,
+          containersStopped: info.ContainersStopped,
+          images: info.Images,
+          storageDriver: info.Driver,
+          dockerRootDir: info.DockerRootDir,
+        },
+      });
+    } catch (error) {
+      logger.error({ error }, "Failed to get Docker info");
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/docker/networks
  * List all Docker networks
  */

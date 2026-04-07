@@ -14,10 +14,9 @@ RUN npm run build
 FROM node:24-alpine AS production
 
 # dumb-init for proper PID 1 signal handling
-# docker-cli, github-cli, curl, git, bash for agent tool execution
+# github-cli, curl, git, bash for agent tool execution
 RUN apk add --no-cache \
     dumb-init \
-    docker-cli \
     github-cli \
     curl \
     git \

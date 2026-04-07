@@ -21,32 +21,11 @@ export const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
     pattern: /rm\s+-rf\s+\//,
     reason: "Recursive deletion of root filesystem is forbidden",
   },
-  {
-    pattern: /docker\s+system\s+prune/,
-    reason: "docker system prune can remove in-use resources",
-  },
-  {
-    pattern: /docker\s+volume\s+rm/,
-    reason:
-      "docker volume rm could delete persistent data. Use Mini Infra API instead",
-  },
-  {
-    pattern: /docker\s+container\s+prune/,
-    reason: "docker container prune can remove needed containers",
-  },
-  {
-    pattern: /docker\s+image\s+prune\s+-a/,
-    reason: "docker image prune -a removes all unused images",
-  },
   { pattern: /mkfs/, reason: "Filesystem formatting is forbidden" },
   { pattern: /dd\s+if=/, reason: "Disk operations with dd are forbidden" },
   {
     pattern: />\s*\/dev\//,
     reason: "Writing to device files is forbidden",
-  },
-  {
-    pattern: /chmod\s+.*\/var\/run\/docker\.sock/,
-    reason: "Modifying Docker socket permissions is forbidden",
   },
   { pattern: /kill\s+-9\s+1($|\s)/, reason: "Killing PID 1 is forbidden" },
   { pattern: /shutdown/, reason: "System shutdown is forbidden" },

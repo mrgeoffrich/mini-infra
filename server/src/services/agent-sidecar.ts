@@ -351,7 +351,6 @@ async function createAgentSidecar(
       ExposedPorts: { [`${SIDECAR_PORT}/tcp`]: {} },
       HostConfig: {
         Binds: [
-          "/var/run/docker.sock:/var/run/docker.sock",
           "mini-infra-agent-sessions:/home/node/.claude",
         ],
         RestartPolicy: { Name: "unless-stopped" },
