@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { tappedQuery, type TapMessage } from "@mrgeoffrich/claude-agent-sdk-tap";
 import { createHttpSink } from "@mrgeoffrich/claude-agent-sdk-tap/transport";
+import { createFileSink } from "./file-sink";
 import { TurnStore } from "../turn-store";
 import { SSEEvent } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
@@ -73,9 +74,9 @@ export async function runTurn(
     { id: string; name: string; inputJson: string }
   >();
 
-  // Set up tap HTTP sink outside try so it's accessible in finally
+  // Set up tap sinks outside try so they're accessible in finally
   const TAP_COLLECTOR_URL = process.env.TAP_COLLECTOR_URL;
-  const tapSink = TAP_COLLECTOR_URL
+  const tapHttpSink = TAP_COLLECTOR_URL
     ? createHttpSink(TAP_COLLECTOR_URL, {
         headers: process.env.TAP_COLLECTOR_AUTH
           ? { Authorization: process.env.TAP_COLLECTOR_AUTH }
@@ -85,6 +86,9 @@ export async function runTurn(
         onError: (err: unknown) => logger.warn({ err }, "Tap HTTP sink error"),
       })
     : null;
+
+  // Always log SDK messages to disk as NDJSON (one file per turn)
+  const tapFileSink = createFileSink(turnId);
 
   try {
     const queryOptions: Record<string, unknown> = {
@@ -144,14 +148,14 @@ export async function runTurn(
         options: queryOptions as Parameters<typeof tappedQuery>[0]["options"],
       },
       {},
-      tapSink
-        ? {
-            onMessage: (msg: TapMessage) => {
-              logger.debug({ tapMessage: msg }, "Tap message");
-              tapSink.send(msg);
-            },
+      {
+        onMessage: (msg: TapMessage) => {
+          tapFileSink.send(msg);
+          if (tapHttpSink) {
+            tapHttpSink.send(msg);
           }
-        : undefined,
+        },
+      },
     );
 
     for await (const message of stream) {
@@ -340,13 +344,19 @@ export async function runTurn(
     clearTimeout(timeoutHandle);
 
     // Flush any buffered tap messages
-    if (tapSink) {
-      try {
-        await tapSink.flush();
-      } catch (err) {
-        logger.warn({ err }, "Failed to flush tap sink");
-      }
+    const flushPromises: Promise<void>[] = [
+      tapFileSink.flush().catch((err) => {
+        logger.warn({ err }, "Failed to flush tap file sink");
+      }),
+    ];
+    if (tapHttpSink) {
+      flushPromises.push(
+        tapHttpSink.flush().catch((err) => {
+          logger.warn({ err }, "Failed to flush tap HTTP sink");
+        }),
+      );
     }
+    await Promise.all(flushPromises);
 
     // Emit result and done
     const finalTurn = store.getTurn(turnId);
