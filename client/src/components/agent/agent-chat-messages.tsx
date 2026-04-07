@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
@@ -6,6 +6,11 @@ import {
   IconNavigation,
   IconFocusCentered,
   IconEye,
+  IconSparkles,
+  IconApi,
+  IconFolderOpen,
+  IconFileText,
+  IconSearch,
 } from "@tabler/icons-react";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { DocContent } from "@/components/help/DocContent";
@@ -15,13 +20,26 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {
   ChatMessage,
   ChatMessageThinking,
   ChatMessageToolUse,
 } from "@/lib/agent-chat-types";
+
+const chatMarkdownClasses = cn(
+  "[&_p]:text-[13px] [&_p]:leading-5 [&_p]:mb-1.5 [&_p:last-child]:mb-0",
+  "[&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1",
+  "[&_h2]:text-[13px] [&_h2]:font-semibold [&_h2]:mt-2.5 [&_h2]:mb-1 [&_h2]:border-0 [&_h2]:pb-0",
+  "[&_h3]:text-[13px] [&_h3]:font-medium [&_h3]:mt-2 [&_h3]:mb-0.5",
+  "[&_ul]:pl-4 [&_ul]:mb-1.5 [&_ul]:space-y-0.5 [&_ol]:pl-4 [&_ol]:mb-1.5 [&_ol]:space-y-0.5",
+  "[&_li]:text-[13px] [&_li]:leading-5",
+  "[&_pre]:text-[11px] [&_pre]:p-2 [&_pre]:mb-1.5 [&_pre]:mt-1",
+  "[&_code]:text-[12px]",
+  "[&_blockquote]:mt-1.5 [&_blockquote]:mb-1.5 [&_blockquote]:text-[13px]",
+  "[&_li_strong]:font-medium",
+  "[&_table]:text-[12px]",
+);
 
 interface ToolDisplay {
   method: string;
@@ -105,6 +123,65 @@ function parseToolDisplay(msg: ChatMessageToolUse): ToolDisplay {
     };
   }
 
+  // Skill tool
+  if (msg.toolName === "Skill") {
+    const skillName = (input?.skill as string) ?? "skill";
+    return {
+      method: "Skill",
+      endpoint: skillName,
+      detail: input ? JSON.stringify(input, null, 2) : "",
+      color: "bg-violet-600",
+      icon: IconSparkles,
+    };
+  }
+
+  // MCP infra tools
+  if (msg.toolName === "mcp__mini-infra-infra__api_request") {
+    const method = ((input?.method as string) ?? "GET").toUpperCase();
+    const apiPath = (input?.path as string) ?? "";
+    return {
+      method,
+      endpoint: apiPath,
+      detail: input ? JSON.stringify(input, null, 2) : "",
+      color: methodColor(method),
+      icon: IconApi,
+    };
+  }
+
+  if (msg.toolName === "mcp__mini-infra-infra__list_docs") {
+    const category = (input?.category as string) ?? "";
+    return {
+      method: "List Docs",
+      endpoint: category,
+      detail: input ? JSON.stringify(input, null, 2) : "",
+      color: "bg-emerald-600",
+      icon: IconFolderOpen,
+    };
+  }
+
+  if (msg.toolName === "mcp__mini-infra-infra__read_doc") {
+    const docPath = (input?.path as string) ?? "";
+    return {
+      method: "Read Doc",
+      endpoint: docPath,
+      detail: input ? JSON.stringify(input, null, 2) : "",
+      color: "bg-emerald-600",
+      icon: IconFileText,
+    };
+  }
+
+  // Grep tool
+  if (msg.toolName === "Grep") {
+    const pattern = (input?.pattern as string) ?? "";
+    return {
+      method: "GREP",
+      endpoint: pattern.slice(0, 80),
+      detail: JSON.stringify(input, null, 2),
+      color: "bg-cyan-600",
+      icon: IconSearch,
+    };
+  }
+
   // Generic fallback
   return {
     method: msg.toolName,
@@ -131,36 +208,31 @@ function methodColor(method: string): string {
 }
 
 function ToolUseBlock({ msg }: { msg: ChatMessageToolUse }) {
-  const { method, endpoint, detail, color, icon: Icon } = parseToolDisplay(msg);
+  const { method, endpoint, icon: Icon } = parseToolDisplay(msg);
+  const input = msg.input as Record<string, unknown> | undefined;
+  const detail = input ? JSON.stringify(input, null, 2) : "";
 
   return (
     <Collapsible>
-      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs hover:bg-muted transition-colors text-left">
+      <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-muted/50 transition-colors text-left text-muted-foreground">
         <IconChevronRight className="size-3 shrink-0 transition-transform [[data-state=open]_&]:rotate-90" />
-        <Badge
-          className={cn(
-            "text-[10px] px-1.5 py-0 text-white border-0 shrink-0 flex items-center gap-1",
-            color,
-          )}
-        >
-          {Icon && <Icon className="size-3" />}
-          {method}
-        </Badge>
-        <span className="truncate font-mono text-muted-foreground">
-          {endpoint}
-        </span>
+        {Icon && <Icon className="size-3 shrink-0" />}
+        <span className="italic shrink-0">{method}</span>
+        {endpoint && (
+          <span className="truncate font-mono opacity-70">{endpoint}</span>
+        )}
         {msg.output === undefined && (
-          <span className="ml-auto shrink-0 size-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="ml-auto shrink-0 size-1.5 rounded-full bg-amber-500 animate-pulse" />
         )}
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 space-y-1">
+      <CollapsibleContent className="mt-0.5 space-y-0.5 ml-5">
         {detail && (
-          <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all">
+          <pre className="overflow-x-auto rounded border bg-muted/30 px-2 py-1.5 text-[11px] font-mono whitespace-pre-wrap break-all">
             {detail}
           </pre>
         )}
         {msg.output !== undefined && (
-          <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-48">
+          <pre className="overflow-x-auto rounded border bg-muted/30 px-2 py-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-48">
             {msg.output}
           </pre>
         )}
@@ -174,35 +246,57 @@ function ThinkingBlock({ msg }: { msg: ChatMessageThinking }) {
     ? msg.content || "Thinking content is redacted."
     : msg.content;
 
+  const [isOpen, setIsOpen] = useState(true);
+  const durationRef = useRef<number | null>(null);
+  const prevStatusRef = useRef(msg.status);
+
+  useEffect(() => {
+    if (prevStatusRef.current === "streaming" && msg.status === "complete") {
+      durationRef.current = Math.max(
+        1,
+        Math.round((Date.now() - msg.timestamp) / 1000),
+      );
+    }
+    prevStatusRef.current = msg.status;
+
+    if (msg.status === "streaming") {
+      setIsOpen(true);
+    }
+  }, [msg.status, msg.timestamp]);
+
   return (
-    <Collapsible>
-      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs hover:bg-muted transition-colors text-left">
-        <IconChevronRight className="size-3 shrink-0 transition-transform [[data-state=open]_&]:rotate-90" />
-        <Badge
+    <div>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-muted/50 transition-colors text-left text-muted-foreground"
+      >
+        <IconChevronRight
           className={cn(
-            "text-[10px] px-1.5 py-0 text-white border-0 shrink-0",
-            msg.redacted ? "bg-gray-500" : "bg-slate-600",
+            "size-3 shrink-0 transition-transform",
+            isOpen && "rotate-90",
           )}
-        >
-          Thinking
-        </Badge>
-        <span className="truncate text-muted-foreground">
-          {msg.redacted
-            ? "Redacted"
-            : msg.status === "streaming"
-              ? "Streaming..."
-              : "Complete"}
-        </span>
-        {msg.status === "streaming" && (
-          <span className="ml-auto shrink-0 size-2 rounded-full bg-amber-500 animate-pulse" />
+        />
+        {msg.status === "streaming" ? (
+          <>
+            <span className="italic">Thinking</span>
+            <span className="ml-auto shrink-0 size-1.5 rounded-full bg-amber-500 animate-pulse" />
+          </>
+        ) : (
+          <span className="italic">
+            {msg.redacted
+              ? "Thought (redacted)"
+              : `Thought${durationRef.current ? ` for ${durationRef.current}s` : ""}`}
+          </span>
         )}
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 space-y-1">
-        <pre className="overflow-x-auto rounded-md border bg-muted p-2 text-xs font-mono whitespace-pre-wrap break-all max-h-48">
-          {content || "Waiting for thinking content..."}
-        </pre>
-      </CollapsibleContent>
-    </Collapsible>
+      </button>
+      {isOpen && (
+        <div className="mt-0.5 animate-in slide-in-from-top-1 duration-200">
+          <pre className="overflow-x-auto rounded border bg-muted/50 px-2 py-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            {content || "..."}
+          </pre>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -211,7 +305,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
     case "user":
       return (
         <div className="flex justify-end">
-          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground whitespace-pre-wrap">
+          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-[13px] text-primary-foreground whitespace-pre-wrap">
             {msg.content}
           </div>
         </div>
@@ -220,16 +314,67 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
     case "assistant":
       return (
         <div className="flex justify-start">
-          <div className="max-w-[85%] text-sm">
+          <div className="max-w-[85%] text-[13px]">
             <DocContent
               content={msg.content}
-              className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_pre]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm"
+              className={chatMarkdownClasses}
             />
           </div>
         </div>
       );
 
     case "tool_use":
+      if (msg.toolName === "Skill") {
+        const skillName =
+          (msg.input as Record<string, unknown> | undefined)?.skill as
+            | string
+            | undefined;
+        return (
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground italic">
+            <IconSparkles className="size-3 shrink-0" />
+            <span>Skill</span>
+            {skillName && (
+              <span className="font-mono not-italic opacity-70 truncate">
+                {skillName}
+              </span>
+            )}
+          </div>
+        );
+      }
+      if (msg.toolName === "mcp__mini-infra-ui__get_current_page") {
+        return (
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground italic">
+            <IconEye className="size-3 shrink-0" />
+            Reading page
+            {msg.output === undefined && (
+              <span className="ml-auto shrink-0 size-1.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
+          </div>
+        );
+      }
+      if (msg.toolName === "mcp__mini-infra-infra__api_request") {
+        const input = msg.input as Record<string, unknown> | undefined;
+        const method = ((input?.method as string) ?? "").toUpperCase();
+        const apiPath = (input?.path as string) ?? "";
+        return (
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground italic">
+            <IconApi className="size-3 shrink-0" />
+            {method && apiPath ? (
+              <>
+                <span>{method}</span>
+                <span className="font-mono not-italic opacity-70 truncate">
+                  {apiPath}
+                </span>
+              </>
+            ) : (
+              <span>Calling API</span>
+            )}
+            {msg.output === undefined && (
+              <span className="ml-auto shrink-0 size-1.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
+          </div>
+        );
+      }
       return <ToolUseBlock msg={msg} />;
 
     case "thinking":
@@ -279,7 +424,7 @@ export function AgentChatMessages() {
     <div
       ref={scrollRef}
       onScroll={checkNearBottom}
-      className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
+      className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
     >
       {messages.length === 0 && !streamingText && <AgentChatWelcome />}
 
@@ -289,10 +434,10 @@ export function AgentChatMessages() {
 
       {streamingText && (
         <div className="flex justify-start">
-          <div className="max-w-[85%] text-sm">
+          <div className="max-w-[85%] text-[13px]">
             <DocContent
               content={streamingText}
-              className="[&_p]:mb-2 [&_p:last-child]:mb-0 [&_pre]:text-xs [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm"
+              className={chatMarkdownClasses}
             />
             <span className="inline-block w-1.5 h-4 ml-0.5 bg-foreground/70 animate-pulse align-text-bottom" />
           </div>
