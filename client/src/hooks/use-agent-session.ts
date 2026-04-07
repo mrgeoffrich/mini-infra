@@ -142,7 +142,12 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
   const [session, setSession] = useState<AgentSession | null>(null);
   const [model, setModel] = useState<string | null>(null);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationId, _setActiveConversationId] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const setActiveConversationId = useCallback((id: string | null) => {
+    activeConversationIdRef.current = id;
+    _setActiveConversationId(id);
+  }, []);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -638,7 +643,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
           body: JSON.stringify({
             message,
             currentPath,
-            conversationId: activeConversationId ?? undefined,
+            conversationId: activeConversationIdRef.current ?? undefined,
           }),
         });
 
@@ -674,7 +679,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentPath is intentionally omitted to avoid recreating on every navigation
-    [activeConversationId, connectSSE, markAllThinkingComplete, clearThinkingIndex],
+    [connectSSE, markAllThinkingComplete, clearThinkingIndex],
   );
 
   const stopSession = useCallback(() => {
