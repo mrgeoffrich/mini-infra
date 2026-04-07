@@ -376,19 +376,35 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
               ]);
               break;
 
-            case "tool_use":
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.role === "tool_use" &&
-                  msg.toolId === (asString(data?.toolId) ?? "")
-                    ? {
-                        ...msg,
-                        input: (data?.input as Record<string, unknown>) ?? undefined,
-                      }
-                    : msg,
-                ),
-              );
+            case "tool_use": {
+              const tuToolId = asString(data?.toolId) ?? "";
+              const tuInput = (data?.input as Record<string, unknown>) ?? undefined;
+              setMessages((prev) => {
+                const exists = prev.some(
+                  (msg) => msg.role === "tool_use" && msg.toolId === tuToolId,
+                );
+                if (exists) {
+                  return prev.map((msg) =>
+                    msg.role === "tool_use" && msg.toolId === tuToolId
+                      ? { ...msg, input: tuInput }
+                      : msg,
+                  );
+                }
+                // No tool_start arrived — create the message with input
+                return [
+                  ...prev,
+                  {
+                    id: tuToolId || crypto.randomUUID(),
+                    role: "tool_use" as const,
+                    toolId: tuToolId,
+                    toolName: asString(data?.toolName) ?? "",
+                    input: tuInput,
+                    timestamp: Date.now(),
+                  },
+                ];
+              });
               break;
+            }
 
             case "tool_result":
               setMessages((prev) =>
