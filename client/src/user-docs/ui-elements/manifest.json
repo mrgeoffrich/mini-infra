@@ -351,7 +351,7 @@
     },
     {
       "id": "header-assisted-setup",
-      "label": "Header Assisted Setup",
+      "label": "Header Guided Setup",
       "elementType": "div",
       "file": "client/src/components/site-header.tsx"
     },
