@@ -117,6 +117,13 @@ echo -e "\033[0;36mPushing agent sidecar image to local registry...\033[0m"
 docker push "$AGENT_SIDECAR_IMAGE"
 echo -e "\033[0;32mAgent sidecar image pushed to $AGENT_SIDECAR_IMAGE\033[0m"
 
+# Remove the old sidecar container so Mini Infra creates a fresh one on startup
+if docker inspect mini-infra-agent-sidecar >/dev/null 2>&1; then
+    echo -e "\033[0;36mRemoving old agent sidecar container...\033[0m"
+    docker rm -f mini-infra-agent-sidecar >/dev/null 2>&1 || true
+    echo -e "\033[0;32mOld agent sidecar container removed\033[0m"
+fi
+
 # ---------------------------------------------------------------------------
 # Step 3: Remember extra networks attached to mini-infra-dev
 # (Networks joined dynamically at runtime, e.g. the dataplane network via
