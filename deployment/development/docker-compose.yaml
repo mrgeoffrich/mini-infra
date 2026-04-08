@@ -21,7 +21,7 @@ services:
       registry:
         condition: service_started
     ports:
-      - "${MINI_INFRA_PORT:-3005}:5000"
+      - "3005:5005"
     volumes:
       # Mount Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
@@ -30,23 +30,12 @@ services:
       # Log files
       - mini-infra-dev-logs:/app/server/logs
     environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:3005}
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
-      - DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
-
-      # Security (optional - auto-generated on first boot if not set)
-      - APP_SECRET=${APP_SECRET:-}
-
-      # Admin Access Control (optional, comma-separated emails allowed to log in)
-      - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}
-
-      # AI Agent (Optional)
-      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-debug}
+      - PUBLIC_URL=http://localhost:3005
+      - LOG_LEVEL=debug
+      - ALLOW_INSECURE=true
 
       # Tracing (Optional)
-      - TAP_COLLECTOR_URL=${TAP_COLLECTOR_URL:-}
+      # - TAP_COLLECTOR_URL=${TAP_COLLECTOR_URL:-}
 
     healthcheck:
       test:

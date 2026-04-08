@@ -286,6 +286,20 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
         },
       });
       securityConfigStore.setAppSecret(appSecret);
+
+      // Re-issue JWT — the token from step 1 was signed with the old secret
+      const user = await prisma.user.findFirst();
+      if (user) {
+        const profile: UserProfile = {
+          id: user.id,
+          email: user.email,
+          name: user.name || undefined,
+          createdAt: user.createdAt.toISOString(),
+        };
+        const newToken = generateToken(profile);
+        setAuthCookie(res, newToken);
+      }
+
       logger.info("Custom app secret saved during setup");
     }
 
