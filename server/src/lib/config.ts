@@ -7,8 +7,6 @@ const legacyConfig = {
   NODE_ENV: appConfig.server.nodeEnv,
   PORT: appConfig.server.port,
   DATABASE_URL: appConfig.database.url,
-  GOOGLE_CLIENT_ID: appConfig.auth.google.clientId,
-  GOOGLE_CLIENT_SECRET: appConfig.auth.google.clientSecret,
   SESSION_SECRET: appConfig.auth.session.secret,
   LOG_LEVEL: appConfig.logging.level,
   PUBLIC_URL: appConfig.server.publicUrl,

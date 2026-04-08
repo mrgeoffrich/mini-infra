@@ -17,9 +17,6 @@ if [ ! -f "$ENV_FILE" ]; then
     echo ""
     echo "  SESSION_SECRET=<generate with: openssl rand -base64 32>"
     echo "  API_KEY_SECRET=<generate with: openssl rand -base64 32>"
-    echo "  GOOGLE_CLIENT_ID=your_google_client_id"
-    echo "  GOOGLE_CLIENT_SECRET=your_google_client_secret"
-    echo "  GOOGLE_CALLBACK_URL=http://your-server:5000/auth/google/callback"
     echo ""
     exit 1
 fi

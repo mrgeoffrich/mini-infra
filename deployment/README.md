@@ -51,9 +51,7 @@ Both production and development require a `.env` file in their respective direct
 - `API_KEY_SECRET` - Generate with: `openssl rand -base64 32`
 
 **Optional variables:**
-- `GOOGLE_CLIENT_ID` - Google OAuth client ID
-- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
-- `GOOGLE_CALLBACK_URL` - OAuth callback URL
+- `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `LOG_LEVEL` - Logging level (debug, info, warn, error)
 
 ## Differences

@@ -16,10 +16,6 @@ const configSchema = z.object({
     url: z.string(),
   }),
   auth: z.object({
-    google: z.object({
-      clientId: z.string().nullable(),
-      clientSecret: z.string().nullable(),
-    }),
     session: z.object({
       secret: z.string().nullable(),
     }),
@@ -101,18 +97,6 @@ const appConfig: Config = {
     url: getConfigValue("database.url", "DATABASE_URL", "file:./dev.db"),
   },
   auth: {
-    google: {
-      clientId: getConfigValue(
-        "auth.google.clientId",
-        "GOOGLE_CLIENT_ID",
-        null,
-      ),
-      clientSecret: getConfigValue(
-        "auth.google.clientSecret",
-        "GOOGLE_CLIENT_SECRET",
-        null,
-      ),
-    },
     session: {
       secret: getConfigValue("auth.session.secret", "SESSION_SECRET", null),
     },

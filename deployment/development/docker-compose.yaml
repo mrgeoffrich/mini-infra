@@ -41,10 +41,7 @@ services:
       - API_KEY_SECRET=${API_KEY_SECRET}
       - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-}
 
-      # Google OAuth (Optional)
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:3005/auth/google/callback}
+      # Admin Access Control (optional, comma-separated emails allowed to log in)
       - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}
 
       # Container Management

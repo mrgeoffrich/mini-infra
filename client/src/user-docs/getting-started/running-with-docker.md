@@ -18,7 +18,7 @@ Mini Infra is distributed as a Docker image. The recommended way to run it is wi
 - Access to the host's Docker socket (`/var/run/docker.sock`)
 - For backups and TLS certificates: an Azure Storage account
 - For Cloudflare features: a Cloudflare account and API token
-- For Google login: a Google OAuth 2.0 client ID and secret
+- For Google login (optional): a Google OAuth 2.0 client ID and secret, configured in the Authentication Settings page
 
 ## Required environment variables
 
@@ -26,8 +26,6 @@ Mini Infra is distributed as a Docker image. The recommended way to run it is wi
 |----------|-------------|
 | `SESSION_SECRET` | Secret used to sign JWT authentication tokens. Use a long random string. |
 | `API_KEY_SECRET` | Secret used to hash API keys and encrypt sensitive config data. Use a long random string. |
-| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 client ID for login. |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 client secret for login. |
 
 ## Example docker-compose.yml
 
@@ -48,8 +46,6 @@ services:
       - NODE_ENV=production
       - SESSION_SECRET=${SESSION_SECRET}
       - API_KEY_SECRET=${API_KEY_SECRET}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - LOG_LEVEL=info
     restart: unless-stopped
     healthcheck:

@@ -19,9 +19,6 @@ Ensure a `.env` file exists at `server/.env` (the start script reads it from the
 ```bash
 SESSION_SECRET=<generate with: openssl rand -base64 32>
 API_KEY_SECRET=<generate with: openssl rand -base64 32>
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:3005/auth/google/callback
 ```
 
 ### 2. Run the Startup Script

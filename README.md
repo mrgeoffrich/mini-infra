@@ -63,12 +63,10 @@ Open `server/.env` and fill in the following:
 
 | Variable | Description |
 |---|---|
-| `GOOGLE_CLIENT_ID` | Your Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret |
 | `SESSION_SECRET` | Random secret for session signing |
 | `API_KEY_SECRET` | Random secret for API key hashing |
 | `ENCRYPTION_SECRET` | Random secret for credential encryption |
-| `ALLOWED_ADMIN_EMAILS` | Comma-separated list of email addresses allowed to log in |
+| `ALLOWED_ADMIN_EMAILS` | (Optional) Comma-separated list of email addresses allowed to log in |
 
 ### 6. Start the development server
 

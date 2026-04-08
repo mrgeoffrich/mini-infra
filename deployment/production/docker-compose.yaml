@@ -20,12 +20,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET}
       - API_KEY_SECRET=${API_KEY_SECRET}
 
-      # Google OAuth (Optional - for authentication)
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:5000/auth/google/callback}
-
-      # Admin Access Control (comma-separated emails allowed to log in)
+      # Admin Access Control (optional, comma-separated emails allowed to log in)
       - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}
 
       # Server Configuration

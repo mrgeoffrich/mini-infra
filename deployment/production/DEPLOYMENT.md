@@ -50,14 +50,9 @@ nano .env  # or use your preferred editor
    ```
 
 3. **(Optional) Configure Google OAuth** for authentication:
+   - Google OAuth can be enabled and configured through the Authentication Settings page in the UI after initial setup
    - Create OAuth credentials at https://console.cloud.google.com/
    - Add authorized redirect URI: `http://your-server:5000/auth/google/callback`
-   - Update `.env`:
-     ```bash
-     GOOGLE_CLIENT_ID=your_client_id
-     GOOGLE_CLIENT_SECRET=your_client_secret
-     GOOGLE_CALLBACK_URL=http://your-server:5000/auth/google/callback
-     ```
 
 4. **(Optional) Configure OpenObserve** integration for log forwarding:
    ```bash
@@ -296,7 +291,7 @@ See `.env.example` for a complete list of available configuration options.
 - `API_KEY_SECRET` - API key hashing secret (must be unique)
 
 ### Optional Variables
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - Google OAuth credentials
+- `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `MINI_INFRA_PORT` - Port to expose (default: 5000)
 - `PUBLIC_URL` - Public URL for the application
 - `LOG_LEVEL` - Logging verbosity (trace|debug|info|warn|error|fatal)

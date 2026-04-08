@@ -14,9 +14,6 @@ if (-not (Test-Path $envFile)) {
     Write-Host ""
     Write-Host "  SESSION_SECRET=<generate with: openssl rand -base64 32>"
     Write-Host "  API_KEY_SECRET=<generate with: openssl rand -base64 32>"
-    Write-Host "  GOOGLE_CLIENT_ID=your_google_client_id"
-    Write-Host "  GOOGLE_CLIENT_SECRET=your_google_client_secret"
-    Write-Host "  GOOGLE_CALLBACK_URL=http://your-server:5000/auth/google/callback"
     Write-Host ""
     exit 1
 }
