@@ -56,9 +56,9 @@ export function MetricsChart({
       return { chartData: [], containerNames: [] as string[], chartConfig: {} as ChartConfig };
     }
 
-    const names = data.data.result.map(
+    const names = [...new Set(data.data.result.map(
       (r) => r.metric.container_name || r.metric.com_docker_compose_service || "unknown"
-    );
+    ))];
 
     // Build time-series data keyed by timestamp
     const timeMap = new Map<number, Record<string, number>>();
@@ -126,29 +126,6 @@ export function MetricsChart({
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[250px] w-full">
           <AreaChart data={chartData}>
-            <defs>
-              {containerNames.map((name, i) => (
-                <linearGradient
-                  key={name}
-                  id={`fill-${title}-${i}`}
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="5%"
-                    stopColor={chartConfig[name]?.color || COLOR_MAP[color]}
-                    stopOpacity={0.8}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor={chartConfig[name]?.color || COLOR_MAP[color]}
-                    stopOpacity={0.1}
-                  />
-                </linearGradient>
-              ))}
-            </defs>
             <CartesianGrid vertical={false} />
             <XAxis
               dataKey="timestamp"
@@ -175,30 +152,42 @@ export function MetricsChart({
               cursor={false}
               content={
                 <ChartTooltipContent
-                  labelFormatter={(value) => {
-                    const date = new Date(Number(value) * 1000);
+                  labelFormatter={(_value, payload) => {
+                    const timestamp = payload?.[0]?.payload?.timestamp;
+                    if (!timestamp) return "Unknown";
+                    const date = new Date(Number(timestamp) * 1000);
                     return date.toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                       second: "2-digit",
                     });
                   }}
-                  formatter={(value, name) => [
-                    valueFormatter(Number(value)),
-                    name,
-                  ]}
-                  indicator="dot"
+                  formatter={(value, name, item) => (
+                    <div className="flex flex-1 items-center gap-2">
+                      <div
+                        className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-muted-foreground flex-1">
+                        {name as string}
+                      </span>
+                      <span className="text-foreground font-mono font-medium tabular-nums">
+                        {valueFormatter(Number(value))}
+                      </span>
+                    </div>
+                  )}
+                  hideIndicator
                 />
               }
             />
-            {containerNames.map((name, i) => (
+            {containerNames.map((name) => (
               <Area
                 key={name}
                 dataKey={name}
                 type="monotone"
-                fill={`url(#fill-${title}-${i})`}
+                fill="transparent"
                 stroke={chartConfig[name]?.color || COLOR_MAP[color]}
-                strokeWidth={1.5}
+                strokeWidth={2}
               />
             ))}
           </AreaChart>
