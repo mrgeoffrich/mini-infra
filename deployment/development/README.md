@@ -17,8 +17,8 @@ Use this deployment to:
 Ensure a `.env` file exists at `server/.env` (the start script reads it from there):
 
 ```bash
-SESSION_SECRET=<generate with: openssl rand -base64 32>
-API_KEY_SECRET=<generate with: openssl rand -base64 32>
+# APP_SECRET is auto-generated on first boot if not set
+# APP_SECRET=<optional: openssl rand -base64 32>
 ```
 
 ### 2. Run the Startup Script

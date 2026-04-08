@@ -41,31 +41,13 @@ cp server/.env.example server/.env
 Copy-Item server\.env.example server\.env
 ```
 
-### 4. Generate secrets
+### 4. Configure environment (optional)
 
-You need to provide values for `SESSION_SECRET`, `API_KEY_SECRET`, and `ENCRYPTION_SECRET` in `server/.env`.
-
-**macOS / Linux:**
-```bash
-openssl rand -base64 32
-```
-
-**Windows (PowerShell):**
-```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }) -as [byte[]])
-```
-
-Run the command three times and paste each value into the corresponding variable in `server/.env`.
-
-### 5. Set required variables
-
-Open `server/.env` and fill in the following:
+The application auto-generates an `APP_SECRET` on first boot if one is not set. You can optionally configure settings in `server/.env`:
 
 | Variable | Description |
 |---|---|
-| `SESSION_SECRET` | Random secret for session signing |
-| `API_KEY_SECRET` | Random secret for API key hashing |
-| `ENCRYPTION_SECRET` | Random secret for credential encryption |
+| `APP_SECRET` | (Optional) Application secret for auth and encryption. Auto-generated on first boot if not set. |
 | `ALLOWED_ADMIN_EMAILS` | (Optional) Comma-separated list of email addresses allowed to log in |
 
 ### 6. Start the development server

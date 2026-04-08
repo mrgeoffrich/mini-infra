@@ -20,12 +20,14 @@ Mini Infra is distributed as a Docker image. The recommended way to run it is wi
 - For Cloudflare features: a Cloudflare account and API token
 - For Google login (optional): a Google OAuth 2.0 client ID and secret, configured in the Authentication Settings page
 
-## Required environment variables
+## Environment variables
+
+All environment variables are optional. The application auto-generates a secret on first boot if `APP_SECRET` is not set.
 
 | Variable | Description |
 |----------|-------------|
-| `SESSION_SECRET` | Secret used to sign JWT authentication tokens. Use a long random string. |
-| `API_KEY_SECRET` | Secret used to hash API keys and encrypt sensitive config data. Use a long random string. |
+| `APP_SECRET` | (Optional) Secret used for JWT signing, API key hashing, and encryption. Auto-generated if not set. |
+| `ALLOWED_ADMIN_EMAILS` | (Optional) Comma-separated list of emails allowed to log in. |
 
 ## Example docker-compose.yml
 
@@ -44,8 +46,6 @@ services:
       - mini-infra-logs:/app/server/logs
     environment:
       - NODE_ENV=production
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY_SECRET=${API_KEY_SECRET}
       - LOG_LEVEL=info
     restart: unless-stopped
     healthcheck:
@@ -100,5 +100,5 @@ Mini Infra handles `SIGTERM` cleanly — it stops background schedulers, flushes
 ## What to watch out for
 
 - Mounting `/var/run/docker.sock` gives Mini Infra **full control** of the Docker daemon on the host. Only use this in trusted environments.
-- The `SESSION_SECRET` and `API_KEY_SECRET` must remain stable. Changing `SESSION_SECRET` invalidates all active sessions; changing `API_KEY_SECRET` breaks all existing API keys. See [Security Settings](/settings/security-settings) for how to rotate these safely.
+- The app secret must remain stable. Changing it invalidates all active sessions and breaks all existing API keys. See [Security Settings](/settings-security) for how to rotate it safely.
 - The `mini-infra-data` volume contains the SQLite database. Losing it means losing all configuration. Back it up or use the self-backup feature (see [Configuring Backup Schedules](/postgres-backups/configuring-backups)).

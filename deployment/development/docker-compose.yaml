@@ -36,10 +36,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
       - DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
 
-      # Security (set in .env file)
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY_SECRET=${API_KEY_SECRET}
-      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-}
+      # Security (optional - auto-generated on first boot if not set)
+      - APP_SECRET=${APP_SECRET:-}
 
       # Admin Access Control (optional, comma-separated emails allowed to log in)
       - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}

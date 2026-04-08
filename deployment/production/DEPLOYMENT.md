@@ -32,24 +32,14 @@ cp .env.example .env
 nano .env  # or use your preferred editor
 ```
 
-**Required Configuration:**
+**Configuration:**
 
-1. **Generate secure secrets** (CRITICAL for production):
+1. The application auto-generates an `APP_SECRET` on first boot. To provide your own, add it to `.env`:
    ```bash
-   # Generate SESSION_SECRET
-   openssl rand -base64 32
-
-   # Generate API_KEY_SECRET
-   openssl rand -base64 32
+   APP_SECRET=<openssl rand -base64 32>
    ```
 
-2. **Update `.env` file** with the generated secrets:
-   ```bash
-   SESSION_SECRET=<generated-secret-1>
-   API_KEY_SECRET=<generated-secret-2>
-   ```
-
-3. **(Optional) Configure Google OAuth** for authentication:
+2. **(Optional) Configure Google OAuth** for authentication:
    - Google OAuth can be enabled and configured through the Authentication Settings page in the UI after initial setup
    - Create OAuth credentials at https://console.cloud.google.com/
    - Add authorized redirect URI: `http://your-server:5000/auth/google/callback`
@@ -125,7 +115,7 @@ Once logged in to Mini Infra, configure:
 
 **Environment Variables:**
 - NEVER commit `.env` to version control
-- Use strong, unique secrets for `SESSION_SECRET` and `API_KEY_SECRET`
+- Ensure `APP_SECRET` is generated (auto-generated on first boot, or set manually)
 - Rotate secrets regularly
 - Consider using Docker secrets for sensitive data
 
@@ -249,7 +239,7 @@ docker compose up -d --force-recreate mini-infra
 docker compose logs mini-infra
 
 # Common issues:
-# - Missing SESSION_SECRET or API_KEY_SECRET in .env
+# - APP_SECRET not generated (should auto-generate on first boot)
 # - Port 5000 already in use
 # - Docker socket permissions
 ```
@@ -286,11 +276,8 @@ netstat -tlnp | grep 5000
 
 See `.env.example` for a complete list of available configuration options.
 
-### Required Variables
-- `SESSION_SECRET` - JWT session signing secret (must be unique)
-- `API_KEY_SECRET` - API key hashing secret (must be unique)
-
 ### Optional Variables
+- `APP_SECRET` - Application secret for auth and encryption (auto-generated on first boot if not set)
 - `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `MINI_INFRA_PORT` - Port to expose (default: 5000)
 - `PUBLIC_URL` - Public URL for the application

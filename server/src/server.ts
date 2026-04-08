@@ -73,118 +73,58 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 const initializeSecuritySecrets = async () => {
   console.log("[STARTUP] Initializing security secrets...");
 
-  // Check for ENCRYPTION_SECRET environment variable
-  if (!process.env.ENCRYPTION_SECRET) {
-    logger.warn(
-      "ENCRYPTION_SECRET environment variable is not set. " +
-        "PostgreSQL credential encryption will not be available. " +
-        "Set ENCRYPTION_SECRET in your .env file to enable secure credential storage."
-    );
-    console.warn(
-      "[STARTUP] ⚠ WARNING: ENCRYPTION_SECRET is not set - PostgreSQL credential encryption is disabled. " +
-        "Set this in your .env file."
-    );
-  } else {
-    console.log("[STARTUP] ✓ ENCRYPTION_SECRET is configured");
-  }
-
   try {
     const CATEGORY = "system";
-    const SESSION_SECRET_KEY = "session_secret";
-    const API_KEY_SECRET_KEY = "api_key_secret";
+    const APP_SECRET_KEY = "app_secret";
 
-    // Check if session secret exists
-    let sessionSetting = await prisma.systemSettings.findFirst({
+    // Check if app secret exists in database
+    let secretSetting = await prisma.systemSettings.findFirst({
       where: {
         category: CATEGORY,
-        key: SESSION_SECRET_KEY,
+        key: APP_SECRET_KEY,
         isActive: true,
       },
     });
 
-    // Generate session secret if it doesn't exist
-    if (!sessionSetting || !sessionSetting.value) {
-      const newSessionSecret = randomBytes(32).toString("hex");
-      console.log("[STARTUP] Session secret not found, generating new one...");
+    // Generate app secret if it doesn't exist
+    if (!secretSetting || !secretSetting.value) {
+      const newSecret = randomBytes(32).toString("hex");
+      console.log("[STARTUP] App secret not found, generating new one...");
 
-      sessionSetting = await prisma.systemSettings.upsert({
+      secretSetting = await prisma.systemSettings.upsert({
         where: {
           category_key: {
             category: CATEGORY,
-            key: SESSION_SECRET_KEY,
+            key: APP_SECRET_KEY,
           },
         },
         create: {
           category: CATEGORY,
-          key: SESSION_SECRET_KEY,
-          value: newSessionSecret,
+          key: APP_SECRET_KEY,
+          value: newSecret,
           isEncrypted: false,
           isActive: true,
           createdBy: "system",
           updatedBy: "system",
         },
         update: {
-          value: newSessionSecret,
+          value: newSecret,
           updatedBy: "system",
           updatedAt: new Date(),
         },
       });
 
-      logger.info("New session secret generated and stored in database");
-      console.log("[STARTUP] ✓ New session secret generated");
+      logger.info("New app secret generated and stored in database");
+      console.log("[STARTUP] ✓ New app secret generated");
     } else {
-      console.log("[STARTUP] ✓ Session secret loaded from database");
+      console.log("[STARTUP] ✓ App secret loaded from database");
     }
 
-    // Check if API key secret exists
-    let apiKeySetting = await prisma.systemSettings.findFirst({
-      where: {
-        category: CATEGORY,
-        key: API_KEY_SECRET_KEY,
-        isActive: true,
-      },
-    });
+    // Load secret into memory
+    securityConfig.setAppSecret(secretSetting.value);
 
-    // Generate API key secret if it doesn't exist
-    if (!apiKeySetting || !apiKeySetting.value) {
-      const newApiKeySecret = randomBytes(32).toString("hex");
-      console.log("[STARTUP] API key secret not found, generating new one...");
-
-      apiKeySetting = await prisma.systemSettings.upsert({
-        where: {
-          category_key: {
-            category: CATEGORY,
-            key: API_KEY_SECRET_KEY,
-          },
-        },
-        create: {
-          category: CATEGORY,
-          key: API_KEY_SECRET_KEY,
-          value: newApiKeySecret,
-          isEncrypted: false,
-          isActive: true,
-          createdBy: "system",
-          updatedBy: "system",
-        },
-        update: {
-          value: newApiKeySecret,
-          updatedBy: "system",
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info("New API key secret generated and stored in database");
-      console.log("[STARTUP] ✓ New API key secret generated");
-    } else {
-      console.log("[STARTUP] ✓ API key secret loaded from database");
-    }
-
-    // Load secrets into memory
-    securityConfig.setSessionSecret(sessionSetting.value);
-    securityConfig.setApiKeySecret(apiKeySetting.value);
-
-    logger.info("Security secrets initialized successfully");
-    console.log("[STARTUP] ✓ Security secrets initialized and loaded into memory");
+    logger.info("Security secret initialized successfully");
+    console.log("[STARTUP] ✓ Security secret initialized and loaded into memory");
   } catch (error) {
     console.error("[STARTUP] FATAL: Failed to initialize security secrets");
     console.error(error);

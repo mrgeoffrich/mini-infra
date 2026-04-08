@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -13,7 +12,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   IconAlertCircle,
-  IconArrowLeft,
   IconKey,
   IconLoader2,
   IconRefresh,
@@ -30,10 +28,8 @@ import {
 } from "@/components/ui/dialog";
 
 interface SecuritySecrets {
-  session_secret: string;
-  api_key_secret: string;
-  session_secret_id: string | null;
-  api_key_secret_id: string | null;
+  app_secret: string;
+  app_secret_id: string | null;
 }
 
 interface RegenerateResponse {
@@ -43,19 +39,8 @@ interface RegenerateResponse {
 
 export default function SecuritySettingsPage() {
   const queryClient = useQueryClient();
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    secretType: "session" | "apiKey" | null;
-    title: string;
-    description: string;
-  }>({
-    isOpen: false,
-    secretType: null,
-    title: "",
-    description: "",
-  });
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Fetch security secrets
   const {
     data: secrets,
     isLoading,
@@ -71,15 +56,11 @@ export default function SecuritySettingsPage() {
     },
   });
 
-  // Regenerate secret mutation
   const regenerateMutation = useMutation({
-    mutationFn: async (secretType: "session" | "apiKey") => {
+    mutationFn: async () => {
       const res = await fetch("/api/settings/security/regenerate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ secret: secretType }),
+        headers: { "Content-Type": "application/json" },
       });
 
       if (!res.ok) {
@@ -90,66 +71,34 @@ export default function SecuritySettingsPage() {
       return res.json() as Promise<RegenerateResponse>;
     },
     onSuccess: (data) => {
-      toastWithCopy.success(data.message, {
-        title: "Success",
-      });
-
-      // Show warning toast
+      toastWithCopy.success(data.message);
       setTimeout(() => {
-        toastWithCopy.warning(data.warning, {
-          title: "Warning",
-        });
+        toastWithCopy.warning(data.warning);
       }, 1000);
-
-      // Refresh the secrets
       queryClient.invalidateQueries({ queryKey: ["security-secrets"] });
     },
     onError: (error: Error) => {
-      toastWithCopy.error(error.message, {
-        title: "Error",
-      });
+      toastWithCopy.error(error.message);
     },
   });
 
-  const handleRegenerateClick = (secretType: "session" | "apiKey") => {
-    const isSession = secretType === "session";
-    setConfirmDialog({
-      isOpen: true,
-      secretType,
-      title: `Regenerate ${isSession ? "Session" : "API Key"} Secret?`,
-      description: isSession
-        ? "This will invalidate all active user sessions. All users will need to log in again. Are you sure you want to continue?"
-        : "This will break all existing API keys. API key hashes are based on this secret. Users will need to create new API keys. Are you sure you want to continue?",
-    });
-  };
-
   const handleConfirmRegenerate = () => {
-    if (confirmDialog.secretType) {
-      regenerateMutation.mutate(confirmDialog.secretType);
-    }
-    setConfirmDialog({ isOpen: false, secretType: null, title: "", description: "" });
-  };
-
-  const handleCancelRegenerate = () => {
-    setConfirmDialog({ isOpen: false, secretType: null, title: "", description: "" });
+    regenerateMutation.mutate();
+    setConfirmOpen(false);
   };
 
   if (isLoading) {
     return (
       <div className="container mx-auto max-w-4xl space-y-6 py-8">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-96" />
-          </div>
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-96" />
         </div>
-
         <Card>
           <CardHeader>
             <Skeleton className="h-6 w-48" />
           </CardHeader>
-          <CardContent className="space-y-6">
-            <Skeleton className="h-24 w-full" />
+          <CardContent>
             <Skeleton className="h-24 w-full" />
           </CardContent>
         </Card>
@@ -172,63 +121,42 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="container mx-auto max-w-4xl space-y-6 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <IconShield className="h-6 w-6" />
-            <h1 className="text-2xl font-bold tracking-tight">
-              Security Settings
-            </h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Manage security secrets for authentication and encryption
-          </p>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <IconShield className="h-6 w-6" />
+          <h1 className="text-2xl font-bold tracking-tight">
+            Security Settings
+          </h1>
         </div>
-
-        <Button variant="outline" asChild>
-          <Link to="/settings">
-            <IconArrowLeft className="h-4 w-4 mr-2" />
-            Back to Settings
-          </Link>
-        </Button>
+        <p className="text-sm text-muted-foreground">
+          Manage the application secret used for authentication and encryption
+        </p>
       </div>
 
-      {/* Warning Alert */}
-      <Alert>
-        <IconAlertCircle className="h-4 w-4" />
-        <AlertDescription>
-          <strong>Important:</strong> These secrets are used system-wide for
-          authentication and encryption. Regenerating them will have immediate
-          effects on all users and services.
-        </AlertDescription>
-      </Alert>
-
-      {/* Security Secrets Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <IconKey className="h-5 w-5" />
-            Security Secrets
+            Application Secret
           </CardTitle>
           <CardDescription>
-            View and regenerate security secrets. Secrets are masked for security.
+            A single secret used for JWT signing, API key hashing, and
+            credential encryption. Auto-generated on first boot.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Session Secret */}
+        <CardContent>
           <div className="space-y-3 rounded-lg border p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <h3 className="font-semibold">Session Secret</h3>
+                <h3 className="font-semibold">App Secret</h3>
                 <p className="text-sm text-muted-foreground">
-                  Used to sign and verify JWT authentication tokens
+                  Used for all authentication and encryption operations
                 </p>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleRegenerateClick("session")}
+                onClick={() => setConfirmOpen(true)}
                 disabled={regenerateMutation.isPending}
               >
                 {regenerateMutation.isPending ? (
@@ -240,57 +168,29 @@ export default function SecuritySettingsPage() {
               </Button>
             </div>
             <div className="rounded bg-muted p-3 font-mono text-sm">
-              {secrets?.session_secret || "••••••••"}
+              {secrets?.app_secret || "••••••••"}
             </div>
             <p className="text-xs text-muted-foreground">
-              ⚠️ Regenerating will invalidate all active user sessions
-            </p>
-          </div>
-
-          {/* API Key Secret */}
-          <div className="space-y-3 rounded-lg border p-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h3 className="font-semibold">API Key Secret</h3>
-                <p className="text-sm text-muted-foreground">
-                  Used to hash API keys and encrypt sensitive configuration data
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleRegenerateClick("apiKey")}
-                disabled={regenerateMutation.isPending}
-              >
-                {regenerateMutation.isPending ? (
-                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <IconRefresh className="h-4 w-4 mr-2" />
-                )}
-                Regenerate
-              </Button>
-            </div>
-            <div className="rounded bg-muted p-3 font-mono text-sm">
-              {secrets?.api_key_secret || "••••••••"}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              ⚠️ Regenerating will break all existing API keys
+              Regenerating will invalidate all active sessions and break all
+              existing API keys. Users will need to log in again and create new
+              API keys.
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog.isOpen} onOpenChange={(open) => {
-        if (!open) handleCancelRegenerate();
-      }}>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{confirmDialog.title}</DialogTitle>
-            <DialogDescription>{confirmDialog.description}</DialogDescription>
+            <DialogTitle>Regenerate App Secret?</DialogTitle>
+            <DialogDescription>
+              This will invalidate all active user sessions and break all
+              existing API keys. All users will need to log in again and create
+              new API keys. Are you sure you want to continue?
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={handleCancelRegenerate}>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
             <Button

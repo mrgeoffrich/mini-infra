@@ -46,17 +46,16 @@ vi.mock("../lib/logger-factory.ts", () => {
 });
 
 vi.mock("../lib/config.ts", () => ({
-  SESSION_SECRET: "test-session-secret",
+  APP_SECRET: "test-secret",
   default: {
-    SESSION_SECRET: "test-session-secret",
+    APP_SECRET: "test-secret",
   },
 }));
 
 // Mock config-new which passport.ts imports
 vi.mock("../lib/config-new", () => ({
   authConfig: {
-    session: { secret: "test-session-secret" },
-    apiKey: { secret: "test-api-key-secret" },
+    appSecret: "test-secret",
     allowedEmails: ["test@example.com", "existing@example.com"],
   },
   serverConfig: {

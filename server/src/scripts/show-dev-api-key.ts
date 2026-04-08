@@ -11,91 +11,49 @@ import { randomBytes } from "crypto";
  */
 
 /**
- * Initialize security secrets from database or generate new ones
+ * Initialize security secret from database or generate a new one
  * This must run FIRST before creating API keys
  */
 async function initializeSecuritySecrets() {
   const CATEGORY = "system";
-  const SESSION_SECRET_KEY = "session_secret";
-  const API_KEY_SECRET_KEY = "api_key_secret";
+  const APP_SECRET_KEY = "app_secret";
 
-  // Check if session secret exists
-  let sessionSetting = await prisma.systemSettings.findFirst({
+  let secretSetting = await prisma.systemSettings.findFirst({
     where: {
       category: CATEGORY,
-      key: SESSION_SECRET_KEY,
+      key: APP_SECRET_KEY,
       isActive: true,
     },
   });
 
-  // Generate session secret if it doesn't exist
-  if (!sessionSetting || !sessionSetting.value) {
-    const newSessionSecret = randomBytes(32).toString("hex");
+  if (!secretSetting || !secretSetting.value) {
+    const newSecret = randomBytes(32).toString("hex");
 
-    sessionSetting = await prisma.systemSettings.upsert({
+    secretSetting = await prisma.systemSettings.upsert({
       where: {
         category_key: {
           category: CATEGORY,
-          key: SESSION_SECRET_KEY,
+          key: APP_SECRET_KEY,
         },
       },
       create: {
         category: CATEGORY,
-        key: SESSION_SECRET_KEY,
-        value: newSessionSecret,
+        key: APP_SECRET_KEY,
+        value: newSecret,
         isEncrypted: false,
         isActive: true,
         createdBy: "system",
         updatedBy: "system",
       },
       update: {
-        value: newSessionSecret,
+        value: newSecret,
         updatedBy: "system",
         updatedAt: new Date(),
       },
     });
   }
 
-  // Check if API key secret exists
-  let apiKeySetting = await prisma.systemSettings.findFirst({
-    where: {
-      category: CATEGORY,
-      key: API_KEY_SECRET_KEY,
-      isActive: true,
-    },
-  });
-
-  // Generate API key secret if it doesn't exist
-  if (!apiKeySetting || !apiKeySetting.value) {
-    const newApiKeySecret = randomBytes(32).toString("hex");
-
-    apiKeySetting = await prisma.systemSettings.upsert({
-      where: {
-        category_key: {
-          category: CATEGORY,
-          key: API_KEY_SECRET_KEY,
-        },
-      },
-      create: {
-        category: CATEGORY,
-        key: API_KEY_SECRET_KEY,
-        value: newApiKeySecret,
-        isEncrypted: false,
-        isActive: true,
-        createdBy: "system",
-        updatedBy: "system",
-      },
-      update: {
-        value: newApiKeySecret,
-        updatedBy: "system",
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  // Load secrets into memory
-  securityConfig.setSessionSecret(sessionSetting.value);
-  securityConfig.setApiKeySecret(apiKeySetting.value);
+  securityConfig.setAppSecret(secretSetting.value);
 }
 
 async function main() {

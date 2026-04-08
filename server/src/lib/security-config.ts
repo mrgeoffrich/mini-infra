@@ -1,101 +1,70 @@
 /**
  * In-Memory Security Configuration Store
  *
- * This module provides a singleton store for security-critical secrets
- * that are loaded from the database at application startup.
+ * This module provides a singleton store for the application secret
+ * that is loaded from the database at application startup.
  *
- * These secrets are loaded once at startup and kept in memory for the
- * lifetime of the application process. They are never reloaded during
- * runtime to ensure consistency and performance.
+ * A single secret (APP_SECRET) is used for all cryptographic operations:
+ * JWT signing, API key hashing, and credential encryption.
  */
 
 import { appLogger } from "./logger-factory";
 
 const logger = appLogger();
 
-interface SecuritySecrets {
-  sessionSecret: string | null;
-  apiKeySecret: string | null;
-}
-
 class SecurityConfigStore {
-  private secrets: SecuritySecrets = {
-    sessionSecret: null,
-    apiKeySecret: null,
-  };
+  private appSecret: string | null = null;
 
   /**
-   * Set the session secret
+   * Set the application secret
    * Should only be called once during application initialization
    */
-  public setSessionSecret(secret: string): void {
-    if (this.secrets.sessionSecret !== null) {
+  public setAppSecret(secret: string): void {
+    if (this.appSecret !== null) {
       logger.warn(
-        "Session secret is being overwritten. This should only happen during initialization.",
+        "App secret is being overwritten. This should only happen during initialization.",
       );
     }
-    this.secrets.sessionSecret = secret;
-    logger.info("Session secret loaded into memory");
+    this.appSecret = secret;
+    logger.info("App secret loaded into memory");
   }
 
   /**
-   * Set the API key secret
-   * Should only be called once during application initialization
+   * Get the application secret
+   * Used for JWT signing, API key hashing, and credential encryption
    */
-  public setApiKeySecret(secret: string): void {
-    if (this.secrets.apiKeySecret !== null) {
-      logger.warn(
-        "API key secret is being overwritten. This should only happen during initialization.",
+  public getAppSecret(): string {
+    if (this.appSecret === null) {
+      throw new Error(
+        "App secret not initialized. Ensure initializeSecuritySecrets() runs at startup.",
       );
     }
-    this.secrets.apiKeySecret = secret;
-    logger.info("API key secret loaded into memory");
+    return this.appSecret;
   }
 
-  /**
-   * Get the session secret
-   * Used for signing and verifying JWT tokens
-   */
+  // Aliases for backwards compatibility -- all return the same secret
   public getSessionSecret(): string {
-    if (this.secrets.sessionSecret === null) {
-      throw new Error(
-        "Session secret not initialized. Ensure initializeSecuritySecrets() runs at startup.",
-      );
-    }
-    return this.secrets.sessionSecret;
+    return this.getAppSecret();
   }
 
-  /**
-   * Get the API key secret
-   * Used for hashing API keys and encrypting sensitive configuration data
-   */
   public getApiKeySecret(): string {
-    if (this.secrets.apiKeySecret === null) {
-      throw new Error(
-        "API key secret not initialized. Ensure initializeSecuritySecrets() runs at startup.",
-      );
-    }
-    return this.secrets.apiKeySecret;
+    return this.getAppSecret();
   }
 
   /**
-   * Check if secrets have been initialized
-   * Useful for startup health checks
+   * Check if the secret has been initialized
    */
   public isInitialized(): boolean {
-    return (
-      this.secrets.sessionSecret !== null && this.secrets.apiKeySecret !== null
-    );
+    return this.appSecret !== null;
   }
 
   /**
-   * Clear all secrets from memory
+   * Clear secret from memory
    * Should only be used during graceful shutdown or in tests
    */
   public clear(): void {
-    logger.info("Clearing security secrets from memory");
-    this.secrets.sessionSecret = null;
-    this.secrets.apiKeySecret = null;
+    logger.info("Clearing app secret from memory");
+    this.appSecret = null;
   }
 }
 
@@ -105,3 +74,4 @@ export const securityConfig = new SecurityConfigStore();
 // Export getter functions for convenience
 export const getSessionSecret = () => securityConfig.getSessionSecret();
 export const getApiKeySecret = () => securityConfig.getApiKeySecret();
+export const getEncryptionSecret = () => securityConfig.getAppSecret();

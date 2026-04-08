@@ -12,8 +12,7 @@ process.env.DATABASE_URL = "file:./test.db";
 process.env.LOG_LEVEL = "silent";
 
 // Initialize security config for tests
-securityConfig.setSessionSecret("test-session-secret-key-for-testing-only");
-securityConfig.setApiKeySecret("test-api-key-secret-for-hashing");
+securityConfig.setAppSecret("test-secret-key-for-testing-only");
 
 // Global test Prisma client
 let testPrisma: typeof prisma;

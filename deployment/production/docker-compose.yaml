@@ -16,9 +16,8 @@ services:
       # Core Configuration
       - NODE_ENV=production
 
-      # Security - REQUIRED (set in .env file)
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY_SECRET=${API_KEY_SECRET}
+      # Security (optional - auto-generated on first boot if not set)
+      - APP_SECRET=${APP_SECRET:-}
 
       # Admin Access Control (optional, comma-separated emails allowed to log in)
       - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}

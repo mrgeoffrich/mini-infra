@@ -15,8 +15,8 @@ if [ ! -f "$ENV_FILE" ]; then
     echo -e "\033[0;33mPlease create a .env file in the deployment/production/ directory.\033[0m"
     echo -e "\033[0;33mYou can use the following template as a starting point:\033[0m"
     echo ""
-    echo "  SESSION_SECRET=<generate with: openssl rand -base64 32>"
-    echo "  API_KEY_SECRET=<generate with: openssl rand -base64 32>"
+    echo "  # APP_SECRET is auto-generated on first boot if not set"
+    echo "  # APP_SECRET=<optional: openssl rand -base64 32>"
     echo ""
     exit 1
 fi
