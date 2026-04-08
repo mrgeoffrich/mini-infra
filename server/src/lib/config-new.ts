@@ -86,7 +86,7 @@ function getConfigValue<T>(path: string, envKey?: string, defaultValue?: T): T {
 // Build configuration object with environment variable overrides
 const appConfig: Config = {
   server: {
-    nodeEnv: getConfigValue("server.nodeEnv", "NODE_ENV", "development") as
+    nodeEnv: getConfigValue("server.nodeEnv", "NODE_ENV", "production") as
       | "development"
       | "production"
       | "test",
