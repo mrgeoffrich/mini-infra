@@ -292,11 +292,15 @@ function AppSecretStep({
   onComplete: () => void;
   dockerHost: string | null;
 }) {
-  const [appSecret, setAppSecret] = useState<string | null>(null);
+  const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
+  const [useCustom, setUseCustom] = useState(false);
+  const [customSecret, setCustomSecret] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCompleting, setIsCompleting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const activeSecret = useCustom ? customSecret : generatedSecret;
 
   useEffect(() => {
     (async () => {
@@ -304,7 +308,7 @@ function AppSecretStep({
         const response = await fetch("/auth/setup/app-secret");
         if (!response.ok) throw new Error("Failed to retrieve app secret");
         const data = await response.json();
-        setAppSecret(data.appSecret);
+        setGeneratedSecret(data.appSecret);
       } catch {
         setError("Failed to load app secret");
       } finally {
@@ -314,15 +318,14 @@ function AppSecretStep({
   }, []);
 
   const handleCopy = async () => {
-    if (!appSecret) return;
+    if (!activeSecret) return;
     try {
-      await navigator.clipboard.writeText(appSecret);
+      await navigator.clipboard.writeText(activeSecret);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for insecure contexts
       const textarea = document.createElement("textarea");
-      textarea.value = appSecret;
+      textarea.value = activeSecret;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand("copy");
@@ -333,21 +336,28 @@ function AppSecretStep({
   };
 
   const handleComplete = async () => {
+    if (!activeSecret) return;
     setIsCompleting(true);
+    setError(null);
     try {
+      const body: Record<string, string> = {};
+      if (dockerHost) body.dockerHost = dockerHost;
+      if (useCustom && customSecret) body.appSecret = customSecret;
+
       const response = await fetch("/auth/setup/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dockerHost }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to complete setup");
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to complete setup");
       }
 
       onComplete();
-    } catch {
-      setError("Failed to complete setup");
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setIsCompleting(false);
     }
@@ -361,7 +371,7 @@ function AppSecretStep({
     );
   }
 
-  if (error && !appSecret) {
+  if (error && !generatedSecret) {
     return (
       <Alert variant="destructive">
         <IconAlertCircle className="h-4 w-4" />
@@ -369,6 +379,8 @@ function AppSecretStep({
       </Alert>
     );
   }
+
+  const customTooShort = useCustom && customSecret.length > 0 && customSecret.length < 32;
 
   return (
     <div className="space-y-4">
@@ -378,23 +390,73 @@ function AppSecretStep({
         host, you will need this secret to decrypt your data.
       </p>
 
-      <div className="relative">
-        <div className="rounded-lg border bg-muted/50 p-3 pr-10 font-mono text-xs break-all select-all">
-          {appSecret}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute right-1 top-1 h-8 w-8 p-0"
-          onClick={handleCopy}
+      <div className="space-y-2">
+        <label
+          className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+            !useCustom
+              ? "border-primary bg-primary/5"
+              : "border-muted hover:border-muted-foreground/30"
+          }`}
+          onClick={() => setUseCustom(false)}
         >
-          {copied ? (
-            <IconCheck className="h-4 w-4 text-green-600" />
-          ) : (
-            <IconCopy className="h-4 w-4" />
-          )}
-        </Button>
+          <IconCircleCheck
+            className={`h-4 w-4 flex-shrink-0 ${!useCustom ? "text-primary" : "text-muted-foreground/30"}`}
+          />
+          <span className="text-sm">Use generated secret</span>
+        </label>
+
+        <label
+          className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+            useCustom
+              ? "border-primary bg-primary/5"
+              : "border-muted hover:border-muted-foreground/30"
+          }`}
+          onClick={() => setUseCustom(true)}
+        >
+          <IconCircleCheck
+            className={`h-4 w-4 flex-shrink-0 ${useCustom ? "text-primary" : "text-muted-foreground/30"}`}
+          />
+          <span className="text-sm">Use my own secret</span>
+        </label>
       </div>
+
+      {!useCustom && generatedSecret && (
+        <div className="relative">
+          <div className="rounded-lg border bg-muted/50 p-3 pr-10 font-mono text-xs break-all select-all">
+            {generatedSecret}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1 h-8 w-8 p-0"
+            onClick={handleCopy}
+          >
+            {copied ? (
+              <IconCheck className="h-4 w-4 text-green-600" />
+            ) : (
+              <IconCopy className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      )}
+
+      {useCustom && (
+        <div className="space-y-1">
+          <Input
+            type="text"
+            placeholder="Enter your app secret (min 32 characters)"
+            value={customSecret}
+            onChange={(e) => setCustomSecret(e.target.value)}
+            className="font-mono text-xs"
+            autoFocus
+          />
+          {customTooShort && (
+            <p className="text-xs text-destructive">
+              Must be at least 32 characters
+            </p>
+          )}
+        </div>
+      )}
 
       <Alert>
         <IconAlertCircle className="h-4 w-4" />
@@ -416,7 +478,7 @@ function AppSecretStep({
       <Button
         className="w-full"
         onClick={handleComplete}
-        disabled={isCompleting}
+        disabled={isCompleting || !activeSecret || customTooShort}
       >
         {isCompleting ? (
           <>
@@ -539,7 +601,7 @@ export function SetupPage() {
             {step === 3 && (
               <AppSecretStep
                 dockerHost={dockerHost}
-                onComplete={() => navigate("/login")}
+                onComplete={() => navigate("/dashboard")}
               />
             )}
           </CardContent>

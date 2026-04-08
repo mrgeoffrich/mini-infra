@@ -26,7 +26,7 @@ import {
 } from "../lib/account-lockout-service";
 import * as authSettingsService from "../lib/auth-settings-service";
 import { requireAuth } from "../lib/auth-middleware";
-import { getApiKeySecret } from "../lib/security-config";
+import { getApiKeySecret, securityConfig as securityConfigStore } from "../lib/security-config";
 import type {
   AuthStatus,
   UserProfile,
@@ -142,6 +142,16 @@ router.post("/setup", (async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Setup has already been completed" });
     }
 
+    // Auto-login: issue JWT so remaining setup steps are authenticated
+    const profile: UserProfile = {
+      id: result.id,
+      email: result.email,
+      name: result.name || undefined,
+      createdAt: result.createdAt.toISOString(),
+    };
+    const token = generateToken(profile);
+    setAuthCookie(res, token);
+
     logger.info({ userId: result.id, email: result.email }, "Initial user created during setup");
     res.status(201).json({ success: true });
   } catch (error) {
@@ -255,8 +265,31 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Setup is not in progress" });
     }
 
+    // Optionally update app secret if user provided their own
+    const { dockerHost, appSecret } = req.body as { dockerHost?: string; appSecret?: string };
+    if (appSecret && appSecret.length >= 32) {
+      await prisma.systemSettings.upsert({
+        where: { category_key: { category: "system", key: "app_secret" } },
+        create: {
+          category: "system",
+          key: "app_secret",
+          value: appSecret,
+          isEncrypted: false,
+          isActive: true,
+          createdBy: "system",
+          updatedBy: "system",
+        },
+        update: {
+          value: appSecret,
+          updatedBy: "system",
+          updatedAt: new Date(),
+        },
+      });
+      securityConfigStore.setAppSecret(appSecret);
+      logger.info("Custom app secret saved during setup");
+    }
+
     // Optionally save Docker socket configuration
-    const { dockerHost } = req.body as { dockerHost?: string };
     if (dockerHost) {
       // Save docker host setting
       await prisma.systemSettings.upsert({
