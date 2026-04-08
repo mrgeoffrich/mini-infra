@@ -86,10 +86,16 @@ const initializeSecuritySecrets = async () => {
       },
     });
 
-    // Generate app secret if it doesn't exist
+    // If no secret in DB, use env var or generate a new one
     if (!secretSetting || !secretSetting.value) {
-      const newSecret = randomBytes(32).toString("hex");
-      console.log("[STARTUP] App secret not found, generating new one...");
+      const envSecret = appConfig.auth.appSecret;
+      const newSecret = envSecret || randomBytes(32).toString("hex");
+
+      if (envSecret) {
+        console.log("[STARTUP] App secret seeded from environment variable");
+      } else {
+        console.log("[STARTUP] App secret not found, generating new one...");
+      }
 
       secretSetting = await prisma.systemSettings.upsert({
         where: {
@@ -114,8 +120,8 @@ const initializeSecuritySecrets = async () => {
         },
       });
 
-      logger.info("New app secret generated and stored in database");
-      console.log("[STARTUP] ✓ New app secret generated");
+      logger.info("App secret stored in database");
+      console.log("[STARTUP] ✓ App secret stored in database");
     } else {
       console.log("[STARTUP] ✓ App secret loaded from database");
     }
