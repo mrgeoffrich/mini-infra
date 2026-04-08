@@ -1,4 +1,3 @@
-import fs from "fs";
 import prisma from "../lib/prisma";
 import { agentLogger } from "../lib/logger-factory";
 import { agentConfig } from "../lib/config-new";
@@ -118,7 +117,6 @@ export async function getSettings(): Promise<AgentSettingsResponse> {
   }
 
   // Check capabilities
-  const dockerAvailable = fs.existsSync("/var/run/docker.sock");
   let githubAvailable = false;
   try {
     const token = await githubAppService.getAgentToken();
@@ -135,10 +133,6 @@ export async function getSettings(): Promise<AgentSettingsResponse> {
       available: AVAILABLE_MODELS,
     },
     capabilities: {
-      docker: {
-        available: dockerAvailable,
-        socketPath: "/var/run/docker.sock",
-      },
       github: { available: githubAvailable },
       api: { available: true },
     },

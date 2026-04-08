@@ -53,7 +53,6 @@ export interface AgentSettingsResponse {
     available: { id: string; label: string }[];
   };
   capabilities: {
-    docker: { available: boolean; socketPath: string };
     github: { available: boolean };
     api: { available: boolean };
   };
