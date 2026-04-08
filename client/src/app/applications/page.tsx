@@ -14,6 +14,9 @@ import {
   IconPackage,
   IconExternalLink,
   IconPlugConnected,
+  IconPlugConnectedX,
+  IconWorld,
+  IconDatabase,
 } from "@tabler/icons-react";
 import {
   useApplications,
@@ -53,7 +56,29 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { UpdateApplicationDialog } from "./update-application-dialog";
-import type { StackTemplateInfo, StackInfo } from "@mini-infra/types";
+import type { StackTemplateInfo, StackInfo, StackServiceType } from "@mini-infra/types";
+
+function getAppServiceType(
+  app: StackTemplateInfo,
+  stacks: StackInfo[] | undefined,
+): StackServiceType | null {
+  // Prefer from deployed stack services
+  if (stacks?.length) {
+    const svc = stacks[0].services?.[0];
+    if (svc) return svc.serviceType;
+  }
+  // Fall back to template version services
+  const templateSvc = app.currentVersion?.services?.[0];
+  if (templateSvc) return templateSvc.serviceType;
+  return null;
+}
+
+function isAdoptedWeb(
+  app: StackTemplateInfo,
+  stacks: StackInfo[] | undefined,
+): boolean {
+  return getAppServiceType(app, stacks) === "AdoptedWeb";
+}
 
 export default function ApplicationsPage() {
   const navigate = useNavigate();
@@ -266,15 +291,30 @@ export default function ApplicationsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {applications.map((app) => {
+              const appStacks = stacksByTemplateId.get(app.id);
+              const adopted = isAdoptedWeb(app, appStacks);
+              const serviceType = getAppServiceType(app, appStacks);
+              const hasStacks = !!appStacks && appStacks.length > 0;
+              const isBusy = stoppingId === app.id
+                || appStacks?.some((s) => s.status === "pending");
               return (
                 <Card
                   key={app.id}
-                  className="group hover:shadow-md transition-shadow"
+                  className={`group transition-shadow ${isBusy ? "opacity-60 pointer-events-none" : "hover:shadow-md"}`}
                 >
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base truncate">
+                        <CardTitle className="text-base truncate flex items-center gap-1.5">
+                          {serviceType === "AdoptedWeb" && (
+                            <IconPlugConnected className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          {serviceType === "StatelessWeb" && (
+                            <IconWorld className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          {serviceType === "Stateful" && (
+                            <IconDatabase className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
                           {app.displayName}
                         </CardTitle>
                         {(() => {
@@ -332,20 +372,15 @@ export default function ApplicationsPage() {
                   </CardHeader>
 
                   <CardContent className="pt-0">
-                    <div className="flex items-center gap-2 mb-3">
-                      {app.category && (
-                        <Badge variant="outline">{app.category}</Badge>
-                      )}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
                       {app.isArchived && (
                         <Badge variant="destructive">Archived</Badge>
                       )}
                       {(() => {
-                        const stacks = stacksByTemplateId.get(app.id);
-                        if (!stacks || stacks.length === 0) return null;
-                        // Pick the best stack for display: prefer synced > pending > error
-                        const displayStack = stacks.find((s) => s.status === "synced")
-                          ?? stacks.find((s) => s.status === "pending")
-                          ?? stacks[0];
+                        if (!appStacks || appStacks.length === 0) return null;
+                        const displayStack = appStacks.find((s) => s.status === "synced")
+                          ?? appStacks.find((s) => s.status === "pending")
+                          ?? appStacks[0];
                         return (
                           <Badge
                             variant={
@@ -355,7 +390,7 @@ export default function ApplicationsPage() {
                             }
                           >
                             {displayStack.status === "synced"
-                              ? "Running"
+                              ? (adopted ? "Connected" : "Running")
                               : displayStack.status ?? "Deployed"}
                           </Badge>
                         );
@@ -368,40 +403,51 @@ export default function ApplicationsPage() {
                     </div>
 
                     <div className="flex gap-2">
-                      {!stacksByTemplateId.has(app.id) && app.environmentId && (
+                      {!hasStacks && app.environmentId && (
                         <Button
                           size="sm"
                           className="flex-1"
                           onClick={() => handleDeploy(app)}
                         >
-                          <IconPlayerPlay className="h-4 w-4 mr-1" />
-                          Deploy
+                          {adopted ? (
+                            <IconPlugConnected className="h-4 w-4 mr-1" />
+                          ) : (
+                            <IconPlayerPlay className="h-4 w-4 mr-1" />
+                          )}
+                          {adopted ? "Connect" : "Deploy"}
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1"
-                        disabled={!stacksByTemplateId.has(app.id)}
-                        onClick={() => setUpdateTarget(app)}
-                      >
-                        <IconRefresh className="h-4 w-4 mr-1" />
-                        Update
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1"
-                        disabled={stoppingId === app.id || !stacksByTemplateId.has(app.id)}
-                        onClick={() => handleStop(app)}
-                      >
-                        {stoppingId === app.id ? (
-                          <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
-                        ) : (
-                          <IconPlayerStop className="h-4 w-4 mr-1" />
-                        )}
-                        Stop
-                      </Button>
+                      {hasStacks && (
+                        <>
+                          {!adopted && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => setUpdateTarget(app)}
+                            >
+                              <IconRefresh className="h-4 w-4 mr-1" />
+                              Update
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            disabled={stoppingId === app.id}
+                            onClick={() => handleStop(app)}
+                          >
+                            {stoppingId === app.id ? (
+                              <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : adopted ? (
+                              <IconPlugConnectedX className="h-4 w-4 mr-1" />
+                            ) : (
+                              <IconPlayerStop className="h-4 w-4 mr-1" />
+                            )}
+                            {adopted ? "Disconnect" : "Stop"}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

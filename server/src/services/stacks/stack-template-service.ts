@@ -55,6 +55,7 @@ const versionSummary = {
   createdAt: true,
   createdById: true,
   _count: { select: { services: true } },
+  services: { select: { serviceType: true }, orderBy: { order: 'asc' as const } },
 };
 
 export class StackTemplateService {
