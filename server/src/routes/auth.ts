@@ -6,6 +6,8 @@ import {
   RequestHandler,
 } from "express";
 import crypto from "crypto";
+import Docker from "dockerode";
+import os from "os";
 import passport from "../lib/passport";
 import { appLogger } from "../lib/logger-factory";
 import { serverConfig, securityConfig, authConfig } from "../lib/config-new";
@@ -34,6 +36,7 @@ import type {
   RecoverRequestPayload,
   RecoverResetPayload,
   ChangePasswordRequest,
+  DockerSocketDetectionResult,
 } from "@mini-infra/types";
 
 const logger = appLogger();
@@ -85,7 +88,7 @@ router.get("/setup-status", (async (_req: Request, res: Response) => {
     const setupComplete = userCount > 0 && (await authSettingsService.isSetupComplete());
     const googleOAuthEnabled = await authSettingsService.isGoogleOAuthEnabled();
 
-    res.json({ setupComplete, googleOAuthEnabled });
+    res.json({ setupComplete, hasUsers: userCount > 0, googleOAuthEnabled });
   } catch (error) {
     logger.error({ error }, "Error checking setup status");
     res.status(500).json({ error: "Failed to check setup status" });
@@ -139,14 +142,149 @@ router.post("/setup", (async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Setup has already been completed" });
     }
 
-    // Mark setup as complete
-    await authSettingsService.markSetupComplete();
-
     logger.info({ userId: result.id, email: result.email }, "Initial user created during setup");
     res.status(201).json({ success: true });
   } catch (error) {
     logger.error({ error }, "Error during setup");
     res.status(500).json({ error: "Setup failed" });
+  }
+}) as RequestHandler);
+
+// ==========================================
+// Public: Setup — auto-detect Docker socket
+// ==========================================
+router.post("/setup/detect-docker", (async (_req: Request, res: Response) => {
+  try {
+    const userCount = await prisma.user.count();
+    const setupComplete = await authSettingsService.isSetupComplete();
+    if (userCount === 0 || setupComplete) {
+      return res.status(403).json({ error: "Setup is not in progress" });
+    }
+
+    const home = os.homedir();
+    const candidates = [
+      { socketPath: "/var/run/docker.sock", display: "unix:///var/run/docker.sock" },
+      { socketPath: "/run/docker.sock", display: "unix:///run/docker.sock" },
+      { socketPath: `${home}/.docker/run/docker.sock`, display: `unix://${home}/.docker/run/docker.sock` },
+      { socketPath: `${home}/.colima/default/docker.sock`, display: `unix://${home}/.colima/default/docker.sock` },
+      { socketPath: `${home}/.orbstack/run/docker.sock`, display: `unix://${home}/.orbstack/run/docker.sock` },
+      { socketPath: "//./pipe/docker_engine", display: "npipe:////./pipe/docker_engine" },
+    ];
+
+    const sockets: DockerSocketDetectionResult["sockets"] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const docker = new Docker({ socketPath: candidate.socketPath });
+        const ping = await Promise.race([
+          docker.ping(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 3000),
+          ),
+        ]);
+
+        const pingStr =
+          ping instanceof Buffer ? ping.toString().trim() :
+          typeof ping === "string" ? ping.trim() :
+          String(ping).trim();
+
+        if (pingStr.toLowerCase() === "ok" || ping === true) {
+          let version: string | undefined;
+          try {
+            const info = await docker.version();
+            version = info.Version;
+          } catch { /* version is optional */ }
+
+          sockets.push({
+            path: candidate.socketPath,
+            displayPath: candidate.display,
+            version,
+          });
+        }
+      } catch {
+        // Socket not accessible — skip
+      }
+    }
+
+    const result: DockerSocketDetectionResult = {
+      detected: sockets.length > 0,
+      sockets,
+    };
+
+    res.json(result);
+  } catch (error) {
+    logger.error({ error }, "Error during Docker socket detection");
+    res.status(500).json({ error: "Docker detection failed" });
+  }
+}) as RequestHandler);
+
+// ==========================================
+// Public: Setup — retrieve app secret
+// ==========================================
+router.get("/setup/app-secret", (async (_req: Request, res: Response) => {
+  try {
+    const userCount = await prisma.user.count();
+    const setupComplete = await authSettingsService.isSetupComplete();
+    if (userCount === 0 || setupComplete) {
+      return res.status(403).json({ error: "Setup is not in progress" });
+    }
+
+    const secretSetting = await prisma.systemSettings.findFirst({
+      where: { category: "system", key: "app_secret", isActive: true },
+    });
+
+    if (!secretSetting?.value) {
+      return res.status(500).json({ error: "App secret not found" });
+    }
+
+    res.json({ appSecret: secretSetting.value });
+  } catch (error) {
+    logger.error({ error }, "Error retrieving app secret");
+    res.status(500).json({ error: "Failed to retrieve app secret" });
+  }
+}) as RequestHandler);
+
+// ==========================================
+// Public: Setup — complete setup wizard
+// ==========================================
+router.post("/setup/complete", (async (req: Request, res: Response) => {
+  try {
+    const userCount = await prisma.user.count();
+    const setupComplete = await authSettingsService.isSetupComplete();
+    if (userCount === 0 || setupComplete) {
+      return res.status(403).json({ error: "Setup is not in progress" });
+    }
+
+    // Optionally save Docker socket configuration
+    const { dockerHost } = req.body as { dockerHost?: string };
+    if (dockerHost) {
+      // Save docker host setting
+      await prisma.systemSettings.upsert({
+        where: { category_key: { category: "docker", key: "host" } },
+        create: {
+          category: "docker",
+          key: "host",
+          value: dockerHost,
+          isEncrypted: false,
+          isActive: true,
+          createdBy: "system",
+          updatedBy: "system",
+        },
+        update: {
+          value: dockerHost,
+          updatedBy: "system",
+          updatedAt: new Date(),
+        },
+      });
+      logger.info({ dockerHost }, "Docker host saved during setup");
+    }
+
+    await authSettingsService.markSetupComplete();
+    logger.info("Setup wizard completed");
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error }, "Error completing setup");
+    res.status(500).json({ error: "Failed to complete setup" });
   }
 }) as RequestHandler);
 

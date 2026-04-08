@@ -207,7 +207,21 @@ export interface ApiKeyResponse {
 
 export interface SetupStatusResponse {
   setupComplete: boolean;
+  hasUsers: boolean;
   googleOAuthEnabled: boolean;
+}
+
+export interface DockerSocketDetectionResult {
+  detected: boolean;
+  sockets: Array<{
+    path: string;
+    displayPath: string;
+    version?: string;
+  }>;
+}
+
+export interface AppSecretResponse {
+  appSecret: string;
 }
 
 export interface SetupRequest {
