@@ -293,8 +293,80 @@ export class StackReconciler {
     const snapshot = stack.lastAppliedSnapshot as unknown as StackDefinition | null;
 
     for (const svc of stack.services) {
-      const container = containerMap.get(svc.serviceName);
       const desiredHash = serviceHashes.get(svc.serviceName)!;
+
+      // AdoptedWeb services reference external containers — different lookup strategy
+      if (svc.serviceType === 'AdoptedWeb') {
+        const adopted = svc.adoptedContainer as unknown as { containerName: string; listeningPort: number } | null;
+        if (!adopted) {
+          planWarnings.push({
+            type: 'adopted-container' as const,
+            serviceName: svc.serviceName,
+            containerName: 'unknown',
+            issue: 'missing' as const,
+            message: `AdoptedWeb service "${svc.serviceName}" has no adoptedContainer configuration`,
+          });
+          actions.push({ serviceName: svc.serviceName, action: 'no-op' });
+          continue;
+        }
+
+        // Look up the adopted container by name
+        const adoptedContainers = await docker.listContainers({
+          all: true,
+          filters: { name: [adopted.containerName] },
+        });
+        const target = adoptedContainers.find((c) =>
+          c.Names.some((n) => n.replace(/^\//, '') === adopted.containerName)
+        );
+
+        if (!target) {
+          planWarnings.push({
+            type: 'adopted-container' as const,
+            serviceName: svc.serviceName,
+            containerName: adopted.containerName,
+            issue: 'missing' as const,
+            message: `Adopted container "${adopted.containerName}" not found`,
+          });
+        } else if (target.State !== 'running') {
+          planWarnings.push({
+            type: 'adopted-container' as const,
+            serviceName: svc.serviceName,
+            containerName: adopted.containerName,
+            issue: 'not-running' as const,
+            message: `Adopted container "${adopted.containerName}" is ${target.State}`,
+          });
+        }
+
+        // Check if routing has been applied before
+        const snapshotSvc = snapshot?.services?.find((s) => s.serviceName === svc.serviceName);
+        if (!snapshotSvc) {
+          // First deploy — need to set up routing
+          actions.push({
+            serviceName: svc.serviceName,
+            action: 'create',
+            reason: 'routing not configured',
+            desiredImage: `adopted:${adopted.containerName}`,
+          });
+        } else {
+          // Check if routing config changed by comparing hashes
+          const snapshotHash = computeDefinitionHash(snapshotSvc);
+          if (snapshotHash === desiredHash) {
+            actions.push({ serviceName: svc.serviceName, action: 'no-op' });
+          } else {
+            const diffs = this.generateDiffs(svc.serviceName, snapshot, toServiceDefinition(svc));
+            actions.push({
+              serviceName: svc.serviceName,
+              action: 'recreate',
+              reason: 'routing configuration changed',
+              diff: diffs.length > 0 ? diffs : undefined,
+              desiredImage: `adopted:${adopted.containerName}`,
+            });
+          }
+        }
+        continue;
+      }
+
+      const container = containerMap.get(svc.serviceName);
       const desiredImage = `${svc.dockerImage}:${svc.dockerTag}`;
 
       if (!container) {
@@ -590,13 +662,20 @@ export class StackReconciler {
         const svc = serviceMap.get(action.serviceName);
         const serviceDef = resolvedDefinitions.get(action.serviceName) ?? null;
         const isStatelessWeb = svc?.serviceType === 'StatelessWeb';
+        const isAdoptedWeb = svc?.serviceType === 'AdoptedWeb';
 
-        if (isStatelessWeb && !this.routingManager) {
-          throw new Error(`StackRoutingManager is required for StatelessWeb service "${action.serviceName}"`);
+        if ((isStatelessWeb || isAdoptedWeb) && !this.routingManager) {
+          throw new Error(`StackRoutingManager is required for ${svc?.serviceType} service "${action.serviceName}"`);
         }
 
         try {
-          if (isStatelessWeb) {
+          if (isAdoptedWeb) {
+            const result = await this.applyAdoptedWeb(
+              action, svc!, serviceDef!, projectName, stackId, stack,
+              serviceHashes, actionStart, log, infraNetworkMap
+            );
+            serviceResults.push(result);
+          } else if (isStatelessWeb) {
             const result = await this.applyStatelessWeb(
               action, svc!, serviceDef!, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
@@ -653,6 +732,7 @@ export class StackReconciler {
               initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
               dependsOn: s.dependsOn as unknown as string[],
               routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
+              adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
             })),
           } as any) as any,
           status: resultStatus,
@@ -797,7 +877,12 @@ export class StackReconciler {
 
         let result: ServiceApplyResult;
 
-        if (svc?.serviceType === 'StatelessWeb' && serviceDef && action.action === 'recreate') {
+        if (svc?.serviceType === 'AdoptedWeb' && serviceDef) {
+          result = await this.applyAdoptedWeb(
+            action, svc, serviceDef, projectName, stackId, stack,
+            serviceHashes, actionStart, log, infraNetworkMap
+          );
+        } else if (svc?.serviceType === 'StatelessWeb' && serviceDef && action.action === 'recreate') {
           result = await this.updateStatelessWeb(
             action, svc, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
@@ -843,6 +928,7 @@ export class StackReconciler {
               initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
               dependsOn: s.dependsOn as unknown as string[],
               routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
+              adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
             })),
           } as any) as any,
         },
@@ -1049,7 +1135,52 @@ export class StackReconciler {
       }
     }
 
-    // 1. Stop and remove all containers
+    // 0b. Clean up routing for AdoptedWeb services (container is NOT removed)
+    const adoptedServices = stack.services.filter((s) => s.serviceType === 'AdoptedWeb');
+    if (adoptedServices.length > 0 && this.routingManager && stack.environmentId) {
+      for (const svc of adoptedServices) {
+        const routing = svc.routing as unknown as StackServiceDefinition['routing'];
+        const adopted = svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer'];
+        if (!routing || !adopted) continue;
+
+        try {
+          const haproxyCtx = await this.routingManager.getHAProxyContext(stack.environmentId);
+          const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
+          await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+          const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+            serviceName: svc.serviceName,
+            containerId: '',
+            containerName: adopted.containerName,
+            routing,
+            environmentId: stack.environmentId,
+            stackId,
+            stackName: stack.name,
+          };
+
+          // Drain and remove servers
+          const backendName = `stk-${stack.name}-${svc.serviceName}`;
+          const backendRecord = await this.prisma.hAProxyBackend.findFirst({
+            where: { name: backendName, environmentId: stack.environmentId },
+            include: { servers: true },
+          });
+          if (backendRecord) {
+            for (const server of backendRecord.servers) {
+              try {
+                await this.routingManager.drainAndRemoveServer(backendName, server.name, haproxyClient);
+              } catch { /* best effort */ }
+            }
+          }
+
+          await this.routingManager.removeRoute(routingCtx, haproxyClient);
+          log.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing');
+        } catch (err: any) {
+          log.warn({ service: svc.serviceName, error: err.message }, 'Failed to remove AdoptedWeb routing');
+        }
+      }
+    }
+
+    // 1. Stop and remove all containers (AdoptedWeb containers are excluded — they don't have stack labels)
     const docker = this.dockerExecutor.getDockerClient();
     const containers = await docker.listContainers({
       all: true,
@@ -1371,6 +1502,221 @@ export class StackReconciler {
       containerPort: routing.listeningPort,
       containerName,
     };
+  }
+
+  /**
+   * Apply an AdoptedWeb service: find the external container, join it to the
+   * HAProxy network, and configure routing. Never creates or removes the container.
+   */
+  private async applyAdoptedWeb(
+    action: ServiceAction,
+    svc: any,
+    serviceDef: StackServiceDefinition,
+    projectName: string,
+    stackId: string,
+    stack: any,
+    serviceHashes: Map<string, string>,
+    actionStart: number,
+    log: any,
+    infraNetworkMap: Map<string, string> = new Map()
+  ): Promise<ServiceApplyResult> {
+    const routing = serviceDef.routing;
+    if (!routing) {
+      throw new Error(`AdoptedWeb service "${action.serviceName}" requires routing configuration`);
+    }
+
+    const adopted = serviceDef.adoptedContainer;
+    if (!adopted) {
+      throw new Error(`AdoptedWeb service "${action.serviceName}" requires adoptedContainer configuration`);
+    }
+
+    switch (action.action) {
+      case 'create':
+      case 'recreate': {
+        log.info({ service: action.serviceName, containerName: adopted.containerName }, `${action.action === 'create' ? 'Creating' : 'Recreating'} AdoptedWeb routing`);
+
+        // For recreate, remove old routing first
+        if (action.action === 'recreate') {
+          try {
+            const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
+            const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
+            await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+            const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+              serviceName: action.serviceName,
+              containerId: '',
+              containerName: adopted.containerName,
+              routing,
+              environmentId: stack.environmentId,
+              stackId,
+              stackName: stack.name,
+            };
+
+            // Remove old server from backend
+            const backendName = `stk-${stack.name}-${action.serviceName}`;
+            const backendRecord = await this.prisma.hAProxyBackend.findFirst({
+              where: { name: backendName, environmentId: stack.environmentId },
+              include: { servers: true },
+            });
+            if (backendRecord) {
+              for (const server of backendRecord.servers) {
+                try {
+                  await haproxyClient.deleteServer(backendName, server.name);
+                } catch { /* may not exist in HAProxy */ }
+              }
+              await this.prisma.hAProxyServer.deleteMany({ where: { backendId: backendRecord.id } });
+            }
+
+            await this.routingManager!.removeRoute(routingCtx, haproxyClient);
+          } catch (err: any) {
+            log.warn({ service: action.serviceName, error: err.message }, 'Failed to clean up old routing (continuing)');
+          }
+        }
+
+        // 1. Find the container by name
+        const docker = this.dockerExecutor.getDockerClient();
+        const containers = await docker.listContainers({
+          all: false,
+          filters: { name: [adopted.containerName] },
+        });
+        const target = containers.find((c) =>
+          c.Names.some((n) => n.replace(/^\//, '') === adopted.containerName)
+        );
+
+        if (!target) {
+          return {
+            serviceName: action.serviceName,
+            action: action.action,
+            success: false,
+            duration: Date.now() - actionStart,
+            error: `Adopted container "${adopted.containerName}" not found or not running`,
+          };
+        }
+
+        // 2. Get HAProxy context
+        const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
+        const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
+        await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+        // 3. Join container to HAProxy applications network
+        const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
+        const containerNetworks = Object.keys(target.NetworkSettings?.Networks || {});
+        if (!containerNetworks.includes(haproxyNetworkName)) {
+          log.info({ containerName: adopted.containerName, network: haproxyNetworkName }, 'Joining adopted container to HAProxy network');
+          await this.containerManager.connectToNetwork(target.Id, haproxyNetworkName);
+        }
+
+        // 4. Join to infra resource networks if specified
+        if (serviceDef.containerConfig.joinResourceNetworks?.length) {
+          await this.joinResourceNetworks(target.Id, serviceDef, infraNetworkMap, log);
+        }
+
+        // 5. Set up backend + server
+        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+          serviceName: action.serviceName,
+          containerId: target.Id,
+          containerName: adopted.containerName,
+          routing: { ...routing, listeningPort: adopted.listeningPort },
+          environmentId: stack.environmentId,
+          stackId,
+          stackName: stack.name,
+        };
+
+        const { backendName, serverName } = await this.routingManager!.setupBackendAndServer(
+          routingCtx, haproxyClient
+        );
+
+        // 6. Resolve TLS and configure route
+        let sslOptions: { enableSsl?: boolean; tlsCertificateId?: string } | undefined;
+        if (routing.tlsCertificate) {
+          const tlsResource = await this.prisma.stackResource.findFirst({
+            where: { stackId, resourceType: 'tls', resourceName: routing.tlsCertificate },
+          });
+          if (tlsResource?.externalId) {
+            sslOptions = { enableSsl: true, tlsCertificateId: tlsResource.externalId };
+          }
+        }
+
+        await this.routingManager!.configureRoute(routingCtx, backendName, haproxyClient, sslOptions);
+
+        // 7. Enable traffic
+        await this.routingManager!.enableTraffic(backendName, serverName, haproxyClient);
+
+        log.info({ service: action.serviceName, containerId: target.Id }, 'AdoptedWeb routing configured');
+
+        return {
+          serviceName: action.serviceName,
+          action: action.action,
+          success: true,
+          duration: Date.now() - actionStart,
+          containerId: target.Id,
+        };
+      }
+
+      case 'remove': {
+        log.info({ service: action.serviceName }, 'Removing AdoptedWeb routing (container will not be stopped)');
+
+        try {
+          const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
+          const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
+          await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+          const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+            serviceName: action.serviceName,
+            containerId: '',
+            containerName: adopted.containerName,
+            routing,
+            environmentId: stack.environmentId,
+            stackId,
+            stackName: stack.name,
+          };
+
+          // Remove server from backend
+          const backendName = `stk-${stack.name}-${action.serviceName}`;
+          const backendRecord = await this.prisma.hAProxyBackend.findFirst({
+            where: { name: backendName, environmentId: stack.environmentId },
+            include: { servers: true },
+          });
+          if (backendRecord) {
+            for (const server of backendRecord.servers) {
+              try {
+                await this.routingManager!.drainAndRemoveServer(
+                  backendName, server.name, haproxyClient
+                );
+              } catch (err: any) {
+                log.warn({ server: server.name, error: err.message }, 'Failed to drain server');
+              }
+            }
+          }
+
+          await this.routingManager!.removeRoute(routingCtx, haproxyClient);
+        } catch (err: any) {
+          log.warn({ service: action.serviceName, error: err.message }, 'Failed to remove routing');
+          return {
+            serviceName: action.serviceName,
+            action: 'remove',
+            success: false,
+            duration: Date.now() - actionStart,
+            error: err.message,
+          };
+        }
+
+        return {
+          serviceName: action.serviceName,
+          action: 'remove',
+          success: true,
+          duration: Date.now() - actionStart,
+        };
+      }
+
+      default:
+        return {
+          serviceName: action.serviceName,
+          action: action.action,
+          success: true,
+          duration: Date.now() - actionStart,
+        };
+    }
   }
 
   private async applyStatelessWeb(

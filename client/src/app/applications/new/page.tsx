@@ -89,7 +89,7 @@ const applicationFormSchema = z.object({
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
       "Must be lowercase, alphanumeric with hyphens, no leading/trailing hyphens",
     ),
-  serviceType: z.enum(["Stateful", "StatelessWeb"]),
+  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
   environmentId: z.string().min(1, "Environment is required"),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Tag is required"),

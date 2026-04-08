@@ -1292,4 +1292,49 @@ router.get('/:stackId/history/:deploymentId', requirePermission('stacks:read'), 
   }
 });
 
+// GET /eligible-containers — List containers eligible for AdoptedWeb adoption
+router.get('/eligible-containers', requirePermission('stacks:read'), async (req, res) => {
+  try {
+    const environmentId = req.query.environmentId as string | undefined;
+    if (!environmentId) {
+      return res.status(400).json({ success: false, message: 'environmentId query parameter is required' });
+    }
+
+    const docker = DockerService.getInstance();
+    if (!docker.isConnected()) {
+      return res.status(503).json({ success: false, message: 'Docker not connected' });
+    }
+
+    const allContainers = await docker.listContainers(false); // running only
+    const { getOwnContainerId } = await import('../services/self-update');
+    const ownContainerId = getOwnContainerId();
+
+    const eligible = allContainers.map((c) => {
+      const hasStackLabel = !!c.labels['mini-infra.stack-id'];
+      const isSelf = ownContainerId && c.id.startsWith(ownContainerId);
+      const ports = c.ports.map((p) => ({
+        containerPort: p.private,
+        protocol: p.type || 'tcp',
+      }));
+
+      return {
+        id: c.id,
+        name: c.name,
+        image: c.image,
+        imageTag: c.imageTag,
+        status: c.status,
+        ports,
+        isSelf: !!isSelf,
+        isManagedByStack: hasStackLabel,
+        managedByStack: hasStackLabel ? c.labels['mini-infra.stack'] : undefined,
+      };
+    }).filter((c) => !c.isManagedByStack || c.isSelf); // Exclude stack-managed unless it's Mini Infra itself
+
+    res.json({ success: true, data: eligible });
+  } catch (error) {
+    logger.error({ error }, 'Failed to list eligible containers');
+    res.status(500).json({ success: false, message: 'Failed to list eligible containers' });
+  }
+});
+
 export default router;

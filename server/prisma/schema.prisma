@@ -1027,6 +1027,7 @@ enum StackStatus {
 enum StackServiceType {
   Stateful
   StatelessWeb
+  AdoptedWeb
 }
 
 enum StackTemplateSource {
@@ -1100,7 +1101,8 @@ model StackService {
   initCommands    Json?            // Array of StackInitCommand
   dependsOn       Json             // Array of service name strings
   order           Int
-  routing         Json?            // StackServiceRouting (required for StatelessWeb, forbidden for Stateful)
+  routing         Json?            // StackServiceRouting (required for StatelessWeb/AdoptedWeb, forbidden for Stateful)
+  adoptedContainer Json?           // AdoptedContainerRef (required for AdoptedWeb)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 

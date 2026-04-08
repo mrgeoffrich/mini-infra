@@ -67,6 +67,7 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     dependsOn: s.dependsOn,
     order: s.order,
     routing: s.routing ? (s.routing as any) : Prisma.DbNull,
+    adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as any) : Prisma.DbNull,
   };
 }
 
@@ -191,6 +192,7 @@ export function resolveServiceConfigs(
     dependsOn: unknown;
     order: number;
     routing: unknown;
+    adoptedContainer?: unknown;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>
 ): {
@@ -234,6 +236,7 @@ export function toServiceDefinition(svc: {
   dependsOn: unknown;
   order: number;
   routing: unknown;
+  adoptedContainer?: unknown;
 }): StackServiceDefinition {
   return {
     serviceName: svc.serviceName,
@@ -246,6 +249,7 @@ export function toServiceDefinition(svc: {
     dependsOn: svc.dependsOn as string[],
     order: svc.order,
     routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
+    adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
   };
 }
 

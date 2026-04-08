@@ -21,22 +21,33 @@ export function computeDefinitionHash(
   service: StackServiceDefinition,
   resolvedConfigFiles?: StackConfigFile[]
 ): string {
-  const configFiles = resolvedConfigFiles ?? service.configFiles ?? [];
-  const sortedConfigFiles = [...configFiles].sort((a, b) =>
-    `${a.volumeName}:${a.path}`.localeCompare(`${b.volumeName}:${b.path}`)
-  );
-  const sortedInitCommands = [...(service.initCommands ?? [])].sort((a, b) =>
-    `${a.volumeName}:${a.mountPath}`.localeCompare(`${b.volumeName}:${b.mountPath}`)
-  );
+  let canonical: unknown;
 
-  const canonical = {
-    dockerImage: service.dockerImage,
-    dockerTag: service.dockerTag,
-    containerConfig: service.containerConfig,
-    configFiles: sortedConfigFiles,
-    initCommands: sortedInitCommands,
-    routing: service.routing ?? null,
-  };
+  if (service.serviceType === 'AdoptedWeb') {
+    // AdoptedWeb services don't manage the container — hash only the adoption ref and routing
+    canonical = {
+      serviceType: 'AdoptedWeb',
+      adoptedContainer: service.adoptedContainer ?? null,
+      routing: service.routing ?? null,
+    };
+  } else {
+    const configFiles = resolvedConfigFiles ?? service.configFiles ?? [];
+    const sortedConfigFiles = [...configFiles].sort((a, b) =>
+      `${a.volumeName}:${a.path}`.localeCompare(`${b.volumeName}:${b.path}`)
+    );
+    const sortedInitCommands = [...(service.initCommands ?? [])].sort((a, b) =>
+      `${a.volumeName}:${a.mountPath}`.localeCompare(`${b.volumeName}:${b.mountPath}`)
+    );
+
+    canonical = {
+      dockerImage: service.dockerImage,
+      dockerTag: service.dockerTag,
+      containerConfig: service.containerConfig,
+      configFiles: sortedConfigFiles,
+      initCommands: sortedInitCommands,
+      routing: service.routing ?? null,
+    };
+  }
 
   const hash = createHash('sha256')
     .update(stableStringify(canonical))

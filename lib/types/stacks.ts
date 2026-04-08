@@ -4,7 +4,7 @@
 
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
-export type StackServiceType = 'Stateful' | 'StatelessWeb';
+export type StackServiceType = 'Stateful' | 'StatelessWeb' | 'AdoptedWeb';
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
 // Stack parameter types
@@ -66,6 +66,11 @@ export interface StackInitCommand {
   volumeName: string;
   mountPath: string;
   commands: string[];
+}
+
+export interface AdoptedContainerRef {
+  containerName: string;
+  listeningPort: number;
 }
 
 export interface StackServiceRouting {
@@ -169,6 +174,7 @@ export interface StackService {
   dependsOn: string[];
   order: number;
   routing: StackServiceRouting | null;
+  adoptedContainer: AdoptedContainerRef | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -216,6 +222,7 @@ export interface StackServiceInfo {
   dependsOn: string[];
   order: number;
   routing: StackServiceRouting | null;
+  adoptedContainer: AdoptedContainerRef | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -233,6 +240,7 @@ export interface StackServiceDefinition {
   dependsOn: string[];
   order: number;
   routing?: StackServiceRouting;
+  adoptedContainer?: AdoptedContainerRef;
 }
 
 export interface StackDefinition {
@@ -276,6 +284,7 @@ export function serializeStack(
       dependsOn: s.dependsOn,
       order: s.order,
       routing: s.routing ?? undefined,
+      adoptedContainer: s.adoptedContainer ?? undefined,
     })),
   };
 }
@@ -345,7 +354,15 @@ export interface ResourceReferenceWarning {
   message: string;
 }
 
-export type PlanWarning = PortConflictWarning | NameConflictWarning | ResourceReferenceWarning;
+export interface AdoptedContainerWarning {
+  type: 'adopted-container';
+  serviceName: string;
+  containerName: string;
+  issue: 'missing' | 'not-running';
+  message: string;
+}
+
+export type PlanWarning = PortConflictWarning | NameConflictWarning | ResourceReferenceWarning | AdoptedContainerWarning;
 
 // Reconciler types
 
