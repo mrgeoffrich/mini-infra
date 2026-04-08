@@ -532,13 +532,11 @@ export function WelcomeDashboard() {
 
         <div className="mt-6 text-center">
           <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs text-muted-foreground"
+            variant="outline"
             onClick={handleSkip}
             disabled={isCompletingOnboarding}
           >
-            Skip setup
+            Skip setup — I'll configure these later
           </Button>
         </div>
       </div>
