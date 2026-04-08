@@ -7,6 +7,25 @@ set -e
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
+
+# Handle --reset flag: remove containers and volumes
+if [ "$1" = "--reset" ]; then
+    echo -e "\033[0;31m⚠  WARNING: This will destroy ALL Mini Infra data including:\033[0m"
+    echo "  - The database (users, settings, configuration)"
+    echo "  - All log files"
+    echo ""
+    read -r -p "Are you sure you want to continue? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+    echo ""
+    echo "Stopping containers and removing volumes..."
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v
+    echo -e "\033[0;32mReset complete. Starting fresh...\033[0m"
+    echo ""
+fi
 
 # Check if .env file exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -26,7 +45,7 @@ echo -e "\033[0;36mUsing .env file: $ENV_FILE\033[0m"
 echo ""
 
 # Start Docker Compose with explicit env file
-docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yaml" up -d
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 
 if [ $? -eq 0 ]; then
     echo ""

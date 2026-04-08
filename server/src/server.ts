@@ -88,8 +88,10 @@ const initializeSecuritySecrets = async () => {
 
     // If no secret in DB, use env var or generate a new one
     if (!secretSetting || !secretSetting.value) {
-      const envSecret = appConfig.auth.appSecret;
-      const newSecret = envSecret || randomBytes(32).toString("hex");
+      const envSecret = appConfig.auth.appSecret === "default-secret-change-in-production"
+        ? null
+        : appConfig.auth.appSecret;
+      const newSecret = envSecret || randomBytes(48).toString("base64url");
 
       if (envSecret) {
         console.log("[STARTUP] App secret seeded from environment variable");

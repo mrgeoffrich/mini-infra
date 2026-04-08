@@ -16,7 +16,7 @@
       "secret": null
     },
     "apiKey": {
-      "secret": "default-secret-change-in-production"
+      "secret": null
     }
   },
   "logging": {

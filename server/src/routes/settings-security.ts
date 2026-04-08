@@ -83,7 +83,7 @@ router.post("/regenerate", requirePermission('settings:write') as RequestHandler
     const { securityConfig } = await import("../lib/security-config");
     const { randomBytes } = await import("crypto");
 
-    const newSecret = randomBytes(32).toString("hex");
+    const newSecret = randomBytes(48).toString("base64url");
 
     await prisma.systemSettings.upsert({
       where: {

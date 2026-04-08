@@ -27,7 +27,7 @@ async function initializeSecuritySecrets() {
   });
 
   if (!secretSetting || !secretSetting.value) {
-    const newSecret = appConfig.auth.appSecret || randomBytes(32).toString("hex");
+    const newSecret = appConfig.auth.appSecret || randomBytes(48).toString("base64url");
 
     secretSetting = await prisma.systemSettings.upsert({
       where: {

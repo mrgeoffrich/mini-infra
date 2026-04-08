@@ -27,6 +27,7 @@ import {
 import * as authSettingsService from "../lib/auth-settings-service";
 import { requireAuth } from "../lib/auth-middleware";
 import { getApiKeySecret, securityConfig as securityConfigStore } from "../lib/security-config";
+import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import type {
   AuthStatus,
   UserProfile,
@@ -303,27 +304,38 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       logger.info("Custom app secret saved during setup");
     }
 
-    // Optionally save Docker socket configuration
+    // Optionally save Docker socket configuration and connect
     if (dockerHost) {
-      // Save docker host setting
+      const configFactory = new ConfigurationServiceFactory(prisma);
+      const dockerConfig = configFactory.create({ category: "docker" });
+      // set() invalidates the cached Docker client and refreshes the main service connection
+      await dockerConfig.set("host", dockerHost, "system");
+      // validate() pings Docker and records connectivity status
+      const validation = await dockerConfig.validate();
+      logger.info({ dockerHost, connected: validation.isValid }, "Docker host saved and validated during setup");
+    }
+
+    // Save Docker host IP address (used for DNS record creation)
+    const { dockerHostIp } = req.body as { dockerHostIp?: string };
+    if (dockerHostIp) {
       await prisma.systemSettings.upsert({
-        where: { category_key: { category: "docker", key: "host" } },
+        where: { category_key: { category: "system", key: "docker_host_ip" } },
         create: {
-          category: "docker",
-          key: "host",
-          value: dockerHost,
+          category: "system",
+          key: "docker_host_ip",
+          value: dockerHostIp,
           isEncrypted: false,
           isActive: true,
           createdBy: "system",
           updatedBy: "system",
         },
         update: {
-          value: dockerHost,
+          value: dockerHostIp,
           updatedBy: "system",
           updatedAt: new Date(),
         },
       });
-      logger.info({ dockerHost }, "Docker host saved during setup");
+      logger.info({ dockerHostIp }, "Docker host IP saved during setup");
     }
 
     await authSettingsService.markSetupComplete();

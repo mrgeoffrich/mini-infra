@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -150,32 +149,28 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 function DockerDetectionStep({
   onComplete,
 }: {
-  onComplete: (dockerHost: string | null) => void;
+  onComplete: (dockerHost: string | null, dockerHostIp: string) => void;
 }) {
   const [isDetecting, setIsDetecting] = useState(true);
   const [result, setResult] = useState<DockerSocketDetectionResult | null>(
     null,
   );
-  const [selectedSocket, setSelectedSocket] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [hostIp, setHostIp] = useState("");
+  const [ipError, setIpError] = useState<string | null>(null);
 
   const detect = useCallback(async () => {
     setIsDetecting(true);
-    setError(null);
+    setError(false);
     try {
       const response = await fetch("/auth/setup/detect-docker", {
         method: "POST",
       });
-      if (!response.ok) {
-        throw new Error("Detection failed");
-      }
+      if (!response.ok) throw new Error("Detection failed");
       const data: DockerSocketDetectionResult = await response.json();
       setResult(data);
-      if (data.detected && data.sockets.length > 0) {
-        setSelectedSocket(data.sockets[0].displayPath);
-      }
     } catch {
-      setError("Failed to detect Docker socket");
+      setError(true);
     } finally {
       setIsDetecting(false);
     }
@@ -185,94 +180,92 @@ function DockerDetectionStep({
     detect();
   }, [detect]);
 
+  const validateIp = (value: string): boolean => {
+    if (!value) {
+      setIpError("Docker Host IP is required");
+      return false;
+    }
+    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipv4Regex.test(value)) {
+      setIpError("Must be a valid IPv4 address (e.g., 192.168.1.100)");
+      return false;
+    }
+    setIpError(null);
+    return true;
+  };
+
+  const handleContinue = () => {
+    if (!validateIp(hostIp)) return;
+    onComplete(socket?.displayPath ?? null, hostIp);
+  };
+
   if (isDetecting) {
     return (
-      <div className="flex flex-col items-center gap-3 py-6">
+      <div className="flex flex-col items-center gap-3 py-8">
         <IconLoader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          Scanning for Docker sockets...
+          Checking for Docker connection...
         </p>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="space-y-4">
-        <Alert variant="destructive">
-          <IconAlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={detect}>
-            Retry
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => onComplete(null)}>
-            Skip
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!result?.detected) {
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          No Docker socket was found at the common locations. You can configure
-          the Docker connection later from the settings page.
-        </p>
-        <Button className="w-full" onClick={() => onComplete(null)}>
-          Continue
-          <IconArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-    );
-  }
+  const connected = result?.detected && result.sockets.length > 0;
+  const socket = connected ? result.sockets[0] : null;
 
   return (
     <div className="space-y-4">
+      {error ? (
+        <Alert variant="destructive">
+          <IconAlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Something went wrong while checking for Docker.
+          </AlertDescription>
+        </Alert>
+      ) : connected && socket ? (
+        <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/50">
+          <IconCircleCheck className="h-5 w-5 flex-shrink-0 text-green-600 dark:text-green-400" />
+          <div>
+            <p className="text-sm font-medium">Connected to Docker</p>
+            {socket.version && (
+              <p className="text-xs text-muted-foreground">
+                Version {socket.version}
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Could not connect to Docker. You can configure the Docker connection
+          later in the app settings.
+        </p>
+      )}
+
       <div className="space-y-2">
-        {result.sockets.map((socket) => (
-          <label
-            key={socket.path}
-            className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-              selectedSocket === socket.displayPath
-                ? "border-primary bg-primary/5"
-                : "border-muted hover:border-muted-foreground/30"
-            }`}
-          >
-            <input
-              type="radio"
-              name="docker-socket"
-              value={socket.displayPath}
-              checked={selectedSocket === socket.displayPath}
-              onChange={() => setSelectedSocket(socket.displayPath)}
-              className="sr-only"
-            />
-            <IconCircleCheck
-              className={`h-4 w-4 flex-shrink-0 ${
-                selectedSocket === socket.displayPath
-                  ? "text-primary"
-                  : "text-muted-foreground/30"
-              }`}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-mono truncate">{socket.displayPath}</p>
-              {socket.version && (
-                <p className="text-xs text-muted-foreground">
-                  Docker {socket.version}
-                </p>
-              )}
-            </div>
-          </label>
-        ))}
+        <Label htmlFor="dockerHostIp">Docker Host IP Address</Label>
+        <Input
+          id="dockerHostIp"
+          type="text"
+          value={hostIp}
+          onChange={(e) => {
+            setHostIp(e.target.value);
+            if (ipError) validateIp(e.target.value);
+          }}
+          placeholder="e.g., 192.168.1.100"
+        />
+        <p className="text-xs text-muted-foreground">
+          The LAN or public IP of this machine. Used for DNS records that point
+          to your services. Make sure this machine has a static IP address —
+          if it changes, DNS records will break.
+        </p>
+        {ipError && (
+          <p className="text-xs text-destructive">{ipError}</p>
+        )}
       </div>
 
       <Button
         className="w-full"
-        onClick={() => onComplete(selectedSocket)}
-        disabled={!selectedSocket}
+        onClick={handleContinue}
       >
         Continue
         <IconArrowRight className="ml-2 h-4 w-4" />
@@ -288,9 +281,11 @@ function DockerDetectionStep({
 function AppSecretStep({
   onComplete,
   dockerHost,
+  dockerHostIp,
 }: {
   onComplete: () => void;
   dockerHost: string | null;
+  dockerHostIp: string;
 }) {
   const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
   const [useCustom, setUseCustom] = useState(false);
@@ -342,6 +337,7 @@ function AppSecretStep({
     try {
       const body: Record<string, string> = {};
       if (dockerHost) body.dockerHost = dockerHost;
+      if (dockerHostIp) body.dockerHostIp = dockerHostIp;
       if (useCustom && customSecret) body.appSecret = customSecret;
 
       const response = await fetch("/auth/setup/complete", {
@@ -540,10 +536,10 @@ function StepIndicator({
 // ---------------------------------------------------------------------------
 
 export function SetupPage() {
-  const navigate = useNavigate();
   const { data: setupStatus } = useSetupStatus();
   const [step, setStep] = useState(1);
   const [dockerHost, setDockerHost] = useState<string | null>(null);
+  const [dockerHostIp, setDockerHostIp] = useState<string>("");
 
   // If setup already has users (e.g. page refresh mid-wizard), skip to step 2
   useEffect(() => {
@@ -592,8 +588,9 @@ export function SetupPage() {
             )}
             {step === 2 && (
               <DockerDetectionStep
-                onComplete={(host) => {
+                onComplete={(host, ip) => {
                   setDockerHost(host);
+                  setDockerHostIp(ip);
                   setStep(3);
                 }}
               />
@@ -601,7 +598,15 @@ export function SetupPage() {
             {step === 3 && (
               <AppSecretStep
                 dockerHost={dockerHost}
-                onComplete={() => navigate("/dashboard")}
+                dockerHostIp={dockerHostIp}
+                onComplete={() => {
+                  // Full page reload to clear stale cached auth/setup queries.
+                  // SPA navigate would hit ProtectedRoute with a stale
+                  // "not authenticated" cache (the JWT cookie was set in step 1
+                  // but useAuthStatus hasn't refetched), causing a redirect loop
+                  // back through /login → /setup.
+                  window.location.href = "/dashboard";
+                }}
               />
             )}
           </CardContent>

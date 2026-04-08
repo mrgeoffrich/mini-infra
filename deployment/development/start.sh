@@ -14,6 +14,24 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
 REGISTRY_HOST="localhost:5051"
 AGENT_SIDECAR_IMAGE="$REGISTRY_HOST/mini-infra-agent-sidecar:latest"
 
+# Handle --reset flag: remove containers and volumes
+if [ "$1" = "--reset" ]; then
+    echo -e "\033[0;31m⚠  WARNING: This will destroy ALL Mini Infra data including:\033[0m"
+    echo "  - The database (users, settings, configuration)"
+    echo "  - All log files"
+    echo ""
+    read -r -p "Are you sure you want to continue? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+    echo ""
+    echo "Stopping containers and removing volumes..."
+    docker compose -f "$COMPOSE_FILE" down -v
+    echo -e "\033[0;32mReset complete. Rebuilding...\033[0m"
+    echo ""
+fi
+
 echo -e "\033[0;32mBuilding and starting Mini Infra development deployment...\033[0m"
 echo -e "\033[0;36mBuilding from local Dockerfile...\033[0m"
 echo ""
