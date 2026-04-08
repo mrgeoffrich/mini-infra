@@ -299,12 +299,14 @@ export const routeConfig: Record<string, RouteConfig> = {
       frontends: {
         path: "/haproxy/frontends",
         title: "Frontends",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-frontends",
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
         title: "Connect Container",
+        parent: "/haproxy/frontends",
         showInNav: false,
         helpDoc: "haproxy/haproxy-frontends",
       },
@@ -327,6 +329,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       backends: {
         path: "/haproxy/backends",
         title: "Backends",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-backends",
       },
@@ -341,6 +344,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       instances: {
         path: "/haproxy/instances",
         title: "Instances",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-instances",
       },

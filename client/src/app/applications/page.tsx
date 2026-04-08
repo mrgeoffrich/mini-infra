@@ -218,9 +218,6 @@ export default function ApplicationsPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold">Applications</h1>
-              <p className="text-muted-foreground">
-                Manage your application templates
-              </p>
             </div>
           </div>
 
@@ -247,9 +244,6 @@ export default function ApplicationsPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold">Applications</h1>
-              <p className="text-muted-foreground">
-                Manage your application templates
-              </p>
             </div>
           </div>
 
@@ -260,7 +254,7 @@ export default function ApplicationsPage() {
             </Button>
             <Button onClick={() => navigate("/applications/new")} data-tour="applications-add-button">
               <IconPlus className="h-4 w-4 mr-2" />
-              Add Application
+              New Application
             </Button>
           </div>
         </div>
@@ -283,7 +277,7 @@ export default function ApplicationsPage() {
                 </Button>
                 <Button onClick={() => navigate("/applications/new")}>
                   <IconPlus className="h-4 w-4 mr-2" />
-                  Add Application
+                  New Application
                 </Button>
               </div>
             </CardContent>

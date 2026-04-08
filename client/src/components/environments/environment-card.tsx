@@ -75,12 +75,18 @@ export function EnvironmentCard({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Applications */}
-        <div className="text-sm">
+        {/* Counts */}
+        <div className="text-sm space-y-1">
           <div className="flex items-center gap-2 text-muted-foreground">
             <IconStack2 className="h-4 w-4" />
             <span>{environment.stackCount} {environment.stackCount === 1 ? 'Application' : 'Applications'}</span>
           </div>
+          {environment.systemStackCount > 0 && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <IconStack2 className="h-4 w-4" />
+              <span>{environment.systemStackCount} Infrastructure {environment.systemStackCount === 1 ? 'Stack' : 'Stacks'}</span>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

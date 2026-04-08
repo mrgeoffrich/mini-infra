@@ -125,7 +125,15 @@ export class EnvironmentManager {
         where: { id },
         include: {
           networks: true,
-          _count: { select: { stacks: true } },
+          _count: {
+              select: {
+                stacks: { where: { template: { source: 'user' } } },
+              },
+            },
+            stacks: {
+              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              select: { id: true },
+            },
         }
       });
 
@@ -147,7 +155,15 @@ export class EnvironmentManager {
         where: { name },
         include: {
           networks: true,
-          _count: { select: { stacks: true } },
+          _count: {
+              select: {
+                stacks: { where: { template: { source: 'user' } } },
+              },
+            },
+            stacks: {
+              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              select: { id: true },
+            },
         }
       });
 
@@ -177,7 +193,15 @@ export class EnvironmentManager {
           where,
           include: {
             networks: true,
-            _count: { select: { stacks: true } },
+            _count: {
+              select: {
+                stacks: { where: { template: { source: 'user' } } },
+              },
+            },
+            stacks: {
+              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              select: { id: true },
+            },
           },
           skip: (page - 1) * limit,
           take: limit,
@@ -210,7 +234,15 @@ export class EnvironmentManager {
         },
         include: {
           networks: true,
-          _count: { select: { stacks: true } },
+          _count: {
+              select: {
+                stacks: { where: { template: { source: 'user' } } },
+              },
+            },
+            stacks: {
+              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              select: { id: true },
+            },
         }
       });
 
@@ -419,6 +451,7 @@ export class EnvironmentManager {
         createdAt: n.createdAt
       })),
       stackCount: prismaEnv._count?.stacks ?? 0,
+      systemStackCount: prismaEnv.stacks?.length ?? 0,
       tunnelId: prismaEnv.tunnelId ?? undefined,
       tunnelServiceUrl: prismaEnv.tunnelServiceUrl ?? undefined,
       createdAt: prismaEnv.createdAt,

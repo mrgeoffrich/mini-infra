@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconNetwork,
-  IconPlus,
   IconRefresh,
   IconSearch,
   IconEye,
@@ -362,10 +361,6 @@ export function FrontendsListPage() {
             </div>
           </div>
 
-          <Button onClick={() => navigate("/haproxy/frontends/new/manual")}>
-            <IconPlus className="h-4 w-4 mr-2" />
-            Connect Container
-          </Button>
         </div>
       </div>
 
@@ -471,15 +466,6 @@ export function FrontendsListPage() {
                     ? "Get started by connecting a container to HAProxy."
                     : "Try adjusting your filters to see more results."}
                 </p>
-                {frontends.length === 0 && (
-                  <Button
-                    onClick={() => navigate("/haproxy/frontends/new/manual")}
-                    className="mt-4"
-                  >
-                    <IconPlus className="h-4 w-4 mr-2" />
-                    Connect Container
-                  </Button>
-                )}
               </div>
             ) : (
               <div className="rounded-md border">
