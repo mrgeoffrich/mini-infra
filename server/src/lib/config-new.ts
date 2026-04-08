@@ -126,26 +126,14 @@ const appConfig: Config = {
       | "silent",
   },
   docker: {
-    containerCacheTtl: getConfigValue(
-      "docker.containerCacheTtl",
-      "CONTAINER_CACHE_TTL",
-      3000,
-    ),
-    containerPollInterval: getConfigValue(
-      "docker.containerPollInterval",
-      "CONTAINER_POLL_INTERVAL",
-      5000,
-    ),
+    containerCacheTtl: 3000,
+    containerPollInterval: 5000,
   },
   azure: {
-    apiTimeout: getConfigValue("azure.apiTimeout", "AZURE_API_TIMEOUT", 15000),
+    apiTimeout: 15000,
   },
   connectivity: {
-    checkInterval: getConfigValue(
-      "connectivity.checkInterval",
-      "CONNECTIVITY_CHECK_INTERVAL",
-      300000,
-    ),
+    checkInterval: 300000, // 5 minutes
   },
   agent: {
     model: getConfigValue("agent.model", "AGENT_MODEL", "claude-sonnet-4-6"),

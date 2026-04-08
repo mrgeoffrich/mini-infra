@@ -31,7 +31,6 @@ const {
     recordConnectivityStatus: vi.fn().mockResolvedValue(undefined),
   },
   mockConfig: {
-    CONTAINER_CACHE_TTL: 3000,
     DOCKER_HOST: "/var/run/docker.sock",
     DOCKER_API_VERSION: "1.51",
   },

@@ -31,14 +31,6 @@ services:
       # Database
       - DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
 
-      # Container Management
-      - CONTAINER_CACHE_TTL=${CONTAINER_CACHE_TTL:-3000}
-      - CONTAINER_POLL_INTERVAL=${CONTAINER_POLL_INTERVAL:-5000}
-
-      # Azure Configuration (Optional)
-      - AZURE_API_TIMEOUT=${AZURE_API_TIMEOUT:-15000}
-      - CONNECTIVITY_CHECK_INTERVAL=${CONNECTIVITY_CHECK_INTERVAL:-300000}
-
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
