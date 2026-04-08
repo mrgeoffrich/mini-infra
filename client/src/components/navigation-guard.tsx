@@ -25,7 +25,7 @@ export function NavigationGuard({
   fallbackMessage,
   showLoginPrompt = true,
 }: NavigationGuardProps) {
-  const { authState, login } = useAuth();
+  const { authState, loginGoogle } = useAuth();
 
   // If authentication is required but user is not authenticated
   if (requireAuth && !authState.isAuthenticated && !authState.isLoading) {
@@ -42,9 +42,9 @@ export function NavigationGuard({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => login()} className="w-full">
+            <Button onClick={() => loginGoogle()} className="w-full">
               <IconLogin className="mr-2 h-4 w-4" />
-              Sign In with Google
+              Sign In
             </Button>
           </CardContent>
         </Card>

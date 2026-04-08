@@ -5,6 +5,9 @@ import { PublicRoute } from "@/components/public-route";
 import { AuthErrorBoundary } from "@/components/auth-error-boundary";
 import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
+import { SetupPage } from "@/app/setup/page";
+import { PasswordRecoveryPage } from "@/app/recover/page";
+import { ForcePasswordChangePage } from "@/app/change-password/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import ContainerDetailPage from "@/app/containers/[id]/page";
@@ -55,6 +58,8 @@ import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
 import StackTemplatesPage from "@/app/stack-templates/page";
 import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
+import UserManagementPage from "@/app/settings/users/page";
+import AuthenticationSettingsPage from "@/app/settings/authentication/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -73,6 +78,36 @@ export const router = createBrowserRouter([
         <PublicRoute restricted>
           <LoginPage />
         </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/setup",
+    element: (
+      <AuthErrorBoundary>
+        <PublicRoute>
+          <SetupPage />
+        </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/recover",
+    element: (
+      <AuthErrorBoundary>
+        <PublicRoute>
+          <PasswordRecoveryPage />
+        </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/change-password",
+    element: (
+      <AuthErrorBoundary>
+        <ProtectedRoute>
+          <ForcePasswordChangePage />
+        </ProtectedRoute>
       </AuthErrorBoundary>
     ),
   },
@@ -279,6 +314,14 @@ export const router = createBrowserRouter([
       {
         path: "settings-self-update",
         element: <SelfUpdateSettingsPage />,
+      },
+      {
+        path: "settings-users",
+        element: <UserManagementPage />,
+      },
+      {
+        path: "settings-authentication",
+        element: <AuthenticationSettingsPage />,
       },
       {
         path: "bug-report-settings",

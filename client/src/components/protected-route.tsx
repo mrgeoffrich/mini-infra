@@ -34,6 +34,11 @@ export function ProtectedRoute({ children, fallback }: ProtectedRouteProps) {
     );
   }
 
+  // Force password change if required
+  if (authState.mustResetPwd && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+
   // User is authenticated, render the protected content
   return <>{children}</>;
 }

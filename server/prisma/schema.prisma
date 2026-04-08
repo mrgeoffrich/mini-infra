@@ -10,24 +10,58 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model for Google OAuth authentication
+// User model for authentication
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  image         String?
-  googleId      String?   @unique
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String?
+  image           String?
+  googleId        String?   @unique
+  passwordHash    String?
+  authMethod      String    @default("local") // "local", "google", "both"
+  mustResetPwd    Boolean   @default(false)
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
-  apiKeys             ApiKey[]
-  userPreference      UserPreference?
-  postgresServers     PostgresServer[]
-  userEvents          UserEvent[]
-  agentConversations  AgentConversation[]
+  apiKeys              ApiKey[]
+  userPreference       UserPreference?
+  postgresServers      PostgresServer[]
+  userEvents           UserEvent[]
+  agentConversations   AgentConversation[]
+  passwordResetTokens  PasswordResetToken[]
 
   @@map("users")
+}
+
+model AuthSettings {
+  id                   String   @id @default(cuid())
+  googleOAuthEnabled   Boolean  @default(false)
+  googleClientId       String?
+  googleClientSecret   String?
+  setupComplete        Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("auth_settings")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String
+  expiresAt  DateTime
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // ApiKey model for webhook authentication

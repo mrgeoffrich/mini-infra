@@ -19,6 +19,7 @@ declare module "express" {
       email: string;
       name?: string;
       image?: string;
+      mustResetPwd?: boolean;
       createdAt: Date;
     };
     jwtPayload?: JwtPayload;
@@ -84,6 +85,7 @@ export const extractJwtUser = async (
         email: true,
         name: true,
         image: true,
+        mustResetPwd: true,
         createdAt: true,
       },
     });
@@ -101,6 +103,7 @@ export const extractJwtUser = async (
       email: user.email,
       name: user.name || undefined,
       image: user.image || undefined,
+      mustResetPwd: user.mustResetPwd,
       createdAt: user.createdAt,
     };
 

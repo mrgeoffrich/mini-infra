@@ -9,6 +9,12 @@ export interface User {
   name: string | null;
   image: string | null;
   googleId: string | null;
+  passwordHash: string | null;
+  authMethod: string; // "local" | "google" | "both"
+  mustResetPwd: boolean;
+  failedAttempts: number;
+  lockedUntil: Date | null;
+  lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +25,7 @@ export interface UserProfile {
   email: string;
   name?: string;
   image?: string;
+  authMethod?: string;
   createdAt: string; // ISO string for JSON serialization
 }
 
@@ -28,6 +35,7 @@ export interface JWTUser {
   email: string;
   name?: string;
   image?: string;
+  mustResetPwd?: boolean;
   createdAt: Date;
 }
 
@@ -38,6 +46,7 @@ export interface JWTUser {
 export interface AuthStatus {
   isAuthenticated: boolean;
   user: UserProfile | null;
+  mustResetPwd?: boolean;
 }
 
 export interface AuthState {
@@ -45,6 +54,7 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: AuthError | null;
+  mustResetPwd?: boolean;
 }
 
 export interface AuthError {
@@ -169,7 +179,8 @@ export interface UpdateUserPreferencesRequest {
 
 export type AuthContextType = {
   authState: AuthState;
-  login: (options?: LoginOptions) => void;
+  loginLocal: (email: string, password: string) => Promise<{ success: boolean; mustResetPwd?: boolean; error?: string }>;
+  loginGoogle: (options?: LoginOptions) => void;
   logout: (options?: LogoutOptions) => Promise<void>;
   refetch: () => Promise<unknown>;
 };
@@ -191,6 +202,84 @@ export interface ApiKeyResponse {
 }
 
 // ====================
+// Setup & Local Auth Types
+// ====================
+
+export interface SetupStatusResponse {
+  setupComplete: boolean;
+  googleOAuthEnabled: boolean;
+}
+
+export interface SetupRequest {
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface LocalLoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LocalLoginResponse {
+  success: boolean;
+  mustResetPwd?: boolean;
+}
+
+export interface RecoverRequestPayload {
+  email: string;
+}
+
+export interface RecoverResetPayload {
+  email: string;
+  token: string;
+  newPassword: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword?: string;
+  newPassword: string;
+}
+
+// ====================
+// User Management Types
+// ====================
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  name: string | null;
+  authMethod: string;
+  createdAt: string;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface ResetPasswordResponse {
+  temporaryPassword: string;
+}
+
+// ====================
+// Auth Settings Types
+// ====================
+
+export interface AuthSettingsInfo {
+  googleOAuthEnabled: boolean;
+  googleClientId: string | null;
+  hasGoogleClientSecret: boolean;
+}
+
+export interface UpdateAuthSettingsRequest {
+  googleOAuthEnabled?: boolean;
+  googleClientId?: string;
+  googleClientSecret?: string;
+}
+
+// ====================
 // Server-only Types
 // ====================
 
@@ -207,7 +296,7 @@ export type OAuthCallbackHandler = (
 // Express Request augmentation (server-only)
 declare module "express-serve-static-core" {
   interface Request {
-    user?: JWTUser;
+    user?: JWTUser & { mustResetPwd?: boolean };
     apiKey?: {
       id: string;
       userId: string;

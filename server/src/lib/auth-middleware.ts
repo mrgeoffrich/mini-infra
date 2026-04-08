@@ -102,6 +102,25 @@ export function requireAuth(
       "Authentication successful",
     );
 
+    // Block access for users who must reset their password (JWT auth only)
+    const authMethod = getAuthMethod(req);
+    if (
+      authMethod === "jwt" &&
+      user.mustResetPwd &&
+      !req.path.startsWith("/auth/change-password") &&
+      req.path !== "/auth/logout" &&
+      req.path !== "/auth/status" &&
+      req.path !== "/auth/user"
+    ) {
+      res.status(403).json({
+        error: "Password change required",
+        mustResetPwd: true,
+        message:
+          "You must change your password before accessing this resource.",
+      });
+      return;
+    }
+
     // Store user in res.locals for route handlers to access
     res.locals.user = user;
     next();

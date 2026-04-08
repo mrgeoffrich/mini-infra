@@ -10,6 +10,7 @@ import {
   IconDashboard,
   IconDatabase,
   IconKey,
+  IconLock,
   IconNetwork,
   IconRobot,
   IconRocket,
@@ -19,6 +20,7 @@ import {
   IconTemplate,
   IconHistory,
   IconDownload,
+  IconUsers,
   IconWorld,
 } from "@tabler/icons-react";
 
@@ -502,6 +504,28 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "administration",
     description: "Update Mini Infra via sidecar container",
     helpDoc: "settings/self-update",
+  },
+
+  "/settings-users": {
+    path: "/settings-users",
+    title: "Users",
+    breadcrumbLabel: "Users",
+    icon: IconUsers,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "User account management",
+  },
+
+  "/settings-authentication": {
+    path: "/settings-authentication",
+    title: "Authentication",
+    breadcrumbLabel: "Authentication",
+    icon: IconLock,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Authentication method configuration",
   },
 
   "/stack-templates": {

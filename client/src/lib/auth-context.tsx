@@ -55,7 +55,6 @@ function setSessionData(data: SessionData): void {
   try {
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
   } catch {
-    // Handle localStorage errors gracefully
     console.warn("Failed to save session data to localStorage");
   }
 }
@@ -64,7 +63,6 @@ function clearSessionData(): void {
   try {
     localStorage.removeItem(SESSION_STORAGE_KEY);
   } catch {
-    // Handle localStorage errors gracefully
     console.warn("Failed to clear session data from localStorage");
   }
 }
@@ -72,7 +70,6 @@ function clearSessionData(): void {
 // Helper function to parse authentication errors
 function parseAuthError(error: unknown): AuthError {
   if (error instanceof Error) {
-    // Parse HTTP errors from fetch responses
     if (error.message.includes("401")) {
       return {
         message: "Your session has expired. Please log in again.",
@@ -132,10 +129,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      refetchOnWindowFocus: true, // Enable refetch on focus for better session management
-      refetchOnReconnect: true, // Refetch when network reconnects
-      staleTime: 1 * 60 * 1000, // 1 minute for auth-related queries
-      gcTime: 10 * 60 * 1000, // Keep auth data in cache longer
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      staleTime: 1 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
     },
   },
 });
@@ -151,7 +148,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
   // Cross-tab synchronization using BroadcastChannel
   useEffect(() => {
     if (typeof window === "undefined" || !window.BroadcastChannel) {
-      return; // BroadcastChannel not supported
+      return;
     }
 
     const channel = new BroadcastChannel("mini-infra-auth");
@@ -169,7 +166,6 @@ function AuthProviderInner({ children }: AuthProviderProps) {
           refetch();
           break;
         case "AUTH_SYNC_REQUEST":
-          // Another tab is requesting auth status, broadcast our current state
           if (authStatus?.isAuthenticated) {
             channel.postMessage({
               type: "AUTH_STATUS",
@@ -182,7 +178,6 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
     channel.addEventListener("message", handleAuthEvent);
 
-    // Cleanup
     return () => {
       channel.removeEventListener("message", handleAuthEvent);
       channel.close();
@@ -192,7 +187,6 @@ function AuthProviderInner({ children }: AuthProviderProps) {
   // Handle session persistence and cross-tab sync on authentication state changes
   useEffect(() => {
     if (authStatus?.isAuthenticated && authStatus.user) {
-      // User is authenticated, save session data and broadcast login event
       const sessionData = getSessionData();
       const wasAlreadyAuthenticated = sessionData.lastLoginTime;
 
@@ -201,7 +195,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         lastLoginTime: new Date().toISOString(),
       });
 
-      // Prefetch user preferences when user logs in (both new logins and status refreshes)
+      // Prefetch user preferences when user logs in
       queryClient.prefetchQuery({
         queryKey: userPreferencesKeys.preferences(),
         queryFn: async () => {
@@ -220,10 +214,9 @@ function AuthProviderInner({ children }: AuthProviderProps) {
           }
           return result.data;
         },
-        staleTime: 5 * 60 * 1000, // 5 minutes
+        staleTime: 5 * 60 * 1000,
       });
 
-      // Only broadcast if this is a new login (not just a status refresh)
       if (!wasAlreadyAuthenticated) {
         broadcastAuthEvent("AUTH_LOGIN", { user: authStatus.user });
         toastWithCopy.success(
@@ -231,18 +224,15 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         );
       }
     } else if (authStatus && !authStatus.isAuthenticated) {
-      // User is not authenticated, clear session data and broadcast logout
       const sessionData = getSessionData();
       const wasAuthenticated = sessionData.lastLoginTime;
 
       clearSessionData();
 
-      // Clear user preferences from cache when logging out
       queryClient.removeQueries({
         queryKey: userPreferencesKeys.all,
       });
 
-      // Only broadcast if user was previously authenticated
       if (wasAuthenticated) {
         broadcastAuthEvent("AUTH_LOGOUT");
       }
@@ -254,18 +244,50 @@ function AuthProviderInner({ children }: AuthProviderProps) {
     isAuthenticated: authStatus?.isAuthenticated || false,
     isLoading,
     error: error ? parseAuthError(error) : null,
+    mustResetPwd: authStatus?.mustResetPwd || false,
   };
 
-  const login = (options?: LoginOptions) => {
-    // Use the redirect URL from options or default to current path (not full URL)
+  const loginLocal = async (
+    email: string,
+    password: string,
+  ): Promise<{ success: boolean; mustResetPwd?: boolean; error?: string }> => {
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error || "Login failed" };
+      }
+
+      // Refetch auth status to update state
+      await refetch();
+      broadcastAuthEvent("AUTH_LOGIN");
+
+      return { success: true, mustResetPwd: data.mustResetPwd };
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred",
+      };
+    }
+  };
+
+  const loginGoogle = (options?: LoginOptions) => {
     let redirectPath = options?.redirectUrl;
     if (!redirectPath) {
-      // Extract just the pathname + search from current location
       redirectPath = window.location.pathname + window.location.search;
     }
 
     const authUrl = `/auth/google?redirect=${encodeURIComponent(redirectPath)}`;
-    console.log(`Initiating OAuth login with redirect: ${redirectPath}`);
     window.location.href = authUrl;
   };
 
@@ -277,22 +299,16 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       });
 
       if (response.ok) {
-        // Clear session data on successful logout
         clearSessionData();
-        // Broadcast logout event to other tabs
         broadcastAuthEvent("AUTH_LOGOUT");
-        // Show success message
         toastWithCopy.success("You have been logged out successfully.");
-        // Invalidate the auth status query to clear the user state
         await refetch();
         const redirectUrl = options?.redirectUrl || "/";
         if (redirectUrl !== window.location.pathname) {
           window.location.href = redirectUrl;
         }
       } else {
-        // Handle different error status codes
         if (response.status === 401) {
-          // User was already logged out, just clear state and redirect
           clearSessionData();
           broadcastAuthEvent("AUTH_LOGOUT");
           await refetch();
@@ -309,7 +325,6 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       }
     } catch (error) {
       console.error("Logout error:", error);
-      // Re-throw with better error message and show toast
       let errorMessage: string;
       if (error instanceof Error) {
         errorMessage = `Failed to log out: ${error.message}`;
@@ -317,7 +332,6 @@ function AuthProviderInner({ children }: AuthProviderProps) {
         errorMessage = "Failed to log out due to an unknown error";
       }
 
-      // Only show toast if error hasn't been shown already
       if (
         !(error instanceof Error && error.message.includes("Logout failed:"))
       ) {
@@ -329,7 +343,8 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
   const contextValue: AuthContextType = {
     authState,
-    login,
+    loginLocal,
+    loginGoogle,
     logout,
     refetch,
   };

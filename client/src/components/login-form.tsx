@@ -1,5 +1,9 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -7,20 +11,42 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useLogin } from "@/hooks/use-login";
 import { useAuth } from "@/hooks/use-auth";
+import { useSetupStatus } from "@/hooks/use-setup-status";
 import { InlineAuthError } from "@/components/auth-error";
-import { IconLoader2 } from "@tabler/icons-react";
+import { IconLoader2, IconAlertCircle } from "@tabler/icons-react";
+import { Separator } from "@/components/ui/separator";
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const { login, isLoading, isAuthenticated } = useLogin();
+  const { loginLocal, loginGoogle, isLoading, isAuthenticated } = useLogin();
   const { authState } = useAuth();
+  const { data: setupStatus } = useSetupStatus();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLocalLoading, setIsLocalLoading] = useState(false);
 
-  const handleGoogleLogin = () => {
-    login();
+  const handleLocalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setIsLocalLoading(true);
+
+    try {
+      const result = await loginLocal(email, password);
+      if (!result.success) {
+        setLoginError(result.error || "Login failed");
+      }
+      // If mustResetPwd, the ProtectedRoute will redirect to /change-password
+    } catch {
+      setLoginError("An unexpected error occurred");
+    } finally {
+      setIsLocalLoading(false);
+    }
   };
 
   if (isAuthenticated) {
@@ -37,14 +63,16 @@ export function LoginForm({
     );
   }
 
+  const googleEnabled = setupStatus?.googleOAuthEnabled ?? false;
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader>
           <CardTitle>Sign in to Mini Infra</CardTitle>
           <CardDescription>
-            Sign in with your Google account to access the infrastructure
-            management dashboard
+            Enter your credentials to access the infrastructure management
+            dashboard
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -56,19 +84,81 @@ export function LoginForm({
               />
             </div>
           )}
-          <Button
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-            className="w-full"
-            size="lg"
-          >
-            {isLoading ? (
-              <>
-                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              <>
+
+          {loginError && (
+            <Alert variant="destructive" className="mb-4">
+              <IconAlertCircle className="h-4 w-4" />
+              <AlertDescription>{loginError}</AlertDescription>
+            </Alert>
+          )}
+
+          <form onSubmit={handleLocalLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoFocus
+                disabled={isLocalLoading}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLocalLoading}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLocalLoading || isLoading}
+            >
+              {isLocalLoading ? (
+                <>
+                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign in"
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-3 text-center">
+            <Link
+              to="/recover"
+              className="text-sm text-muted-foreground hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
+          {googleEnabled && (
+            <>
+              <div className="relative my-4">
+                <Separator />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+                  or
+                </span>
+              </div>
+
+              <Button
+                onClick={() => loginGoogle()}
+                variant="outline"
+                className="w-full"
+                disabled={isLoading}
+              >
                 <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -88,12 +178,9 @@ export function LoginForm({
                   />
                 </svg>
                 Continue with Google
-              </>
-            )}
-          </Button>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            Secure OAuth authentication powered by Google
-          </p>
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -150,6 +150,8 @@ import agentSidecarRoutes from "./routes/agent-sidecar";
 import dnsRoutes from "./routes/dns";
 import imagesRoutes from "./routes/images";
 import apiRoutesRoutes from "./routes/api-routes";
+import usersRoutes from "./routes/users";
+import authSettingsRoutes from "./routes/auth-settings";
 
 // JWT-based authentication doesn't require CSRF protection for now
 // TODO: Implement JWT-based CSRF protection if needed
@@ -157,6 +159,8 @@ import apiRoutesRoutes from "./routes/api-routes";
 // API routes - with debugging to identify problematic routes
 const routes = [
   { path: "/auth", router: authRoutes, name: "authRoutes" },
+  { path: "/api/users", router: usersRoutes, name: "usersRoutes" },
+  { path: "/api/auth-settings", router: authSettingsRoutes, name: "authSettingsRoutes" },
   { path: "/api/keys", router: apiKeyRoutes, name: "apiKeyRoutes" },
   { path: "/api/containers", router: containerRoutes, name: "containerRoutes" },
   { path: "/api/docker", router: dockerRoutes, name: "dockerRoutes" },

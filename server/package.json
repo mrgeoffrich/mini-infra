@@ -63,6 +63,7 @@
         "@types/pg": "^8.15.5",
         "acme-client": "^5.4.0",
         "adm-zip": "^0.5.16",
+        "argon2": "^0.44.0",
         "axios": "^1.13.5",
         "better-sqlite3": "^12.4.1",
         "cloudflare": "^4.5.0",
