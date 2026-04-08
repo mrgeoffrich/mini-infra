@@ -32,6 +32,7 @@ import { UserSettingsPage } from "@/app/user/settings/page";
 import ApplicationsPage from "@/app/applications/page";
 import NewApplicationPage from "@/app/applications/new/page";
 import ApplicationDetailPage from "@/app/applications/[id]/page";
+import AdoptContainerPage from "@/app/applications/adopt/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { CreateApiKeyPage } from "@/app/api-keys/new/page";
 import { PermissionPresetsPage } from "@/app/api-keys/presets/page";
@@ -178,6 +179,10 @@ export const router = createBrowserRouter([
       {
         path: "applications/new",
         element: <NewApplicationPage />,
+      },
+      {
+        path: "applications/adopt",
+        element: <AdoptContainerPage />,
       },
       {
         path: "applications/:id",

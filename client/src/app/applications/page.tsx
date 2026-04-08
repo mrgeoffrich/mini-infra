@@ -13,6 +13,7 @@ import {
   IconLoader2,
   IconPackage,
   IconExternalLink,
+  IconPlugConnected,
 } from "@tabler/icons-react";
 import {
   useApplications,
@@ -228,6 +229,10 @@ export default function ApplicationsPage() {
           </div>
 
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/applications/adopt")}>
+              <IconPlugConnected className="h-4 w-4 mr-2" />
+              Connect Existing Container
+            </Button>
             <Button onClick={() => navigate("/applications/new")} data-tour="applications-add-button">
               <IconPlus className="h-4 w-4 mr-2" />
               Add Application
@@ -247,6 +252,10 @@ export default function ApplicationsPage() {
                 Create a new application template to get started.
               </p>
               <div className="flex gap-2">
+                <Button variant="outline" onClick={() => navigate("/applications/adopt")}>
+                  <IconPlugConnected className="h-4 w-4 mr-2" />
+                  Connect Existing Container
+                </Button>
                 <Button onClick={() => navigate("/applications/new")}>
                   <IconPlus className="h-4 w-4 mr-2" />
                   Add Application
