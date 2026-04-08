@@ -1263,6 +1263,7 @@ model StackTemplateService {
   dependsOn       Json                  // string[]
   order           Int
   routing         Json?                 // StackServiceRouting | null
+  adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
 
   @@unique([versionId, serviceName])
   @@index([versionId])

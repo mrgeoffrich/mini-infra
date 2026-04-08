@@ -151,6 +151,52 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
   }
 });
 
+// GET /eligible-containers — List containers eligible for AdoptedWeb adoption
+// NOTE: Must be defined before /:stackId to avoid being caught by the parameter route
+router.get('/eligible-containers', requirePermission('stacks:read'), async (req, res) => {
+  try {
+    const environmentId = req.query.environmentId as string | undefined;
+    if (!environmentId) {
+      return res.status(400).json({ success: false, message: 'environmentId query parameter is required' });
+    }
+
+    const docker = DockerService.getInstance();
+    if (!docker.isConnected()) {
+      return res.status(503).json({ success: false, message: 'Docker not connected' });
+    }
+
+    const allContainers = await docker.listContainers(false); // running only
+    const { getOwnContainerId } = await import('../services/self-update');
+    const ownContainerId = getOwnContainerId();
+
+    const eligible = allContainers.map((c) => {
+      const hasStackLabel = !!c.labels['mini-infra.stack-id'];
+      const isSelf = ownContainerId && c.id.startsWith(ownContainerId);
+      const ports = c.ports.map((p) => ({
+        containerPort: p.private,
+        protocol: p.type || 'tcp',
+      }));
+
+      return {
+        id: c.id,
+        name: c.name,
+        image: c.image,
+        imageTag: c.imageTag,
+        status: c.status,
+        ports,
+        isSelf: !!isSelf,
+        isManagedByStack: hasStackLabel,
+        managedByStack: hasStackLabel ? c.labels['mini-infra.stack'] : undefined,
+      };
+    }).filter((c) => !c.isManagedByStack || c.isSelf); // Exclude stack-managed unless it's Mini Infra itself
+
+    res.json({ success: true, data: eligible });
+  } catch (error) {
+    logger.error({ error }, 'Failed to list eligible containers');
+    res.status(500).json({ success: false, message: 'Failed to list eligible containers' });
+  }
+});
+
 // GET /:stackId — Get stack with services
 router.get('/:stackId', requirePermission('stacks:read'), async (req, res) => {
   try {
@@ -1016,6 +1062,53 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           logger.warn({ error: err.message, stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
         }
 
+        // Step 1b: Clean up routing for AdoptedWeb services (container is NOT removed)
+        const adoptedServices = fullStack.services.filter((s) => s.serviceType === 'AdoptedWeb');
+        if (adoptedServices.length > 0 && fullStack.environmentId) {
+          const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+          for (const svc of adoptedServices) {
+            const routing = svc.routing as any;
+            const adopted = svc.adoptedContainer as any;
+            if (!routing || !adopted) continue;
+
+            try {
+              const haproxyCtx = await routingManager.getHAProxyContext(fullStack.environmentId);
+              const { HAProxyDataPlaneClient } = await import('../services/haproxy');
+              const haproxyClient = new HAProxyDataPlaneClient();
+              await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+              const routingCtx = {
+                serviceName: svc.serviceName,
+                containerId: '',
+                containerName: adopted.containerName,
+                routing,
+                environmentId: fullStack.environmentId,
+                stackId,
+                stackName: fullStack.name,
+              };
+
+              // Drain and remove servers from backend
+              const backendName = `stk-${fullStack.name}-${svc.serviceName}`;
+              const backendRecord = await prisma.hAProxyBackend.findFirst({
+                where: { name: backendName, environmentId: fullStack.environmentId },
+                include: { servers: true },
+              });
+              if (backendRecord) {
+                for (const server of backendRecord.servers) {
+                  try {
+                    await routingManager.drainAndRemoveServer(backendName, server.name, haproxyClient);
+                  } catch { /* best effort */ }
+                }
+              }
+
+              await routingManager.removeRoute(routingCtx, haproxyClient);
+              logger.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing during destroy');
+            } catch (err: any) {
+              logger.warn({ service: svc.serviceName, error: err.message }, 'Failed to remove AdoptedWeb routing during destroy');
+            }
+          }
+        }
+
         // Step 2: Get HAProxy context from stack's environment (optional)
         let haproxyContainerId = '';
         let haproxyNetworkName = '';
@@ -1289,51 +1382,6 @@ router.get('/:stackId/history/:deploymentId', requirePermission('stacks:read'), 
   } catch (error) {
     logger.error({ error, stackId: req.params.stackId }, 'Failed to get deployment record');
     res.status(500).json({ success: false, message: 'Failed to get deployment record' });
-  }
-});
-
-// GET /eligible-containers — List containers eligible for AdoptedWeb adoption
-router.get('/eligible-containers', requirePermission('stacks:read'), async (req, res) => {
-  try {
-    const environmentId = req.query.environmentId as string | undefined;
-    if (!environmentId) {
-      return res.status(400).json({ success: false, message: 'environmentId query parameter is required' });
-    }
-
-    const docker = DockerService.getInstance();
-    if (!docker.isConnected()) {
-      return res.status(503).json({ success: false, message: 'Docker not connected' });
-    }
-
-    const allContainers = await docker.listContainers(false); // running only
-    const { getOwnContainerId } = await import('../services/self-update');
-    const ownContainerId = getOwnContainerId();
-
-    const eligible = allContainers.map((c) => {
-      const hasStackLabel = !!c.labels['mini-infra.stack-id'];
-      const isSelf = ownContainerId && c.id.startsWith(ownContainerId);
-      const ports = c.ports.map((p) => ({
-        containerPort: p.private,
-        protocol: p.type || 'tcp',
-      }));
-
-      return {
-        id: c.id,
-        name: c.name,
-        image: c.image,
-        imageTag: c.imageTag,
-        status: c.status,
-        ports,
-        isSelf: !!isSelf,
-        isManagedByStack: hasStackLabel,
-        managedByStack: hasStackLabel ? c.labels['mini-infra.stack'] : undefined,
-      };
-    }).filter((c) => !c.isManagedByStack || c.isSelf); // Exclude stack-managed unless it's Mini Infra itself
-
-    res.json({ success: true, data: eligible });
-  } catch (error) {
-    logger.error({ error }, 'Failed to list eligible containers');
-    res.status(500).json({ success: false, message: 'Failed to list eligible containers' });
   }
 });
 

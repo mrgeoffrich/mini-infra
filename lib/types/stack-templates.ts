@@ -14,6 +14,7 @@ import type {
   StackServiceDefinition,
   StackResourceOutput,
   StackResourceInput,
+  AdoptedContainerRef,
 } from './stacks';
 
 // Enum mirrors
@@ -143,6 +144,7 @@ export interface StackTemplateServiceInfo {
   dependsOn: string[];
   order: number;
   routing: StackServiceRouting | null;
+  adoptedContainer?: AdoptedContainerRef;
 }
 
 export interface StackTemplateConfigFileInfo {
