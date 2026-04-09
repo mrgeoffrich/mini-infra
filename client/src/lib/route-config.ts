@@ -10,6 +10,7 @@ import {
   IconDashboard,
   IconDatabase,
   IconKey,
+  IconLock,
   IconNetwork,
   IconRobot,
   IconRocket,
@@ -19,6 +20,7 @@ import {
   IconTemplate,
   IconHistory,
   IconDownload,
+  IconUsers,
   IconWorld,
 } from "@tabler/icons-react";
 
@@ -297,12 +299,14 @@ export const routeConfig: Record<string, RouteConfig> = {
       frontends: {
         path: "/haproxy/frontends",
         title: "Frontends",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-frontends",
       },
       "frontends/new/manual": {
         path: "/haproxy/frontends/new/manual",
         title: "Connect Container",
+        parent: "/haproxy/frontends",
         showInNav: false,
         helpDoc: "haproxy/haproxy-frontends",
       },
@@ -325,6 +329,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       backends: {
         path: "/haproxy/backends",
         title: "Backends",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-backends",
       },
@@ -339,6 +344,7 @@ export const routeConfig: Record<string, RouteConfig> = {
       instances: {
         path: "/haproxy/instances",
         title: "Instances",
+        parent: "/haproxy",
         showInNav: true,
         helpDoc: "haproxy/haproxy-instances",
       },
@@ -502,6 +508,28 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "administration",
     description: "Update Mini Infra via sidecar container",
     helpDoc: "settings/self-update",
+  },
+
+  "/settings-users": {
+    path: "/settings-users",
+    title: "Users",
+    breadcrumbLabel: "Users",
+    icon: IconUsers,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "User account management",
+  },
+
+  "/settings-authentication": {
+    path: "/settings-authentication",
+    title: "Authentication",
+    breadcrumbLabel: "Authentication",
+    icon: IconLock,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Authentication method configuration",
   },
 
   "/stack-templates": {

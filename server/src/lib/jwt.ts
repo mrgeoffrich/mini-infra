@@ -11,6 +11,7 @@ export interface JwtPayload {
   email: string;
   name?: string;
   image?: string;
+  mustResetPwd?: boolean;
   iat?: number; // Issued at
   exp?: number; // Expires at
 }
@@ -22,13 +23,17 @@ const JWT_ISSUER = "mini-infra";
 /**
  * Generate a JWT token for a user
  */
-export const generateToken = (user: UserProfile): string => {
+export const generateToken = (
+  user: UserProfile,
+  options?: { mustResetPwd?: boolean },
+): string => {
   try {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       name: user.name || undefined,
       image: user.image || undefined,
+      ...(options?.mustResetPwd ? { mustResetPwd: true } : {}),
     };
 
     const token = jwt.sign(payload, getSessionSecret(), {

@@ -16,16 +16,7 @@ const configSchema = z.object({
     url: z.string(),
   }),
   auth: z.object({
-    google: z.object({
-      clientId: z.string().nullable(),
-      clientSecret: z.string().nullable(),
-    }),
-    session: z.object({
-      secret: z.string().nullable(),
-    }),
-    apiKey: z.object({
-      secret: z.string(),
-    }),
+    appSecret: z.string().nullable(),
     allowedEmails: z.array(z.string()).nullable(),
   }),
   logging: z.object({
@@ -90,7 +81,7 @@ function getConfigValue<T>(path: string, envKey?: string, defaultValue?: T): T {
 // Build configuration object with environment variable overrides
 const appConfig: Config = {
   server: {
-    nodeEnv: getConfigValue("server.nodeEnv", "NODE_ENV", "development") as
+    nodeEnv: getConfigValue("server.nodeEnv", "NODE_ENV", "production") as
       | "development"
       | "production"
       | "test",
@@ -101,28 +92,10 @@ const appConfig: Config = {
     url: getConfigValue("database.url", "DATABASE_URL", "file:./dev.db"),
   },
   auth: {
-    google: {
-      clientId: getConfigValue(
-        "auth.google.clientId",
-        "GOOGLE_CLIENT_ID",
-        null,
-      ),
-      clientSecret: getConfigValue(
-        "auth.google.clientSecret",
-        "GOOGLE_CLIENT_SECRET",
-        null,
-      ),
-    },
-    session: {
-      secret: getConfigValue("auth.session.secret", "SESSION_SECRET", null),
-    },
-    apiKey: {
-      secret: getConfigValue(
-        "auth.apiKey.secret",
-        "API_KEY_SECRET",
-        "default-secret-change-in-production",
-      ),
-    },
+    appSecret:
+      getConfigValue("auth.appSecret", "APP_SECRET", null) ||
+      getConfigValue("auth.session.secret", "SESSION_SECRET", null) ||
+      getConfigValue("auth.apiKey.secret", "API_KEY_SECRET", null),
     allowedEmails: (() => {
       const envValue = process.env.ALLOWED_ADMIN_EMAILS;
       if (envValue) {
@@ -142,26 +115,14 @@ const appConfig: Config = {
       | "silent",
   },
   docker: {
-    containerCacheTtl: getConfigValue(
-      "docker.containerCacheTtl",
-      "CONTAINER_CACHE_TTL",
-      3000,
-    ),
-    containerPollInterval: getConfigValue(
-      "docker.containerPollInterval",
-      "CONTAINER_POLL_INTERVAL",
-      5000,
-    ),
+    containerCacheTtl: 3000,
+    containerPollInterval: 5000,
   },
   azure: {
-    apiTimeout: getConfigValue("azure.apiTimeout", "AZURE_API_TIMEOUT", 15000),
+    apiTimeout: 15000,
   },
   connectivity: {
-    checkInterval: getConfigValue(
-      "connectivity.checkInterval",
-      "CONNECTIVITY_CHECK_INTERVAL",
-      300000,
-    ),
+    checkInterval: 300000, // 5 minutes
   },
   agent: {
     model: getConfigValue("agent.model", "AGENT_MODEL", "claude-sonnet-4-6"),

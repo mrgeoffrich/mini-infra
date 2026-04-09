@@ -9,13 +9,10 @@ import { securityConfig } from "../lib/security-config";
 // Mock environment variables for testing
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = "file:./test.db";
-process.env.GOOGLE_CLIENT_ID = "test-google-client-id";
-process.env.GOOGLE_CLIENT_SECRET = "test-google-client-secret";
 process.env.LOG_LEVEL = "silent";
 
 // Initialize security config for tests
-securityConfig.setSessionSecret("test-session-secret-key-for-testing-only");
-securityConfig.setApiKeySecret("test-api-key-secret-for-hashing");
+securityConfig.setAppSecret("test-secret-key-for-testing-only");
 
 // Global test Prisma client
 let testPrisma: typeof prisma;

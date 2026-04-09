@@ -144,7 +144,10 @@ export class StackRoutingManager {
       ctx.environmentId,
       frontendType,
       haproxyClient,
-      this.prisma
+      this.prisma,
+      enableSsl && sslOptions?.tlsCertificateId
+        ? { tlsCertificateId: sslOptions.tlsCertificateId }
+        : undefined
     );
 
     await this.haproxyFrontendManager.addRouteToSharedFrontend(

@@ -4,7 +4,6 @@ import express, {
   NextFunction,
   RequestHandler,
 } from "express";
-import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
@@ -15,9 +14,7 @@ const router = express.Router();
 
 /**
  * GET /api/settings/security
- * Get security secrets (masked for display)
- *
- * Response: { session_secret: string, api_key_secret: string }
+ * Get security secret (masked for display)
  */
 router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   req: Request,
@@ -32,26 +29,16 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
   const userId = user.id;
 
   try {
-    logger.info({ requestId, userId }, "Fetching security secrets (masked)");
+    logger.info({ requestId, userId }, "Fetching security secret (masked)");
 
-    // Fetch secrets from database
-    const sessionSecret = await prisma.systemSettings.findFirst({
+    const appSecret = await prisma.systemSettings.findFirst({
       where: {
         category: "system",
-        key: "session_secret",
+        key: "app_secret",
         isActive: true,
       },
     });
 
-    const apiKeySecret = await prisma.systemSettings.findFirst({
-      where: {
-        category: "system",
-        key: "api_key_secret",
-        isActive: true,
-      },
-    });
-
-    // Mask secrets (show first 4 and last 4 characters)
     const maskSecret = (secret: string | null): string => {
       if (!secret || secret.length < 8) {
         return "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
@@ -60,30 +47,22 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
     };
 
     res.status(200).json({
-      session_secret: maskSecret(sessionSecret?.value || null),
-      api_key_secret: maskSecret(apiKeySecret?.value || null),
-      session_secret_id: sessionSecret?.id || null,
-      api_key_secret_id: apiKeySecret?.id || null,
+      app_secret: maskSecret(appSecret?.value || null),
+      app_secret_id: appSecret?.id || null,
     });
   } catch (error) {
     logger.error(
-      {
-        error,
-        requestId,
-        userId,
-      },
-      "Failed to fetch security secrets",
+      { error, requestId, userId },
+      "Failed to fetch security secret",
     );
-
     next(error);
   }
 }) as RequestHandler);
 
 /**
  * POST /api/settings/security/regenerate
- * Regenerate a security secret (session_secret or api_key_secret)
+ * Regenerate the application secret
  *
- * Body: { secret: "session" | "apiKey" }
  * Response: { message: string, warning: string }
  */
 router.post("/regenerate", requirePermission('settings:write') as RequestHandler, (async (
@@ -99,58 +78,23 @@ router.post("/regenerate", requirePermission('settings:write') as RequestHandler
   const userId = user.id;
 
   try {
-    // Validate request body
-    const requestSchema = z.object({
-      secret: z.enum(["session", "apiKey"]),
-    });
+    logger.info({ requestId, userId }, "Regenerating app secret");
 
-    const validationResult = requestSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      logger.warn(
-        { requestId, userId, errors: validationResult.error.issues },
-        "Invalid regenerate secret request",
-      );
-      return res.status(400).json({
-        error: "Invalid request",
-        message: 'Secret type must be either "session" or "apiKey"',
-      });
-    }
-
-    const { secret: secretType } = validationResult.data;
-
-    logger.info(
-      { requestId, userId, secretType },
-      "Regenerating security secret",
-    );
-
-    // Import security config and crypto here to avoid circular dependencies
     const { securityConfig } = await import("../lib/security-config");
     const { randomBytes } = await import("crypto");
 
-    // Generate new secret
-    const newSecret = randomBytes(32).toString("hex");
+    const newSecret = randomBytes(48).toString("base64url");
 
-    // Determine which secret to update
-    const settingKey =
-      secretType === "session" ? "session_secret" : "api_key_secret";
-    const setterMethod =
-      secretType === "session" ? "setSessionSecret" : "setApiKeySecret";
-    const warningMessage =
-      secretType === "session"
-        ? "All active user sessions have been invalidated. Users will need to log in again."
-        : "All existing API keys will no longer work. API key hashes are based on this secret.";
-
-    // Update in database
     await prisma.systemSettings.upsert({
       where: {
         category_key: {
           category: "system",
-          key: settingKey,
+          key: "app_secret",
         },
       },
       create: {
         category: "system",
-        key: settingKey,
+        key: "app_secret",
         value: newSecret,
         isEncrypted: false,
         isActive: true,
@@ -164,28 +108,20 @@ router.post("/regenerate", requirePermission('settings:write') as RequestHandler
       },
     });
 
-    // Update in-memory config
-    (securityConfig as any)[setterMethod](newSecret);
+    securityConfig.setAppSecret(newSecret);
 
-    logger.info(
-      { requestId, userId, secretType },
-      "Security secret regenerated successfully",
-    );
+    logger.info({ requestId, userId }, "App secret regenerated successfully");
 
     res.status(200).json({
-      message: `${secretType === "session" ? "Session" : "API key"} secret regenerated successfully`,
-      warning: warningMessage,
+      message: "App secret regenerated successfully",
+      warning:
+        "All active sessions have been invalidated and all existing API keys will no longer work. Users will need to log in again and create new API keys.",
     });
   } catch (error) {
     logger.error(
-      {
-        error,
-        requestId,
-        userId,
-      },
-      "Failed to regenerate security secret",
+      { error, requestId, userId },
+      "Failed to regenerate app secret",
     );
-
     next(error);
   }
 }) as RequestHandler);

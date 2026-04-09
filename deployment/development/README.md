@@ -17,11 +17,8 @@ Use this deployment to:
 Ensure a `.env` file exists at `server/.env` (the start script reads it from there):
 
 ```bash
-SESSION_SECRET=<generate with: openssl rand -base64 32>
-API_KEY_SECRET=<generate with: openssl rand -base64 32>
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:3005/auth/google/callback
+# APP_SECRET is auto-generated on first boot if not set
+# APP_SECRET=<optional: openssl rand -base64 32>
 ```
 
 ### 2. Run the Startup Script

@@ -57,7 +57,7 @@ sections:
       - slug: running-with-docker
         topics:
           - Docker Compose setup for Mini Infra
-          - Required environment variables — SESSION_SECRET, API_KEY_SECRET, Google OAuth
+          - Optional environment variables — APP_SECRET (auto-generated if not set)
           - Volume mounts — docker socket, data, logs
           - Health check endpoint /health
           - Graceful shutdown behavior

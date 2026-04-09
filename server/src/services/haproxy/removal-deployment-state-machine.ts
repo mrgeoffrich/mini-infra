@@ -163,10 +163,9 @@ export const removalDeploymentMachine = setup({
             }
         }),
         resetState: assign({
-            // Keep deployment identifiers and environment context
-            // Only reset removal state
+            // Keep deployment identifiers, environment context, and containersToRemove (input data)
+            // Only reset removal progress state
             containerId: () => undefined,
-            containersToRemove: () => [],
             lbRemovalComplete: () => false,
             frontendRemoved: () => false,
             applicationStopped: () => false,

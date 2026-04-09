@@ -55,6 +55,7 @@ const versionSummary = {
   createdAt: true,
   createdById: true,
   _count: { select: { services: true } },
+  services: { select: { serviceType: true }, orderBy: { order: 'asc' as const } },
 };
 
 export class StackTemplateService {
@@ -931,6 +932,7 @@ function serializeTemplateService(svc: any): StackTemplateServiceInfo {
     dependsOn: svc.dependsOn,
     order: svc.order,
     routing: svc.routing,
+    adoptedContainer: svc.adoptedContainer ?? undefined,
   };
 }
 
@@ -965,6 +967,7 @@ function toTemplateServiceCreate(
     dependsOn: s.dependsOn as any,
     order: s.order ?? fallbackOrder,
     routing: s.routing ? (s.routing as any) : Prisma.DbNull,
+    adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as any) : Prisma.DbNull,
   };
 }
 
@@ -1085,6 +1088,7 @@ function buildServiceDefinitionsFromVersion(version: {
       dependsOn: svc.dependsOn ?? [],
       order: svc.order,
       routing: svc.routing ?? undefined,
+      adoptedContainer: svc.adoptedContainer ?? undefined,
     };
   });
 }

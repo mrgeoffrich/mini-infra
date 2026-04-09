@@ -38,7 +38,7 @@ const serviceSchema = z.object({
       /^[a-z0-9][a-z0-9-]*$/,
       "Must start with a letter or digit and contain only lowercase letters, digits, or hyphens",
     ),
-  serviceType: z.enum(["Stateful", "StatelessWeb"]),
+  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Docker tag is required"),
   order: z.coerce.number().int().min(1, "Order must be at least 1"),

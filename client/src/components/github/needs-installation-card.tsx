@@ -60,7 +60,7 @@ export function NeedsInstallationCard({
       <CardContent className="space-y-4">
         <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-4">
           <p className="text-sm text-amber-800 dark:text-amber-200">
-            Click the button below to install the app on GitHub. After
+            Click the Install on GitHub button to install the app. After
             installing, come back here and click &quot;Check Installation&quot;.
           </p>
         </div>

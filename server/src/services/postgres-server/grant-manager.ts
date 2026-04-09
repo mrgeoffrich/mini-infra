@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import prisma from "../../lib/prisma";
 import { appLogger } from "../../lib/logger-factory";
+import { getEncryptionSecret } from "../../lib/security-config";
 import postgresServerService from "./server-manager";
 import CryptoJS from "crypto-js";
 
@@ -19,31 +20,11 @@ function escapeIdentifier(identifier: string): string {
  * Handles granting and revoking permissions for users on databases
  */
 export class GrantManagementService {
-  private readonly encryptionSecret: string | undefined;
-
-  constructor(encryptionSecret?: string) {
-    this.encryptionSecret = encryptionSecret || process.env.ENCRYPTION_SECRET;
-  }
-
-  /**
-   * Get the encryption secret, throwing if not configured
-   */
-  private getEncryptionSecret(): string {
-    if (!this.encryptionSecret) {
-      throw new Error(
-        "ENCRYPTION_SECRET environment variable is not set. " +
-          "It is required for PostgreSQL credential encryption. " +
-          "Set it in your .env file."
-      );
-    }
-    return this.encryptionSecret;
-  }
-
   /**
    * Decrypt a connection string
    */
   private decryptConnectionString(encryptedString: string): string {
-    const bytes = CryptoJS.AES.decrypt(encryptedString, this.getEncryptionSecret());
+    const bytes = CryptoJS.AES.decrypt(encryptedString, getEncryptionSecret());
     return bytes.toString(CryptoJS.enc.Utf8);
   }
 

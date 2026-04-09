@@ -16,16 +16,10 @@ services:
       # Core Configuration
       - NODE_ENV=production
 
-      # Security - REQUIRED (set in .env file)
-      - SESSION_SECRET=${SESSION_SECRET}
-      - API_KEY_SECRET=${API_KEY_SECRET}
+      # Security (optional - auto-generated on first boot if not set)
+      - APP_SECRET=${APP_SECRET:-}
 
-      # Google OAuth (Optional - for authentication)
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:5000/auth/google/callback}
-
-      # Admin Access Control (comma-separated emails allowed to log in)
+      # Admin Access Control (optional, comma-separated emails allowed to log in)
       - ALLOWED_ADMIN_EMAILS=${ALLOWED_ADMIN_EMAILS:-}
 
       # Server Configuration
@@ -35,14 +29,6 @@ services:
 
       # Database
       - DATABASE_URL=file:/app/data/production.db?foreign_keys=true&journal_mode=WAL
-
-      # Container Management
-      - CONTAINER_CACHE_TTL=${CONTAINER_CACHE_TTL:-3000}
-      - CONTAINER_POLL_INTERVAL=${CONTAINER_POLL_INTERVAL:-5000}
-
-      # Azure Configuration (Optional)
-      - AZURE_API_TIMEOUT=${AZURE_API_TIMEOUT:-15000}
-      - CONNECTIVITY_CHECK_INTERVAL=${CONNECTIVITY_CHECK_INTERVAL:-300000}
 
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]

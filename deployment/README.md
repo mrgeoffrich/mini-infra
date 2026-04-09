@@ -18,7 +18,7 @@ Deploy using pre-built images from ghcr.io:
 cd deployment/production
 
 # Create your .env file (see DEPLOYMENT.md for details)
-# You'll need to generate SESSION_SECRET and API_KEY_SECRET
+# APP_SECRET is auto-generated on first boot if not set
 
 # Run the startup script
 ./start.sh          # Linux/macOS
@@ -46,14 +46,9 @@ cd deployment/development
 
 Both production and development require a `.env` file in their respective directories.
 
-**Required variables:**
-- `SESSION_SECRET` - Generate with: `openssl rand -base64 32`
-- `API_KEY_SECRET` - Generate with: `openssl rand -base64 32`
-
 **Optional variables:**
-- `GOOGLE_CLIENT_ID` - Google OAuth client ID
-- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
-- `GOOGLE_CALLBACK_URL` - OAuth callback URL
+- `APP_SECRET` - Application secret for auth and encryption (auto-generated on first boot if not set)
+- `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `LOG_LEVEL` - Logging level (debug, info, warn, error)
 
 ## Differences

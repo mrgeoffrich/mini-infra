@@ -16,12 +16,10 @@ import {
 } from "@tabler/icons-react";
 import {
   useMonitoringStatus,
-  usePrometheusQuery,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
 import { formatCpu, formatBytes, formatBytesPerSec } from "@/lib/format-metrics";
 import { MetricsChart } from "./MetricsChart";
-import { ContainerMetricsTable } from "./ContainerMetricsTable";
 
 type TimeRange = "15m" | "1h" | "6h" | "24h";
 
@@ -51,17 +49,6 @@ export function MonitoringPage() {
 
   const rangeSeconds = TIME_RANGE_SECONDS[timeRange];
   const step = TIME_RANGE_STEP[timeRange];
-
-  // Current metrics (instant queries)
-  const { data: cpuData } = usePrometheusQuery(
-    'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
-    { enabled: isRunning }
-  );
-
-  const { data: memoryData } = usePrometheusQuery(
-    'docker_container_mem_usage{container_name!=""}',
-    { enabled: isRunning }
-  );
 
   // Range queries for charts
   const { data: cpuRangeData } = usePrometheusRangeQuery(
@@ -140,12 +127,6 @@ export function MonitoringPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Current Metrics Table */}
-            <ContainerMetricsTable
-              cpuData={cpuData}
-              memoryData={memoryData}
-            />
 
             {/* Charts */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

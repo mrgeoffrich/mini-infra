@@ -36,7 +36,7 @@ const templateConfigFileSchema = z.object({
 
 const templateServiceSchema = z.object({
   serviceName: z.string().min(1).max(100).regex(nameRegex, "Service name can only contain letters, numbers, hyphens, and underscores"),
-  serviceType: z.enum(["Stateful", "StatelessWeb"]),
+  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
   dockerImage: z.string().min(1),
   dockerTag: z.string().min(1),
   containerConfig: stackContainerConfigSchema,
@@ -47,10 +47,11 @@ const templateServiceSchema = z.object({
 }).refine(
   (data) => {
     if (data.serviceType === "StatelessWeb" && !data.routing) return false;
+    if (data.serviceType === "AdoptedWeb" && !data.routing) return false;
     if (data.serviceType === "Stateful" && data.routing) return false;
     return true;
   },
-  { message: "StatelessWeb services must have routing; Stateful services must not have routing" }
+  { message: "StatelessWeb/AdoptedWeb services must have routing; Stateful services must not have routing" }
 );
 
 export const templateFileSchema = z.object({
@@ -94,7 +95,7 @@ export interface LoadedTemplate {
     volumes: z.infer<typeof stackVolumeSchema>[];
     services: Array<{
       serviceName: string;
-      serviceType: "Stateful" | "StatelessWeb";
+      serviceType: "Stateful" | "StatelessWeb" | "AdoptedWeb";
       dockerImage: string;
       dockerTag: string;
       containerConfig: any;

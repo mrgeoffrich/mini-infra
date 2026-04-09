@@ -188,6 +188,11 @@ export const stackTunnelIngressSchema = z.object({
   service: z.string().min(1),
 });
 
+export const adoptedContainerSchema = z.object({
+  containerName: z.string().min(1).max(253),
+  listeningPort: z.number().int().min(1).max(65535),
+});
+
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
 
 const stackNameSchema = z
@@ -206,7 +211,7 @@ export const stackServiceDefinitionSchema = z
         nameRegex,
         "Service name can only contain letters, numbers, hyphens, and underscores"
       ),
-    serviceType: z.enum(["Stateful", "StatelessWeb"]),
+    serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
     dockerImage: z.string().min(1),
     dockerTag: z.string().min(1),
     containerConfig: stackContainerConfigSchema,
@@ -215,6 +220,7 @@ export const stackServiceDefinitionSchema = z
     dependsOn: z.array(z.string()),
     order: z.number().int().min(0),
     routing: stackServiceRoutingSchema.optional(),
+    adoptedContainer: adoptedContainerSchema.optional(),
   })
   .refine(
     (data) => {
@@ -225,6 +231,28 @@ export const stackServiceDefinitionSchema = z
     },
     {
       message: "StatelessWeb services must have routing",
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "AdoptedWeb" && !data.routing) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "AdoptedWeb services must have routing",
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "AdoptedWeb" && !data.adoptedContainer) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "AdoptedWeb services must have adoptedContainer",
     }
   );
 
@@ -277,7 +305,7 @@ export const updateStackSchema = z.object({
 });
 
 export const updateStackServiceSchema = z.object({
-  serviceType: z.enum(["Stateful", "StatelessWeb"]).optional(),
+  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]).optional(),
   dockerImage: z.string().min(1).optional(),
   dockerTag: z.string().min(1).optional(),
   containerConfig: stackContainerConfigSchema.optional(),
@@ -286,6 +314,7 @@ export const updateStackServiceSchema = z.object({
   dependsOn: z.array(z.string()).optional(),
   order: z.number().int().min(0).optional(),
   routing: stackServiceRoutingSchema.nullable().optional(),
+  adoptedContainer: adoptedContainerSchema.nullable().optional(),
 });
 
 export const applyStackSchema = z.object({

@@ -1,132 +1,140 @@
 # Mini Infra
 
-A web application for managing a single Docker host and its associated infrastructure. Provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using HAProxy, and Cloudflare tunnel monitoring.
+**One command to manage your entire Docker host.** Containers, backups, load balancing, monitoring, and an AI assistant — all in a clean, simple UI.
 
-## Screenshots
+```bash
+docker run -d \
+  --name mini-infra \
+  -p 5000:5000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v mini-infra-data:/app/data \
+  ghcr.io/mrgeoffrich/mini-infra:latest
+```
 
-_Coming soon._
+Then open [http://localhost:5000](http://localhost:5000) and you're done. A 3-step setup wizard creates your admin account, detects Docker, and generates your app secret. No config files, no environment variables, no prerequisites beyond Docker itself.
 
-## Prerequisites
+![Setup Wizard](docs/screenshots/setup-wizard.png)
 
-- [Node.js](https://nodejs.org/) 24+ (npm is included)
-- [Docker](https://www.docker.com/) (for container management features)
-- [Google OAuth credentials](https://console.cloud.google.com/apis/credentials) (for authentication)
+---
 
-## Getting Started
+## Why Mini Infra?
 
-### 1. Clone the repository
+Most self-hosting tools either do one thing well or try to do everything and become complex to manage. Mini Infra hits the sweet spot: **a single container that covers the concerns most self-hosters actually have**, with a UI that stays out of your way.
+
+### Container Management
+
+Full visibility into every container on your Docker host. Start, stop, restart, inspect, view logs — all from a clean dashboard with real-time status updates.
+
+![Container Dashboard](docs/screenshots/containers.png)
+
+### Zero-Downtime Deployments
+
+Blue-green deployments powered by HAProxy. Deploy new versions of your services with automatic health checks, traffic switching, and rollback on failure. No dropped requests.
+
+### Encrypted Database Backups
+
+Schedule automated PostgreSQL backups to Azure Blob Storage. Encrypted, compressed, with configurable retention policies. Restore with a click.
+
+### Infrastructure as Stacks
+
+Define your infrastructure as composable stacks with plan/apply semantics. Built-in templates for common patterns like monitoring and networking get you started fast. Drift detection tells you when reality doesn't match your definitions.
+
+![Stack Templates](docs/screenshots/stack-templates.png)
+
+### Real-Time Monitoring & Logs
+
+Container metrics (CPU, memory, network) and a centralized log viewer with filtering, search, and live tailing across all your containers.
+
+![Container Logs](docs/screenshots/logs.png)
+
+### AI Assistant
+
+An optional AI operations assistant (powered by Claude) that can answer questions about your infrastructure, help diagnose issues, and perform actions through natural language. It understands your Docker host, your containers, and the Mini Infra API.
+
+### Environments & Networking
+
+Organize services into environments (production, staging, etc.) with isolated Docker networks. Connect environments to the internet via Cloudflare Tunnels — no firewall ports to open.
+
+### TLS Certificates
+
+Automated SSL/TLS via Let's Encrypt with DNS-01 challenges through Cloudflare. Auto-renewed 30 days before expiry.
+
+---
+
+## Quick Start
+
+### Docker Run
+
+```bash
+docker run -d \
+  --name mini-infra \
+  -p 5000:5000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v mini-infra-data:/app/data \
+  -v mini-infra-logs:/app/server/logs \
+  ghcr.io/mrgeoffrich/mini-infra:latest
+```
+
+### Docker Compose
+
+```yaml
+services:
+  mini-infra:
+    image: ghcr.io/mrgeoffrich/mini-infra:latest
+    container_name: mini-infra
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - mini-infra-data:/app/data
+      - mini-infra-logs:/app/server/logs
+
+volumes:
+  mini-infra-data:
+  mini-infra-logs:
+```
+
+### What Happens Next
+
+1. Open `http://your-server:5000`
+2. Create your admin account (email + password)
+3. Mini Infra auto-detects your Docker connection
+4. Start managing your infrastructure
+
+No OAuth setup required. No external databases. No config files. Everything runs from a single container with an embedded SQLite database.
+
+---
+
+## Optional Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `APP_SECRET` | Auto-generated | Secret for auth tokens and encryption. Set this to persist across container recreations |
+| `ALLOWED_ADMIN_EMAILS` | — | Comma-separated emails allowed to create accounts |
+| `PUBLIC_URL` | `http://localhost:5000` | Public URL (set this when behind a reverse proxy) |
+| `LOG_LEVEL` | `info` | Logging verbosity: `trace`, `debug`, `info`, `warn`, `error` |
+
+---
+
+## Tech Stack
+
+- **Frontend:** React 19, Vite, Tailwind CSS, shadcn/ui
+- **Backend:** Express.js 5, Prisma ORM, SQLite
+- **Infrastructure:** Docker API, HAProxy Data Plane API, Cloudflare API, Azure Blob Storage
+- **AI Assistant:** Claude Agent SDK (optional, requires Anthropic API key)
+- **Language:** TypeScript throughout
+
+## Development
+
+See [CLAUDE.md](CLAUDE.md) for development setup, project structure, and coding patterns.
 
 ```bash
 git clone https://github.com/mrgeoffrich/mini-infra.git
 cd mini-infra
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
-```
-
-### 3. Configure environment variables
-
-Copy the example environment file:
-
-**macOS / Linux:**
-```bash
-cp server/.env.example server/.env
-```
-
-**Windows (PowerShell):**
-```powershell
-Copy-Item server\.env.example server\.env
-```
-
-### 4. Generate secrets
-
-You need to provide values for `SESSION_SECRET`, `API_KEY_SECRET`, and `ENCRYPTION_SECRET` in `server/.env`.
-
-**macOS / Linux:**
-```bash
-openssl rand -base64 32
-```
-
-**Windows (PowerShell):**
-```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }) -as [byte[]])
-```
-
-Run the command three times and paste each value into the corresponding variable in `server/.env`.
-
-### 5. Set required variables
-
-Open `server/.env` and fill in the following:
-
-| Variable | Description |
-|---|---|
-| `GOOGLE_CLIENT_ID` | Your Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret |
-| `SESSION_SECRET` | Random secret for session signing |
-| `API_KEY_SECRET` | Random secret for API key hashing |
-| `ENCRYPTION_SECRET` | Random secret for credential encryption |
-| `ALLOWED_ADMIN_EMAILS` | Comma-separated list of email addresses allowed to log in |
-
-### 6. Start the development server
-
-```bash
 npm run dev
 ```
-
-This starts three services concurrently: the shared types library (watch mode), the Express backend, and the Vite frontend. The app will be available at [http://localhost:3000](http://localhost:3000) with the API on port 5005.
-
-## Environment Variables
-
-See [`server/.env.example`](server/.env.example) for the full list of environment variables. Key optional variables include:
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `5005` | Backend server port |
-| `PUBLIC_URL` | `http://localhost:3000` | Public-facing URL (used for CORS and OAuth callbacks) |
-| `LOG_LEVEL` | `debug` | Logging level (`debug`, `info`, `warn`, `error`) |
-| `ALLOW_INSECURE` | `false` | Disable HTTPS-enforcing headers (auto-set when `PUBLIC_URL` uses `http://`) |
-
-## Running with Docker
-
-Pre-built Docker images and deployment configurations are available in the [`deployment/`](deployment/) directory. See:
-
-- [`deployment/README.md`](deployment/README.md) for an overview
-- [`deployment/development/README.md`](deployment/development/README.md) for local Docker development
-- [`deployment/production/DEPLOYMENT.md`](deployment/production/DEPLOYMENT.md) for production deployment
-
-## Agent Tracing
-
-If the AI assistant is enabled (API key configured via Settings UI), you can trace agent interactions using the Claude Agent SDK's built-in beta tracing. Set these environment variables on the Mini Infra server — they are automatically forwarded to the agent sidecar container:
-
-| Variable | Description |
-|---|---|
-| `ENABLE_BETA_TRACING_DETAILED` | Set to `1` to enable detailed beta tracing |
-| `BETA_TRACING_ENDPOINT` | URL of the tracing backend to receive trace data |
-
-For the dev Docker deployment, add these to your `deployment/development/.env` file and restart (or run `./start.sh --just-copy-env` to refresh env vars without rebuilding).
-
-## Running Tests
-
-```bash
-npm test -w server
-```
-
-To run a single test file:
-
-```bash
-npx -w server vitest run src/__tests__/your-test-file.test.ts
-```
-
-## Tech Stack
-
-- **Frontend:** React 19, Vite, Tailwind CSS, shadcn/ui, TanStack Query
-- **Backend:** Express.js 5, Prisma ORM, SQLite
-- **Auth:** Google OAuth 2.0 via Passport
-- **Infrastructure:** Docker API (dockerode), HAProxy, Cloudflare API, Azure Blob Storage
-- **Language:** TypeScript throughout (shared types via npm workspaces)
 
 ## License
 

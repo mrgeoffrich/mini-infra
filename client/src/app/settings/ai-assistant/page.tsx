@@ -3,7 +3,6 @@ import {
   IconRobot,
   IconLoader2,
   IconKey,
-  IconBrandDocker,
   IconBrandGithub,
   IconApi,
   IconSettings,
@@ -432,24 +431,11 @@ export default function AiAssistantSettingsPage() {
                 <div>
                   <p className="font-medium text-sm">API Access</p>
                   <p className="text-xs text-muted-foreground">
-                    The assistant has full internal API access via a dedicated service key
+                    Full API access including Docker management via a dedicated service key
                   </p>
                 </div>
               </div>
               <StatusBadge available={settings.capabilities.api.available} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <IconBrandDocker className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-sm">Docker</p>
-                  <p className="text-xs text-muted-foreground">
-                    Socket: {settings.capabilities.docker.socketPath}
-                  </p>
-                </div>
-              </div>
-              <StatusBadge available={settings.capabilities.docker.available} />
             </div>
 
             <div className="flex items-center justify-between">

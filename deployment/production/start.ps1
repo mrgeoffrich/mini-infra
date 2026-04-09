@@ -12,11 +12,8 @@ if (-not (Test-Path $envFile)) {
     Write-Host "Please create a .env file in the deployment/production/ directory." -ForegroundColor Yellow
     Write-Host "You can use the following template as a starting point:" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  SESSION_SECRET=<generate with: openssl rand -base64 32>"
-    Write-Host "  API_KEY_SECRET=<generate with: openssl rand -base64 32>"
-    Write-Host "  GOOGLE_CLIENT_ID=your_google_client_id"
-    Write-Host "  GOOGLE_CLIENT_SECRET=your_google_client_secret"
-    Write-Host "  GOOGLE_CALLBACK_URL=http://your-server:5000/auth/google/callback"
+    Write-Host "  # APP_SECRET is auto-generated on first boot if not set"
+    Write-Host "  # APP_SECRET=<optional: openssl rand -base64 32>"
     Write-Host ""
     exit 1
 }

@@ -12,6 +12,7 @@ export interface Environment {
   tunnelServiceUrl?: string;
   networks: EnvironmentNetwork[];
   stackCount: number;
+  systemStackCount: number;
   createdAt: Date;
   updatedAt: Date;
 }

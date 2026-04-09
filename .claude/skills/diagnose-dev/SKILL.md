@@ -10,12 +10,11 @@ You're debugging a running instance of Mini Infra — a Docker host management w
 ## Environment
 
 - **App URL**: http://localhost:3005
-- **API Key**: `mk_49181f65c1b91ec453684007f69eaceb7633c5cad706c7c901a2c9f5322c72af`
 - **Container name**: `mini-infra-dev`
 - **Docker Compose file**: `deployment/development/docker-compose.yaml`
 - **Source code**: available in the current working directory
 
-Use the API key via header: `x-api-key: mk_49181f65c1b91ec453684007f69eaceb7633c5cad706c7c901a2c9f5322c72af`
+Ask the user for an API key as this will change often.
 
 ## Diagnosis Workflow
 

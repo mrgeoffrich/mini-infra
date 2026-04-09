@@ -151,6 +151,52 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
   }
 });
 
+// GET /eligible-containers — List containers eligible for AdoptedWeb adoption
+// NOTE: Must be defined before /:stackId to avoid being caught by the parameter route
+router.get('/eligible-containers', requirePermission('stacks:read'), async (req, res) => {
+  try {
+    const environmentId = req.query.environmentId as string | undefined;
+    if (!environmentId) {
+      return res.status(400).json({ success: false, message: 'environmentId query parameter is required' });
+    }
+
+    const docker = DockerService.getInstance();
+    if (!docker.isConnected()) {
+      return res.status(503).json({ success: false, message: 'Docker not connected' });
+    }
+
+    const allContainers = await docker.listContainers(false); // running only
+    const { getOwnContainerId } = await import('../services/self-update');
+    const ownContainerId = getOwnContainerId();
+
+    const eligible = allContainers.map((c) => {
+      const hasStackLabel = !!c.labels['mini-infra.stack-id'];
+      const isSelf = ownContainerId && c.id.startsWith(ownContainerId);
+      const ports = c.ports.map((p) => ({
+        containerPort: p.private,
+        protocol: p.type || 'tcp',
+      }));
+
+      return {
+        id: c.id,
+        name: c.name,
+        image: c.image,
+        imageTag: c.imageTag,
+        status: c.status,
+        ports,
+        isSelf: !!isSelf,
+        isManagedByStack: hasStackLabel,
+        managedByStack: hasStackLabel ? c.labels['mini-infra.stack'] : undefined,
+      };
+    }).filter((c) => !c.isManagedByStack || c.isSelf); // Exclude stack-managed unless it's Mini Infra itself
+
+    res.json({ success: true, data: eligible });
+  } catch (error) {
+    logger.error({ error }, 'Failed to list eligible containers');
+    res.status(500).json({ success: false, message: 'Failed to list eligible containers' });
+  }
+});
+
 // GET /:stackId — Get stack with services
 router.get('/:stackId', requirePermission('stacks:read'), async (req, res) => {
   try {
@@ -1016,6 +1062,53 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           logger.warn({ error: err.message, stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
         }
 
+        // Step 1b: Clean up routing for AdoptedWeb services (container is NOT removed)
+        const adoptedServices = fullStack.services.filter((s) => s.serviceType === 'AdoptedWeb');
+        if (adoptedServices.length > 0 && fullStack.environmentId) {
+          const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
+          for (const svc of adoptedServices) {
+            const routing = svc.routing as any;
+            const adopted = svc.adoptedContainer as any;
+            if (!routing || !adopted) continue;
+
+            try {
+              const haproxyCtx = await routingManager.getHAProxyContext(fullStack.environmentId);
+              const { HAProxyDataPlaneClient } = await import('../services/haproxy');
+              const haproxyClient = new HAProxyDataPlaneClient();
+              await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+
+              const routingCtx = {
+                serviceName: svc.serviceName,
+                containerId: '',
+                containerName: adopted.containerName,
+                routing,
+                environmentId: fullStack.environmentId,
+                stackId,
+                stackName: fullStack.name,
+              };
+
+              // Drain and remove servers from backend
+              const backendName = `stk-${fullStack.name}-${svc.serviceName}`;
+              const backendRecord = await prisma.hAProxyBackend.findFirst({
+                where: { name: backendName, environmentId: fullStack.environmentId },
+                include: { servers: true },
+              });
+              if (backendRecord) {
+                for (const server of backendRecord.servers) {
+                  try {
+                    await routingManager.drainAndRemoveServer(backendName, server.name, haproxyClient);
+                  } catch { /* best effort */ }
+                }
+              }
+
+              await routingManager.removeRoute(routingCtx, haproxyClient);
+              logger.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing during destroy');
+            } catch (err: any) {
+              logger.warn({ service: svc.serviceName, error: err.message }, 'Failed to remove AdoptedWeb routing during destroy');
+            }
+          }
+        }
+
         // Step 2: Get HAProxy context from stack's environment (optional)
         let haproxyContainerId = '';
         let haproxyNetworkName = '';
@@ -1039,58 +1132,83 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const stackContainers = allContainers.filter((c: any) =>
           c.labels?.['mini-infra.stack-id'] === stackId
         );
-        const containerIds = stackContainers.map((c: any) => c.id);
 
-        logger.info({ stackId, containerCount: containerIds.length }, 'Found stack containers for removal state machine');
+        logger.info({ stackId, containerCount: stackContainers.length }, 'Found stack containers for removal');
 
-        // Step 4: Run the removal state machine for container cleanup
-        const removalContext = {
-          deploymentId: stackId,
-          configurationId: stackId,
-          applicationName: fullStack.name,
-          environmentId,
-          environmentName,
-          haproxyContainerId,
-          haproxyNetworkName,
-          containersToRemove: containerIds,
-          lbRemovalComplete: false,
-          frontendRemoved: false,
-          applicationStopped: false,
-          applicationRemoved: false,
-          retryCount: 0,
-          triggerType: 'manual',
-          triggeredBy,
-          startTime,
-        };
+        // Step 4: Run the removal state machine per service for correct HAProxy cleanup
+        // Each service has its own HAProxy backend named stk-{stackName}-{serviceName}
+        const nonAdoptedServices = fullStack.services.filter((s) => s.serviceType !== 'AdoptedWeb');
+        let totalContainersRemoved = 0;
 
-        const containersRemoved = await new Promise<number>((resolve, reject) => {
-          const machine = removalDeploymentMachine.provide({});
-          const actor = createActor(machine, { input: removalContext });
+        for (const svc of nonAdoptedServices) {
+          const serviceContainers = stackContainers.filter((c: any) =>
+            c.labels?.['mini-infra.service'] === svc.serviceName
+          );
+          const containerIds = serviceContainers.map((c: any) => c.id);
 
-          actor.subscribe((state) => {
-            // Emit progress via user event
-            const progressMap: Record<string, number> = {
-              idle: 0, removingFromLB: 10, removingFrontend: 20,
-              stoppingApplication: 40, removingApplication: 60,
-              cleanup: 80, completed: 100, failed: 0,
-            };
-            const progress = progressMap[state.value as string] ?? 0;
-            if (userEventId && progress > 0) {
-              userEventService.updateEvent(userEventId, { progress }).catch(() => {});
-            }
+          // StatelessWeb backends use stk-{stackName}-{serviceName} naming
+          const applicationName = svc.serviceType === 'StatelessWeb'
+            ? `stk-${fullStack.name}-${svc.serviceName}`
+            : fullStack.name;
 
-            if (state.status === 'done') {
-              if (state.value === 'completed') {
-                resolve(containerIds.length);
-              } else {
-                reject(new Error(state.context.error || 'Removal state machine failed'));
+          const removalContext = {
+            deploymentId: stackId,
+            configurationId: stackId,
+            applicationName,
+            environmentId,
+            environmentName,
+            haproxyContainerId,
+            haproxyNetworkName,
+            containersToRemove: containerIds,
+            lbRemovalComplete: false,
+            frontendRemoved: false,
+            applicationStopped: false,
+            applicationRemoved: false,
+            retryCount: 0,
+            triggerType: 'manual',
+            triggeredBy,
+            startTime,
+          };
+
+          logger.info({ stackId, service: svc.serviceName, applicationName, containerCount: containerIds.length }, 'Running removal state machine for service');
+
+          const removed = await new Promise<number>((resolve, reject) => {
+            const machine = removalDeploymentMachine.provide({});
+            const actor = createActor(machine, { input: removalContext });
+
+            actor.subscribe((state) => {
+              // Emit progress via user event
+              const serviceCount = nonAdoptedServices.length;
+              const serviceIndex = nonAdoptedServices.indexOf(svc);
+              const progressMap: Record<string, number> = {
+                idle: 0, removingFromLB: 10, removingFrontend: 20,
+                stoppingApplication: 40, removingApplication: 60,
+                cleanup: 80, completed: 100, failed: 0,
+              };
+              const stateProgress = progressMap[state.value as string] ?? 0;
+              // Scale progress across services
+              const progress = Math.round((serviceIndex / serviceCount) * 100 + (stateProgress / serviceCount));
+              if (userEventId && progress > 0) {
+                userEventService.updateEvent(userEventId, { progress: Math.min(progress, 95) }).catch(() => {});
               }
-            }
+
+              if (state.status === 'done') {
+                if (state.value === 'completed') {
+                  resolve(containerIds.length);
+                } else {
+                  reject(new Error(state.context.error || 'Removal state machine failed'));
+                }
+              }
+            });
+
+            actor.start();
+            actor.send({ type: 'START_REMOVAL' });
           });
 
-          actor.start();
-          actor.send({ type: 'START_REMOVAL' });
-        });
+          totalContainersRemoved += removed;
+        }
+
+        const containersRemoved = totalContainersRemoved;
 
         // Step 5: Remove networks and volumes (post state machine)
         const dockerExecutor = new DockerExecutorService();

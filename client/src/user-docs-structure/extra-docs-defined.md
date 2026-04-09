@@ -31,7 +31,7 @@ Each entry is consumed by the `write-user-docs` skill to generate the actual art
 **Content to cover**:
 - Prerequisites: a Linux host with Docker installed
 - Pulling the image from `ghcr.io/mrgeoffrich/mini-infra:latest`
-- Required environment variables: `SESSION_SECRET`, `API_KEY_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- Optional environment variable: `APP_SECRET` (auto-generated if not set)
 - The Docker socket mount (`/var/run/docker.sock`) and why it is needed
 - Persistent data volumes (`mini-infra-data` for the SQLite database, `mini-infra-logs` for logs)
 - Example `docker-compose.yml` snippet

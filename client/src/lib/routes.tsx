@@ -5,6 +5,9 @@ import { PublicRoute } from "@/components/public-route";
 import { AuthErrorBoundary } from "@/components/auth-error-boundary";
 import { AppLayout } from "@/components/app-layout";
 import { LoginPage } from "@/app/login/page";
+import { SetupPage } from "@/app/setup/page";
+import { PasswordRecoveryPage } from "@/app/recover/page";
+import { ForcePasswordChangePage } from "@/app/change-password/page";
 import { DashboardPage } from "@/app/dashboard/page";
 import { ContainersPage } from "@/app/containers/page";
 import ContainerDetailPage from "@/app/containers/[id]/page";
@@ -29,6 +32,7 @@ import { UserSettingsPage } from "@/app/user/settings/page";
 import ApplicationsPage from "@/app/applications/page";
 import NewApplicationPage from "@/app/applications/new/page";
 import ApplicationDetailPage from "@/app/applications/[id]/page";
+import AdoptContainerPage from "@/app/applications/adopt/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { CreateApiKeyPage } from "@/app/api-keys/new/page";
 import { PermissionPresetsPage } from "@/app/api-keys/presets/page";
@@ -49,12 +53,15 @@ import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/
 import BackendsListPage from "@/app/haproxy/backends/page";
 import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
 import HAProxyInstancesPage from "@/app/haproxy/instances/page";
+import HAProxyOverviewPage from "@/app/haproxy/page";
 import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
 import { HostPage } from "@/app/host/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
 import StackTemplatesPage from "@/app/stack-templates/page";
 import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
+import UserManagementPage from "@/app/settings/users/page";
+import AuthenticationSettingsPage from "@/app/settings/authentication/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -73,6 +80,36 @@ export const router = createBrowserRouter([
         <PublicRoute restricted>
           <LoginPage />
         </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/setup",
+    element: (
+      <AuthErrorBoundary>
+        <PublicRoute>
+          <SetupPage />
+        </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/recover",
+    element: (
+      <AuthErrorBoundary>
+        <PublicRoute>
+          <PasswordRecoveryPage />
+        </PublicRoute>
+      </AuthErrorBoundary>
+    ),
+  },
+  {
+    path: "/change-password",
+    element: (
+      <AuthErrorBoundary>
+        <ProtectedRoute>
+          <ForcePasswordChangePage />
+        </ProtectedRoute>
       </AuthErrorBoundary>
     ),
   },
@@ -145,6 +182,10 @@ export const router = createBrowserRouter([
         element: <NewApplicationPage />,
       },
       {
+        path: "applications/adopt",
+        element: <AdoptContainerPage />,
+      },
+      {
         path: "applications/:id",
         element: <ApplicationDetailPage />,
       },
@@ -186,7 +227,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "haproxy",
-        element: <Navigate to="/haproxy/frontends" replace />,
+        element: <HAProxyOverviewPage />,
       },
       {
         path: "haproxy/frontends",
@@ -279,6 +320,14 @@ export const router = createBrowserRouter([
       {
         path: "settings-self-update",
         element: <SelfUpdateSettingsPage />,
+      },
+      {
+        path: "settings-users",
+        element: <UserManagementPage />,
+      },
+      {
+        path: "settings-authentication",
+        element: <AuthenticationSettingsPage />,
       },
       {
         path: "bug-report-settings",
