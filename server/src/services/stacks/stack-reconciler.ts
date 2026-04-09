@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import Docker from 'dockerode';
-import { PrismaClient } from '@prisma/client';
+import type { Logger } from 'pino';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   StackPlan,
   PlanWarning,
@@ -16,6 +17,7 @@ import {
   StackVolume,
   StackResourceOutput,
   StackResourceInput,
+  StackServiceRouting,
   ApplyOptions,
   ApplyResult,
   UpdateOptions,
@@ -27,7 +29,7 @@ import {
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
-import { StackRoutingManager } from './stack-routing-manager';
+import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { servicesLogger } from '../../lib/logger-factory';
 import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
@@ -35,7 +37,8 @@ import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-sta
 import { blueGreenUpdateMachine } from '../haproxy/blue-green-update-state-machine';
 import { removalDeploymentMachine } from '../haproxy/removal-deployment-state-machine';
 import { runStateMachineToCompletion } from './state-machine-runner';
-import { EnvironmentValidationService } from '../environment';
+import type { HAProxyDataPlaneClient } from '../haproxy';
+import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
 import {
   buildStackTemplateContext,
   buildContainerMap,
@@ -1084,7 +1087,7 @@ export class StackReconciler {
           const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
           await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
 
-          const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+          const routingCtx: StackRoutingContext = {
             serviceName: svc.serviceName,
             containerId: '',
             containerName: adopted.containerName,
@@ -1508,7 +1511,7 @@ export class StackReconciler {
         }
 
         // 5. Set up backend + server
-        const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+        const routingCtx: StackRoutingContext = {
           serviceName: action.serviceName,
           containerId: target.Id,
           containerName: adopted.containerName,
@@ -1921,14 +1924,25 @@ export class StackReconciler {
 
   /**
    * Build the lastAppliedSnapshot value from a Prisma stack record.
-   * Handles the JSON field casting that Prisma requires.
+   * Handles the JSON field casting that Prisma requires — Prisma types JSON
+   * columns as `Prisma.JsonValue` but serializeStack expects the lib types.
    */
-  private buildAppliedSnapshot(stack: any): any {
+  private buildAppliedSnapshot(
+    stack: { name: string; description: string | null; networks: unknown; volumes: unknown;
+      parameters: unknown; resourceOutputs: unknown; resourceInputs: unknown;
+      tlsCertificates: unknown; dnsRecords: unknown; tunnelIngress: unknown;
+      services: Array<{
+        serviceName: string; serviceType: string; dockerImage: string; dockerTag: string;
+        order: number; containerConfig: unknown; configFiles: unknown; initCommands: unknown;
+        dependsOn: unknown; routing: unknown; adoptedContainer: unknown;
+      }>;
+    }
+  ): Prisma.InputJsonValue {
     return serializeStack({
       ...stack,
       networks: stack.networks as unknown as StackNetwork[],
       volumes: stack.volumes as unknown as StackVolume[],
-      services: stack.services.map((s: any) => ({
+      services: stack.services.map((s) => ({
         ...s,
         serviceType: s.serviceType as StackServiceDefinition['serviceType'],
         containerConfig: s.containerConfig as unknown as StackContainerConfig,
@@ -1938,19 +1952,19 @@ export class StackReconciler {
         routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
         adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
       })),
-    } as any) as any;
+    } as any) as unknown as Prisma.InputJsonValue;
   }
 
   /**
    * Get an initialized HAProxy data plane client for an environment.
    */
   private async getInitializedHAProxyClient(environmentId: string): Promise<{
-    haproxyCtx: Awaited<ReturnType<StackRoutingManager['getHAProxyContext']>>;
-    haproxyClient: any;
+    haproxyCtx: HAProxyEnvironmentContext;
+    haproxyClient: HAProxyDataPlaneClient;
   }> {
     const haproxyCtx = await this.routingManager!.getHAProxyContext(environmentId);
-    const { HAProxyDataPlaneClient } = await import('../haproxy');
-    const haproxyClient = new HAProxyDataPlaneClient();
+    const { HAProxyDataPlaneClient: Client } = await import('../haproxy');
+    const haproxyClient = new Client();
     await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
     return { haproxyCtx, haproxyClient };
   }
@@ -1962,15 +1976,15 @@ export class StackReconciler {
   private async cleanupAdoptedWebRouting(
     serviceName: string,
     adoptedContainerName: string,
-    routing: any,
+    routing: StackServiceRouting,
     stackId: string,
-    stack: any,
-    log: any,
+    stack: { environmentId: string; name: string },
+    log: Logger,
     drainBeforeRemove: boolean
   ): Promise<void> {
-    const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
 
-    const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+    const routingCtx: StackRoutingContext = {
       serviceName,
       containerId: '',
       containerName: adoptedContainerName,
@@ -2015,7 +2029,7 @@ export class StackReconciler {
     duration: number,
     error: string,
     triggeredBy: string | null | undefined,
-    log: any
+    log: Logger
   ): Promise<void> {
     try {
       await this.prisma.stackDeployment.create({
