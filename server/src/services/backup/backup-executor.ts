@@ -11,6 +11,7 @@ import { PostgresDatabaseManager } from "../postgres";
 import { PostgresSettingsConfigService } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
+import { resolveDatabaseNetworkName } from "./database-network-resolver";
 import {
   BackupOperationInfo,
   BackupOperationType,
@@ -56,9 +57,6 @@ export class BackupExecutorService {
 
   // Timeout for backup operations (2 hours)
   private static readonly BACKUP_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-
-  // Docker network for backup operations
-  private static readonly BACKUP_NETWORK_NAME = "mini-infra-postgres-backup";
 
   // Retry configuration
   private static readonly MAX_RETRIES = 3;
@@ -114,12 +112,13 @@ export class BackupExecutorService {
         await this.dockerExecutor.initialize();
         servicesLogger().debug("Docker executor initialized successfully");
 
-        // Create dedicated backup network
+        // Ensure backup network exists (resolved dynamically or fallback)
+        const networkName = await resolveDatabaseNetworkName(this.prisma);
         servicesLogger().debug(
-          `Creating backup network: ${BackupExecutorService.BACKUP_NETWORK_NAME}`,
+          `Ensuring backup network exists: ${networkName}`,
         );
         await this.dockerExecutor.createNetwork(
-          BackupExecutorService.BACKUP_NETWORK_NAME,
+          networkName,
           undefined,
           {
             driver: "bridge",
@@ -538,16 +537,16 @@ export class BackupExecutorService {
         throw new Error(`Failed to pull Docker image: ${errorMessage}`);
       }
 
-      // Get Azure connection string
+      // Verify Azure is configured (needed for SAS URL generation and post-backup verification)
       servicesLogger().debug(
         {
           operationId,
         },
-        "Retrieving Azure connection string",
+        "Verifying Azure Storage configuration",
       );
 
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         servicesLogger().error(
           {
@@ -561,9 +560,8 @@ export class BackupExecutorService {
       servicesLogger().debug(
         {
           operationId,
-          hasAzureConnection: !!azureConnectionString,
         },
-        "Azure connection string retrieved successfully",
+        "Azure Storage configuration verified",
       );
 
       // Get database connection details
@@ -601,6 +599,15 @@ export class BackupExecutorService {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const blobName = `${databaseId}/${operationId}_${timestamp}.dump`;
 
+      // Generate a write SAS URL for the backup container to upload directly
+      const sasExpiryMinutes = Math.ceil(BackupExecutorService.BACKUP_TIMEOUT_MS / 60000) + 15;
+      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
+        backupConfig.azureContainerName,
+        blobName,
+        sasExpiryMinutes,
+        "write",
+      );
+
       servicesLogger().info(
         {
           operationId,
@@ -608,8 +615,9 @@ export class BackupExecutorService {
           blobName,
           backupFormat: backupConfig.backupFormat,
           compressionLevel: backupConfig.compressionLevel,
+          sasExpiryMinutes,
         },
-        "Generated backup file path and configuration",
+        "Generated backup file path and SAS URL",
       );
 
       // Execute backup using Docker
@@ -619,9 +627,7 @@ export class BackupExecutorService {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
-        AZURE_CONTAINER_NAME: backupConfig.azureContainerName,
-        AZURE_BLOB_NAME: blobName,
+        AZURE_SAS_URL: "[REDACTED]",
         BACKUP_FORMAT: backupConfig.backupFormat,
         COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
       };
@@ -636,6 +642,7 @@ export class BackupExecutorService {
         "Starting backup container execution",
       );
 
+      const backupNetworkName = await resolveDatabaseNetworkName(this.prisma);
       const containerStartTime = Date.now();
       // Track the latest pending progress update from the callback to avoid
       // fire-and-forget race conditions where an unawaited DB write completes
@@ -652,14 +659,12 @@ export class BackupExecutorService {
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
-              AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-              AZURE_CONTAINER_NAME: backupConfig.azureContainerName,
-              AZURE_BLOB_NAME: blobName,
+              AZURE_SAS_URL: azureSasUrl,
               BACKUP_FORMAT: backupConfig.backupFormat,
               COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
             },
             timeout: BackupExecutorService.BACKUP_TIMEOUT_MS,
-            networkMode: BackupExecutorService.BACKUP_NETWORK_NAME,
+            networkMode: backupNetworkName,
           },
           (progress) => {
             // Update progress based on container status
@@ -936,7 +941,7 @@ export class BackupExecutorService {
   }> {
     try {
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         return {
           success: false,

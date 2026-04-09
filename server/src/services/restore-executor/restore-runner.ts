@@ -6,12 +6,10 @@ import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";
 import { DbOperations } from "./db-operations";
 import { extractBlobNameFromUrl, extractContainerFromUrl } from "./utils";
+import { resolveDatabaseNetworkName } from "../backup/database-network-resolver";
 
 // Timeout for restore operations (3 hours)
 export const RESTORE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
-
-// Docker network for restore operations (shared with backup)
-export const RESTORE_NETWORK_NAME = "mini-infra-postgres-backup";
 
 /**
  * RestoreRunner orchestrates the full restore execution flow:
@@ -198,16 +196,16 @@ export class RestoreRunner {
         "Docker image pulled successfully",
       );
 
-      // Get Azure connection string
+      // Verify Azure is configured
       servicesLogger().debug(
         {
           operationId,
         },
-        "Retrieving Azure connection string",
+        "Verifying Azure Storage configuration",
       );
 
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         servicesLogger().error(
           {
@@ -223,9 +221,8 @@ export class RestoreRunner {
       servicesLogger().debug(
         {
           operationId,
-          hasAzureConnection: !!azureConnectionString,
         },
-        "Azure connection string retrieved successfully",
+        "Azure Storage configuration verified",
       );
 
       // Get database connection details
@@ -259,6 +256,9 @@ export class RestoreRunner {
         "Database connection configuration retrieved and prepared for restore",
       );
 
+      // Resolve the database management network for backup/restore containers
+      const databaseNetworkName = await resolveDatabaseNetworkName(this.prisma);
+
       await this.dbOps.updateRestoreProgress(operationId, {
         status: "running",
         progress: 35,
@@ -282,6 +282,7 @@ export class RestoreRunner {
           dockerImage,
           database.database,
           backupUrl,
+          databaseNetworkName,
         );
 
       servicesLogger().info(
@@ -299,9 +300,16 @@ export class RestoreRunner {
         message: "Starting restore container",
       });
 
-      // Extract blob name from backup URL for restore
+      // Extract blob name from backup URL and generate a read SAS URL for restore
       const blobName = extractBlobNameFromUrl(backupUrl);
       const containerName = extractContainerFromUrl(backupUrl);
+      const sasExpiryMinutes = Math.ceil(RESTORE_TIMEOUT_MS / 60000) + 15;
+      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
+        containerName,
+        blobName,
+        sasExpiryMinutes,
+        "read",
+      );
 
       servicesLogger().info(
         {
@@ -309,8 +317,9 @@ export class RestoreRunner {
           backupUrl,
           containerName,
           blobName,
+          sasExpiryMinutes,
         },
-        "Parsed backup URL components for restore",
+        "Generated read SAS URL for restore",
       );
 
       // Execute restore using Docker
@@ -320,11 +329,9 @@ export class RestoreRunner {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
-        AZURE_CONTAINER_NAME: containerName,
+        AZURE_SAS_URL: "[REDACTED]",
         RESTORE: "yes",
         DROP_PUBLIC: "yes",
-        AZURE_BLOB_NAME: blobName,
       };
 
       dockerExecutorLogger().info(
@@ -348,14 +355,12 @@ export class RestoreRunner {
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
-              AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-              AZURE_CONTAINER_NAME: containerName,
+              AZURE_SAS_URL: azureSasUrl,
               RESTORE: "yes",
               DROP_PUBLIC: "yes",
-              AZURE_BLOB_NAME: blobName,
             },
             timeout: RESTORE_TIMEOUT_MS,
-            networkMode: RESTORE_NETWORK_NAME,
+            networkMode: databaseNetworkName,
           },
           (progress) => {
             // Update progress based on container status
@@ -480,6 +485,7 @@ export class RestoreRunner {
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+          databaseNetworkName,
         );
 
         servicesLogger().info(
@@ -549,6 +555,7 @@ export class RestoreRunner {
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+          databaseNetworkName,
         );
 
         servicesLogger().info(

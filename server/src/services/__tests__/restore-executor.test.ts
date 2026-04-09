@@ -90,6 +90,9 @@ const mockPrisma = {
   systemSettings: {
     findFirst: vi.fn(),
   },
+  infraResource: {
+    findFirst: vi.fn().mockResolvedValue(null),
+  },
 } as unknown as typeof prisma;
 
 // Mock service instances
@@ -107,6 +110,8 @@ const mockPostgresDatabaseManager = {
 
 const mockAzureStorageService = {
   get: vi.fn(),
+  getConnectionString: vi.fn(),
+  generateBlobSasUrl: vi.fn().mockResolvedValue("https://testaccount.blob.core.windows.net/container/blob?sas-token"),
 } as unknown as AzureStorageService;
 
 describe("RestoreExecutorService", () => {
@@ -720,6 +725,12 @@ describe("RestoreExecutorService", () => {
 
       expect(result).toContain("testdb/rollback-");
       expect(result).toContain("testaccount.blob.core.windows.net");
+      expect(mockAzureStorageService.generateBlobSasUrl).toHaveBeenCalledWith(
+        "backups",
+        expect.stringContaining("testdb/rollback-"),
+        expect.any(Number),
+        "write",
+      );
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
           image: "postgres:15-alpine",
@@ -729,9 +740,7 @@ describe("RestoreExecutorService", () => {
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
-            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-            AZURE_CONTAINER_NAME: "backups",
-            AZURE_BLOB_NAME: expect.stringContaining("testdb/rollback-"),
+            AZURE_SAS_URL: expect.stringContaining("sas-token"),
           }),
           timeout: 30 * 60 * 1000,
         }),
@@ -789,6 +798,12 @@ describe("RestoreExecutorService", () => {
         "postgres:15-alpine",
       );
 
+      expect(mockAzureStorageService.generateBlobSasUrl).toHaveBeenCalledWith(
+        "rollback-backups",
+        "testdb/rollback-123.sql",
+        expect.any(Number),
+        "read",
+      );
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
           image: "postgres:15-alpine",
@@ -797,11 +812,9 @@ describe("RestoreExecutorService", () => {
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
-            AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-            AZURE_CONTAINER_NAME: "rollback-backups",
+            AZURE_SAS_URL: expect.stringContaining("sas-token"),
             RESTORE: "yes",
             DROP_PUBLIC: "yes",
-            BACKUP_FILE_URL: rollbackUrl,
           }),
           timeout: 60 * 60 * 1000,
         }),
