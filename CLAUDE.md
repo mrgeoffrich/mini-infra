@@ -6,42 +6,18 @@ For browser automation and browser testing tasks, use the Playwright CLI skill d
 
 When opening the site in playwrite use `playwright-cli open --persistent --headed)` and browse to http://localhost:3005
 
-## Restarting the Dev Server
-
-Run `touch .restart-dev` in the project root to trigger a full dev server restart (lib, server, and client). The file is automatically deleted after the restart is triggered.
-
 ## Important Instructions
 
 * Always use http://localhost:3005 for all frontend and backend requests as this is a vite server that will proxy through to the backend. If you need to test the proxy, use http://localhost:5005 for what it connects to.
 * **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
 * **Sidecar folders are NOT in the npm workspace**. `update-sidecar/` and `agent-sidecar/` are standalone packages — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
 * NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
-* You can directly access all API endpoints in this application using the automatically generated development API key. Here's how:
-* Run this command to display your development API key:
-```bash
-npm run show-dev-key -w server
-```
-
-### Use the API Key
-Add one of these headers to your HTTP requests:
-- **Authorization Header**: `Authorization: Bearer <your-api-key>`
-- **x-api-key Header**: `x-api-key: <your-api-key>`
-
-### Example Usage
-```bash
-curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/containers
-curl -H "x-api-key: <your-api-key>" http://localhost:3005/api/stacks
-```
-
-⚠️  **Important**: This only works in development mode. The API key is automatically created when you start the server with `npm run dev`.
 
 ## Project Overview
 
 Mini Infra is a web application designed to manage a single Docker host and its associated infrastructure. It provides centralized management for Docker containers, PostgreSQL database backups, zero-downtime deployments using HAProxy, and Cloudflare tunnel monitoring.
 
 ### Key Concepts
-
-For the full glossary with detailed explanations, see `client/src/user-docs/getting-started/concepts.md`.
 
 - **Container** — a Docker container on the managed host. Status: Running, Stopped, Paused, Exited, Restarting.
 - **Application** — a logical concept that provides a simplified UX for managing services. Under the hood, an application is just a stack. The application layer handles creating the stack definition from user inputs (image, ports, env vars, volumes, routing) and exposes deploy/update/stop actions. All actual container orchestration happens at the stack level.
@@ -64,61 +40,6 @@ For the full glossary with detailed explanations, see `client/src/user-docs/gett
 - **Self-Update** — in-place upgrade via sidecar health-check pattern. Pulls new image, validates, swaps containers. Auto-rollback on failure. Data preserved on mounted volumes.
 - **Agent Sidecar** — optional AI operations assistant in a separate container. Natural language interface to Docker, Mini Infra API, and docs. Per-user conversations with SSE streaming.
 
-## Technology Stack
-
-### Frontend
-- **Build Tool**: Vite
-- **UI Framework**: React with React DOM
-- **Routing**: React Router DOM
-- **Styling**: Tailwind CSS with shadcn/ui components via Radix UI
-- **UI Components**:
-  - Radix UI primitives (dialog, dropdown, select, etc.)
-  - Tabler Icons and Lucide React
-  - Custom shadcn/ui components with class-variance-authority
-- **Forms**: React Hook Form with Zod validation
-- **State Management**: TanStack Query (React Query)
-- **Data Tables**: @tanstack/react-table for container data display
-- **Date Handling**: date-fns with date-fns-tz for timezone support
-- **Charts**: Recharts for data visualization
-- **Notifications**: Sonner for toast notifications
-- **Drag & Drop**: @dnd-kit suite for sortable interfaces
-- **Theming**: next-themes for dark/light mode
-- **Virtualization**: react-window for large lists
-
-### Backend
-- **API Framework**: Express.js
-- **Database**: SQLite with Prisma ORM
-- **Authentication**: Passport with Google OAuth 2.0 strategy
-- **Validation**: Zod for runtime type checking
-- **Logging**: Pino with multi-file domain-specific logging architecture
-  - pino-http for HTTP request logging
-  - pino-pretty for development formatting
-  - pino-roll for production log rotation
-- **Security**:
-  - Helmet for HTTP security headers
-  - CORS for cross-origin requests
-  - crypto-js for data encryption
-  - jsonwebtoken for JWT tokens
-- **External API Integrations**:
-  - dockerode for Docker API
-  - @azure/storage-blob for Azure Storage
-  - cloudflare for Cloudflare API
-  - pg for PostgreSQL connectivity
-- **Scheduling**: node-cron with cron-parser
-- **Caching**: node-cache for in-memory caching
-
-### Development Tools
-- **Language**: TypeScript
-- **Package Manager**: npm with workspaces
-- **Linting**: ESLint with TypeScript ESLint
-- **Code Formatting**: Prettier
-- **Testing**: Vitest with Supertest for API testing
-- **Build & Development**:
-  - tsx for TypeScript execution and watching
-  - cross-env for cross-platform environment variables
-  - rimraf for cross-platform file cleanup
-- **Shared Types**: Centralized TypeScript definitions in `@mini-infra/types` package
-
 ## Development Environment Notes
 
 - **Platform Detection**: If Claude is unsure about the platform, run `uname -s 2>/dev/null || echo "Windows"` to detect the operating system reliably
@@ -134,12 +55,18 @@ mini-infra/
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
 ├── update-sidecar/        # Self-update sidecar container (mini-infra-sidecar)
 ├── agent-sidecar/         # AI agent sidecar container (mini-infra-agent-sidecar)
+├── pg-az-backup/          # PostgreSQL Azure backup container
+├── deployment/            # Deployment configurations
+├── scripts/               # Utility scripts (see below)
 ├── docs/                  # Project documentation and specs
+├── claude-guidance/       # Claude Code guidance files
 ├── .claude/               # Claude Code configuration
-├── CLAUDE.md              # Claude Code context and instructions
-├── README.md              # Project documentation
 └── package.json           # Root workspace configuration
 ```
+
+### Utility Scripts (`scripts/`)
+- `generate-ui-manifest.mjs` — Scans `client/src/` for `data-tour` attributes and generates `client/src/user-docs/ui-elements/manifest.json`, mapping UI element IDs to routes for the AI agent's `highlight_element` tool. Run via `npm run generate:ui-manifest`.
+- `top-files-by-lines.sh` — Lists the top N files of a given extension by line count. Usage: `./scripts/top-files-by-lines.sh ts 20`
 
 ## Shared Types Architecture
 
@@ -225,16 +152,6 @@ Note: Socket IO is not required for the self patching or updating feature.
 - `npx -w server prisma migrate status` - Check migration status and detect drift
 - `npx -w server prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
 
-#### Host Docker Socket Mount (Recommended)
-
-```bash
--v /var/run/docker.sock:/var/run/docker.sock
-```
-
-**Pros**: Simple, direct access to host Docker daemon
-**Cons**: Security risk - container has full Docker control
-**Use Case**: Trusted environments, development, single-host deployments
-
 ## Critical Coding Patterns
 
 These are the most commonly missed patterns. See `server/CLAUDE.md` for the full service guide.
@@ -245,16 +162,4 @@ These are the most commonly missed patterns. See `server/CLAUDE.md` for the full
 * **Always use `ConfigurationServiceFactory`** to create config services — never instantiate `DockerConfigService`, `AzureStorageService`, etc. directly.
 * **All configuration mutations require `userId`** for audit trail — `set()`, `delete()`, and `create()` methods all track who made the change.
 * **Use `Channel.*` and `ServerEvent.*` constants** for Socket.IO — never use raw strings for event names or channels.
-
-## Logging Architecture
-
-The application uses a sophisticated multi-file logging architecture built on Pino for high-performance structured logging with domain separation.
-
-Logs are found in `server/logs/` directory with the following files:
- - `app.log.*` - Application logs
- - `app-http.log.*` - http request and response logs
- - `app-services.log.*` - log from services that run from `server/src/service/*.ts`
- - `app-dockerexecutor.log.*` - logs from container execution
- - `app-prisma.log.*` - log from prisma
- - `app-loadbalancer.log.*` - logs from the haproxy service
- - `app-tls.log.*` - logs from the certificate management service
+* In typescript avoid the use of any. This is OK to clean up later but its good to have strongly typed variables.

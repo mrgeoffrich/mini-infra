@@ -7,12 +7,10 @@
     "lib"
   ],
   "scripts": {
-    "dev": "node scripts/dev-with-restart.mjs",
-    "dev:all": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:lib": "npm run dev -w lib",
     "dev:client": "npm run dev -w client",
     "dev:server": "npm run dev -w server",
-    "dev:agent-sidecar": "node scripts/dev-agent-sidecar.mjs",
     "build": "npm run build:server && npm run build:client",
     "build:lib": "npm run build -w lib",
     "build:client": "npm run build -w client",
