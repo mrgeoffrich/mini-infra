@@ -720,21 +720,7 @@ export class StackReconciler {
         data: {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: serializeStack({
-            ...stack,
-            networks: stack.networks as unknown as StackNetwork[],
-            volumes: stack.volumes as unknown as StackVolume[],
-            services: stack.services.map((s) => ({
-              ...s,
-              serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-              containerConfig: s.containerConfig as unknown as StackContainerConfig,
-              configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
-              initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
-              dependsOn: s.dependsOn as unknown as string[],
-              routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
-              adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
-            })),
-          } as any) as any,
+          lastAppliedSnapshot: this.buildAppliedSnapshot(stack),
           status: resultStatus,
           removedAt: null,
         },
@@ -764,29 +750,9 @@ export class StackReconciler {
         duration: Date.now() - startTime,
       };
     } catch (err: any) {
-      // Record unexpected failure as a deployment record
       const duration = Date.now() - startTime;
       log.error({ error: err.message }, 'Apply failed unexpectedly');
-      try {
-        await this.prisma.stackDeployment.create({
-          data: {
-            stackId,
-            action: 'apply',
-            success: false,
-            version: stack.version,
-            status: 'error',
-            duration,
-            error: err.message,
-            triggeredBy: options?.triggeredBy ?? null,
-          },
-        });
-        await this.prisma.stack.update({
-          where: { id: stackId },
-          data: { status: 'error' },
-        });
-      } catch (dbErr) {
-        log.error({ error: dbErr }, 'Failed to record deployment failure');
-      }
+      await this.recordDeploymentFailure(stackId, 'apply', stack.version, duration, err.message, options?.triggeredBy, log);
       throw err;
     }
   }
@@ -919,19 +885,7 @@ export class StackReconciler {
           status: resultStatus,
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: serializeStack({
-            ...stack,
-            services: stack.services.map((s) => ({
-              ...s,
-              serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-              containerConfig: s.containerConfig as unknown as StackContainerConfig,
-              configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
-              initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
-              dependsOn: s.dependsOn as unknown as string[],
-              routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
-              adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
-            })),
-          } as any) as any,
+          lastAppliedSnapshot: this.buildAppliedSnapshot(stack),
         },
       });
 
@@ -959,26 +913,7 @@ export class StackReconciler {
     } catch (err: any) {
       const duration = Date.now() - startTime;
       log.error({ error: err.message }, 'Update failed unexpectedly');
-      try {
-        await this.prisma.stackDeployment.create({
-          data: {
-            stackId,
-            action: 'update',
-            success: false,
-            version: stack.version,
-            status: 'error',
-            duration,
-            error: err.message,
-            triggeredBy: options?.triggeredBy ?? null,
-          },
-        });
-        await this.prisma.stack.update({
-          where: { id: stackId },
-          data: { status: 'error' },
-        });
-      } catch (dbErr) {
-        log.error({ error: dbErr }, 'Failed to record update failure');
-      }
+      await this.recordDeploymentFailure(stackId, 'update', stack.version, duration, err.message, options?.triggeredBy, log);
       throw err;
     }
   }
@@ -1527,36 +1462,10 @@ export class StackReconciler {
         // For recreate, remove old routing first
         if (action.action === 'recreate') {
           try {
-            const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
-            const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
-            await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-
-            const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
-              serviceName: action.serviceName,
-              containerId: '',
-              containerName: adopted.containerName,
-              routing,
-              environmentId: stack.environmentId,
-              stackId,
-              stackName: stack.name,
-            };
-
-            // Remove old server from backend
-            const backendName = `stk-${stack.name}-${action.serviceName}`;
-            const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-              where: { name: backendName, environmentId: stack.environmentId },
-              include: { servers: true },
-            });
-            if (backendRecord) {
-              for (const server of backendRecord.servers) {
-                try {
-                  await haproxyClient.deleteServer(backendName, server.name);
-                } catch { /* may not exist in HAProxy */ }
-              }
-              await this.prisma.hAProxyServer.deleteMany({ where: { backendId: backendRecord.id } });
-            }
-
-            await this.routingManager!.removeRoute(routingCtx, haproxyClient);
+            await this.cleanupAdoptedWebRouting(
+              action.serviceName, adopted.containerName, routing,
+              stackId, stack, log, false
+            );
           } catch (err: any) {
             log.warn({ service: action.serviceName, error: err.message }, 'Failed to clean up old routing (continuing)');
           }
@@ -1583,9 +1492,7 @@ export class StackReconciler {
         }
 
         // 2. Get HAProxy context
-        const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
-        const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
-        await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
 
         // 3. Join container to HAProxy applications network
         const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
@@ -1646,39 +1553,10 @@ export class StackReconciler {
         log.info({ service: action.serviceName }, 'Removing AdoptedWeb routing (container will not be stopped)');
 
         try {
-          const haproxyCtx = await this.routingManager!.getHAProxyContext(stack.environmentId);
-          const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
-          await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-
-          const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
-            serviceName: action.serviceName,
-            containerId: '',
-            containerName: adopted.containerName,
-            routing,
-            environmentId: stack.environmentId,
-            stackId,
-            stackName: stack.name,
-          };
-
-          // Remove server from backend
-          const backendName = `stk-${stack.name}-${action.serviceName}`;
-          const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-            where: { name: backendName, environmentId: stack.environmentId },
-            include: { servers: true },
-          });
-          if (backendRecord) {
-            for (const server of backendRecord.servers) {
-              try {
-                await this.routingManager!.drainAndRemoveServer(
-                  backendName, server.name, haproxyClient
-                );
-              } catch (err: any) {
-                log.warn({ server: server.name, error: err.message }, 'Failed to drain server');
-              }
-            }
-          }
-
-          await this.routingManager!.removeRoute(routingCtx, haproxyClient);
+          await this.cleanupAdoptedWebRouting(
+            action.serviceName, adopted.containerName, routing,
+            stackId, stack, log, true
+          );
         } catch (err: any) {
           log.warn({ service: action.serviceName, error: err.message }, 'Failed to remove routing');
           return {
@@ -2039,6 +1917,126 @@ export class StackReconciler {
     }
 
     return warnings;
+  }
+
+  /**
+   * Build the lastAppliedSnapshot value from a Prisma stack record.
+   * Handles the JSON field casting that Prisma requires.
+   */
+  private buildAppliedSnapshot(stack: any): any {
+    return serializeStack({
+      ...stack,
+      networks: stack.networks as unknown as StackNetwork[],
+      volumes: stack.volumes as unknown as StackVolume[],
+      services: stack.services.map((s: any) => ({
+        ...s,
+        serviceType: s.serviceType as StackServiceDefinition['serviceType'],
+        containerConfig: s.containerConfig as unknown as StackContainerConfig,
+        configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
+        initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
+        dependsOn: s.dependsOn as unknown as string[],
+        routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
+        adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
+      })),
+    } as any) as any;
+  }
+
+  /**
+   * Get an initialized HAProxy data plane client for an environment.
+   */
+  private async getInitializedHAProxyClient(environmentId: string): Promise<{
+    haproxyCtx: Awaited<ReturnType<StackRoutingManager['getHAProxyContext']>>;
+    haproxyClient: any;
+  }> {
+    const haproxyCtx = await this.routingManager!.getHAProxyContext(environmentId);
+    const { HAProxyDataPlaneClient } = await import('../haproxy');
+    const haproxyClient = new HAProxyDataPlaneClient();
+    await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
+    return { haproxyCtx, haproxyClient };
+  }
+
+  /**
+   * Clean up HAProxy routing for an AdoptedWeb service.
+   * Used by both recreate and remove actions.
+   */
+  private async cleanupAdoptedWebRouting(
+    serviceName: string,
+    adoptedContainerName: string,
+    routing: any,
+    stackId: string,
+    stack: any,
+    log: any,
+    drainBeforeRemove: boolean
+  ): Promise<void> {
+    const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+
+    const routingCtx: import('./stack-routing-manager').StackRoutingContext = {
+      serviceName,
+      containerId: '',
+      containerName: adoptedContainerName,
+      routing,
+      environmentId: stack.environmentId,
+      stackId,
+      stackName: stack.name,
+    };
+
+    const backendName = `stk-${stack.name}-${serviceName}`;
+    const backendRecord = await this.prisma.hAProxyBackend.findFirst({
+      where: { name: backendName, environmentId: stack.environmentId },
+      include: { servers: true },
+    });
+    if (backendRecord) {
+      for (const server of backendRecord.servers) {
+        try {
+          if (drainBeforeRemove) {
+            await this.routingManager!.drainAndRemoveServer(backendName, server.name, haproxyClient);
+          } else {
+            await haproxyClient.deleteServer(backendName, server.name);
+          }
+        } catch (err: any) {
+          log.warn({ server: server.name, error: err.message }, 'Failed to remove/drain server');
+        }
+      }
+      if (!drainBeforeRemove) {
+        await this.prisma.hAProxyServer.deleteMany({ where: { backendId: backendRecord.id } });
+      }
+    }
+
+    await this.routingManager!.removeRoute(routingCtx, haproxyClient);
+  }
+
+  /**
+   * Record a failed deployment and update stack status to error.
+   */
+  private async recordDeploymentFailure(
+    stackId: string,
+    actionType: 'apply' | 'update',
+    version: number,
+    duration: number,
+    error: string,
+    triggeredBy: string | null | undefined,
+    log: any
+  ): Promise<void> {
+    try {
+      await this.prisma.stackDeployment.create({
+        data: {
+          stackId,
+          action: actionType,
+          success: false,
+          version,
+          status: 'error',
+          duration,
+          error,
+          triggeredBy: triggeredBy ?? null,
+        },
+      });
+      await this.prisma.stack.update({
+        where: { id: stackId },
+        data: { status: 'error' },
+      });
+    } catch (dbErr) {
+      log.error({ error: dbErr }, `Failed to record ${actionType} failure`);
+    }
   }
 
   private generateDiffs(
