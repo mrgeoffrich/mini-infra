@@ -198,16 +198,16 @@ export class RestoreRunner {
         "Docker image pulled successfully",
       );
 
-      // Get Azure connection string
+      // Verify Azure is configured
       servicesLogger().debug(
         {
           operationId,
         },
-        "Retrieving Azure connection string",
+        "Verifying Azure Storage configuration",
       );
 
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         servicesLogger().error(
           {
@@ -223,9 +223,8 @@ export class RestoreRunner {
       servicesLogger().debug(
         {
           operationId,
-          hasAzureConnection: !!azureConnectionString,
         },
-        "Azure connection string retrieved successfully",
+        "Azure Storage configuration verified",
       );
 
       // Get database connection details
@@ -299,9 +298,16 @@ export class RestoreRunner {
         message: "Starting restore container",
       });
 
-      // Extract blob name from backup URL for restore
+      // Extract blob name from backup URL and generate a read SAS URL for restore
       const blobName = extractBlobNameFromUrl(backupUrl);
       const containerName = extractContainerFromUrl(backupUrl);
+      const sasExpiryMinutes = Math.ceil(RESTORE_TIMEOUT_MS / 60000) + 15;
+      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
+        containerName,
+        blobName,
+        sasExpiryMinutes,
+        "read",
+      );
 
       servicesLogger().info(
         {
@@ -309,8 +315,9 @@ export class RestoreRunner {
           backupUrl,
           containerName,
           blobName,
+          sasExpiryMinutes,
         },
-        "Parsed backup URL components for restore",
+        "Generated read SAS URL for restore",
       );
 
       // Execute restore using Docker
@@ -320,11 +327,9 @@ export class RestoreRunner {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
-        AZURE_CONTAINER_NAME: containerName,
+        AZURE_SAS_URL: "[REDACTED]",
         RESTORE: "yes",
         DROP_PUBLIC: "yes",
-        AZURE_BLOB_NAME: blobName,
       };
 
       dockerExecutorLogger().info(
@@ -348,11 +353,9 @@ export class RestoreRunner {
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
-              AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-              AZURE_CONTAINER_NAME: containerName,
+              AZURE_SAS_URL: azureSasUrl,
               RESTORE: "yes",
               DROP_PUBLIC: "yes",
-              AZURE_BLOB_NAME: blobName,
             },
             timeout: RESTORE_TIMEOUT_MS,
             networkMode: RESTORE_NETWORK_NAME,

@@ -51,14 +51,25 @@ export class RollbackManager {
       const rollbackContainerName = extractContainerFromUrl(backupUrl);
       const rollbackBlobName = `${databaseName}/rollback-${timestamp}.dump`;
 
+      // Generate a write SAS URL for the rollback backup upload
+      const rollbackTimeoutMs = 30 * 60 * 1000;
+      const sasExpiryMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
+      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
+        rollbackContainerName,
+        rollbackBlobName,
+        sasExpiryMinutes,
+        "write",
+      );
+
       servicesLogger().info(
         {
           rollbackContainerName,
           rollbackBlobName,
           timestamp,
           backupUrl,
+          sasExpiryMinutes,
         },
-        "Generated rollback backup path and container from backup URL",
+        "Generated rollback backup path and write SAS URL",
       );
 
       const containerEnv = {
@@ -67,16 +78,14 @@ export class RollbackManager {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
-        AZURE_CONTAINER_NAME: rollbackContainerName,
-        AZURE_BLOB_NAME: rollbackBlobName,
+        AZURE_SAS_URL: "[REDACTED]",
       };
 
       dockerExecutorLogger().info(
         {
           dockerImage,
           environment: containerEnv,
-          timeoutMs: 30 * 60 * 1000,
+          timeoutMs: rollbackTimeoutMs,
         },
         "Starting rollback backup container",
       );
@@ -90,11 +99,9 @@ export class RollbackManager {
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
-          AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-          AZURE_CONTAINER_NAME: rollbackContainerName,
-          AZURE_BLOB_NAME: rollbackBlobName,
+          AZURE_SAS_URL: azureSasUrl,
         },
-        timeout: 30 * 60 * 1000, // 30 minutes for rollback backup
+        timeout: rollbackTimeoutMs,
       });
 
       dockerExecutorLogger().info(
@@ -187,13 +194,24 @@ export class RollbackManager {
 
       const { containerName, blobName } = parseBackupUrl(rollbackBackupUrl);
 
+      // Generate a read SAS URL for the rollback backup download
+      const rollbackTimeoutMs = 60 * 60 * 1000;
+      const sasExpiryMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
+      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
+        containerName,
+        blobName,
+        sasExpiryMinutes,
+        "read",
+      );
+
       servicesLogger().debug(
         {
           rollbackBackupUrl,
           containerName,
           blobName,
+          sasExpiryMinutes,
         },
-        "Parsed rollback backup URL components",
+        "Generated read SAS URL for rollback restore",
       );
 
       const containerEnv = {
@@ -202,18 +220,16 @@ export class RollbackManager {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: "[REDACTED]",
-        AZURE_CONTAINER_NAME: containerName,
+        AZURE_SAS_URL: "[REDACTED]",
         RESTORE: "yes",
         DROP_PUBLIC: "yes",
-        BACKUP_FILE_URL: rollbackBackupUrl,
       };
 
       dockerExecutorLogger().info(
         {
           dockerImage,
           environment: containerEnv,
-          timeoutMs: 60 * 60 * 1000,
+          timeoutMs: rollbackTimeoutMs,
         },
         "Starting rollback container execution",
       );
@@ -226,13 +242,11 @@ export class RollbackManager {
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
-          AZURE_STORAGE_ACCOUNT_CONNECTION_STRING: azureConnectionString,
-          AZURE_CONTAINER_NAME: containerName,
+          AZURE_SAS_URL: azureSasUrl,
           RESTORE: "yes",
           DROP_PUBLIC: "yes",
-          BACKUP_FILE_URL: rollbackBackupUrl,
         },
-        timeout: 60 * 60 * 1000, // 1 hour for rollback
+        timeout: rollbackTimeoutMs,
       });
 
       dockerExecutorLogger().info(

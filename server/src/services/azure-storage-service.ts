@@ -1119,16 +1119,18 @@ export class AzureStorageService extends ConfigurationService {
   }
 
   /**
-   * Generate a time-limited SAS URL for blob download
+   * Generate a time-limited SAS URL for blob access
    * @param containerName - Name of the Azure container
    * @param blobName - Name of the blob
    * @param expiryMinutes - Number of minutes until the SAS token expires (default: 15)
+   * @param mode - Access mode: "read" for download, "write" for upload (default: "read")
    * @returns Full blob URL with SAS token appended
    */
   async generateBlobSasUrl(
     containerName: string,
     blobName: string,
     expiryMinutes: number = 15,
+    mode: "read" | "write" = "read",
   ): Promise<string> {
     try {
       const connectionString = await this.getConnectionString();
@@ -1155,9 +1157,14 @@ export class AzureStorageService extends ConfigurationService {
         accountKey,
       );
 
-      // Set SAS token permissions (read-only)
+      // Set SAS token permissions based on mode
       const permissions = new BlobSASPermissions();
-      permissions.read = true;
+      if (mode === "write") {
+        permissions.create = true;
+        permissions.write = true;
+      } else {
+        permissions.read = true;
+      }
 
       // Calculate expiry time
       const startsOn = new Date();
@@ -1184,8 +1191,9 @@ export class AzureStorageService extends ConfigurationService {
           blobName,
           expiryMinutes,
           expiresOn: expiresOn.toISOString(),
+          mode,
         },
-        "Generated SAS URL for blob download",
+        `Generated SAS URL for blob ${mode}`,
       );
 
       return blobUrl;
@@ -1199,6 +1207,7 @@ export class AzureStorageService extends ConfigurationService {
           containerName,
           blobName,
           expiryMinutes,
+          mode,
         },
         "Failed to generate SAS URL",
       );
