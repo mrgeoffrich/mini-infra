@@ -26,13 +26,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
 
-RESTORE="${RESTORE:-no}"
-DROP_PUBLIC="${DROP_PUBLIC:-no}"
-BACKUP_FORMAT="${BACKUP_FORMAT:-plain}"
-COMPRESSION_LEVEL="${COMPRESSION_LEVEL:-6}"
+export RESTORE="${RESTORE:-no}"
+export DROP_PUBLIC="${DROP_PUBLIC:-no}"
+export BACKUP_FORMAT="${BACKUP_FORMAT:-plain}"
+export COMPRESSION_LEVEL="${COMPRESSION_LEVEL:-6}"
 
 # Common pg connection options
-PG_OPTS="-h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER}"
+export PG_OPTS="-h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER}"
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 

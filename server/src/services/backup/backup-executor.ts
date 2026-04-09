@@ -546,7 +546,7 @@ export class BackupExecutorService {
       );
 
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         servicesLogger().error(
           {
@@ -941,7 +941,7 @@ export class BackupExecutorService {
   }> {
     try {
       const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
+        await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
         return {
           success: false,

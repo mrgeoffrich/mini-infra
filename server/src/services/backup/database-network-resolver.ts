@@ -1,3 +1,4 @@
+import { PrismaClient } from "@prisma/client";
 import { servicesLogger } from "../../lib/logger-factory";
 
 const LEGACY_NETWORK_NAME = "mini-infra-postgres-backup";
@@ -8,7 +9,7 @@ const LEGACY_NETWORK_NAME = "mini-infra-postgres-backup";
  * with the database output, otherwise falls back to the legacy network name.
  */
 export async function resolveDatabaseNetworkName(
-  prisma: { infraResource: { findFirst: Function } },
+  prisma: Pick<PrismaClient, "infraResource">,
 ): Promise<string> {
   try {
     const resource = await prisma.infraResource.findFirst({

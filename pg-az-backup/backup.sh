@@ -68,7 +68,7 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     -X PUT \
     -H "x-ms-blob-type: BlockBlob" \
     -H "Content-Type: application/octet-stream" \
-    --data-binary "@${FINAL_FILE}" \
+    -T "$FINAL_FILE" \
     "$AZURE_SAS_URL")
 
 if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
