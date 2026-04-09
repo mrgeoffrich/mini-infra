@@ -6,12 +6,10 @@ import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";
 import { DbOperations } from "./db-operations";
 import { extractBlobNameFromUrl, extractContainerFromUrl } from "./utils";
+import { resolveDatabaseNetworkName } from "../backup/database-network-resolver";
 
 // Timeout for restore operations (3 hours)
 export const RESTORE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
-
-// Docker network for restore operations (shared with backup)
-export const RESTORE_NETWORK_NAME = "mini-infra-postgres-backup";
 
 /**
  * RestoreRunner orchestrates the full restore execution flow:
@@ -258,6 +256,9 @@ export class RestoreRunner {
         "Database connection configuration retrieved and prepared for restore",
       );
 
+      // Resolve the database management network for backup/restore containers
+      const databaseNetworkName = await resolveDatabaseNetworkName(this.prisma);
+
       await this.dbOps.updateRestoreProgress(operationId, {
         status: "running",
         progress: 35,
@@ -281,6 +282,7 @@ export class RestoreRunner {
           dockerImage,
           database.database,
           backupUrl,
+          databaseNetworkName,
         );
 
       servicesLogger().info(
@@ -358,7 +360,7 @@ export class RestoreRunner {
               DROP_PUBLIC: "yes",
             },
             timeout: RESTORE_TIMEOUT_MS,
-            networkMode: RESTORE_NETWORK_NAME,
+            networkMode: databaseNetworkName,
           },
           (progress) => {
             // Update progress based on container status
@@ -483,6 +485,7 @@ export class RestoreRunner {
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+          databaseNetworkName,
         );
 
         servicesLogger().info(
@@ -552,6 +555,7 @@ export class RestoreRunner {
           rollbackBackupUrl,
           azureConnectionString,
           dockerImage,
+          databaseNetworkName,
         );
 
         servicesLogger().info(

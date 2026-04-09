@@ -17,7 +17,8 @@ import type { RestoreOperation } from "@prisma/client";
 
 import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";
-import { RestoreRunner, RESTORE_TIMEOUT_MS, RESTORE_NETWORK_NAME } from "./restore-runner";
+import { RestoreRunner, RESTORE_TIMEOUT_MS } from "./restore-runner";
+import { resolveDatabaseNetworkName } from "../backup/database-network-resolver";
 import { DbOperations } from "./db-operations";
 import {
   parseBackupUrl,
@@ -189,12 +190,13 @@ export class RestoreExecutorService {
         await this._dockerExecutor.initialize();
         servicesLogger().debug("Docker executor initialized successfully");
 
-        // Create dedicated restore network (shared with backup)
+        // Ensure database network exists (shared with backup)
+        const networkName = await resolveDatabaseNetworkName(this.prisma);
         servicesLogger().debug(
-          `Ensuring restore network exists: ${RESTORE_NETWORK_NAME}`,
+          `Ensuring restore network exists: ${networkName}`,
         );
         await this._dockerExecutor.createNetwork(
-          RESTORE_NETWORK_NAME,
+          networkName,
           undefined,
           {
             driver: "bridge",
@@ -559,6 +561,7 @@ export class RestoreExecutorService {
     dockerImage: string,
     databaseName: string,
     backupUrl: string,
+    networkMode?: string,
   ): Promise<string> {
     return this.rollbackManager.createRollbackBackup(
       connectionConfig,
@@ -566,6 +569,7 @@ export class RestoreExecutorService {
       dockerImage,
       databaseName,
       backupUrl,
+      networkMode,
     );
   }
 
@@ -574,12 +578,14 @@ export class RestoreExecutorService {
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,
+    networkMode?: string,
   ): Promise<void> {
     return this.rollbackManager.executeRollback(
       connectionConfig,
       rollbackBackupUrl,
       azureConnectionString,
       dockerImage,
+      networkMode,
     );
   }
 

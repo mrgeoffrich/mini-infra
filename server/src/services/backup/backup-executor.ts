@@ -11,6 +11,7 @@ import { PostgresDatabaseManager } from "../postgres";
 import { PostgresSettingsConfigService } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
+import { resolveDatabaseNetworkName } from "./database-network-resolver";
 import {
   BackupOperationInfo,
   BackupOperationType,
@@ -56,9 +57,6 @@ export class BackupExecutorService {
 
   // Timeout for backup operations (2 hours)
   private static readonly BACKUP_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-
-  // Docker network for backup operations
-  private static readonly BACKUP_NETWORK_NAME = "mini-infra-postgres-backup";
 
   // Retry configuration
   private static readonly MAX_RETRIES = 3;
@@ -114,12 +112,13 @@ export class BackupExecutorService {
         await this.dockerExecutor.initialize();
         servicesLogger().debug("Docker executor initialized successfully");
 
-        // Create dedicated backup network
+        // Ensure backup network exists (resolved dynamically or fallback)
+        const networkName = await resolveDatabaseNetworkName(this.prisma);
         servicesLogger().debug(
-          `Creating backup network: ${BackupExecutorService.BACKUP_NETWORK_NAME}`,
+          `Ensuring backup network exists: ${networkName}`,
         );
         await this.dockerExecutor.createNetwork(
-          BackupExecutorService.BACKUP_NETWORK_NAME,
+          networkName,
           undefined,
           {
             driver: "bridge",
@@ -643,6 +642,7 @@ export class BackupExecutorService {
         "Starting backup container execution",
       );
 
+      const backupNetworkName = await resolveDatabaseNetworkName(this.prisma);
       const containerStartTime = Date.now();
       // Track the latest pending progress update from the callback to avoid
       // fire-and-forget race conditions where an unawaited DB write completes
@@ -664,7 +664,7 @@ export class BackupExecutorService {
               COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
             },
             timeout: BackupExecutorService.BACKUP_TIMEOUT_MS,
-            networkMode: BackupExecutorService.BACKUP_NETWORK_NAME,
+            networkMode: backupNetworkName,
           },
           (progress) => {
             // Update progress based on container status

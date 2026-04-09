@@ -90,6 +90,9 @@ const mockPrisma = {
   systemSettings: {
     findFirst: vi.fn(),
   },
+  infraResource: {
+    findFirst: vi.fn().mockResolvedValue(null),
+  },
 } as unknown as typeof prisma;
 
 // Mock service instances

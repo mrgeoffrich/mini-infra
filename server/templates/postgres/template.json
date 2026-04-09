@@ -1,0 +1,93 @@
+{
+  "name": "postgres",
+  "displayName": "PostgreSQL Database",
+  "builtinVersion": 1,
+  "scope": "environment",
+  "category": "database",
+  "description": "PostgreSQL database server with persistent storage",
+  "parameters": [
+    {
+      "name": "postgres-user",
+      "type": "string",
+      "default": "postgres",
+      "description": "PostgreSQL superuser name"
+    },
+    {
+      "name": "postgres-password",
+      "type": "string",
+      "default": "changeme",
+      "description": "PostgreSQL superuser password"
+    },
+    {
+      "name": "postgres-db",
+      "type": "string",
+      "default": "postgres",
+      "description": "Default database name"
+    },
+    {
+      "name": "host-port",
+      "type": "number",
+      "default": 5432,
+      "description": "Host port for PostgreSQL (0 to disable)"
+    },
+    {
+      "name": "expose-on-host",
+      "type": "boolean",
+      "default": false,
+      "description": "Bind PostgreSQL port to the Docker host"
+    }
+  ],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "database" }
+  ],
+  "networks": [],
+  "volumes": [
+    { "name": "postgres_data" }
+  ],
+  "services": [
+    {
+      "serviceName": "postgres",
+      "serviceType": "Stateful",
+      "dockerImage": "postgres",
+      "dockerTag": "17-alpine",
+      "containerConfig": {
+        "env": {
+          "POSTGRES_USER": "{{params.postgres-user}}",
+          "POSTGRES_PASSWORD": "{{params.postgres-password}}",
+          "POSTGRES_DB": "{{params.postgres-db}}"
+        },
+        "ports": [
+          {
+            "containerPort": 5432,
+            "hostPort": "{{params.host-port}}",
+            "protocol": "tcp",
+            "exposeOnHost": "{{params.expose-on-host}}"
+          }
+        ],
+        "mounts": [
+          {
+            "source": "postgres_data",
+            "target": "/var/lib/postgresql/data",
+            "type": "volume"
+          }
+        ],
+        "restartPolicy": "unless-stopped",
+        "healthcheck": {
+          "test": ["CMD-SHELL", "pg_isready -U {{params.postgres-user}} -d {{params.postgres-db}}"],
+          "interval": 30,
+          "timeout": 5,
+          "retries": 3,
+          "startPeriod": 30
+        },
+        "joinResourceNetworks": ["database"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

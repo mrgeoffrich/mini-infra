@@ -33,6 +33,7 @@ export class RollbackManager {
     dockerImage: string,
     databaseName: string,
     backupUrl: string,
+    networkMode?: string,
   ): Promise<string> {
     const startTime = Date.now();
     try {
@@ -102,6 +103,7 @@ export class RollbackManager {
           AZURE_SAS_URL: azureSasUrl,
         },
         timeout: rollbackTimeoutMs,
+        ...(networkMode && { networkMode }),
       });
 
       dockerExecutorLogger().info(
@@ -180,6 +182,7 @@ export class RollbackManager {
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,
+    networkMode?: string,
   ): Promise<void> {
     const startTime = Date.now();
     try {
@@ -247,6 +250,7 @@ export class RollbackManager {
           DROP_PUBLIC: "yes",
         },
         timeout: rollbackTimeoutMs,
+        ...(networkMode && { networkMode }),
       });
 
       dockerExecutorLogger().info(
