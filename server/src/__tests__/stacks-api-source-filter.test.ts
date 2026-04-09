@@ -118,7 +118,7 @@ describe('GET /api/stacks - source filtering', () => {
     expect(res.body.data).toHaveLength(1);
 
     const call = mockFindMany.mock.calls[0][0];
-    expect(call.where).toEqual({ status: { not: 'removed' } });
+    expect(call.where).toEqual({});
     // No OR clause when no scope or environmentId
     expect(call.where.OR).toBeUndefined();
   });
@@ -219,7 +219,6 @@ describe('GET /api/stacks - source filtering', () => {
     // Verify the where clause would exclude user-template stacks
     const call = mockFindMany.mock.calls[0][0];
     expect(call.where).toEqual({
-      status: { not: 'removed' },
       environmentId: null,
       OR: [
         { template: { source: 'system' } },

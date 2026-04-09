@@ -246,6 +246,15 @@ describe('EnvironmentManager', () => {
         where: { id: 'env-1' },
         include: {
           networks: true,
+          _count: {
+            select: {
+              stacks: { where: { template: { source: 'user' } } },
+            },
+          },
+          stacks: {
+            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            select: { id: true },
+          },
         }
       });
     });
@@ -284,6 +293,15 @@ describe('EnvironmentManager', () => {
         where: { type: 'production' },
         include: {
           networks: true,
+          _count: {
+            select: {
+              stacks: { where: { template: { source: 'user' } } },
+            },
+          },
+          stacks: {
+            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            select: { id: true },
+          },
         },
         skip: 0,
         take: 10,
@@ -323,9 +341,20 @@ describe('EnvironmentManager', () => {
           description: 'Updated description',
           type: 'production',
           networkType: undefined,
+          tunnelId: undefined,
+          tunnelServiceUrl: undefined,
         },
         include: {
           networks: true,
+          _count: {
+            select: {
+              stacks: { where: { template: { source: 'user' } } },
+            },
+          },
+          stacks: {
+            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            select: { id: true },
+          },
         }
       });
     });
