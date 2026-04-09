@@ -15,8 +15,8 @@ import { servicesLogger } from "../../lib/logger-factory";
  */
 export class PostgresSettingsConfigService extends ConfigurationService {
   // Default Docker images for PostgreSQL operations
-  private static readonly DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
-  private static readonly DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
+  private static readonly DEFAULT_BACKUP_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
+  private static readonly DEFAULT_RESTORE_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
 
   constructor(prisma: PrismaClient) {
     super(prisma, "system" as SettingsCategory);
@@ -33,10 +33,14 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       const existingRestoreSetting = await this.get("restore_docker_image");
 
       // Create default settings if they don't exist
+      // Use PG_BACKUP_IMAGE_TAG env var (baked in at Docker build time) if available
+      const defaultBackupImage = process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE;
+      const defaultRestoreImage = process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE;
+
       if (!existingBackupSetting) {
         await this.set(
           "backup_docker_image",
-          PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
+          defaultBackupImage,
           userId,
         );
       }
@@ -44,7 +48,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       if (!existingRestoreSetting) {
         await this.set(
           "restore_docker_image",
-          PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
+          defaultRestoreImage,
           userId,
         );
       }
@@ -235,24 +239,32 @@ export class PostgresSettingsConfigService extends ConfigurationService {
 
   /**
    * Get backup Docker image setting
+   * Fallback chain: DB setting -> PG_BACKUP_IMAGE_TAG env var -> hardcoded default
    */
   async getBackupDockerImage(): Promise<string> {
     const configuredImage = await this.get("backup_docker_image");
-    if (!configuredImage) {
-      throw new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system");
+    if (configuredImage) {
+      return configuredImage;
     }
-    return configuredImage;
+    if (process.env.PG_BACKUP_IMAGE_TAG) {
+      return process.env.PG_BACKUP_IMAGE_TAG;
+    }
+    return PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE;
   }
 
   /**
    * Get restore Docker image setting
+   * Fallback chain: DB setting -> PG_BACKUP_IMAGE_TAG env var -> hardcoded default
    */
   async getRestoreDockerImage(): Promise<string> {
     const configuredImage = await this.get("restore_docker_image");
-    if (!configuredImage) {
-      throw new Error("Restore Docker image not configured in system settings. Please configure it at /settings/system");
+    if (configuredImage) {
+      return configuredImage;
     }
-    return configuredImage;
+    if (process.env.PG_BACKUP_IMAGE_TAG) {
+      return process.env.PG_BACKUP_IMAGE_TAG;
+    }
+    return PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE;
   }
 
   /**
@@ -400,8 +412,8 @@ export class PostgresSettingsConfigService extends ConfigurationService {
     restoreDockerImage: string;
   } {
     return {
-      backupDockerImage: PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
-      restoreDockerImage: PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
+      backupDockerImage: process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
+      restoreDockerImage: process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
     };
   }
 }

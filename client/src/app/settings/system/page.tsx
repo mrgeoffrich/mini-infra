@@ -72,7 +72,7 @@ const systemSettingsSchema = z.object({
     .min(1, "Backup Docker image is required")
     .regex(
       /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
-      "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
+      "Invalid Docker image format (e.g., ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)",
     ),
 
   // Restore container settings
@@ -81,7 +81,7 @@ const systemSettingsSchema = z.object({
     .min(1, "Restore Docker image is required")
     .regex(
       /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
-      "Invalid Docker image format (e.g., postgres:15-alpine, ghcr.io/user/repo:latest)",
+      "Invalid Docker image format (e.g., ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)",
     ),
 
   // Docker Host IP Configuration
@@ -106,8 +106,8 @@ const systemSettingsSchema = z.object({
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 // Default Docker images and settings
-const DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
-const DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
+const DEFAULT_BACKUP_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
+const DEFAULT_RESTORE_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
 
 export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -489,13 +489,13 @@ export default function SystemSettingsPage() {
                           <FormLabel>Docker Image</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="postgres:15-alpine"
+                              placeholder="ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev"
                               {...field}
                             />
                           </FormControl>
                           <FormDescription>
                             Docker image for backup operations (e.g.,
-                            postgres:15-alpine, myregistry/postgres:latest)
+                            ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -525,13 +525,13 @@ export default function SystemSettingsPage() {
                           <FormLabel>Docker Image</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="postgres:15-alpine"
+                              placeholder="ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev"
                               {...field}
                             />
                           </FormControl>
                           <FormDescription>
                             Docker image for restore operations (e.g.,
-                            postgres:15-alpine, myregistry/postgres:latest)
+                            ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

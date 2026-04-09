@@ -54,3 +54,49 @@ jobs:
           package-type: container
           min-versions-to-keep: 10
           ignore-versions: '^(\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|dev|main|production|latest)$'
+
+  cleanup-agent-sidecar:
+    name: Cleanup mini-infra-agent-sidecar images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete untagged agent-sidecar versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-agent-sidecar
+          package-type: container
+          delete-only-untagged-versions: 'true'
+          min-versions-to-keep: 10
+
+      - name: Delete old agent-sidecar versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-agent-sidecar
+          package-type: container
+          min-versions-to-keep: 10
+          ignore-versions: '^(\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|dev|main|production|latest)$'
+
+  cleanup-pg-backup:
+    name: Cleanup mini-infra-pg-backup images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete untagged pg-backup versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-pg-backup
+          package-type: container
+          delete-only-untagged-versions: 'true'
+          min-versions-to-keep: 10
+
+      - name: Delete old pg-backup versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: mini-infra-pg-backup
+          package-type: container
+          min-versions-to-keep: 10
+          ignore-versions: '^(\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|dev|main|production|latest)$'

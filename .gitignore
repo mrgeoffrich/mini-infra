@@ -65,3 +65,8 @@ coverage/
 # Superpowers working files
 .superpowers/
 .worktrees/
+
+# Python artifacts (pg-az-backup)
+__pycache__/
+*.pyc
+*.pyo

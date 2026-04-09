@@ -19,6 +19,7 @@
     "build:server": "npm run build:lib && npm run build -w server",
     "build:sidecar": "npm --prefix update-sidecar install && npm --prefix update-sidecar run build",
     "build:agent-sidecar": "npm --prefix agent-sidecar install && npm --prefix agent-sidecar run build",
+    "build:pg-backup": "docker build -t mini-infra-pg-backup:dev ./pg-az-backup",
     "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
     "start": "npm start -w server",
     "install:all": "npm install",
