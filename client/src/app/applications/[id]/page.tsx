@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   IconArrowLeft,
   IconLoader2,
@@ -43,55 +42,10 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { StackServiceType } from "@mini-infra/types";
-
-// ---- Zod Schema (same as new page) ----
-
-const envVarSchema = z.object({
-  key: z.string().min(1, "Key is required"),
-  value: z.string(),
-});
-
-const portMappingSchema = z.object({
-  containerPort: z.number().int().min(1).max(65535),
-  hostPort: z.number().int().min(1).max(65535),
-  protocol: z.enum(["tcp", "udp"]),
-});
-
-const volumeMountSchema = z.object({
-  name: z.string().min(1, "Volume name is required"),
-  mountPath: z.string().min(1, "Mount path is required"),
-});
-
-const routingSchema = z.object({
-  hostname: z.string().min(1, "Hostname is required"),
-  listeningPort: z.number().int().min(1).max(65535),
-  enableSsl: z.boolean().optional(),
-  enableTunnel: z.boolean().optional(),
-});
-
-const applicationFormSchema = z.object({
-  displayName: z.string().min(1, "Application name is required").max(100),
-  description: z.string().max(500).optional(),
-  serviceName: z
-    .string()
-    .min(1, "Service name is required")
-    .max(63)
-    .regex(
-      /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
-      "Must be lowercase, alphanumeric with hyphens, no leading/trailing hyphens",
-    ),
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
-  dockerImage: z.string().min(1, "Docker image is required"),
-  dockerTag: z.string().min(1, "Tag is required"),
-  ports: z.array(portMappingSchema),
-  envVars: z.array(envVarSchema),
-  volumeMounts: z.array(volumeMountSchema),
-  enableRouting: z.boolean(),
-  routing: routingSchema.optional(),
-  restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
-});
-
-type ApplicationFormData = z.infer<typeof applicationFormSchema>;
+import {
+  editApplicationFormSchema,
+  type EditApplicationFormData,
+} from "@/lib/application-schemas";
 
 export default function ApplicationDetailPage() {
   const navigate = useNavigate();
@@ -106,8 +60,8 @@ export default function ApplicationDetailPage() {
   const boundEnvironment = environments.find((e) => e.id === boundEnvironmentId);
   const networkType = boundEnvironment?.networkType;
 
-  const form = useForm<ApplicationFormData>({
-    resolver: zodResolver(applicationFormSchema),
+  const form = useForm<EditApplicationFormData>({
+    resolver: zodResolver(editApplicationFormSchema),
     defaultValues: {
       displayName: "",
       description: "",
@@ -204,7 +158,7 @@ export default function ApplicationDetailPage() {
     });
   }, [data, form]);
 
-  const onSubmit = async (formData: ApplicationFormData) => {
+  const onSubmit = async (formData: EditApplicationFormData) => {
     if (!id || !data?.data) return;
 
     const template = data.data;
