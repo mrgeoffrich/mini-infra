@@ -1,5 +1,37 @@
 import { format, formatDistanceToNow } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
+
+/**
+ * Formats a date in a specific timezone using native Intl.DateTimeFormat.
+ * Replaces the `date-fns-tz` package's `formatInTimeZone`.
+ */
+function formatInTimezone(
+  date: Date,
+  timezone: string,
+  fmt: string,
+): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const p: Record<string, string> = {};
+  for (const { type, value } of parts) p[type] = value;
+
+  return fmt
+    .replace("MMM", p.month ?? "")
+    .replace("yyyy", p.year ?? "")
+    .replace("dd", (p.day ?? "").padStart(2, "0"))
+    .replace("d", p.day ?? "")
+    .replace("HH", (p.hour ?? "").padStart(2, "0"))
+    .replace("mm", (p.minute ?? "").padStart(2, "0"))
+    .replace("ss", (p.second ?? "").padStart(2, "0"));
+}
 
 export interface DateFormatOptions {
   /**
@@ -34,7 +66,7 @@ export function formatDateTime(
   try {
     const timeFormat = showSeconds ? "HH:mm:ss" : "HH:mm";
     const dateFormat = `MMM d, yyyy ${timeFormat}`;
-    return formatInTimeZone(dateObj, timezone, dateFormat);
+    return formatInTimezone(dateObj, timezone, dateFormat);
   } catch (error) {
     // Fallback to browser timezone if timezone is invalid
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
@@ -61,7 +93,7 @@ export function formatDate(
   }
 
   try {
-    return formatInTimeZone(dateObj, timezone, "MMM d, yyyy");
+    return formatInTimezone(dateObj, timezone, "MMM d, yyyy");
   } catch (error) {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, "MMM d, yyyy");
@@ -87,7 +119,7 @@ export function formatTime(
   }
 
   try {
-    return formatInTimeZone(dateObj, timezone, timeFormat);
+    return formatInTimezone(dateObj, timezone, timeFormat);
   } catch (error) {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, timeFormat);
@@ -129,7 +161,7 @@ export function formatContainerDate(
   }
 
   try {
-    return formatInTimeZone(dateObj, timezone, "MMM d, HH:mm");
+    return formatInTimezone(dateObj, timezone, "MMM d, HH:mm");
   } catch (error) {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, "MMM d, HH:mm");

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import Convert from "ansi-to-html";
+import { ansiToHtml } from "@/lib/ansi-to-html";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,14 +30,6 @@ interface LogViewerProps {
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-
-const convert = new Convert({
-  fg: "#FFF",
-  bg: "#000",
-  newline: false,
-  escapeXML: true,
-  stream: false,
-});
 
 export function LogViewer({ containerId, containerName }: LogViewerProps) {
   const [autoScroll, setAutoScroll] = useState(true);
@@ -111,7 +103,7 @@ export function LogViewer({ containerId, containerName }: LogViewerProps) {
     const isStderr = log.stream === "stderr";
 
     // Convert ANSI codes to HTML
-    const htmlMessage = convert.toHtml(log.message);
+    const htmlMessage = ansiToHtml(log.message);
 
     // Highlight search matches safely:
     // 1. Escape regex metacharacters to prevent ReDoS
